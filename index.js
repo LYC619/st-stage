@@ -102,8 +102,53 @@
     };
   }
 
+  // core/presets.ts
+  var PRESET_DEFS = [
+    {
+      id: "preset_silver_loli",
+      name: "银发萝莉",
+      description: "内置预设 · 银发双马尾萝莉，8 个常用表情",
+      dir: "silver-loli",
+      tags: ["微笑", "害羞", "恼怒", "惊讶", "哭泣", "得意", "无奈", "开心"]
+    },
+    {
+      id: "preset_raven_onee",
+      name: "黑长直御姐",
+      description: "内置预设 · 黑长直冷艳御姐，8 个常用表情",
+      dir: "raven-onee",
+      tags: ["微笑", "害羞", "恼怒", "惊讶", "哭泣", "得意", "冷淡", "温柔"]
+    }
+  ];
+  function getPresetPacks(baseUrl = "") {
+    return PRESET_DEFS.map((def) => ({
+      id: def.id,
+      name: def.name,
+      author: "内置预设",
+      description: def.description,
+      sprites: def.tags.map((tag) => ({
+        tag,
+        url: `${baseUrl}/presets/${def.dir}/${encodeURIComponent(tag)}.png`
+      }))
+    }));
+  }
+  function isPresetPack(packId) {
+    return PRESET_DEFS.some((d) => d.id === packId);
+  }
+
   // st-extension/src/st-adapter.ts
   var MODULE_NAME = "sprite_overlay";
+  var DEFAULT_EXTENSION_FOLDER = "st-stage";
+  function getExtensionBaseUrl() {
+    try {
+      const stack = new Error().stack ?? "";
+      const match = stack.match(/\/scripts\/extensions\/third-party\/([^/]+)\//);
+      if (match) {
+        return `/scripts/extensions/third-party/${match[1]}`;
+      }
+    } catch {
+    }
+    return `/scripts/extensions/third-party/${DEFAULT_EXTENSION_FOLDER}`;
+  }
   function getContext() {
     const st = window.SillyTavern;
     if (!st) throw new Error("[sprite-overlay] SillyTavern 全局对象不存在，扩展只能在 ST 内运行");
@@ -113,17 +158,25 @@
     async loadSettings() {
       const ctx = getContext();
       const saved = ctx.extensionSettings[MODULE_NAME];
+      const presets = getPresetPacks(`${getExtensionBaseUrl()}/public`);
       if (saved && typeof saved === "object") {
-        return { ...createDefaultSettings(), ...saved };
+        const merged = { ...createDefaultSettings(), ...saved };
+        const customPacks = (merged.packs ?? []).filter((p) => !isPresetPack(p.id));
+        merged.packs = [...presets, ...customPacks];
+        return merged;
       }
       const defaults = createDefaultSettings();
+      defaults.packs = presets;
       ctx.extensionSettings[MODULE_NAME] = defaults;
       ctx.saveSettingsDebounced();
       return defaults;
     }
     async saveSettings(settings) {
       const ctx = getContext();
-      ctx.extensionSettings[MODULE_NAME] = settings;
+      ctx.extensionSettings[MODULE_NAME] = {
+        ...settings,
+        packs: settings.packs.filter((p) => !isPresetPack(p.id))
+      };
       ctx.saveSettingsDebounced();
     }
     async saveImage(fileName, base64Data, characterName) {
