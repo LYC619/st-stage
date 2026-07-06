@@ -111,3 +111,137 @@
   opacity: 0.8;
   margin-top: 4px;
 }
+
+/* 悬浮窗：占位提示与齿轮按钮 */
+#sprite-overlay-root .sprite-overlay-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: pre-line;
+  min-height: 120px;
+  padding: 16px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.6;
+}
+
+#sprite-overlay-root .sprite-overlay-gear {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  backdrop-filter: blur(4px);
+}
+
+#sprite-overlay-root .sprite-overlay-frame:hover .sprite-overlay-gear {
+  opacity: 1;
+}
+
+/* 立绘包管理弹窗 */
+.so-manager-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.so-manager {
+  width: min(520px, 92vw);
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+  background: var(--SmartThemeBlurTintColor, rgba(25, 25, 30, 0.95));
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+.so-manager-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.so-manager .so-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  flex-wrap: wrap;
+}
+
+.so-manager .so-pack-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.so-manager .so-pack-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+  border-radius: 8px;
+}
+
+.so-manager .so-pack-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 修复按钮文字竖排：强制不换行、宽度自适应 */
+.so-manager .so-btn-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.so-manager .menu_button.so-btn,
+.so-manager .menu_button {
+  white-space: nowrap;
+  width: max-content;
+  flex-shrink: 0;
+}
+
+.so-manager .so-thumbs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 4px 0;
+}
+
+.so-manager .so-thumbs img {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.so-manager .so-status {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 4px;
+}
