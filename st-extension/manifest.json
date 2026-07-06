@@ -1,0 +1,12 @@
+{
+  "display_name": "角色立绘悬浮窗",
+  "loading_order": 100,
+  "requires": [],
+  "optional": [],
+  "js": "dist/index.js",
+  "css": "style.css",
+  "author": "sprite-overlay",
+  "version": "0.1.0",
+  "homePage": "",
+  "auto_update": false
+}

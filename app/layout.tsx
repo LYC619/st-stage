@@ -3,8 +3,8 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
+  title: '角色立绘悬浮窗 · SillyTavern 插件测试环境',
+  description: '为任意纯文字角色卡添加立绘悬浮窗：prompt 注入、标签提取、表情切换的全链路模拟测试环境',
   generator: 'v0.app',
   icons: {
     icon: [

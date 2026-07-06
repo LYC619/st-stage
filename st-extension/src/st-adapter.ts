@@ -1,0 +1,125 @@
+/**
+ * SillyTavern 平台适配器。
+ * 依赖 ST 全局运行时（SillyTavern.getContext()），仅在 ST 内运行。
+ *
+ * 关键 API：
+ * - context.extensionSettings[MODULE] + saveSettingsDebounced()：设置持久化
+ * - context.setExtensionPrompt(MODULE, prompt, position, depth)：prompt 注入（官方 API，
+ *   优于 fetch 拦截，抗 ST 版本升级）
+ * - context.eventSource.on(event_types.MESSAGE_RECEIVED)：消息事件（优于 DOM 监听）
+ * - saveBase64AsFile：把上传图片写入用户数据目录，返回可访问 URL
+ */
+
+import type { PlatformAdapter } from '../../core/adapter'
+import type { PluginSettings } from '../../core/types'
+import { createDefaultSettings } from '../../core/types'
+
+export const MODULE_NAME = 'sprite_overlay'
+
+/** ST 全局 context 的最小类型描述 */
+interface STContext {
+  extensionSettings: Record<string, unknown>
+  saveSettingsDebounced: () => void
+  setExtensionPrompt: (key: string, prompt: string, position: number, depth: number) => void
+  eventSource: {
+    on: (event: string, handler: (...args: unknown[]) => void) => void
+    removeListener: (event: string, handler: (...args: unknown[]) => void) => void
+  }
+  eventTypes: Record<string, string>
+  characters: Array<{ name: string }>
+  characterId: number | undefined
+  chat: Array<{ mes: string; is_user: boolean }>
+}
+
+declare global {
+  interface Window {
+    SillyTavern?: { getContext: () => STContext }
+  }
+}
+
+function getContext(): STContext {
+  const st = window.SillyTavern
+  if (!st) throw new Error('[sprite-overlay] SillyTavern 全局对象不存在，扩展只能在 ST 内运行')
+  return st.getContext()
+}
+
+export class STAdapter implements PlatformAdapter {
+  async loadSettings(): Promise<PluginSettings> {
+    const ctx = getContext()
+    const saved = ctx.extensionSettings[MODULE_NAME] as PluginSettings | undefined
+    if (saved && typeof saved === 'object') {
+      return { ...createDefaultSettings(), ...saved }
+    }
+    const defaults = createDefaultSettings()
+    ctx.extensionSettings[MODULE_NAME] = defaults
+    ctx.saveSettingsDebounced()
+    return defaults
+  }
+
+  async saveSettings(settings: PluginSettings): Promise<void> {
+    const ctx = getContext()
+    ctx.extensionSettings[MODULE_NAME] = settings
+    ctx.saveSettingsDebounced()
+  }
+
+  async saveImage(fileName: string, base64Data: string, characterName: string): Promise<string> {
+    // ST 提供的文件保存工具（写入用户数据目录，返回静态可访问路径）
+    // saveBase64AsFile(base64WithoutPrefix, subFolder, fileName, extension)
+    const ctx = getContext() as STContext & {
+      saveBase64AsFile?: (data: string, folder: string, name: string, ext: string) => Promise<string>
+    }
+    const match = base64Data.match(/^data:image\/(\w+);base64,(.+)$/s)
+    if (!match) throw new Error('图片数据格式不正确')
+    const [, ext, data] = match
+    const baseName = fileName.replace(/\.[^.]+$/, '')
+    if (typeof ctx.saveBase64AsFile === 'function') {
+      return await ctx.saveBase64AsFile(data, `sprite-overlay/${characterName}`, baseName, ext)
+    }
+    // 回退：直接内嵌 data URI（占空间但保证可用）
+    return base64Data
+  }
+
+  getCurrentCharacterName(): string {
+    const ctx = getContext()
+    if (ctx.characterId === undefined) return ''
+    return ctx.characters[ctx.characterId]?.name ?? ''
+  }
+
+  injectPrompt(prompt: string): void {
+    const ctx = getContext()
+    // position 1 = IN_PROMPT（拼接到 prompt 中），depth 4 = 距末尾 4 层，贴近对话又不干扰最新消息
+    ctx.setExtensionPrompt(MODULE_NAME, prompt, 1, 4)
+  }
+
+  onMessageReceived(handler: (messageText: string) => void): () => void {
+    const ctx = getContext()
+    const eventName =
+      ctx.eventTypes?.MESSAGE_RECEIVED ??
+      (ctx as unknown as { event_types?: Record<string, string> }).event_types?.MESSAGE_RECEIVED ??
+      'message_received'
+
+    const wrapped = (...args: unknown[]) => {
+      try {
+        const messageId = args[0]
+        const chat = getContext().chat
+        const message =
+          typeof messageId === 'number' ? chat[messageId] : chat[chat.length - 1]
+        if (message && !message.is_user && typeof message.mes === 'string') {
+          handler(message.mes)
+        }
+      } catch (err) {
+        console.error('[sprite-overlay] 处理消息事件失败', err)
+      }
+    }
+    ctx.eventSource.on(eventName, wrapped)
+    return () => ctx.eventSource.removeListener(eventName, wrapped)
+  }
+
+  /** 订阅角色切换事件 */
+  onCharacterChanged(handler: () => void): () => void {
+    const ctx = getContext()
+    const eventName = ctx.eventTypes?.CHAT_CHANGED ?? 'chat_id_changed'
+    ctx.eventSource.on(eventName, handler)
+    return () => ctx.eventSource.removeListener(eventName, handler)
+  }
+}
