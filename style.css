@@ -1,0 +1,113 @@
+/* 角色立绘悬浮窗 — SillyTavern 扩展样式 */
+
+#sprite-overlay-root {
+  position: fixed;
+  z-index: 9999;
+  user-select: none;
+  touch-action: none;
+}
+
+#sprite-overlay-root .sprite-overlay-frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(20, 20, 24, 0.6);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  cursor: move;
+}
+
+#sprite-overlay-root img {
+  display: block;
+  width: 100%;
+  height: auto;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+#sprite-overlay-root .sprite-overlay-tag {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 11px;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+
+#sprite-overlay-root .sprite-overlay-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 20px;
+  height: 20px;
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+#sprite-overlay-root .sprite-overlay-frame:hover .sprite-overlay-resize {
+  opacity: 1;
+}
+
+#sprite-overlay-root .sprite-overlay-resize::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid rgba(255, 255, 255, 0.6);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.6);
+  border-radius: 2px;
+}
+
+/* 设置面板 */
+.sprite-overlay-settings .so-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  flex-wrap: wrap;
+}
+
+.sprite-overlay-settings .so-pack-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.sprite-overlay-settings .so-pack-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+  border-radius: 8px;
+}
+
+.sprite-overlay-settings .so-thumbs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 4px 0;
+}
+
+.sprite-overlay-settings .so-thumbs img {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.sprite-overlay-settings .so-status {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 4px;
+}

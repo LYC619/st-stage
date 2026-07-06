@@ -13,8 +13,31 @@
 import type { PlatformAdapter } from '../../core/adapter'
 import type { PluginSettings } from '../../core/types'
 import { createDefaultSettings } from '../../core/types'
+import { getPresetPacks, isPresetPack } from '../../core/presets'
 
 export const MODULE_NAME = 'sprite_overlay'
+
+/** 仓库名即扩展安装目录名（通过 GitHub 链接安装时） */
+const DEFAULT_EXTENSION_FOLDER = 'st-stage'
+
+/**
+ * 探测扩展的静态资源根路径。
+ * ST 把第三方扩展 clone 到 /scripts/extensions/third-party/<仓库名>/ 并静态托管。
+ * 通过错误堆栈中的脚本 URL 动态解析目录名，用户改文件夹名也不会失效；
+ * 解析失败时回退到默认仓库名。
+ */
+export function getExtensionBaseUrl(): string {
+  try {
+    const stack = new Error().stack ?? ''
+    const match = stack.match(/\/scripts\/extensions\/third-party\/([^/]+)\//)
+    if (match) {
+      return `/scripts/extensions/third-party/${match[1]}`
+    }
+  } catch {
+    // 忽略，走回退
+  }
+  return `/scripts/extensions/third-party/${DEFAULT_EXTENSION_FOLDER}`
+}
 
 /** ST 全局 context 的最小类型描述 */
 interface STContext {
@@ -47,10 +70,16 @@ export class STAdapter implements PlatformAdapter {
   async loadSettings(): Promise<PluginSettings> {
     const ctx = getContext()
     const saved = ctx.extensionSettings[MODULE_NAME] as PluginSettings | undefined
+    // 内置预设包随扩展仓库分发（public/presets/），每次加载都以当前安装路径刷新 URL
+    const presets = getPresetPacks(`${getExtensionBaseUrl()}/public`)
     if (saved && typeof saved === 'object') {
-      return { ...createDefaultSettings(), ...saved }
+      const merged = { ...createDefaultSettings(), ...saved }
+      const customPacks = (merged.packs ?? []).filter((p) => !isPresetPack(p.id))
+      merged.packs = [...presets, ...customPacks]
+      return merged
     }
     const defaults = createDefaultSettings()
+    defaults.packs = presets
     ctx.extensionSettings[MODULE_NAME] = defaults
     ctx.saveSettingsDebounced()
     return defaults
@@ -58,7 +87,11 @@ export class STAdapter implements PlatformAdapter {
 
   async saveSettings(settings: PluginSettings): Promise<void> {
     const ctx = getContext()
-    ctx.extensionSettings[MODULE_NAME] = settings
+    // 预设包随扩展分发、加载时动态合并，持久化时剔除以免存储冗余/过期 URL
+    ctx.extensionSettings[MODULE_NAME] = {
+      ...settings,
+      packs: settings.packs.filter((p) => !isPresetPack(p.id)),
+    }
     ctx.saveSettingsDebounced()
   }
 

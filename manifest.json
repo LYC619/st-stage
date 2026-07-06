@@ -3,10 +3,10 @@
   "loading_order": 100,
   "requires": [],
   "optional": [],
-  "js": "dist/index.js",
+  "js": "index.js",
   "css": "style.css",
-  "author": "sprite-overlay",
+  "author": "LYC619",
   "version": "0.1.0",
-  "homePage": "",
-  "auto_update": false
+  "homePage": "https://github.com/LYC619/st-stage",
+  "auto_update": true
 }
