@@ -192,8 +192,12 @@
     }
     getCurrentCharacterName() {
       const ctx = getContext();
-      if (ctx.characterId === void 0) return "";
-      return ctx.characters[ctx.characterId]?.name ?? "";
+      const id = ctx.characterId;
+      if (id !== void 0 && id !== null && `${id}` !== "") {
+        const byId = ctx.characters[Number(id)]?.name;
+        if (byId) return byId;
+      }
+      return ctx.name2 ?? "";
     }
     injectPrompt(prompt) {
       const ctx = getContext();
@@ -227,7 +231,7 @@
   };
 
   // st-extension/src/overlay-dom.ts
-  function createOverlay(initialLayout, onLayoutChange) {
+  function createOverlay(initialLayout, onLayoutChange, onManage) {
     let layout = { ...initialLayout };
     const root = document.createElement("div");
     root.id = "sprite-overlay-root";
@@ -241,7 +245,19 @@
     tagBadge.className = "sprite-overlay-tag";
     const resizeHandle = document.createElement("div");
     resizeHandle.className = "sprite-overlay-resize";
-    frame.append(img, tagBadge, resizeHandle);
+    const placeholder = document.createElement("div");
+    placeholder.className = "sprite-overlay-placeholder";
+    placeholder.style.display = "none";
+    const gearBtn = document.createElement("div");
+    gearBtn.className = "sprite-overlay-gear";
+    gearBtn.title = "立绘包管理";
+    gearBtn.textContent = "⚙";
+    gearBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+    gearBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onManage?.();
+    });
+    frame.append(img, placeholder, tagBadge, gearBtn, resizeHandle);
     root.append(frame);
     document.body.append(root);
     function applyLayout() {
@@ -284,6 +300,9 @@
     let fadeTimer = null;
     return {
       setImage(url, tag) {
+        placeholder.style.display = "none";
+        img.style.display = "block";
+        tagBadge.style.display = "";
         if (img.src === url) return;
         img.style.opacity = "0";
         if (fadeTimer) clearTimeout(fadeTimer);
@@ -295,6 +314,12 @@
           };
           if (img.complete) img.style.opacity = "1";
         }, 180);
+      },
+      setPlaceholder(text) {
+        img.style.display = "none";
+        tagBadge.style.display = "none";
+        placeholder.textContent = text;
+        placeholder.style.display = "flex";
       },
       setVisible(visible) {
         root.style.display = visible ? "block" : "none";
@@ -372,175 +397,182 @@
     });
   }
 
-  // st-extension/src/settings-panel.ts
-  function mountSettingsPanel(deps) {
-    const container = document.getElementById("extensions_settings");
-    if (!container) {
-      console.warn("[sprite-overlay] 未找到 #extensions_settings，设置面板未挂载");
-      return;
-    }
-    const wrapper = document.createElement("div");
-    wrapper.className = "sprite-overlay-settings";
-    wrapper.innerHTML = `
-    <div class="inline-drawer">
-      <div class="inline-drawer-toggle inline-drawer-header">
-        <b>角色立绘悬浮窗</b>
-        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-      </div>
-      <div class="inline-drawer-content" id="so-panel-content"></div>
-    </div>
-  `;
-    container.append(wrapper);
-    const content = wrapper.querySelector("#so-panel-content");
-    render(content, deps);
-  }
-  function render(content, deps) {
-    const settings = deps.getSettings();
-    const characterName = deps.adapter.getCurrentCharacterName();
-    const binding = settings.bindings.find((b) => b.characterName === characterName);
-    content.innerHTML = "";
-    content.append(
-      checkboxRow(
-        "启用立绘悬浮窗",
-        settings.enabled,
-        (v) => commit({ ...deps.getSettings(), enabled: v })
-      ),
-      checkboxRow(
-        "消息中隐藏 [立绘:xxx] 标签",
-        settings.hideTagInMessage,
-        (v) => commit({ ...deps.getSettings(), hideTagInMessage: v })
-      )
-    );
-    const bindRow = document.createElement("div");
-    bindRow.className = "so-row";
-    const bindLabel = document.createElement("span");
-    bindLabel.textContent = `当前角色「${characterName || "未选择"}」绑定：`;
-    const select = document.createElement("select");
-    select.className = "text_pole";
-    select.innerHTML = '<option value="">选择立绘包…</option>' + settings.packs.map(
-      (p) => `<option value="${p.id}" ${binding?.packId === p.id ? "selected" : ""}>${p.name}（${p.sprites.length} 张）</option>`
-    ).join("");
-    select.addEventListener("change", () => {
-      if (!characterName || !select.value) return;
-      commit(bindCharacter(deps.getSettings(), characterName, select.value));
-    });
-    bindRow.append(bindLabel, select);
-    if (binding) {
-      bindRow.append(
-        checkboxRow(
-          "启用",
-          binding.enabled,
-          (v) => commit(toggleBinding(deps.getSettings(), characterName, v))
-        )
-      );
-    }
-    content.append(bindRow);
-    const list = document.createElement("div");
-    list.className = "so-pack-list";
-    for (const pack of settings.packs) {
-      list.append(renderPackItem(pack, deps, characterName));
-    }
-    content.append(list);
-    const actions = document.createElement("div");
-    actions.className = "so-row";
-    const nameInput = document.createElement("input");
-    nameInput.type = "text";
-    nameInput.className = "text_pole";
-    nameInput.placeholder = "新立绘包名称…";
-    const createBtn = button("新建立绘包", () => {
-      const name = nameInput.value.trim();
-      if (!name) return;
-      commit(upsertPack(deps.getSettings(), { id: genId(), name, author: "我", sprites: [] }));
-      nameInput.value = "";
-    });
-    const importBtn = button("导入立绘包", () => {
-      pickFile(".json,application/json", false, async (files) => {
-        try {
-          const text = await files[0].text();
-          const pack = importPack(text);
-          commit(upsertPack(deps.getSettings(), pack));
-          toast(`已导入「${pack.name}」（${pack.sprites.length} 张）`);
-        } catch (err) {
-          toast(err instanceof Error ? err.message : "导入失败");
-        }
-      });
-    });
-    actions.append(nameInput, createBtn, importBtn);
-    content.append(actions);
-    const status = document.createElement("div");
-    status.className = "so-status";
-    content.append(status);
-    function toast(msg) {
-      status.textContent = msg;
-      setTimeout(() => {
-        if (status.textContent === msg) status.textContent = "";
-      }, 3e3);
-    }
-    function commit(next) {
-      deps.updateSettings(next);
-      render(content, deps);
-    }
-  }
-  function renderPackItem(pack, deps, characterName) {
-    const item = document.createElement("div");
-    item.className = "so-pack-item";
-    const info = document.createElement("div");
-    info.innerHTML = `<b>${pack.name}</b> <small>${pack.sprites.length} 张 · ${pack.author ?? ""}</small>`;
-    const btns = document.createElement("div");
-    btns.className = "so-row";
-    btns.append(
-      button("上传图片", () => {
-        pickFile("image/*", true, async (files) => {
-          const current = deps.getSettings();
-          const target = current.packs.find((p) => p.id === pack.id);
-          if (!target) return;
-          const sprites = [...target.sprites];
-          for (const file of Array.from(files)) {
-            const tag = file.name.replace(/\.[^.]+$/, "").trim();
-            if (!tag) continue;
-            const dataUri = await fileToDataUri(file);
-            const url = await deps.adapter.saveImage(file.name, dataUri, characterName || pack.name);
-            const idx = sprites.findIndex((s) => s.tag === tag);
-            if (idx >= 0) sprites[idx] = { tag, url };
-            else sprites.push({ tag, url });
-          }
-          deps.updateSettings(upsertPack(current, { ...target, sprites }));
-          const content = item.closest("#so-panel-content");
-          if (content) render(content, deps);
-        });
-      }),
-      button("导出", async () => {
-        const file = await exportPack(pack, false);
-        const blob = new Blob([JSON.stringify(file, null, 2)], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `${pack.name}.sprite-pack.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-      }),
-      button("删除", () => {
-        if (!window.confirm(`确定删除立绘包「${pack.name}」？`)) return;
-        const content = item.closest("#so-panel-content");
-        deps.updateSettings(removePack(deps.getSettings(), pack.id));
-        if (content) render(content, deps);
-      })
-    );
-    item.append(info, btns);
-    if (pack.sprites.length > 0) {
-      const thumbs = document.createElement("div");
-      thumbs.className = "so-thumbs";
-      for (const s of pack.sprites) {
-        const img = document.createElement("img");
-        img.src = s.url;
-        img.alt = s.tag;
-        img.title = s.tag;
-        img.loading = "lazy";
-        thumbs.append(img);
+  // st-extension/src/sprite-manager.ts
+  function createSpriteManager(deps) {
+    let backdrop = null;
+    function open() {
+      if (backdrop) {
+        renderBody();
+        return;
       }
-      item.append(thumbs);
+      backdrop = document.createElement("div");
+      backdrop.className = "so-manager-backdrop";
+      backdrop.addEventListener("click", (e) => {
+        if (e.target === backdrop) close();
+      });
+      const dialog = document.createElement("div");
+      dialog.className = "so-manager";
+      dialog.innerHTML = `
+      <div class="so-manager-header">
+        <b>立绘包管理</b>
+        <div class="menu_button so-manager-close" title="关闭">✕</div>
+      </div>
+      <div class="so-manager-body"></div>
+    `;
+      dialog.querySelector(".so-manager-close")?.addEventListener("click", () => close());
+      backdrop.append(dialog);
+      document.body.append(backdrop);
+      renderBody();
     }
-    return item;
+    function close() {
+      backdrop?.remove();
+      backdrop = null;
+    }
+    function refreshIfOpen() {
+      if (backdrop) renderBody();
+    }
+    function renderBody() {
+      const body = backdrop?.querySelector(".so-manager-body");
+      if (!body) return;
+      const settings = deps.getSettings();
+      const characterName = deps.adapter.getCurrentCharacterName();
+      const binding = settings.bindings.find((b) => b.characterName === characterName);
+      body.innerHTML = "";
+      const bindRow = document.createElement("div");
+      bindRow.className = "so-row";
+      const bindLabel = document.createElement("span");
+      bindLabel.textContent = characterName ? `角色「${characterName}」绑定：` : "请先打开一个角色聊天再绑定立绘包";
+      bindRow.append(bindLabel);
+      if (characterName) {
+        const select = document.createElement("select");
+        select.className = "text_pole";
+        select.innerHTML = '<option value="">选择立绘包…</option>' + settings.packs.map(
+          (p) => `<option value="${p.id}" ${binding?.packId === p.id ? "selected" : ""}>${p.name}（${p.sprites.length} 张）</option>`
+        ).join("");
+        select.addEventListener("change", () => {
+          if (!select.value) return;
+          commit(bindCharacter(deps.getSettings(), characterName, select.value));
+        });
+        bindRow.append(select);
+        if (binding) {
+          bindRow.append(
+            checkboxRow(
+              "启用",
+              binding.enabled,
+              (v) => commit(toggleBinding(deps.getSettings(), characterName, v))
+            )
+          );
+        }
+      }
+      body.append(bindRow);
+      const list = document.createElement("div");
+      list.className = "so-pack-list";
+      for (const pack of settings.packs) {
+        list.append(renderPackItem(pack, characterName));
+      }
+      body.append(list);
+      const actions = document.createElement("div");
+      actions.className = "so-row";
+      const nameInput = document.createElement("input");
+      nameInput.type = "text";
+      nameInput.className = "text_pole";
+      nameInput.placeholder = "新立绘包名称…";
+      const createBtn = button("新建立绘包", () => {
+        const name = nameInput.value.trim();
+        if (!name) return;
+        commit(upsertPack(deps.getSettings(), { id: genId(), name, author: "我", sprites: [] }));
+        nameInput.value = "";
+      });
+      const importBtn = button("导入立绘包", () => {
+        pickFile(".json,application/json", false, async (files) => {
+          try {
+            const text = await files[0].text();
+            const pack = importPack(text);
+            commit(upsertPack(deps.getSettings(), pack));
+            toast(`已导入「${pack.name}」（${pack.sprites.length} 张）`);
+          } catch (err) {
+            toast(err instanceof Error ? err.message : "导入失败");
+          }
+        });
+      });
+      actions.append(nameInput, createBtn, importBtn);
+      body.append(actions);
+      const status = document.createElement("div");
+      status.className = "so-status";
+      body.append(status);
+      function toast(msg) {
+        status.textContent = msg;
+        setTimeout(() => {
+          if (status.textContent === msg) status.textContent = "";
+        }, 3e3);
+      }
+      function commit(next) {
+        deps.updateSettings(next);
+        renderBody();
+      }
+      function renderPackItem(pack, charName) {
+        const item = document.createElement("div");
+        item.className = "so-pack-item";
+        const info = document.createElement("div");
+        info.className = "so-pack-info";
+        info.innerHTML = `<b>${pack.name}</b> <small>${pack.sprites.length} 张 · ${pack.author ?? ""}</small>`;
+        const btns = document.createElement("div");
+        btns.className = "so-btn-row";
+        btns.append(
+          button("上传图片", () => {
+            pickFile("image/*", true, async (files) => {
+              const current = deps.getSettings();
+              const target = current.packs.find((p) => p.id === pack.id);
+              if (!target) return;
+              const sprites = [...target.sprites];
+              for (const file of Array.from(files)) {
+                const tag = file.name.replace(/\.[^.]+$/, "").trim();
+                if (!tag) continue;
+                const dataUri = await fileToDataUri(file);
+                const url = await deps.adapter.saveImage(file.name, dataUri, charName || pack.name);
+                const idx = sprites.findIndex((s) => s.tag === tag);
+                if (idx >= 0) sprites[idx] = { tag, url };
+                else sprites.push({ tag, url });
+              }
+              commit(upsertPack(current, { ...target, sprites }));
+            });
+          }),
+          button("导出", async () => {
+            const file = await exportPack(pack, false);
+            const blob = new Blob([JSON.stringify(file, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${pack.name}.sprite-pack.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }),
+          button("删除", () => {
+            if (!window.confirm(`确定删除立绘包「${pack.name}」？`)) return;
+            commit(removePack(deps.getSettings(), pack.id));
+          })
+        );
+        const top = document.createElement("div");
+        top.className = "so-pack-top";
+        top.append(info, btns);
+        item.append(top);
+        if (pack.sprites.length > 0) {
+          const thumbs = document.createElement("div");
+          thumbs.className = "so-thumbs";
+          for (const s of pack.sprites) {
+            const img = document.createElement("img");
+            img.src = s.url;
+            img.alt = s.tag;
+            img.title = s.tag;
+            img.loading = "lazy";
+            thumbs.append(img);
+          }
+          item.append(thumbs);
+        }
+        return item;
+      }
+    }
+    return { open, close, refreshIfOpen };
   }
   function checkboxRow(label, checked, onChange) {
     const row = document.createElement("label");
@@ -556,7 +588,7 @@
   }
   function button(label, onClick) {
     const btn = document.createElement("div");
-    btn.className = "menu_button";
+    btn.className = "menu_button so-btn";
     btn.textContent = label;
     btn.addEventListener("click", onClick);
     return btn;
@@ -580,6 +612,57 @@
     });
   }
 
+  // st-extension/src/settings-panel.ts
+  function mountSettingsPanel(deps) {
+    const container = document.getElementById("extensions_settings");
+    if (!container) {
+      console.warn("[sprite-overlay] 未找到 #extensions_settings，设置面板未挂载");
+      return;
+    }
+    const wrapper = document.createElement("div");
+    wrapper.className = "sprite-overlay-settings";
+    wrapper.innerHTML = `
+    <div class="inline-drawer">
+      <div class="inline-drawer-toggle inline-drawer-header">
+        <b>角色立绘悬浮窗</b>
+        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+      </div>
+      <div class="inline-drawer-content" id="so-panel-content"></div>
+    </div>
+  `;
+    container.append(wrapper);
+    const content = wrapper.querySelector("#so-panel-content");
+    const settings = deps.getSettings();
+    content.append(
+      checkboxRow2(
+        "启用立绘悬浮窗",
+        settings.enabled,
+        (v) => deps.updateSettings({ ...deps.getSettings(), enabled: v })
+      ),
+      checkboxRow2(
+        "消息中隐藏 [立绘:xxx] 标签",
+        settings.hideTagInMessage,
+        (v) => deps.updateSettings({ ...deps.getSettings(), hideTagInMessage: v })
+      )
+    );
+    const hint = document.createElement("div");
+    hint.className = "so-status";
+    hint.textContent = "立绘包管理与角色绑定：点击聊天界面悬浮窗右上角的 ⚙ 按钮。";
+    content.append(hint);
+  }
+  function checkboxRow2(label, checked, onChange) {
+    const row = document.createElement("label");
+    row.className = "so-row checkbox_label";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = checked;
+    input.addEventListener("change", () => onChange(input.checked));
+    const span = document.createElement("span");
+    span.textContent = label;
+    row.append(input, span);
+    return row;
+  }
+
   // st-extension/src/index.ts
   async function init() {
     const adapter = new STAdapter();
@@ -590,22 +673,44 @@
       console.error("[sprite-overlay] 初始化失败", err);
       return;
     }
-    let overlay = createOverlay(settings.overlay, (layout) => {
-      settings = { ...settings, overlay: layout };
+    function updateSettings(next) {
+      settings = next;
       adapter.saveSettings(settings);
+      overlay.setLayout(settings.overlay);
+      refresh();
+    }
+    const manager = createSpriteManager({
+      adapter,
+      getSettings: () => settings,
+      updateSettings
     });
+    const overlay = createOverlay(
+      settings.overlay,
+      (layout) => {
+        settings = { ...settings, overlay: layout };
+        adapter.saveSettings(settings);
+      },
+      () => manager.open()
+    );
     function refresh() {
+      if (!settings.enabled) {
+        adapter.injectPrompt("");
+        overlay.setVisible(false);
+        return;
+      }
       const characterName = adapter.getCurrentCharacterName();
       const tags = getAvailableTags(settings, characterName);
-      adapter.injectPrompt(settings.enabled ? buildInjectionPrompt(tags) : "");
-      const pack = settings.enabled ? getActivePack(settings, characterName) : null;
+      adapter.injectPrompt(buildInjectionPrompt(tags));
+      const pack = getActivePack(settings, characterName);
       if (pack && pack.sprites.length > 0) {
         preloadPack(pack);
         overlay.setImage(pack.sprites[0].url, pack.sprites[0].tag);
-        overlay.setVisible(true);
+      } else if (characterName) {
+        overlay.setPlaceholder("未绑定立绘包\n点击 ⚙ 进行绑定");
       } else {
-        overlay.setVisible(false);
+        overlay.setPlaceholder("打开角色聊天后\n点击 ⚙ 绑定立绘包");
       }
+      overlay.setVisible(true);
     }
     adapter.onMessageReceived((text) => {
       if (!settings.enabled) return;
@@ -620,16 +725,13 @@
         overlay.setVisible(true);
       }
     });
-    adapter.onCharacterChanged(() => refresh());
+    adapter.onCharacterChanged(() => {
+      refresh();
+      manager.refreshIfOpen();
+    });
     mountSettingsPanel({
-      adapter,
       getSettings: () => settings,
-      updateSettings: (next) => {
-        settings = next;
-        adapter.saveSettings(settings);
-        overlay.setLayout(settings.overlay);
-        refresh();
-      }
+      updateSettings
     });
     refresh();
     console.log("[sprite-overlay] 角色立绘悬浮窗扩展已加载");

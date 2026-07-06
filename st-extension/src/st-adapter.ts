@@ -50,7 +50,10 @@ interface STContext {
   }
   eventTypes: Record<string, string>
   characters: Array<{ name: string }>
-  characterId: number | undefined
+  /** 注意：真实 ST 中可能是字符串（如 "5"），也可能未定义 */
+  characterId: number | string | undefined
+  /** 当前对话的角色显示名（比 characterId 更可靠的回退） */
+  name2?: string
   chat: Array<{ mes: string; is_user: boolean }>
 }
 
@@ -114,8 +117,14 @@ export class STAdapter implements PlatformAdapter {
 
   getCurrentCharacterName(): string {
     const ctx = getContext()
-    if (ctx.characterId === undefined) return ''
-    return ctx.characters[ctx.characterId]?.name ?? ''
+    // characterId 在真实 ST 中可能是字符串（"5"）；空串/undefined 都视为未选择
+    const id = ctx.characterId
+    if (id !== undefined && id !== null && `${id}` !== '') {
+      const byId = ctx.characters[Number(id)]?.name
+      if (byId) return byId
+    }
+    // 回退：name2 是 ST 维护的当前角色显示名
+    return ctx.name2 ?? ''
   }
 
   injectPrompt(prompt: string): void {

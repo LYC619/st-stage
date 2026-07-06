@@ -7,6 +7,8 @@ import type { OverlayLayout } from '../../core/types'
 
 export interface OverlayController {
   setImage(url: string, tag: string): void
+  /** 未绑定立绘包时显示占位提示（保留管理入口） */
+  setPlaceholder(text: string): void
   setVisible(visible: boolean): void
   setLayout(layout: OverlayLayout): void
   destroy(): void
@@ -15,6 +17,7 @@ export interface OverlayController {
 export function createOverlay(
   initialLayout: OverlayLayout,
   onLayoutChange: (layout: OverlayLayout) => void,
+  onManage?: () => void,
 ): OverlayController {
   let layout = { ...initialLayout }
 
@@ -35,7 +38,23 @@ export function createOverlay(
   const resizeHandle = document.createElement('div')
   resizeHandle.className = 'sprite-overlay-resize'
 
-  frame.append(img, tagBadge, resizeHandle)
+  // 未绑定立绘包时的占位提示
+  const placeholder = document.createElement('div')
+  placeholder.className = 'sprite-overlay-placeholder'
+  placeholder.style.display = 'none'
+
+  // 齿轮按钮：打开立绘包管理弹窗
+  const gearBtn = document.createElement('div')
+  gearBtn.className = 'sprite-overlay-gear'
+  gearBtn.title = '立绘包管理'
+  gearBtn.textContent = '⚙'
+  gearBtn.addEventListener('pointerdown', (e) => e.stopPropagation())
+  gearBtn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    onManage?.()
+  })
+
+  frame.append(img, placeholder, tagBadge, gearBtn, resizeHandle)
   root.append(frame)
   document.body.append(root)
 
@@ -84,6 +103,9 @@ export function createOverlay(
 
   return {
     setImage(url: string, tag: string) {
+      placeholder.style.display = 'none'
+      img.style.display = 'block'
+      tagBadge.style.display = ''
       if (img.src === url) return
       img.style.opacity = '0'
       if (fadeTimer) clearTimeout(fadeTimer)
@@ -96,6 +118,12 @@ export function createOverlay(
         // 已缓存图片可能不触发 onload
         if (img.complete) img.style.opacity = '1'
       }, 180)
+    },
+    setPlaceholder(text: string) {
+      img.style.display = 'none'
+      tagBadge.style.display = 'none'
+      placeholder.textContent = text
+      placeholder.style.display = 'flex'
     },
     setVisible(visible: boolean) {
       root.style.display = visible ? 'block' : 'none'
