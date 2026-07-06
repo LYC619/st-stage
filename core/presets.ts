@@ -1,8 +1,8 @@
 /**
- * 内置预设立绘包清单。
- * 图片路径为相对路径，由适配器传入 baseUrl 拼接：
+ * 内置预设立绘包清单（v2 格式，source='local'）。
+ * ref 为相对扩展目录的路径，由 resolveSpriteUrl 按适配器 baseUrl 拼接：
  * - Web 端：baseUrl = ''（Next.js public 目录，即 /presets/...）
- * - ST 端：baseUrl = 扩展静态目录前缀
+ * - ST 端：baseUrl = 扩展静态目录前缀 + '/public'
  */
 
 import type { SpritePack } from './types'
@@ -32,16 +32,23 @@ const PRESET_DEFS: PresetDef[] = [
   },
 ]
 
-/** 获取全部内置预设立绘包 */
-export function getPresetPacks(baseUrl = ''): SpritePack[] {
+/**
+ * 获取全部内置预设立绘包（v2）。
+ * 条目 id 使用稳定值（包 id + 标签），避免每次加载生成新 id 导致设置漂移。
+ */
+export function getPresetPacks(_baseUrl = ''): SpritePack[] {
   return PRESET_DEFS.map((def) => ({
     id: def.id,
     name: def.name,
+    version: 2 as const,
     author: '内置预设',
     description: def.description,
     sprites: def.tags.map((tag) => ({
-      tag,
-      url: `${baseUrl}/presets/${def.dir}/${encodeURIComponent(tag)}.png`,
+      id: `${def.id}_${tag}`,
+      label: tag,
+      tags: [tag],
+      source: 'local' as const,
+      ref: `presets/${def.dir}/${tag}.png`,
     })),
   }))
 }

@@ -19,6 +19,11 @@ export interface PlatformAdapter {
   /** 获取当前对话的角色名 */
   getCurrentCharacterName(): string
   /**
+   * 静态资源根路径（local 立绘条目解析用）。
+   * Web 端返回 ''（Next.js public）；ST 端返回扩展安装目录 + '/public'。
+   */
+  getAssetBaseUrl(): string
+  /**
    * 注入/更新 system prompt。传空字符串表示清除注入。
    * ST 端使用 setExtensionPrompt；Web 端更新「注入预览」状态。
    */

@@ -12,7 +12,7 @@
 
 import type { PlatformAdapter } from '../../core/adapter'
 import type { PluginSettings } from '../../core/types'
-import { createDefaultSettings } from '../../core/types'
+import { migrateSettings } from '../../core/migrate'
 import { getPresetPacks, isPresetPack } from '../../core/presets'
 
 export const MODULE_NAME = 'sprite_overlay'
