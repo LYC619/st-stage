@@ -1,7 +1,7 @@
 "use strict";
 (() => {
   // core/tag-parser.ts
-  var TAG_REGEX = /[\[【]\s*立绘\s*[:：]\s*([^\]】]+?)\s*[\]】]/g;
+  var TAG_REGEX = /[[【]\s*立绘\s*[:：]\s*([^\]】]+?)\s*[\]】]/g;
   function extractTags(text) {
     const tags = [];
     let match;
@@ -16,6 +16,12 @@
     const tags = extractTags(text);
     return tags.length > 0 ? tags[tags.length - 1] : null;
   }
+  function stripTags(text) {
+    return text.replace(new RegExp(TAG_REGEX.source, "g"), "").replace(/[ \t]+$/gm, "");
+  }
+  function hasTag(text) {
+    return new RegExp(TAG_REGEX.source).test(text);
+  }
 
   // core/prompt-builder.ts
   function buildInjectionPrompt(tags) {
@@ -28,6 +34,30 @@
       "以 [立绘:标签名] 的格式单独标注（例如 [立绘:" + tags[0] + "]）。",
       "只能使用列表中存在的标签，每次回复只标注一个。"
     ].join("\n");
+  }
+
+  // core/naming.ts
+  var TAG_MAX_LENGTH = 20;
+  var PACK_NAME_MAX_LENGTH = 30;
+  var DESCRIPTION_MAX_LENGTH = 200;
+  var CONTROL_CHARS = new RegExp("[\\u0000-\\u001f\\u007f]", "g");
+  var TAG_FORBIDDEN = /[[\]【】|=,，:：@/\\<>"'`]/g;
+  var PACK_NAME_FORBIDDEN = /[|=@<>"'`]/g;
+  var PATH_SEGMENT_ALLOWED = /[^0-9A-Za-z一-鿿぀-ヿ .\-_]/g;
+  function normalizeTag(raw) {
+    return raw.replace(CONTROL_CHARS, "").replace(TAG_FORBIDDEN, "").replace(/\s+/g, " ").trim().slice(0, TAG_MAX_LENGTH).trim();
+  }
+  function fileNameToTag(fileName) {
+    return normalizeTag(fileName.replace(/\.[^.]+$/, ""));
+  }
+  function sanitizePackName(raw) {
+    return raw.replace(CONTROL_CHARS, "").replace(PACK_NAME_FORBIDDEN, "").replace(/\s+/g, " ").trim().slice(0, PACK_NAME_MAX_LENGTH).trim();
+  }
+  function sanitizeDescription(raw) {
+    return raw.replace(CONTROL_CHARS, "").replace(/[<>]/g, "").trim().slice(0, DESCRIPTION_MAX_LENGTH).trim();
+  }
+  function sanitizePathSegment(raw) {
+    return raw.replace(CONTROL_CHARS, "").replace(PATH_SEGMENT_ALLOWED, "").replace(/\.{2,}/g, ".").replace(/^[. ]+|[. ]+$/g, "").slice(0, 40).trim();
   }
 
   // core/sprite-store.ts
@@ -74,6 +104,44 @@
       bindings: [...others, { characterName, packId, enabled: true }]
     };
   }
+  function touchPack(pack, sprites) {
+    return { ...pack, sprites, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+  }
+  function upsertSprite(pack, sprite) {
+    const idx = pack.sprites.findIndex((s) => s.tag === sprite.tag);
+    const sprites = idx >= 0 ? pack.sprites.map((s, i) => i === idx ? sprite : s) : [...pack.sprites, sprite];
+    return touchPack(pack, sprites);
+  }
+  function removeSprite(pack, tag) {
+    const next = touchPack(
+      pack,
+      pack.sprites.filter((s) => s.tag !== tag)
+    );
+    if (next.coverTag === tag) delete next.coverTag;
+    return next;
+  }
+  function renameSprite(pack, oldTag, newTagRaw) {
+    const newTag = normalizeTag(newTagRaw);
+    if (!newTag) throw new Error("表情名不能为空，且不能包含 [ ] : | = @ 等符号");
+    if (newTag === oldTag) return pack;
+    if (pack.sprites.some((s) => s.tag === newTag)) {
+      throw new Error(`表情名「${newTag}」在该立绘包中已存在`);
+    }
+    const sprites = pack.sprites.map((s) => s.tag === oldTag ? { ...s, tag: newTag } : s);
+    const next = touchPack(pack, sprites);
+    if (next.coverTag === oldTag) next.coverTag = newTag;
+    return next;
+  }
+  function moveSprite(pack, fromIndex, toIndex) {
+    const len = pack.sprites.length;
+    if (fromIndex === toIndex || fromIndex < 0 || fromIndex >= len || toIndex < 0 || toIndex >= len) {
+      return pack;
+    }
+    const sprites = [...pack.sprites];
+    const [moved] = sprites.splice(fromIndex, 1);
+    sprites.splice(toIndex, 0, moved);
+    return touchPack(pack, sprites);
+  }
   function toggleBinding(settings, characterName, enabled) {
     return {
       ...settings,
@@ -91,14 +159,397 @@
     }
   }
 
+  // core/phone-registry.ts
+  var APP_ID_REGEX = /^[a-z][a-z0-9-]{1,31}$/;
+  var PhoneAppRegistry = class {
+    constructor() {
+      this.apps = /* @__PURE__ */ new Map();
+      this.listeners = /* @__PURE__ */ new Set();
+    }
+    /** 注册 App；id 非法或重复时抛错（第三方 App 装载失败不应拖垮框架，调用方自行 catch） */
+    register(app) {
+      if (!APP_ID_REGEX.test(app.id)) {
+        throw new Error(`App id「${app.id}」非法：需匹配 ${APP_ID_REGEX}`);
+      }
+      if (this.apps.has(app.id)) {
+        throw new Error(`App id「${app.id}」已被注册`);
+      }
+      this.apps.set(app.id, app);
+      this.notify();
+    }
+    unregister(id) {
+      if (this.apps.delete(id)) this.notify();
+    }
+    get(id) {
+      return this.apps.get(id);
+    }
+    /** 按 order 升序返回全部 App */
+    list() {
+      return [...this.apps.values()].sort((a, b) => (a.order ?? 100) - (b.order ?? 100));
+    }
+    /** 订阅注册表变化（Home 屏据此重绘），返回退订函数 */
+    subscribe(listener) {
+      this.listeners.add(listener);
+      return () => this.listeners.delete(listener);
+    }
+    notify() {
+      for (const l of this.listeners) l();
+    }
+  };
+
+  // core/phone-shell.ts
+  var DRAG_THRESHOLD = 6;
+  function createPhoneShell(initialState, deps) {
+    let state = { ...initialState };
+    let activeApp = null;
+    const fab = document.createElement("div");
+    fab.className = "so-phone-fab";
+    fab.title = "打开手机";
+    fab.textContent = "📱";
+    fab.setAttribute("role", "button");
+    fab.setAttribute("aria-label", "打开手机面板");
+    const shell = document.createElement("div");
+    shell.className = "so-phone-shell";
+    shell.style.display = "none";
+    const statusBar2 = document.createElement("div");
+    statusBar2.className = "so-phone-status";
+    const statusTitle = document.createElement("span");
+    statusTitle.className = "so-phone-status-title";
+    statusTitle.textContent = "st-stage";
+    const clock = document.createElement("span");
+    clock.className = "so-phone-clock";
+    statusBar2.append(statusTitle, clock);
+    const screen = document.createElement("div");
+    screen.className = "so-phone-screen";
+    const homeBar = document.createElement("div");
+    homeBar.className = "so-phone-homebar";
+    const homeBtn = document.createElement("div");
+    homeBtn.className = "so-phone-homebtn";
+    homeBtn.title = "返回主屏 / 收起手机";
+    homeBtn.setAttribute("role", "button");
+    homeBtn.setAttribute("aria-label", "返回主屏或收起手机");
+    homeBar.append(homeBtn);
+    shell.append(statusBar2, screen, homeBar);
+    document.body.append(fab, shell);
+    const clockTimer = setInterval(updateClock, 3e4);
+    updateClock();
+    function updateClock() {
+      clock.textContent = (/* @__PURE__ */ new Date()).toLocaleTimeString("zh-CN", {
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+    function applyLayout() {
+      const clampedX = Math.max(0, Math.min(state.x, window.innerWidth - 56));
+      const clampedY = Math.max(0, Math.min(state.y, window.innerHeight - 56));
+      fab.style.left = `${clampedX}px`;
+      fab.style.top = `${clampedY}px`;
+      fab.style.display = state.open ? "none" : "flex";
+      shell.style.display = state.open ? "flex" : "none";
+      if (state.open) {
+        const shellW = 320;
+        const shellH = Math.min(580, window.innerHeight - 32);
+        shell.style.height = `${shellH}px`;
+        shell.style.left = `${Math.max(8, Math.min(clampedX, window.innerWidth - shellW - 8))}px`;
+        shell.style.top = `${Math.max(8, Math.min(clampedY, window.innerHeight - shellH - 8))}px`;
+      }
+    }
+    applyLayout();
+    function commitState(next) {
+      state = next;
+      applyLayout();
+      deps.onStateChange(state);
+    }
+    fab.addEventListener("pointerdown", (startEvent) => {
+      startEvent.preventDefault();
+      const startX = startEvent.clientX;
+      const startY = startEvent.clientY;
+      const origin = { ...state };
+      let moved = false;
+      const onMove = (ev) => {
+        const dx = ev.clientX - startX;
+        const dy = ev.clientY - startY;
+        if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+        moved = true;
+        state = { ...origin, x: origin.x + dx, y: origin.y + dy };
+        applyLayout();
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        if (moved) {
+          commitState(state);
+        } else {
+          commitState({ ...state, open: true });
+          renderScreen();
+        }
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    });
+    homeBtn.addEventListener("click", () => {
+      if (activeApp) {
+        leaveApp();
+        renderScreen();
+      } else {
+        commitState({ ...state, open: false });
+      }
+    });
+    const unsubscribe = deps.registry.subscribe(() => {
+      if (state.open && !activeApp) renderScreen();
+    });
+    function leaveApp() {
+      if (activeApp) {
+        try {
+          activeApp.unmount?.();
+        } catch (err) {
+          console.error(`[sprite-overlay] App「${activeApp.id}」unmount 失败`, err);
+        }
+        activeApp = null;
+      }
+    }
+    function renderScreen() {
+      screen.innerHTML = "";
+      if (activeApp) {
+        statusTitle.textContent = activeApp.name;
+        const container = document.createElement("div");
+        container.className = "so-phone-app-container";
+        screen.append(container);
+        try {
+          activeApp.mount(container, deps.createAppContext(activeApp.id, goHome));
+        } catch (err) {
+          console.error(`[sprite-overlay] App「${activeApp.id}」mount 失败`, err);
+          const errBox = document.createElement("div");
+          errBox.className = "so-phone-app-error";
+          errBox.textContent = "App 打开失败，详见控制台";
+          container.append(errBox);
+        }
+        return;
+      }
+      statusTitle.textContent = "st-stage";
+      const grid = document.createElement("div");
+      grid.className = "so-phone-home-grid";
+      for (const app of deps.registry.list()) {
+        grid.append(renderAppIcon(app));
+      }
+      screen.append(grid);
+    }
+    function renderAppIcon(app) {
+      const cell = document.createElement("div");
+      cell.className = "so-phone-app-icon";
+      cell.setAttribute("role", "button");
+      cell.tabIndex = 0;
+      cell.setAttribute("aria-label", `打开 ${app.name}`);
+      const icon = document.createElement("div");
+      icon.className = "so-phone-app-glyph";
+      icon.textContent = app.icon;
+      const label = document.createElement("div");
+      label.className = "so-phone-app-label";
+      label.textContent = app.name;
+      cell.append(icon, label);
+      const openThis = () => {
+        activeApp = app;
+        renderScreen();
+      };
+      cell.addEventListener("click", openThis);
+      cell.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openThis();
+        }
+      });
+      return cell;
+    }
+    function goHome() {
+      leaveApp();
+      renderScreen();
+    }
+    return {
+      setState(next) {
+        state = { ...next };
+        applyLayout();
+        if (state.open) renderScreen();
+      },
+      openApp(appId) {
+        const app = deps.registry.get(appId);
+        if (!app) return;
+        leaveApp();
+        activeApp = app;
+        if (!state.open) commitState({ ...state, open: true });
+        renderScreen();
+      },
+      destroy() {
+        clearInterval(clockTimer);
+        unsubscribe();
+        leaveApp();
+        fab.remove();
+        shell.remove();
+      }
+    };
+  }
+
   // core/types.ts
+  var SETTINGS_VERSION = 2;
+  var DEFAULT_IMAGE_HOST = "https://files.catbox.moe/";
+  function getSpriteSource(sprite) {
+    if (sprite.url.startsWith("data:")) return "embedded";
+    if (/^https?:\/\//.test(sprite.url)) return "hosted";
+    return "local";
+  }
+  function getPackCover(pack) {
+    if (pack.coverTag) {
+      const cover = pack.sprites.find((s) => s.tag === pack.coverTag);
+      if (cover) return cover;
+    }
+    return pack.sprites[0] ?? null;
+  }
   function createDefaultSettings() {
     return {
+      settingsVersion: SETTINGS_VERSION,
       enabled: true,
       hideTagInMessage: false,
+      renderInlineImages: false,
+      imageHost: DEFAULT_IMAGE_HOST,
       overlay: { x: 24, y: 80, width: 220 },
+      phone: { x: 24, y: 320, open: false },
       packs: [],
-      bindings: []
+      bindings: [],
+      apps: {}
+    };
+  }
+
+  // core/share-code.ts
+  var SHARE_PREFIX = "stpack1:";
+  var CODE_REGEX = /^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$/;
+  function isValidImageCode(code) {
+    return CODE_REGEX.test(code) && !code.includes("..");
+  }
+  function extractImageCode(url) {
+    if (!/^https?:\/\//.test(url)) return null;
+    const withoutQuery = url.split(/[?#]/)[0];
+    const seg = withoutQuery.split("/").pop() ?? "";
+    return isValidImageCode(seg) ? seg : null;
+  }
+  function encodeShareString(pack) {
+    const entries = [];
+    const skipped = [];
+    let host = null;
+    for (const sprite of pack.sprites) {
+      const code = sprite.code ?? extractImageCode(sprite.url);
+      if (!code || !sprite.url.startsWith("http") || !sprite.url.endsWith(code)) {
+        skipped.push(sprite.tag);
+        continue;
+      }
+      const prefix = sprite.url.slice(0, sprite.url.length - code.length);
+      if (host === null) host = prefix;
+      if (prefix !== host) {
+        skipped.push(sprite.tag);
+        continue;
+      }
+      entries.push({ tag: sprite.tag, code });
+    }
+    if (entries.length === 0 || host === null) return null;
+    const segments = [sanitizePackName(pack.name) || "分享立绘包"];
+    if (host !== DEFAULT_IMAGE_HOST) segments.push(`@host=${host}`);
+    if (pack.author) segments.push(`@author=${sanitizePackName(pack.author)}`);
+    for (const e of entries) segments.push(`${e.tag}=${e.code}`);
+    return { text: SHARE_PREFIX + segments.join("|"), included: entries.length, skipped };
+  }
+  function decodeShareString(raw) {
+    const text = raw.trim();
+    const prefixIndex = text.indexOf(SHARE_PREFIX);
+    if (prefixIndex === -1) {
+      throw new Error(`导入失败：没有找到 ${SHARE_PREFIX} 开头的分享串`);
+    }
+    const body = text.slice(prefixIndex + SHARE_PREFIX.length).trim();
+    const segments = body.split("|");
+    const name = sanitizePackName(segments[0] ?? "") || "分享立绘包";
+    let host = DEFAULT_IMAGE_HOST;
+    let author;
+    const sprites = [];
+    const seenTags = /* @__PURE__ */ new Set();
+    for (const segment of segments.slice(1)) {
+      const part = segment.trim();
+      if (!part) continue;
+      if (part.startsWith("@")) {
+        const eq2 = part.indexOf("=");
+        if (eq2 === -1) continue;
+        const key = part.slice(1, eq2).trim().toLowerCase();
+        const value = part.slice(eq2 + 1).trim();
+        if (key === "host" && /^https?:\/\/.+/.test(value)) {
+          host = value.endsWith("/") ? value : `${value}/`;
+        } else if (key === "author") {
+          author = sanitizePackName(value) || void 0;
+        }
+        continue;
+      }
+      const eq = part.indexOf("=");
+      if (eq === -1) continue;
+      const tag = normalizeTag(part.slice(0, eq));
+      const code = part.slice(eq + 1).trim();
+      if (!tag || !isValidImageCode(code) || seenTags.has(tag)) continue;
+      seenTags.add(tag);
+      sprites.push({ tag, url: host + code, code });
+    }
+    if (sprites.length === 0) {
+      throw new Error("导入失败：分享串中没有可用的「表情=编码」条目");
+    }
+    const finalSprites = sprites.map((s) => ({ ...s, url: host + s.code }));
+    return { id: genId(), name, author, sprites: finalSprites, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+  }
+
+  // core/migrate.ts
+  function migrateSettings(saved) {
+    const defaults = createDefaultSettings();
+    if (!saved || typeof saved !== "object") return defaults;
+    const raw = saved;
+    return {
+      settingsVersion: SETTINGS_VERSION,
+      enabled: typeof raw.enabled === "boolean" ? raw.enabled : defaults.enabled,
+      hideTagInMessage: typeof raw.hideTagInMessage === "boolean" ? raw.hideTagInMessage : defaults.hideTagInMessage,
+      renderInlineImages: typeof raw.renderInlineImages === "boolean" ? raw.renderInlineImages : defaults.renderInlineImages,
+      imageHost: typeof raw.imageHost === "string" && /^https?:\/\//.test(raw.imageHost) ? raw.imageHost : defaults.imageHost,
+      overlay: migrateOverlay(raw.overlay, defaults.overlay),
+      phone: migratePhone(raw.phone, defaults.phone),
+      packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
+      bindings: Array.isArray(raw.bindings) ? raw.bindings.filter(
+        (b) => b && typeof b.characterName === "string" && typeof b.packId === "string" && typeof b.enabled === "boolean"
+      ) : [],
+      apps: raw.apps && typeof raw.apps === "object" && !Array.isArray(raw.apps) ? raw.apps : {}
+    };
+  }
+  function migrateOverlay(raw, fallback) {
+    if (raw && typeof raw.x === "number" && typeof raw.y === "number" && typeof raw.width === "number" && Number.isFinite(raw.x + raw.y + raw.width)) {
+      return { x: raw.x, y: raw.y, width: raw.width };
+    }
+    return fallback;
+  }
+  function migratePhone(raw, fallback) {
+    if (raw && typeof raw.x === "number" && typeof raw.y === "number" && Number.isFinite(raw.x + raw.y)) {
+      return { x: raw.x, y: raw.y, open: typeof raw.open === "boolean" ? raw.open : fallback.open };
+    }
+    return fallback;
+  }
+  function migratePack(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const p = raw;
+    if (typeof p.id !== "string" || !p.id || !Array.isArray(p.sprites)) return null;
+    const name = sanitizePackName(typeof p.name === "string" ? p.name : "") || "未命名立绘包";
+    const sprites = p.sprites.flatMap((s) => {
+      if (!s || typeof s.tag !== "string" || typeof s.url !== "string" || !s.url) return [];
+      const tag = normalizeTag(s.tag) || s.tag.trim();
+      if (!tag) return [];
+      const code = typeof s.code === "string" && s.code ? s.code : extractImageCode(s.url) ?? void 0;
+      return [{ tag, url: s.url, ...code ? { code } : {} }];
+    });
+    return {
+      id: p.id,
+      name,
+      ...typeof p.author === "string" && p.author ? { author: p.author } : {},
+      ...typeof p.description === "string" && p.description ? { description: p.description } : {},
+      ...typeof p.coverTag === "string" && p.coverTag ? { coverTag: p.coverTag } : {},
+      ...typeof p.updatedAt === "string" && p.updatedAt ? { updatedAt: p.updatedAt } : {},
+      sprites
     };
   }
 
@@ -160,8 +611,8 @@
       const saved = ctx.extensionSettings[MODULE_NAME];
       const presets = getPresetPacks(`${getExtensionBaseUrl()}/public`);
       if (saved && typeof saved === "object") {
-        const merged = { ...createDefaultSettings(), ...saved };
-        const customPacks = (merged.packs ?? []).filter((p) => !isPresetPack(p.id));
+        const merged = migrateSettings(saved);
+        const customPacks = merged.packs.filter((p) => !isPresetPack(p.id));
         merged.packs = [...presets, ...customPacks];
         return merged;
       }
@@ -184,9 +635,10 @@
       const match = base64Data.match(/^data:image\/(\w+);base64,(.+)$/s);
       if (!match) throw new Error("图片数据格式不正确");
       const [, ext, data] = match;
-      const baseName = fileName.replace(/\.[^.]+$/, "");
+      const baseName = sanitizePathSegment(fileName.replace(/\.[^.]+$/, "")) || `sprite_${Date.now()}`;
+      const folder = sanitizePathSegment(characterName) || "shared";
       if (typeof ctx.saveBase64AsFile === "function") {
-        return await ctx.saveBase64AsFile(data, `sprite-overlay/${characterName}`, baseName, ext);
+        return await ctx.saveBase64AsFile(data, `sprite-overlay/${folder}`, baseName, ext);
       }
       return base64Data;
     }
@@ -335,29 +787,36 @@
   }
 
   // core/pack-io.ts
-  async function exportPack(pack, embedBase64 = false) {
+  async function exportPack(pack, embedHosted = false) {
     const sprites = [];
     for (const sprite of pack.sprites) {
-      if (sprite.url.startsWith("data:")) {
+      const source = getSpriteSource(sprite);
+      if (source === "embedded") {
         sprites.push({ tag: sprite.tag, data: sprite.url });
-      } else if (embedBase64) {
+      } else if (source === "local" || embedHosted) {
         try {
           const data = await urlToDataUri(sprite.url);
           sprites.push({ tag: sprite.tag, data });
         } catch {
-          sprites.push({ tag: sprite.tag, url: sprite.url });
+          sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code) });
         }
       } else {
-        sprites.push({ tag: sprite.tag, url: sprite.url });
+        sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code) });
       }
     }
     return {
-      format: "sprite-pack@1",
+      format: "sprite-pack@2",
       name: pack.name,
       author: pack.author,
       description: pack.description,
+      coverTag: pack.coverTag,
+      exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
       sprites
     };
+  }
+  function codeField(url, code) {
+    const resolved = code ?? extractImageCode(url);
+    return resolved ? { code: resolved } : {};
   }
   function importPack(jsonText) {
     let raw;
@@ -367,21 +826,36 @@
       throw new Error("导入失败：不是合法的 JSON 文件");
     }
     const file = raw;
-    if (file.format !== "sprite-pack@1") {
-      throw new Error("导入失败：不是 sprite-pack@1 格式的立绘包");
+    if (file.format !== "sprite-pack@2" && file.format !== "sprite-pack@1") {
+      throw new Error("导入失败：不是 sprite-pack@1 / @2 格式的立绘包");
     }
-    if (!file.name || !Array.isArray(file.sprites) || file.sprites.length === 0) {
+    if (typeof file.name !== "string" || !file.name || !Array.isArray(file.sprites) || file.sprites.length === 0) {
       throw new Error("导入失败：立绘包缺少名称或立绘列表为空");
     }
-    const sprites = file.sprites.filter((s) => s && typeof s.tag === "string" && (s.url || s.data)).map((s) => ({ tag: s.tag.trim(), url: s.data ?? s.url }));
-    if (sprites.length === 0) {
-      throw new Error("导入失败：没有可用的立绘条目");
+    const seenTags = /* @__PURE__ */ new Set();
+    const sprites = [];
+    for (const item of file.sprites) {
+      if (!item || typeof item.tag !== "string") continue;
+      const url = typeof item.data === "string" && item.data ? item.data : typeof item.url === "string" ? item.url : "";
+      if (!url) continue;
+      const tag = normalizeTag(item.tag);
+      if (!tag || seenTags.has(tag)) continue;
+      seenTags.add(tag);
+      const code = typeof item.code === "string" && item.code ? item.code : extractImageCode(url) ?? void 0;
+      sprites.push({ tag, url, ...code ? { code } : {} });
     }
+    if (sprites.length === 0) {
+      throw new Error("导入失败：没有可用的立绘条目（表情名可能全部为空或重复）");
+    }
+    const normalizedCover = typeof file.coverTag === "string" ? normalizeTag(file.coverTag) : "";
+    const coverTag = sprites.some((s) => s.tag === normalizedCover) ? normalizedCover : void 0;
     return {
       id: genId(),
-      name: file.name,
-      author: file.author,
-      description: file.description,
+      name: sanitizePackName(file.name) || "导入立绘包",
+      author: typeof file.author === "string" ? sanitizePackName(file.author) || void 0 : void 0,
+      description: typeof file.description === "string" ? sanitizeDescription(file.description) || void 0 : void 0,
+      coverTag,
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
       sprites
     };
   }
@@ -397,58 +871,166 @@
     });
   }
 
+  // core/image-compress.ts
+  function blobToDataUri(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  }
+  function estimateDataUriBytes(dataUri) {
+    const comma = dataUri.indexOf(",");
+    const payload = comma >= 0 ? dataUri.length - comma - 1 : dataUri.length;
+    return Math.round(payload * 0.75);
+  }
+  function formatBytes(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  async function compressImage(file, options = {}) {
+    const { maxDimension = 1024, quality = 0.85 } = options;
+    const originalUri = await blobToDataUri(file);
+    const original = {
+      dataUri: originalUri,
+      compressed: false,
+      bytes: estimateDataUriBytes(originalUri)
+    };
+    if (file.type === "image/gif" || file.type === "image/svg+xml") return original;
+    if (typeof document === "undefined") return original;
+    try {
+      const img = await loadImage(originalUri);
+      const longest = Math.max(img.naturalWidth, img.naturalHeight);
+      if (longest === 0) return original;
+      const scale = Math.min(1, maxDimension / longest);
+      const width = Math.max(1, Math.round(img.naturalWidth * scale));
+      const height = Math.max(1, Math.round(img.naturalHeight * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return original;
+      ctx.drawImage(img, 0, 0, width, height);
+      const compressedUri = canvas.toDataURL("image/webp", quality);
+      if (!compressedUri.startsWith("data:image/webp") || compressedUri.length >= originalUri.length) {
+        return original;
+      }
+      return {
+        dataUri: compressedUri,
+        compressed: true,
+        bytes: estimateDataUriBytes(compressedUri)
+      };
+    } catch {
+      return original;
+    }
+  }
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("图片解码失败"));
+      img.src = src;
+    });
+  }
+
   // st-extension/src/sprite-manager.ts
   function createSpriteManager(deps) {
     let backdrop = null;
+    let view = { kind: "list" };
     function open() {
       if (backdrop) {
-        renderBody();
+        render();
         return;
       }
-      backdrop = document.createElement("div");
-      backdrop.className = "so-manager-backdrop";
+      view = { kind: "list" };
+      backdrop = el("div", "so-manager-backdrop");
       backdrop.addEventListener("click", (e) => {
         if (e.target === backdrop) close();
       });
-      const dialog = document.createElement("div");
-      dialog.className = "so-manager";
-      dialog.innerHTML = `
-      <div class="so-manager-header">
-        <b>立绘包管理</b>
-        <div class="menu_button so-manager-close" title="关闭">✕</div>
-      </div>
-      <div class="so-manager-body"></div>
-    `;
-      dialog.querySelector(".so-manager-close")?.addEventListener("click", () => close());
+      document.addEventListener("keydown", onEscape);
+      const dialog = el("div", "so-manager");
+      dialog.setAttribute("role", "dialog");
+      dialog.setAttribute("aria-label", "立绘包管理");
+      const header = el("div", "so-manager-header");
+      const title = el("b", "so-manager-title");
+      const closeBtn = el("div", "menu_button so-manager-close");
+      closeBtn.title = "关闭";
+      closeBtn.textContent = "✕";
+      closeBtn.addEventListener("click", () => close());
+      header.append(title, closeBtn);
+      const body = el("div", "so-manager-body");
+      dialog.append(header, body);
       backdrop.append(dialog);
       document.body.append(backdrop);
-      renderBody();
+      render();
+    }
+    function onEscape(e) {
+      if (e.key !== "Escape") return;
+      if (view.kind === "pack") {
+        view = { kind: "list" };
+        render();
+      } else {
+        close();
+      }
     }
     function close() {
+      document.removeEventListener("keydown", onEscape);
       backdrop?.remove();
       backdrop = null;
     }
     function refreshIfOpen() {
-      if (backdrop) renderBody();
+      if (backdrop) render();
     }
-    function renderBody() {
-      const body = backdrop?.querySelector(".so-manager-body");
-      if (!body) return;
+    function commit(next) {
+      deps.updateSettings(next);
+      render();
+    }
+    function commitPack(pack) {
+      commit(upsertPack(deps.getSettings(), pack));
+    }
+    function render() {
+      if (!backdrop) return;
+      const title = backdrop.querySelector(".so-manager-title");
+      const body = backdrop.querySelector(".so-manager-body");
+      body.innerHTML = "";
+      if (view.kind === "pack") {
+        const packId = view.packId;
+        const pack = deps.getSettings().packs.find((p) => p.id === packId);
+        if (pack) {
+          title.textContent = `立绘包 · ${pack.name}`;
+          renderPackDetail(body, pack);
+          return;
+        }
+        view = { kind: "list" };
+      }
+      title.textContent = "立绘包管理";
+      renderList(body);
+    }
+    function renderList(body) {
       const settings = deps.getSettings();
       const characterName = deps.adapter.getCurrentCharacterName();
       const binding = settings.bindings.find((b) => b.characterName === characterName);
-      body.innerHTML = "";
-      const bindRow = document.createElement("div");
-      bindRow.className = "so-row";
-      const bindLabel = document.createElement("span");
+      const bindRow = el("div", "so-row so-bind-row");
+      const bindLabel = el("span");
       bindLabel.textContent = characterName ? `角色「${characterName}」绑定：` : "请先打开一个角色聊天再绑定立绘包";
       bindRow.append(bindLabel);
       if (characterName) {
         const select = document.createElement("select");
         select.className = "text_pole";
-        select.innerHTML = '<option value="">选择立绘包…</option>' + settings.packs.map(
-          (p) => `<option value="${p.id}" ${binding?.packId === p.id ? "selected" : ""}>${p.name}（${p.sprites.length} 张）</option>`
-        ).join("");
+        select.setAttribute("aria-label", "绑定立绘包");
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "选择立绘包…";
+        select.append(placeholder);
+        for (const p of settings.packs) {
+          const opt = document.createElement("option");
+          opt.value = p.id;
+          opt.textContent = `${p.name}（${p.sprites.length} 张）`;
+          opt.selected = binding?.packId === p.id;
+          select.append(opt);
+        }
         select.addEventListener("change", () => {
           if (!select.value) return;
           commit(bindCharacter(deps.getSettings(), characterName, select.value));
@@ -465,118 +1047,347 @@
         }
       }
       body.append(bindRow);
-      const list = document.createElement("div");
-      list.className = "so-pack-list";
-      for (const pack of settings.packs) {
-        list.append(renderPackItem(pack, characterName));
-      }
+      const list = el("div", "so-pack-list");
+      for (const pack of settings.packs) list.append(renderPackCard(pack));
       body.append(list);
-      const actions = document.createElement("div");
-      actions.className = "so-row";
-      const nameInput = document.createElement("input");
-      nameInput.type = "text";
-      nameInput.className = "text_pole";
-      nameInput.placeholder = "新立绘包名称…";
+      const createRow = el("div", "so-row");
+      const nameInput = textInput("新立绘包名称…");
       const createBtn = button("新建立绘包", () => {
-        const name = nameInput.value.trim();
-        if (!name) return;
-        commit(upsertPack(deps.getSettings(), { id: genId(), name, author: "我", sprites: [] }));
-        nameInput.value = "";
+        const name = sanitizePackName(nameInput.value);
+        if (!name) {
+          toast(body, "包名不能为空（| = @ < > 等符号会被剔除）");
+          return;
+        }
+        const pack = { id: genId(), name, author: "我", sprites: [] };
+        deps.updateSettings(upsertPack(deps.getSettings(), pack));
+        view = { kind: "pack", packId: pack.id };
+        render();
       });
-      const importBtn = button("导入立绘包", () => {
-        pickFile(".json,application/json", false, async (files) => {
-          try {
-            const text = await files[0].text();
-            const pack = importPack(text);
-            commit(upsertPack(deps.getSettings(), pack));
-            toast(`已导入「${pack.name}」（${pack.sprites.length} 张）`);
-          } catch (err) {
-            toast(err instanceof Error ? err.message : "导入失败");
+      nameInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.isComposing) createBtn.click();
+      });
+      createRow.append(nameInput, createBtn);
+      body.append(createRow);
+      const importRow = el("div", "so-row");
+      importRow.append(
+        button("导入 JSON 文件", () => {
+          pickFile(".json,application/json", false, async (files) => {
+            try {
+              const pack = importPack(await files[0].text());
+              deps.updateSettings(upsertPack(deps.getSettings(), pack));
+              view = { kind: "pack", packId: pack.id };
+              render();
+            } catch (err) {
+              toast(body, err instanceof Error ? err.message : "导入失败");
+            }
+          });
+        })
+      );
+      body.append(importRow);
+      const shareRow = el("div", "so-row so-share-row");
+      const shareInput = textInput("粘贴 stpack1: 开头的分享串…");
+      const shareBtn = button("导入分享串", () => {
+        if (!shareInput.value.trim()) return;
+        try {
+          const pack = decodeShareString(shareInput.value);
+          deps.updateSettings(upsertPack(deps.getSettings(), pack));
+          shareInput.value = "";
+          view = { kind: "pack", packId: pack.id };
+          render();
+        } catch (err) {
+          toast(body, err instanceof Error ? err.message : "分享串解析失败");
+        }
+      });
+      shareRow.append(shareInput, shareBtn);
+      body.append(shareRow);
+      body.append(statusBar());
+    }
+    function renderPackCard(pack) {
+      const item = el("div", "so-pack-item so-pack-card");
+      item.tabIndex = 0;
+      item.setAttribute("role", "button");
+      item.title = "点击进入管理";
+      const cover = getPackCover(pack);
+      const thumb = el("div", "so-card-thumb");
+      if (cover) {
+        const img = document.createElement("img");
+        img.src = cover.url;
+        img.alt = cover.tag;
+        img.loading = "lazy";
+        thumb.append(img);
+      } else {
+        thumb.textContent = "空";
+      }
+      const info = el("div", "so-pack-info");
+      const nameEl = el("b");
+      nameEl.textContent = pack.name;
+      const metaEl = el("small");
+      metaEl.textContent = `${pack.sprites.length} 张 · ${pack.author ?? "未知作者"}${isPresetPack(pack.id) ? " · 预设（只读）" : ""}`;
+      info.append(nameEl, metaEl);
+      const arrow = el("div", "so-card-arrow");
+      arrow.textContent = "›";
+      item.append(thumb, info, arrow);
+      const enter = () => {
+        view = { kind: "pack", packId: pack.id };
+        render();
+      };
+      item.addEventListener("click", enter);
+      item.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          enter();
+        }
+      });
+      return item;
+    }
+    function renderPackDetail(body, pack) {
+      const readonly = isPresetPack(pack.id);
+      const topRow = el("div", "so-row so-detail-top");
+      topRow.append(
+        button("‹ 返回列表", () => {
+          view = { kind: "list" };
+          render();
+        })
+      );
+      const spacer = el("div", "so-spacer");
+      topRow.append(spacer);
+      topRow.append(
+        button("导出 JSON", async () => {
+          const file = await exportPack(pack);
+          downloadJson(file, `${pack.name}.sprite-pack.json`);
+          toast(body, `已导出「${pack.name}」`);
+        }),
+        button("复制分享串", async () => {
+          const result = encodeShareString(pack);
+          if (!result) {
+            toast(body, "该包没有图床图片，无法生成分享串（本地/内嵌图请用「导出 JSON」）");
+            return;
           }
-        });
-      });
-      actions.append(nameInput, createBtn, importBtn);
-      body.append(actions);
-      const status = document.createElement("div");
-      status.className = "so-status";
-      body.append(status);
-      function toast(msg) {
-        status.textContent = msg;
-        setTimeout(() => {
-          if (status.textContent === msg) status.textContent = "";
-        }, 3e3);
-      }
-      function commit(next) {
-        deps.updateSettings(next);
-        renderBody();
-      }
-      function renderPackItem(pack, charName) {
-        const item = document.createElement("div");
-        item.className = "so-pack-item";
-        const info = document.createElement("div");
-        info.className = "so-pack-info";
-        info.innerHTML = `<b>${pack.name}</b> <small>${pack.sprites.length} 张 · ${pack.author ?? ""}</small>`;
-        const btns = document.createElement("div");
-        btns.className = "so-btn-row";
-        btns.append(
-          button("上传图片", () => {
-            pickFile("image/*", true, async (files) => {
-              const current = deps.getSettings();
-              const target = current.packs.find((p) => p.id === pack.id);
-              if (!target) return;
-              const sprites = [...target.sprites];
-              for (const file of Array.from(files)) {
-                const tag = file.name.replace(/\.[^.]+$/, "").trim();
-                if (!tag) continue;
-                const dataUri = await fileToDataUri(file);
-                const url = await deps.adapter.saveImage(file.name, dataUri, charName || pack.name);
-                const idx = sprites.findIndex((s) => s.tag === tag);
-                if (idx >= 0) sprites[idx] = { tag, url };
-                else sprites.push({ tag, url });
-              }
-              commit(upsertPack(current, { ...target, sprites }));
-            });
-          }),
-          button("导出", async () => {
-            const file = await exportPack(pack, false);
-            const blob = new Blob([JSON.stringify(file, null, 2)], { type: "application/json" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `${pack.name}.sprite-pack.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-          }),
-          button("删除", () => {
-            if (!window.confirm(`确定删除立绘包「${pack.name}」？`)) return;
+          const ok = await copyText(result.text);
+          const skipNote = result.skipped.length > 0 ? `；跳过非图床立绘：${result.skipped.join("、")}` : "";
+          toast(body, ok ? `已复制分享串（${result.included} 张）${skipNote}` : "复制失败，请手动复制弹出的文本");
+          if (!ok) window.prompt("手动复制分享串：", result.text);
+        })
+      );
+      if (!readonly) {
+        topRow.append(
+          button("删除立绘包", () => {
+            if (!window.confirm(`确定删除立绘包「${pack.name}」？绑定关系会一并清除。`)) return;
+            view = { kind: "list" };
             commit(removePack(deps.getSettings(), pack.id));
+          }, "so-btn-danger")
+        );
+      }
+      body.append(topRow);
+      if (readonly) {
+        const note = el("div", "so-status");
+        note.textContent = "预设包随扩展分发、只读；想改动可先「导出 JSON」再导入为自定义包。";
+        body.append(note);
+      } else {
+        const metaRow = el("div", "so-row so-meta-row");
+        const nameInput = textInput("包名");
+        nameInput.value = pack.name;
+        const authorInput = textInput("作者");
+        authorInput.value = pack.author ?? "";
+        const descInput = textInput("描述（可选）");
+        descInput.value = pack.description ?? "";
+        metaRow.append(
+          labeled("包名", nameInput),
+          labeled("作者", authorInput),
+          labeled("描述", descInput),
+          button("保存信息", () => {
+            const name = sanitizePackName(nameInput.value);
+            if (!name) {
+              toast(body, "包名不能为空");
+              return;
+            }
+            commitPack({
+              ...pack,
+              name,
+              author: sanitizePackName(authorInput.value) || void 0,
+              description: sanitizeDescription(descInput.value) || void 0
+            });
           })
         );
-        const top = document.createElement("div");
-        top.className = "so-pack-top";
-        top.append(info, btns);
-        item.append(top);
-        if (pack.sprites.length > 0) {
-          const thumbs = document.createElement("div");
-          thumbs.className = "so-thumbs";
-          for (const s of pack.sprites) {
-            const img = document.createElement("img");
-            img.src = s.url;
-            img.alt = s.tag;
-            img.title = s.tag;
-            img.loading = "lazy";
-            thumbs.append(img);
-          }
-          item.append(thumbs);
-        }
-        return item;
+        body.append(metaRow);
       }
+      const grid = el("div", "so-sprite-grid");
+      pack.sprites.forEach((sprite, index) => {
+        grid.append(renderSpriteCell(body, pack, sprite, index, readonly));
+      });
+      if (pack.sprites.length === 0) {
+        const empty = el("div", "so-status");
+        empty.textContent = "还没有立绘，用下方按钮上传图片（文件名即表情名）。";
+        grid.append(empty);
+      }
+      body.append(grid);
+      if (!readonly) {
+        const addRow = el("div", "so-row");
+        addRow.append(
+          button("上传图片（自动压缩）", () => {
+            pickFile("image/*", true, (files) => void handleUpload(body, pack.id, files));
+          })
+        );
+        body.append(addRow);
+        const codeRow = el("div", "so-row so-code-row");
+        const tagInput = textInput("表情名，如 微笑");
+        const codeInput = textInput("图床编码，如 ab12cd.png");
+        codeRow.append(
+          labeled("表情", tagInput),
+          labeled("编码", codeInput),
+          button("按编码添加", () => {
+            const tag = normalizeTag(tagInput.value);
+            const code = codeInput.value.trim();
+            if (!tag) {
+              toast(body, "表情名不能为空（[ ] : | = @ 等符号会被剔除）");
+              return;
+            }
+            if (!isValidImageCode(code)) {
+              toast(body, "编码格式不对：应为图床文件名，如 ab12cd.png");
+              return;
+            }
+            const current = deps.getSettings();
+            const target = current.packs.find((p) => p.id === pack.id);
+            if (!target) return;
+            const host = current.imageHost.endsWith("/") ? current.imageHost : `${current.imageHost}/`;
+            commitPack(upsertSprite(target, { tag, url: host + code, code }));
+            tagInput.value = "";
+            codeInput.value = "";
+          })
+        );
+        const codeHint = el("div", "so-status");
+        codeHint.textContent = `编码将拼接当前图床前缀：${deps.getSettings().imageHost}`;
+        body.append(codeRow, codeHint);
+      }
+      body.append(statusBar());
+    }
+    function renderSpriteCell(body, pack, sprite, index, readonly) {
+      const cell = el("div", "so-sprite-cell");
+      if (pack.coverTag === sprite.tag) cell.classList.add("so-cover");
+      const img = document.createElement("img");
+      img.src = sprite.url;
+      img.alt = sprite.tag;
+      img.title = sprite.tag;
+      img.loading = "lazy";
+      const tagEl = el("div", "so-sprite-tag");
+      tagEl.textContent = sprite.tag;
+      tagEl.title = sprite.tag;
+      cell.append(img, tagEl);
+      if (readonly) return cell;
+      const latestPack = () => deps.getSettings().packs.find((p) => p.id === pack.id);
+      const bar = el("div", "so-sprite-actions");
+      bar.append(
+        iconButton("✎", "重命名", () => {
+          const next = window.prompt(`「${sprite.tag}」改名为：`, sprite.tag);
+          if (next === null) return;
+          const target = latestPack();
+          if (!target) return;
+          try {
+            commitPack(renameSprite(target, sprite.tag, next));
+          } catch (err) {
+            toast(body, err instanceof Error ? err.message : "改名失败");
+          }
+        }),
+        iconButton("🖼", "替换图片", () => {
+          pickFile("image/*", false, async (files) => {
+            try {
+              const result = await compressImage(files[0]);
+              const url = await deps.adapter.saveImage(
+                `${sprite.tag}.webp`,
+                result.dataUri,
+                deps.adapter.getCurrentCharacterName() || pack.name
+              );
+              const target = latestPack();
+              if (!target) return;
+              commitPack(upsertSprite(target, { tag: sprite.tag, url }));
+              toast(body, `已替换「${sprite.tag}」（${formatBytes(result.bytes)}）`);
+            } catch (err) {
+              toast(body, err instanceof Error ? err.message : "替换失败");
+            }
+          });
+        }),
+        iconButton("★", "设为封面", () => {
+          const target = latestPack();
+          if (!target) return;
+          commitPack({ ...target, coverTag: sprite.tag });
+        }),
+        iconButton("◀", "前移", () => {
+          const target = latestPack();
+          if (!target) return;
+          commitPack(moveSprite(target, index, index - 1));
+        }),
+        iconButton("▶", "后移", () => {
+          const target = latestPack();
+          if (!target) return;
+          commitPack(moveSprite(target, index, index + 1));
+        }),
+        iconButton("✕", "删除", () => {
+          if (!window.confirm(`删除立绘「${sprite.tag}」？`)) return;
+          const target = latestPack();
+          if (!target) return;
+          commitPack(removeSprite(target, sprite.tag));
+        })
+      );
+      cell.append(bar);
+      return cell;
+    }
+    async function handleUpload(body, packId, files) {
+      let added = 0;
+      let skipped = 0;
+      let savedBytes = "";
+      for (const file of Array.from(files)) {
+        const tag = fileNameToTag(file.name);
+        if (!tag) {
+          skipped++;
+          continue;
+        }
+        try {
+          const result = await compressImage(file);
+          savedBytes = formatBytes(result.bytes);
+          const url = await deps.adapter.saveImage(
+            file.name,
+            result.dataUri,
+            deps.adapter.getCurrentCharacterName() || packId
+          );
+          const target = deps.getSettings().packs.find((p) => p.id === packId);
+          if (!target) return;
+          deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(target, { tag, url })));
+          added++;
+        } catch (err) {
+          console.error("[sprite-overlay] 上传失败", err);
+          skipped++;
+        }
+      }
+      render();
+      const note = skipped > 0 ? `，跳过 ${skipped} 张（文件名无效或保存失败）` : "";
+      toast(
+        backdrop?.querySelector(".so-manager-body"),
+        `已添加 ${added} 张立绘${added === 1 ? `（${savedBytes}）` : ""}${note}`
+      );
     }
     return { open, close, refreshIfOpen };
   }
+  function el(tag, className) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    return node;
+  }
+  function textInput(placeholder) {
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "text_pole";
+    input.placeholder = placeholder;
+    return input;
+  }
+  function labeled(label, input) {
+    const wrap = el("label", "so-labeled");
+    const span = el("span", "so-labeled-text");
+    span.textContent = label;
+    wrap.append(span, input);
+    return wrap;
+  }
   function checkboxRow(label, checked, onChange) {
-    const row = document.createElement("label");
-    row.className = "so-row checkbox_label";
+    const row = el("label", "so-row checkbox_label");
     const input = document.createElement("input");
     input.type = "checkbox";
     input.checked = checked;
@@ -586,12 +1397,42 @@
     row.append(input, span);
     return row;
   }
-  function button(label, onClick) {
-    const btn = document.createElement("div");
-    btn.className = "menu_button so-btn";
+  function button(label, onClick, extraClass = "") {
+    const btn = el("div", `menu_button so-btn ${extraClass}`.trim());
+    btn.setAttribute("role", "button");
+    btn.tabIndex = 0;
     btn.textContent = label;
     btn.addEventListener("click", onClick);
+    btn.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onClick();
+      }
+    });
     return btn;
+  }
+  function iconButton(icon, title, onClick) {
+    const btn = el("div", "so-icon-btn");
+    btn.textContent = icon;
+    btn.title = title;
+    btn.setAttribute("role", "button");
+    btn.setAttribute("aria-label", title);
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onClick();
+    });
+    return btn;
+  }
+  function statusBar() {
+    return el("div", "so-status so-toast");
+  }
+  function toast(scope, msg) {
+    const bar = scope?.querySelector(".so-toast");
+    if (!bar) return;
+    bar.textContent = msg;
+    setTimeout(() => {
+      if (bar.textContent === msg) bar.textContent = "";
+    }, 4e3);
   }
   function pickFile(accept, multiple, onPick) {
     const input = document.createElement("input");
@@ -603,13 +1444,34 @@
     });
     input.click();
   }
-  function fileToDataUri(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
-    });
+  function downloadJson(data, fileName) {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.append(ta);
+        ta.select();
+        const ok = document.execCommand("copy");
+        ta.remove();
+        return ok;
+      } catch {
+        return false;
+      }
+    }
   }
 
   // st-extension/src/settings-panel.ts
@@ -643,6 +1505,15 @@
         "消息中隐藏 [立绘:xxx] 标签",
         settings.hideTagInMessage,
         (v) => deps.updateSettings({ ...deps.getSettings(), hideTagInMessage: v })
+      ),
+      checkboxRow2(
+        "渲染消息内插图（<img>编码</img>）",
+        settings.renderInlineImages,
+        (v) => deps.updateSettings({ ...deps.getSettings(), renderInlineImages: v })
+      ),
+      hostRow(
+        settings.imageHost,
+        (v) => deps.updateSettings({ ...deps.getSettings(), imageHost: v })
       )
     );
     const hint = document.createElement("div");
@@ -653,6 +1524,302 @@
   function checkboxRow2(label, checked, onChange) {
     const row = document.createElement("label");
     row.className = "so-row checkbox_label";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = checked;
+    input.addEventListener("change", () => onChange(input.checked));
+    const span = document.createElement("span");
+    span.textContent = label;
+    row.append(input, span);
+    return row;
+  }
+  function hostRow(value, onChange) {
+    const row = document.createElement("div");
+    row.className = "so-row";
+    const span = document.createElement("span");
+    span.textContent = "图床前缀";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "text_pole";
+    input.value = value;
+    input.placeholder = DEFAULT_IMAGE_HOST;
+    input.addEventListener("blur", () => {
+      const raw = input.value.trim() || DEFAULT_IMAGE_HOST;
+      if (!/^https?:\/\/.+/.test(raw)) {
+        input.value = DEFAULT_IMAGE_HOST;
+        onChange(DEFAULT_IMAGE_HOST);
+        return;
+      }
+      const normalized = raw.endsWith("/") ? raw : `${raw}/`;
+      input.value = normalized;
+      onChange(normalized);
+    });
+    row.append(span, input);
+    return row;
+  }
+
+  // core/inline-image.ts
+  var HTML_STYLE_SOURCE = "<\\s*(img|illustration)\\s*>\\s*([^<]+?)\\s*<\\/\\s*\\1\\s*>";
+  var BRACKET_STYLE_SOURCE = "[\\[【]\\s*(插图|图)\\s*[:：]\\s*([^\\]】]+?)\\s*[\\]】]";
+  var COMBINED_SOURCE = `${HTML_STYLE_SOURCE}|${BRACKET_STYLE_SOURCE}`;
+  function hasInlineImageMarkup(text) {
+    return new RegExp(COMBINED_SOURCE, "i").test(text);
+  }
+  function replaceInlineImages(text, replacer) {
+    const regex = new RegExp(COMBINED_SOURCE, "gi");
+    return text.replace(regex, (raw, ...groups) => {
+      const code = (groups[1] ?? groups[3] ?? "").trim();
+      if (!isValidImageCode(code)) return raw;
+      const out = replacer({ raw, code });
+      return out === null ? raw : out;
+    });
+  }
+
+  // st-extension/src/message-postprocess.ts
+  var PROCESSED_ATTR = "data-so-processed";
+  function mountMessagePostprocess(deps) {
+    const st = window.SillyTavern;
+    if (!st) return () => {
+    };
+    const ctx = st.getContext();
+    const renderedEvents = [
+      ctx.eventTypes?.CHARACTER_MESSAGE_RENDERED,
+      ctx.eventTypes?.USER_MESSAGE_RENDERED
+    ].filter((e) => typeof e === "string" && e.length > 0);
+    const handler = (...args) => {
+      const messageId = typeof args[0] === "number" || typeof args[0] === "string" ? args[0] : null;
+      queueMicrotask(() => processMessages(deps.getSettings(), messageId));
+    };
+    if (renderedEvents.length > 0) {
+      for (const event of renderedEvents) ctx.eventSource.on(event, handler);
+      return () => {
+        for (const event of renderedEvents) ctx.eventSource.removeListener(event, handler);
+      };
+    }
+    const fallbackEvent = ctx.eventTypes?.MESSAGE_RECEIVED ?? "message_received";
+    const fallbackHandler = (...args) => {
+      const messageId = typeof args[0] === "number" || typeof args[0] === "string" ? args[0] : null;
+      setTimeout(() => processMessages(deps.getSettings(), messageId), 150);
+    };
+    ctx.eventSource.on(fallbackEvent, fallbackHandler);
+    return () => ctx.eventSource.removeListener(fallbackEvent, fallbackHandler);
+  }
+  function processMessages(settings, messageId = null) {
+    if (!settings.enabled) return;
+    if (!settings.hideTagInMessage && !settings.renderInlineImages) return;
+    const scope = messageId !== null && messageId !== void 0 && `${messageId}` !== "" ? document.querySelectorAll(`#chat .mes[mesid="${CSS.escape(`${messageId}`)}"] .mes_text`) : document.querySelectorAll("#chat .mes .mes_text");
+    for (const node of Array.from(scope)) {
+      processMessageElement(node, settings);
+    }
+  }
+  function reprocessAllMessages(settings) {
+    for (const node of Array.from(document.querySelectorAll(`#chat .mes .mes_text[${PROCESSED_ATTR}]`))) {
+      node.removeAttribute(PROCESSED_ATTR);
+    }
+    processMessages(settings);
+  }
+  function processMessageElement(root, settings) {
+    const fingerprint = `${settings.hideTagInMessage ? "T" : ""}${settings.renderInlineImages ? "I" : ""}`;
+    if (root.getAttribute(PROCESSED_ATTR) === fingerprint) return;
+    const host = settings.imageHost.endsWith("/") ? settings.imageHost : `${settings.imageHost}/`;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const textNodes = [];
+    let current;
+    while (current = walker.nextNode()) {
+      textNodes.push(current);
+    }
+    for (const textNode of textNodes) {
+      const text = textNode.nodeValue ?? "";
+      if (!text) continue;
+      const needsStrip = settings.hideTagInMessage && hasTag(text);
+      const needsImages = settings.renderInlineImages && hasInlineImageMarkup(text);
+      if (!needsStrip && !needsImages) continue;
+      let processed = needsStrip ? stripTags(text) : text;
+      if (needsImages) {
+        const PLACEHOLDER = "\0SO_IMG\0";
+        const codes = [];
+        processed = replaceInlineImages(processed, (m) => {
+          codes.push(m.code);
+          return PLACEHOLDER;
+        });
+        const parts = processed.split(PLACEHOLDER);
+        const fragment = document.createDocumentFragment();
+        parts.forEach((part, i) => {
+          if (part) fragment.append(document.createTextNode(part));
+          if (i < codes.length) fragment.append(createInlineImage(host, codes[i]));
+        });
+        textNode.replaceWith(fragment);
+      } else if (processed !== text) {
+        textNode.nodeValue = processed;
+      }
+    }
+    root.setAttribute(PROCESSED_ATTR, fingerprint);
+  }
+  function createInlineImage(host, code) {
+    const wrap = document.createElement("span");
+    wrap.className = "so-inline-image";
+    const img = document.createElement("img");
+    img.src = host + code;
+    img.alt = code;
+    img.loading = "lazy";
+    img.addEventListener("error", () => wrap.classList.add("so-inline-image-error"), { once: true });
+    wrap.append(img);
+    return wrap;
+  }
+
+  // st-extension/src/phone-apps.ts
+  function createBuiltinApps(deps) {
+    return [spritesApp(deps), galleryApp(deps), settingsApp()];
+  }
+  function spritesApp(deps) {
+    return {
+      id: "sprites",
+      name: "立绘",
+      icon: "🎭",
+      order: 1,
+      mount(container, ctx) {
+        const settings = ctx.getSettings();
+        const characterName = ctx.getCharacterName();
+        const pack = getActivePack(settings, characterName);
+        const info = el2("div", "so-app-section");
+        const title = el2("div", "so-app-title");
+        title.textContent = characterName ? `当前角色：${characterName}` : "尚未打开角色聊天";
+        const detail = el2("div", "so-app-desc");
+        detail.textContent = pack ? `已绑定「${pack.name}」（${pack.sprites.length} 个表情）` : "未绑定立绘包 — 到「图库」App 里绑定";
+        info.append(title, detail);
+        const actions = el2("div", "so-app-section");
+        actions.append(
+          appButton("把立绘窗拉回视口", () => {
+            const next = { ...ctx.getSettings(), overlay: { x: 24, y: 80, width: ctx.getSettings().overlay.width } };
+            ctx.updateSettings(next);
+            deps.overlay.setLayout(next.overlay);
+            deps.overlay.setVisible(true);
+          }),
+          appButton(settings.enabled ? "关闭立绘悬浮窗" : "开启立绘悬浮窗", () => {
+            ctx.updateSettings({ ...ctx.getSettings(), enabled: !ctx.getSettings().enabled });
+            ctx.goHome();
+          })
+        );
+        container.append(info, actions);
+        if (pack && pack.sprites.length > 0) {
+          const grid = el2("div", "so-app-sprite-strip");
+          for (const sprite of pack.sprites) {
+            const img = document.createElement("img");
+            img.src = sprite.url;
+            img.alt = sprite.tag;
+            img.title = `点击预览「${sprite.tag}」`;
+            img.loading = "lazy";
+            img.addEventListener("click", () => {
+              deps.overlay.setImage(sprite.url, sprite.tag);
+              deps.overlay.setVisible(true);
+            });
+            grid.append(img);
+          }
+          container.append(grid);
+          const hint = el2("div", "so-app-desc");
+          hint.textContent = "点缩略图可直接预览表情。";
+          container.append(hint);
+        }
+      }
+    };
+  }
+  function galleryApp(deps) {
+    return {
+      id: "gallery",
+      name: "图库",
+      icon: "🗂",
+      order: 2,
+      mount(container, ctx) {
+        const section = el2("div", "so-app-section");
+        const desc = el2("div", "so-app-desc");
+        desc.textContent = "立绘包管理：新建/上传/导入导出/分享串/角色绑定。";
+        section.append(
+          desc,
+          appButton("打开立绘包管理", () => {
+            deps.manager.open();
+          })
+        );
+        container.append(section);
+        const settings = ctx.getSettings();
+        const list = el2("div", "so-app-section");
+        const title = el2("div", "so-app-title");
+        title.textContent = `共 ${settings.packs.length} 个立绘包`;
+        list.append(title);
+        for (const pack of settings.packs) {
+          const row = el2("div", "so-app-desc");
+          row.textContent = `· ${pack.name}（${pack.sprites.length} 张）`;
+          list.append(row);
+        }
+        container.append(list);
+      }
+    };
+  }
+  function settingsApp() {
+    return {
+      id: "settings",
+      name: "设置",
+      icon: "⚙️",
+      order: 90,
+      mount(container, ctx) {
+        const settings = ctx.getSettings();
+        const section = el2("div", "so-app-section");
+        section.append(
+          toggleRow(
+            "启用立绘悬浮窗",
+            settings.enabled,
+            (v) => ctx.updateSettings({ ...ctx.getSettings(), enabled: v })
+          ),
+          toggleRow(
+            "隐藏 [立绘:xxx] 标签",
+            settings.hideTagInMessage,
+            (v) => ctx.updateSettings({ ...ctx.getSettings(), hideTagInMessage: v })
+          ),
+          toggleRow(
+            "渲染消息内插图",
+            settings.renderInlineImages,
+            (v) => ctx.updateSettings({ ...ctx.getSettings(), renderInlineImages: v })
+          )
+        );
+        const hostSection = el2("div", "so-app-section");
+        const hostLabel = el2("div", "so-app-title");
+        hostLabel.textContent = "图床前缀";
+        const hostInput = document.createElement("input");
+        hostInput.type = "text";
+        hostInput.className = "text_pole so-app-input";
+        hostInput.value = settings.imageHost;
+        hostInput.placeholder = DEFAULT_IMAGE_HOST;
+        hostInput.addEventListener("blur", () => {
+          const raw = hostInput.value.trim() || DEFAULT_IMAGE_HOST;
+          const value = /^https?:\/\/.+/.test(raw) ? raw.endsWith("/") ? raw : `${raw}/` : DEFAULT_IMAGE_HOST;
+          hostInput.value = value;
+          ctx.updateSettings({ ...ctx.getSettings(), imageHost: value });
+        });
+        hostSection.append(hostLabel, hostInput);
+        container.append(section, hostSection);
+      }
+    };
+  }
+  function el2(tag, className) {
+    const node = document.createElement(tag);
+    node.className = className;
+    return node;
+  }
+  function appButton(label, onClick) {
+    const btn = el2("div", "menu_button so-app-btn");
+    btn.setAttribute("role", "button");
+    btn.tabIndex = 0;
+    btn.textContent = label;
+    btn.addEventListener("click", onClick);
+    btn.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onClick();
+      }
+    });
+    return btn;
+  }
+  function toggleRow(label, checked, onChange) {
+    const row = el2("label", "so-app-toggle checkbox_label");
     const input = document.createElement("input");
     input.type = "checkbox";
     input.checked = checked;
@@ -674,10 +1841,12 @@
       return;
     }
     function updateSettings(next) {
+      const displayChanged = next.hideTagInMessage !== settings.hideTagInMessage || next.renderInlineImages !== settings.renderInlineImages || next.imageHost !== settings.imageHost || next.enabled !== settings.enabled;
       settings = next;
       adapter.saveSettings(settings);
       overlay.setLayout(settings.overlay);
       refresh();
+      if (displayChanged) reprocessAllMessages(settings);
     }
     const manager = createSpriteManager({
       adapter,
@@ -692,6 +1861,33 @@
       },
       () => manager.open()
     );
+    const registry = new PhoneAppRegistry();
+    function createAppContext(appId, goHome) {
+      return {
+        getSettings: () => settings,
+        updateSettings,
+        getCharacterName: () => adapter.getCurrentCharacterName(),
+        getAppData: () => settings.apps[appId],
+        setAppData: (data) => {
+          updateSettings({ ...settings, apps: { ...settings.apps, [appId]: data } });
+        },
+        goHome
+      };
+    }
+    const phone = createPhoneShell(settings.phone, {
+      registry,
+      createAppContext,
+      onStateChange: (state) => {
+        settings = { ...settings, phone: state };
+        adapter.saveSettings(settings);
+      }
+    });
+    for (const app of createBuiltinApps({ overlay, manager })) {
+      registry.register(app);
+    }
+    window.stStage = {
+      registerApp: (app) => registry.register(app)
+    };
     function refresh() {
       if (!settings.enabled) {
         adapter.injectPrompt("");
@@ -725,6 +1921,7 @@
         overlay.setVisible(true);
       }
     });
+    mountMessagePostprocess({ getSettings: () => settings });
     adapter.onCharacterChanged(() => {
       refresh();
       manager.refreshIfOpen();
@@ -734,7 +1931,8 @@
       updateSettings
     });
     refresh();
-    console.log("[sprite-overlay] 角色立绘悬浮窗扩展已加载");
+    phone.setState(settings.phone);
+    console.log("[sprite-overlay] 角色立绘悬浮窗扩展已加载（含手机框架）");
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => void init());

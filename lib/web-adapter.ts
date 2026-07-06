@@ -9,6 +9,7 @@
 import type { PlatformAdapter } from '@/core/adapter'
 import type { PluginSettings } from '@/core/types'
 import { createDefaultSettings } from '@/core/types'
+import { migrateSettings } from '@/core/migrate'
 import { getPresetPacks } from '@/core/presets'
 
 const STORAGE_KEY = 'sprite-overlay-settings-v1'
@@ -29,12 +30,12 @@ export class WebAdapter implements PlatformAdapter {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY)
       if (!raw) return defaults
-      const saved = JSON.parse(raw) as PluginSettings
-      // 合并：预设包以代码内清单为准（保证图片路径正确），用户自定义包保留
+      // 任意历史版本 → 当前版本；预设包以代码内清单为准（保证图片路径正确），用户自定义包保留
+      const saved = migrateSettings(JSON.parse(raw))
       const customPacks = saved.packs.filter((p) => !p.id.startsWith('preset_'))
       return {
-        ...defaults,
         ...saved,
+        bindings: saved.bindings.length > 0 ? saved.bindings : defaults.bindings,
         packs: [...getPresetPacks(), ...customPacks],
       }
     } catch {

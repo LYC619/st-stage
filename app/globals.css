@@ -1,6 +1,8 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
+/* 手机框架样式（与 ST 扩展共用同一文件） */
+@import '../core/phone-shell.css';
 
 @custom-variant dark (&:is(.dark *));
 

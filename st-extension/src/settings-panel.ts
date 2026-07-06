@@ -1,10 +1,11 @@
 /**
  * ST 扩展设置面板（原生 DOM，挂载到 #extensions_settings）。
- * 只保留基础设定：总开关、隐藏标签。
+ * 基础设定：总开关、隐藏标签、消息内插图、图床前缀。
  * 立绘包管理与角色绑定在聊天界面的悬浮窗中进行（齿轮按钮）。
  */
 
 import type { PluginSettings } from '../../core/types'
+import { DEFAULT_IMAGE_HOST } from '../../core/types'
 
 interface PanelDeps {
   getSettings: () => PluginSettings
@@ -41,6 +42,12 @@ export function mountSettingsPanel(deps: PanelDeps): void {
     checkboxRow('消息中隐藏 [立绘:xxx] 标签', settings.hideTagInMessage, (v) =>
       deps.updateSettings({ ...deps.getSettings(), hideTagInMessage: v }),
     ),
+    checkboxRow('渲染消息内插图（<img>编码</img>）', settings.renderInlineImages, (v) =>
+      deps.updateSettings({ ...deps.getSettings(), renderInlineImages: v }),
+    ),
+    hostRow(settings.imageHost, (v) =>
+      deps.updateSettings({ ...deps.getSettings(), imageHost: v }),
+    ),
   )
 
   const hint = document.createElement('div')
@@ -59,5 +66,31 @@ function checkboxRow(label: string, checked: boolean, onChange: (v: boolean) => 
   const span = document.createElement('span')
   span.textContent = label
   row.append(input, span)
+  return row
+}
+
+/** 图床前缀输入行：失焦时校验并保存（须为 http(s)，自动补结尾 /） */
+function hostRow(value: string, onChange: (v: string) => void): HTMLElement {
+  const row = document.createElement('div')
+  row.className = 'so-row'
+  const span = document.createElement('span')
+  span.textContent = '图床前缀'
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.className = 'text_pole'
+  input.value = value
+  input.placeholder = DEFAULT_IMAGE_HOST
+  input.addEventListener('blur', () => {
+    const raw = input.value.trim() || DEFAULT_IMAGE_HOST
+    if (!/^https?:\/\/.+/.test(raw)) {
+      input.value = DEFAULT_IMAGE_HOST
+      onChange(DEFAULT_IMAGE_HOST)
+      return
+    }
+    const normalized = raw.endsWith('/') ? raw : `${raw}/`
+    input.value = normalized
+    onChange(normalized)
+  })
+  row.append(span, input)
   return row
 }

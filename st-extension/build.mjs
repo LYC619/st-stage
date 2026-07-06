@@ -3,7 +3,7 @@
  *
  * 产物直接输出到仓库根目录，使整个仓库本身就是一个标准 ST 扩展：
  * - /index.js    （打包后的扩展脚本，manifest.json 引用）
- * - /style.css   （从 st-extension/style.css 复制）
+ * - /style.css   （st-extension/style.css + core/phone-shell.css 拼接）
  *
  * 这样 SillyTavern 可以直接通过 GitHub 链接安装：
  *   https://github.com/LYC619/st-stage
@@ -13,7 +13,7 @@
  */
 
 import { build } from 'esbuild'
-import { copyFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -32,6 +32,9 @@ await build({
   logLevel: 'info',
 })
 
-copyFileSync(path.join(dir, 'style.css'), path.join(root, 'style.css'))
+// style.css = 扩展基础样式 + 双端共用的手机框架样式
+const baseCss = readFileSync(path.join(dir, 'style.css'), 'utf8')
+const phoneCss = readFileSync(path.join(root, 'core/phone-shell.css'), 'utf8')
+writeFileSync(path.join(root, 'style.css'), `${baseCss}\n${phoneCss}`)
 
 console.log('[build] 根目录 index.js / style.css 已生成（记得提交到 git）')

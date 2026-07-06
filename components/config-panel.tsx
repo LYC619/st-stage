@@ -6,9 +6,13 @@
 
 import { useRef, useState } from 'react'
 import type { PluginSettings, SpritePack } from '@/core/types'
-import { bindCharacter, genId, removePack, toggleBinding, upsertPack } from '@/core/sprite-store'
+import { DEFAULT_IMAGE_HOST } from '@/core/types'
+import { bindCharacter, genId, removePack, toggleBinding, upsertPack, upsertSprite } from '@/core/sprite-store'
 import { isPresetPack } from '@/core/presets'
 import { exportPack, importPack } from '@/core/pack-io'
+import { decodeShareString, encodeShareString } from '@/core/share-code'
+import { fileNameToTag, sanitizePackName } from '@/core/naming'
+import { compressImage } from '@/core/image-compress'
 
 interface ConfigPanelProps {
   settings: PluginSettings
@@ -32,31 +36,26 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
     setTimeout(() => setStatus(null), 2500)
   }
 
-  /** 上传图片到指定包：文件名（去扩展名）即标签 */
+  /** 上传图片到指定包：文件名（去扩展名）即标签；canvas 压缩为 WebP 后存 data URI */
   const handleUpload = async (files: FileList | null) => {
     if (!files || !uploadTargetPack) return
     const pack = settings.packs.find((p) => p.id === uploadTargetPack)
     if (!pack) return
-    const newSprites = [...pack.sprites]
+    let target = pack
+    let added = 0
     for (const file of Array.from(files)) {
-      const tag = file.name.replace(/\.[^.]+$/, '').trim()
+      const tag = fileNameToTag(file.name)
       if (!tag) continue
-      const dataUri = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result as string)
-        reader.onerror = () => reject(reader.error)
-        reader.readAsDataURL(file)
-      })
-      const idx = newSprites.findIndex((s) => s.tag === tag)
-      if (idx >= 0) newSprites[idx] = { tag, url: dataUri }
-      else newSprites.push({ tag, url: dataUri })
+      const { dataUri } = await compressImage(file)
+      target = upsertSprite(target, { tag, url: dataUri })
+      added++
     }
-    onSettingsChange(upsertPack(settings, { ...pack, sprites: newSprites }))
-    flash(`已添加 ${files.length} 张立绘到「${pack.name}」`)
+    onSettingsChange(upsertPack(settings, target))
+    flash(`已添加 ${added} 张立绘到「${pack.name}」（自动压缩为 WebP）`)
   }
 
   const handleCreatePack = () => {
-    const name = newPackName.trim()
+    const name = sanitizePackName(newPackName)
     if (!name) return
     const pack: SpritePack = { id: genId(), name, author: '我', sprites: [] }
     onSettingsChange(upsertPack(settings, pack))
@@ -64,8 +63,9 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
     flash(`已创建立绘包「${name}」，请上传图片（文件名即标签）`)
   }
 
-  const handleExport = async (pack: SpritePack, embed: boolean) => {
-    const file = await exportPack(pack, embed)
+  const handleExport = async (pack: SpritePack) => {
+    // 本地/预设图片自动内嵌 base64；图床 URL 保持轻量
+    const file = await exportPack(pack)
     const blob = new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -85,6 +85,35 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
       flash(`已导入立绘包「${pack.name}」（${pack.sprites.length} 张）`)
     } catch (err) {
       flash(err instanceof Error ? err.message : '导入失败')
+    }
+  }
+
+  const [shareInput, setShareInput] = useState('')
+
+  const handleImportShare = () => {
+    if (!shareInput.trim()) return
+    try {
+      const pack = decodeShareString(shareInput)
+      onSettingsChange(upsertPack(settings, pack))
+      setShareInput('')
+      flash(`已导入分享串「${pack.name}」（${pack.sprites.length} 张）`)
+    } catch (err) {
+      flash(err instanceof Error ? err.message : '分享串解析失败')
+    }
+  }
+
+  const handleCopyShare = async (pack: SpritePack) => {
+    const result = encodeShareString(pack)
+    if (!result) {
+      flash('该包没有图床图片，无法生成分享串（本地图请用「导出」）')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(result.text)
+      const skipNote = result.skipped.length > 0 ? `，跳过 ${result.skipped.length} 张非图床图` : ''
+      flash(`已复制分享串（${result.included} 张）${skipNote}`)
+    } catch {
+      window.prompt('手动复制分享串：', result.text)
     }
   }
 
@@ -110,6 +139,31 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
             checked={settings.hideTagInMessage}
             onChange={(e) => onSettingsChange({ ...settings, hideTagInMessage: e.target.checked })}
             className="h-4 w-4 accent-primary"
+          />
+        </label>
+        <label className="flex items-center justify-between text-sm text-foreground">
+          渲染消息内插图（[插图:编码]）
+          <input
+            type="checkbox"
+            checked={settings.renderInlineImages}
+            onChange={(e) => onSettingsChange({ ...settings, renderInlineImages: e.target.checked })}
+            className="h-4 w-4 accent-primary"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm text-foreground">
+          <span className="text-xs text-muted-foreground">图床前缀（分享串与插图编码拼接用）</span>
+          <input
+            type="text"
+            defaultValue={settings.imageHost}
+            placeholder={DEFAULT_IMAGE_HOST}
+            onBlur={(e) => {
+              const raw = e.target.value.trim() || DEFAULT_IMAGE_HOST
+              const value = /^https?:\/\/.+/.test(raw) ? (raw.endsWith('/') ? raw : `${raw}/`) : DEFAULT_IMAGE_HOST
+              e.target.value = value
+              onSettingsChange({ ...settings, imageHost: value })
+            }}
+            className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+            aria-label="图床前缀"
           />
         </label>
       </section>
@@ -185,10 +239,17 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleExport(pack, !isPresetPack(pack.id))}
+                    onClick={() => handleExport(pack)}
                     className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                   >
                     导出
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyShare(pack)}
+                    className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                  >
+                    分享串
                   </button>
                   {!isPresetPack(pack.id) && (
                     <button
@@ -206,7 +267,6 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
                 <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
                   {pack.sprites.map((s) => (
                     <figure key={s.tag} className="shrink-0 text-center">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={s.url || '/placeholder.svg'}
                         alt={`${pack.name} - ${s.tag}`}
@@ -252,6 +312,28 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
         >
           导入立绘包（.sprite-pack.json）
         </button>
+
+        {/* 导入分享串 */}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={shareInput}
+            onChange={(e) => setShareInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) handleImportShare()
+            }}
+            placeholder="粘贴 stpack1: 分享串…"
+            className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring"
+            aria-label="分享串输入框"
+          />
+          <button
+            type="button"
+            onClick={handleImportShare}
+            className="shrink-0 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            导入
+          </button>
+        </div>
       </section>
 
       {status && (

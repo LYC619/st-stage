@@ -1,12 +1,32 @@
 /**
- * 立绘包管理弹窗：从悬浮窗齿轮按钮打开。
- * 功能：当前角色绑定、立绘包管理（新建/上传/删除/导入/导出）。
- * （原settings-panel 中的立绘包功能迁移至此，设置面板只保留基础开关）
+ * 立绘包管理弹窗（ST 端）：从悬浮窗齿轮按钮打开。
+ * 两级视图：
+ * - 列表页：当前角色绑定、包卡片（封面/统计）、新建、导入（JSON 文件 / 一行分享串）
+ * - 详情页：包元数据编辑、立绘网格（改名/替换/删除/设封面/排序）、上传（自动压缩）、
+ *   按图床编码批量添加、导出 JSON / 复制分享串
+ *
+ * 安全：所有用户可控文本（包名/tag/作者）一律 textContent，不进 innerHTML。
+ * 预设包只读（加载时由代码清单重建，改了也会丢），仅允许绑定/导出/分享。
  */
 
-import type { PluginSettings, SpritePack } from '../../core/types'
-import { bindCharacter, genId, removePack, toggleBinding, upsertPack } from '../../core/sprite-store'
+import type { PluginSettings, Sprite, SpritePack } from '../../core/types'
+import { getPackCover } from '../../core/types'
+import {
+  bindCharacter,
+  genId,
+  moveSprite,
+  removePack,
+  removeSprite,
+  renameSprite,
+  toggleBinding,
+  upsertPack,
+  upsertSprite,
+} from '../../core/sprite-store'
 import { exportPack, importPack } from '../../core/pack-io'
+import { decodeShareString, encodeShareString, isValidImageCode } from '../../core/share-code'
+import { fileNameToTag, normalizeTag, sanitizeDescription, sanitizePackName } from '../../core/naming'
+import { compressImage, formatBytes } from '../../core/image-compress'
+import { isPresetPack } from '../../core/presets'
 import type { STAdapter } from './st-adapter'
 
 export interface ManagerDeps {
@@ -22,57 +42,103 @@ export interface ManagerController {
   refreshIfOpen(): void
 }
 
+type View = { kind: 'list' } | { kind: 'pack'; packId: string }
+
 export function createSpriteManager(deps: ManagerDeps): ManagerController {
   let backdrop: HTMLElement | null = null
+  let view: View = { kind: 'list' }
 
   function open(): void {
     if (backdrop) {
-      renderBody()
+      render()
       return
     }
-    backdrop = document.createElement('div')
-    backdrop.className = 'so-manager-backdrop'
+    view = { kind: 'list' }
+    backdrop = el('div', 'so-manager-backdrop')
     backdrop.addEventListener('click', (e) => {
       if (e.target === backdrop) close()
     })
+    document.addEventListener('keydown', onEscape)
 
-    const dialog = document.createElement('div')
-    dialog.className = 'so-manager'
-    dialog.innerHTML = `
-      <div class="so-manager-header">
-        <b>立绘包管理</b>
-        <div class="menu_button so-manager-close" title="关闭">✕</div>
-      </div>
-      <div class="so-manager-body"></div>
-    `
-    dialog.querySelector('.so-manager-close')?.addEventListener('click', () => close())
+    const dialog = el('div', 'so-manager')
+    dialog.setAttribute('role', 'dialog')
+    dialog.setAttribute('aria-label', '立绘包管理')
+
+    const header = el('div', 'so-manager-header')
+    const title = el('b', 'so-manager-title')
+    const closeBtn = el('div', 'menu_button so-manager-close')
+    closeBtn.title = '关闭'
+    closeBtn.textContent = '✕'
+    closeBtn.addEventListener('click', () => close())
+    header.append(title, closeBtn)
+
+    const body = el('div', 'so-manager-body')
+    dialog.append(header, body)
     backdrop.append(dialog)
     document.body.append(backdrop)
-    renderBody()
+    render()
+  }
+
+  function onEscape(e: KeyboardEvent): void {
+    if (e.key !== 'Escape') return
+    if (view.kind === 'pack') {
+      view = { kind: 'list' }
+      render()
+    } else {
+      close()
+    }
   }
 
   function close(): void {
+    document.removeEventListener('keydown', onEscape)
     backdrop?.remove()
     backdrop = null
   }
 
   function refreshIfOpen(): void {
-    if (backdrop) renderBody()
+    if (backdrop) render()
   }
 
-  function renderBody(): void {
-    const body = backdrop?.querySelector('.so-manager-body') as HTMLElement | null
-    if (!body) return
+  function commit(next: PluginSettings): void {
+    deps.updateSettings(next)
+    render()
+  }
+
+  /** 修改单个包并提交 */
+  function commitPack(pack: SpritePack): void {
+    commit(upsertPack(deps.getSettings(), pack))
+  }
+
+  function render(): void {
+    if (!backdrop) return
+    const title = backdrop.querySelector('.so-manager-title') as HTMLElement
+    const body = backdrop.querySelector('.so-manager-body') as HTMLElement
+    body.innerHTML = ''
+
+    if (view.kind === 'pack') {
+      const packId = view.packId
+      const pack = deps.getSettings().packs.find((p) => p.id === packId)
+      if (pack) {
+        title.textContent = `立绘包 · ${pack.name}`
+        renderPackDetail(body, pack)
+        return
+      }
+      view = { kind: 'list' }
+    }
+    title.textContent = '立绘包管理'
+    renderList(body)
+  }
+
+  /* ---------------- 列表页 ---------------- */
+
+  function renderList(body: HTMLElement): void {
     const settings = deps.getSettings()
     const characterName = deps.adapter.getCurrentCharacterName()
     const binding = settings.bindings.find((b) => b.characterName === characterName)
 
-    body.innerHTML = ''
-
     // 当前角色绑定
-    const bindRow = document.createElement('div')
-    bindRow.className = 'so-row'
-    const bindLabel = document.createElement('span')
+    const bindRow = el('div', 'so-row so-bind-row')
+    const bindLabel = el('span')
     bindLabel.textContent = characterName
       ? `角色「${characterName}」绑定：`
       : '请先打开一个角色聊天再绑定立绘包'
@@ -80,14 +146,18 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     if (characterName) {
       const select = document.createElement('select')
       select.className = 'text_pole'
-      select.innerHTML =
-        '<option value="">选择立绘包…</option>' +
-        settings.packs
-          .map(
-            (p) =>
-              `<option value="${p.id}" ${binding?.packId === p.id ? 'selected' : ''}>${p.name}（${p.sprites.length} 张）</option>`,
-          )
-          .join('')
+      select.setAttribute('aria-label', '绑定立绘包')
+      const placeholder = document.createElement('option')
+      placeholder.value = ''
+      placeholder.textContent = '选择立绘包…'
+      select.append(placeholder)
+      for (const p of settings.packs) {
+        const opt = document.createElement('option')
+        opt.value = p.id
+        opt.textContent = `${p.name}（${p.sprites.length} 张）`
+        opt.selected = binding?.packId === p.id
+        select.append(opt)
+      }
       select.addEventListener('change', () => {
         if (!select.value) return
         commit(bindCharacter(deps.getSettings(), characterName, select.value))
@@ -103,132 +173,394 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     }
     body.append(bindRow)
 
-    // 立绘包列表
-    const list = document.createElement('div')
-    list.className = 'so-pack-list'
-    for (const pack of settings.packs) {
-      list.append(renderPackItem(pack, characterName))
-    }
+    // 包卡片列表
+    const list = el('div', 'so-pack-list')
+    for (const pack of settings.packs) list.append(renderPackCard(pack))
     body.append(list)
 
-    // 新建 / 导入
-    const actions = document.createElement('div')
-    actions.className = 'so-row'
-    const nameInput = document.createElement('input')
-    nameInput.type = 'text'
-    nameInput.className = 'text_pole'
-    nameInput.placeholder = '新立绘包名称…'
+    // 新建
+    const createRow = el('div', 'so-row')
+    const nameInput = textInput('新立绘包名称…')
     const createBtn = button('新建立绘包', () => {
-      const name = nameInput.value.trim()
-      if (!name) return
-      commit(upsertPack(deps.getSettings(), { id: genId(), name, author: '我', sprites: [] }))
-      nameInput.value = ''
+      const name = sanitizePackName(nameInput.value)
+      if (!name) {
+        toast(body, '包名不能为空（| = @ < > 等符号会被剔除）')
+        return
+      }
+      const pack: SpritePack = { id: genId(), name, author: '我', sprites: [] }
+      deps.updateSettings(upsertPack(deps.getSettings(), pack))
+      view = { kind: 'pack', packId: pack.id }
+      render()
     })
-    const importBtn = button('导入立绘包', () => {
-      pickFile('.json,application/json', false, async (files) => {
-        try {
-          const text = await files[0].text()
-          const pack = importPack(text)
-          commit(upsertPack(deps.getSettings(), pack))
-          toast(`已导入「${pack.name}」（${pack.sprites.length} 张）`)
-        } catch (err) {
-          toast(err instanceof Error ? err.message : '导入失败')
+    nameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.isComposing) createBtn.click()
+    })
+    createRow.append(nameInput, createBtn)
+    body.append(createRow)
+
+    // 导入：JSON 文件 / 分享串
+    const importRow = el('div', 'so-row')
+    importRow.append(
+      button('导入 JSON 文件', () => {
+        pickFile('.json,application/json', false, async (files) => {
+          try {
+            const pack = importPack(await files[0].text())
+            deps.updateSettings(upsertPack(deps.getSettings(), pack))
+            view = { kind: 'pack', packId: pack.id }
+            render()
+          } catch (err) {
+            toast(body, err instanceof Error ? err.message : '导入失败')
+          }
+        })
+      }),
+    )
+    body.append(importRow)
+
+    const shareRow = el('div', 'so-row so-share-row')
+    const shareInput = textInput('粘贴 stpack1: 开头的分享串…')
+    const shareBtn = button('导入分享串', () => {
+      if (!shareInput.value.trim()) return
+      try {
+        const pack = decodeShareString(shareInput.value)
+        deps.updateSettings(upsertPack(deps.getSettings(), pack))
+        shareInput.value = ''
+        view = { kind: 'pack', packId: pack.id }
+        render()
+      } catch (err) {
+        toast(body, err instanceof Error ? err.message : '分享串解析失败')
+      }
+    })
+    shareRow.append(shareInput, shareBtn)
+    body.append(shareRow)
+
+    body.append(statusBar())
+  }
+
+  function renderPackCard(pack: SpritePack): HTMLElement {
+    const item = el('div', 'so-pack-item so-pack-card')
+    item.tabIndex = 0
+    item.setAttribute('role', 'button')
+    item.title = '点击进入管理'
+
+    const cover = getPackCover(pack)
+    const thumb = el('div', 'so-card-thumb')
+    if (cover) {
+      const img = document.createElement('img')
+      img.src = cover.url
+      img.alt = cover.tag
+      img.loading = 'lazy'
+      thumb.append(img)
+    } else {
+      thumb.textContent = '空'
+    }
+
+    const info = el('div', 'so-pack-info')
+    const nameEl = el('b')
+    nameEl.textContent = pack.name
+    const metaEl = el('small')
+    metaEl.textContent = `${pack.sprites.length} 张 · ${pack.author ?? '未知作者'}${isPresetPack(pack.id) ? ' · 预设（只读）' : ''}`
+    info.append(nameEl, metaEl)
+
+    const arrow = el('div', 'so-card-arrow')
+    arrow.textContent = '›'
+
+    item.append(thumb, info, arrow)
+    const enter = () => {
+      view = { kind: 'pack', packId: pack.id }
+      render()
+    }
+    item.addEventListener('click', enter)
+    item.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        enter()
+      }
+    })
+    return item
+  }
+
+  /* ---------------- 详情页 ---------------- */
+
+  function renderPackDetail(body: HTMLElement, pack: SpritePack): void {
+    const readonly = isPresetPack(pack.id)
+
+    // 顶部：返回 + 操作
+    const topRow = el('div', 'so-row so-detail-top')
+    topRow.append(
+      button('‹ 返回列表', () => {
+        view = { kind: 'list' }
+        render()
+      }),
+    )
+    const spacer = el('div', 'so-spacer')
+    topRow.append(spacer)
+    topRow.append(
+      button('导出 JSON', async () => {
+        // 本地/预设图片自动内嵌 base64（别人导入才能看到图）；图床 URL 保持轻量
+        const file = await exportPack(pack)
+        downloadJson(file, `${pack.name}.sprite-pack.json`)
+        toast(body, `已导出「${pack.name}」`)
+      }),
+      button('复制分享串', async () => {
+        const result = encodeShareString(pack)
+        if (!result) {
+          toast(body, '该包没有图床图片，无法生成分享串（本地/内嵌图请用「导出 JSON」）')
+          return
         }
-      })
-    })
-    actions.append(nameInput, createBtn, importBtn)
-    body.append(actions)
-
-    const status = document.createElement('div')
-    status.className = 'so-status'
-    body.append(status)
-
-    function toast(msg: string) {
-      status.textContent = msg
-      setTimeout(() => {
-        if (status.textContent === msg) status.textContent = ''
-      }, 3000)
+        const ok = await copyText(result.text)
+        const skipNote = result.skipped.length > 0 ? `；跳过非图床立绘：${result.skipped.join('、')}` : ''
+        toast(body, ok ? `已复制分享串（${result.included} 张）${skipNote}` : '复制失败，请手动复制弹出的文本')
+        if (!ok) window.prompt('手动复制分享串：', result.text)
+      }),
+    )
+    if (!readonly) {
+      topRow.append(
+        button('删除立绘包', () => {
+          if (!window.confirm(`确定删除立绘包「${pack.name}」？绑定关系会一并清除。`)) return
+          view = { kind: 'list' }
+          commit(removePack(deps.getSettings(), pack.id))
+        }, 'so-btn-danger'),
+      )
     }
+    body.append(topRow)
 
-    function commit(next: PluginSettings) {
-      deps.updateSettings(next)
-      renderBody()
-    }
-
-    function renderPackItem(pack: SpritePack, charName: string): HTMLElement {
-      const item = document.createElement('div')
-      item.className = 'so-pack-item'
-
-      const info = document.createElement('div')
-      info.className = 'so-pack-info'
-      info.innerHTML = `<b>${pack.name}</b> <small>${pack.sprites.length} 张 · ${pack.author ?? ''}</small>`
-
-      const btns = document.createElement('div')
-      btns.className = 'so-btn-row'
-      btns.append(
-        button('上传图片', () => {
-          pickFile('image/*', true, async (files) => {
-            const current = deps.getSettings()
-            const target = current.packs.find((p) => p.id === pack.id)
-            if (!target) return
-            const sprites = [...target.sprites]
-            for (const file of Array.from(files)) {
-              const tag = file.name.replace(/\.[^.]+$/, '').trim()
-              if (!tag) continue
-              const dataUri = await fileToDataUri(file)
-              const url = await deps.adapter.saveImage(file.name, dataUri, charName || pack.name)
-              const idx = sprites.findIndex((s) => s.tag === tag)
-              if (idx >= 0) sprites[idx] = { tag, url }
-              else sprites.push({ tag, url })
-            }
-            commit(upsertPack(current, { ...target, sprites }))
+    // 元数据编辑
+    if (readonly) {
+      const note = el('div', 'so-status')
+      note.textContent = '预设包随扩展分发、只读；想改动可先「导出 JSON」再导入为自定义包。'
+      body.append(note)
+    } else {
+      const metaRow = el('div', 'so-row so-meta-row')
+      const nameInput = textInput('包名')
+      nameInput.value = pack.name
+      const authorInput = textInput('作者')
+      authorInput.value = pack.author ?? ''
+      const descInput = textInput('描述（可选）')
+      descInput.value = pack.description ?? ''
+      metaRow.append(
+        labeled('包名', nameInput),
+        labeled('作者', authorInput),
+        labeled('描述', descInput),
+        button('保存信息', () => {
+          const name = sanitizePackName(nameInput.value)
+          if (!name) {
+            toast(body, '包名不能为空')
+            return
+          }
+          commitPack({
+            ...pack,
+            name,
+            author: sanitizePackName(authorInput.value) || undefined,
+            description: sanitizeDescription(descInput.value) || undefined,
           })
         }),
-        button('导出', async () => {
-          const file = await exportPack(pack, false)
-          const blob = new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' })
-          const url = URL.createObjectURL(blob)
-          const a = document.createElement('a')
-          a.href = url
-          a.download = `${pack.name}.sprite-pack.json`
-          a.click()
-          URL.revokeObjectURL(url)
-        }),
-        button('删除', () => {
-          if (!window.confirm(`确定删除立绘包「${pack.name}」？`)) return
-          commit(removePack(deps.getSettings(), pack.id))
+      )
+      body.append(metaRow)
+    }
+
+    // 立绘网格
+    const grid = el('div', 'so-sprite-grid')
+    pack.sprites.forEach((sprite, index) => {
+      grid.append(renderSpriteCell(body, pack, sprite, index, readonly))
+    })
+    if (pack.sprites.length === 0) {
+      const empty = el('div', 'so-status')
+      empty.textContent = '还没有立绘，用下方按钮上传图片（文件名即表情名）。'
+      grid.append(empty)
+    }
+    body.append(grid)
+
+    // 添加立绘
+    if (!readonly) {
+      const addRow = el('div', 'so-row')
+      addRow.append(
+        button('上传图片（自动压缩）', () => {
+          pickFile('image/*', true, (files) => void handleUpload(body, pack.id, files))
         }),
       )
+      body.append(addRow)
 
-      const top = document.createElement('div')
-      top.className = 'so-pack-top'
-      top.append(info, btns)
-      item.append(top)
-
-      if (pack.sprites.length > 0) {
-        const thumbs = document.createElement('div')
-        thumbs.className = 'so-thumbs'
-        for (const s of pack.sprites) {
-          const img = document.createElement('img')
-          img.src = s.url
-          img.alt = s.tag
-          img.title = s.tag
-          img.loading = 'lazy'
-          thumbs.append(img)
-        }
-        item.append(thumbs)
-      }
-
-      return item
+      const codeRow = el('div', 'so-row so-code-row')
+      const tagInput = textInput('表情名，如 微笑')
+      const codeInput = textInput('图床编码，如 ab12cd.png')
+      codeRow.append(
+        labeled('表情', tagInput),
+        labeled('编码', codeInput),
+        button('按编码添加', () => {
+          const tag = normalizeTag(tagInput.value)
+          const code = codeInput.value.trim()
+          if (!tag) {
+            toast(body, '表情名不能为空（[ ] : | = @ 等符号会被剔除）')
+            return
+          }
+          if (!isValidImageCode(code)) {
+            toast(body, '编码格式不对：应为图床文件名，如 ab12cd.png')
+            return
+          }
+          const current = deps.getSettings()
+          const target = current.packs.find((p) => p.id === pack.id)
+          if (!target) return
+          const host = current.imageHost.endsWith('/') ? current.imageHost : `${current.imageHost}/`
+          commitPack(upsertSprite(target, { tag, url: host + code, code }))
+          tagInput.value = ''
+          codeInput.value = ''
+        }),
+      )
+      const codeHint = el('div', 'so-status')
+      codeHint.textContent = `编码将拼接当前图床前缀：${deps.getSettings().imageHost}`
+      body.append(codeRow, codeHint)
     }
+
+    body.append(statusBar())
+  }
+
+  function renderSpriteCell(
+    body: HTMLElement,
+    pack: SpritePack,
+    sprite: Sprite,
+    index: number,
+    readonly: boolean,
+  ): HTMLElement {
+    const cell = el('div', 'so-sprite-cell')
+    if (pack.coverTag === sprite.tag) cell.classList.add('so-cover')
+
+    const img = document.createElement('img')
+    img.src = sprite.url
+    img.alt = sprite.tag
+    img.title = sprite.tag
+    img.loading = 'lazy'
+
+    const tagEl = el('div', 'so-sprite-tag')
+    tagEl.textContent = sprite.tag
+    tagEl.title = sprite.tag
+
+    cell.append(img, tagEl)
+    if (readonly) return cell
+
+    const latestPack = () => deps.getSettings().packs.find((p) => p.id === pack.id)
+
+    const bar = el('div', 'so-sprite-actions')
+    bar.append(
+      iconButton('✎', '重命名', () => {
+        const next = window.prompt(`「${sprite.tag}」改名为：`, sprite.tag)
+        if (next === null) return
+        const target = latestPack()
+        if (!target) return
+        try {
+          commitPack(renameSprite(target, sprite.tag, next))
+        } catch (err) {
+          toast(body, err instanceof Error ? err.message : '改名失败')
+        }
+      }),
+      iconButton('🖼', '替换图片', () => {
+        pickFile('image/*', false, async (files) => {
+          try {
+            const result = await compressImage(files[0])
+            const url = await deps.adapter.saveImage(
+              `${sprite.tag}.webp`,
+              result.dataUri,
+              deps.adapter.getCurrentCharacterName() || pack.name,
+            )
+            const target = latestPack()
+            if (!target) return
+            commitPack(upsertSprite(target, { tag: sprite.tag, url }))
+            toast(body, `已替换「${sprite.tag}」（${formatBytes(result.bytes)}）`)
+          } catch (err) {
+            toast(body, err instanceof Error ? err.message : '替换失败')
+          }
+        })
+      }),
+      iconButton('★', '设为封面', () => {
+        const target = latestPack()
+        if (!target) return
+        commitPack({ ...target, coverTag: sprite.tag })
+      }),
+      iconButton('◀', '前移', () => {
+        const target = latestPack()
+        if (!target) return
+        commitPack(moveSprite(target, index, index - 1))
+      }),
+      iconButton('▶', '后移', () => {
+        const target = latestPack()
+        if (!target) return
+        commitPack(moveSprite(target, index, index + 1))
+      }),
+      iconButton('✕', '删除', () => {
+        if (!window.confirm(`删除立绘「${sprite.tag}」？`)) return
+        const target = latestPack()
+        if (!target) return
+        commitPack(removeSprite(target, sprite.tag))
+      }),
+    )
+    cell.append(bar)
+    return cell
+  }
+
+  /** 批量上传：压缩 → saveImage → upsertSprite（文件名即 tag） */
+  async function handleUpload(body: HTMLElement, packId: string, files: FileList): Promise<void> {
+    let added = 0
+    let skipped = 0
+    let savedBytes = ''
+    for (const file of Array.from(files)) {
+      const tag = fileNameToTag(file.name)
+      if (!tag) {
+        skipped++
+        continue
+      }
+      try {
+        const result = await compressImage(file)
+        savedBytes = formatBytes(result.bytes)
+        const url = await deps.adapter.saveImage(
+          file.name,
+          result.dataUri,
+          deps.adapter.getCurrentCharacterName() || packId,
+        )
+        const target = deps.getSettings().packs.find((p) => p.id === packId)
+        if (!target) return
+        deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(target, { tag, url })))
+        added++
+      } catch (err) {
+        console.error('[sprite-overlay] 上传失败', err)
+        skipped++
+      }
+    }
+    render()
+    const note = skipped > 0 ? `，跳过 ${skipped} 张（文件名无效或保存失败）` : ''
+    toast(
+      backdrop?.querySelector('.so-manager-body') as HTMLElement,
+      `已添加 ${added} 张立绘${added === 1 ? `（${savedBytes}）` : ''}${note}`,
+    )
   }
 
   return { open, close, refreshIfOpen }
 }
 
+/* ---------------- DOM 工具 ---------------- */
+
+function el(tag: string, className?: string): HTMLElement {
+  const node = document.createElement(tag)
+  if (className) node.className = className
+  return node
+}
+
+function textInput(placeholder: string): HTMLInputElement {
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.className = 'text_pole'
+  input.placeholder = placeholder
+  return input
+}
+
+function labeled(label: string, input: HTMLElement): HTMLElement {
+  const wrap = el('label', 'so-labeled')
+  const span = el('span', 'so-labeled-text')
+  span.textContent = label
+  wrap.append(span, input)
+  return wrap
+}
+
 function checkboxRow(label: string, checked: boolean, onChange: (v: boolean) => void): HTMLElement {
-  const row = document.createElement('label')
-  row.className = 'so-row checkbox_label'
+  const row = el('label', 'so-row checkbox_label')
   const input = document.createElement('input')
   input.type = 'checkbox'
   input.checked = checked
@@ -239,12 +571,46 @@ function checkboxRow(label: string, checked: boolean, onChange: (v: boolean) => 
   return row
 }
 
-function button(label: string, onClick: () => void): HTMLElement {
-  const btn = document.createElement('div')
-  btn.className = 'menu_button so-btn'
+function button(label: string, onClick: () => void, extraClass = ''): HTMLElement {
+  const btn = el('div', `menu_button so-btn ${extraClass}`.trim())
+  btn.setAttribute('role', 'button')
+  btn.tabIndex = 0
   btn.textContent = label
   btn.addEventListener('click', onClick)
+  btn.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onClick()
+    }
+  })
   return btn
+}
+
+function iconButton(icon: string, title: string, onClick: () => void): HTMLElement {
+  const btn = el('div', 'so-icon-btn')
+  btn.textContent = icon
+  btn.title = title
+  btn.setAttribute('role', 'button')
+  btn.setAttribute('aria-label', title)
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    onClick()
+  })
+  return btn
+}
+
+/** 状态提示条（toast 输出目标） */
+function statusBar(): HTMLElement {
+  return el('div', 'so-status so-toast')
+}
+
+function toast(scope: HTMLElement | null, msg: string): void {
+  const bar = scope?.querySelector('.so-toast') as HTMLElement | null
+  if (!bar) return
+  bar.textContent = msg
+  setTimeout(() => {
+    if (bar.textContent === msg) bar.textContent = ''
+  }, 4000)
 }
 
 function pickFile(accept: string, multiple: boolean, onPick: (files: FileList) => void): void {
@@ -258,11 +624,34 @@ function pickFile(accept: string, multiple: boolean, onPick: (files: FileList) =
   input.click()
 }
 
-function fileToDataUri(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
-  })
+function downloadJson(data: unknown, fileName: string): void {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    // 非安全上下文（http 直连 ST）没有 clipboard API，走隐藏 textarea 兜底
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.append(ta)
+      ta.select()
+      const ok = document.execCommand('copy')
+      ta.remove()
+      return ok
+    } catch {
+      return false
+    }
+  }
 }

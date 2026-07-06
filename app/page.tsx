@@ -14,6 +14,7 @@ import { webAdapter } from '@/lib/web-adapter'
 import { ChatSimulator } from '@/components/chat-simulator'
 import { ConfigPanel } from '@/components/config-panel'
 import { SpriteOverlay } from '@/components/sprite-overlay'
+import { PhoneMount } from '@/components/phone-mount'
 
 export default function Page() {
   const [settings, setSettings] = useState<PluginSettings | null>(null)
@@ -99,6 +100,8 @@ export default function Page() {
             characterName={characterName}
             availableTags={availableTags}
             hideTagInMessage={settings.hideTagInMessage}
+            renderInlineImages={settings.renderInlineImages}
+            imageHost={settings.imageHost}
             injectionPrompt={injectionPrompt}
             onAiMessage={handleAiMessage}
           />
@@ -120,6 +123,16 @@ export default function Page() {
         layout={settings.overlay}
         visible={settings.enabled && !!activePack}
         onLayoutChange={(overlay) => updateSettings({ ...settings, overlay })}
+      />
+
+      <PhoneMount
+        settings={settings}
+        characterName={characterName}
+        onSettingsChange={updateSettings}
+        onPreviewSprite={(url, tag) => {
+          setCurrentUrl(url)
+          setCurrentTag(tag)
+        }}
       />
     </main>
   )

@@ -245,3 +245,222 @@
   opacity: 0.8;
   margin-top: 4px;
 }
+
+/* ---- 管理弹窗 v2：列表卡片 + 详情网格 ---- */
+
+.so-manager .so-pack-card {
+  flex-direction: row;
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.so-manager .so-pack-card:hover,
+.so-manager .so-pack-card:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.3);
+  outline: none;
+}
+
+.so-manager .so-card-thumb {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.25);
+  font-size: 11px;
+  opacity: 0.9;
+}
+
+.so-manager .so-card-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.so-manager .so-pack-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.so-manager .so-pack-info b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.so-manager .so-pack-info small {
+  opacity: 0.7;
+  font-size: 11px;
+}
+
+.so-manager .so-card-arrow {
+  font-size: 20px;
+  opacity: 0.5;
+  flex-shrink: 0;
+  padding: 0 4px;
+}
+
+.so-manager .so-spacer {
+  flex: 1;
+}
+
+.so-manager .so-btn-danger {
+  color: #ff7676;
+}
+
+.so-manager .so-labeled {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.so-manager .so-labeled-text {
+  font-size: 12px;
+  opacity: 0.75;
+  flex-shrink: 0;
+}
+
+.so-manager .so-labeled .text_pole {
+  min-width: 0;
+  flex: 1;
+}
+
+.so-manager .so-meta-row,
+.so-manager .so-code-row {
+  align-items: stretch;
+}
+
+.so-manager .so-share-row .text_pole {
+  flex: 1;
+  min-width: 160px;
+}
+
+/* 立绘网格 */
+.so-manager .so-sprite-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.so-manager .so-sprite-cell {
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.so-manager .so-sprite-cell.so-cover {
+  border-color: rgba(255, 214, 90, 0.7);
+  box-shadow: 0 0 0 1px rgba(255, 214, 90, 0.35);
+}
+
+.so-manager .so-sprite-cell.so-cover::after {
+  content: '封面';
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  border-radius: 4px;
+  background: rgba(255, 214, 90, 0.9);
+  color: #402d00;
+}
+
+.so-manager .so-sprite-cell img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.so-manager .so-sprite-tag {
+  padding: 3px 6px;
+  font-size: 11px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.so-manager .so-sprite-actions {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px;
+  background: rgba(0, 0, 0, 0.62);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.so-manager .so-sprite-cell:hover .so-sprite-actions,
+.so-manager .so-sprite-cell:focus-within .so-sprite-actions {
+  opacity: 1;
+}
+
+.so-manager .so-icon-btn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(30, 30, 36, 0.9);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.08s ease;
+}
+
+.so-manager .so-icon-btn:hover {
+  background: rgba(70, 70, 80, 0.95);
+  transform: translateY(-1px);
+}
+
+/* 触屏设备：actions 常显（无 hover） */
+@media (hover: none) {
+  .so-manager .so-sprite-actions {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.35);
+    align-items: flex-end;
+  }
+}
+
+/* ---- 消息内插图（message-postprocess） ---- */
+
+#chat .so-inline-image {
+  display: block;
+  text-align: center;
+  margin: 8px 0;
+}
+
+#chat .so-inline-image img {
+  max-width: min(85%, 480px);
+  max-height: 60vh;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* 加载失败：显示编码提示，方便发现写错的编码 */
+#chat .so-inline-image-error img {
+  min-width: 120px;
+  min-height: 48px;
+  background: rgba(255, 100, 100, 0.12);
+}

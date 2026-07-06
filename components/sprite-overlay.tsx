@@ -90,7 +90,6 @@ export function SpriteOverlay({
         className="group relative cursor-move overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
         onPointerDown={onPointerDown('move')}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={displayUrl || '/placeholder.svg'}
           alt=""

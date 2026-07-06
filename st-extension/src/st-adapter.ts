@@ -13,7 +13,9 @@
 import type { PlatformAdapter } from '../../core/adapter'
 import type { PluginSettings } from '../../core/types'
 import { createDefaultSettings } from '../../core/types'
+import { migrateSettings } from '../../core/migrate'
 import { getPresetPacks, isPresetPack } from '../../core/presets'
+import { sanitizePathSegment } from '../../core/naming'
 
 export const MODULE_NAME = 'sprite_overlay'
 
@@ -72,12 +74,13 @@ function getContext(): STContext {
 export class STAdapter implements PlatformAdapter {
   async loadSettings(): Promise<PluginSettings> {
     const ctx = getContext()
-    const saved = ctx.extensionSettings[MODULE_NAME] as PluginSettings | undefined
+    const saved = ctx.extensionSettings[MODULE_NAME]
     // 内置预设包随扩展仓库分发（public/presets/），每次加载都以当前安装路径刷新 URL
     const presets = getPresetPacks(`${getExtensionBaseUrl()}/public`)
     if (saved && typeof saved === 'object') {
-      const merged = { ...createDefaultSettings(), ...saved }
-      const customPacks = (merged.packs ?? []).filter((p) => !isPresetPack(p.id))
+      // 任意历史版本 → 当前版本（v1 无 settingsVersion 字段，migrate 会补齐新字段并反推图床编码）
+      const merged = migrateSettings(saved)
+      const customPacks = merged.packs.filter((p) => !isPresetPack(p.id))
       merged.packs = [...presets, ...customPacks]
       return merged
     }
@@ -107,9 +110,10 @@ export class STAdapter implements PlatformAdapter {
     const match = base64Data.match(/^data:image\/(\w+);base64,(.+)$/s)
     if (!match) throw new Error('图片数据格式不正确')
     const [, ext, data] = match
-    const baseName = fileName.replace(/\.[^.]+$/, '')
+    const baseName = sanitizePathSegment(fileName.replace(/\.[^.]+$/, '')) || `sprite_${Date.now()}`
+    const folder = sanitizePathSegment(characterName) || 'shared'
     if (typeof ctx.saveBase64AsFile === 'function') {
-      return await ctx.saveBase64AsFile(data, `sprite-overlay/${characterName}`, baseName, ext)
+      return await ctx.saveBase64AsFile(data, `sprite-overlay/${folder}`, baseName, ext)
     }
     // 回退：直接内嵌 data URI（占空间但保证可用）
     return base64Data

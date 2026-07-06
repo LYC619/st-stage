@@ -4,6 +4,7 @@
  */
 
 import type { PluginSettings, Sprite, SpritePack } from './types'
+import { normalizeTag } from './naming'
 
 /** 生成简单唯一 ID */
 export function genId(): string {
@@ -71,6 +72,62 @@ export function bindCharacter(
     ...settings,
     bindings: [...others, { characterName, packId, enabled: true }],
   }
+}
+
+/* ---------- 单张立绘操作（M2 图库管理） ---------- */
+
+/** 更新包内容并盖 updatedAt 时间戳 */
+function touchPack(pack: SpritePack, sprites: Sprite[]): SpritePack {
+  return { ...pack, sprites, updatedAt: new Date().toISOString() }
+}
+
+/** 在包内新增或替换立绘（同 tag 覆盖 url/code） */
+export function upsertSprite(pack: SpritePack, sprite: Sprite): SpritePack {
+  const idx = pack.sprites.findIndex((s) => s.tag === sprite.tag)
+  const sprites =
+    idx >= 0
+      ? pack.sprites.map((s, i) => (i === idx ? sprite : s))
+      : [...pack.sprites, sprite]
+  return touchPack(pack, sprites)
+}
+
+/** 删除包内一张立绘；若删的是封面则清掉 coverTag */
+export function removeSprite(pack: SpritePack, tag: string): SpritePack {
+  const next = touchPack(
+    pack,
+    pack.sprites.filter((s) => s.tag !== tag),
+  )
+  if (next.coverTag === tag) delete next.coverTag
+  return next
+}
+
+/**
+ * 重命名立绘 tag。失败时抛出带中文说明的 Error：
+ * 新 tag 清洗后为空、或与包内其他立绘重名。
+ */
+export function renameSprite(pack: SpritePack, oldTag: string, newTagRaw: string): SpritePack {
+  const newTag = normalizeTag(newTagRaw)
+  if (!newTag) throw new Error('表情名不能为空，且不能包含 [ ] : | = @ 等符号')
+  if (newTag === oldTag) return pack
+  if (pack.sprites.some((s) => s.tag === newTag)) {
+    throw new Error(`表情名「${newTag}」在该立绘包中已存在`)
+  }
+  const sprites = pack.sprites.map((s) => (s.tag === oldTag ? { ...s, tag: newTag } : s))
+  const next = touchPack(pack, sprites)
+  if (next.coverTag === oldTag) next.coverTag = newTag
+  return next
+}
+
+/** 移动立绘顺序（fromIndex → toIndex，越界时原样返回） */
+export function moveSprite(pack: SpritePack, fromIndex: number, toIndex: number): SpritePack {
+  const len = pack.sprites.length
+  if (fromIndex === toIndex || fromIndex < 0 || fromIndex >= len || toIndex < 0 || toIndex >= len) {
+    return pack
+  }
+  const sprites = [...pack.sprites]
+  const [moved] = sprites.splice(fromIndex, 1)
+  sprites.splice(toIndex, 0, moved)
+  return touchPack(pack, sprites)
 }
 
 /** 切换角色绑定的启用状态 */

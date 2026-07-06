@@ -3,7 +3,7 @@
  * 容错：全角/半角冒号与括号、标签前后空格、多个标签取最后一个（最贴近结尾情境）。
  */
 
-const TAG_REGEX = /[\[【]\s*立绘\s*[:：]\s*([^\]】]+?)\s*[\]】]/g
+const TAG_REGEX = /[[【]\s*立绘\s*[:：]\s*([^\]】]+?)\s*[\]】]/g
 
 /** 提取文本中所有立绘标签（按出现顺序） */
 export function extractTags(text: string): string[] {
