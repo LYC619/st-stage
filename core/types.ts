@@ -109,6 +109,8 @@ export interface PluginSettings {
   overlay: OverlayLayout
   /** 手机壳状态（M4 手机 UI 框架） */
   phone: PhoneState
+  /** 是否显示手机框；关闭时回退为纯悬浮窗模式（悬浮窗 ⚙ 仍可打开图库） */
+  showPhone: boolean
   /** 所有立绘包 */
   packs: SpritePack[]
   /** 角色绑定 */
@@ -159,6 +161,7 @@ export function createDefaultSettings(): PluginSettings {
     imageHost: DEFAULT_IMAGE_HOST,
     overlay: { x: 24, y: 80, width: 220 },
     phone: { x: 24, y: 320, open: false },
+    showPhone: true,
     packs: [],
     bindings: [],
     apps: {},

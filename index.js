@@ -202,6 +202,7 @@
   function createPhoneShell(initialState, deps) {
     let state = { ...initialState };
     let activeApp = null;
+    let hidden = false;
     const fab = document.createElement("div");
     fab.className = "so-phone-fab";
     fab.title = "打开手机";
@@ -240,6 +241,11 @@
       });
     }
     function applyLayout() {
+      if (hidden) {
+        fab.style.display = "none";
+        shell.style.display = "none";
+        return;
+      }
       const clampedX = Math.max(0, Math.min(state.x, window.innerWidth - 56));
       const clampedY = Math.max(0, Math.min(state.y, window.innerHeight - 56));
       fab.style.left = `${clampedX}px`;
@@ -378,6 +384,10 @@
         if (!state.open) commitState({ ...state, open: true });
         renderScreen();
       },
+      setVisible(visible) {
+        hidden = !visible;
+        applyLayout();
+      },
       destroy() {
         clearInterval(clockTimer);
         unsubscribe();
@@ -412,6 +422,7 @@
       imageHost: DEFAULT_IMAGE_HOST,
       overlay: { x: 24, y: 80, width: 220 },
       phone: { x: 24, y: 320, open: false },
+      showPhone: true,
       packs: [],
       bindings: [],
       apps: {}
@@ -511,6 +522,7 @@
       imageHost: typeof raw.imageHost === "string" && /^https?:\/\//.test(raw.imageHost) ? raw.imageHost : defaults.imageHost,
       overlay: migrateOverlay(raw.overlay, defaults.overlay),
       phone: migratePhone(raw.phone, defaults.phone),
+      showPhone: typeof raw.showPhone === "boolean" ? raw.showPhone : defaults.showPhone,
       packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
       bindings: Array.isArray(raw.bindings) ? raw.bindings.filter(
         (b) => b && typeof b.characterName === "string" && typeof b.packId === "string" && typeof b.enabled === "boolean"
@@ -1502,6 +1514,11 @@
         (v) => deps.updateSettings({ ...deps.getSettings(), enabled: v })
       ),
       checkboxRow2(
+        "显示手机框（关闭则回退纯悬浮窗）",
+        settings.showPhone,
+        (v) => deps.updateSettings({ ...deps.getSettings(), showPhone: v })
+      ),
+      checkboxRow2(
         "消息中隐藏 [立绘:xxx] 标签",
         settings.hideTagInMessage,
         (v) => deps.updateSettings({ ...deps.getSettings(), hideTagInMessage: v })
@@ -1845,6 +1862,7 @@
       settings = next;
       adapter.saveSettings(settings);
       overlay.setLayout(settings.overlay);
+      phone.setVisible(settings.showPhone);
       refresh();
       if (displayChanged) reprocessAllMessages(settings);
     }
@@ -1932,6 +1950,7 @@
     });
     refresh();
     phone.setState(settings.phone);
+    phone.setVisible(settings.showPhone);
     console.log("[sprite-overlay] 角色立绘悬浮窗扩展已加载（含手机框架）");
   }
   if (document.readyState === "loading") {

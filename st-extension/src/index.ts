@@ -44,6 +44,7 @@ async function init(): Promise<void> {
     settings = next
     adapter.saveSettings(settings)
     overlay.setLayout(settings.overlay)
+    phone.setVisible(settings.showPhone)
     refresh()
     // 显示相关设置变更：清掉幂等标记，重新处理全部气泡
     if (displayChanged) reprocessAllMessages(settings)
@@ -155,6 +156,7 @@ async function init(): Promise<void> {
 
   refresh()
   phone.setState(settings.phone)
+  phone.setVisible(settings.showPhone)
   console.log('[sprite-overlay] 角色立绘悬浮窗扩展已加载（含手机框架）')
 }
 

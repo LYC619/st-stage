@@ -133,6 +133,15 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
           />
         </label>
         <label className="flex items-center justify-between text-sm text-foreground">
+          显示手机框（关闭则回退纯悬浮窗）
+          <input
+            type="checkbox"
+            checked={settings.showPhone}
+            onChange={(e) => onSettingsChange({ ...settings, showPhone: e.target.checked })}
+            className="h-4 w-4 accent-primary"
+          />
+        </label>
+        <label className="flex items-center justify-between text-sm text-foreground">
           消息中隐藏 [立绘:xxx] 标签
           <input
             type="checkbox"

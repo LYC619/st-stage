@@ -22,6 +22,8 @@ export interface PhoneShellController {
   setState(state: PhoneState): void
   /** 直接打开指定 App（展开手机并进入） */
   openApp(appId: string): void
+  /** 显隐整个手机（图标 + 壳）；隐藏时回退纯悬浮窗模式，即时生效 */
+  setVisible(visible: boolean): void
   destroy(): void
 }
 
@@ -33,6 +35,8 @@ export function createPhoneShell(
 ): PhoneShellController {
   let state: PhoneState = { ...initialState }
   let activeApp: PhoneApp | null = null
+  // 手机总显隐（功能④）：隐藏时图标与壳都不显示，回退纯悬浮窗模式
+  let hidden = false
 
   /* ---- 悬浮图标 ---- */
   const fab = document.createElement('div')
@@ -82,6 +86,11 @@ export function createPhoneShell(
 
   /* ---- 布局 ---- */
   function applyLayout(): void {
+    if (hidden) {
+      fab.style.display = 'none'
+      shell.style.display = 'none'
+      return
+    }
     const clampedX = Math.max(0, Math.min(state.x, window.innerWidth - 56))
     const clampedY = Math.max(0, Math.min(state.y, window.innerHeight - 56))
     fab.style.left = `${clampedX}px`
@@ -236,6 +245,10 @@ export function createPhoneShell(
       activeApp = app
       if (!state.open) commitState({ ...state, open: true })
       renderScreen()
+    },
+    setVisible(visible: boolean) {
+      hidden = !visible
+      applyLayout()
     },
     destroy() {
       clearInterval(clockTimer)

@@ -43,6 +43,7 @@ export function migrateSettings(saved: unknown): PluginSettings {
         : defaults.imageHost,
     overlay: migrateOverlay(raw.overlay, defaults.overlay),
     phone: migratePhone(raw.phone, defaults.phone),
+    showPhone: typeof raw.showPhone === 'boolean' ? raw.showPhone : defaults.showPhone,
     packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
     bindings: Array.isArray(raw.bindings)
       ? raw.bindings.filter(

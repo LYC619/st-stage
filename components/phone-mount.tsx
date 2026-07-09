@@ -50,6 +50,7 @@ export function PhoneMount({ settings, characterName, onSettingsChange, onPrevie
         latest.current.onSettingsChange({ ...latest.current.settings, phone: state }),
     })
     shellRef.current = shell
+    shell.setVisible(latest.current.settings.showPhone)
 
     for (const app of createWebApps(() => latest.current)) registry.register(app)
 
@@ -64,6 +65,11 @@ export function PhoneMount({ settings, characterName, onSettingsChange, onPrevie
   useEffect(() => {
     shellRef.current?.setState(settings.phone)
   }, [settings.phone])
+
+  // 显示手机框开关（功能④）：即时显隐，不重建壳
+  useEffect(() => {
+    shellRef.current?.setVisible(settings.showPhone)
+  }, [settings.showPhone])
 
   return null
 }

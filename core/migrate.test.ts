@@ -35,6 +35,7 @@ describe('migrateSettings', () => {
     expect(migrated.settingsVersion).toBe(SETTINGS_VERSION)
     expect(migrated.hideTagInMessage).toBe(true)
     expect(migrated.renderInlineImages).toBe(false)
+    expect(migrated.showPhone).toBe(true) // 旧数据无此字段 → 默认显示手机框
     expect(migrated.imageHost).toBeTruthy()
     expect(migrated.overlay).toEqual({ x: 10, y: 20, width: 300 })
     expect(migrated.bindings).toHaveLength(1)
@@ -79,6 +80,11 @@ describe('migrateSettings', () => {
     })
     expect(migrated.packs[0].sprites).toHaveLength(1)
     expect(migrated.packs[0].sprites[0].tag).toBe('|||')
+  })
+
+  it('showPhone 显式 false 时保留（功能④手机显隐开关）', () => {
+    expect(migrateSettings({ ...V1_SAVED, showPhone: false }).showPhone).toBe(false)
+    expect(migrateSettings({ ...V1_SAVED, showPhone: 'nope' }).showPhone).toBe(true)
   })
 
   it('当前版本数据迁移后语义不变', () => {

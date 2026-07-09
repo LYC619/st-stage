@@ -39,6 +39,9 @@ export function mountSettingsPanel(deps: PanelDeps): void {
     checkboxRow('启用立绘悬浮窗', settings.enabled, (v) =>
       deps.updateSettings({ ...deps.getSettings(), enabled: v }),
     ),
+    checkboxRow('显示手机框（关闭则回退纯悬浮窗）', settings.showPhone, (v) =>
+      deps.updateSettings({ ...deps.getSettings(), showPhone: v }),
+    ),
     checkboxRow('消息中隐藏 [立绘:xxx] 标签', settings.hideTagInMessage, (v) =>
       deps.updateSettings({ ...deps.getSettings(), hideTagInMessage: v }),
     ),
