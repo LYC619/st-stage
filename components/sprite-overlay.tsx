@@ -2,79 +2,117 @@
 
 /**
  * 立绘悬浮窗：fixed 定位、可拖拽、右下角缩放、切换时淡入淡出。
- * React 薄壳，状态与匹配逻辑在 core 层。
+ * 功能③：接收一条消息的立绘序列，>1 张时底部圆点指示 + 点击切换 + 可选自动轮播。
+ * React 薄壳，序列/匹配逻辑在 core 层与父组件。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { OverlayLayout } from '@/core/types'
 
+interface SpriteRef {
+  url: string
+  tag: string
+}
+
 interface SpriteOverlayProps {
-  imageUrl: string | null
-  tag: string | null
+  /** 当前消息的立绘序列（单张即一个元素） */
+  sprites: SpriteRef[]
   characterName: string
   layout: OverlayLayout
   onLayoutChange: (layout: OverlayLayout) => void
   visible: boolean
+  /** 自动轮播开关（功能③） */
+  autoSwitch: boolean
+  /** 自动轮播间隔秒数 */
+  autoSwitchSeconds: number
 }
 
+const DRAG_THRESHOLD = 6
+
 export function SpriteOverlay({
-  imageUrl,
-  tag,
+  sprites,
   characterName,
   layout,
   onLayoutChange,
   visible,
+  autoSwitch,
+  autoSwitchSeconds,
 }: SpriteOverlayProps) {
-  const [displayUrl, setDisplayUrl] = useState(imageUrl)
+  const [index, setIndex] = useState(0)
+  // 手动点击后自增，作为自动轮播 effect 的依赖 → 重置计时
+  const [manualTick, setManualTick] = useState(0)
+  const current = sprites[index] ?? null
+
+  const [displayUrl, setDisplayUrl] = useState<string | null>(current?.url ?? null)
   const [fading, setFading] = useState(false)
-  const dragState = useRef<{ mode: 'move' | 'resize'; startX: number; startY: number; origin: OverlayLayout } | null>(null)
+  const dragState = useRef<{ startX: number; startY: number; origin: OverlayLayout } | null>(null)
   const layoutRef = useRef(layout)
   layoutRef.current = layout
 
+  // 序列变化 → 回到第一张
+  useEffect(() => {
+    setIndex(0)
+  }, [sprites])
+
   // 图片切换时淡出 → 换图 → 淡入
   useEffect(() => {
-    if (imageUrl === displayUrl) return
+    const url = current?.url ?? null
+    if (url === displayUrl) return
     setFading(true)
     const timer = setTimeout(() => {
-      setDisplayUrl(imageUrl)
+      setDisplayUrl(url)
       setFading(false)
     }, 180)
     return () => clearTimeout(timer)
-  }, [imageUrl, displayUrl])
+  }, [current?.url, displayUrl])
+
+  // 自动轮播；手动点击（manualTick 变化）会重启计时
+  useEffect(() => {
+    if (!autoSwitch || sprites.length <= 1) return
+    const id = setInterval(
+      () => setIndex((i) => (i + 1) % sprites.length),
+      Math.max(1, autoSwitchSeconds) * 1000,
+    )
+    return () => clearInterval(id)
+  }, [autoSwitch, autoSwitchSeconds, sprites, manualTick])
+
+  const advance = useCallback(() => {
+    if (sprites.length <= 1) return
+    setIndex((i) => (i + 1) % sprites.length)
+    setManualTick((k) => k + 1)
+  }, [sprites.length])
 
   const onPointerDown = useCallback(
     (mode: 'move' | 'resize') => (e: React.PointerEvent) => {
       e.preventDefault()
       e.stopPropagation()
-      dragState.current = { mode, startX: e.clientX, startY: e.clientY, origin: { ...layoutRef.current } }
+      const startX = e.clientX
+      const startY = e.clientY
+      const origin = { ...layoutRef.current }
+      dragState.current = { startX, startY, origin }
+      let moved = false
 
       const onMove = (ev: PointerEvent) => {
-        const state = dragState.current
-        if (!state) return
-        const dx = ev.clientX - state.startX
-        const dy = ev.clientY - state.startY
-        if (state.mode === 'move') {
-          onLayoutChange({
-            ...state.origin,
-            x: Math.max(0, state.origin.x + dx),
-            y: Math.max(0, state.origin.y + dy),
-          })
+        const dx = ev.clientX - startX
+        const dy = ev.clientY - startY
+        if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return
+        moved = true
+        if (mode === 'move') {
+          onLayoutChange({ ...origin, x: Math.max(0, origin.x + dx), y: Math.max(0, origin.y + dy) })
         } else {
-          onLayoutChange({
-            ...state.origin,
-            width: Math.min(600, Math.max(100, state.origin.width + dx)),
-          })
+          onLayoutChange({ ...origin, width: Math.min(600, Math.max(100, origin.width + dx)) })
         }
       }
       const onUp = () => {
         dragState.current = null
         window.removeEventListener('pointermove', onMove)
         window.removeEventListener('pointerup', onUp)
+        if (!moved && mode === 'move') advance() // 点击（未拖动）→ 切下一张
       }
       window.addEventListener('pointermove', onMove)
       window.addEventListener('pointerup', onUp)
     },
-    [onLayoutChange],
+    [onLayoutChange, advance],
   )
 
   if (!visible || !displayUrl) return null
@@ -84,7 +122,7 @@ export function SpriteOverlay({
       className="fixed z-50 select-none"
       style={{ left: layout.x, top: layout.y, width: layout.width }}
       role="img"
-      aria-label={`${characterName}的立绘${tag ? `：${tag}` : ''}`}
+      aria-label={`${characterName}的立绘${current?.tag ? `：${current.tag}` : ''}`}
     >
       <div
         className="group relative cursor-move overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
@@ -98,9 +136,21 @@ export function SpriteOverlay({
           style={{ opacity: fading ? 0 : 1 }}
         />
         {/* 标签徽章 */}
-        {tag && (
+        {current?.tag && (
           <div className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-foreground/70 px-2 py-0.5 text-xs text-background backdrop-blur-sm">
-            {tag}
+            {current.tag}
+          </div>
+        )}
+        {/* 圆点指示器（序列 >1 张） */}
+        {sprites.length > 1 && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center gap-1.5">
+            {sprites.map((_, i) => (
+              <span
+                key={i}
+                className={`h-1.5 w-1.5 rounded-full ${i === index ? 'bg-white' : 'bg-white/45'}`}
+                style={{ boxShadow: '0 0 2px rgba(0,0,0,0.65)' }}
+              />
+            ))}
           </div>
         )}
         {/* 缩放手柄 */}

@@ -44,6 +44,11 @@ export function migrateSettings(saved: unknown): PluginSettings {
     overlay: migrateOverlay(raw.overlay, defaults.overlay),
     phone: migratePhone(raw.phone, defaults.phone),
     showPhone: typeof raw.showPhone === 'boolean' ? raw.showPhone : defaults.showPhone,
+    autoSwitch: typeof raw.autoSwitch === 'boolean' ? raw.autoSwitch : defaults.autoSwitch,
+    autoSwitchSeconds:
+      typeof raw.autoSwitchSeconds === 'number' && Number.isFinite(raw.autoSwitchSeconds)
+        ? Math.min(60, Math.max(1, Math.round(raw.autoSwitchSeconds)))
+        : defaults.autoSwitchSeconds,
     packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
     bindings: Array.isArray(raw.bindings)
       ? raw.bindings.filter(

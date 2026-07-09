@@ -48,6 +48,12 @@ export function mountSettingsPanel(deps: PanelDeps): void {
     checkboxRow('渲染消息内插图（<img>编码</img>）', settings.renderInlineImages, (v) =>
       deps.updateSettings({ ...deps.getSettings(), renderInlineImages: v }),
     ),
+    checkboxRow('多立绘自动轮播（一条消息含多张立绘时）', settings.autoSwitch, (v) =>
+      deps.updateSettings({ ...deps.getSettings(), autoSwitch: v }),
+    ),
+    numberRow('轮播间隔（秒）', settings.autoSwitchSeconds, (v) =>
+      deps.updateSettings({ ...deps.getSettings(), autoSwitchSeconds: v }),
+    ),
     hostRow(settings.imageHost, (v) =>
       deps.updateSettings({ ...deps.getSettings(), imageHost: v }),
     ),
@@ -69,6 +75,36 @@ function checkboxRow(label: string, checked: boolean, onChange: (v: boolean) => 
   const span = document.createElement('span')
   span.textContent = label
   row.append(input, span)
+  return row
+}
+
+/** 数字输入行：失焦/回车时取整并夹到 [min,max]（用于轮播间隔秒数） */
+function numberRow(
+  label: string,
+  value: number,
+  onChange: (v: number) => void,
+  min = 1,
+  max = 60,
+): HTMLElement {
+  const row = document.createElement('div')
+  row.className = 'so-row'
+  const span = document.createElement('span')
+  span.textContent = label
+  const input = document.createElement('input')
+  input.type = 'number'
+  input.className = 'text_pole'
+  input.min = String(min)
+  input.max = String(max)
+  input.step = '1'
+  input.value = String(value)
+  input.style.maxWidth = '90px'
+  input.addEventListener('change', () => {
+    const n = Math.round(Number(input.value))
+    const clamped = Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min
+    input.value = String(clamped)
+    onChange(clamped)
+  })
+  row.append(span, input)
   return row
 }
 

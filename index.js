@@ -12,10 +12,6 @@
     }
     return tags;
   }
-  function extractLastTag(text) {
-    const tags = extractTags(text);
-    return tags.length > 0 ? tags[tags.length - 1] : null;
-  }
   function stripTags(text) {
     return text.replace(new RegExp(TAG_REGEX.source, "g"), "").replace(/[ \t]+$/gm, "");
   }
@@ -82,6 +78,16 @@
       (s) => s.tag.includes(normalized) || normalized.includes(s.tag)
     );
     return partial ?? null;
+  }
+  function matchSprites(pack, tags) {
+    const out = [];
+    for (const tag of tags) {
+      const sprite = matchSprite(pack, tag);
+      if (sprite && (out.length === 0 || out[out.length - 1].tag !== sprite.tag)) {
+        out.push(sprite);
+      }
+    }
+    return out;
   }
   function upsertPack(settings, pack) {
     const exists = settings.packs.some((p) => p.id === pack.id);
@@ -423,6 +429,8 @@
       overlay: { x: 24, y: 80, width: 220 },
       phone: { x: 24, y: 320, open: false },
       showPhone: true,
+      autoSwitch: false,
+      autoSwitchSeconds: 3,
       packs: [],
       bindings: [],
       apps: {}
@@ -523,6 +531,8 @@
       overlay: migrateOverlay(raw.overlay, defaults.overlay),
       phone: migratePhone(raw.phone, defaults.phone),
       showPhone: typeof raw.showPhone === "boolean" ? raw.showPhone : defaults.showPhone,
+      autoSwitch: typeof raw.autoSwitch === "boolean" ? raw.autoSwitch : defaults.autoSwitch,
+      autoSwitchSeconds: typeof raw.autoSwitchSeconds === "number" && Number.isFinite(raw.autoSwitchSeconds) ? Math.min(60, Math.max(1, Math.round(raw.autoSwitchSeconds))) : defaults.autoSwitchSeconds,
       packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
       bindings: Array.isArray(raw.bindings) ? raw.bindings.filter(
         (b) => b && typeof b.characterName === "string" && typeof b.packId === "string" && typeof b.enabled === "boolean"
@@ -695,8 +705,15 @@
   };
 
   // st-extension/src/overlay-dom.ts
+  var DRAG_THRESHOLD2 = 6;
   function createOverlay(initialLayout, onLayoutChange, onManage) {
     let layout = { ...initialLayout };
+    let sprites = [];
+    let index = 0;
+    let autoEnabled = false;
+    let autoSeconds = 3;
+    let autoTimer = null;
+    let fadeTimer = null;
     const root = document.createElement("div");
     root.id = "sprite-overlay-root";
     root.style.display = "none";
@@ -707,6 +724,9 @@
     img.draggable = false;
     const tagBadge = document.createElement("div");
     tagBadge.className = "sprite-overlay-tag";
+    const dots = document.createElement("div");
+    dots.className = "sprite-overlay-dots";
+    dots.style.display = "none";
     const resizeHandle = document.createElement("div");
     resizeHandle.className = "sprite-overlay-resize";
     const placeholder = document.createElement("div");
@@ -721,7 +741,7 @@
       e.stopPropagation();
       onManage?.();
     });
-    frame.append(img, placeholder, tagBadge, gearBtn, resizeHandle);
+    frame.append(img, placeholder, tagBadge, dots, gearBtn, resizeHandle);
     root.append(frame);
     document.body.append(root);
     function applyLayout() {
@@ -730,14 +750,86 @@
       root.style.width = `${layout.width}px`;
     }
     applyLayout();
+    function showImage(url, tag) {
+      placeholder.style.display = "none";
+      img.style.display = "block";
+      tagBadge.style.display = "";
+      if (img.src === url) {
+        tagBadge.textContent = tag;
+        return;
+      }
+      img.style.opacity = "0";
+      if (fadeTimer) clearTimeout(fadeTimer);
+      fadeTimer = setTimeout(() => {
+        img.src = url;
+        tagBadge.textContent = tag;
+        img.onload = () => {
+          img.style.opacity = "1";
+        };
+        if (img.complete) img.style.opacity = "1";
+      }, 180);
+    }
+    function renderDots() {
+      dots.replaceChildren();
+      if (sprites.length <= 1) {
+        dots.style.display = "none";
+        return;
+      }
+      sprites.forEach((_, i) => {
+        const dot = document.createElement("span");
+        if (i === index) dot.className = "active";
+        dots.append(dot);
+      });
+      dots.style.display = "flex";
+    }
+    function renderCurrent() {
+      const cur = sprites[index];
+      if (!cur) return;
+      showImage(cur.url, cur.tag);
+      Array.from(dots.children).forEach(
+        (el3, i) => el3.classList.toggle("active", i === index)
+      );
+    }
+    function stopAuto() {
+      if (autoTimer) {
+        clearInterval(autoTimer);
+        autoTimer = null;
+      }
+    }
+    function startAuto() {
+      stopAuto();
+      if (autoEnabled && sprites.length > 1) {
+        autoTimer = setInterval(() => {
+          index = (index + 1) % sprites.length;
+          renderCurrent();
+        }, Math.max(1, autoSeconds) * 1e3);
+      }
+    }
+    function advanceManually() {
+      if (sprites.length <= 1) return;
+      index = (index + 1) % sprites.length;
+      renderCurrent();
+      startAuto();
+    }
+    function applySprites(list) {
+      if (list.length === 0) return;
+      sprites = list;
+      index = 0;
+      renderDots();
+      renderCurrent();
+      startAuto();
+    }
     function startDrag(mode, startEvent) {
       startEvent.preventDefault();
       const startX = startEvent.clientX;
       const startY = startEvent.clientY;
       const origin = { ...layout };
+      let moved = false;
       const onMove = (ev) => {
         const dx = ev.clientX - startX;
         const dy = ev.clientY - startY;
+        if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD2) return;
+        moved = true;
         if (mode === "move") {
           layout = { ...origin, x: Math.max(0, origin.x + dx), y: Math.max(0, origin.y + dy) };
         } else {
@@ -748,7 +840,11 @@
       const onUp = () => {
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
-        onLayoutChange(layout);
+        if (moved) {
+          onLayoutChange(layout);
+        } else if (mode === "move") {
+          advanceManually();
+        }
       };
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
@@ -761,25 +857,24 @@
       e.stopPropagation();
       startDrag("resize", e);
     });
-    let fadeTimer = null;
     return {
       setImage(url, tag) {
-        placeholder.style.display = "none";
-        img.style.display = "block";
-        tagBadge.style.display = "";
-        if (img.src === url) return;
-        img.style.opacity = "0";
-        if (fadeTimer) clearTimeout(fadeTimer);
-        fadeTimer = setTimeout(() => {
-          img.src = url;
-          tagBadge.textContent = tag;
-          img.onload = () => {
-            img.style.opacity = "1";
-          };
-          if (img.complete) img.style.opacity = "1";
-        }, 180);
+        applySprites([{ url, tag }]);
+      },
+      setSprites(list) {
+        applySprites(list);
+      },
+      setAutoSwitch(enabled, seconds) {
+        autoEnabled = enabled;
+        autoSeconds = Math.max(1, seconds);
+        startAuto();
       },
       setPlaceholder(text) {
+        stopAuto();
+        sprites = [];
+        index = 0;
+        dots.replaceChildren();
+        dots.style.display = "none";
         img.style.display = "none";
         tagBadge.style.display = "none";
         placeholder.textContent = text;
@@ -793,6 +888,8 @@
         applyLayout();
       },
       destroy() {
+        stopAuto();
+        if (fadeTimer) clearTimeout(fadeTimer);
         root.remove();
       }
     };
@@ -1528,6 +1625,16 @@
         settings.renderInlineImages,
         (v) => deps.updateSettings({ ...deps.getSettings(), renderInlineImages: v })
       ),
+      checkboxRow2(
+        "多立绘自动轮播（一条消息含多张立绘时）",
+        settings.autoSwitch,
+        (v) => deps.updateSettings({ ...deps.getSettings(), autoSwitch: v })
+      ),
+      numberRow(
+        "轮播间隔（秒）",
+        settings.autoSwitchSeconds,
+        (v) => deps.updateSettings({ ...deps.getSettings(), autoSwitchSeconds: v })
+      ),
       hostRow(
         settings.imageHost,
         (v) => deps.updateSettings({ ...deps.getSettings(), imageHost: v })
@@ -1548,6 +1655,28 @@
     const span = document.createElement("span");
     span.textContent = label;
     row.append(input, span);
+    return row;
+  }
+  function numberRow(label, value, onChange, min = 1, max = 60) {
+    const row = document.createElement("div");
+    row.className = "so-row";
+    const span = document.createElement("span");
+    span.textContent = label;
+    const input = document.createElement("input");
+    input.type = "number";
+    input.className = "text_pole";
+    input.min = String(min);
+    input.max = String(max);
+    input.step = "1";
+    input.value = String(value);
+    input.style.maxWidth = "90px";
+    input.addEventListener("change", () => {
+      const n = Math.round(Number(input.value));
+      const clamped = Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min;
+      input.value = String(clamped);
+      onChange(clamped);
+    });
+    row.append(span, input);
     return row;
   }
   function hostRow(value, onChange) {
@@ -1859,10 +1988,12 @@
     }
     function updateSettings(next) {
       const displayChanged = next.hideTagInMessage !== settings.hideTagInMessage || next.renderInlineImages !== settings.renderInlineImages || next.imageHost !== settings.imageHost || next.enabled !== settings.enabled;
+      const autoChanged = next.autoSwitch !== settings.autoSwitch || next.autoSwitchSeconds !== settings.autoSwitchSeconds;
       settings = next;
       adapter.saveSettings(settings);
       overlay.setLayout(settings.overlay);
       phone.setVisible(settings.showPhone);
+      if (autoChanged) overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds);
       refresh();
       if (displayChanged) reprocessAllMessages(settings);
     }
@@ -1879,6 +2010,7 @@
       },
       () => manager.open()
     );
+    overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds);
     const registry = new PhoneAppRegistry();
     function createAppContext(appId, goHome) {
       return {
@@ -1931,11 +2063,9 @@
       const characterName = adapter.getCurrentCharacterName();
       const pack = getActivePack(settings, characterName);
       if (!pack) return;
-      const tag = extractLastTag(text);
-      if (!tag) return;
-      const sprite = matchSprite(pack, tag);
-      if (sprite) {
-        overlay.setImage(sprite.url, sprite.tag);
+      const seq = matchSprites(pack, extractTags(text));
+      if (seq.length > 0) {
+        overlay.setSprites(seq);
         overlay.setVisible(true);
       }
     });

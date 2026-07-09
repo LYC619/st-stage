@@ -6,9 +6,9 @@
  */
 
 import type { PluginSettings } from '../../core/types'
-import { extractLastTag } from '../../core/tag-parser'
+import { extractTags } from '../../core/tag-parser'
 import { buildInjectionPrompt } from '../../core/prompt-builder'
-import { getActivePack, getAvailableTags, matchSprite, preloadPack } from '../../core/sprite-store'
+import { getActivePack, getAvailableTags, matchSprites, preloadPack } from '../../core/sprite-store'
 import { PhoneAppRegistry, type PhoneAppContext } from '../../core/phone-registry'
 import { createPhoneShell } from '../../core/phone-shell'
 import { STAdapter } from './st-adapter'
@@ -41,10 +41,14 @@ async function init(): Promise<void> {
       next.renderInlineImages !== settings.renderInlineImages ||
       next.imageHost !== settings.imageHost ||
       next.enabled !== settings.enabled
+    const autoChanged =
+      next.autoSwitch !== settings.autoSwitch ||
+      next.autoSwitchSeconds !== settings.autoSwitchSeconds
     settings = next
     adapter.saveSettings(settings)
     overlay.setLayout(settings.overlay)
     phone.setVisible(settings.showPhone)
+    if (autoChanged) overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds)
     refresh()
     // 显示相关设置变更：清掉幂等标记，重新处理全部气泡
     if (displayChanged) reprocessAllMessages(settings)
@@ -64,6 +68,7 @@ async function init(): Promise<void> {
     },
     () => manager.open(),
   )
+  overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds)
 
   /* ---- 手机框架 ---- */
   const registry = new PhoneAppRegistry()
@@ -124,17 +129,15 @@ async function init(): Promise<void> {
     overlay.setVisible(true)
   }
 
-  // 收到 AI 消息：提取标签 → 匹配 → 切换立绘
+  // 收到 AI 消息：提取全部标签 → 匹配序列 → 悬浮窗排队展示（功能③）
   adapter.onMessageReceived((text) => {
     if (!settings.enabled) return
     const characterName = adapter.getCurrentCharacterName()
     const pack = getActivePack(settings, characterName)
     if (!pack) return
-    const tag = extractLastTag(text)
-    if (!tag) return
-    const sprite = matchSprite(pack, tag)
-    if (sprite) {
-      overlay.setImage(sprite.url, sprite.tag)
+    const seq = matchSprites(pack, extractTags(text))
+    if (seq.length > 0) {
+      overlay.setSprites(seq)
       overlay.setVisible(true)
     }
   })

@@ -159,6 +159,33 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
             className="h-4 w-4 accent-primary"
           />
         </label>
+        <label className="flex items-center justify-between text-sm text-foreground">
+          多立绘自动轮播（一条消息多张时）
+          <input
+            type="checkbox"
+            checked={settings.autoSwitch}
+            onChange={(e) => onSettingsChange({ ...settings, autoSwitch: e.target.checked })}
+            className="h-4 w-4 accent-primary"
+          />
+        </label>
+        <label className="flex items-center justify-between text-sm text-foreground">
+          轮播间隔（秒）
+          <input
+            type="number"
+            min={1}
+            max={60}
+            step={1}
+            defaultValue={settings.autoSwitchSeconds}
+            onBlur={(e) => {
+              const n = Math.round(Number(e.target.value))
+              const v = Number.isFinite(n) ? Math.min(60, Math.max(1, n)) : 3
+              e.target.value = String(v)
+              onSettingsChange({ ...settings, autoSwitchSeconds: v })
+            }}
+            className="w-20 rounded-lg border border-input bg-background px-2 py-1 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+            aria-label="轮播间隔秒数"
+          />
+        </label>
         <label className="flex flex-col gap-1 text-sm text-foreground">
           <span className="text-xs text-muted-foreground">图床前缀（分享串与插图编码拼接用）</span>
           <input

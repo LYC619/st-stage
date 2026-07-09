@@ -111,6 +111,10 @@ export interface PluginSettings {
   phone: PhoneState
   /** 是否显示手机框；关闭时回退为纯悬浮窗模式（悬浮窗 ⚙ 仍可打开图库） */
   showPhone: boolean
+  /** 多立绘序列自动轮播开关（功能③；关闭时仅点击切换） */
+  autoSwitch: boolean
+  /** 自动轮播间隔秒数（功能③，默认 3，范围 1–60） */
+  autoSwitchSeconds: number
   /** 所有立绘包 */
   packs: SpritePack[]
   /** 角色绑定 */
@@ -162,6 +166,8 @@ export function createDefaultSettings(): PluginSettings {
     overlay: { x: 24, y: 80, width: 220 },
     phone: { x: 24, y: 320, open: false },
     showPhone: true,
+    autoSwitch: false,
+    autoSwitchSeconds: 3,
     packs: [],
     bindings: [],
     apps: {},

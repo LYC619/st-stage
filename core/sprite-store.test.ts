@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SpritePack } from './types'
 import { getPackCover, getSpriteSource } from './types'
-import { matchSprite, moveSprite, removeSprite, renameSprite, upsertSprite } from './sprite-store'
+import { matchSprite, matchSprites, moveSprite, removeSprite, renameSprite, upsertSprite } from './sprite-store'
 
 function pack(): SpritePack {
   return {
@@ -36,6 +36,22 @@ describe('matchSprite 模糊回退', () => {
     expect(matchSprite(pack(), '微笑')!.url).toBe('u1')
     expect(matchSprite(pack(), '有点害羞')!.url).toBe('u2')
     expect(matchSprite(pack(), '开心')).toBeNull()
+  })
+})
+
+describe('matchSprites 序列（功能③）', () => {
+  it('多标签保序映射，跳过未命中', () => {
+    expect(matchSprites(pack(), ['微笑', '恼怒', '开心']).map((s) => s.tag)).toEqual(['微笑', '恼怒'])
+  })
+  it('折叠相邻重复，但保留往返 A→B→A', () => {
+    expect(matchSprites(pack(), ['微笑', '微笑', '害羞', '微笑']).map((s) => s.tag)).toEqual([
+      '微笑',
+      '害羞',
+      '微笑',
+    ])
+  })
+  it('全部未命中返回空数组', () => {
+    expect(matchSprites(pack(), ['开心', '生气'])).toEqual([])
   })
 })
 

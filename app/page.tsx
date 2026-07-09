@@ -7,9 +7,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PluginSettings } from '@/core/types'
-import { extractLastTag } from '@/core/tag-parser'
+import { extractTags } from '@/core/tag-parser'
 import { buildInjectionPrompt } from '@/core/prompt-builder'
-import { getActivePack, getAvailableTags, matchSprite, preloadPack } from '@/core/sprite-store'
+import { getActivePack, getAvailableTags, matchSprites, preloadPack } from '@/core/sprite-store'
 import { webAdapter } from '@/lib/web-adapter'
 import { ChatSimulator } from '@/components/chat-simulator'
 import { ConfigPanel } from '@/components/config-panel'
@@ -19,8 +19,8 @@ import { PhoneMount } from '@/components/phone-mount'
 export default function Page() {
   const [settings, setSettings] = useState<PluginSettings | null>(null)
   const [characterName, setCharacterName] = useState('小雪')
-  const [currentTag, setCurrentTag] = useState<string | null>(null)
-  const [currentUrl, setCurrentUrl] = useState<string | null>(null)
+  // 功能③：当前展示的立绘序列（单张即一个元素）
+  const [sprites, setSprites] = useState<{ url: string; tag: string }[]>([])
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 初始化：加载设置
@@ -45,28 +45,23 @@ export default function Page() {
   )
   const injectionPrompt = useMemo(() => buildInjectionPrompt(availableTags), [availableTags])
 
-  // 角色/包切换：预加载全部立绘，重置为第一张
+  // 角色/包切换：预加载全部立绘，重置为第一张（单张）
   useEffect(() => {
     if (!activePack || activePack.sprites.length === 0) {
-      setCurrentUrl(null)
-      setCurrentTag(null)
+      setSprites([])
       return
     }
     preloadPack(activePack)
-    setCurrentTag(activePack.sprites[0].tag)
-    setCurrentUrl(activePack.sprites[0].url)
+    setSprites([{ url: activePack.sprites[0].url, tag: activePack.sprites[0].tag }])
   }, [activePack])
 
-  // 核心链路：收到 AI 消息 → 提取标签 → 匹配立绘 → 切换
+  // 核心链路：收到 AI 消息 → 提取全部标签 → 匹配序列 → 悬浮窗排队展示（功能③）
   const handleAiMessage = useCallback(
     (text: string) => {
       if (!settings?.enabled || !activePack) return
-      const tag = extractLastTag(text)
-      if (!tag) return
-      const sprite = matchSprite(activePack, tag)
-      if (sprite) {
-        setCurrentTag(sprite.tag)
-        setCurrentUrl(sprite.url)
+      const seq = matchSprites(activePack, extractTags(text))
+      if (seq.length > 0) {
+        setSprites(seq.map((s) => ({ url: s.url, tag: s.tag })))
       }
     },
     [settings?.enabled, activePack],
@@ -117,11 +112,12 @@ export default function Page() {
       </div>
 
       <SpriteOverlay
-        imageUrl={currentUrl}
-        tag={currentTag}
+        sprites={sprites}
         characterName={characterName}
         layout={settings.overlay}
         visible={settings.enabled && !!activePack}
+        autoSwitch={settings.autoSwitch}
+        autoSwitchSeconds={settings.autoSwitchSeconds}
         onLayoutChange={(overlay) => updateSettings({ ...settings, overlay })}
       />
 
@@ -129,10 +125,7 @@ export default function Page() {
         settings={settings}
         characterName={characterName}
         onSettingsChange={updateSettings}
-        onPreviewSprite={(url, tag) => {
-          setCurrentUrl(url)
-          setCurrentTag(tag)
-        }}
+        onPreviewSprite={(url, tag) => setSprites([{ url, tag }])}
       />
     </main>
   )

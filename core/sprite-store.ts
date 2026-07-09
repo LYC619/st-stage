@@ -43,6 +43,22 @@ export function matchSprite(pack: SpritePack, tag: string): Sprite | null {
   return partial ?? null
 }
 
+/**
+ * 一条消息的多个标签 → 有序立绘序列（功能③）。
+ * 逐个模糊匹配，未命中的标签跳过；折叠相邻重复（同一张连着出现只保留一次），
+ * 保留 A→B→A 这种往返。返回空数组表示没有任何标签命中（调用方保持当前立绘）。
+ */
+export function matchSprites(pack: SpritePack, tags: string[]): Sprite[] {
+  const out: Sprite[] = []
+  for (const tag of tags) {
+    const sprite = matchSprite(pack, tag)
+    if (sprite && (out.length === 0 || out[out.length - 1].tag !== sprite.tag)) {
+      out.push(sprite)
+    }
+  }
+  return out
+}
+
 /** 添加/更新立绘包（同 id 覆盖），返回新 settings */
 export function upsertPack(settings: PluginSettings, pack: SpritePack): PluginSettings {
   const exists = settings.packs.some((p) => p.id === pack.id)

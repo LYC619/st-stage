@@ -49,6 +49,31 @@
   transition: opacity 0.15s;
 }
 
+/* 功能③ 多立绘序列：底部居中圆点指示（不挡左下角标签/右下角缩放） */
+#sprite-overlay-root .sprite-overlay-dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+  pointer-events: none;
+}
+
+#sprite-overlay-root .sprite-overlay-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.45);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.65);
+  transition: background 0.15s ease;
+}
+
+#sprite-overlay-root .sprite-overlay-dots span.active {
+  background: #fff;
+}
+
 #sprite-overlay-root .sprite-overlay-frame:hover .sprite-overlay-resize {
   opacity: 1;
 }

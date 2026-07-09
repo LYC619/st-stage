@@ -87,6 +87,14 @@ describe('migrateSettings', () => {
     expect(migrateSettings({ ...V1_SAVED, showPhone: 'nope' }).showPhone).toBe(true)
   })
 
+  it('autoSwitchSeconds 取整并夹到 [1,60]（功能③轮播间隔）', () => {
+    expect(migrateSettings({ ...V1_SAVED, autoSwitchSeconds: 8 }).autoSwitchSeconds).toBe(8)
+    expect(migrateSettings({ ...V1_SAVED, autoSwitchSeconds: 0 }).autoSwitchSeconds).toBe(1)
+    expect(migrateSettings({ ...V1_SAVED, autoSwitchSeconds: 999 }).autoSwitchSeconds).toBe(60)
+    expect(migrateSettings({ ...V1_SAVED, autoSwitchSeconds: 3.7 }).autoSwitchSeconds).toBe(4)
+    expect(migrateSettings({ ...V1_SAVED }).autoSwitchSeconds).toBe(3) // 缺失 → 默认 3
+  })
+
   it('当前版本数据迁移后语义不变', () => {
     const current = createDefaultSettings()
     current.packs = [
