@@ -39,6 +39,25 @@ export function fileNameToTag(fileName: string): string {
   return normalizeTag(fileName.replace(/\.[^.]+$/, ''))
 }
 
+/**
+ * 上传文件名 → { 分组, 图名 }（功能②）。
+ * 文件名含下划线时按**首个** `_` 拆分（鸣人_微笑 → 分组 鸣人 / 图名 微笑）；
+ * 拆不出有效两段时退回 fallbackGroup（本批分组输入）+ 整名为图名。
+ */
+export function parseUploadName(
+  fileName: string,
+  fallbackGroup = '',
+): { group: string; tag: string } {
+  const base = fileName.replace(/\.[^.]+$/, '')
+  const sep = base.indexOf('_')
+  if (sep > 0 && sep < base.length - 1) {
+    const group = normalizeTag(base.slice(0, sep))
+    const tag = normalizeTag(base.slice(sep + 1))
+    if (group && tag) return { group, tag }
+  }
+  return { group: normalizeTag(fallbackGroup), tag: fileNameToTag(fileName) }
+}
+
 /** 清洗立绘包名/作者名。结果可能为空串，调用方需给默认值。 */
 export function sanitizePackName(raw: string): string {
   return raw

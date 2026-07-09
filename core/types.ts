@@ -24,6 +24,11 @@ export interface Sprite {
    * 存在时该立绘可参与紧凑分享串；与 url 同步维护。
    */
   code?: string
+  /**
+   * 分组标签（功能②）：角色名 / 服装 / 状态等，缺省/空串表示未分组。
+   * 开启多角色模式后按 [立绘:分组/图名] 寻址；同一包内可混放多个分组。
+   */
+  group?: string
 }
 
 /** 立绘的图源类型（由 url/code 推导，不单独存储） */
@@ -115,6 +120,10 @@ export interface PluginSettings {
   autoSwitch: boolean
   /** 自动轮播间隔秒数（功能③，默认 3，范围 1–60） */
   autoSwitchSeconds: number
+  /** 多角色/分组模式（功能②）：开启后按 [立绘:分组/图名] 寻址，prompt 枚举分组 */
+  multiRole: boolean
+  /** 多角色 prompt 生成模式：full=枚举全部 分组/图名 组合；repeat=分组×共享情绪名（省 token） */
+  multiRolePromptMode: 'full' | 'repeat'
   /** 所有立绘包 */
   packs: SpritePack[]
   /** 角色绑定 */
@@ -143,6 +152,8 @@ export interface SpritePackFile {
     data?: string
     /** 图床编码（可选，随 url 一起导出） */
     code?: string
+    /** 分组标签（功能②，可选） */
+    group?: string
   }>
 }
 
@@ -168,6 +179,8 @@ export function createDefaultSettings(): PluginSettings {
     showPhone: true,
     autoSwitch: false,
     autoSwitchSeconds: 3,
+    multiRole: false,
+    multiRolePromptMode: 'full',
     packs: [],
     bindings: [],
     apps: {},

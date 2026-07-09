@@ -11,7 +11,7 @@ import { bindCharacter, genId, removePack, toggleBinding, upsertPack, upsertSpri
 import { isPresetPack } from '@/core/presets'
 import { exportPack, importPack } from '@/core/pack-io'
 import { decodeShareString, encodeShareString } from '@/core/share-code'
-import { fileNameToTag, sanitizePackName } from '@/core/naming'
+import { parseUploadName, sanitizePackName } from '@/core/naming'
 import { compressImage } from '@/core/image-compress'
 
 interface ConfigPanelProps {
@@ -23,6 +23,7 @@ interface ConfigPanelProps {
 
 export function ConfigPanel({ settings, characterName, onCharacterNameChange, onSettingsChange }: ConfigPanelProps) {
   const [newPackName, setNewPackName] = useState('')
+  const [uploadGroup, setUploadGroup] = useState('')
   const [status, setStatus] = useState<string | null>(null)
   const uploadRef = useRef<HTMLInputElement>(null)
   const importRef = useRef<HTMLInputElement>(null)
@@ -36,7 +37,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
     setTimeout(() => setStatus(null), 2500)
   }
 
-  /** 上传图片到指定包：文件名（去扩展名）即标签；canvas 压缩为 WebP 后存 data URI */
+  /** 上传图片到指定包：文件名拆 分组/图名（或用「本批分组」）；canvas 压缩为 WebP 后存 data URI */
   const handleUpload = async (files: FileList | null) => {
     if (!files || !uploadTargetPack) return
     const pack = settings.packs.find((p) => p.id === uploadTargetPack)
@@ -44,10 +45,10 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
     let target = pack
     let added = 0
     for (const file of Array.from(files)) {
-      const tag = fileNameToTag(file.name)
+      const { group, tag } = parseUploadName(file.name, uploadGroup)
       if (!tag) continue
       const { dataUri } = await compressImage(file)
-      target = upsertSprite(target, { tag, url: dataUri })
+      target = upsertSprite(target, group ? { tag, url: dataUri, group } : { tag, url: dataUri })
       added++
     }
     onSettingsChange(upsertPack(settings, target))
@@ -186,6 +187,32 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
             aria-label="轮播间隔秒数"
           />
         </label>
+        <label className="flex items-center justify-between text-sm text-foreground">
+          多角色/分组模式（[立绘:分组/图名]）
+          <input
+            type="checkbox"
+            checked={settings.multiRole}
+            onChange={(e) => onSettingsChange({ ...settings, multiRole: e.target.checked })}
+            className="h-4 w-4 accent-primary"
+          />
+        </label>
+        <label className="flex items-center justify-between gap-2 text-sm text-foreground">
+          分组 prompt 模式
+          <select
+            value={settings.multiRolePromptMode}
+            onChange={(e) =>
+              onSettingsChange({
+                ...settings,
+                multiRolePromptMode: e.target.value === 'repeat' ? 'repeat' : 'full',
+              })
+            }
+            className="rounded-lg border border-input bg-background px-2 py-1 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+            aria-label="分组 prompt 模式"
+          >
+            <option value="full">全量（枚举全部组合）</option>
+            <option value="repeat">重复（分组×共享情绪名·省 token）</option>
+          </select>
+        </label>
         <label className="flex flex-col gap-1 text-sm text-foreground">
           <span className="text-xs text-muted-foreground">图床前缀（分享串与插图编码拼接用）</span>
           <input
@@ -252,6 +279,17 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
       {/* 立绘包管理 */}
       <section className="flex flex-col gap-2.5 border-t border-border pt-4">
         <h3 className="text-xs font-semibold text-muted-foreground">立绘包管理</h3>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          本批分组（上传时用；也可用文件名 鸣人_微笑.png 自动拆分组）
+          <input
+            type="text"
+            value={uploadGroup}
+            onChange={(e) => setUploadGroup(e.target.value)}
+            placeholder="留空 = 不分组"
+            className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+            aria-label="本批分组"
+          />
+        </label>
         <ul className="flex flex-col gap-2">
           {settings.packs.map((pack) => (
             <li key={pack.id} className="rounded-lg border border-border p-2.5">
@@ -309,7 +347,9 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
                         className="h-14 w-14 rounded-md border border-border object-cover"
                         loading="lazy"
                       />
-                      <figcaption className="mt-0.5 max-w-14 truncate text-[10px] text-muted-foreground">{s.tag}</figcaption>
+                      <figcaption className="mt-0.5 max-w-14 truncate text-[10px] text-muted-foreground">
+                        {s.group ? `${s.group}/${s.tag}` : s.tag}
+                      </figcaption>
                     </figure>
                   ))}
                 </div>

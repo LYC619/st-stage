@@ -54,6 +54,22 @@ export function mountSettingsPanel(deps: PanelDeps): void {
     numberRow('轮播间隔（秒）', settings.autoSwitchSeconds, (v) =>
       deps.updateSettings({ ...deps.getSettings(), autoSwitchSeconds: v }),
     ),
+    checkboxRow('多角色/分组模式（按 [立绘:分组/图名] 寻址）', settings.multiRole, (v) =>
+      deps.updateSettings({ ...deps.getSettings(), multiRole: v }),
+    ),
+    selectRow(
+      '分组 prompt 模式',
+      settings.multiRolePromptMode,
+      [
+        { value: 'full', label: '全量（枚举全部组合）' },
+        { value: 'repeat', label: '重复（分组×共享情绪名·省 token）' },
+      ],
+      (v) =>
+        deps.updateSettings({
+          ...deps.getSettings(),
+          multiRolePromptMode: v === 'repeat' ? 'repeat' : 'full',
+        }),
+    ),
     hostRow(settings.imageHost, (v) =>
       deps.updateSettings({ ...deps.getSettings(), imageHost: v }),
     ),
@@ -105,6 +121,31 @@ function numberRow(
     onChange(clamped)
   })
   row.append(span, input)
+  return row
+}
+
+/** 下拉选择行（用于分组 prompt 模式 full/repeat） */
+function selectRow(
+  label: string,
+  value: string,
+  options: Array<{ value: string; label: string }>,
+  onChange: (v: string) => void,
+): HTMLElement {
+  const row = document.createElement('div')
+  row.className = 'so-row'
+  const span = document.createElement('span')
+  span.textContent = label
+  const select = document.createElement('select')
+  select.className = 'text_pole'
+  for (const opt of options) {
+    const o = document.createElement('option')
+    o.value = opt.value
+    o.textContent = opt.label
+    if (opt.value === value) o.selected = true
+    select.append(o)
+  }
+  select.addEventListener('change', () => onChange(select.value))
+  row.append(span, select)
   return row
 }
 

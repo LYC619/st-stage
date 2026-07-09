@@ -31,6 +31,34 @@
       "只能使用列表中存在的标签，每次回复只标注一个。"
     ].join("\n");
   }
+  function buildMultiRolePrompt(entries, mode) {
+    if (entries.length === 0) return "";
+    const groups = [];
+    const tags = [];
+    for (const e of entries) {
+      if (e.group && !groups.includes(e.group)) groups.push(e.group);
+      if (!tags.includes(e.tag)) tags.push(e.tag);
+    }
+    if (groups.length === 0) return buildInjectionPrompt(tags);
+    if (mode === "repeat") {
+      return [
+        "[角色立绘系统]",
+        `可用角色/分组：${groups.join("、")}`,
+        `每个角色的可用表情：${tags.join("、")}`,
+        "请在每次回复的末尾，选择一个角色和一个表情，",
+        `以 [立绘:角色/表情] 的格式单独标注（例如 [立绘:${groups[0]}/${tags[0]}]）。`,
+        "角色与表情都只能取自上述清单，每次回复标注一个。"
+      ].join("\n");
+    }
+    const addresses = entries.map((e) => e.group ? `${e.group}/${e.tag}` : e.tag);
+    return [
+      "[角色立绘系统]",
+      `可用立绘（角色/表情）：${addresses.join("、")}`,
+      "请在每次回复的末尾，从上述列表中选择一个最贴合当前情境的立绘，",
+      `以 [立绘:名称] 的格式单独标注（例如 [立绘:${addresses[0]}]）。`,
+      "只能使用列表中存在的名称，每次回复只标注一个。"
+    ].join("\n");
+  }
 
   // core/naming.ts
   var TAG_MAX_LENGTH = 20;
@@ -45,6 +73,16 @@
   }
   function fileNameToTag(fileName) {
     return normalizeTag(fileName.replace(/\.[^.]+$/, ""));
+  }
+  function parseUploadName(fileName, fallbackGroup = "") {
+    const base = fileName.replace(/\.[^.]+$/, "");
+    const sep = base.indexOf("_");
+    if (sep > 0 && sep < base.length - 1) {
+      const group = normalizeTag(base.slice(0, sep));
+      const tag = normalizeTag(base.slice(sep + 1));
+      if (group && tag) return { group, tag };
+    }
+    return { group: normalizeTag(fallbackGroup), tag: fileNameToTag(fileName) };
   }
   function sanitizePackName(raw) {
     return raw.replace(CONTROL_CHARS, "").replace(PACK_NAME_FORBIDDEN, "").replace(/\s+/g, " ").trim().slice(0, PACK_NAME_MAX_LENGTH).trim();
@@ -79,11 +117,47 @@
     );
     return partial ?? null;
   }
-  function matchSprites(pack, tags) {
+  function spriteGroup(sprite) {
+    return sprite.group ?? "";
+  }
+  function getGroups(pack) {
+    const seen = [];
+    for (const s of pack.sprites) {
+      const g = spriteGroup(s);
+      if (g && !seen.includes(g)) seen.push(g);
+    }
+    return seen;
+  }
+  function matchInGroup(pack, group, tag) {
+    const g = group.trim();
+    const pool = pack.sprites.filter((s) => {
+      const sg = spriteGroup(s);
+      if (!g) return sg === "";
+      if (!sg) return false;
+      return sg === g || sg.includes(g) || g.includes(sg);
+    });
+    const exact = pool.find((s) => s.tag === tag);
+    if (exact) return exact;
+    return pool.find((s) => s.tag.includes(tag) || tag.includes(s.tag)) ?? null;
+  }
+  function matchAddress(pack, address) {
+    const raw = address.trim();
+    if (!raw) return null;
+    const slash = raw.indexOf("/");
+    if (slash >= 0) {
+      const group = raw.slice(0, slash).trim();
+      const tag = raw.slice(slash + 1).trim();
+      const inGroup = matchInGroup(pack, group, tag);
+      if (inGroup) return inGroup;
+      return matchSprite(pack, tag) ?? matchSprite(pack, raw);
+    }
+    return matchSprite(pack, raw);
+  }
+  function matchSprites(pack, addresses) {
     const out = [];
-    for (const tag of tags) {
-      const sprite = matchSprite(pack, tag);
-      if (sprite && (out.length === 0 || out[out.length - 1].tag !== sprite.tag)) {
+    for (const address of addresses) {
+      const sprite = matchAddress(pack, address);
+      if (sprite && out[out.length - 1] !== sprite) {
         out.push(sprite);
       }
     }
@@ -114,29 +188,47 @@
     return { ...pack, sprites, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
   }
   function upsertSprite(pack, sprite) {
-    const idx = pack.sprites.findIndex((s) => s.tag === sprite.tag);
+    const g = spriteGroup(sprite);
+    const idx = pack.sprites.findIndex((s) => s.tag === sprite.tag && spriteGroup(s) === g);
     const sprites = idx >= 0 ? pack.sprites.map((s, i) => i === idx ? sprite : s) : [...pack.sprites, sprite];
     return touchPack(pack, sprites);
   }
-  function removeSprite(pack, tag) {
+  function removeSprite(pack, tag, group = "") {
     const next = touchPack(
       pack,
-      pack.sprites.filter((s) => s.tag !== tag)
+      pack.sprites.filter((s) => !(s.tag === tag && spriteGroup(s) === group))
     );
-    if (next.coverTag === tag) delete next.coverTag;
+    if (next.coverTag === tag && !next.sprites.some((s) => s.tag === tag)) delete next.coverTag;
     return next;
   }
-  function renameSprite(pack, oldTag, newTagRaw) {
+  function renameSprite(pack, oldTag, newTagRaw, group = "") {
     const newTag = normalizeTag(newTagRaw);
-    if (!newTag) throw new Error("表情名不能为空，且不能包含 [ ] : | = @ 等符号");
+    if (!newTag) throw new Error("表情名不能为空，且不能包含 [ ] / : | = @ 等符号");
     if (newTag === oldTag) return pack;
-    if (pack.sprites.some((s) => s.tag === newTag)) {
-      throw new Error(`表情名「${newTag}」在该立绘包中已存在`);
+    if (pack.sprites.some((s) => s.tag === newTag && spriteGroup(s) === group)) {
+      throw new Error(`表情名「${newTag}」在该分组中已存在`);
     }
-    const sprites = pack.sprites.map((s) => s.tag === oldTag ? { ...s, tag: newTag } : s);
+    const sprites = pack.sprites.map(
+      (s) => s.tag === oldTag && spriteGroup(s) === group ? { ...s, tag: newTag } : s
+    );
     const next = touchPack(pack, sprites);
     if (next.coverTag === oldTag) next.coverTag = newTag;
     return next;
+  }
+  function setSpriteGroup(pack, tag, fromGroup, toGroupRaw) {
+    const toGroup = normalizeTag(toGroupRaw);
+    if (toGroup === fromGroup) return pack;
+    if (pack.sprites.some((s) => s.tag === tag && spriteGroup(s) === toGroup)) {
+      throw new Error(`分组「${toGroup || "未分组"}」中已存在表情「${tag}」`);
+    }
+    const sprites = pack.sprites.map((s) => {
+      if (!(s.tag === tag && spriteGroup(s) === fromGroup)) return s;
+      const next = { ...s };
+      if (toGroup) next.group = toGroup;
+      else delete next.group;
+      return next;
+    });
+    return touchPack(pack, sprites);
   }
   function moveSprite(pack, fromIndex, toIndex) {
     const len = pack.sprites.length;
@@ -431,6 +523,8 @@
       showPhone: true,
       autoSwitch: false,
       autoSwitchSeconds: 3,
+      multiRole: false,
+      multiRolePromptMode: "full",
       packs: [],
       bindings: [],
       apps: {}
@@ -533,6 +627,8 @@
       showPhone: typeof raw.showPhone === "boolean" ? raw.showPhone : defaults.showPhone,
       autoSwitch: typeof raw.autoSwitch === "boolean" ? raw.autoSwitch : defaults.autoSwitch,
       autoSwitchSeconds: typeof raw.autoSwitchSeconds === "number" && Number.isFinite(raw.autoSwitchSeconds) ? Math.min(60, Math.max(1, Math.round(raw.autoSwitchSeconds))) : defaults.autoSwitchSeconds,
+      multiRole: typeof raw.multiRole === "boolean" ? raw.multiRole : defaults.multiRole,
+      multiRolePromptMode: raw.multiRolePromptMode === "full" || raw.multiRolePromptMode === "repeat" ? raw.multiRolePromptMode : defaults.multiRolePromptMode,
       packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
       bindings: Array.isArray(raw.bindings) ? raw.bindings.filter(
         (b) => b && typeof b.characterName === "string" && typeof b.packId === "string" && typeof b.enabled === "boolean"
@@ -562,7 +658,8 @@
       const tag = normalizeTag(s.tag) || s.tag.trim();
       if (!tag) return [];
       const code = typeof s.code === "string" && s.code ? s.code : extractImageCode(s.url) ?? void 0;
-      return [{ tag, url: s.url, ...code ? { code } : {} }];
+      const group = typeof s.group === "string" ? normalizeTag(s.group) : "";
+      return [{ tag, url: s.url, ...code ? { code } : {}, ...group ? { group } : {} }];
     });
     return {
       id: p.id,
@@ -900,17 +997,18 @@
     const sprites = [];
     for (const sprite of pack.sprites) {
       const source = getSpriteSource(sprite);
+      const group = sprite.group ? { group: sprite.group } : {};
       if (source === "embedded") {
-        sprites.push({ tag: sprite.tag, data: sprite.url });
+        sprites.push({ tag: sprite.tag, data: sprite.url, ...group });
       } else if (source === "local" || embedHosted) {
         try {
           const data = await urlToDataUri(sprite.url);
-          sprites.push({ tag: sprite.tag, data });
+          sprites.push({ tag: sprite.tag, data, ...group });
         } catch {
-          sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code) });
+          sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code), ...group });
         }
       } else {
-        sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code) });
+        sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code), ...group });
       }
     }
     return {
@@ -941,17 +1039,20 @@
     if (typeof file.name !== "string" || !file.name || !Array.isArray(file.sprites) || file.sprites.length === 0) {
       throw new Error("导入失败：立绘包缺少名称或立绘列表为空");
     }
-    const seenTags = /* @__PURE__ */ new Set();
+    const seen = /* @__PURE__ */ new Set();
     const sprites = [];
     for (const item of file.sprites) {
       if (!item || typeof item.tag !== "string") continue;
       const url = typeof item.data === "string" && item.data ? item.data : typeof item.url === "string" ? item.url : "";
       if (!url) continue;
       const tag = normalizeTag(item.tag);
-      if (!tag || seenTags.has(tag)) continue;
-      seenTags.add(tag);
+      if (!tag) continue;
+      const group = typeof item.group === "string" ? normalizeTag(item.group) : "";
+      const key = group ? `${group}/${tag}` : tag;
+      if (seen.has(key)) continue;
+      seen.add(key);
       const code = typeof item.code === "string" && item.code ? item.code : extractImageCode(url) ?? void 0;
-      sprites.push({ tag, url, ...code ? { code } : {} });
+      sprites.push({ tag, url, ...code ? { code } : {}, ...group ? { group } : {} });
     }
     if (sprites.length === 0) {
       throw new Error("导入失败：没有可用的立绘条目（表情名可能全部为空或重复）");
@@ -1320,35 +1421,59 @@
         );
         body.append(metaRow);
       }
-      const grid = el("div", "so-sprite-grid");
-      pack.sprites.forEach((sprite, index) => {
-        grid.append(renderSpriteCell(body, pack, sprite, index, readonly));
-      });
       if (pack.sprites.length === 0) {
         const empty = el("div", "so-status");
         empty.textContent = "还没有立绘，用下方按钮上传图片（文件名即表情名）。";
-        grid.append(empty);
+        body.append(empty);
+      } else {
+        const groups = getGroups(pack);
+        const sections = groups.length === 0 ? [""] : [...groups];
+        if (groups.length > 0 && pack.sprites.some((s) => spriteGroup(s) === "")) sections.push("");
+        for (const g of sections) {
+          if (groups.length > 0) {
+            const head = el("div", "so-group-head");
+            head.textContent = g === "" ? "未分组" : g;
+            body.append(head);
+          }
+          const grid = el("div", "so-sprite-grid");
+          pack.sprites.forEach((sprite, index) => {
+            if (spriteGroup(sprite) === g) {
+              grid.append(renderSpriteCell(body, pack, sprite, index, readonly));
+            }
+          });
+          body.append(grid);
+        }
       }
-      body.append(grid);
       if (!readonly) {
         const addRow = el("div", "so-row");
+        const batchGroupInput = textInput("本批分组，可空");
         addRow.append(
+          labeled("分组", batchGroupInput),
           button("上传图片（自动压缩）", () => {
-            pickFile("image/*", true, (files) => void handleUpload(body, pack.id, files));
+            pickFile(
+              "image/*",
+              true,
+              (files) => void handleUpload(body, pack.id, files, batchGroupInput.value)
+            );
           })
         );
         body.append(addRow);
+        const upHint = el("div", "so-status");
+        upHint.textContent = "文件名含下划线自动拆分组：鸣人_微笑.png → 分组「鸣人」表情「微笑」；否则用「本批分组」。";
+        body.append(upHint);
         const codeRow = el("div", "so-row so-code-row");
         const tagInput = textInput("表情名，如 微笑");
         const codeInput = textInput("图床编码，如 ab12cd.png");
+        const codeGroupInput = textInput("分组，可空");
         codeRow.append(
           labeled("表情", tagInput),
           labeled("编码", codeInput),
+          labeled("分组", codeGroupInput),
           button("按编码添加", () => {
             const tag = normalizeTag(tagInput.value);
             const code = codeInput.value.trim();
             if (!tag) {
-              toast(body, "表情名不能为空（[ ] : | = @ 等符号会被剔除）");
+              toast(body, "表情名不能为空（[ ] / : | = @ 等符号会被剔除）");
               return;
             }
             if (!isValidImageCode(code)) {
@@ -1359,9 +1484,11 @@
             const target = current.packs.find((p) => p.id === pack.id);
             if (!target) return;
             const host = current.imageHost.endsWith("/") ? current.imageHost : `${current.imageHost}/`;
-            commitPack(upsertSprite(target, { tag, url: host + code, code }));
+            const group = normalizeTag(codeGroupInput.value);
+            commitPack(upsertSprite(target, { tag, url: host + code, code, ...group ? { group } : {} }));
             tagInput.value = "";
             codeInput.value = "";
+            codeGroupInput.value = "";
           })
         );
         const codeHint = el("div", "so-status");
@@ -1392,9 +1519,21 @@
           const target = latestPack();
           if (!target) return;
           try {
-            commitPack(renameSprite(target, sprite.tag, next));
+            commitPack(renameSprite(target, sprite.tag, next, spriteGroup(sprite)));
           } catch (err) {
             toast(body, err instanceof Error ? err.message : "改名失败");
+          }
+        }),
+        iconButton("🏷", "设分组", () => {
+          const cur = spriteGroup(sprite);
+          const next = window.prompt(`「${sprite.tag}」的分组（留空=移出分组）：`, cur);
+          if (next === null) return;
+          const target = latestPack();
+          if (!target) return;
+          try {
+            commitPack(setSpriteGroup(target, sprite.tag, cur, next));
+          } catch (err) {
+            toast(body, err instanceof Error ? err.message : "改分组失败");
           }
         }),
         iconButton("🖼", "替换图片", () => {
@@ -1408,7 +1547,8 @@
               );
               const target = latestPack();
               if (!target) return;
-              commitPack(upsertSprite(target, { tag: sprite.tag, url }));
+              const g = spriteGroup(sprite);
+              commitPack(upsertSprite(target, { tag: sprite.tag, url, ...g ? { group: g } : {} }));
               toast(body, `已替换「${sprite.tag}」（${formatBytes(result.bytes)}）`);
             } catch (err) {
               toast(body, err instanceof Error ? err.message : "替换失败");
@@ -1434,18 +1574,18 @@
           if (!window.confirm(`删除立绘「${sprite.tag}」？`)) return;
           const target = latestPack();
           if (!target) return;
-          commitPack(removeSprite(target, sprite.tag));
+          commitPack(removeSprite(target, sprite.tag, spriteGroup(sprite)));
         })
       );
       cell.append(bar);
       return cell;
     }
-    async function handleUpload(body, packId, files) {
+    async function handleUpload(body, packId, files, batchGroup) {
       let added = 0;
       let skipped = 0;
       let savedBytes = "";
       for (const file of Array.from(files)) {
-        const tag = fileNameToTag(file.name);
+        const { group, tag } = parseUploadName(file.name, batchGroup);
         if (!tag) {
           skipped++;
           continue;
@@ -1460,7 +1600,8 @@
           );
           const target = deps.getSettings().packs.find((p) => p.id === packId);
           if (!target) return;
-          deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(target, { tag, url })));
+          const sprite = group ? { tag, url, group } : { tag, url };
+          deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(target, sprite)));
           added++;
         } catch (err) {
           console.error("[sprite-overlay] 上传失败", err);
@@ -1635,6 +1776,23 @@
         settings.autoSwitchSeconds,
         (v) => deps.updateSettings({ ...deps.getSettings(), autoSwitchSeconds: v })
       ),
+      checkboxRow2(
+        "多角色/分组模式（按 [立绘:分组/图名] 寻址）",
+        settings.multiRole,
+        (v) => deps.updateSettings({ ...deps.getSettings(), multiRole: v })
+      ),
+      selectRow(
+        "分组 prompt 模式",
+        settings.multiRolePromptMode,
+        [
+          { value: "full", label: "全量（枚举全部组合）" },
+          { value: "repeat", label: "重复（分组×共享情绪名·省 token）" }
+        ],
+        (v) => deps.updateSettings({
+          ...deps.getSettings(),
+          multiRolePromptMode: v === "repeat" ? "repeat" : "full"
+        })
+      ),
       hostRow(
         settings.imageHost,
         (v) => deps.updateSettings({ ...deps.getSettings(), imageHost: v })
@@ -1677,6 +1835,24 @@
       onChange(clamped);
     });
     row.append(span, input);
+    return row;
+  }
+  function selectRow(label, value, options, onChange) {
+    const row = document.createElement("div");
+    row.className = "so-row";
+    const span = document.createElement("span");
+    span.textContent = label;
+    const select = document.createElement("select");
+    select.className = "text_pole";
+    for (const opt of options) {
+      const o = document.createElement("option");
+      o.value = opt.value;
+      o.textContent = opt.label;
+      if (opt.value === value) o.selected = true;
+      select.append(o);
+    }
+    select.addEventListener("change", () => onChange(select.value));
+    row.append(span, select);
     return row;
   }
   function hostRow(value, onChange) {
@@ -2045,9 +2221,12 @@
         return;
       }
       const characterName = adapter.getCurrentCharacterName();
-      const tags = getAvailableTags(settings, characterName);
-      adapter.injectPrompt(buildInjectionPrompt(tags));
       const pack = getActivePack(settings, characterName);
+      const prompt = settings.multiRole && pack ? buildMultiRolePrompt(
+        pack.sprites.map((s) => ({ group: s.group ?? "", tag: s.tag })),
+        settings.multiRolePromptMode
+      ) : buildInjectionPrompt(getAvailableTags(settings, characterName));
+      adapter.injectPrompt(prompt);
       if (pack && pack.sprites.length > 0) {
         preloadPack(pack);
         overlay.setImage(pack.sprites[0].url, pack.sprites[0].tag);

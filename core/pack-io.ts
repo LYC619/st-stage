@@ -21,18 +21,19 @@ export async function exportPack(pack: SpritePack, embedHosted = false): Promise
   const sprites: SpritePackFile['sprites'] = []
   for (const sprite of pack.sprites) {
     const source = getSpriteSource(sprite)
+    const group = sprite.group ? { group: sprite.group } : {}
     if (source === 'embedded') {
-      sprites.push({ tag: sprite.tag, data: sprite.url })
+      sprites.push({ tag: sprite.tag, data: sprite.url, ...group })
     } else if (source === 'local' || embedHosted) {
       try {
         const data = await urlToDataUri(sprite.url)
-        sprites.push({ tag: sprite.tag, data })
+        sprites.push({ tag: sprite.tag, data, ...group })
       } catch {
         // 转换失败则回退为 URL
-        sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code) })
+        sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code), ...group })
       }
     } else {
-      sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code) })
+      sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code), ...group })
     }
   }
   return {
@@ -75,7 +76,7 @@ export function importPack(jsonText: string): SpritePack {
     throw new Error('导入失败：立绘包缺少名称或立绘列表为空')
   }
 
-  const seenTags = new Set<string>()
+  const seen = new Set<string>()
   const sprites: SpritePack['sprites'] = []
   for (const item of file.sprites as Array<Record<string, unknown>>) {
     if (!item || typeof item.tag !== 'string') continue
@@ -87,11 +88,15 @@ export function importPack(jsonText: string): SpritePack {
           : ''
     if (!url) continue
     const tag = normalizeTag(item.tag)
-    if (!tag || seenTags.has(tag)) continue
-    seenTags.add(tag)
+    if (!tag) continue
+    const group = typeof item.group === 'string' ? normalizeTag(item.group) : ''
+    // 去重键含分组：不同分组可复用同一 tag（如 鸣人/微笑 与 佐助/微笑）
+    const key = group ? `${group}/${tag}` : tag
+    if (seen.has(key)) continue
+    seen.add(key)
     const code =
       typeof item.code === 'string' && item.code ? item.code : (extractImageCode(url) ?? undefined)
-    sprites.push({ tag, url, ...(code ? { code } : {}) })
+    sprites.push({ tag, url, ...(code ? { code } : {}), ...(group ? { group } : {}) })
   }
   if (sprites.length === 0) {
     throw new Error('导入失败：没有可用的立绘条目（表情名可能全部为空或重复）')

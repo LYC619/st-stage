@@ -7,7 +7,7 @@
 
 import type { PluginSettings } from '../../core/types'
 import { extractTags } from '../../core/tag-parser'
-import { buildInjectionPrompt } from '../../core/prompt-builder'
+import { buildInjectionPrompt, buildMultiRolePrompt } from '../../core/prompt-builder'
 import { getActivePack, getAvailableTags, matchSprites, preloadPack } from '../../core/sprite-store'
 import { PhoneAppRegistry, type PhoneAppContext } from '../../core/phone-registry'
 import { createPhoneShell } from '../../core/phone-shell'
@@ -113,10 +113,17 @@ async function init(): Promise<void> {
     }
 
     const characterName = adapter.getCurrentCharacterName()
-    const tags = getAvailableTags(settings, characterName)
-    adapter.injectPrompt(buildInjectionPrompt(tags))
-
     const pack = getActivePack(settings, characterName)
+    // 多角色模式：按分组枚举（全量/重复）；否则单角色标签列表
+    const prompt =
+      settings.multiRole && pack
+        ? buildMultiRolePrompt(
+            pack.sprites.map((s) => ({ group: s.group ?? '', tag: s.tag })),
+            settings.multiRolePromptMode,
+          )
+        : buildInjectionPrompt(getAvailableTags(settings, characterName))
+    adapter.injectPrompt(prompt)
+
     if (pack && pack.sprites.length > 0) {
       preloadPack(pack)
       overlay.setImage(pack.sprites[0].url, pack.sprites[0].tag)

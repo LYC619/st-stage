@@ -416,6 +416,16 @@
   min-width: 160px;
 }
 
+/* 分组分区标题（功能②） */
+.so-manager .so-group-head {
+  margin: 12px 0 4px;
+  padding-bottom: 3px;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.85;
+  border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.12));
+}
+
 /* 立绘网格：移动端 2 列，桌面端（>=768px）4 列 */
 .so-manager .so-sprite-grid {
   display: grid;

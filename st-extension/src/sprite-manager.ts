@@ -14,17 +14,25 @@ import { getPackCover } from '../../core/types'
 import {
   bindCharacter,
   genId,
+  getGroups,
   moveSprite,
   removePack,
   removeSprite,
   renameSprite,
+  setSpriteGroup,
+  spriteGroup,
   toggleBinding,
   upsertPack,
   upsertSprite,
 } from '../../core/sprite-store'
 import { exportPack, importPack } from '../../core/pack-io'
 import { decodeShareString, encodeShareString, isValidImageCode } from '../../core/share-code'
-import { fileNameToTag, normalizeTag, sanitizeDescription, sanitizePackName } from '../../core/naming'
+import {
+  normalizeTag,
+  parseUploadName,
+  sanitizeDescription,
+  sanitizePackName,
+} from '../../core/naming'
 import { compressImage, formatBytes } from '../../core/image-compress'
 import { isPresetPack } from '../../core/presets'
 import type { STAdapter } from './st-adapter'
@@ -358,39 +366,62 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       body.append(metaRow)
     }
 
-    // 立绘网格
-    const grid = el('div', 'so-sprite-grid')
-    pack.sprites.forEach((sprite, index) => {
-      grid.append(renderSpriteCell(body, pack, sprite, index, readonly))
-    })
+    // 立绘网格：有分组则按分组分区展示（功能②），否则单一网格
     if (pack.sprites.length === 0) {
       const empty = el('div', 'so-status')
       empty.textContent = '还没有立绘，用下方按钮上传图片（文件名即表情名）。'
-      grid.append(empty)
+      body.append(empty)
+    } else {
+      const groups = getGroups(pack)
+      const sections: string[] = groups.length === 0 ? [''] : [...groups]
+      if (groups.length > 0 && pack.sprites.some((s) => spriteGroup(s) === '')) sections.push('')
+      for (const g of sections) {
+        if (groups.length > 0) {
+          const head = el('div', 'so-group-head')
+          head.textContent = g === '' ? '未分组' : g
+          body.append(head)
+        }
+        const grid = el('div', 'so-sprite-grid')
+        pack.sprites.forEach((sprite, index) => {
+          if (spriteGroup(sprite) === g) {
+            grid.append(renderSpriteCell(body, pack, sprite, index, readonly))
+          }
+        })
+        body.append(grid)
+      }
     }
-    body.append(grid)
 
     // 添加立绘
     if (!readonly) {
       const addRow = el('div', 'so-row')
+      const batchGroupInput = textInput('本批分组，可空')
       addRow.append(
+        labeled('分组', batchGroupInput),
         button('上传图片（自动压缩）', () => {
-          pickFile('image/*', true, (files) => void handleUpload(body, pack.id, files))
+          pickFile('image/*', true, (files) =>
+            void handleUpload(body, pack.id, files, batchGroupInput.value),
+          )
         }),
       )
       body.append(addRow)
+      const upHint = el('div', 'so-status')
+      upHint.textContent =
+        '文件名含下划线自动拆分组：鸣人_微笑.png → 分组「鸣人」表情「微笑」；否则用「本批分组」。'
+      body.append(upHint)
 
       const codeRow = el('div', 'so-row so-code-row')
       const tagInput = textInput('表情名，如 微笑')
       const codeInput = textInput('图床编码，如 ab12cd.png')
+      const codeGroupInput = textInput('分组，可空')
       codeRow.append(
         labeled('表情', tagInput),
         labeled('编码', codeInput),
+        labeled('分组', codeGroupInput),
         button('按编码添加', () => {
           const tag = normalizeTag(tagInput.value)
           const code = codeInput.value.trim()
           if (!tag) {
-            toast(body, '表情名不能为空（[ ] : | = @ 等符号会被剔除）')
+            toast(body, '表情名不能为空（[ ] / : | = @ 等符号会被剔除）')
             return
           }
           if (!isValidImageCode(code)) {
@@ -401,9 +432,11 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           const target = current.packs.find((p) => p.id === pack.id)
           if (!target) return
           const host = current.imageHost.endsWith('/') ? current.imageHost : `${current.imageHost}/`
-          commitPack(upsertSprite(target, { tag, url: host + code, code }))
+          const group = normalizeTag(codeGroupInput.value)
+          commitPack(upsertSprite(target, { tag, url: host + code, code, ...(group ? { group } : {}) }))
           tagInput.value = ''
           codeInput.value = ''
+          codeGroupInput.value = ''
         }),
       )
       const codeHint = el('div', 'so-status')
@@ -447,9 +480,21 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         const target = latestPack()
         if (!target) return
         try {
-          commitPack(renameSprite(target, sprite.tag, next))
+          commitPack(renameSprite(target, sprite.tag, next, spriteGroup(sprite)))
         } catch (err) {
           toast(body, err instanceof Error ? err.message : '改名失败')
+        }
+      }),
+      iconButton('🏷', '设分组', () => {
+        const cur = spriteGroup(sprite)
+        const next = window.prompt(`「${sprite.tag}」的分组（留空=移出分组）：`, cur)
+        if (next === null) return
+        const target = latestPack()
+        if (!target) return
+        try {
+          commitPack(setSpriteGroup(target, sprite.tag, cur, next))
+        } catch (err) {
+          toast(body, err instanceof Error ? err.message : '改分组失败')
         }
       }),
       iconButton('🖼', '替换图片', () => {
@@ -463,7 +508,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
             )
             const target = latestPack()
             if (!target) return
-            commitPack(upsertSprite(target, { tag: sprite.tag, url }))
+            const g = spriteGroup(sprite)
+            commitPack(upsertSprite(target, { tag: sprite.tag, url, ...(g ? { group: g } : {}) }))
             toast(body, `已替换「${sprite.tag}」（${formatBytes(result.bytes)}）`)
           } catch (err) {
             toast(body, err instanceof Error ? err.message : '替换失败')
@@ -489,20 +535,25 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         if (!window.confirm(`删除立绘「${sprite.tag}」？`)) return
         const target = latestPack()
         if (!target) return
-        commitPack(removeSprite(target, sprite.tag))
+        commitPack(removeSprite(target, sprite.tag, spriteGroup(sprite)))
       }),
     )
     cell.append(bar)
     return cell
   }
 
-  /** 批量上传：压缩 → saveImage → upsertSprite（文件名即 tag） */
-  async function handleUpload(body: HTMLElement, packId: string, files: FileList): Promise<void> {
+  /** 批量上传：压缩 → saveImage → upsertSprite（文件名拆 分组/图名，或用本批分组） */
+  async function handleUpload(
+    body: HTMLElement,
+    packId: string,
+    files: FileList,
+    batchGroup: string,
+  ): Promise<void> {
     let added = 0
     let skipped = 0
     let savedBytes = ''
     for (const file of Array.from(files)) {
-      const tag = fileNameToTag(file.name)
+      const { group, tag } = parseUploadName(file.name, batchGroup)
       if (!tag) {
         skipped++
         continue
@@ -517,7 +568,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         )
         const target = deps.getSettings().packs.find((p) => p.id === packId)
         if (!target) return
-        deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(target, { tag, url })))
+        const sprite: Sprite = group ? { tag, url, group } : { tag, url }
+        deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(target, sprite)))
         added++
       } catch (err) {
         console.error('[sprite-overlay] 上传失败', err)

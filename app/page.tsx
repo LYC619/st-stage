@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PluginSettings } from '@/core/types'
 import { extractTags } from '@/core/tag-parser'
-import { buildInjectionPrompt } from '@/core/prompt-builder'
+import { buildInjectionPrompt, buildMultiRolePrompt } from '@/core/prompt-builder'
 import { getActivePack, getAvailableTags, matchSprites, preloadPack } from '@/core/sprite-store'
 import { webAdapter } from '@/lib/web-adapter'
 import { ChatSimulator } from '@/components/chat-simulator'
@@ -43,7 +43,23 @@ export default function Page() {
     () => (settings ? getAvailableTags(settings, characterName) : []),
     [settings, characterName],
   )
-  const injectionPrompt = useMemo(() => buildInjectionPrompt(availableTags), [availableTags])
+  const injectionPrompt = useMemo(() => {
+    if (settings?.multiRole && activePack) {
+      return buildMultiRolePrompt(
+        activePack.sprites.map((s) => ({ group: s.group ?? '', tag: s.tag })),
+        settings.multiRolePromptMode,
+      )
+    }
+    return buildInjectionPrompt(availableTags)
+  }, [settings?.multiRole, settings?.multiRolePromptMode, activePack, availableTags])
+
+  // 聊天模拟器的快捷触发项：多角色模式用「分组/图名」地址，否则用图名
+  const chatChoices = useMemo(() => {
+    if (settings?.multiRole && activePack) {
+      return activePack.sprites.map((s) => (s.group ? `${s.group}/${s.tag}` : s.tag))
+    }
+    return availableTags
+  }, [settings?.multiRole, activePack, availableTags])
 
   // 角色/包切换：预加载全部立绘，重置为第一张（单张）
   useEffect(() => {
@@ -93,7 +109,7 @@ export default function Page() {
         <div className="min-h-[60dvh] lg:min-h-0">
           <ChatSimulator
             characterName={characterName}
-            availableTags={availableTags}
+            availableTags={chatChoices}
             hideTagInMessage={settings.hideTagInMessage}
             renderInlineImages={settings.renderInlineImages}
             imageHost={settings.imageHost}

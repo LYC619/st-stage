@@ -49,6 +49,11 @@ export function migrateSettings(saved: unknown): PluginSettings {
       typeof raw.autoSwitchSeconds === 'number' && Number.isFinite(raw.autoSwitchSeconds)
         ? Math.min(60, Math.max(1, Math.round(raw.autoSwitchSeconds)))
         : defaults.autoSwitchSeconds,
+    multiRole: typeof raw.multiRole === 'boolean' ? raw.multiRole : defaults.multiRole,
+    multiRolePromptMode:
+      raw.multiRolePromptMode === 'full' || raw.multiRolePromptMode === 'repeat'
+        ? raw.multiRolePromptMode
+        : defaults.multiRolePromptMode,
     packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
     bindings: Array.isArray(raw.bindings)
       ? raw.bindings.filter(
@@ -108,7 +113,8 @@ function migratePack(raw: unknown): SpritePack | null {
     if (!tag) return []
     const code =
       typeof s.code === 'string' && s.code ? s.code : (extractImageCode(s.url) ?? undefined)
-    return [{ tag, url: s.url, ...(code ? { code } : {}) }]
+    const group = typeof s.group === 'string' ? normalizeTag(s.group) : ''
+    return [{ tag, url: s.url, ...(code ? { code } : {}), ...(group ? { group } : {}) }]
   })
 
   return {
