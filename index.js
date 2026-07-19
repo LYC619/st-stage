@@ -525,6 +525,8 @@
       autoSwitchSeconds: 3,
       multiRole: false,
       multiRolePromptMode: "full",
+      imgbbApiKey: "",
+      autoUpload: false,
       packs: [],
       bindings: [],
       apps: {}
@@ -629,6 +631,8 @@
       autoSwitchSeconds: typeof raw.autoSwitchSeconds === "number" && Number.isFinite(raw.autoSwitchSeconds) ? Math.min(60, Math.max(1, Math.round(raw.autoSwitchSeconds))) : defaults.autoSwitchSeconds,
       multiRole: typeof raw.multiRole === "boolean" ? raw.multiRole : defaults.multiRole,
       multiRolePromptMode: raw.multiRolePromptMode === "full" || raw.multiRolePromptMode === "repeat" ? raw.multiRolePromptMode : defaults.multiRolePromptMode,
+      imgbbApiKey: typeof raw.imgbbApiKey === "string" ? raw.imgbbApiKey : defaults.imgbbApiKey,
+      autoUpload: typeof raw.autoUpload === "boolean" ? raw.autoUpload : defaults.autoUpload,
       packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
       bindings: Array.isArray(raw.bindings) ? raw.bindings.filter(
         (b) => b && typeof b.characterName === "string" && typeof b.packId === "string" && typeof b.enabled === "boolean"
@@ -1145,6 +1149,22 @@
     });
   }
 
+  // core/imgbb.ts
+  async function uploadToImgbb(apiKey, base64DataUri, fetchImpl = fetch) {
+    const key = apiKey.trim();
+    if (!key) throw new Error("未配置 imgbb API Key");
+    const rawBase64 = base64DataUri.replace(/^data:[^;]*;base64,/, "");
+    const form = new FormData();
+    form.append("key", key);
+    form.append("image", rawBase64);
+    const res = await fetchImpl("https://api.imgbb.com/1/upload", { method: "POST", body: form });
+    const json = await res.json().catch(() => null);
+    if (!json?.success || !json.data?.image) {
+      throw new Error(`imgbb 上传失败：${json?.error?.message ?? `HTTP ${res.status}`}`);
+    }
+    return { url: json.data.url ?? "", code: json.data.image.filename ?? "" };
+  }
+
   // st-extension/src/sprite-manager.ts
   function createSpriteManager(deps) {
     let backdrop = null;
@@ -1583,7 +1603,11 @@
     async function handleUpload(body, packId, files, batchGroup) {
       let added = 0;
       let skipped = 0;
+      let hosted = 0;
+      let hostFailed = 0;
       let savedBytes = "";
+      const { autoUpload, imgbbApiKey } = deps.getSettings();
+      const useImgbb = autoUpload && imgbbApiKey.trim() !== "";
       for (const file of Array.from(files)) {
         const { group, tag } = parseUploadName(file.name, batchGroup);
         if (!tag) {
@@ -1603,6 +1627,20 @@
           const sprite = group ? { tag, url, group } : { tag, url };
           deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(target, sprite)));
           added++;
+          if (useImgbb) {
+            try {
+              const up = await uploadToImgbb(imgbbApiKey, result.dataUri);
+              const latest = deps.getSettings().packs.find((p) => p.id === packId);
+              if (latest) {
+                const hostedSprite = group ? { tag, url: up.url, code: up.code, group } : { tag, url: up.url, code: up.code };
+                deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(latest, hostedSprite)));
+                hosted++;
+              }
+            } catch (err) {
+              console.warn("[sprite-overlay] imgbb 上传失败（图片保留本地）", err);
+              hostFailed++;
+            }
+          }
         } catch (err) {
           console.error("[sprite-overlay] 上传失败", err);
           skipped++;
@@ -1610,9 +1648,10 @@
       }
       render();
       const note = skipped > 0 ? `，跳过 ${skipped} 张（文件名无效或保存失败）` : "";
+      const hostNote = useImgbb ? `，imgbb 成功 ${hosted} 张${hostFailed > 0 ? `、失败 ${hostFailed} 张（已保留本地，可稍后手动补编号）` : ""}` : "";
       toast(
         backdrop?.querySelector(".so-manager-body"),
-        `已添加 ${added} 张立绘${added === 1 ? `（${savedBytes}）` : ""}${note}`
+        `已添加 ${added} 张立绘${added === 1 ? `（${savedBytes}）` : ""}${note}${hostNote}`
       );
     }
     return { open, close, refreshIfOpen };
@@ -1798,6 +1837,38 @@
         (v) => deps.updateSettings({ ...deps.getSettings(), imageHost: v })
       )
     );
+    const imgbbHint = document.createElement("div");
+    imgbbHint.className = "so-status";
+    imgbbHint.textContent = "自动上传需 imgbb API Key（免费申请：https://api.imgbb.com/）";
+    const autoRow = document.createElement("label");
+    autoRow.className = "so-row checkbox_label";
+    const autoInput = document.createElement("input");
+    autoInput.type = "checkbox";
+    autoInput.checked = settings.autoUpload;
+    autoInput.addEventListener("change", () => {
+      const cur = deps.getSettings();
+      if (autoInput.checked && !cur.imgbbApiKey.trim()) {
+        autoInput.checked = false;
+        imgbbHint.textContent = "请先填写 imgbb API Key（免费申请：https://api.imgbb.com/）";
+        return;
+      }
+      if (autoInput.checked) {
+        imgbbHint.textContent = "API Key 仅存储在本地浏览器中，不会上传到任何服务器；申请：https://api.imgbb.com/";
+      }
+      deps.updateSettings({ ...cur, autoUpload: autoInput.checked });
+    });
+    const autoSpan = document.createElement("span");
+    autoSpan.textContent = "导入时自动上传到 imgbb 图床并绑定编号";
+    autoRow.append(autoInput, autoSpan);
+    content.append(
+      passwordRow(
+        "imgbb API Key",
+        settings.imgbbApiKey,
+        (v) => deps.updateSettings({ ...deps.getSettings(), imgbbApiKey: v })
+      ),
+      autoRow,
+      imgbbHint
+    );
     const hint = document.createElement("div");
     hint.className = "so-status";
     hint.textContent = "立绘包管理与角色绑定：点击聊天界面悬浮窗右上角的 ⚙ 按钮。";
@@ -1835,6 +1906,29 @@
       onChange(clamped);
     });
     row.append(span, input);
+    return row;
+  }
+  function passwordRow(label, value, onChange) {
+    const row = document.createElement("div");
+    row.className = "so-row";
+    const span = document.createElement("span");
+    span.textContent = label;
+    const input = document.createElement("input");
+    input.type = "password";
+    input.className = "text_pole";
+    input.value = value;
+    input.autocomplete = "off";
+    input.addEventListener("change", () => onChange(input.value.trim()));
+    const eye = document.createElement("div");
+    eye.className = "menu_button";
+    eye.textContent = "👁";
+    eye.title = "显示/隐藏 Key";
+    eye.setAttribute("role", "button");
+    eye.setAttribute("aria-label", "显示或隐藏 API Key");
+    eye.addEventListener("click", () => {
+      input.type = input.type === "password" ? "text" : "password";
+    });
+    row.append(span, input, eye);
     return row;
   }
   function selectRow(label, value, options, onChange) {

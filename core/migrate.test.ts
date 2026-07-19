@@ -95,6 +95,20 @@ describe('migrateSettings', () => {
     expect(migrateSettings({ ...V1_SAVED }).autoSwitchSeconds).toBe(3) // 缺失 → 默认 3
   })
 
+  it('imgbb 字段缺失回退空串/false，已配置的 Key 保留（功能①）', () => {
+    // 旧数据（V1_SAVED 无 imgbb 字段）→ 默认空串 / false
+    const missing = migrateSettings(V1_SAVED)
+    expect(missing.imgbbApiKey).toBe('')
+    expect(missing.autoUpload).toBe(false)
+    // 已配置的 Key 与开关原样保留
+    const provided = migrateSettings({ ...V1_SAVED, imgbbApiKey: 'abc123', autoUpload: true })
+    expect(provided.imgbbApiKey).toBe('abc123')
+    expect(provided.autoUpload).toBe(true)
+    // 类型不对时回退默认
+    expect(migrateSettings({ ...V1_SAVED, imgbbApiKey: 123 }).imgbbApiKey).toBe('')
+    expect(migrateSettings({ ...V1_SAVED, autoUpload: 'yes' }).autoUpload).toBe(false)
+  })
+
   it('当前版本数据迁移后语义不变', () => {
     const current = createDefaultSettings()
     current.packs = [

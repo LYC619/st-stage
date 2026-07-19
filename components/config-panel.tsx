@@ -13,6 +13,7 @@ import { exportPack, importPack } from '@/core/pack-io'
 import { decodeShareString, encodeShareString } from '@/core/share-code'
 import { parseUploadName, sanitizePackName } from '@/core/naming'
 import { compressImage } from '@/core/image-compress'
+import { uploadToImgbb } from '@/core/imgbb'
 
 interface ConfigPanelProps {
   settings: PluginSettings
@@ -24,6 +25,7 @@ interface ConfigPanelProps {
 export function ConfigPanel({ settings, characterName, onCharacterNameChange, onSettingsChange }: ConfigPanelProps) {
   const [newPackName, setNewPackName] = useState('')
   const [uploadGroup, setUploadGroup] = useState('')
+  const [showKey, setShowKey] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const uploadRef = useRef<HTMLInputElement>(null)
   const importRef = useRef<HTMLInputElement>(null)
@@ -37,22 +39,41 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
     setTimeout(() => setStatus(null), 2500)
   }
 
-  /** 上传图片到指定包：文件名拆 分组/图名（或用「本批分组」）；canvas 压缩为 WebP 后存 data URI */
+  /** 上传图片到指定包：文件名拆 分组/图名（或用「本批分组」）；压缩后本地保底，开了自动上传再传 imgbb 绑编号 */
   const handleUpload = async (files: FileList | null) => {
     if (!files || !uploadTargetPack) return
     const pack = settings.packs.find((p) => p.id === uploadTargetPack)
     if (!pack) return
+    const useImgbb = settings.autoUpload && settings.imgbbApiKey.trim() !== ''
     let target = pack
     let added = 0
+    let hosted = 0
+    let hostFailed = 0
     for (const file of Array.from(files)) {
       const { group, tag } = parseUploadName(file.name, uploadGroup)
       if (!tag) continue
       const { dataUri } = await compressImage(file)
       target = upsertSprite(target, group ? { tag, url: dataUri, group } : { tag, url: dataUri })
       added++
+      if (useImgbb) {
+        // 本地 data URI 已保底；imgbb 成功则换直链+编号，失败仅计数
+        try {
+          const up = await uploadToImgbb(settings.imgbbApiKey, dataUri)
+          target = upsertSprite(
+            target,
+            group ? { tag, url: up.url, code: up.code, group } : { tag, url: up.url, code: up.code },
+          )
+          hosted++
+        } catch {
+          hostFailed++
+        }
+      }
     }
     onSettingsChange(upsertPack(settings, target))
-    flash(`已添加 ${added} 张立绘到「${pack.name}」（自动压缩为 WebP）`)
+    const hostNote = useImgbb
+      ? `，imgbb 成功 ${hosted} 张${hostFailed > 0 ? `、失败 ${hostFailed} 张（保留本地）` : ''}`
+      : ''
+    flash(`已添加 ${added} 张立绘到「${pack.name}」（自动压缩为 WebP）${hostNote}`)
   }
 
   const handleCreatePack = () => {
@@ -212,6 +233,45 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
             <option value="full">全量（枚举全部组合）</option>
             <option value="repeat">重复（分组×共享情绪名·省 token）</option>
           </select>
+        </label>
+        <label className="flex flex-col gap-1 text-sm text-foreground">
+          <span className="text-xs text-muted-foreground">imgbb API Key（仅存本地，申请：api.imgbb.com）</span>
+          <span className="flex gap-1.5">
+            <input
+              type={showKey ? 'text' : 'password'}
+              defaultValue={settings.imgbbApiKey}
+              autoComplete="off"
+              onBlur={(e) => onSettingsChange({ ...settings, imgbbApiKey: e.target.value.trim() })}
+              className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+              aria-label="imgbb API Key"
+            />
+            <button
+              type="button"
+              onClick={() => setShowKey((v) => !v)}
+              className="shrink-0 rounded-lg border border-border px-2.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              aria-label={showKey ? '隐藏 API Key' : '显示 API Key'}
+            >
+              {showKey ? '隐藏' : '显示'}
+            </button>
+          </span>
+        </label>
+        <label className="flex items-center justify-between text-sm text-foreground">
+          导入时自动上传到 imgbb 并绑定编号
+          <input
+            type="checkbox"
+            checked={settings.autoUpload}
+            onChange={(e) => {
+              if (e.target.checked && !settings.imgbbApiKey.trim()) {
+                flash('请先填写 imgbb API Key（免费申请：https://api.imgbb.com/）')
+                return
+              }
+              if (e.target.checked) {
+                flash('API Key 仅存储在本地浏览器中，不会上传到任何服务器')
+              }
+              onSettingsChange({ ...settings, autoUpload: e.target.checked })
+            }}
+            className="h-4 w-4 accent-primary"
+          />
         </label>
         <label className="flex flex-col gap-1 text-sm text-foreground">
           <span className="text-xs text-muted-foreground">图床前缀（分享串与插图编码拼接用）</span>

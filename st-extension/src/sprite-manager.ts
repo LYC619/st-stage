@@ -34,6 +34,7 @@ import {
   sanitizePackName,
 } from '../../core/naming'
 import { compressImage, formatBytes } from '../../core/image-compress'
+import { uploadToImgbb } from '../../core/imgbb'
 import { isPresetPack } from '../../core/presets'
 import type { STAdapter } from './st-adapter'
 
@@ -542,7 +543,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     return cell
   }
 
-  /** 批量上传：压缩 → saveImage → upsertSprite（文件名拆 分组/图名，或用本批分组） */
+  /** 批量上传：压缩 → saveImage 本地保底 → upsertSprite；开了自动上传再异步传 imgbb 绑编号 */
   async function handleUpload(
     body: HTMLElement,
     packId: string,
@@ -551,7 +552,11 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   ): Promise<void> {
     let added = 0
     let skipped = 0
+    let hosted = 0
+    let hostFailed = 0
     let savedBytes = ''
+    const { autoUpload, imgbbApiKey } = deps.getSettings()
+    const useImgbb = autoUpload && imgbbApiKey.trim() !== ''
     for (const file of Array.from(files)) {
       const { group, tag } = parseUploadName(file.name, batchGroup)
       if (!tag) {
@@ -571,6 +576,23 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         const sprite: Sprite = group ? { tag, url, group } : { tag, url }
         deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(target, sprite)))
         added++
+        if (useImgbb) {
+          // 本地已保底；imgbb 成功则换成图床直链+编号，失败仅计数不回滚
+          try {
+            const up = await uploadToImgbb(imgbbApiKey, result.dataUri)
+            const latest = deps.getSettings().packs.find((p) => p.id === packId)
+            if (latest) {
+              const hostedSprite: Sprite = group
+                ? { tag, url: up.url, code: up.code, group }
+                : { tag, url: up.url, code: up.code }
+              deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(latest, hostedSprite)))
+              hosted++
+            }
+          } catch (err) {
+            console.warn('[sprite-overlay] imgbb 上传失败（图片保留本地）', err)
+            hostFailed++
+          }
+        }
       } catch (err) {
         console.error('[sprite-overlay] 上传失败', err)
         skipped++
@@ -578,9 +600,12 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     }
     render()
     const note = skipped > 0 ? `，跳过 ${skipped} 张（文件名无效或保存失败）` : ''
+    const hostNote = useImgbb
+      ? `，imgbb 成功 ${hosted} 张${hostFailed > 0 ? `、失败 ${hostFailed} 张（已保留本地，可稍后手动补编号）` : ''}`
+      : ''
     toast(
       backdrop?.querySelector('.so-manager-body') as HTMLElement,
-      `已添加 ${added} 张立绘${added === 1 ? `（${savedBytes}）` : ''}${note}`,
+      `已添加 ${added} 张立绘${added === 1 ? `（${savedBytes}）` : ''}${note}${hostNote}`,
     )
   }
 

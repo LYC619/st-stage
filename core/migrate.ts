@@ -54,6 +54,8 @@ export function migrateSettings(saved: unknown): PluginSettings {
       raw.multiRolePromptMode === 'full' || raw.multiRolePromptMode === 'repeat'
         ? raw.multiRolePromptMode
         : defaults.multiRolePromptMode,
+    imgbbApiKey: typeof raw.imgbbApiKey === 'string' ? raw.imgbbApiKey : defaults.imgbbApiKey,
+    autoUpload: typeof raw.autoUpload === 'boolean' ? raw.autoUpload : defaults.autoUpload,
     packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
     bindings: Array.isArray(raw.bindings)
       ? raw.bindings.filter(

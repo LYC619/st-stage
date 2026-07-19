@@ -75,6 +75,39 @@ export function mountSettingsPanel(deps: PanelDeps): void {
     ),
   )
 
+  // 功能① imgbb 直传：Key 输入（密码型+显隐）+ 自动上传开关（空 Key 拦截）+ 提示行
+  const imgbbHint = document.createElement('div')
+  imgbbHint.className = 'so-status'
+  imgbbHint.textContent = '自动上传需 imgbb API Key（免费申请：https://api.imgbb.com/）'
+  const autoRow = document.createElement('label')
+  autoRow.className = 'so-row checkbox_label'
+  const autoInput = document.createElement('input')
+  autoInput.type = 'checkbox'
+  autoInput.checked = settings.autoUpload
+  autoInput.addEventListener('change', () => {
+    const cur = deps.getSettings()
+    if (autoInput.checked && !cur.imgbbApiKey.trim()) {
+      autoInput.checked = false
+      imgbbHint.textContent = '请先填写 imgbb API Key（免费申请：https://api.imgbb.com/）'
+      return
+    }
+    if (autoInput.checked) {
+      imgbbHint.textContent =
+        'API Key 仅存储在本地浏览器中，不会上传到任何服务器；申请：https://api.imgbb.com/'
+    }
+    deps.updateSettings({ ...cur, autoUpload: autoInput.checked })
+  })
+  const autoSpan = document.createElement('span')
+  autoSpan.textContent = '导入时自动上传到 imgbb 图床并绑定编号'
+  autoRow.append(autoInput, autoSpan)
+  content.append(
+    passwordRow('imgbb API Key', settings.imgbbApiKey, (v) =>
+      deps.updateSettings({ ...deps.getSettings(), imgbbApiKey: v }),
+    ),
+    autoRow,
+    imgbbHint,
+  )
+
   const hint = document.createElement('div')
   hint.className = 'so-status'
   hint.textContent = '立绘包管理与角色绑定：点击聊天界面悬浮窗右上角的 ⚙ 按钮。'
@@ -121,6 +154,31 @@ function numberRow(
     onChange(clamped)
   })
   row.append(span, input)
+  return row
+}
+
+/** 密码输入行（imgbb API Key）：👁 切换明文显示，change 时去空格保存 */
+function passwordRow(label: string, value: string, onChange: (v: string) => void): HTMLElement {
+  const row = document.createElement('div')
+  row.className = 'so-row'
+  const span = document.createElement('span')
+  span.textContent = label
+  const input = document.createElement('input')
+  input.type = 'password'
+  input.className = 'text_pole'
+  input.value = value
+  input.autocomplete = 'off'
+  input.addEventListener('change', () => onChange(input.value.trim()))
+  const eye = document.createElement('div')
+  eye.className = 'menu_button'
+  eye.textContent = '👁'
+  eye.title = '显示/隐藏 Key'
+  eye.setAttribute('role', 'button')
+  eye.setAttribute('aria-label', '显示或隐藏 API Key')
+  eye.addEventListener('click', () => {
+    input.type = input.type === 'password' ? 'text' : 'password'
+  })
+  row.append(span, input, eye)
   return row
 }
 

@@ -124,6 +124,10 @@ export interface PluginSettings {
   multiRole: boolean
   /** 多角色 prompt 生成模式：full=枚举全部 分组/图名 组合；repeat=分组×共享情绪名（省 token） */
   multiRolePromptMode: 'full' | 'repeat'
+  /** imgbb 图床 API Key（功能①，仅存本地浏览器；空串=未配置） */
+  imgbbApiKey: string
+  /** 导入立绘时是否自动直传 imgbb 图床并绑定编号（功能①，需先配置 API Key） */
+  autoUpload: boolean
   /** 所有立绘包 */
   packs: SpritePack[]
   /** 角色绑定 */
@@ -181,6 +185,8 @@ export function createDefaultSettings(): PluginSettings {
     autoSwitchSeconds: 3,
     multiRole: false,
     multiRolePromptMode: 'full',
+    imgbbApiKey: '',
+    autoUpload: false,
     packs: [],
     bindings: [],
     apps: {},
