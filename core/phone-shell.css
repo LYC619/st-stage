@@ -51,19 +51,44 @@
 .so-phone-status {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 18px 6px;
+  gap: 8px;
+  padding: 8px 16px 6px 10px;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.85);
   flex-shrink: 0;
 }
 
+/* App 内返回键（Home 屏隐藏，由 JS 切换 display） */
+.so-phone-back {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 26px;
+  border-radius: 8px;
+  font-size: 20px;
+  line-height: 1;
+  padding-bottom: 2px;
+  cursor: pointer;
+  opacity: 0.85;
+  touch-action: manipulation;
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+
+.so-phone-back:hover,
+.so-phone-back:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  opacity: 1;
+  outline: none;
+}
+
 .so-phone-status-title {
+  flex: 1;
+  min-width: 0;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 65%;
 }
 
 .so-phone-clock {
@@ -80,13 +105,15 @@
   color: rgba(255, 255, 255, 0.92);
 }
 
-/* Home 键 */
+/* Home 键：整条栏都可点（视觉上仍是中间一条细线） */
 .so-phone-homebar {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 0 10px;
+  min-height: 36px;
   flex-shrink: 0;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 .so-phone-homebtn {
@@ -94,12 +121,20 @@
   height: 5px;
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.45);
-  cursor: pointer;
-  transition: background 0.12s ease;
+  transition: background 0.12s ease, transform 0.1s ease;
 }
 
-.so-phone-homebtn:hover {
+.so-phone-homebar:hover .so-phone-homebtn,
+.so-phone-homebar:focus-visible .so-phone-homebtn {
   background: rgba(255, 255, 255, 0.75);
+}
+
+.so-phone-homebar:focus-visible {
+  outline: none;
+}
+
+.so-phone-homebar:active .so-phone-homebtn {
+  transform: scaleX(0.92);
 }
 
 /* Home 屏 App 栅格 */

@@ -36,26 +36,47 @@ export function mountSettingsPanel(deps: PanelDeps): void {
   const settings = deps.getSettings()
 
   content.append(
-    checkboxRow('启用立绘悬浮窗', settings.enabled, (v) =>
-      deps.updateSettings({ ...deps.getSettings(), enabled: v }),
+    checkboxRow(
+      '启用立绘悬浮窗',
+      settings.enabled,
+      (v) => deps.updateSettings({ ...deps.getSettings(), enabled: v }),
+      '总开关：把可用立绘清单注入给 AI，并根据回复中的 [立绘:xxx] 标签在悬浮窗展示对应立绘。关闭后两者都停用。',
     ),
-    checkboxRow('显示手机框（关闭则回退纯悬浮窗）', settings.showPhone, (v) =>
-      deps.updateSettings({ ...deps.getSettings(), showPhone: v }),
+    checkboxRow(
+      '显示手机框（关闭则回退纯悬浮窗）',
+      settings.showPhone,
+      (v) => deps.updateSettings({ ...deps.getSettings(), showPhone: v }),
+      '在屏幕上显示可拖动的 📱 图标，点击展开手机面板（立绘 / 图库 / 设置 App）。关闭后仅保留立绘悬浮窗本体。',
     ),
-    checkboxRow('消息中隐藏 [立绘:xxx] 标签', settings.hideTagInMessage, (v) =>
-      deps.updateSettings({ ...deps.getSettings(), hideTagInMessage: v }),
+    checkboxRow(
+      '消息中隐藏 [立绘:xxx] 标签',
+      settings.hideTagInMessage,
+      (v) => deps.updateSettings({ ...deps.getSettings(), hideTagInMessage: v }),
+      '[立绘:xxx] 是 AI 用来切换立绘的控制标签。开启后聊天气泡里不再显示这串文字，仅在后台生效；消息原文不变，可随时关闭。',
     ),
-    checkboxRow('渲染消息内插图（<img>编码</img>）', settings.renderInlineImages, (v) =>
-      deps.updateSettings({ ...deps.getSettings(), renderInlineImages: v }),
+    checkboxRow(
+      '渲染消息内插图（<img>编码</img>）',
+      settings.renderInlineImages,
+      (v) => deps.updateSettings({ ...deps.getSettings(), renderInlineImages: v }),
+      '把 AI 回复中的 <img>图床编码</img> 渲染成真实图片，编码会自动拼接下方「图床前缀」。适合让 AI 在正文里插图。',
     ),
-    checkboxRow('多立绘自动轮播（一条消息含多张立绘时）', settings.autoSwitch, (v) =>
-      deps.updateSettings({ ...deps.getSettings(), autoSwitch: v }),
+    checkboxRow(
+      '多立绘自动轮播（一条消息含多张立绘时）',
+      settings.autoSwitch,
+      (v) => deps.updateSettings({ ...deps.getSettings(), autoSwitch: v }),
+      '一条回复命中多张立绘时，悬浮窗按下方间隔自动逐张播放；关闭后需点击悬浮窗手动切换。',
     ),
-    numberRow('轮播间隔（秒）', settings.autoSwitchSeconds, (v) =>
-      deps.updateSettings({ ...deps.getSettings(), autoSwitchSeconds: v }),
+    numberRow(
+      '轮播间隔（秒）',
+      settings.autoSwitchSeconds,
+      (v) => deps.updateSettings({ ...deps.getSettings(), autoSwitchSeconds: v }),
+      '自动轮播时每张立绘的停留时长，范围 1–60 秒。',
     ),
-    checkboxRow('多角色/分组模式（按 [立绘:分组/图名] 寻址）', settings.multiRole, (v) =>
-      deps.updateSettings({ ...deps.getSettings(), multiRole: v }),
+    checkboxRow(
+      '多角色/分组模式（按 [立绘:分组/图名] 寻址）',
+      settings.multiRole,
+      (v) => deps.updateSettings({ ...deps.getSettings(), multiRole: v }),
+      '立绘包内用「分组」区分多个角色或形态时开启：AI 会用 [立绘:分组/图名]（如 [立绘:鸣人/微笑]）精确指定立绘。单角色包保持关闭即可。',
     ),
     selectRow(
       '分组 prompt 模式',
@@ -69,9 +90,12 @@ export function mountSettingsPanel(deps: PanelDeps): void {
           ...deps.getSettings(),
           multiRolePromptMode: v === 'repeat' ? 'repeat' : 'full',
         }),
+      '注入给 AI 的立绘清单写法。全量：逐一列出每个「分组/图名」组合，最直观；重复：只列分组名和共享的表情名，各分组图名一致时更省 token。',
     ),
-    hostRow(settings.imageHost, (v) =>
-      deps.updateSettings({ ...deps.getSettings(), imageHost: v }),
+    hostRow(
+      settings.imageHost,
+      (v) => deps.updateSettings({ ...deps.getSettings(), imageHost: v }),
+      '拼在「图床编码」前面的 URL，用于按编码添加立绘、分享串和消息内插图。默认 catbox，一般无需修改。',
     ),
   )
 
@@ -99,10 +123,18 @@ export function mountSettingsPanel(deps: PanelDeps): void {
   })
   const autoSpan = document.createElement('span')
   autoSpan.textContent = '导入时自动上传到 imgbb 图床并绑定编号'
+  autoSpan.append(
+    helpIcon(
+      '上传立绘时自动同步到 imgbb 图床并记录编号，这样「复制分享串」分享给别人时对方才能看到图。上传失败时图片仍保留在本地。',
+    ),
+  )
   autoRow.append(autoInput, autoSpan)
   content.append(
-    passwordRow('imgbb API Key', settings.imgbbApiKey, (v) =>
-      deps.updateSettings({ ...deps.getSettings(), imgbbApiKey: v }),
+    passwordRow(
+      'imgbb API Key',
+      settings.imgbbApiKey,
+      (v) => deps.updateSettings({ ...deps.getSettings(), imgbbApiKey: v }),
+      '开启「自动上传」所需的 imgbb 账号密钥，仅保存在本地浏览器、不会上传到别处。免费申请：api.imgbb.com',
     ),
     autoRow,
     imgbbHint,
@@ -114,7 +146,30 @@ export function mountSettingsPanel(deps: PanelDeps): void {
   content.append(hint)
 }
 
-function checkboxRow(label: string, checked: boolean, onChange: (v: boolean) => void): HTMLElement {
+/**
+ * 悬浮说明图标：hover / 键盘聚焦 / 触屏点按（tabindex 聚焦）时经 CSS 显示 data-tip 气泡。
+ * 放在 <label> 内时点击会触发 checkbox，preventDefault 拦掉。
+ */
+function helpIcon(tip: string): HTMLElement {
+  const icon = document.createElement('span')
+  icon.className = 'so-help'
+  icon.textContent = '?'
+  icon.tabIndex = 0
+  icon.setAttribute('aria-label', tip)
+  icon.dataset.tip = tip
+  icon.addEventListener('click', (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+  })
+  return icon
+}
+
+function checkboxRow(
+  label: string,
+  checked: boolean,
+  onChange: (v: boolean) => void,
+  help?: string,
+): HTMLElement {
   const row = document.createElement('label')
   row.className = 'so-row checkbox_label'
   const input = document.createElement('input')
@@ -123,6 +178,7 @@ function checkboxRow(label: string, checked: boolean, onChange: (v: boolean) => 
   input.addEventListener('change', () => onChange(input.checked))
   const span = document.createElement('span')
   span.textContent = label
+  if (help) span.append(helpIcon(help))
   row.append(input, span)
   return row
 }
@@ -132,6 +188,7 @@ function numberRow(
   label: string,
   value: number,
   onChange: (v: number) => void,
+  help?: string,
   min = 1,
   max = 60,
 ): HTMLElement {
@@ -139,6 +196,7 @@ function numberRow(
   row.className = 'so-row'
   const span = document.createElement('span')
   span.textContent = label
+  if (help) span.append(helpIcon(help))
   const input = document.createElement('input')
   input.type = 'number'
   input.className = 'text_pole'
@@ -158,11 +216,17 @@ function numberRow(
 }
 
 /** 密码输入行（imgbb API Key）：👁 切换明文显示，change 时去空格保存 */
-function passwordRow(label: string, value: string, onChange: (v: string) => void): HTMLElement {
+function passwordRow(
+  label: string,
+  value: string,
+  onChange: (v: string) => void,
+  help?: string,
+): HTMLElement {
   const row = document.createElement('div')
   row.className = 'so-row'
   const span = document.createElement('span')
   span.textContent = label
+  if (help) span.append(helpIcon(help))
   const input = document.createElement('input')
   input.type = 'password'
   input.className = 'text_pole'
@@ -188,11 +252,13 @@ function selectRow(
   value: string,
   options: Array<{ value: string; label: string }>,
   onChange: (v: string) => void,
+  help?: string,
 ): HTMLElement {
   const row = document.createElement('div')
   row.className = 'so-row'
   const span = document.createElement('span')
   span.textContent = label
+  if (help) span.append(helpIcon(help))
   const select = document.createElement('select')
   select.className = 'text_pole'
   for (const opt of options) {
@@ -208,11 +274,12 @@ function selectRow(
 }
 
 /** 图床前缀输入行：失焦时校验并保存（须为 http(s)，自动补结尾 /） */
-function hostRow(value: string, onChange: (v: string) => void): HTMLElement {
+function hostRow(value: string, onChange: (v: string) => void, help?: string): HTMLElement {
   const row = document.createElement('div')
   row.className = 'so-row'
   const span = document.createElement('span')
   span.textContent = '图床前缀'
+  if (help) span.append(helpIcon(help))
   const input = document.createElement('input')
   input.type = 'text'
   input.className = 'text_pole'

@@ -74,12 +74,29 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     dialog.setAttribute('aria-label', '立绘包管理')
 
     const header = el('div', 'so-manager-header')
+    // 详情页专用返回键：放在固定头部，滚到哪都能返回（移动端全屏时尤其重要）
+    const backBtn = el('div', 'menu_button so-manager-back')
+    backBtn.title = '返回列表'
+    backBtn.textContent = '‹'
+    backBtn.setAttribute('role', 'button')
+    backBtn.tabIndex = 0
+    const goBack = () => {
+      view = { kind: 'list' }
+      render()
+    }
+    backBtn.addEventListener('click', goBack)
+    backBtn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        goBack()
+      }
+    })
     const title = el('b', 'so-manager-title')
     const closeBtn = el('div', 'menu_button so-manager-close')
     closeBtn.title = '关闭'
     closeBtn.textContent = '✕'
     closeBtn.addEventListener('click', () => close())
-    header.append(title, closeBtn)
+    header.append(backBtn, title, closeBtn)
 
     const body = el('div', 'so-manager-body')
     dialog.append(header, body)
@@ -120,6 +137,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
   function render(): void {
     if (!backdrop) return
+    const backBtn = backdrop.querySelector('.so-manager-back') as HTMLElement
     const title = backdrop.querySelector('.so-manager-title') as HTMLElement
     const body = backdrop.querySelector('.so-manager-body') as HTMLElement
     body.innerHTML = ''
@@ -128,12 +146,14 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       const packId = view.packId
       const pack = deps.getSettings().packs.find((p) => p.id === packId)
       if (pack) {
-        title.textContent = `立绘包 · ${pack.name}`
+        backBtn.style.display = 'inline-flex'
+        title.textContent = pack.name
         renderPackDetail(body, pack)
         return
       }
       view = { kind: 'list' }
     }
+    backBtn.style.display = 'none'
     title.textContent = '立绘包管理'
     renderList(body)
   }
@@ -146,16 +166,15 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     const binding = settings.bindings.find((b) => b.characterName === characterName)
 
     // 当前角色绑定
-    const bindRow = el('div', 'so-row so-bind-row')
-    const bindLabel = el('span')
-    bindLabel.textContent = characterName
-      ? `角色「${characterName}」绑定：`
-      : '请先打开一个角色聊天再绑定立绘包'
-    bindRow.append(bindLabel)
+    const bindSection = el('div', 'so-section')
+    const bindTitle = el('div', 'so-section-title')
+    bindTitle.textContent = characterName ? `当前角色：${characterName}` : '当前角色绑定'
+    bindSection.append(bindTitle)
     if (characterName) {
+      const bindRow = el('div', 'so-row so-bind-row')
       const select = document.createElement('select')
       select.className = 'text_pole'
-      select.setAttribute('aria-label', '绑定立绘包')
+      select.setAttribute('aria-label', `为「${characterName}」绑定立绘包`)
       const placeholder = document.createElement('option')
       placeholder.value = ''
       placeholder.textContent = '选择立绘包…'
@@ -179,17 +198,29 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           ),
         )
       }
+      bindSection.append(bindRow)
+    } else {
+      const tip = el('div', 'so-status')
+      tip.textContent = '请先打开一个角色聊天，再回来绑定立绘包。'
+      bindSection.append(tip)
     }
-    body.append(bindRow)
+    body.append(bindSection)
 
-    // 包卡片列表
-    const list = el('div', 'so-pack-list')
-    for (const pack of settings.packs) list.append(renderPackCard(pack))
-    body.append(list)
+    // 包封面图墙：立绘包是图片集合，用卡片网格浏览（同 ST 角色列表的卡片墙模式）
+    const grid = el('div', 'so-pack-grid')
+    for (const pack of settings.packs) {
+      const bound = binding?.packId === pack.id ? (binding.enabled ? 'active' : 'off') : null
+      grid.append(renderPackCard(pack, bound))
+    }
+    body.append(grid)
 
-    // 新建
+    // 新建 / 导入
+    const addSection = el('div', 'so-section')
+    const addTitle = el('div', 'so-section-title')
+    addTitle.textContent = '新建 / 导入'
     const createRow = el('div', 'so-row')
     const nameInput = textInput('新立绘包名称…')
+    nameInput.classList.add('so-grow')
     const createBtn = button('新建立绘包', () => {
       const name = sanitizePackName(nameInput.value)
       if (!name) {
@@ -205,11 +236,25 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       if (e.key === 'Enter' && !e.isComposing) createBtn.click()
     })
     createRow.append(nameInput, createBtn)
-    body.append(createRow)
 
-    // 导入：JSON 文件 / 分享串
     const importRow = el('div', 'so-row')
+    const shareInput = textInput('粘贴 stpack1: 开头的分享串…')
+    shareInput.classList.add('so-grow')
+    const shareBtn = button('导入分享串', () => {
+      if (!shareInput.value.trim()) return
+      try {
+        const pack = decodeShareString(shareInput.value)
+        deps.updateSettings(upsertPack(deps.getSettings(), pack))
+        shareInput.value = ''
+        view = { kind: 'pack', packId: pack.id }
+        render()
+      } catch (err) {
+        toast(body, err instanceof Error ? err.message : '分享串解析失败')
+      }
+    })
     importRow.append(
+      shareInput,
+      shareBtn,
       button('导入 JSON 文件', () => {
         pickFile('.json,application/json', false, async (files) => {
           try {
@@ -223,69 +268,62 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         })
       }),
     )
-    body.append(importRow)
-
-    const shareRow = el('div', 'so-row so-share-row')
-    const shareInput = textInput('粘贴 stpack1: 开头的分享串…')
-    const shareBtn = button('导入分享串', () => {
-      if (!shareInput.value.trim()) return
-      try {
-        const pack = decodeShareString(shareInput.value)
-        deps.updateSettings(upsertPack(deps.getSettings(), pack))
-        shareInput.value = ''
-        view = { kind: 'pack', packId: pack.id }
-        render()
-      } catch (err) {
-        toast(body, err instanceof Error ? err.message : '分享串解析失败')
-      }
-    })
-    shareRow.append(shareInput, shareBtn)
-    body.append(shareRow)
+    addSection.append(addTitle, createRow, importRow)
+    body.append(addSection)
 
     body.append(statusBar())
   }
 
-  function renderPackCard(pack: SpritePack): HTMLElement {
-    const item = el('div', 'so-pack-item so-pack-card')
-    item.tabIndex = 0
-    item.setAttribute('role', 'button')
-    item.title = '点击进入管理'
+  function renderPackCard(pack: SpritePack, bound: 'active' | 'off' | null): HTMLElement {
+    const card = el('div', 'so-pack-card')
+    card.tabIndex = 0
+    card.setAttribute('role', 'button')
+    card.setAttribute('aria-label', `打开立绘包「${pack.name}」`)
+    card.title = '点击进入管理'
 
+    // 封面区：大图 + 角标（使用中 / 预设）
+    const coverBox = el('div', 'so-card-cover')
     const cover = getPackCover(pack)
-    const thumb = el('div', 'so-card-thumb')
     if (cover) {
       const img = document.createElement('img')
       img.src = cover.url
       img.alt = cover.tag
       img.loading = 'lazy'
-      thumb.append(img)
+      coverBox.append(img)
     } else {
-      thumb.textContent = '空'
+      coverBox.textContent = '暂无立绘'
+    }
+    if (bound) {
+      const badge = el('span', bound === 'active' ? 'so-card-badge' : 'so-card-badge so-card-badge-off')
+      badge.textContent = bound === 'active' ? '使用中' : '已停用'
+      coverBox.append(badge)
+    }
+    if (isPresetPack(pack.id)) {
+      const chip = el('span', 'so-card-chip')
+      chip.textContent = '预设'
+      coverBox.append(chip)
     }
 
-    const info = el('div', 'so-pack-info')
+    const info = el('div', 'so-card-info')
     const nameEl = el('b')
     nameEl.textContent = pack.name
     const metaEl = el('small')
-    metaEl.textContent = `${pack.sprites.length} 张 · ${pack.author ?? '未知作者'}${isPresetPack(pack.id) ? ' · 预设（只读）' : ''}`
+    metaEl.textContent = `${pack.sprites.length} 张 · ${pack.author ?? '未知作者'}`
     info.append(nameEl, metaEl)
 
-    const arrow = el('div', 'so-card-arrow')
-    arrow.textContent = '›'
-
-    item.append(thumb, info, arrow)
+    card.append(coverBox, info)
     const enter = () => {
       view = { kind: 'pack', packId: pack.id }
       render()
     }
-    item.addEventListener('click', enter)
-    item.addEventListener('keydown', (e) => {
+    card.addEventListener('click', enter)
+    card.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault()
         enter()
       }
     })
-    return item
+    return card
   }
 
   /* ---------------- 详情页 ---------------- */
@@ -293,16 +331,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   function renderPackDetail(body: HTMLElement, pack: SpritePack): void {
     const readonly = isPresetPack(pack.id)
 
-    // 顶部：返回 + 操作
+    // 顶部操作（返回键在固定头部）：导出/分享靠左，删除靠右与其隔开
     const topRow = el('div', 'so-row so-detail-top')
-    topRow.append(
-      button('‹ 返回列表', () => {
-        view = { kind: 'list' }
-        render()
-      }),
-    )
-    const spacer = el('div', 'so-spacer')
-    topRow.append(spacer)
     topRow.append(
       button('导出 JSON', async () => {
         // 本地/预设图片自动内嵌 base64（别人导入才能看到图）；图床 URL 保持轻量
@@ -322,6 +352,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         if (!ok) window.prompt('手动复制分享串：', result.text)
       }),
     )
+    const spacer = el('div', 'so-spacer')
+    topRow.append(spacer)
     if (!readonly) {
       topRow.append(
         button('删除立绘包', () => {
@@ -339,6 +371,9 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       note.textContent = '预设包随扩展分发、只读；想改动可先「导出 JSON」再导入为自定义包。'
       body.append(note)
     } else {
+      const metaSection = el('div', 'so-section')
+      const metaTitle = el('div', 'so-section-title')
+      metaTitle.textContent = '包信息'
       const metaRow = el('div', 'so-row so-meta-row')
       const nameInput = textInput('包名')
       nameInput.value = pack.name
@@ -364,7 +399,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           })
         }),
       )
-      body.append(metaRow)
+      metaSection.append(metaTitle, metaRow)
+      body.append(metaSection)
     }
 
     // 立绘网格：有分组则按分组分区展示（功能②），否则单一网格
@@ -394,6 +430,11 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
     // 添加立绘
     if (!readonly) {
+      const addSection = el('div', 'so-section')
+      const addTitle = el('div', 'so-section-title')
+      addTitle.textContent = '添加立绘'
+      addSection.append(addTitle)
+
       const addRow = el('div', 'so-row')
       const batchGroupInput = textInput('本批分组，可空')
       addRow.append(
@@ -404,11 +445,10 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           )
         }),
       )
-      body.append(addRow)
       const upHint = el('div', 'so-status')
       upHint.textContent =
         '文件名含下划线自动拆分组：鸣人_微笑.png → 分组「鸣人」表情「微笑」；否则用「本批分组」。'
-      body.append(upHint)
+      addSection.append(addRow, upHint)
 
       const codeRow = el('div', 'so-row so-code-row')
       const tagInput = textInput('表情名，如 微笑')
@@ -442,7 +482,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       )
       const codeHint = el('div', 'so-status')
       codeHint.textContent = `编码将拼接当前图床前缀：${deps.getSettings().imageHost}`
-      body.append(codeRow, codeHint)
+      addSection.append(codeRow, codeHint)
+      body.append(addSection)
     }
 
     body.append(statusBar())

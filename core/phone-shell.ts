@@ -53,23 +53,39 @@ export function createPhoneShell(
 
   const statusBar = document.createElement('div')
   statusBar.className = 'so-phone-status'
+  // App 内左上角返回键：比 Home 条更符合直觉的返回方式（Home 条仍可用）
+  const backBtn = document.createElement('div')
+  backBtn.className = 'so-phone-back'
+  backBtn.textContent = '‹'
+  backBtn.title = '返回主屏'
+  backBtn.setAttribute('role', 'button')
+  backBtn.setAttribute('aria-label', '返回主屏')
+  backBtn.tabIndex = 0
+  backBtn.addEventListener('click', () => goHome())
+  backBtn.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      goHome()
+    }
+  })
   const statusTitle = document.createElement('span')
   statusTitle.className = 'so-phone-status-title'
   statusTitle.textContent = 'st-stage'
   const clock = document.createElement('span')
   clock.className = 'so-phone-clock'
-  statusBar.append(statusTitle, clock)
+  statusBar.append(backBtn, statusTitle, clock)
 
   const screen = document.createElement('div')
   screen.className = 'so-phone-screen'
 
   const homeBar = document.createElement('div')
   homeBar.className = 'so-phone-homebar'
+  homeBar.title = '返回主屏 / 收起手机'
+  homeBar.setAttribute('role', 'button')
+  homeBar.setAttribute('aria-label', '返回主屏或收起手机')
+  homeBar.tabIndex = 0
   const homeBtn = document.createElement('div')
   homeBtn.className = 'so-phone-homebtn'
-  homeBtn.title = '返回主屏 / 收起手机'
-  homeBtn.setAttribute('role', 'button')
-  homeBtn.setAttribute('aria-label', '返回主屏或收起手机')
   homeBar.append(homeBtn)
 
   shell.append(statusBar, screen, homeBar)
@@ -144,12 +160,20 @@ export function createPhoneShell(
     window.addEventListener('pointerup', onUp)
   })
 
-  homeBtn.addEventListener('click', () => {
+  // 整条 Home 栏都是命中区（原来只有中间 96×5px 的细线能点，触屏几乎点不中）
+  const onHomePress = () => {
     if (activeApp) {
       leaveApp()
       renderScreen()
     } else {
       commitState({ ...state, open: false })
+    }
+  }
+  homeBar.addEventListener('click', onHomePress)
+  homeBar.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onHomePress()
     }
   })
 
@@ -171,6 +195,7 @@ export function createPhoneShell(
 
   function renderScreen(): void {
     screen.innerHTML = ''
+    backBtn.style.display = activeApp ? 'flex' : 'none'
     if (activeApp) {
       statusTitle.textContent = activeApp.name
       const container = document.createElement('div')

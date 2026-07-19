@@ -312,21 +312,36 @@
     shell.style.display = "none";
     const statusBar2 = document.createElement("div");
     statusBar2.className = "so-phone-status";
+    const backBtn = document.createElement("div");
+    backBtn.className = "so-phone-back";
+    backBtn.textContent = "‹";
+    backBtn.title = "返回主屏";
+    backBtn.setAttribute("role", "button");
+    backBtn.setAttribute("aria-label", "返回主屏");
+    backBtn.tabIndex = 0;
+    backBtn.addEventListener("click", () => goHome());
+    backBtn.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        goHome();
+      }
+    });
     const statusTitle = document.createElement("span");
     statusTitle.className = "so-phone-status-title";
     statusTitle.textContent = "st-stage";
     const clock = document.createElement("span");
     clock.className = "so-phone-clock";
-    statusBar2.append(statusTitle, clock);
+    statusBar2.append(backBtn, statusTitle, clock);
     const screen = document.createElement("div");
     screen.className = "so-phone-screen";
     const homeBar = document.createElement("div");
     homeBar.className = "so-phone-homebar";
+    homeBar.title = "返回主屏 / 收起手机";
+    homeBar.setAttribute("role", "button");
+    homeBar.setAttribute("aria-label", "返回主屏或收起手机");
+    homeBar.tabIndex = 0;
     const homeBtn = document.createElement("div");
     homeBtn.className = "so-phone-homebtn";
-    homeBtn.title = "返回主屏 / 收起手机";
-    homeBtn.setAttribute("role", "button");
-    homeBtn.setAttribute("aria-label", "返回主屏或收起手机");
     homeBar.append(homeBtn);
     shell.append(statusBar2, screen, homeBar);
     document.body.append(fab, shell);
@@ -391,12 +406,19 @@
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
     });
-    homeBtn.addEventListener("click", () => {
+    const onHomePress = () => {
       if (activeApp) {
         leaveApp();
         renderScreen();
       } else {
         commitState({ ...state, open: false });
+      }
+    };
+    homeBar.addEventListener("click", onHomePress);
+    homeBar.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onHomePress();
       }
     });
     const unsubscribe = deps.registry.subscribe(() => {
@@ -414,6 +436,7 @@
     }
     function renderScreen() {
       screen.innerHTML = "";
+      backBtn.style.display = activeApp ? "flex" : "none";
       if (activeApp) {
         statusTitle.textContent = activeApp.name;
         const container = document.createElement("div");
@@ -1184,12 +1207,28 @@
       dialog.setAttribute("role", "dialog");
       dialog.setAttribute("aria-label", "立绘包管理");
       const header = el("div", "so-manager-header");
+      const backBtn = el("div", "menu_button so-manager-back");
+      backBtn.title = "返回列表";
+      backBtn.textContent = "‹";
+      backBtn.setAttribute("role", "button");
+      backBtn.tabIndex = 0;
+      const goBack = () => {
+        view = { kind: "list" };
+        render();
+      };
+      backBtn.addEventListener("click", goBack);
+      backBtn.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          goBack();
+        }
+      });
       const title = el("b", "so-manager-title");
       const closeBtn = el("div", "menu_button so-manager-close");
       closeBtn.title = "关闭";
       closeBtn.textContent = "✕";
       closeBtn.addEventListener("click", () => close());
-      header.append(title, closeBtn);
+      header.append(backBtn, title, closeBtn);
       const body = el("div", "so-manager-body");
       dialog.append(header, body);
       backdrop.append(dialog);
@@ -1222,6 +1261,7 @@
     }
     function render() {
       if (!backdrop) return;
+      const backBtn = backdrop.querySelector(".so-manager-back");
       const title = backdrop.querySelector(".so-manager-title");
       const body = backdrop.querySelector(".so-manager-body");
       body.innerHTML = "";
@@ -1229,12 +1269,14 @@
         const packId = view.packId;
         const pack = deps.getSettings().packs.find((p) => p.id === packId);
         if (pack) {
-          title.textContent = `立绘包 · ${pack.name}`;
+          backBtn.style.display = "inline-flex";
+          title.textContent = pack.name;
           renderPackDetail(body, pack);
           return;
         }
         view = { kind: "list" };
       }
+      backBtn.style.display = "none";
       title.textContent = "立绘包管理";
       renderList(body);
     }
@@ -1242,14 +1284,15 @@
       const settings = deps.getSettings();
       const characterName = deps.adapter.getCurrentCharacterName();
       const binding = settings.bindings.find((b) => b.characterName === characterName);
-      const bindRow = el("div", "so-row so-bind-row");
-      const bindLabel = el("span");
-      bindLabel.textContent = characterName ? `角色「${characterName}」绑定：` : "请先打开一个角色聊天再绑定立绘包";
-      bindRow.append(bindLabel);
+      const bindSection = el("div", "so-section");
+      const bindTitle = el("div", "so-section-title");
+      bindTitle.textContent = characterName ? `当前角色：${characterName}` : "当前角色绑定";
+      bindSection.append(bindTitle);
       if (characterName) {
+        const bindRow = el("div", "so-row so-bind-row");
         const select = document.createElement("select");
         select.className = "text_pole";
-        select.setAttribute("aria-label", "绑定立绘包");
+        select.setAttribute("aria-label", `为「${characterName}」绑定立绘包`);
         const placeholder = document.createElement("option");
         placeholder.value = "";
         placeholder.textContent = "选择立绘包…";
@@ -1275,13 +1318,25 @@
             )
           );
         }
+        bindSection.append(bindRow);
+      } else {
+        const tip = el("div", "so-status");
+        tip.textContent = "请先打开一个角色聊天，再回来绑定立绘包。";
+        bindSection.append(tip);
       }
-      body.append(bindRow);
-      const list = el("div", "so-pack-list");
-      for (const pack of settings.packs) list.append(renderPackCard(pack));
-      body.append(list);
+      body.append(bindSection);
+      const grid = el("div", "so-pack-grid");
+      for (const pack of settings.packs) {
+        const bound = binding?.packId === pack.id ? binding.enabled ? "active" : "off" : null;
+        grid.append(renderPackCard(pack, bound));
+      }
+      body.append(grid);
+      const addSection = el("div", "so-section");
+      const addTitle = el("div", "so-section-title");
+      addTitle.textContent = "新建 / 导入";
       const createRow = el("div", "so-row");
       const nameInput = textInput("新立绘包名称…");
+      nameInput.classList.add("so-grow");
       const createBtn = button("新建立绘包", () => {
         const name = sanitizePackName(nameInput.value);
         if (!name) {
@@ -1297,9 +1352,24 @@
         if (e.key === "Enter" && !e.isComposing) createBtn.click();
       });
       createRow.append(nameInput, createBtn);
-      body.append(createRow);
       const importRow = el("div", "so-row");
+      const shareInput = textInput("粘贴 stpack1: 开头的分享串…");
+      shareInput.classList.add("so-grow");
+      const shareBtn = button("导入分享串", () => {
+        if (!shareInput.value.trim()) return;
+        try {
+          const pack = decodeShareString(shareInput.value);
+          deps.updateSettings(upsertPack(deps.getSettings(), pack));
+          shareInput.value = "";
+          view = { kind: "pack", packId: pack.id };
+          render();
+        } catch (err) {
+          toast(body, err instanceof Error ? err.message : "分享串解析失败");
+        }
+      });
       importRow.append(
+        shareInput,
+        shareBtn,
         button("导入 JSON 文件", () => {
           pickFile(".json,application/json", false, async (files) => {
             try {
@@ -1313,74 +1383,60 @@
           });
         })
       );
-      body.append(importRow);
-      const shareRow = el("div", "so-row so-share-row");
-      const shareInput = textInput("粘贴 stpack1: 开头的分享串…");
-      const shareBtn = button("导入分享串", () => {
-        if (!shareInput.value.trim()) return;
-        try {
-          const pack = decodeShareString(shareInput.value);
-          deps.updateSettings(upsertPack(deps.getSettings(), pack));
-          shareInput.value = "";
-          view = { kind: "pack", packId: pack.id };
-          render();
-        } catch (err) {
-          toast(body, err instanceof Error ? err.message : "分享串解析失败");
-        }
-      });
-      shareRow.append(shareInput, shareBtn);
-      body.append(shareRow);
+      addSection.append(addTitle, createRow, importRow);
+      body.append(addSection);
       body.append(statusBar());
     }
-    function renderPackCard(pack) {
-      const item = el("div", "so-pack-item so-pack-card");
-      item.tabIndex = 0;
-      item.setAttribute("role", "button");
-      item.title = "点击进入管理";
+    function renderPackCard(pack, bound) {
+      const card = el("div", "so-pack-card");
+      card.tabIndex = 0;
+      card.setAttribute("role", "button");
+      card.setAttribute("aria-label", `打开立绘包「${pack.name}」`);
+      card.title = "点击进入管理";
+      const coverBox = el("div", "so-card-cover");
       const cover = getPackCover(pack);
-      const thumb = el("div", "so-card-thumb");
       if (cover) {
         const img = document.createElement("img");
         img.src = cover.url;
         img.alt = cover.tag;
         img.loading = "lazy";
-        thumb.append(img);
+        coverBox.append(img);
       } else {
-        thumb.textContent = "空";
+        coverBox.textContent = "暂无立绘";
       }
-      const info = el("div", "so-pack-info");
+      if (bound) {
+        const badge = el("span", bound === "active" ? "so-card-badge" : "so-card-badge so-card-badge-off");
+        badge.textContent = bound === "active" ? "使用中" : "已停用";
+        coverBox.append(badge);
+      }
+      if (isPresetPack(pack.id)) {
+        const chip = el("span", "so-card-chip");
+        chip.textContent = "预设";
+        coverBox.append(chip);
+      }
+      const info = el("div", "so-card-info");
       const nameEl = el("b");
       nameEl.textContent = pack.name;
       const metaEl = el("small");
-      metaEl.textContent = `${pack.sprites.length} 张 · ${pack.author ?? "未知作者"}${isPresetPack(pack.id) ? " · 预设（只读）" : ""}`;
+      metaEl.textContent = `${pack.sprites.length} 张 · ${pack.author ?? "未知作者"}`;
       info.append(nameEl, metaEl);
-      const arrow = el("div", "so-card-arrow");
-      arrow.textContent = "›";
-      item.append(thumb, info, arrow);
+      card.append(coverBox, info);
       const enter = () => {
         view = { kind: "pack", packId: pack.id };
         render();
       };
-      item.addEventListener("click", enter);
-      item.addEventListener("keydown", (e) => {
+      card.addEventListener("click", enter);
+      card.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           enter();
         }
       });
-      return item;
+      return card;
     }
     function renderPackDetail(body, pack) {
       const readonly = isPresetPack(pack.id);
       const topRow = el("div", "so-row so-detail-top");
-      topRow.append(
-        button("‹ 返回列表", () => {
-          view = { kind: "list" };
-          render();
-        })
-      );
-      const spacer = el("div", "so-spacer");
-      topRow.append(spacer);
       topRow.append(
         button("导出 JSON", async () => {
           const file = await exportPack(pack);
@@ -1399,6 +1455,8 @@
           if (!ok) window.prompt("手动复制分享串：", result.text);
         })
       );
+      const spacer = el("div", "so-spacer");
+      topRow.append(spacer);
       if (!readonly) {
         topRow.append(
           button("删除立绘包", () => {
@@ -1414,6 +1472,9 @@
         note.textContent = "预设包随扩展分发、只读；想改动可先「导出 JSON」再导入为自定义包。";
         body.append(note);
       } else {
+        const metaSection = el("div", "so-section");
+        const metaTitle = el("div", "so-section-title");
+        metaTitle.textContent = "包信息";
         const metaRow = el("div", "so-row so-meta-row");
         const nameInput = textInput("包名");
         nameInput.value = pack.name;
@@ -1439,7 +1500,8 @@
             });
           })
         );
-        body.append(metaRow);
+        metaSection.append(metaTitle, metaRow);
+        body.append(metaSection);
       }
       if (pack.sprites.length === 0) {
         const empty = el("div", "so-status");
@@ -1465,6 +1527,10 @@
         }
       }
       if (!readonly) {
+        const addSection = el("div", "so-section");
+        const addTitle = el("div", "so-section-title");
+        addTitle.textContent = "添加立绘";
+        addSection.append(addTitle);
         const addRow = el("div", "so-row");
         const batchGroupInput = textInput("本批分组，可空");
         addRow.append(
@@ -1477,10 +1543,9 @@
             );
           })
         );
-        body.append(addRow);
         const upHint = el("div", "so-status");
         upHint.textContent = "文件名含下划线自动拆分组：鸣人_微笑.png → 分组「鸣人」表情「微笑」；否则用「本批分组」。";
-        body.append(upHint);
+        addSection.append(addRow, upHint);
         const codeRow = el("div", "so-row so-code-row");
         const tagInput = textInput("表情名，如 微笑");
         const codeInput = textInput("图床编码，如 ab12cd.png");
@@ -1513,7 +1578,8 @@
         );
         const codeHint = el("div", "so-status");
         codeHint.textContent = `编码将拼接当前图床前缀：${deps.getSettings().imageHost}`;
-        body.append(codeRow, codeHint);
+        addSection.append(codeRow, codeHint);
+        body.append(addSection);
       }
       body.append(statusBar());
     }
@@ -1788,37 +1854,44 @@
       checkboxRow2(
         "启用立绘悬浮窗",
         settings.enabled,
-        (v) => deps.updateSettings({ ...deps.getSettings(), enabled: v })
+        (v) => deps.updateSettings({ ...deps.getSettings(), enabled: v }),
+        "总开关：把可用立绘清单注入给 AI，并根据回复中的 [立绘:xxx] 标签在悬浮窗展示对应立绘。关闭后两者都停用。"
       ),
       checkboxRow2(
         "显示手机框（关闭则回退纯悬浮窗）",
         settings.showPhone,
-        (v) => deps.updateSettings({ ...deps.getSettings(), showPhone: v })
+        (v) => deps.updateSettings({ ...deps.getSettings(), showPhone: v }),
+        "在屏幕上显示可拖动的 📱 图标，点击展开手机面板（立绘 / 图库 / 设置 App）。关闭后仅保留立绘悬浮窗本体。"
       ),
       checkboxRow2(
         "消息中隐藏 [立绘:xxx] 标签",
         settings.hideTagInMessage,
-        (v) => deps.updateSettings({ ...deps.getSettings(), hideTagInMessage: v })
+        (v) => deps.updateSettings({ ...deps.getSettings(), hideTagInMessage: v }),
+        "[立绘:xxx] 是 AI 用来切换立绘的控制标签。开启后聊天气泡里不再显示这串文字，仅在后台生效；消息原文不变，可随时关闭。"
       ),
       checkboxRow2(
         "渲染消息内插图（<img>编码</img>）",
         settings.renderInlineImages,
-        (v) => deps.updateSettings({ ...deps.getSettings(), renderInlineImages: v })
+        (v) => deps.updateSettings({ ...deps.getSettings(), renderInlineImages: v }),
+        "把 AI 回复中的 <img>图床编码</img> 渲染成真实图片，编码会自动拼接下方「图床前缀」。适合让 AI 在正文里插图。"
       ),
       checkboxRow2(
         "多立绘自动轮播（一条消息含多张立绘时）",
         settings.autoSwitch,
-        (v) => deps.updateSettings({ ...deps.getSettings(), autoSwitch: v })
+        (v) => deps.updateSettings({ ...deps.getSettings(), autoSwitch: v }),
+        "一条回复命中多张立绘时，悬浮窗按下方间隔自动逐张播放；关闭后需点击悬浮窗手动切换。"
       ),
       numberRow(
         "轮播间隔（秒）",
         settings.autoSwitchSeconds,
-        (v) => deps.updateSettings({ ...deps.getSettings(), autoSwitchSeconds: v })
+        (v) => deps.updateSettings({ ...deps.getSettings(), autoSwitchSeconds: v }),
+        "自动轮播时每张立绘的停留时长，范围 1–60 秒。"
       ),
       checkboxRow2(
         "多角色/分组模式（按 [立绘:分组/图名] 寻址）",
         settings.multiRole,
-        (v) => deps.updateSettings({ ...deps.getSettings(), multiRole: v })
+        (v) => deps.updateSettings({ ...deps.getSettings(), multiRole: v }),
+        "立绘包内用「分组」区分多个角色或形态时开启：AI 会用 [立绘:分组/图名]（如 [立绘:鸣人/微笑]）精确指定立绘。单角色包保持关闭即可。"
       ),
       selectRow(
         "分组 prompt 模式",
@@ -1830,11 +1903,13 @@
         (v) => deps.updateSettings({
           ...deps.getSettings(),
           multiRolePromptMode: v === "repeat" ? "repeat" : "full"
-        })
+        }),
+        "注入给 AI 的立绘清单写法。全量：逐一列出每个「分组/图名」组合，最直观；重复：只列分组名和共享的表情名，各分组图名一致时更省 token。"
       ),
       hostRow(
         settings.imageHost,
-        (v) => deps.updateSettings({ ...deps.getSettings(), imageHost: v })
+        (v) => deps.updateSettings({ ...deps.getSettings(), imageHost: v }),
+        "拼在「图床编码」前面的 URL，用于按编码添加立绘、分享串和消息内插图。默认 catbox，一般无需修改。"
       )
     );
     const imgbbHint = document.createElement("div");
@@ -1859,12 +1934,18 @@
     });
     const autoSpan = document.createElement("span");
     autoSpan.textContent = "导入时自动上传到 imgbb 图床并绑定编号";
+    autoSpan.append(
+      helpIcon(
+        "上传立绘时自动同步到 imgbb 图床并记录编号，这样「复制分享串」分享给别人时对方才能看到图。上传失败时图片仍保留在本地。"
+      )
+    );
     autoRow.append(autoInput, autoSpan);
     content.append(
       passwordRow(
         "imgbb API Key",
         settings.imgbbApiKey,
-        (v) => deps.updateSettings({ ...deps.getSettings(), imgbbApiKey: v })
+        (v) => deps.updateSettings({ ...deps.getSettings(), imgbbApiKey: v }),
+        "开启「自动上传」所需的 imgbb 账号密钥，仅保存在本地浏览器、不会上传到别处。免费申请：api.imgbb.com"
       ),
       autoRow,
       imgbbHint
@@ -1874,7 +1955,20 @@
     hint.textContent = "立绘包管理与角色绑定：点击聊天界面悬浮窗右上角的 ⚙ 按钮。";
     content.append(hint);
   }
-  function checkboxRow2(label, checked, onChange) {
+  function helpIcon(tip) {
+    const icon = document.createElement("span");
+    icon.className = "so-help";
+    icon.textContent = "?";
+    icon.tabIndex = 0;
+    icon.setAttribute("aria-label", tip);
+    icon.dataset.tip = tip;
+    icon.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    return icon;
+  }
+  function checkboxRow2(label, checked, onChange, help) {
     const row = document.createElement("label");
     row.className = "so-row checkbox_label";
     const input = document.createElement("input");
@@ -1883,14 +1977,16 @@
     input.addEventListener("change", () => onChange(input.checked));
     const span = document.createElement("span");
     span.textContent = label;
+    if (help) span.append(helpIcon(help));
     row.append(input, span);
     return row;
   }
-  function numberRow(label, value, onChange, min = 1, max = 60) {
+  function numberRow(label, value, onChange, help, min = 1, max = 60) {
     const row = document.createElement("div");
     row.className = "so-row";
     const span = document.createElement("span");
     span.textContent = label;
+    if (help) span.append(helpIcon(help));
     const input = document.createElement("input");
     input.type = "number";
     input.className = "text_pole";
@@ -1908,11 +2004,12 @@
     row.append(span, input);
     return row;
   }
-  function passwordRow(label, value, onChange) {
+  function passwordRow(label, value, onChange, help) {
     const row = document.createElement("div");
     row.className = "so-row";
     const span = document.createElement("span");
     span.textContent = label;
+    if (help) span.append(helpIcon(help));
     const input = document.createElement("input");
     input.type = "password";
     input.className = "text_pole";
@@ -1931,11 +2028,12 @@
     row.append(span, input, eye);
     return row;
   }
-  function selectRow(label, value, options, onChange) {
+  function selectRow(label, value, options, onChange, help) {
     const row = document.createElement("div");
     row.className = "so-row";
     const span = document.createElement("span");
     span.textContent = label;
+    if (help) span.append(helpIcon(help));
     const select = document.createElement("select");
     select.className = "text_pole";
     for (const opt of options) {
@@ -1949,11 +2047,12 @@
     row.append(span, select);
     return row;
   }
-  function hostRow(value, onChange) {
+  function hostRow(value, onChange, help) {
     const row = document.createElement("div");
     row.className = "so-row";
     const span = document.createElement("span");
     span.textContent = "图床前缀";
+    if (help) span.append(helpIcon(help));
     const input = document.createElement("input");
     input.type = "text";
     input.className = "text_pole";
