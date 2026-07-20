@@ -96,7 +96,14 @@ async function init(): Promise<void> {
     },
   })
 
-  for (const app of createBuiltinApps({ overlay, manager })) {
+  /** 收起手机壳并持久化（打开全屏弹窗前用，避免手机挡在弹窗上） */
+  function collapsePhone(): void {
+    settings = { ...settings, phone: { ...settings.phone, open: false } }
+    adapter.saveSettings(settings)
+    phone.setState(settings.phone)
+  }
+
+  for (const app of createBuiltinApps({ overlay, manager, collapsePhone })) {
     registry.register(app)
   }
 

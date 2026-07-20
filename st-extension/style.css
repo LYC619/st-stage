@@ -235,7 +235,16 @@
   padding: 16px;
   border-radius: 12px;
   border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
-  background: var(--SmartThemeBlurTintColor, rgba(25, 25, 30, 0.95));
+  /* 主题色叠在实底之上：不少 ST 主题的 BlurTint 很透（靠 blur 配合），
+     直接当背景会看穿到聊天页，弹窗像不存在一样 */
+  background:
+    linear-gradient(
+      var(--SmartThemeBlurTintColor, transparent),
+      var(--SmartThemeBlurTintColor, transparent)
+    ),
+    rgba(22, 22, 28, 0.94);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
 }
 
@@ -417,6 +426,13 @@
 
 .so-manager .so-pack-card:active {
   transform: scale(0.98);
+}
+
+/* 老内核不支持 aspect-ratio 时给封面兜底高度，避免卡片塌成一行字 */
+@supports not (aspect-ratio: 3 / 4) {
+  .so-manager .so-card-cover {
+    height: 160px;
+  }
 }
 
 /* 封面：3:4 竖版，适配立绘长图 */

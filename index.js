@@ -1300,20 +1300,27 @@
       const title = backdrop.querySelector(".so-manager-title");
       const body = backdrop.querySelector(".so-manager-body");
       body.innerHTML = "";
-      if (view.kind === "pack") {
-        const packId = view.packId;
-        const pack = deps.getSettings().packs.find((p) => p.id === packId);
-        if (pack) {
-          backBtn.style.display = "inline-flex";
-          title.textContent = pack.name;
-          renderPackDetail(body, pack);
-          return;
+      try {
+        if (view.kind === "pack") {
+          const packId = view.packId;
+          const pack = deps.getSettings().packs.find((p) => p.id === packId);
+          if (pack) {
+            backBtn.style.display = "inline-flex";
+            title.textContent = pack.name;
+            renderPackDetail(body, pack);
+            return;
+          }
+          view = { kind: "list" };
         }
-        view = { kind: "list" };
+        backBtn.style.display = "none";
+        title.textContent = "立绘包管理";
+        renderList(body);
+      } catch (err) {
+        console.error("[sprite-overlay] 管理弹窗渲染失败", err);
+        const msg = el("div", "so-status");
+        msg.textContent = `界面渲染出错：${err instanceof Error ? err.message : String(err)}`;
+        body.append(msg);
       }
-      backBtn.style.display = "none";
-      title.textContent = "立绘包管理";
-      renderList(body);
     }
     function renderList(body) {
       const settings = deps.getSettings();
@@ -2311,6 +2318,7 @@
         section.append(
           desc,
           appButton("打开立绘包管理", () => {
+            deps.collapsePhone();
             deps.manager.open();
           })
         );
@@ -2491,7 +2499,12 @@
         adapter.saveSettings(settings);
       }
     });
-    for (const app of createBuiltinApps({ overlay, manager })) {
+    function collapsePhone() {
+      settings = { ...settings, phone: { ...settings.phone, open: false } };
+      adapter.saveSettings(settings);
+      phone.setState(settings.phone);
+    }
+    for (const app of createBuiltinApps({ overlay, manager, collapsePhone })) {
       registry.register(app);
     }
     window.stStage = {

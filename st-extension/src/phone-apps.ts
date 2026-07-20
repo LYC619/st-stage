@@ -16,6 +16,8 @@ import type { ManagerController } from './sprite-manager'
 export interface BuiltinAppDeps {
   overlay: OverlayController
   manager: ManagerController
+  /** 收起手机壳（打开全屏弹窗前调用，避免手机挡在弹窗上面） */
+  collapsePhone: () => void
 }
 
 export function createBuiltinApps(deps: BuiltinAppDeps): PhoneApp[] {
@@ -98,6 +100,7 @@ function galleryApp(deps: BuiltinAppDeps): PhoneApp {
       section.append(
         desc,
         appButton('打开立绘包管理', () => {
+          deps.collapsePhone()
           deps.manager.open()
         }),
       )

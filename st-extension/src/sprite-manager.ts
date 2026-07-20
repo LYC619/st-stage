@@ -142,20 +142,28 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     const body = backdrop.querySelector('.so-manager-body') as HTMLElement
     body.innerHTML = ''
 
-    if (view.kind === 'pack') {
-      const packId = view.packId
-      const pack = deps.getSettings().packs.find((p) => p.id === packId)
-      if (pack) {
-        backBtn.style.display = 'inline-flex'
-        title.textContent = pack.name
-        renderPackDetail(body, pack)
-        return
+    // 渲染兜错：任何异常都显示在弹窗里，不留“只有标题栏”的空壳（移动端无控制台可查）
+    try {
+      if (view.kind === 'pack') {
+        const packId = view.packId
+        const pack = deps.getSettings().packs.find((p) => p.id === packId)
+        if (pack) {
+          backBtn.style.display = 'inline-flex'
+          title.textContent = pack.name
+          renderPackDetail(body, pack)
+          return
+        }
+        view = { kind: 'list' }
       }
-      view = { kind: 'list' }
+      backBtn.style.display = 'none'
+      title.textContent = '立绘包管理'
+      renderList(body)
+    } catch (err) {
+      console.error('[sprite-overlay] 管理弹窗渲染失败', err)
+      const msg = el('div', 'so-status')
+      msg.textContent = `界面渲染出错：${err instanceof Error ? err.message : String(err)}`
+      body.append(msg)
     }
-    backBtn.style.display = 'none'
-    title.textContent = '立绘包管理'
-    renderList(body)
   }
 
   /* ---------------- 列表页 ---------------- */
