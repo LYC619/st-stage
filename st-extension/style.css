@@ -638,6 +638,9 @@
 
   #sprite-overlay-root .sprite-overlay-resize {
     opacity: 0.55;
+    /* 触屏加大命中区，20px 手指很难点中 */
+    width: 28px;
+    height: 28px;
   }
 }
 
@@ -667,6 +670,11 @@
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* 楼层内立绘（spriteDisplayMode=inline/both）：立绘多为竖长图，高度比插图更收敛 */
+#chat .so-inline-sprite img {
+  max-height: 40vh;
 }
 
 /* 加载失败：显示编码提示，方便发现写错的编码 */

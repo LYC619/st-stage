@@ -88,11 +88,15 @@ export function createOverlay(
   document.body.append(root)
 
   function applyLayout() {
-    root.style.left = `${layout.x}px`
-    root.style.top = `${layout.y}px`
-    root.style.width = `${layout.width}px`
+    // 视口钳位（移动端适配）：桌面存的坐标/宽度在窄屏上会整个飘出屏幕，渲染时夹回可见范围。
+    // 只钳显示不改 layout —— 回到大屏后仍按原坐标展示。
+    root.style.left = `${Math.max(0, Math.min(layout.x, window.innerWidth - 48))}px`
+    root.style.top = `${Math.max(0, Math.min(layout.y, window.innerHeight - 48))}px`
+    root.style.width = `${Math.min(layout.width, Math.max(100, window.innerWidth - 16))}px`
   }
   applyLayout()
+  // 旋转屏幕 / 移动端地址栏伸缩时重新钳位
+  window.addEventListener('resize', applyLayout)
 
   /** 淡出 → 换图 → 淡入 */
   function showImage(url: string, tag: string) {
@@ -188,21 +192,34 @@ export function createOverlay(
       if (mode === 'move') {
         layout = { ...origin, x: Math.max(0, origin.x + dx), y: Math.max(0, origin.y + dy) }
       } else {
-        layout = { ...origin, width: Math.min(600, Math.max(100, origin.width + dx)) }
+        layout = {
+          ...origin,
+          width: Math.min(600, window.innerWidth - 16, Math.max(100, origin.width + dx)),
+        }
       }
       applyLayout()
     }
     const onUp = () => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
+      cleanup()
       if (moved) {
         onLayoutChange(layout)
       } else if (mode === 'move') {
         advanceManually() // 点击（未拖动）→ 切下一张
       }
     }
+    // 触屏上浏览器可能中途接管指针（边缘滑动/系统手势）：保留已拖到的位置，不当作点击
+    const onCancel = () => {
+      cleanup()
+      if (moved) onLayoutChange(layout)
+    }
+    function cleanup() {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+    }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
   }
 
   frame.addEventListener('pointerdown', (e) => {
@@ -247,6 +264,7 @@ export function createOverlay(
     destroy() {
       stopAuto()
       if (fadeTimer) clearTimeout(fadeTimer)
+      window.removeEventListener('resize', applyLayout)
       root.remove()
     },
   }

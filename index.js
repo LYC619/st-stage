@@ -15,6 +15,14 @@
   function stripTags(text) {
     return text.replace(new RegExp(TAG_REGEX.source, "g"), "").replace(/[ \t]+$/gm, "");
   }
+  function replaceTags(text, replacer) {
+    return text.replace(new RegExp(TAG_REGEX.source, "g"), (raw, address) => {
+      const trimmed = address.trim();
+      if (!trimmed) return raw;
+      const out = replacer(trimmed, raw);
+      return out === null ? raw : out;
+    });
+  }
   function hasTag(text) {
     return new RegExp(TAG_REGEX.source).test(text);
   }
@@ -374,6 +382,7 @@
       }
     }
     applyLayout();
+    window.addEventListener("resize", applyLayout);
     function commitState(next) {
       state = next;
       applyLayout();
@@ -394,8 +403,7 @@
         applyLayout();
       };
       const onUp = () => {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
+        cleanup();
         if (moved) {
           commitState(state);
         } else {
@@ -403,8 +411,18 @@
           renderScreen();
         }
       };
+      const onCancel = () => {
+        cleanup();
+        if (moved) commitState(state);
+      };
+      function cleanup() {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onCancel);
+      }
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onCancel);
     });
     const onHomePress = () => {
       if (activeApp) {
@@ -511,6 +529,7 @@
       },
       destroy() {
         clearInterval(clockTimer);
+        window.removeEventListener("resize", applyLayout);
         unsubscribe();
         leaveApp();
         fab.remove();
@@ -539,6 +558,7 @@
       settingsVersion: SETTINGS_VERSION,
       enabled: true,
       hideTagInMessage: false,
+      spriteDisplayMode: "overlay",
       renderInlineImages: false,
       imageHost: DEFAULT_IMAGE_HOST,
       overlay: { x: 24, y: 80, width: 220 },
@@ -645,6 +665,7 @@
       settingsVersion: SETTINGS_VERSION,
       enabled: typeof raw.enabled === "boolean" ? raw.enabled : defaults.enabled,
       hideTagInMessage: typeof raw.hideTagInMessage === "boolean" ? raw.hideTagInMessage : defaults.hideTagInMessage,
+      spriteDisplayMode: raw.spriteDisplayMode === "overlay" || raw.spriteDisplayMode === "inline" || raw.spriteDisplayMode === "both" ? raw.spriteDisplayMode : defaults.spriteDisplayMode,
       renderInlineImages: typeof raw.renderInlineImages === "boolean" ? raw.renderInlineImages : defaults.renderInlineImages,
       imageHost: typeof raw.imageHost === "string" && /^https?:\/\//.test(raw.imageHost) ? raw.imageHost : defaults.imageHost,
       overlay: migrateOverlay(raw.overlay, defaults.overlay),
@@ -869,11 +890,12 @@
     root.append(frame);
     document.body.append(root);
     function applyLayout() {
-      root.style.left = `${layout.x}px`;
-      root.style.top = `${layout.y}px`;
-      root.style.width = `${layout.width}px`;
+      root.style.left = `${Math.max(0, Math.min(layout.x, window.innerWidth - 48))}px`;
+      root.style.top = `${Math.max(0, Math.min(layout.y, window.innerHeight - 48))}px`;
+      root.style.width = `${Math.min(layout.width, Math.max(100, window.innerWidth - 16))}px`;
     }
     applyLayout();
+    window.addEventListener("resize", applyLayout);
     function showImage(url, tag) {
       placeholder.style.display = "none";
       img.style.display = "block";
@@ -957,21 +979,33 @@
         if (mode === "move") {
           layout = { ...origin, x: Math.max(0, origin.x + dx), y: Math.max(0, origin.y + dy) };
         } else {
-          layout = { ...origin, width: Math.min(600, Math.max(100, origin.width + dx)) };
+          layout = {
+            ...origin,
+            width: Math.min(600, window.innerWidth - 16, Math.max(100, origin.width + dx))
+          };
         }
         applyLayout();
       };
       const onUp = () => {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
+        cleanup();
         if (moved) {
           onLayoutChange(layout);
         } else if (mode === "move") {
           advanceManually();
         }
       };
+      const onCancel = () => {
+        cleanup();
+        if (moved) onLayoutChange(layout);
+      };
+      function cleanup() {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onCancel);
+      }
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onCancel);
     }
     frame.addEventListener("pointerdown", (e) => {
       if (e.target === resizeHandle) return;
@@ -1014,6 +1048,7 @@
       destroy() {
         stopAuto();
         if (fadeTimer) clearTimeout(fadeTimer);
+        window.removeEventListener("resize", applyLayout);
         root.remove();
       }
     };
@@ -1869,6 +1904,20 @@
         (v) => deps.updateSettings({ ...deps.getSettings(), hideTagInMessage: v }),
         "[立绘:xxx] 是 AI 用来切换立绘的控制标签。开启后聊天气泡里不再显示这串文字，仅在后台生效；消息原文不变，可随时关闭。"
       ),
+      selectRow(
+        "立绘显示位置",
+        settings.spriteDisplayMode,
+        [
+          { value: "overlay", label: "悬浮窗（默认）" },
+          { value: "inline", label: "楼层内（消息里原位显示）" },
+          { value: "both", label: "两者都显示" }
+        ],
+        (v) => deps.updateSettings({
+          ...deps.getSettings(),
+          spriteDisplayMode: v === "inline" || v === "both" ? v : "overlay"
+        }),
+        "楼层内：把消息中的 [立绘:xxx] 标签原位替换成立绘图片，本地上传、内嵌和图床图源都支持；此模式下悬浮窗隐藏。匹配不到的标签仍按上面「隐藏标签」设置处理。只影响显示，消息原文不变。"
+      ),
       checkboxRow2(
         "渲染消息内插图（<img>编码</img>）",
         settings.renderInlineImages,
@@ -2121,7 +2170,8 @@
   }
   function processMessages(settings, messageId = null) {
     if (!settings.enabled) return;
-    if (!settings.hideTagInMessage && !settings.renderInlineImages) return;
+    if (!settings.hideTagInMessage && !settings.renderInlineImages && settings.spriteDisplayMode === "overlay")
+      return;
     const scope = messageId !== null && messageId !== void 0 && `${messageId}` !== "" ? document.querySelectorAll(`#chat .mes[mesid="${CSS.escape(`${messageId}`)}"] .mes_text`) : document.querySelectorAll("#chat .mes .mes_text");
     for (const node of Array.from(scope)) {
       processMessageElement(node, settings);
@@ -2134,9 +2184,12 @@
     processMessages(settings);
   }
   function processMessageElement(root, settings) {
-    const fingerprint = `${settings.hideTagInMessage ? "T" : ""}${settings.renderInlineImages ? "I" : ""}`;
+    const inlineSprites = settings.spriteDisplayMode !== "overlay";
+    const fingerprint = `${settings.hideTagInMessage ? "T" : ""}${settings.renderInlineImages ? "I" : ""}${inlineSprites ? "S" : ""}`;
     if (root.getAttribute(PROCESSED_ATTR) === fingerprint) return;
     const host = settings.imageHost.endsWith("/") ? settings.imageHost : `${settings.imageHost}/`;
+    const chName = inlineSprites ? root.closest(".mes")?.getAttribute("ch_name") ?? "" : "";
+    const pack = chName ? getActivePack(settings, chName) : null;
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     const textNodes = [];
     let current;
@@ -2146,36 +2199,43 @@
     for (const textNode of textNodes) {
       const text = textNode.nodeValue ?? "";
       if (!text) continue;
-      const needsStrip = settings.hideTagInMessage && hasTag(text);
+      const tagged = hasTag(text);
+      const needsSprites = inlineSprites && pack !== null && tagged;
+      const needsStrip = settings.hideTagInMessage && tagged && !needsSprites;
       const needsImages = settings.renderInlineImages && hasInlineImageMarkup(text);
-      if (!needsStrip && !needsImages) continue;
+      if (!needsSprites && !needsStrip && !needsImages) continue;
       let processed = needsStrip ? stripTags(text) : text;
-      if (needsImages) {
-        const PLACEHOLDER = "\0SO_IMG\0";
-        const codes = [];
-        processed = replaceInlineImages(processed, (m) => {
-          codes.push(m.code);
-          return PLACEHOLDER;
+      const elements = [];
+      const marker = (el3) => `\0${elements.push(el3) - 1}\0`;
+      if (needsSprites && pack) {
+        processed = replaceTags(processed, (address) => {
+          const sprite = matchAddress(pack, address);
+          if (!sprite) return settings.hideTagInMessage ? "" : null;
+          return marker(createImage(sprite.url, sprite.tag, "so-inline-sprite"));
         });
-        const parts = processed.split(PLACEHOLDER);
-        const fragment = document.createDocumentFragment();
-        parts.forEach((part, i) => {
-          if (part) fragment.append(document.createTextNode(part));
-          if (i < codes.length) fragment.append(createInlineImage(host, codes[i]));
-        });
-        textNode.replaceWith(fragment);
-      } else if (processed !== text) {
-        textNode.nodeValue = processed;
       }
+      if (needsImages) {
+        processed = replaceInlineImages(processed, (m) => marker(createImage(host + m.code, m.code)));
+      }
+      if (elements.length === 0) {
+        if (processed !== text) textNode.nodeValue = processed;
+        continue;
+      }
+      const fragment = document.createDocumentFragment();
+      processed.split("\0").forEach((part, i) => {
+        if (i % 2 === 1) fragment.append(elements[Number(part)]);
+        else if (part) fragment.append(document.createTextNode(part));
+      });
+      textNode.replaceWith(fragment);
     }
     root.setAttribute(PROCESSED_ATTR, fingerprint);
   }
-  function createInlineImage(host, code) {
+  function createImage(src, alt, extraClass = "") {
     const wrap = document.createElement("span");
-    wrap.className = "so-inline-image";
+    wrap.className = extraClass ? `so-inline-image ${extraClass}` : "so-inline-image";
     const img = document.createElement("img");
-    img.src = host + code;
-    img.alt = code;
+    img.src = src;
+    img.alt = alt;
     img.loading = "lazy";
     img.addEventListener("error", () => wrap.classList.add("so-inline-image-error"), { once: true });
     wrap.append(img);
@@ -2289,6 +2349,19 @@
             settings.hideTagInMessage,
             (v) => ctx.updateSettings({ ...ctx.getSettings(), hideTagInMessage: v })
           ),
+          selectRow2(
+            "立绘显示位置",
+            settings.spriteDisplayMode,
+            [
+              { value: "overlay", label: "悬浮窗（默认）" },
+              { value: "inline", label: "楼层内（消息里原位显示）" },
+              { value: "both", label: "两者都显示" }
+            ],
+            (v) => ctx.updateSettings({
+              ...ctx.getSettings(),
+              spriteDisplayMode: v === "inline" || v === "both" ? v : "overlay"
+            })
+          ),
           toggleRow(
             "渲染消息内插图",
             settings.renderInlineImages,
@@ -2344,6 +2417,23 @@
     row.append(input, span);
     return row;
   }
+  function selectRow2(label, value, options, onChange) {
+    const row = el2("label", "so-app-toggle");
+    const span = document.createElement("span");
+    span.textContent = label;
+    const select = document.createElement("select");
+    select.className = "text_pole so-app-input";
+    for (const opt of options) {
+      const o = document.createElement("option");
+      o.value = opt.value;
+      o.textContent = opt.label;
+      if (opt.value === value) o.selected = true;
+      select.append(o);
+    }
+    select.addEventListener("change", () => onChange(select.value));
+    row.append(span, select);
+    return row;
+  }
 
   // st-extension/src/index.ts
   async function init() {
@@ -2356,7 +2446,7 @@
       return;
     }
     function updateSettings(next) {
-      const displayChanged = next.hideTagInMessage !== settings.hideTagInMessage || next.renderInlineImages !== settings.renderInlineImages || next.imageHost !== settings.imageHost || next.enabled !== settings.enabled;
+      const displayChanged = next.hideTagInMessage !== settings.hideTagInMessage || next.renderInlineImages !== settings.renderInlineImages || next.spriteDisplayMode !== settings.spriteDisplayMode || next.imageHost !== settings.imageHost || next.enabled !== settings.enabled;
       const autoChanged = next.autoSwitch !== settings.autoSwitch || next.autoSwitchSeconds !== settings.autoSwitchSeconds;
       settings = next;
       adapter.saveSettings(settings);
@@ -2428,10 +2518,10 @@
       } else {
         overlay.setPlaceholder("打开角色聊天后\n点击 ⚙ 绑定立绘包");
       }
-      overlay.setVisible(true);
+      overlay.setVisible(settings.spriteDisplayMode !== "inline");
     }
     adapter.onMessageReceived((text) => {
-      if (!settings.enabled) return;
+      if (!settings.enabled || settings.spriteDisplayMode === "inline") return;
       const characterName = adapter.getCurrentCharacterName();
       const pack = getActivePack(settings, characterName);
       if (!pack) return;

@@ -43,3 +43,12 @@
 1. git 提交（含根目录产物 index.js/style.css）
 2. findings.md §4 待验证清单：真实 ST 中渲染事件名、saveBase64AsFile 路径、移动端表现
 3. 三期候选：图床直传（需 server 插件代理 CORS）、第三方 App 动态加载
+
+## 会话 4 · 2026-07-20（四期续：楼层内立绘 + 移动端适配）
+
+- 新设置 `spriteDisplayMode: overlay/inline/both`（立绘显示位置）：inline/both 时消息后处理把 `[立绘:xxx]` 原位替换为立绘图片（`matchAddress` → `sprite.url`，本地上传/内嵌/图床三种图源通吃，**不依赖图床正则**）；inline 时悬浮窗隐藏。按气泡 `.mes[ch_name]` 逐条解析绑定包，群聊也正确。匹配不到的标签退回「隐藏标签」语义。
+- core：`tag-parser.replaceTags()` 新增（含测试）；migrate 补默认值（无需 bump 版本，loadSettings 每次全量重建字段）。
+- 移动端适配：悬浮窗/手机图标渲染时视口钳位（只钳显示不改持久化坐标）+ `resize` 重钳；拖拽补 `pointercancel`（浏览器手势接管时保位置、不误判点击）；触屏缩放手柄 20→28px；悬浮窗宽度钳到视口内。
+- 双端同步：设置面板 + 手机设置 App + Web 模拟器（config-panel 下拉、chat-simulator 楼层内渲染同逻辑）。
+- 坑：message-postprocess/chat-simulator 旧占位符是**真 NUL 字节**写在源码里（Edit 工具匹配不上，Read 显示成空格）；已统一改为 `\0` 转义字面量 + `split('\0')` 字符串切分（奇数位=元素序号，避开 no-control-regex）。
+- 验证：87 单测 ✅ lint ✅ typecheck ✅ build:ext ✅ next build ✅；manifest 0.3.0 → 0.4.0；README 补说明。产物 index.js/style.css 已重建，待用户提交。

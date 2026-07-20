@@ -88,6 +88,15 @@ export interface OverlayLayout {
   width: number
 }
 
+/**
+ * 立绘显示位置（四期）：
+ * - overlay 悬浮窗（默认，旧行为）
+ * - inline  楼层内：把消息里的 [立绘:xxx] 标签原位替换为立绘图片，悬浮窗隐藏
+ * - both    两者都显示
+ * 楼层内渲染直接用 sprite.url，三种图源（内嵌 base64 / ST 本地路径 / 图床）均可显示。
+ */
+export type SpriteDisplayMode = 'overlay' | 'inline' | 'both'
+
 /** 手机壳状态：悬浮图标位置 + 是否展开 */
 export interface PhoneState {
   /** 悬浮图标距视口左侧 px */
@@ -106,6 +115,8 @@ export interface PluginSettings {
   enabled: boolean
   /** 提取标签后是否在消息渲染中隐藏 [立绘:xxx] 文本 */
   hideTagInMessage: boolean
+  /** 立绘显示位置（四期）：悬浮窗 / 楼层内 / 两者 */
+  spriteDisplayMode: SpriteDisplayMode
   /** 是否渲染消息内插图（<img>编码</img> → 图片，M3 消息后处理） */
   renderInlineImages: boolean
   /** 图床前缀，用于分享串编码与消息内插图解析 */
@@ -176,6 +187,7 @@ export function createDefaultSettings(): PluginSettings {
     settingsVersion: SETTINGS_VERSION,
     enabled: true,
     hideTagInMessage: false,
+    spriteDisplayMode: 'overlay',
     renderInlineImages: false,
     imageHost: DEFAULT_IMAGE_HOST,
     overlay: { x: 24, y: 80, width: 220 },

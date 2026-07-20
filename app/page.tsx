@@ -113,6 +113,8 @@ export default function Page() {
             hideTagInMessage={settings.hideTagInMessage}
             renderInlineImages={settings.renderInlineImages}
             imageHost={settings.imageHost}
+            spriteDisplayMode={settings.spriteDisplayMode}
+            activePack={activePack}
             injectionPrompt={injectionPrompt}
             onAiMessage={handleAiMessage}
           />
@@ -131,7 +133,7 @@ export default function Page() {
         sprites={sprites}
         characterName={characterName}
         layout={settings.overlay}
-        visible={settings.enabled && !!activePack}
+        visible={settings.enabled && !!activePack && settings.spriteDisplayMode !== 'inline'}
         autoSwitch={settings.autoSwitch}
         autoSwitchSeconds={settings.autoSwitchSeconds}
         onLayoutChange={(overlay) => updateSettings({ ...settings, overlay })}

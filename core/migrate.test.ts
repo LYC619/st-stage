@@ -109,6 +109,13 @@ describe('migrateSettings', () => {
     expect(migrateSettings({ ...V1_SAVED, autoUpload: 'yes' }).autoUpload).toBe(false)
   })
 
+  it('spriteDisplayMode 缺失/非法回退 overlay，合法值保留（四期）', () => {
+    expect(migrateSettings(V1_SAVED).spriteDisplayMode).toBe('overlay')
+    expect(migrateSettings({ ...V1_SAVED, spriteDisplayMode: 'inline' }).spriteDisplayMode).toBe('inline')
+    expect(migrateSettings({ ...V1_SAVED, spriteDisplayMode: 'both' }).spriteDisplayMode).toBe('both')
+    expect(migrateSettings({ ...V1_SAVED, spriteDisplayMode: 'xxx' }).spriteDisplayMode).toBe('overlay')
+  })
+
   it('当前版本数据迁移后语义不变', () => {
     const current = createDefaultSettings()
     current.packs = [

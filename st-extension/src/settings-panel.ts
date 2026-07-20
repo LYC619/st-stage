@@ -54,6 +54,21 @@ export function mountSettingsPanel(deps: PanelDeps): void {
       (v) => deps.updateSettings({ ...deps.getSettings(), hideTagInMessage: v }),
       '[立绘:xxx] 是 AI 用来切换立绘的控制标签。开启后聊天气泡里不再显示这串文字，仅在后台生效；消息原文不变，可随时关闭。',
     ),
+    selectRow(
+      '立绘显示位置',
+      settings.spriteDisplayMode,
+      [
+        { value: 'overlay', label: '悬浮窗（默认）' },
+        { value: 'inline', label: '楼层内（消息里原位显示）' },
+        { value: 'both', label: '两者都显示' },
+      ],
+      (v) =>
+        deps.updateSettings({
+          ...deps.getSettings(),
+          spriteDisplayMode: v === 'inline' || v === 'both' ? v : 'overlay',
+        }),
+      '楼层内：把消息中的 [立绘:xxx] 标签原位替换成立绘图片，本地上传、内嵌和图床图源都支持；此模式下悬浮窗隐藏。匹配不到的标签仍按上面「隐藏标签」设置处理。只影响显示，消息原文不变。',
+    ),
     checkboxRow(
       '渲染消息内插图（<img>编码</img>）',
       settings.renderInlineImages,

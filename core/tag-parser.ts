@@ -28,6 +28,22 @@ export function stripTags(text: string): string {
   return text.replace(new RegExp(TAG_REGEX.source, 'g'), '').replace(/[ \t]+$/gm, '')
 }
 
+/**
+ * 把每个 [立绘:地址] 标签替换为 replacer 的返回值（用于楼层内立绘渲染）。
+ * replacer 返回 null 表示该处保持原文；地址为空的标签始终保持原文。
+ */
+export function replaceTags(
+  text: string,
+  replacer: (address: string, raw: string) => string | null,
+): string {
+  return text.replace(new RegExp(TAG_REGEX.source, 'g'), (raw, address: string) => {
+    const trimmed = address.trim()
+    if (!trimmed) return raw
+    const out = replacer(trimmed, raw)
+    return out === null ? raw : out
+  })
+}
+
 /** 检查文本是否含立绘标签 */
 export function hasTag(text: string): boolean {
   return new RegExp(TAG_REGEX.source).test(text)

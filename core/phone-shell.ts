@@ -123,6 +123,8 @@ export function createPhoneShell(
     }
   }
   applyLayout()
+  // 旋转屏幕 / 移动端地址栏伸缩时重新钳位图标与壳的位置
+  window.addEventListener('resize', applyLayout)
 
   function commitState(next: PhoneState): void {
     state = next
@@ -147,8 +149,7 @@ export function createPhoneShell(
       applyLayout()
     }
     const onUp = () => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
+      cleanup()
       if (moved) {
         commitState(state)
       } else {
@@ -156,8 +157,19 @@ export function createPhoneShell(
         renderScreen()
       }
     }
+    // 触屏上浏览器可能中途接管指针（边缘滑动/系统手势）：保留已拖到的位置，不当作点击展开
+    const onCancel = () => {
+      cleanup()
+      if (moved) commitState(state)
+    }
+    function cleanup() {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+    }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
   })
 
   // 整条 Home 栏都是命中区（原来只有中间 96×5px 的细线能点，触屏几乎点不中）
@@ -277,6 +289,7 @@ export function createPhoneShell(
     },
     destroy() {
       clearInterval(clockTimer)
+      window.removeEventListener('resize', applyLayout)
       unsubscribe()
       leaveApp()
       fab.remove()

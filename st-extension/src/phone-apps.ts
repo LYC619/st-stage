@@ -138,6 +138,20 @@ function settingsApp(): PhoneApp {
         toggleRow('隐藏 [立绘:xxx] 标签', settings.hideTagInMessage, (v) =>
           ctx.updateSettings({ ...ctx.getSettings(), hideTagInMessage: v }),
         ),
+        selectRow(
+          '立绘显示位置',
+          settings.spriteDisplayMode,
+          [
+            { value: 'overlay', label: '悬浮窗（默认）' },
+            { value: 'inline', label: '楼层内（消息里原位显示）' },
+            { value: 'both', label: '两者都显示' },
+          ],
+          (v) =>
+            ctx.updateSettings({
+              ...ctx.getSettings(),
+              spriteDisplayMode: v === 'inline' || v === 'both' ? v : 'overlay',
+            }),
+        ),
         toggleRow('渲染消息内插图', settings.renderInlineImages, (v) =>
           ctx.updateSettings({ ...ctx.getSettings(), renderInlineImages: v }),
         ),
@@ -200,6 +214,30 @@ function toggleRow(label: string, checked: boolean, onChange: (v: boolean) => vo
   const span = document.createElement('span')
   span.textContent = label
   row.append(input, span)
+  return row
+}
+
+/** 下拉行（设置 App 用，如立绘显示位置） */
+function selectRow(
+  label: string,
+  value: string,
+  options: Array<{ value: string; label: string }>,
+  onChange: (v: string) => void,
+): HTMLElement {
+  const row = el('label', 'so-app-toggle')
+  const span = document.createElement('span')
+  span.textContent = label
+  const select = document.createElement('select')
+  select.className = 'text_pole so-app-input'
+  for (const opt of options) {
+    const o = document.createElement('option')
+    o.value = opt.value
+    o.textContent = opt.label
+    if (opt.value === value) o.selected = true
+    select.append(o)
+  }
+  select.addEventListener('change', () => onChange(select.value))
+  row.append(span, select)
   return row
 }
 

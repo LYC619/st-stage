@@ -172,6 +172,27 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
             className="h-4 w-4 accent-primary"
           />
         </label>
+        <label className="flex items-center justify-between gap-2 text-sm text-foreground">
+          立绘显示位置
+          <select
+            value={settings.spriteDisplayMode}
+            onChange={(e) =>
+              onSettingsChange({
+                ...settings,
+                spriteDisplayMode:
+                  e.target.value === 'inline' || e.target.value === 'both'
+                    ? e.target.value
+                    : 'overlay',
+              })
+            }
+            className="rounded-lg border border-input bg-background px-2 py-1 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+            aria-label="立绘显示位置"
+          >
+            <option value="overlay">悬浮窗（默认）</option>
+            <option value="inline">楼层内（消息里原位显示）</option>
+            <option value="both">两者都显示</option>
+          </select>
+        </label>
         <label className="flex items-center justify-between text-sm text-foreground">
           渲染消息内插图（[插图:编码]）
           <input

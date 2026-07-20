@@ -33,6 +33,12 @@ export function migrateSettings(saved: unknown): PluginSettings {
     enabled: typeof raw.enabled === 'boolean' ? raw.enabled : defaults.enabled,
     hideTagInMessage:
       typeof raw.hideTagInMessage === 'boolean' ? raw.hideTagInMessage : defaults.hideTagInMessage,
+    spriteDisplayMode:
+      raw.spriteDisplayMode === 'overlay' ||
+      raw.spriteDisplayMode === 'inline' ||
+      raw.spriteDisplayMode === 'both'
+        ? raw.spriteDisplayMode
+        : defaults.spriteDisplayMode,
     renderInlineImages:
       typeof raw.renderInlineImages === 'boolean'
         ? raw.renderInlineImages

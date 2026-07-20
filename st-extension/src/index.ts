@@ -39,6 +39,7 @@ async function init(): Promise<void> {
     const displayChanged =
       next.hideTagInMessage !== settings.hideTagInMessage ||
       next.renderInlineImages !== settings.renderInlineImages ||
+      next.spriteDisplayMode !== settings.spriteDisplayMode ||
       next.imageHost !== settings.imageHost ||
       next.enabled !== settings.enabled
     const autoChanged =
@@ -133,12 +134,13 @@ async function init(): Promise<void> {
     } else {
       overlay.setPlaceholder('打开角色聊天后\n点击 ⚙ 绑定立绘包')
     }
-    overlay.setVisible(true)
+    // inline 模式：立绘在楼层内原位显示，悬浮窗整个隐藏
+    overlay.setVisible(settings.spriteDisplayMode !== 'inline')
   }
 
   // 收到 AI 消息：提取全部标签 → 匹配序列 → 悬浮窗排队展示（功能③）
   adapter.onMessageReceived((text) => {
-    if (!settings.enabled) return
+    if (!settings.enabled || settings.spriteDisplayMode === 'inline') return
     const characterName = adapter.getCurrentCharacterName()
     const pack = getActivePack(settings, characterName)
     if (!pack) return
