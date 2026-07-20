@@ -217,7 +217,12 @@
 /* 立绘包管理弹窗 */
 .so-manager-backdrop {
   position: fixed;
-  inset: 0;
+  /* 不用 inset 简写：Chromium 87 之前的老内核（不少国产壳浏览器）不认识，
+     会导致遮罩没有四边锚点、整个弹窗塌成一条 */
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 10000;
   display: flex;
   align-items: center;
@@ -258,7 +263,7 @@
 
 /* 移动端（<768px）：撑满 backdrop 全屏。不用 vh/dvh —— 手机浏览器地址栏/底部工具栏
    （叠加 ST 的 UI 缩放）会让视口单位大于 fixed 可视区，居中布局把弹窗顶部顶出屏幕；
-   backdrop 的 inset:0 始终等于真实可视区，stretch 直接继承它的高度。 */
+   backdrop 的四边锚点（top/right/bottom/left:0）始终等于真实可视区，stretch 直接继承它的高度。 */
 @media (max-width: 767.98px) {
   .so-manager-backdrop {
     align-items: stretch;
@@ -450,7 +455,10 @@
 
 .so-manager .so-card-cover img {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -613,7 +621,10 @@
 
 .so-manager .so-sprite-actions {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
