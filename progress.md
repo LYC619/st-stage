@@ -52,3 +52,4 @@
 - 双端同步：设置面板 + 手机设置 App + Web 模拟器（config-panel 下拉、chat-simulator 楼层内渲染同逻辑）。
 - 坑：message-postprocess/chat-simulator 旧占位符是**真 NUL 字节**写在源码里（Edit 工具匹配不上，Read 显示成空格）；已统一改为 `\0` 转义字面量 + `split('\0')` 字符串切分（奇数位=元素序号，避开 no-control-regex）。
 - 验证：87 单测 ✅ lint ✅ typecheck ✅ build:ext ✅ next build ✅；manifest 0.3.0 → 0.4.0；README 补说明。产物 index.js/style.css 已重建，待用户提交。
+- 真机反馈修复：管理弹窗在手机上顶部被截断/窗口过大 —— `100dvh` 与移动端浏览器 fixed 可视区不一致（地址栏/工具栏、ST 缩放），改为弹窗 stretch 撑满 backdrop（inset:0 恒等于真实可视区，全程不用视口单位）；手机端封面卡片墙加密为自适应约 3 列。

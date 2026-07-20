@@ -247,17 +247,28 @@
   -webkit-overflow-scrolling: touch;
 }
 
-/* 移动端（<768px）：近全屏，带刘海/底部安全区边距 */
+/* 移动端（<768px）：撑满 backdrop 全屏。不用 vh/dvh —— 手机浏览器地址栏/底部工具栏
+   （叠加 ST 的 UI 缩放）会让视口单位大于 fixed 可视区，居中布局把弹窗顶部顶出屏幕；
+   backdrop 的 inset:0 始终等于真实可视区，stretch 直接继承它的高度。 */
 @media (max-width: 767.98px) {
+  .so-manager-backdrop {
+    align-items: stretch;
+  }
+
   .so-manager {
-    width: 100vw;
+    width: 100%;
     max-width: none;
-    height: 100vh;
-    height: 100dvh;
+    height: auto;
     max-height: none;
     border-radius: 0;
     padding: calc(12px + env(safe-area-inset-top, 0px)) 12px
       calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* 手机上封面卡片墙更密（约 3 列），单卡不霸屏 */
+  .so-manager .so-pack-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 8px;
   }
 }
 
