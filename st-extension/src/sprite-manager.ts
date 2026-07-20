@@ -57,6 +57,16 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   let backdrop: HTMLElement | null = null
   let view: View = { kind: 'list' }
 
+  /** 遮罩尺寸用 JS 按 innerWidth/Height 写死 px（与手机壳同一套定位路径）：
+      移动端浏览器对 fixed+四边锚点/视口单位的解释五花八门，内联 px 最稳 */
+  function applyBackdropSize(): void {
+    if (!backdrop) return
+    backdrop.style.left = '0'
+    backdrop.style.top = '0'
+    backdrop.style.width = `${window.innerWidth}px`
+    backdrop.style.height = `${window.innerHeight}px`
+  }
+
   function open(): void {
     if (backdrop) {
       render()
@@ -68,6 +78,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       if (e.target === backdrop) close()
     })
     document.addEventListener('keydown', onEscape)
+    window.addEventListener('resize', applyBackdropSize)
+    applyBackdropSize()
 
     const dialog = el('div', 'so-manager')
     dialog.setAttribute('role', 'dialog')
@@ -117,6 +129,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
   function close(): void {
     document.removeEventListener('keydown', onEscape)
+    window.removeEventListener('resize', applyBackdropSize)
     backdrop?.remove()
     backdrop = null
   }

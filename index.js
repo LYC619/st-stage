@@ -1227,6 +1227,13 @@
   function createSpriteManager(deps) {
     let backdrop = null;
     let view = { kind: "list" };
+    function applyBackdropSize() {
+      if (!backdrop) return;
+      backdrop.style.left = "0";
+      backdrop.style.top = "0";
+      backdrop.style.width = `${window.innerWidth}px`;
+      backdrop.style.height = `${window.innerHeight}px`;
+    }
     function open() {
       if (backdrop) {
         render();
@@ -1238,6 +1245,8 @@
         if (e.target === backdrop) close();
       });
       document.addEventListener("keydown", onEscape);
+      window.addEventListener("resize", applyBackdropSize);
+      applyBackdropSize();
       const dialog = el("div", "so-manager");
       dialog.setAttribute("role", "dialog");
       dialog.setAttribute("aria-label", "立绘包管理");
@@ -1281,6 +1290,7 @@
     }
     function close() {
       document.removeEventListener("keydown", onEscape);
+      window.removeEventListener("resize", applyBackdropSize);
       backdrop?.remove();
       backdrop = null;
     }
