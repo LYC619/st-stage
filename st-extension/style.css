@@ -214,6 +214,30 @@
   opacity: 1;
 }
 
+/* 悬浮窗关闭按钮：与齿轮同排（齿轮右上，✕ 在其左侧） */
+#sprite-overlay-root .sprite-overlay-close {
+  position: absolute;
+  right: 38px;
+  top: 6px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  backdrop-filter: blur(4px);
+}
+
+#sprite-overlay-root .sprite-overlay-frame:hover .sprite-overlay-close {
+  opacity: 1;
+}
+
 /* 立绘包管理弹窗 */
 .so-manager-backdrop {
   position: fixed;
@@ -670,7 +694,8 @@
     align-items: flex-end;
   }
 
-  #sprite-overlay-root .sprite-overlay-gear {
+  #sprite-overlay-root .sprite-overlay-gear,
+  #sprite-overlay-root .sprite-overlay-close {
     opacity: 0.9;
   }
 
@@ -715,9 +740,18 @@
   max-height: 40vh;
 }
 
-/* 加载失败：显示编码提示，方便发现写错的编码 */
+/* 加载失败：显示编码提示，方便发现写错的编码；整块可点击重试 */
+#chat .so-inline-image-error {
+  cursor: pointer;
+}
+
 #chat .so-inline-image-error img {
   min-width: 120px;
   min-height: 48px;
   background: rgba(255, 100, 100, 0.12);
+}
+
+/* 加工标记元素（可逆渲染用），保险起见双保险隐藏 */
+#chat .so-processed-marker {
+  display: none;
 }

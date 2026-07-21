@@ -6,10 +6,17 @@
  * - 补 settingsVersion / renderInlineImages / imageHost 字段
  * - sprite.url 为图床 URL 时反推 code（URL 最后一段文件名）
  * - tag / 包名过 naming.ts 清洗（清洗后为空或重复的条目原样保留 tag，不静默丢图）
+ * v2 → v3：
+ * - 补 overlayHidden / recentFloors 字段
  */
 
 import type { PluginSettings, SpritePack } from './types'
-import { createDefaultSettings, SETTINGS_VERSION } from './types'
+import {
+  createDefaultSettings,
+  RECENT_FLOORS_MAX,
+  RECENT_FLOORS_MIN,
+  SETTINGS_VERSION,
+} from './types'
 import { normalizeTag, sanitizePackName } from './naming'
 import { extractImageCode } from './share-code'
 
@@ -48,6 +55,12 @@ export function migrateSettings(saved: unknown): PluginSettings {
         ? raw.imageHost
         : defaults.imageHost,
     overlay: migrateOverlay(raw.overlay, defaults.overlay),
+    overlayHidden:
+      typeof raw.overlayHidden === 'boolean' ? raw.overlayHidden : defaults.overlayHidden,
+    recentFloors:
+      typeof raw.recentFloors === 'number' && Number.isFinite(raw.recentFloors)
+        ? Math.min(RECENT_FLOORS_MAX, Math.max(RECENT_FLOORS_MIN, Math.round(raw.recentFloors)))
+        : defaults.recentFloors,
     phone: migratePhone(raw.phone, defaults.phone),
     showPhone: typeof raw.showPhone === 'boolean' ? raw.showPhone : defaults.showPhone,
     autoSwitch: typeof raw.autoSwitch === 'boolean' ? raw.autoSwitch : defaults.autoSwitch,

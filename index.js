@@ -539,7 +539,10 @@
   }
 
   // core/types.ts
-  var SETTINGS_VERSION = 2;
+  var SETTINGS_VERSION = 3;
+  var RECENT_FLOORS_DEFAULT = 6;
+  var RECENT_FLOORS_MIN = 1;
+  var RECENT_FLOORS_MAX = 50;
   var DEFAULT_IMAGE_HOST = "https://files.catbox.moe/";
   function getSpriteSource(sprite) {
     if (sprite.url.startsWith("data:")) return "embedded";
@@ -562,6 +565,8 @@
       renderInlineImages: false,
       imageHost: DEFAULT_IMAGE_HOST,
       overlay: { x: 24, y: 80, width: 220 },
+      overlayHidden: false,
+      recentFloors: RECENT_FLOORS_DEFAULT,
       phone: { x: 24, y: 320, open: false },
       showPhone: true,
       autoSwitch: false,
@@ -669,6 +674,8 @@
       renderInlineImages: typeof raw.renderInlineImages === "boolean" ? raw.renderInlineImages : defaults.renderInlineImages,
       imageHost: typeof raw.imageHost === "string" && /^https?:\/\//.test(raw.imageHost) ? raw.imageHost : defaults.imageHost,
       overlay: migrateOverlay(raw.overlay, defaults.overlay),
+      overlayHidden: typeof raw.overlayHidden === "boolean" ? raw.overlayHidden : defaults.overlayHidden,
+      recentFloors: typeof raw.recentFloors === "number" && Number.isFinite(raw.recentFloors) ? Math.min(RECENT_FLOORS_MAX, Math.max(RECENT_FLOORS_MIN, Math.round(raw.recentFloors))) : defaults.recentFloors,
       phone: migratePhone(raw.phone, defaults.phone),
       showPhone: typeof raw.showPhone === "boolean" ? raw.showPhone : defaults.showPhone,
       autoSwitch: typeof raw.autoSwitch === "boolean" ? raw.autoSwitch : defaults.autoSwitch,
@@ -829,7 +836,8 @@
         try {
           const messageId = args[0];
           const chat = getContext().chat;
-          const message = typeof messageId === "number" ? chat[messageId] : chat[chat.length - 1];
+          const idNum = typeof messageId === "number" ? messageId : typeof messageId === "string" && messageId.trim() !== "" ? Number(messageId) : NaN;
+          const message = Number.isInteger(idNum) && idNum >= 0 && idNum < chat.length ? chat[idNum] : chat[chat.length - 1];
           if (message && !message.is_user && typeof message.mes === "string") {
             handler(message.mes);
           }
@@ -851,7 +859,7 @@
 
   // st-extension/src/overlay-dom.ts
   var DRAG_THRESHOLD2 = 6;
-  function createOverlay(initialLayout, onLayoutChange, onManage) {
+  function createOverlay(initialLayout, onLayoutChange, onManage, onClose) {
     let layout = { ...initialLayout };
     let sprites = [];
     let index = 0;
@@ -886,16 +894,31 @@
       e.stopPropagation();
       onManage?.();
     });
-    frame.append(img, placeholder, tagBadge, dots, gearBtn, resizeHandle);
+    const closeBtn = document.createElement("div");
+    closeBtn.className = "sprite-overlay-close";
+    closeBtn.title = "关闭悬浮窗（立绘功能不受影响，可在手机「立绘」App 重新打开）";
+    closeBtn.textContent = "✕";
+    closeBtn.setAttribute("role", "button");
+    closeBtn.setAttribute("aria-label", "关闭悬浮窗");
+    closeBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+    closeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onClose?.();
+    });
+    frame.append(img, placeholder, tagBadge, dots, gearBtn, closeBtn, resizeHandle);
     root.append(frame);
     document.body.append(root);
     function applyLayout() {
-      root.style.left = `${Math.max(0, Math.min(layout.x, window.innerWidth - 48))}px`;
-      root.style.top = `${Math.max(0, Math.min(layout.y, window.innerHeight - 48))}px`;
-      root.style.width = `${Math.min(layout.width, Math.max(100, window.innerWidth - 16))}px`;
+      const w = Math.min(layout.width, Math.max(100, window.innerWidth - 16));
+      root.style.width = `${w}px`;
+      const h = Math.min(root.offsetHeight || 48, window.innerHeight - 8);
+      root.style.left = `${Math.max(0, Math.min(layout.x, window.innerWidth - w))}px`;
+      root.style.top = `${Math.max(0, Math.min(layout.y, window.innerHeight - h))}px`;
     }
     applyLayout();
     window.addEventListener("resize", applyLayout);
+    window.visualViewport?.addEventListener("resize", applyLayout);
+    img.addEventListener("load", applyLayout);
     function showImage(url, tag) {
       placeholder.style.display = "none";
       img.style.display = "block";
@@ -1049,6 +1072,7 @@
         stopAuto();
         if (fadeTimer) clearTimeout(fadeTimer);
         window.removeEventListener("resize", applyLayout);
+        window.visualViewport?.removeEventListener("resize", applyLayout);
         root.remove();
       }
     };
@@ -2157,7 +2181,9 @@
   }
 
   // st-extension/src/message-postprocess.ts
-  var PROCESSED_ATTR = "data-so-processed";
+  var FP_ATTR = "data-so-fp";
+  var MARKER_CLASS = "so-processed-marker";
+  var snapshots = /* @__PURE__ */ new WeakMap();
   function mountMessagePostprocess(deps) {
     const st = window.SillyTavern;
     if (!st) return () => {
@@ -2185,28 +2211,98 @@
     ctx.eventSource.on(fallbackEvent, fallbackHandler);
     return () => ctx.eventSource.removeListener(fallbackEvent, fallbackHandler);
   }
+  function anyFeatureOn(settings) {
+    return settings.enabled && (settings.hideTagInMessage || settings.renderInlineImages || settings.spriteDisplayMode !== "overlay");
+  }
+  function clampFloors(settings) {
+    const n = Math.round(settings.recentFloors);
+    if (!Number.isFinite(n)) return RECENT_FLOORS_MIN;
+    return Math.min(RECENT_FLOORS_MAX, Math.max(RECENT_FLOORS_MIN, n));
+  }
+  function originalTextOf(el3) {
+    return snapshots.get(el3)?.originalText ?? el3.textContent ?? "";
+  }
+  function collectCandidates() {
+    const out = [];
+    for (const mes of Array.from(document.querySelectorAll("#chat .mes"))) {
+      if (mes.getAttribute("is_user") === "true" || mes.getAttribute("is_system") === "true") continue;
+      const textEl = mes.querySelector(".mes_text");
+      if (!textEl) continue;
+      const text = originalTextOf(textEl);
+      if (hasTag(text) || hasInlineImageMarkup(text)) out.push(textEl);
+    }
+    return out;
+  }
   function processMessages(settings, messageId = null) {
-    if (!settings.enabled) return;
-    if (!settings.hideTagInMessage && !settings.renderInlineImages && settings.spriteDisplayMode === "overlay")
+    if (!anyFeatureOn(settings)) return;
+    if (messageId !== null && messageId !== void 0 && `${messageId}` !== "") {
+      const idStr = `${messageId}`;
+      const allMes = Array.from(document.querySelectorAll("#chat .mes"));
+      const scope = allMes.filter((m) => m.getAttribute("mesid") === idStr).map((m) => m.querySelector(".mes_text")).filter((el3) => el3 !== null);
+      const lastMes = allMes.length > 0 ? allMes[allMes.length - 1] : null;
+      let windowSet = null;
+      for (const el3 of scope) {
+        if (lastMes !== null && el3.closest(".mes") === lastMes) {
+          processMessageElement(el3, settings);
+          continue;
+        }
+        windowSet ?? (windowSet = new Set(collectCandidates().slice(-clampFloors(settings))));
+        if (windowSet.has(el3)) processMessageElement(el3, settings);
+      }
       return;
-    const scope = messageId !== null && messageId !== void 0 && `${messageId}` !== "" ? document.querySelectorAll(`#chat .mes[mesid="${CSS.escape(`${messageId}`)}"] .mes_text`) : document.querySelectorAll("#chat .mes .mes_text");
-    for (const node of Array.from(scope)) {
-      processMessageElement(node, settings);
+    }
+    for (const el3 of collectCandidates().slice(-clampFloors(settings))) {
+      processMessageElement(el3, settings);
     }
   }
   function reprocessAllMessages(settings) {
-    for (const node of Array.from(document.querySelectorAll(`#chat .mes .mes_text[${PROCESSED_ATTR}]`))) {
-      node.removeAttribute(PROCESSED_ATTR);
+    restoreAllMessages();
+    if (anyFeatureOn(settings)) processMessages(settings);
+  }
+  function restoreAllMessages() {
+    for (const node of Array.from(document.querySelectorAll(`#chat .mes_text[${FP_ATTR}]`))) {
+      restoreElement(node);
     }
-    processMessages(settings);
+  }
+  function restoreElement(root) {
+    const snap = snapshots.get(root);
+    const isOurs = root.querySelector(`.${MARKER_CLASS}`) !== null;
+    if (snap && isOurs) {
+      root.replaceChildren(...snap.nodes);
+    }
+    snapshots.delete(root);
+    root.removeAttribute(FP_ATTR);
+  }
+  function hashText(text) {
+    let h = 5381;
+    for (let i = 0; i < text.length; i++) {
+      h = (h << 5) + h + text.charCodeAt(i) | 0;
+    }
+    return (h >>> 0).toString(36);
   }
   function processMessageElement(root, settings) {
     const inlineSprites = settings.spriteDisplayMode !== "overlay";
-    const fingerprint = `${settings.hideTagInMessage ? "T" : ""}${settings.renderInlineImages ? "I" : ""}${inlineSprites ? "S" : ""}`;
-    if (root.getAttribute(PROCESSED_ATTR) === fingerprint) return;
     const host = settings.imageHost.endsWith("/") ? settings.imageHost : `${settings.imageHost}/`;
+    const snap = snapshots.get(root);
+    const contentIsOurs = snap !== void 0 && root.querySelector(`.${MARKER_CLASS}`) !== null;
+    const originalText = contentIsOurs ? snap.originalText : root.textContent ?? "";
+    const fingerprint = `${settings.hideTagInMessage ? "T" : ""}${settings.renderInlineImages ? "I" : ""}${inlineSprites ? "S" : ""}|${hashText(host)}|${hashText(originalText)}`;
+    if (contentIsOurs && root.getAttribute(FP_ATTR) === fingerprint) return;
+    if (contentIsOurs) {
+      root.replaceChildren(...snap.nodes);
+    }
+    snapshots.delete(root);
+    root.removeAttribute(FP_ATTR);
     const chName = inlineSprites ? root.closest(".mes")?.getAttribute("ch_name") ?? "" : "";
     const pack = chName ? getActivePack(settings, chName) : null;
+    const freshText = root.textContent ?? "";
+    const tagged = hasTag(freshText);
+    const needsWork = settings.hideTagInMessage && tagged || inlineSprites && pack !== null && tagged || settings.renderInlineImages && hasInlineImageMarkup(freshText);
+    if (!needsWork) return;
+    snapshots.set(root, {
+      nodes: Array.from(root.childNodes).map((n) => n.cloneNode(true)),
+      originalText: freshText
+    });
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     const textNodes = [];
     let current;
@@ -2216,9 +2312,9 @@
     for (const textNode of textNodes) {
       const text = textNode.nodeValue ?? "";
       if (!text) continue;
-      const tagged = hasTag(text);
-      const needsSprites = inlineSprites && pack !== null && tagged;
-      const needsStrip = settings.hideTagInMessage && tagged && !needsSprites;
+      const nodeTagged = hasTag(text);
+      const needsSprites = inlineSprites && pack !== null && nodeTagged;
+      const needsStrip = settings.hideTagInMessage && nodeTagged && !needsSprites;
       const needsImages = settings.renderInlineImages && hasInlineImageMarkup(text);
       if (!needsSprites && !needsStrip && !needsImages) continue;
       let processed = needsStrip ? stripTags(text) : text;
@@ -2245,7 +2341,11 @@
       });
       textNode.replaceWith(fragment);
     }
-    root.setAttribute(PROCESSED_ATTR, fingerprint);
+    const processedMark = document.createElement("span");
+    processedMark.className = MARKER_CLASS;
+    processedMark.hidden = true;
+    root.prepend(processedMark);
+    root.setAttribute(FP_ATTR, fingerprint);
   }
   function createImage(src, alt, extraClass = "") {
     const wrap = document.createElement("span");
@@ -2254,7 +2354,18 @@
     img.src = src;
     img.alt = alt;
     img.loading = "lazy";
-    img.addEventListener("error", () => wrap.classList.add("so-inline-image-error"), { once: true });
+    img.addEventListener("error", () => {
+      wrap.classList.add("so-inline-image-error");
+      wrap.title = "图片加载失败，点击重试";
+    });
+    img.addEventListener("load", () => {
+      wrap.classList.remove("so-inline-image-error");
+      wrap.removeAttribute("title");
+    });
+    wrap.addEventListener("click", () => {
+      if (!wrap.classList.contains("so-inline-image-error")) return;
+      img.src = src.startsWith("data:") ? src : `${src}${src.includes("?") ? "&" : "?"}so_retry=${Date.now()}`;
+    });
     wrap.append(img);
     return wrap;
   }
@@ -2464,7 +2575,7 @@
       return;
     }
     function updateSettings(next) {
-      const displayChanged = next.hideTagInMessage !== settings.hideTagInMessage || next.renderInlineImages !== settings.renderInlineImages || next.spriteDisplayMode !== settings.spriteDisplayMode || next.imageHost !== settings.imageHost || next.enabled !== settings.enabled;
+      const displayChanged = next.hideTagInMessage !== settings.hideTagInMessage || next.renderInlineImages !== settings.renderInlineImages || next.spriteDisplayMode !== settings.spriteDisplayMode || next.imageHost !== settings.imageHost || next.enabled !== settings.enabled || next.recentFloors !== settings.recentFloors;
       const autoChanged = next.autoSwitch !== settings.autoSwitch || next.autoSwitchSeconds !== settings.autoSwitchSeconds;
       settings = next;
       adapter.saveSettings(settings);
@@ -2485,7 +2596,9 @@
         settings = { ...settings, overlay: layout };
         adapter.saveSettings(settings);
       },
-      () => manager.open()
+      () => manager.open(),
+      // 悬浮窗 ✕：只隐藏窗体并记住状态，立绘功能（含楼层立绘）不受影响
+      () => updateSettings({ ...settings, overlayHidden: true })
     );
     overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds);
     const registry = new PhoneAppRegistry();
@@ -2520,10 +2633,15 @@
     window.stStage = {
       registerApp: (app) => registry.register(app)
     };
+    function overlayAllowed() {
+      return settings.enabled && settings.spriteDisplayMode !== "inline" && !settings.overlayHidden;
+    }
+    let lastOverlayContentKey = "";
     function refresh() {
       if (!settings.enabled) {
         adapter.injectPrompt("");
         overlay.setVisible(false);
+        lastOverlayContentKey = "";
         return;
       }
       const characterName = adapter.getCurrentCharacterName();
@@ -2533,23 +2651,27 @@
         settings.multiRolePromptMode
       ) : buildInjectionPrompt(getAvailableTags(settings, characterName));
       adapter.injectPrompt(prompt);
-      if (pack && pack.sprites.length > 0) {
-        preloadPack(pack);
-        overlay.setImage(pack.sprites[0].url, pack.sprites[0].tag);
-      } else if (characterName) {
-        overlay.setPlaceholder("未绑定立绘包\n点击 ⚙ 进行绑定");
-      } else {
-        overlay.setPlaceholder("打开角色聊天后\n点击 ⚙ 绑定立绘包");
+      const contentKey = `${characterName}|${pack?.id ?? "none"}|${pack ? pack.sprites.length > 0 : false}`;
+      if (contentKey !== lastOverlayContentKey) {
+        lastOverlayContentKey = contentKey;
+        if (pack && pack.sprites.length > 0) {
+          preloadPack(pack);
+          overlay.setImage(pack.sprites[0].url, pack.sprites[0].tag);
+        } else if (characterName) {
+          overlay.setPlaceholder("未绑定立绘包\n点击 ⚙ 进行绑定");
+        } else {
+          overlay.setPlaceholder("打开角色聊天后\n点击 ⚙ 绑定立绘包");
+        }
       }
-      overlay.setVisible(settings.spriteDisplayMode !== "inline");
+      overlay.setVisible(overlayAllowed());
     }
     adapter.onMessageReceived((text) => {
-      if (!settings.enabled || settings.spriteDisplayMode === "inline") return;
+      if (!settings.enabled) return;
       const characterName = adapter.getCurrentCharacterName();
       const pack = getActivePack(settings, characterName);
       if (!pack) return;
       const seq = matchSprites(pack, extractTags(text));
-      if (seq.length > 0) {
+      if (seq.length > 0 && overlayAllowed()) {
         overlay.setSprites(seq);
         overlay.setVisible(true);
       }
@@ -2558,6 +2680,7 @@
     adapter.onCharacterChanged(() => {
       refresh();
       manager.refreshIfOpen();
+      setTimeout(() => reprocessAllMessages(settings), 200);
     });
     mountSettingsPanel({
       getSettings: () => settings,

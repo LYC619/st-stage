@@ -3,12 +3,17 @@
  * 纯 TS，零框架依赖，Web 测试环境与 SillyTavern 扩展共用。
  *
  * 数据格式版本：
- * - 存储 settingsVersion = 2（v1 无此字段，由 core/migrate.ts 自动升级）
+ * - 存储 settingsVersion = 3（v1/v2 由 core/migrate.ts 自动升级）
  * - 立绘包文件 sprite-pack@2（导入兼容 @1）
  */
 
 /** 当前设置存储版本 */
-export const SETTINGS_VERSION = 2
+export const SETTINGS_VERSION = 3
+
+/** 楼层模式补渲染的最近 AI 楼层数：默认与上下限 */
+export const RECENT_FLOORS_DEFAULT = 6
+export const RECENT_FLOORS_MIN = 1
+export const RECENT_FLOORS_MAX = 50
 
 /** 默认图床前缀（紧凑分享串中省略 host 时使用） */
 export const DEFAULT_IMAGE_HOST = 'https://files.catbox.moe/'
@@ -123,6 +128,16 @@ export interface PluginSettings {
   imageHost: string
   /** 悬浮窗布局 */
   overlay: OverlayLayout
+  /**
+   * 悬浮窗被用户手动关闭（✕）：只隐藏窗体并记住状态，不关闭立绘功能；
+   * both 模式下楼层立绘继续工作。重新打开入口在「立绘」App。
+   */
+  overlayHidden: boolean
+  /**
+   * 楼层模式补渲染的最近 AI 楼层数（1–50，默认 6）。
+   * 只在切换显示模式 / 加载聊天时限制补渲染范围；新收到的 AI 回复不受限。
+   */
+  recentFloors: number
   /** 手机壳状态（M4 手机 UI 框架） */
   phone: PhoneState
   /** 是否显示手机框；关闭时回退为纯悬浮窗模式（悬浮窗 ⚙ 仍可打开图库） */
@@ -191,6 +206,8 @@ export function createDefaultSettings(): PluginSettings {
     renderInlineImages: false,
     imageHost: DEFAULT_IMAGE_HOST,
     overlay: { x: 24, y: 80, width: 220 },
+    overlayHidden: false,
+    recentFloors: RECENT_FLOORS_DEFAULT,
     phone: { x: 24, y: 320, open: false },
     showPhone: true,
     autoSwitch: false,

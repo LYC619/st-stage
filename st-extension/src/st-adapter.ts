@@ -148,8 +148,17 @@ export class STAdapter implements PlatformAdapter {
       try {
         const messageId = args[0]
         const chat = getContext().chat
+        // messageId 可能是数字或数字字符串（"5"）；两者都按索引取，非法才回退最后一条
+        const idNum =
+          typeof messageId === 'number'
+            ? messageId
+            : typeof messageId === 'string' && messageId.trim() !== ''
+              ? Number(messageId)
+              : NaN
         const message =
-          typeof messageId === 'number' ? chat[messageId] : chat[chat.length - 1]
+          Number.isInteger(idNum) && idNum >= 0 && idNum < chat.length
+            ? chat[idNum]
+            : chat[chat.length - 1]
         if (message && !message.is_user && typeof message.mes === 'string') {
           handler(message.mes)
         }

@@ -34,6 +34,7 @@ export function createOverlay(
   initialLayout: OverlayLayout,
   onLayoutChange: (layout: OverlayLayout) => void,
   onManage?: () => void,
+  onClose?: () => void,
 ): OverlayController {
   let layout = { ...initialLayout }
 
@@ -83,20 +84,39 @@ export function createOverlay(
     onManage?.()
   })
 
-  frame.append(img, placeholder, tagBadge, dots, gearBtn, resizeHandle)
+  // 关闭按钮：只隐藏窗体并记住状态（不关立绘功能），重新打开入口在「立绘」App
+  const closeBtn = document.createElement('div')
+  closeBtn.className = 'sprite-overlay-close'
+  closeBtn.title = '关闭悬浮窗（立绘功能不受影响，可在手机「立绘」App 重新打开）'
+  closeBtn.textContent = '✕'
+  closeBtn.setAttribute('role', 'button')
+  closeBtn.setAttribute('aria-label', '关闭悬浮窗')
+  closeBtn.addEventListener('pointerdown', (e) => e.stopPropagation())
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    onClose?.()
+  })
+
+  frame.append(img, placeholder, tagBadge, dots, gearBtn, closeBtn, resizeHandle)
   root.append(frame)
   document.body.append(root)
 
   function applyLayout() {
-    // 视口钳位（移动端适配）：桌面存的坐标/宽度在窄屏上会整个飘出屏幕，渲染时夹回可见范围。
+    // 视口钳位（移动端适配）：按真实尺寸完整钳回视口，不只是露出一角。
     // 只钳显示不改 layout —— 回到大屏后仍按原坐标展示。
-    root.style.left = `${Math.max(0, Math.min(layout.x, window.innerWidth - 48))}px`
-    root.style.top = `${Math.max(0, Math.min(layout.y, window.innerHeight - 48))}px`
-    root.style.width = `${Math.min(layout.width, Math.max(100, window.innerWidth - 16))}px`
+    const w = Math.min(layout.width, Math.max(100, window.innerWidth - 16))
+    root.style.width = `${w}px`
+    // 高度随图片比例动态变化：取当前实际高度（未渲染时按最小 48 兜底）
+    const h = Math.min(root.offsetHeight || 48, window.innerHeight - 8)
+    root.style.left = `${Math.max(0, Math.min(layout.x, window.innerWidth - w))}px`
+    root.style.top = `${Math.max(0, Math.min(layout.y, window.innerHeight - h))}px`
   }
   applyLayout()
-  // 旋转屏幕 / 移动端地址栏伸缩时重新钳位
+  // 旋转屏幕 / 移动端地址栏伸缩时重新钳位（visualViewport 对地址栏变化更敏感）
   window.addEventListener('resize', applyLayout)
+  window.visualViewport?.addEventListener('resize', applyLayout)
+  // 图片加载后高度才确定，重新钳一次
+  img.addEventListener('load', applyLayout)
 
   /** 淡出 → 换图 → 淡入 */
   function showImage(url: string, tag: string) {
@@ -265,6 +285,7 @@ export function createOverlay(
       stopAuto()
       if (fadeTimer) clearTimeout(fadeTimer)
       window.removeEventListener('resize', applyLayout)
+      window.visualViewport?.removeEventListener('resize', applyLayout)
       root.remove()
     },
   }

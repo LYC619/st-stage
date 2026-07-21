@@ -116,6 +116,17 @@ describe('migrateSettings', () => {
     expect(migrateSettings({ ...V1_SAVED, spriteDisplayMode: 'xxx' }).spriteDisplayMode).toBe('overlay')
   })
 
+  it('v3 新字段：overlayHidden / recentFloors 缺失补默认，非法值夹回范围（五期）', () => {
+    const missing = migrateSettings(V1_SAVED)
+    expect(missing.overlayHidden).toBe(false)
+    expect(missing.recentFloors).toBe(6)
+    expect(migrateSettings({ ...V1_SAVED, overlayHidden: true }).overlayHidden).toBe(true)
+    expect(migrateSettings({ ...V1_SAVED, recentFloors: 20 }).recentFloors).toBe(20)
+    expect(migrateSettings({ ...V1_SAVED, recentFloors: 0 }).recentFloors).toBe(1)
+    expect(migrateSettings({ ...V1_SAVED, recentFloors: 999 }).recentFloors).toBe(50)
+    expect(migrateSettings({ ...V1_SAVED, recentFloors: 'many' }).recentFloors).toBe(6)
+  })
+
   it('当前版本数据迁移后语义不变', () => {
     const current = createDefaultSettings()
     current.packs = [

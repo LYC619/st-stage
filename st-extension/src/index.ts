@@ -41,7 +41,8 @@ async function init(): Promise<void> {
       next.renderInlineImages !== settings.renderInlineImages ||
       next.spriteDisplayMode !== settings.spriteDisplayMode ||
       next.imageHost !== settings.imageHost ||
-      next.enabled !== settings.enabled
+      next.enabled !== settings.enabled ||
+      next.recentFloors !== settings.recentFloors
     const autoChanged =
       next.autoSwitch !== settings.autoSwitch ||
       next.autoSwitchSeconds !== settings.autoSwitchSeconds
@@ -51,7 +52,7 @@ async function init(): Promise<void> {
     phone.setVisible(settings.showPhone)
     if (autoChanged) overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds)
     refresh()
-    // 显示相关设置变更：清掉幂等标记，重新处理全部气泡
+    // 显示相关设置变更：先恢复原始 DOM 再按新规则补渲染（总开关关闭时只恢复）
     if (displayChanged) reprocessAllMessages(settings)
   }
 
@@ -68,6 +69,8 @@ async function init(): Promise<void> {
       adapter.saveSettings(settings)
     },
     () => manager.open(),
+    // 悬浮窗 ✕：只隐藏窗体并记住状态，立绘功能（含楼层立绘）不受影响
+    () => updateSettings({ ...settings, overlayHidden: true }),
   )
   overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds)
 
@@ -112,11 +115,21 @@ async function init(): Promise<void> {
     registerApp: (app) => registry.register(app),
   }
 
+  /** 悬浮窗是否允许显示：总开关开 + 非仅楼层模式 + 未被用户手动关闭 */
+  function overlayAllowed(): boolean {
+    return settings.enabled && settings.spriteDisplayMode !== 'inline' && !settings.overlayHidden
+  }
+
+  /** 上次悬浮窗内容 key：角色+包不变时不重置当前立绘（无关设置变更不打断展示） */
+  let lastOverlayContentKey = ''
+
   /** 根据当前角色刷新：注入 prompt + 更新悬浮窗 */
   function refresh(): void {
     if (!settings.enabled) {
+      // 总开关关闭：清空注入、隐藏悬浮窗；手机与其他内置工具不受影响
       adapter.injectPrompt('')
       overlay.setVisible(false)
+      lastOverlayContentKey = ''
       return
     }
 
@@ -132,27 +145,32 @@ async function init(): Promise<void> {
         : buildInjectionPrompt(getAvailableTags(settings, characterName))
     adapter.injectPrompt(prompt)
 
-    if (pack && pack.sprites.length > 0) {
-      preloadPack(pack)
-      overlay.setImage(pack.sprites[0].url, pack.sprites[0].tag)
-    } else if (characterName) {
-      // 未绑定：显示占位提示，保留 ⚙ 管理入口
-      overlay.setPlaceholder('未绑定立绘包\n点击 ⚙ 进行绑定')
-    } else {
-      overlay.setPlaceholder('打开角色聊天后\n点击 ⚙ 绑定立绘包')
+    const contentKey = `${characterName}|${pack?.id ?? 'none'}|${pack ? pack.sprites.length > 0 : false}`
+    if (contentKey !== lastOverlayContentKey) {
+      lastOverlayContentKey = contentKey
+      if (pack && pack.sprites.length > 0) {
+        preloadPack(pack)
+        overlay.setImage(pack.sprites[0].url, pack.sprites[0].tag)
+      } else if (characterName) {
+        // 未绑定：显示占位提示，保留 ⚙ 管理入口
+        overlay.setPlaceholder('未绑定立绘包\n点击 ⚙ 进行绑定')
+      } else {
+        overlay.setPlaceholder('打开角色聊天后\n点击 ⚙ 绑定立绘包')
+      }
     }
-    // inline 模式：立绘在楼层内原位显示，悬浮窗整个隐藏
-    overlay.setVisible(settings.spriteDisplayMode !== 'inline')
+    // 仅楼层模式 / 用户手动关闭：悬浮窗一律不显示
+    overlay.setVisible(overlayAllowed())
   }
 
   // 收到 AI 消息：提取全部标签 → 匹配序列 → 悬浮窗排队展示（功能③）
   adapter.onMessageReceived((text) => {
-    if (!settings.enabled || settings.spriteDisplayMode === 'inline') return
+    if (!settings.enabled) return
     const characterName = adapter.getCurrentCharacterName()
     const pack = getActivePack(settings, characterName)
     if (!pack) return
     const seq = matchSprites(pack, extractTags(text))
-    if (seq.length > 0) {
+    // 仅楼层模式/手动关闭时不弹悬浮窗（楼层立绘由消息后处理负责）
+    if (seq.length > 0 && overlayAllowed()) {
       overlay.setSprites(seq)
       overlay.setVisible(true)
     }
@@ -161,10 +179,12 @@ async function init(): Promise<void> {
   // 消息渲染后处理：隐藏标签 / 渲染插图
   mountMessagePostprocess({ getSettings: () => settings })
 
-  // 切换聊天/角色时：重新注入 + 刷新悬浮窗和管理弹窗（修复角色名不更新的问题）
+  // 切换聊天/角色时：重新注入 + 刷新悬浮窗和管理弹窗；延迟补渲染窗口内历史楼层
+  // （渲染事件逐条触发时窗口守卫已限流，这里兜底渲染事件缺失的旧版 ST / 迟到的 DOM）
   adapter.onCharacterChanged(() => {
     refresh()
     manager.refreshIfOpen()
+    setTimeout(() => reprocessAllMessages(settings), 200)
   })
 
   // 设置面板：基础设定（开关/图床前缀）
