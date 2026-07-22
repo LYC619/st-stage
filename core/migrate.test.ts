@@ -127,6 +127,50 @@ describe('migrateSettings', () => {
     expect(migrateSettings({ ...V1_SAVED, recentFloors: 'many' }).recentFloors).toBe(6)
   })
 
+  it('绑定 packId → packIds 形状迁移（六期），幂等且不丢包', () => {
+    // 旧单包绑定
+    const old = migrateSettings(V1_SAVED)
+    expect(old.bindings[0].packIds).toEqual(['pack_abc'])
+    // 已是 packIds 的新形状原样保留（去重）
+    const neo = migrateSettings({
+      ...V1_SAVED,
+      bindings: [{ characterName: '小雪', packIds: ['a', 'b', 'a'], enabled: false }],
+    })
+    expect(neo.bindings[0].packIds).toEqual(['a', 'b'])
+    expect(neo.bindings[0].enabled).toBe(false)
+    // 幂等：二次迁移不变
+    expect(migrateSettings(neo).bindings).toEqual(neo.bindings)
+    // 无任何包 id 的绑定被丢弃
+    expect(
+      migrateSettings({ ...V1_SAVED, bindings: [{ characterName: 'x', enabled: true }] }).bindings,
+    ).toEqual([])
+  })
+
+  it('spriteCount 缺省 1，取整夹到 [1,10]（七期）', () => {
+    expect(migrateSettings(V1_SAVED).spriteCount).toBe(1)
+    expect(migrateSettings({ ...V1_SAVED, spriteCount: 5 }).spriteCount).toBe(5)
+    expect(migrateSettings({ ...V1_SAVED, spriteCount: 0 }).spriteCount).toBe(1)
+    expect(migrateSettings({ ...V1_SAVED, spriteCount: 99 }).spriteCount).toBe(10)
+  })
+
+  it('包 roleName/outfit 与立绘 outfit 迁移保留（六期）', () => {
+    const m = migrateSettings({
+      ...V1_SAVED,
+      packs: [
+        {
+          id: 'p',
+          name: '鸣人居家',
+          roleName: '鸣人',
+          outfit: '居家服',
+          sprites: [{ tag: '微笑', url: 'https://x.com/a.png', outfit: '战斗服' }],
+        },
+      ],
+    })
+    expect(m.packs[0].roleName).toBe('鸣人')
+    expect(m.packs[0].outfit).toBe('居家服')
+    expect(m.packs[0].sprites[0].outfit).toBe('战斗服')
+  })
+
   it('当前版本数据迁移后语义不变', () => {
     const current = createDefaultSettings()
     current.packs = [

@@ -86,9 +86,10 @@ describe('功能② 分组寻址', () => {
     expect(matchAddress(groupedPack(), '鸣人/微笑')!.url).toBe('n1')
     expect(matchAddress(groupedPack(), '佐助/微笑')!.url).toBe('s1')
   })
-  it('matchAddress：分组内模糊；组内无则回退全局按图名', () => {
+  it('matchAddress：分组内模糊命中；组内无该图名则 null（严格·不跨组回退）', () => {
     expect(matchAddress(groupedPack(), '佐助/有点冷漠')!.url).toBe('s2')
-    expect(matchAddress(groupedPack(), '鸣人/冷漠')!.url).toBe('s2') // 鸣人无冷漠 → 回退命中佐助
+    // 鸣人无冷漠 → 严格锁定人名后 null，绝不回退到佐助的冷漠
+    expect(matchAddress(groupedPack(), '鸣人/冷漠')).toBeNull()
   })
   it('matchAddress：无 / 时按图名全局匹配（兼容旧行为）', () => {
     expect(matchAddress(groupedPack(), '微笑')!.url).toBe('n1')

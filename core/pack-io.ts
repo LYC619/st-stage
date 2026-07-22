@@ -21,19 +21,22 @@ export async function exportPack(pack: SpritePack, embedHosted = false): Promise
   const sprites: SpritePackFile['sprites'] = []
   for (const sprite of pack.sprites) {
     const source = getSpriteSource(sprite)
-    const group = sprite.group ? { group: sprite.group } : {}
+    const extra = {
+      ...(sprite.group ? { group: sprite.group } : {}),
+      ...(sprite.outfit ? { outfit: sprite.outfit } : {}),
+    }
     if (source === 'embedded') {
-      sprites.push({ tag: sprite.tag, data: sprite.url, ...group })
+      sprites.push({ tag: sprite.tag, data: sprite.url, ...extra })
     } else if (source === 'local' || embedHosted) {
       try {
         const data = await urlToDataUri(sprite.url)
-        sprites.push({ tag: sprite.tag, data, ...group })
+        sprites.push({ tag: sprite.tag, data, ...extra })
       } catch {
         // 转换失败则回退为 URL
-        sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code), ...group })
+        sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code), ...extra })
       }
     } else {
-      sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code), ...group })
+      sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code), ...extra })
     }
   }
   return {
@@ -41,6 +44,8 @@ export async function exportPack(pack: SpritePack, embedHosted = false): Promise
     name: pack.name,
     author: pack.author,
     description: pack.description,
+    ...(pack.roleName ? { roleName: pack.roleName } : {}),
+    ...(pack.outfit ? { outfit: pack.outfit } : {}),
     coverTag: pack.coverTag,
     exportedAt: new Date().toISOString(),
     sprites,
@@ -66,6 +71,8 @@ export function importPack(jsonText: string): SpritePack {
     name?: unknown
     author?: unknown
     description?: unknown
+    roleName?: unknown
+    outfit?: unknown
     coverTag?: unknown
     sprites?: unknown
   }
@@ -90,13 +97,20 @@ export function importPack(jsonText: string): SpritePack {
     const tag = normalizeTag(item.tag)
     if (!tag) continue
     const group = typeof item.group === 'string' ? normalizeTag(item.group) : ''
-    // 去重键含分组：不同分组可复用同一 tag（如 鸣人/微笑 与 佐助/微笑）
-    const key = group ? `${group}/${tag}` : tag
+    const outfit = typeof item.outfit === 'string' ? normalizeTag(item.outfit) : ''
+    // 去重键含分组+服装：不同分组/服装可复用同一 tag（如 鸣人/微笑 与 佐助/微笑）
+    const key = `${group}|${outfit}|${tag}`
     if (seen.has(key)) continue
     seen.add(key)
     const code =
       typeof item.code === 'string' && item.code ? item.code : (extractImageCode(url) ?? undefined)
-    sprites.push({ tag, url, ...(code ? { code } : {}), ...(group ? { group } : {}) })
+    sprites.push({
+      tag,
+      url,
+      ...(code ? { code } : {}),
+      ...(group ? { group } : {}),
+      ...(outfit ? { outfit } : {}),
+    })
   }
   if (sprites.length === 0) {
     throw new Error('导入失败：没有可用的立绘条目（表情名可能全部为空或重复）')
@@ -104,6 +118,8 @@ export function importPack(jsonText: string): SpritePack {
 
   const normalizedCover = typeof file.coverTag === 'string' ? normalizeTag(file.coverTag) : ''
   const coverTag = sprites.some((s) => s.tag === normalizedCover) ? normalizedCover : undefined
+  const roleName = typeof file.roleName === 'string' ? normalizeTag(file.roleName) : ''
+  const outfit = typeof file.outfit === 'string' ? normalizeTag(file.outfit) : ''
 
   return {
     id: genId(),
@@ -114,6 +130,8 @@ export function importPack(jsonText: string): SpritePack {
       typeof file.description === 'string'
         ? sanitizeDescription(file.description) || undefined
         : undefined,
+    ...(roleName ? { roleName } : {}),
+    ...(outfit ? { outfit } : {}),
     coverTag,
     updatedAt: new Date().toISOString(),
     sprites,

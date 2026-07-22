@@ -12,16 +12,18 @@
 import type { PluginSettings, Sprite, SpritePack } from '../../core/types'
 import { getPackCover } from '../../core/types'
 import {
-  bindCharacter,
+  bindPack,
   genId,
   getGroups,
   moveSprite,
   removePack,
   removeSprite,
   renameSprite,
+  reorderBinding,
   setSpriteGroup,
   spriteGroup,
   toggleBinding,
+  unbindPack,
   upsertPack,
   upsertSprite,
 } from '../../core/sprite-store'
@@ -194,36 +196,64 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     const settings = deps.getSettings()
     const characterName = deps.adapter.getCurrentCharacterName()
     const binding = settings.bindings.find((b) => b.characterName === characterName)
+    const boundIds = binding?.packIds ?? []
 
-    // 当前角色绑定
+    // 当前角色绑定（六期：一个聊天可启用多个包，可增删、排序、整体启停）
     const bindSection = el('div', 'so-section')
     const bindTitle = el('div', 'so-section-title')
     bindTitle.textContent = characterName ? `当前角色：${characterName}` : '当前角色绑定'
     bindSection.append(bindTitle)
     if (characterName) {
+      // 已启用的包（可排序、移除）
+      if (boundIds.length > 0) {
+        const boundLabel = el('div', 'so-status')
+        boundLabel.textContent = `已启用 ${boundIds.length} 个包（顺序影响多包寻址优先级）：`
+        bindSection.append(boundLabel)
+        boundIds.forEach((id, index) => {
+          const pack = settings.packs.find((p) => p.id === id)
+          const row = el('div', 'so-row so-bind-item')
+          const name = el('span', 'so-bind-name')
+          name.textContent = pack ? `${index + 1}. ${pack.name}（${pack.sprites.length} 张）` : `（已删除的包 ${id}）`
+          row.append(
+            name,
+            iconButton('▲', '上移', () => {
+              if (index > 0) commit(reorderBinding(deps.getSettings(), characterName, index, index - 1))
+            }),
+            iconButton('▼', '下移', () => {
+              commit(reorderBinding(deps.getSettings(), characterName, index, index + 1))
+            }),
+            iconButton('✕', '停用此包', () => {
+              commit(unbindPack(deps.getSettings(), characterName, id))
+            }),
+          )
+          bindSection.append(row)
+        })
+      }
+
+      // 添加一个包 + 整体启停
       const bindRow = el('div', 'so-row so-bind-row')
       const select = document.createElement('select')
       select.className = 'text_pole'
-      select.setAttribute('aria-label', `为「${characterName}」绑定立绘包`)
+      select.setAttribute('aria-label', `为「${characterName}」添加启用立绘包`)
       const placeholder = document.createElement('option')
       placeholder.value = ''
-      placeholder.textContent = '选择立绘包…'
+      placeholder.textContent = boundIds.length > 0 ? '再启用一个包…' : '选择要启用的包…'
       select.append(placeholder)
       for (const p of settings.packs) {
+        if (boundIds.includes(p.id)) continue
         const opt = document.createElement('option')
         opt.value = p.id
         opt.textContent = `${p.name}（${p.sprites.length} 张）`
-        opt.selected = binding?.packId === p.id
         select.append(opt)
       }
       select.addEventListener('change', () => {
         if (!select.value) return
-        commit(bindCharacter(deps.getSettings(), characterName, select.value))
+        commit(bindPack(deps.getSettings(), characterName, select.value))
       })
       bindRow.append(select)
       if (binding) {
         bindRow.append(
-          checkboxRow('启用', binding.enabled, (v) =>
+          checkboxRow('全部启用', binding.enabled, (v) =>
             commit(toggleBinding(deps.getSettings(), characterName, v)),
           ),
         )
@@ -239,7 +269,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     // 包封面图墙：立绘包是图片集合，用卡片网格浏览（同 ST 角色列表的卡片墙模式）
     const grid = el('div', 'so-pack-grid')
     for (const pack of settings.packs) {
-      const bound = binding?.packId === pack.id ? (binding.enabled ? 'active' : 'off') : null
+      const bound = boundIds.includes(pack.id) ? (binding?.enabled ? 'active' : 'off') : null
       grid.append(renderPackCard(pack, bound))
     }
     body.append(grid)
@@ -411,25 +441,38 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       authorInput.value = pack.author ?? ''
       const descInput = textInput('描述（可选）')
       descInput.value = pack.description ?? ''
+      const roleInput = textInput('人名（可空）')
+      roleInput.value = pack.roleName ?? ''
+      const outfitInput = textInput('服装（可空）')
+      outfitInput.value = pack.outfit ?? ''
       metaRow.append(
         labeled('包名', nameInput),
         labeled('作者', authorInput),
         labeled('描述', descInput),
+        labeled('人名', roleInput),
+        labeled('服装', outfitInput),
         button('保存信息', () => {
           const name = sanitizePackName(nameInput.value)
           if (!name) {
             toast(body, '包名不能为空')
             return
           }
+          const roleName = normalizeTag(roleInput.value)
+          const outfit = normalizeTag(outfitInput.value)
           commitPack({
             ...pack,
             name,
             author: sanitizePackName(authorInput.value) || undefined,
             description: sanitizeDescription(descInput.value) || undefined,
+            roleName: roleName || undefined,
+            outfit: outfit || undefined,
           })
         }),
       )
-      metaSection.append(metaTitle, metaRow)
+      const metaHint = el('div', 'so-status')
+      metaHint.textContent =
+        '人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。'
+      metaSection.append(metaTitle, metaRow, metaHint)
       body.append(metaSection)
     }
 

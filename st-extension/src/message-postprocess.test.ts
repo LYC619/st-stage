@@ -59,7 +59,7 @@ function baseSettings(over: Partial<PluginSettings> = {}): PluginSettings {
       ],
     },
   ]
-  s.bindings = [{ characterName: '小雪', packId: 'p1', enabled: true }]
+  s.bindings = [{ characterName: '小雪', packIds: ['p1'], enabled: true }]
   return { ...s, ...over }
 }
 

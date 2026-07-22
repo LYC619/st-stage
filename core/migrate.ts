@@ -7,15 +7,19 @@
  * - sprite.url 为图床 URL 时反推 code（URL 最后一段文件名）
  * - tag / 包名过 naming.ts 清洗（清洗后为空或重复的条目原样保留 tag，不静默丢图）
  * v2 → v3：
- * - 补 overlayHidden / recentFloors 字段
+ * - 补 overlayHidden / recentFloors / spriteCount 字段
+ * - 绑定 packId → packIds（形状迁移，幂等：已是 packIds 的原样保留）
+ * - 立绘 outfit / 包 roleName·outfit 保留
  */
 
-import type { PluginSettings, SpritePack } from './types'
+import type { CharacterBinding, PluginSettings, SpritePack } from './types'
 import {
   createDefaultSettings,
   RECENT_FLOORS_MAX,
   RECENT_FLOORS_MIN,
   SETTINGS_VERSION,
+  SPRITE_COUNT_MAX,
+  SPRITE_COUNT_MIN,
 } from './types'
 import { normalizeTag, sanitizePackName } from './naming'
 import { extractImageCode } from './share-code'
@@ -73,17 +77,15 @@ export function migrateSettings(saved: unknown): PluginSettings {
       raw.multiRolePromptMode === 'full' || raw.multiRolePromptMode === 'repeat'
         ? raw.multiRolePromptMode
         : defaults.multiRolePromptMode,
+    spriteCount:
+      typeof raw.spriteCount === 'number' && Number.isFinite(raw.spriteCount)
+        ? Math.min(SPRITE_COUNT_MAX, Math.max(SPRITE_COUNT_MIN, Math.round(raw.spriteCount)))
+        : defaults.spriteCount,
     imgbbApiKey: typeof raw.imgbbApiKey === 'string' ? raw.imgbbApiKey : defaults.imgbbApiKey,
     autoUpload: typeof raw.autoUpload === 'boolean' ? raw.autoUpload : defaults.autoUpload,
     packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
     bindings: Array.isArray(raw.bindings)
-      ? raw.bindings.filter(
-          (b) =>
-            b &&
-            typeof b.characterName === 'string' &&
-            typeof b.packId === 'string' &&
-            typeof b.enabled === 'boolean',
-        )
+      ? raw.bindings.flatMap((b) => migrateBinding(b) ?? [])
       : [],
     apps: raw.apps && typeof raw.apps === 'object' && !Array.isArray(raw.apps) ? raw.apps : {},
   }
@@ -120,6 +122,29 @@ function migratePhone(
   return fallback
 }
 
+/**
+ * 单条绑定迁移（形状容错，幂等）：
+ * - 旧 { characterName, packId, enabled } → { characterName, packIds:[packId], enabled }
+ * - 新 { characterName, packIds:[...], enabled } → 原样（去重、丢弃空串）
+ * 无有效 packId 时返回 null（丢弃）。
+ */
+function migrateBinding(raw: unknown): CharacterBinding | null {
+  if (!raw || typeof raw !== 'object') return null
+  const b = raw as { characterName?: unknown; packId?: unknown; packIds?: unknown; enabled?: unknown }
+  if (typeof b.characterName !== 'string' || !b.characterName) return null
+  const ids: string[] = []
+  if (Array.isArray(b.packIds)) {
+    for (const id of b.packIds) if (typeof id === 'string' && id && !ids.includes(id)) ids.push(id)
+  }
+  if (typeof b.packId === 'string' && b.packId && !ids.includes(b.packId)) ids.push(b.packId)
+  if (ids.length === 0) return null
+  return {
+    characterName: b.characterName,
+    packIds: ids,
+    enabled: typeof b.enabled === 'boolean' ? b.enabled : true,
+  }
+}
+
 /** 单个包迁移；结构完全非法时返回 null（丢弃并由调用方 flatMap 过滤） */
 function migratePack(raw: unknown): SpritePack | null {
   if (!raw || typeof raw !== 'object') return null
@@ -135,14 +160,30 @@ function migratePack(raw: unknown): SpritePack | null {
     const code =
       typeof s.code === 'string' && s.code ? s.code : (extractImageCode(s.url) ?? undefined)
     const group = typeof s.group === 'string' ? normalizeTag(s.group) : ''
-    return [{ tag, url: s.url, ...(code ? { code } : {}), ...(group ? { group } : {}) }]
+    const outfit = typeof s.outfit === 'string' ? normalizeTag(s.outfit) : ''
+    const remoteUrl =
+      typeof s.remoteUrl === 'string' && /^https?:\/\//.test(s.remoteUrl) ? s.remoteUrl : ''
+    return [
+      {
+        tag,
+        url: s.url,
+        ...(code ? { code } : {}),
+        ...(group ? { group } : {}),
+        ...(outfit ? { outfit } : {}),
+        ...(remoteUrl ? { remoteUrl } : {}),
+      },
+    ]
   })
 
+  const roleName = typeof p.roleName === 'string' ? normalizeTag(p.roleName) : ''
+  const outfit = typeof p.outfit === 'string' ? normalizeTag(p.outfit) : ''
   return {
     id: p.id,
     name,
     ...(typeof p.author === 'string' && p.author ? { author: p.author } : {}),
     ...(typeof p.description === 'string' && p.description ? { description: p.description } : {}),
+    ...(roleName ? { roleName } : {}),
+    ...(outfit ? { outfit } : {}),
     ...(typeof p.coverTag === 'string' && p.coverTag ? { coverTag: p.coverTag } : {}),
     ...(typeof p.updatedAt === 'string' && p.updatedAt ? { updatedAt: p.updatedAt } : {}),
     sprites,

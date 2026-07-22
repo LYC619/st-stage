@@ -5,8 +5,13 @@
  */
 
 import type { PhoneApp } from '../../../core/phone-registry'
-import { RECENT_FLOORS_MAX, RECENT_FLOORS_MIN } from '../../../core/types'
-import { getActivePack } from '../../../core/sprite-store'
+import {
+  RECENT_FLOORS_MAX,
+  RECENT_FLOORS_MIN,
+  SPRITE_COUNT_MAX,
+  SPRITE_COUNT_MIN,
+} from '../../../core/types'
+import { getActivePacks } from '../../../core/sprite-store'
 import { el, appButton, numberRow, selectRow, toggleRow } from './widgets'
 
 export function spriteApp(): PhoneApp {
@@ -18,7 +23,8 @@ export function spriteApp(): PhoneApp {
     mount(container, ctx) {
       const settings = ctx.getSettings()
       const characterName = ctx.getCharacterName()
-      const pack = getActivePack(settings, characterName)
+      const packs = getActivePacks(settings, characterName)
+      const pack = packs[0] ?? null
 
       // 状态 + 总开关
       const stateSection = el('div', 'so-app-section')
@@ -27,7 +33,9 @@ export function spriteApp(): PhoneApp {
       const detail = el('div', 'so-app-desc')
       detail.textContent = settings.enabled
         ? pack
-          ? `立绘功能运行中 — 已绑定「${pack.name}」（${pack.sprites.length} 张）`
+          ? packs.length > 1
+            ? `立绘功能运行中 — 已启用 ${packs.length} 个包（${packs.reduce((n, p) => n + p.sprites.length, 0)} 张）`
+            : `立绘功能运行中 — 已绑定「${pack.name}」（${pack.sprites.length} 张）`
           : '立绘功能已开启，但当前角色未绑定立绘包（到「图库」绑定）'
         : '立绘功能已关闭：不注入 Prompt、不解析标签，旧楼层已恢复原文'
       stateSection.append(
@@ -106,15 +114,15 @@ export function spriteApp(): PhoneApp {
       promptTitle.textContent = 'Prompt'
       promptSection.append(
         promptTitle,
-        toggleRow('多角色/分组模式（[立绘:分组/图名] 寻址）', settings.multiRole, (v) =>
-          ctx.updateSettings({ ...ctx.getSettings(), multiRole: v }),
+        numberRow('每次回复立绘数量', settings.spriteCount, SPRITE_COUNT_MIN, SPRITE_COUNT_MAX, (v) =>
+          ctx.updateSettings({ ...ctx.getSettings(), spriteCount: v }),
         ),
         selectRow(
           'Prompt 模式',
           settings.multiRolePromptMode,
           [
             { value: 'full', label: '全量（枚举全部地址）' },
-            { value: 'repeat', label: '精简（分组×共享图名）' },
+            { value: 'repeat', label: '智能精简（共有图名合并）' },
           ],
           (v) =>
             ctx.updateSettings({
@@ -123,6 +131,10 @@ export function spriteApp(): PhoneApp {
             }),
         ),
       )
+      const promptHint = el('div', 'so-app-desc')
+      promptHint.textContent =
+        '多个包/含人名服装时，Prompt 用完整地址 [立绘:人名/服装/图名]；单包纯图名时用简写 [立绘:图名]。'
+      promptSection.append(promptHint)
 
       container.append(stateSection, displaySection, autoSection, promptSection)
     },

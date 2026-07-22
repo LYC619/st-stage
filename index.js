@@ -27,45 +27,142 @@
     return new RegExp(TAG_REGEX.source).test(text);
   }
 
+  // core/types.ts
+  var SETTINGS_VERSION = 3;
+  var RECENT_FLOORS_DEFAULT = 6;
+  var RECENT_FLOORS_MIN = 1;
+  var RECENT_FLOORS_MAX = 50;
+  var SPRITE_COUNT_DEFAULT = 1;
+  var SPRITE_COUNT_MIN = 1;
+  var SPRITE_COUNT_MAX = 10;
+  var DEFAULT_IMAGE_HOST = "https://files.catbox.moe/";
+  function getSpriteSource(sprite) {
+    if (sprite.url.startsWith("data:")) return "embedded";
+    if (/^https?:\/\//.test(sprite.url)) return "hosted";
+    return "local";
+  }
+  function getPackCover(pack) {
+    if (pack.coverTag) {
+      const cover = pack.sprites.find((s) => s.tag === pack.coverTag);
+      if (cover) return cover;
+    }
+    return pack.sprites[0] ?? null;
+  }
+  function spriteRole(pack, sprite) {
+    return (sprite.group ?? "").trim() || (pack.roleName ?? "").trim();
+  }
+  function spriteOutfit(pack, sprite) {
+    return (sprite.outfit ?? "").trim() || (pack.outfit ?? "").trim();
+  }
+  function formatAddress(a) {
+    if (a.role && a.outfit) return `${a.role}/${a.outfit}/${a.tag}`;
+    if (a.role) return `${a.role}/${a.tag}`;
+    return a.tag;
+  }
+  function parseAddress(address) {
+    const parts = address.split("/").map((s) => s.trim());
+    if (parts.length >= 3) {
+      return { role: parts[0], outfit: parts[1], tag: parts.slice(2).join("/") };
+    }
+    if (parts.length === 2) return { role: parts[0], outfit: "", tag: parts[1] };
+    return { role: "", outfit: "", tag: parts[0] ?? "" };
+  }
+  function createDefaultSettings() {
+    return {
+      settingsVersion: SETTINGS_VERSION,
+      enabled: true,
+      hideTagInMessage: false,
+      spriteDisplayMode: "overlay",
+      renderInlineImages: false,
+      imageHost: DEFAULT_IMAGE_HOST,
+      overlay: { x: 24, y: 80, width: 220 },
+      overlayHidden: false,
+      recentFloors: RECENT_FLOORS_DEFAULT,
+      phone: { x: 24, y: 320, open: false },
+      showPhone: true,
+      autoSwitch: false,
+      autoSwitchSeconds: 3,
+      multiRole: false,
+      multiRolePromptMode: "full",
+      spriteCount: SPRITE_COUNT_DEFAULT,
+      imgbbApiKey: "",
+      autoUpload: false,
+      packs: [],
+      bindings: [],
+      apps: {}
+    };
+  }
+
   // core/prompt-builder.ts
-  function buildInjectionPrompt(tags) {
-    if (tags.length === 0) return "";
-    const list = tags.join("、");
+  function countInstruction(count) {
+    if (count <= 1) {
+      return "请在每次回复的末尾，选择一个最贴合当前情境与角色情绪的立绘，以 [立绘:名称] 的格式单独标注。";
+    }
+    return `请根据回复内容，按情节顺序选择 ${count} 张立绘，并依次输出 ${count} 个 [立绘:...] 标签（每个单独一行）。`;
+  }
+  function sceneKey(a) {
+    return `${a.role}\0${a.outfit}`;
+  }
+  function sceneLabel(a) {
+    if (a.role && a.outfit) return `${a.role}/${a.outfit}`;
+    if (a.role) return a.role;
+    return "默认";
+  }
+  function buildFull(addresses, count) {
+    const list = addresses.map(formatAddress);
     return [
       "[角色立绘系统]",
-      `可用立绘表情：${list}`,
-      "请在每次回复的末尾，从上述列表中选择一个最贴合当前情境与角色情绪的标签，",
-      "以 [立绘:标签名] 的格式单独标注（例如 [立绘:" + tags[0] + "]）。",
-      "只能使用列表中存在的标签，每次回复只标注一个。"
+      `可用立绘：${list.join("、")}`,
+      countInstruction(count),
+      `只能使用上述列表中存在的名称（例如 [立绘:${list[0]}]）。`
     ].join("\n");
   }
-  function buildMultiRolePrompt(entries, mode) {
-    if (entries.length === 0) return "";
-    const groups = [];
-    const tags = [];
-    for (const e of entries) {
-      if (e.group && !groups.includes(e.group)) groups.push(e.group);
-      if (!tags.includes(e.tag)) tags.push(e.tag);
+  function buildSmart(addresses, count) {
+    const scenes = /* @__PURE__ */ new Map();
+    for (const a of addresses) {
+      const key = sceneKey(a);
+      let scene = scenes.get(key);
+      if (!scene) {
+        scene = { label: sceneLabel(a), tags: /* @__PURE__ */ new Set() };
+        scenes.set(key, scene);
+      }
+      scene.tags.add(a.tag);
     }
-    if (groups.length === 0) return buildInjectionPrompt(tags);
-    if (mode === "repeat") {
-      return [
-        "[角色立绘系统]",
-        `可用角色/分组：${groups.join("、")}`,
-        `每个角色的可用表情：${tags.join("、")}`,
-        "请在每次回复的末尾，选择一个角色和一个表情，",
-        `以 [立绘:角色/表情] 的格式单独标注（例如 [立绘:${groups[0]}/${tags[0]}]）。`,
-        "角色与表情都只能取自上述清单，每次回复标注一个。"
-      ].join("\n");
+    const sceneList = [...scenes.values()];
+    const allTags = /* @__PURE__ */ new Set();
+    for (const a of addresses) allTags.add(a.tag);
+    const sharedTags = [...allTags].filter((tag) => sceneList.every((s) => s.tags.has(tag)));
+    const sharedSet = new Set(sharedTags);
+    const others = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const a of addresses) {
+      if (sharedSet.has(a.tag)) continue;
+      const addr = formatAddress(a);
+      if (!seen.has(addr)) {
+        seen.add(addr);
+        others.push(addr);
+      }
     }
-    const addresses = entries.map((e) => e.group ? `${e.group}/${e.tag}` : e.tag);
-    return [
-      "[角色立绘系统]",
-      `可用立绘（角色/表情）：${addresses.join("、")}`,
-      "请在每次回复的末尾，从上述列表中选择一个最贴合当前情境的立绘，",
-      `以 [立绘:名称] 的格式单独标注（例如 [立绘:${addresses[0]}]）。`,
-      "只能使用列表中存在的名称，每次回复只标注一个。"
-    ].join("\n");
+    if (sceneList.length <= 1) {
+      return buildFull(addresses, count);
+    }
+    const lines = ["[角色立绘系统]"];
+    lines.push(`可用角色/服装：${sceneList.map((s) => s.label).join("、")}`);
+    if (sharedTags.length > 0) {
+      lines.push(`各角色共有表情：${sharedTags.join("、")}`);
+      lines.push("共有表情请写成 [立绘:角色/表情] 或 [立绘:角色/服装/表情]（表情取自共有表情清单）。");
+    }
+    if (others.length > 0) {
+      lines.push(`其他图片（请照抄完整地址）：${others.join("、")}`);
+    }
+    lines.push(countInstruction(count));
+    lines.push("只能使用实际存在的组合，不要自行拼造不存在的角色/服装/表情。");
+    return lines.join("\n");
+  }
+  function buildPrompt(addresses, mode, count) {
+    if (addresses.length === 0) return "";
+    const n = Math.max(1, Math.round(count) || 1);
+    return mode === "repeat" ? buildSmart(addresses, n) : buildFull(addresses, n);
   }
 
   // core/naming.ts
@@ -106,24 +203,20 @@
   function genId() {
     return `pack_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   }
-  function getActivePack(settings, characterName) {
+  function getActivePacks(settings, characterName) {
     const binding = settings.bindings.find((b) => b.characterName === characterName && b.enabled);
-    if (!binding) return null;
-    return settings.packs.find((p) => p.id === binding.packId) ?? null;
+    if (!binding) return [];
+    const byId = new Map(settings.packs.map((p) => [p.id, p]));
+    return binding.packIds.map((id) => byId.get(id)).filter((p) => p != null);
   }
-  function getAvailableTags(settings, characterName) {
-    const pack = getActivePack(settings, characterName);
-    return pack ? pack.sprites.map((s) => s.tag) : [];
-  }
-  function matchSprite(pack, tag) {
-    const normalized = tag.trim();
-    if (!normalized) return null;
-    const exact = pack.sprites.find((s) => s.tag === normalized);
-    if (exact) return exact;
-    const partial = pack.sprites.find(
-      (s) => s.tag.includes(normalized) || normalized.includes(s.tag)
-    );
-    return partial ?? null;
+  function getActiveAddresses(settings, characterName) {
+    const out = [];
+    for (const pack of getActivePacks(settings, characterName)) {
+      for (const s of pack.sprites) {
+        out.push({ role: spriteRole(pack, s), outfit: spriteOutfit(pack, s), tag: s.tag });
+      }
+    }
+    return out;
   }
   function spriteGroup(sprite) {
     return sprite.group ?? "";
@@ -136,38 +229,54 @@
     }
     return seen;
   }
-  function matchInGroup(pack, group, tag) {
-    const g = group.trim();
-    const pool = pack.sprites.filter((s) => {
-      const sg = spriteGroup(s);
-      if (!g) return sg === "";
-      if (!sg) return false;
-      return sg === g || sg.includes(g) || g.includes(sg);
-    });
-    const exact = pool.find((s) => s.tag === tag);
-    if (exact) return exact;
-    return pool.find((s) => s.tag.includes(tag) || tag.includes(s.tag)) ?? null;
+  function flatten(packs) {
+    const out = [];
+    for (const pack of packs) {
+      for (const sprite of pack.sprites) {
+        out.push({ pack, sprite, role: spriteRole(pack, sprite), outfit: spriteOutfit(pack, sprite) });
+      }
+    }
+    return out;
   }
-  function matchAddress(pack, address) {
+  function nameMatches(actual, query) {
+    if (actual === query) return true;
+    return actual.length > 0 && (actual.includes(query) || query.includes(actual));
+  }
+  function lockByName(pool, query, of) {
+    const exact = pool.filter((c) => of(c) === query);
+    if (exact.length > 0) return exact;
+    const fuzzy = pool.filter((c) => nameMatches(of(c), query));
+    if (fuzzy.length === 0) return [];
+    const locked = of(fuzzy[0]);
+    return fuzzy.filter((c) => of(c) === locked);
+  }
+  function matchTagInPool(pool, tag) {
+    const exact = pool.find((c) => c.sprite.tag === tag);
+    if (exact) return exact.sprite;
+    const partial = pool.find((c) => c.sprite.tag.includes(tag) || tag.includes(c.sprite.tag));
+    return partial?.sprite ?? null;
+  }
+  function resolveSprite(packs, address) {
     const raw = address.trim();
     if (!raw) return null;
-    const slash = raw.indexOf("/");
-    if (slash >= 0) {
-      const group = raw.slice(0, slash).trim();
-      const tag = raw.slice(slash + 1).trim();
-      const inGroup = matchInGroup(pack, group, tag);
-      if (inGroup) return inGroup;
-      return matchSprite(pack, tag) ?? matchSprite(pack, raw);
+    const { role, outfit, tag } = parseAddress(raw);
+    if (!tag) return null;
+    let pool = flatten(packs);
+    if (role) {
+      pool = lockByName(pool, role, (c) => c.role);
+      if (pool.length === 0) return null;
     }
-    return matchSprite(pack, raw);
+    if (outfit) {
+      pool = lockByName(pool, outfit, (c) => c.outfit);
+      if (pool.length === 0) return null;
+    }
+    return matchTagInPool(pool, tag);
   }
-  function matchSprites(pack, addresses) {
+  function resolveSprites(packs, addresses) {
     const out = [];
     for (const address of addresses) {
-      const sprite = matchAddress(pack, address);
-      if (sprite && out[out.length - 1] !== sprite) {
-        out.push(sprite);
-      }
+      const sprite = resolveSprite(packs, address);
+      if (sprite && out[out.length - 1] !== sprite) out.push(sprite);
     }
     return out;
   }
@@ -179,17 +288,48 @@
     };
   }
   function removePack(settings, packId) {
+    const bindings = settings.bindings.map((b) => ({ ...b, packIds: b.packIds.filter((id) => id !== packId) })).filter((b) => b.packIds.length > 0);
     return {
       ...settings,
       packs: settings.packs.filter((p) => p.id !== packId),
-      bindings: settings.bindings.filter((b) => b.packId !== packId)
+      bindings
     };
   }
-  function bindCharacter(settings, characterName, packId) {
-    const others = settings.bindings.filter((b) => b.characterName !== characterName);
+  function bindPack(settings, characterName, packId) {
+    const existing = settings.bindings.find((b) => b.characterName === characterName);
+    if (existing) {
+      if (existing.packIds.includes(packId)) {
+        return { ...settings, bindings: settings.bindings.map((b) => b === existing ? { ...b, enabled: true } : b) };
+      }
+      return {
+        ...settings,
+        bindings: settings.bindings.map(
+          (b) => b === existing ? { ...b, packIds: [...b.packIds, packId], enabled: true } : b
+        )
+      };
+    }
     return {
       ...settings,
-      bindings: [...others, { characterName, packId, enabled: true }]
+      bindings: [...settings.bindings, { characterName, packIds: [packId], enabled: true }]
+    };
+  }
+  function unbindPack(settings, characterName, packId) {
+    const bindings = settings.bindings.map(
+      (b) => b.characterName === characterName ? { ...b, packIds: b.packIds.filter((id) => id !== packId) } : b
+    ).filter((b) => b.packIds.length > 0);
+    return { ...settings, bindings };
+  }
+  function reorderBinding(settings, characterName, fromIndex, toIndex) {
+    return {
+      ...settings,
+      bindings: settings.bindings.map((b) => {
+        if (b.characterName !== characterName) return b;
+        const ids = [...b.packIds];
+        if (fromIndex < 0 || fromIndex >= ids.length || toIndex < 0 || toIndex >= ids.length) return b;
+        const [moved] = ids.splice(fromIndex, 1);
+        ids.splice(toIndex, 0, moved);
+        return { ...b, packIds: ids };
+      })
     };
   }
   function touchPack(pack, sprites) {
@@ -569,49 +709,6 @@
     };
   }
 
-  // core/types.ts
-  var SETTINGS_VERSION = 3;
-  var RECENT_FLOORS_DEFAULT = 6;
-  var RECENT_FLOORS_MIN = 1;
-  var RECENT_FLOORS_MAX = 50;
-  var DEFAULT_IMAGE_HOST = "https://files.catbox.moe/";
-  function getSpriteSource(sprite) {
-    if (sprite.url.startsWith("data:")) return "embedded";
-    if (/^https?:\/\//.test(sprite.url)) return "hosted";
-    return "local";
-  }
-  function getPackCover(pack) {
-    if (pack.coverTag) {
-      const cover = pack.sprites.find((s) => s.tag === pack.coverTag);
-      if (cover) return cover;
-    }
-    return pack.sprites[0] ?? null;
-  }
-  function createDefaultSettings() {
-    return {
-      settingsVersion: SETTINGS_VERSION,
-      enabled: true,
-      hideTagInMessage: false,
-      spriteDisplayMode: "overlay",
-      renderInlineImages: false,
-      imageHost: DEFAULT_IMAGE_HOST,
-      overlay: { x: 24, y: 80, width: 220 },
-      overlayHidden: false,
-      recentFloors: RECENT_FLOORS_DEFAULT,
-      phone: { x: 24, y: 320, open: false },
-      showPhone: true,
-      autoSwitch: false,
-      autoSwitchSeconds: 3,
-      multiRole: false,
-      multiRolePromptMode: "full",
-      imgbbApiKey: "",
-      autoUpload: false,
-      packs: [],
-      bindings: [],
-      apps: {}
-    };
-  }
-
   // core/share-code.ts
   var SHARE_PREFIX = "stpack1:";
   var CODE_REGEX = /^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$/;
@@ -713,12 +810,11 @@
       autoSwitchSeconds: typeof raw.autoSwitchSeconds === "number" && Number.isFinite(raw.autoSwitchSeconds) ? Math.min(60, Math.max(1, Math.round(raw.autoSwitchSeconds))) : defaults.autoSwitchSeconds,
       multiRole: typeof raw.multiRole === "boolean" ? raw.multiRole : defaults.multiRole,
       multiRolePromptMode: raw.multiRolePromptMode === "full" || raw.multiRolePromptMode === "repeat" ? raw.multiRolePromptMode : defaults.multiRolePromptMode,
+      spriteCount: typeof raw.spriteCount === "number" && Number.isFinite(raw.spriteCount) ? Math.min(SPRITE_COUNT_MAX, Math.max(SPRITE_COUNT_MIN, Math.round(raw.spriteCount))) : defaults.spriteCount,
       imgbbApiKey: typeof raw.imgbbApiKey === "string" ? raw.imgbbApiKey : defaults.imgbbApiKey,
       autoUpload: typeof raw.autoUpload === "boolean" ? raw.autoUpload : defaults.autoUpload,
       packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
-      bindings: Array.isArray(raw.bindings) ? raw.bindings.filter(
-        (b) => b && typeof b.characterName === "string" && typeof b.packId === "string" && typeof b.enabled === "boolean"
-      ) : [],
+      bindings: Array.isArray(raw.bindings) ? raw.bindings.flatMap((b) => migrateBinding(b) ?? []) : [],
       apps: raw.apps && typeof raw.apps === "object" && !Array.isArray(raw.apps) ? raw.apps : {}
     };
   }
@@ -734,6 +830,22 @@
     }
     return fallback;
   }
+  function migrateBinding(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const b = raw;
+    if (typeof b.characterName !== "string" || !b.characterName) return null;
+    const ids = [];
+    if (Array.isArray(b.packIds)) {
+      for (const id of b.packIds) if (typeof id === "string" && id && !ids.includes(id)) ids.push(id);
+    }
+    if (typeof b.packId === "string" && b.packId && !ids.includes(b.packId)) ids.push(b.packId);
+    if (ids.length === 0) return null;
+    return {
+      characterName: b.characterName,
+      packIds: ids,
+      enabled: typeof b.enabled === "boolean" ? b.enabled : true
+    };
+  }
   function migratePack(raw) {
     if (!raw || typeof raw !== "object") return null;
     const p = raw;
@@ -745,13 +857,28 @@
       if (!tag) return [];
       const code = typeof s.code === "string" && s.code ? s.code : extractImageCode(s.url) ?? void 0;
       const group = typeof s.group === "string" ? normalizeTag(s.group) : "";
-      return [{ tag, url: s.url, ...code ? { code } : {}, ...group ? { group } : {} }];
+      const outfit2 = typeof s.outfit === "string" ? normalizeTag(s.outfit) : "";
+      const remoteUrl = typeof s.remoteUrl === "string" && /^https?:\/\//.test(s.remoteUrl) ? s.remoteUrl : "";
+      return [
+        {
+          tag,
+          url: s.url,
+          ...code ? { code } : {},
+          ...group ? { group } : {},
+          ...outfit2 ? { outfit: outfit2 } : {},
+          ...remoteUrl ? { remoteUrl } : {}
+        }
+      ];
     });
+    const roleName = typeof p.roleName === "string" ? normalizeTag(p.roleName) : "";
+    const outfit = typeof p.outfit === "string" ? normalizeTag(p.outfit) : "";
     return {
       id: p.id,
       name,
       ...typeof p.author === "string" && p.author ? { author: p.author } : {},
       ...typeof p.description === "string" && p.description ? { description: p.description } : {},
+      ...roleName ? { roleName } : {},
+      ...outfit ? { outfit } : {},
       ...typeof p.coverTag === "string" && p.coverTag ? { coverTag: p.coverTag } : {},
       ...typeof p.updatedAt === "string" && p.updatedAt ? { updatedAt: p.updatedAt } : {},
       sprites
@@ -1114,18 +1241,21 @@
     const sprites = [];
     for (const sprite of pack.sprites) {
       const source = getSpriteSource(sprite);
-      const group = sprite.group ? { group: sprite.group } : {};
+      const extra = {
+        ...sprite.group ? { group: sprite.group } : {},
+        ...sprite.outfit ? { outfit: sprite.outfit } : {}
+      };
       if (source === "embedded") {
-        sprites.push({ tag: sprite.tag, data: sprite.url, ...group });
+        sprites.push({ tag: sprite.tag, data: sprite.url, ...extra });
       } else if (source === "local" || embedHosted) {
         try {
           const data = await urlToDataUri(sprite.url);
-          sprites.push({ tag: sprite.tag, data, ...group });
+          sprites.push({ tag: sprite.tag, data, ...extra });
         } catch {
-          sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code), ...group });
+          sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code), ...extra });
         }
       } else {
-        sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code), ...group });
+        sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code), ...extra });
       }
     }
     return {
@@ -1133,6 +1263,8 @@
       name: pack.name,
       author: pack.author,
       description: pack.description,
+      ...pack.roleName ? { roleName: pack.roleName } : {},
+      ...pack.outfit ? { outfit: pack.outfit } : {},
       coverTag: pack.coverTag,
       exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
       sprites
@@ -1165,22 +1297,33 @@
       const tag = normalizeTag(item.tag);
       if (!tag) continue;
       const group = typeof item.group === "string" ? normalizeTag(item.group) : "";
-      const key = group ? `${group}/${tag}` : tag;
+      const outfit2 = typeof item.outfit === "string" ? normalizeTag(item.outfit) : "";
+      const key = `${group}|${outfit2}|${tag}`;
       if (seen.has(key)) continue;
       seen.add(key);
       const code = typeof item.code === "string" && item.code ? item.code : extractImageCode(url) ?? void 0;
-      sprites.push({ tag, url, ...code ? { code } : {}, ...group ? { group } : {} });
+      sprites.push({
+        tag,
+        url,
+        ...code ? { code } : {},
+        ...group ? { group } : {},
+        ...outfit2 ? { outfit: outfit2 } : {}
+      });
     }
     if (sprites.length === 0) {
       throw new Error("导入失败：没有可用的立绘条目（表情名可能全部为空或重复）");
     }
     const normalizedCover = typeof file.coverTag === "string" ? normalizeTag(file.coverTag) : "";
     const coverTag = sprites.some((s) => s.tag === normalizedCover) ? normalizedCover : void 0;
+    const roleName = typeof file.roleName === "string" ? normalizeTag(file.roleName) : "";
+    const outfit = typeof file.outfit === "string" ? normalizeTag(file.outfit) : "";
     return {
       id: genId(),
       name: sanitizePackName(file.name) || "导入立绘包",
       author: typeof file.author === "string" ? sanitizePackName(file.author) || void 0 : void 0,
       description: typeof file.description === "string" ? sanitizeDescription(file.description) || void 0 : void 0,
+      ...roleName ? { roleName } : {},
+      ...outfit ? { outfit } : {},
       coverTag,
       updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
       sprites
@@ -1395,35 +1538,60 @@
       const settings = deps.getSettings();
       const characterName = deps.adapter.getCurrentCharacterName();
       const binding = settings.bindings.find((b) => b.characterName === characterName);
+      const boundIds = binding?.packIds ?? [];
       const bindSection = el("div", "so-section");
       const bindTitle = el("div", "so-section-title");
       bindTitle.textContent = characterName ? `当前角色：${characterName}` : "当前角色绑定";
       bindSection.append(bindTitle);
       if (characterName) {
+        if (boundIds.length > 0) {
+          const boundLabel = el("div", "so-status");
+          boundLabel.textContent = `已启用 ${boundIds.length} 个包（顺序影响多包寻址优先级）：`;
+          bindSection.append(boundLabel);
+          boundIds.forEach((id, index) => {
+            const pack = settings.packs.find((p) => p.id === id);
+            const row = el("div", "so-row so-bind-item");
+            const name = el("span", "so-bind-name");
+            name.textContent = pack ? `${index + 1}. ${pack.name}（${pack.sprites.length} 张）` : `（已删除的包 ${id}）`;
+            row.append(
+              name,
+              iconButton("▲", "上移", () => {
+                if (index > 0) commit(reorderBinding(deps.getSettings(), characterName, index, index - 1));
+              }),
+              iconButton("▼", "下移", () => {
+                commit(reorderBinding(deps.getSettings(), characterName, index, index + 1));
+              }),
+              iconButton("✕", "停用此包", () => {
+                commit(unbindPack(deps.getSettings(), characterName, id));
+              })
+            );
+            bindSection.append(row);
+          });
+        }
         const bindRow = el("div", "so-row so-bind-row");
         const select = document.createElement("select");
         select.className = "text_pole";
-        select.setAttribute("aria-label", `为「${characterName}」绑定立绘包`);
+        select.setAttribute("aria-label", `为「${characterName}」添加启用立绘包`);
         const placeholder = document.createElement("option");
         placeholder.value = "";
-        placeholder.textContent = "选择立绘包…";
+        placeholder.textContent = boundIds.length > 0 ? "再启用一个包…" : "选择要启用的包…";
         select.append(placeholder);
         for (const p of settings.packs) {
+          if (boundIds.includes(p.id)) continue;
           const opt = document.createElement("option");
           opt.value = p.id;
           opt.textContent = `${p.name}（${p.sprites.length} 张）`;
-          opt.selected = binding?.packId === p.id;
           select.append(opt);
         }
         select.addEventListener("change", () => {
           if (!select.value) return;
-          commit(bindCharacter(deps.getSettings(), characterName, select.value));
+          commit(bindPack(deps.getSettings(), characterName, select.value));
         });
         bindRow.append(select);
         if (binding) {
           bindRow.append(
             checkboxRow(
-              "启用",
+              "全部启用",
               binding.enabled,
               (v) => commit(toggleBinding(deps.getSettings(), characterName, v))
             )
@@ -1438,7 +1606,7 @@
       body.append(bindSection);
       const grid = el("div", "so-pack-grid");
       for (const pack of settings.packs) {
-        const bound = binding?.packId === pack.id ? binding.enabled ? "active" : "off" : null;
+        const bound = boundIds.includes(pack.id) ? binding?.enabled ? "active" : "off" : null;
         grid.append(renderPackCard(pack, bound));
       }
       body.append(grid);
@@ -1593,25 +1761,37 @@
         authorInput.value = pack.author ?? "";
         const descInput = textInput("描述（可选）");
         descInput.value = pack.description ?? "";
+        const roleInput = textInput("人名（可空）");
+        roleInput.value = pack.roleName ?? "";
+        const outfitInput = textInput("服装（可空）");
+        outfitInput.value = pack.outfit ?? "";
         metaRow.append(
           labeled("包名", nameInput),
           labeled("作者", authorInput),
           labeled("描述", descInput),
+          labeled("人名", roleInput),
+          labeled("服装", outfitInput),
           button("保存信息", () => {
             const name = sanitizePackName(nameInput.value);
             if (!name) {
               toast(body, "包名不能为空");
               return;
             }
+            const roleName = normalizeTag(roleInput.value);
+            const outfit = normalizeTag(outfitInput.value);
             commitPack({
               ...pack,
               name,
               author: sanitizePackName(authorInput.value) || void 0,
-              description: sanitizeDescription(descInput.value) || void 0
+              description: sanitizeDescription(descInput.value) || void 0,
+              roleName: roleName || void 0,
+              outfit: outfit || void 0
             });
           })
         );
-        metaSection.append(metaTitle, metaRow);
+        const metaHint = el("div", "so-status");
+        metaHint.textContent = "人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。";
+        metaSection.append(metaTitle, metaRow, metaHint);
         body.append(metaSection);
       }
       if (pack.sprites.length === 0) {
@@ -2138,10 +2318,11 @@
     snapshots.delete(root);
     root.removeAttribute(FP_ATTR);
     const chName = inlineSprites ? root.closest(".mes")?.getAttribute("ch_name") ?? "" : "";
-    const pack = chName ? getActivePack(settings, chName) : null;
+    const packs = chName ? getActivePacks(settings, chName) : [];
+    const hasPacks = packs.length > 0;
     const freshText = root.textContent ?? "";
     const tagged = hasTag(freshText);
-    const needsWork = settings.hideTagInMessage && tagged || inlineSprites && pack !== null && tagged || settings.renderInlineImages && hasInlineImageMarkup(freshText);
+    const needsWork = settings.hideTagInMessage && tagged || inlineSprites && hasPacks && tagged || settings.renderInlineImages && hasInlineImageMarkup(freshText);
     if (!needsWork) return;
     snapshots.set(root, {
       nodes: Array.from(root.childNodes).map((n) => n.cloneNode(true)),
@@ -2157,16 +2338,16 @@
       const text = textNode.nodeValue ?? "";
       if (!text) continue;
       const nodeTagged = hasTag(text);
-      const needsSprites = inlineSprites && pack !== null && nodeTagged;
+      const needsSprites = inlineSprites && hasPacks && nodeTagged;
       const needsStrip = settings.hideTagInMessage && nodeTagged && !needsSprites;
       const needsImages = settings.renderInlineImages && hasInlineImageMarkup(text);
       if (!needsSprites && !needsStrip && !needsImages) continue;
       let processed = needsStrip ? stripTags(text) : text;
       const elements = [];
       const marker = (el3) => `\0${elements.push(el3) - 1}\0`;
-      if (needsSprites && pack) {
+      if (needsSprites && hasPacks) {
         processed = replaceTags(processed, (address) => {
-          const sprite = matchAddress(pack, address);
+          const sprite = resolveSprite(packs, address);
           if (!sprite) return settings.hideTagInMessage ? "" : null;
           return marker(createImage(sprite.url, sprite.tag, "so-inline-sprite"));
         });
@@ -2307,12 +2488,13 @@
       mount(container, ctx) {
         const settings = ctx.getSettings();
         const characterName = ctx.getCharacterName();
-        const pack = getActivePack(settings, characterName);
+        const packs = getActivePacks(settings, characterName);
+        const pack = packs[0] ?? null;
         const stateSection = el2("div", "so-app-section");
         const title = el2("div", "so-app-title");
         title.textContent = characterName ? `当前角色：${characterName}` : "尚未打开角色聊天";
         const detail = el2("div", "so-app-desc");
-        detail.textContent = settings.enabled ? pack ? `立绘功能运行中 — 已绑定「${pack.name}」（${pack.sprites.length} 张）` : "立绘功能已开启，但当前角色未绑定立绘包（到「图库」绑定）" : "立绘功能已关闭：不注入 Prompt、不解析标签，旧楼层已恢复原文";
+        detail.textContent = settings.enabled ? pack ? packs.length > 1 ? `立绘功能运行中 — 已启用 ${packs.length} 个包（${packs.reduce((n, p) => n + p.sprites.length, 0)} 张）` : `立绘功能运行中 — 已绑定「${pack.name}」（${pack.sprites.length} 张）` : "立绘功能已开启，但当前角色未绑定立绘包（到「图库」绑定）" : "立绘功能已关闭：不注入 Prompt、不解析标签，旧楼层已恢复原文";
         stateSection.append(
           title,
           toggleRow(
@@ -2398,17 +2580,19 @@
         promptTitle.textContent = "Prompt";
         promptSection.append(
           promptTitle,
-          toggleRow(
-            "多角色/分组模式（[立绘:分组/图名] 寻址）",
-            settings.multiRole,
-            (v) => ctx.updateSettings({ ...ctx.getSettings(), multiRole: v })
+          numberRow(
+            "每次回复立绘数量",
+            settings.spriteCount,
+            SPRITE_COUNT_MIN,
+            SPRITE_COUNT_MAX,
+            (v) => ctx.updateSettings({ ...ctx.getSettings(), spriteCount: v })
           ),
           selectRow(
             "Prompt 模式",
             settings.multiRolePromptMode,
             [
               { value: "full", label: "全量（枚举全部地址）" },
-              { value: "repeat", label: "精简（分组×共享图名）" }
+              { value: "repeat", label: "智能精简（共有图名合并）" }
             ],
             (v) => ctx.updateSettings({
               ...ctx.getSettings(),
@@ -2416,6 +2600,9 @@
             })
           )
         );
+        const promptHint = el2("div", "so-app-desc");
+        promptHint.textContent = "多个包/含人名服装时，Prompt 用完整地址 [立绘:人名/服装/图名]；单包纯图名时用简写 [立绘:图名]。";
+        promptSection.append(promptHint);
         container.append(stateSection, displaySection, autoSection, promptSection);
       }
     };
@@ -2576,17 +2763,19 @@
         return;
       }
       const characterName = adapter.getCurrentCharacterName();
-      const pack = getActivePack(settings, characterName);
-      const prompt = settings.multiRole && pack ? buildMultiRolePrompt(
-        pack.sprites.map((s) => ({ group: s.group ?? "", tag: s.tag })),
-        settings.multiRolePromptMode
-      ) : buildInjectionPrompt(getAvailableTags(settings, characterName));
+      const packs = getActivePacks(settings, characterName);
+      const pack = packs[0] ?? null;
+      const prompt = buildPrompt(
+        getActiveAddresses(settings, characterName),
+        settings.multiRolePromptMode,
+        settings.spriteCount
+      );
       adapter.injectPrompt(prompt);
-      const contentKey = `${characterName}|${pack?.id ?? "none"}|${pack ? pack.sprites.length > 0 : false}`;
+      const contentKey = `${characterName}|${packs.map((p) => p.id).join(",")}|${pack ? pack.sprites.length > 0 : false}`;
       if (contentKey !== lastOverlayContentKey) {
         lastOverlayContentKey = contentKey;
         if (pack && pack.sprites.length > 0) {
-          preloadPack(pack);
+          for (const p of packs) preloadPack(p);
           overlay.setImage(pack.sprites[0].url, pack.sprites[0].tag);
         } else if (characterName) {
           overlay.setPlaceholder("未绑定立绘包\n点击 ⚙ 进行绑定");
@@ -2599,9 +2788,9 @@
     adapter.onMessageReceived((text) => {
       if (!settings.enabled) return;
       const characterName = adapter.getCurrentCharacterName();
-      const pack = getActivePack(settings, characterName);
-      if (!pack) return;
-      const seq = matchSprites(pack, extractTags(text));
+      const packs = getActivePacks(settings, characterName);
+      if (packs.length === 0) return;
+      const seq = resolveSprites(packs, extractTags(text));
       if (seq.length > 0 && overlayAllowed()) {
         overlay.setSprites(seq);
         overlay.setVisible(true);

@@ -32,7 +32,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
   const [uploadTargetPack, setUploadTargetPack] = useState<string | null>(null)
 
   const binding = settings.bindings.find((b) => b.characterName === characterName)
-  const boundPack = binding ? settings.packs.find((p) => p.id === binding.packId) : null
+  const boundPack = binding ? settings.packs.find((p) => p.id === binding.packIds[0]) : null
 
   const flash = (msg: string) => {
     setStatus(msg)
@@ -324,7 +324,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
         />
         <div className="flex items-center gap-2">
           <select
-            value={binding?.packId ?? ''}
+            value={binding?.packIds[0] ?? ''}
             onChange={(e) => {
               if (e.target.value) onSettingsChange(bindCharacter(settings, characterName, e.target.value))
             }}

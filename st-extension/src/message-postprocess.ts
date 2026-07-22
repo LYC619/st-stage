@@ -19,7 +19,7 @@
 
 import { hasTag, replaceTags, stripTags } from '../../core/tag-parser'
 import { hasInlineImageMarkup, replaceInlineImages } from '../../core/inline-image'
-import { getActivePack, matchAddress } from '../../core/sprite-store'
+import { getActivePacks, resolveSprite } from '../../core/sprite-store'
 import type { PluginSettings } from '../../core/types'
 import { RECENT_FLOORS_MAX, RECENT_FLOORS_MIN } from '../../core/types'
 
@@ -208,15 +208,16 @@ function processMessageElement(root: HTMLElement, settings: PluginSettings): voi
   snapshots.delete(root)
   root.removeAttribute(FP_ATTR)
 
-  // 楼层内立绘：按气泡所属消息的角色名解析绑定包（未绑定/用户消息 → null，标签走原有隐藏逻辑）
+  // 楼层内立绘：按气泡所属消息的角色名解析全部启用包（多包严格寻址）
   const chName = inlineSprites ? (root.closest('.mes')?.getAttribute('ch_name') ?? '') : ''
-  const pack = chName ? getActivePack(settings, chName) : null
+  const packs = chName ? getActivePacks(settings, chName) : []
+  const hasPacks = packs.length > 0
 
   const freshText = root.textContent ?? ''
   const tagged = hasTag(freshText)
   const needsWork =
     (settings.hideTagInMessage && tagged) ||
-    (inlineSprites && pack !== null && tagged) ||
+    (inlineSprites && hasPacks && tagged) ||
     (settings.renderInlineImages && hasInlineImageMarkup(freshText))
   if (!needsWork) return
 
@@ -239,7 +240,7 @@ function processMessageElement(root: HTMLElement, settings: PluginSettings): voi
     if (!text) continue
 
     const nodeTagged = hasTag(text)
-    const needsSprites = inlineSprites && pack !== null && nodeTagged
+    const needsSprites = inlineSprites && hasPacks && nodeTagged
     const needsStrip = settings.hideTagInMessage && nodeTagged && !needsSprites
     const needsImages = settings.renderInlineImages && hasInlineImageMarkup(text)
     if (!needsSprites && !needsStrip && !needsImages) continue
@@ -251,9 +252,9 @@ function processMessageElement(root: HTMLElement, settings: PluginSettings): voi
     const elements: HTMLElement[] = []
     const marker = (el: HTMLElement) => `\0${elements.push(el) - 1}\0`
 
-    if (needsSprites && pack) {
+    if (needsSprites && hasPacks) {
       processed = replaceTags(processed, (address) => {
-        const sprite = matchAddress(pack, address)
+        const sprite = resolveSprite(packs, address)
         // 匹配不到的标签退回「隐藏标签」语义：开了隐藏就摘除，否则保留原文
         if (!sprite) return settings.hideTagInMessage ? '' : null
         return marker(createImage(sprite.url, sprite.tag, 'so-inline-sprite'))

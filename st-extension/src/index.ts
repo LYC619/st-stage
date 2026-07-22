@@ -7,8 +7,13 @@
 
 import type { PluginSettings } from '../../core/types'
 import { extractTags } from '../../core/tag-parser'
-import { buildInjectionPrompt, buildMultiRolePrompt } from '../../core/prompt-builder'
-import { getActivePack, getAvailableTags, matchSprites, preloadPack } from '../../core/sprite-store'
+import { buildPrompt } from '../../core/prompt-builder'
+import {
+  getActiveAddresses,
+  getActivePacks,
+  preloadPack,
+  resolveSprites,
+} from '../../core/sprite-store'
 import { PhoneAppRegistry, type PhoneAppContext } from '../../core/phone-registry'
 import { createPhoneShell } from '../../core/phone-shell'
 import { STAdapter } from './st-adapter'
@@ -144,22 +149,21 @@ async function init(): Promise<void> {
     }
 
     const characterName = adapter.getCurrentCharacterName()
-    const pack = getActivePack(settings, characterName)
-    // 多角色模式：按分组枚举（全量/重复）；否则单角色标签列表
-    const prompt =
-      settings.multiRole && pack
-        ? buildMultiRolePrompt(
-            pack.sprites.map((s) => ({ group: s.group ?? '', tag: s.tag })),
-            settings.multiRolePromptMode,
-          )
-        : buildInjectionPrompt(getAvailableTags(settings, characterName))
+    const packs = getActivePacks(settings, characterName)
+    const pack = packs[0] ?? null
+    // 三级地址列表 → prompt（纯图名场景自然退化为旧的图名清单）
+    const prompt = buildPrompt(
+      getActiveAddresses(settings, characterName),
+      settings.multiRolePromptMode,
+      settings.spriteCount,
+    )
     adapter.injectPrompt(prompt)
 
-    const contentKey = `${characterName}|${pack?.id ?? 'none'}|${pack ? pack.sprites.length > 0 : false}`
+    const contentKey = `${characterName}|${packs.map((p) => p.id).join(',')}|${pack ? pack.sprites.length > 0 : false}`
     if (contentKey !== lastOverlayContentKey) {
       lastOverlayContentKey = contentKey
       if (pack && pack.sprites.length > 0) {
-        preloadPack(pack)
+        for (const p of packs) preloadPack(p)
         overlay.setImage(pack.sprites[0].url, pack.sprites[0].tag)
       } else if (characterName) {
         // 未绑定：显示占位提示，保留 ⚙ 管理入口
@@ -172,13 +176,13 @@ async function init(): Promise<void> {
     overlay.setVisible(overlayAllowed())
   }
 
-  // 收到 AI 消息：提取全部标签 → 匹配序列 → 悬浮窗排队展示（功能③）
+  // 收到 AI 消息：提取全部标签 → 多包严格匹配序列 → 悬浮窗排队展示（功能③）
   adapter.onMessageReceived((text) => {
     if (!settings.enabled) return
     const characterName = adapter.getCurrentCharacterName()
-    const pack = getActivePack(settings, characterName)
-    if (!pack) return
-    const seq = matchSprites(pack, extractTags(text))
+    const packs = getActivePacks(settings, characterName)
+    if (packs.length === 0) return
+    const seq = resolveSprites(packs, extractTags(text))
     // 仅楼层模式/手动关闭时不弹悬浮窗（楼层立绘由消息后处理负责）
     if (seq.length > 0 && overlayAllowed()) {
       overlay.setSprites(seq)

@@ -25,7 +25,7 @@ export class WebAdapter implements PlatformAdapter {
     const defaults = createDefaultSettings()
     // 内置预设包始终存在；默认角色开箱绑定银发萝莉预设
     defaults.packs = getPresetPacks()
-    defaults.bindings = [{ characterName: '小雪', packId: 'preset_silver_loli', enabled: true }]
+    defaults.bindings = [{ characterName: '小雪', packIds: ['preset_silver_loli'], enabled: true }]
     if (typeof window === 'undefined') return defaults
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY)
