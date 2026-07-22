@@ -54,6 +54,9 @@
   function spriteOutfit(pack, sprite) {
     return (sprite.outfit ?? "").trim() || (pack.outfit ?? "").trim();
   }
+  function spriteAddress(pack, sprite) {
+    return { role: spriteRole(pack, sprite), outfit: spriteOutfit(pack, sprite), tag: sprite.tag };
+  }
   function formatAddress(a) {
     if (a.role && a.outfit) return `${a.role}/${a.outfit}/${a.tag}`;
     if (a.role) return `${a.role}/${a.tag}`;
@@ -737,6 +740,7 @@
 
   // core/share-code.ts
   var SHARE_PREFIX = "stpack1:";
+  var SHARE_PREFIX_V2 = "stpack2:";
   var CODE_REGEX = /^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$/;
   function isValidImageCode(code) {
     return CODE_REGEX.test(code) && !code.includes("..");
@@ -747,32 +751,12 @@
     const seg = withoutQuery.split("/").pop() ?? "";
     return isValidImageCode(seg) ? seg : null;
   }
-  function encodeShareString(pack) {
-    const entries = [];
-    const skipped = [];
-    let host = null;
-    for (const sprite of pack.sprites) {
-      const code = sprite.code ?? extractImageCode(sprite.url);
-      if (!code || !sprite.url.startsWith("http") || !sprite.url.endsWith(code)) {
-        skipped.push(sprite.tag);
-        continue;
-      }
-      const prefix = sprite.url.slice(0, sprite.url.length - code.length);
-      if (host === null) host = prefix;
-      if (prefix !== host) {
-        skipped.push(sprite.tag);
-        continue;
-      }
-      entries.push({ tag: sprite.tag, code });
-    }
-    if (entries.length === 0 || host === null) return null;
-    const segments = [sanitizePackName(pack.name) || "分享立绘包"];
-    if (host !== DEFAULT_IMAGE_HOST) segments.push(`@host=${host}`);
-    if (pack.author) segments.push(`@author=${sanitizePackName(pack.author)}`);
-    for (const e of entries) segments.push(`${e.tag}=${e.code}`);
-    return { text: SHARE_PREFIX + segments.join("|"), included: entries.length, skipped };
-  }
   function decodeShareString(raw) {
+    const text = raw.trim();
+    if (text.indexOf(SHARE_PREFIX_V2) !== -1) return decodeShareStringV2(text);
+    return decodeShareStringV1(text);
+  }
+  function decodeShareStringV1(raw) {
     const text = raw.trim();
     const prefixIndex = text.indexOf(SHARE_PREFIX);
     if (prefixIndex === -1) {
@@ -813,6 +797,85 @@
     }
     const finalSprites = sprites.map((s) => ({ ...s, url: host + s.code }));
     return { id: genId(), name, author, sprites: finalSprites, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+  }
+  function shareableUrl(sprite) {
+    if (sprite.remoteUrl && /^https?:\/\//.test(sprite.remoteUrl)) return sprite.remoteUrl;
+    if (/^https?:\/\//.test(sprite.url)) return sprite.url;
+    return null;
+  }
+  function encodeShareStringV2(pack) {
+    const entries = [];
+    const missing = [];
+    for (const sprite of pack.sprites) {
+      const addr = formatAddress(spriteAddress(pack, sprite));
+      const url = shareableUrl(sprite);
+      if (!url) {
+        missing.push(addr);
+        continue;
+      }
+      entries.push(`${addr}=${url}`);
+    }
+    if (entries.length === 0) return null;
+    const segments = [sanitizePackName(pack.name) || "分享立绘包"];
+    if (pack.author) segments.push(`@author=${sanitizePackName(pack.author)}`);
+    segments.push(...entries);
+    return {
+      text: SHARE_PREFIX_V2 + segments.join("|"),
+      included: entries.length,
+      total: pack.sprites.length,
+      missing
+    };
+  }
+  function decodeShareStringV2(raw) {
+    const text = raw.trim();
+    const prefixIndex = text.indexOf(SHARE_PREFIX_V2);
+    if (prefixIndex === -1) {
+      throw new Error(`导入失败：没有找到 ${SHARE_PREFIX_V2} 开头的分享串`);
+    }
+    const body = text.slice(prefixIndex + SHARE_PREFIX_V2.length).trim();
+    const segments = body.split("|");
+    const name = sanitizePackName(segments[0] ?? "") || "分享立绘包";
+    let author;
+    const sprites = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const segment of segments.slice(1)) {
+      const part = segment.trim();
+      if (!part) continue;
+      if (part.startsWith("@")) {
+        const eq2 = part.indexOf("=");
+        if (eq2 === -1) continue;
+        const key2 = part.slice(1, eq2).trim().toLowerCase();
+        const value = part.slice(eq2 + 1).trim();
+        if (key2 === "author") author = sanitizePackName(value) || void 0;
+        continue;
+      }
+      const eq = part.indexOf("=");
+      if (eq === -1) continue;
+      const addr = part.slice(0, eq).trim();
+      const url = part.slice(eq + 1).trim();
+      if (!/^https?:\/\//.test(url)) continue;
+      const { role, outfit, tag: rawTag } = parseAddress(addr);
+      const tag = normalizeTag(rawTag);
+      const cleanRole = normalizeTag(role);
+      const cleanOutfit = normalizeTag(outfit);
+      if (!tag) continue;
+      const key = `${cleanRole}|${cleanOutfit}|${tag}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const code = extractImageCode(url) ?? void 0;
+      sprites.push({
+        tag,
+        url,
+        remoteUrl: url,
+        ...code ? { code } : {},
+        ...cleanRole ? { group: cleanRole } : {},
+        ...cleanOutfit ? { outfit: cleanOutfit } : {}
+      });
+    }
+    if (sprites.length === 0) {
+      throw new Error("导入失败：分享串中没有可用的「地址=URL」条目");
+    }
+    return { id: genId(), name, author, sprites, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
   }
 
   // core/migrate.ts
@@ -1767,7 +1830,7 @@
       });
       createRow.append(nameInput, createBtn);
       const importRow = el("div", "so-row");
-      const shareInput = textInput("粘贴 stpack1: 开头的分享串…");
+      const shareInput = textInput("粘贴 stpack2:/stpack1: 分享串…");
       shareInput.classList.add("so-grow");
       const shareBtn = button("导入分享串", () => {
         if (!shareInput.value.trim()) return;
@@ -1858,14 +1921,25 @@
           toast(body, `已导出「${pack.name}」`);
         }),
         button("复制分享串", async () => {
-          const result = encodeShareString(pack);
+          const result = encodeShareStringV2(pack);
           if (!result) {
-            toast(body, "该包没有图床图片，无法生成分享串（本地/内嵌图请用「导出 JSON」）");
+            toast(body, "该包没有可分享的远程图片（本地/内嵌图请用「导出 JSON」，或先上传 imgbb）");
             return;
           }
+          if (result.missing.length > 0) {
+            const preview = result.missing.slice(0, 8).join("、");
+            const more = result.missing.length > 8 ? ` 等 ${result.missing.length} 项` : "";
+            const go = window.confirm(
+              `分享串不完整：${result.included}/${result.total} 张有远程地址。
+缺少远程地址（不会包含在分享串里）：${preview}${more}
+
+这些图片对方将看不到。仍要复制残缺分享串吗？`
+            );
+            if (!go) return;
+          }
           const ok = await copyText(result.text);
-          const skipNote = result.skipped.length > 0 ? `；跳过非图床立绘：${result.skipped.join("、")}` : "";
-          toast(body, ok ? `已复制分享串（${result.included} 张）${skipNote}` : "复制失败，请手动复制弹出的文本");
+          const note = result.missing.length > 0 ? `（${result.included}/${result.total} 张，缺 ${result.missing.length} 张）` : `（${result.included} 张，完整）`;
+          toast(body, ok ? `已复制分享串${note}` : "复制失败，请手动复制弹出的文本");
           if (!ok) window.prompt("手动复制分享串：", result.text);
         })
       );
@@ -1953,6 +2027,25 @@
         }
       }
       if (!readonly) {
+        const pending = pack.sprites.filter(
+          (s) => getSpriteSource(s) !== "hosted" && !(s.remoteUrl && /^https?:\/\//.test(s.remoteUrl))
+        );
+        const { imgbbApiKey } = deps.getSettings();
+        if (pending.length > 0 && imgbbApiKey.trim()) {
+          const upSection = el("div", "so-section");
+          const upTitle = el("div", "so-section-title");
+          upTitle.textContent = "图床补传";
+          const upDesc = el("div", "so-status");
+          upDesc.textContent = `${pending.length} 张立绘还没有远程地址（分享时对方看不到）。补传到 imgbb 后本地图仍保留。`;
+          upSection.append(
+            upTitle,
+            upDesc,
+            button(`补传 ${pending.length} 张到 imgbb（失败可重试）`, () => {
+              void retryPendingUploads(body, pack.id);
+            })
+          );
+          body.append(upSection);
+        }
         const splitPreview = previewGroupSplit(pack);
         if (splitPreview.length >= 2) {
           const splitSection = el("div", "so-section");
@@ -2079,8 +2172,35 @@ ${preview}
               const target = latestPack();
               if (!target) return;
               const g = spriteGroup(sprite);
-              commitPack(upsertSprite(target, { tag: sprite.tag, url, ...g ? { group: g } : {} }));
-              toast(body, `已替换「${sprite.tag}」（${formatBytes(result.bytes)}）`);
+              const o = sprite.outfit;
+              const base = {
+                tag: sprite.tag,
+                url,
+                ...g ? { group: g } : {},
+                ...o ? { outfit: o } : {}
+              };
+              commitPack(upsertSprite(target, base));
+              const { autoUpload, imgbbApiKey } = deps.getSettings();
+              if (autoUpload && imgbbApiKey.trim()) {
+                try {
+                  const up = await uploadToImgbb(imgbbApiKey, result.dataUri);
+                  if (isValidImgbbResult(up)) {
+                    const latest = latestPack();
+                    if (latest) {
+                      commitPack(
+                        upsertSprite(latest, { ...base, code: up.code, remoteUrl: up.url })
+                      );
+                      toast(body, `已替换「${sprite.tag}」并重传图床（${formatBytes(result.bytes)}）`);
+                      return;
+                    }
+                  }
+                  toast(body, `已替换「${sprite.tag}」，但图床响应无效，标记为待上传`);
+                } catch {
+                  toast(body, `已替换「${sprite.tag}」，图床上传失败，标记为待上传`);
+                }
+              } else {
+                toast(body, `已替换「${sprite.tag}」（${formatBytes(result.bytes)}），远程地址待上传`);
+              }
             } catch (err) {
               toast(body, err instanceof Error ? err.message : "替换失败");
             }
@@ -2285,6 +2405,55 @@ ${preview}
       if (failed > 0) parts.push(`失败 ${failed} 张`);
       if (useImgbb) parts.push(`imgbb 成功 ${hosted}${hostFailed > 0 ? `、失败 ${hostFailed}` : ""}`);
       toast(backdrop?.querySelector(".so-manager-body"), parts.join("，"));
+    }
+    async function retryPendingUploads(body, packId) {
+      const { imgbbApiKey } = deps.getSettings();
+      if (!imgbbApiKey.trim()) {
+        toast(body, "请先在「图库」App 配置 imgbb API Key");
+        return;
+      }
+      const pack = deps.getSettings().packs.find((p) => p.id === packId);
+      if (!pack) return;
+      const pending = pack.sprites.filter(
+        (s) => getSpriteSource(s) !== "hosted" && !(s.remoteUrl && /^https?:\/\//.test(s.remoteUrl))
+      );
+      let ok = 0;
+      let fail = 0;
+      for (let i = 0; i < pending.length; i++) {
+        const sprite = pending[i];
+        toast(body, `补传中 ${i + 1}/${pending.length}：${sprite.tag}`);
+        try {
+          const dataUri = sprite.url.startsWith("data:") ? sprite.url : await urlToDataUri(sprite.url);
+          const up = await uploadToImgbb(imgbbApiKey, dataUri);
+          if (!isValidImgbbResult(up)) {
+            fail++;
+            continue;
+          }
+          const latest = deps.getSettings().packs.find((p) => p.id === packId);
+          const target = latest?.sprites.find(
+            (s) => s.tag === sprite.tag && (s.group ?? "") === (sprite.group ?? "")
+          );
+          if (!latest || !target) {
+            fail++;
+            continue;
+          }
+          deps.updateSettings(
+            upsertPack(
+              deps.getSettings(),
+              upsertSprite(latest, { ...target, code: up.code, remoteUrl: up.url })
+            )
+          );
+          ok++;
+        } catch (err) {
+          console.warn("[sprite-overlay] 补传失败", err);
+          fail++;
+        }
+      }
+      render();
+      toast(
+        backdrop?.querySelector(".so-manager-body"),
+        `补传完成：成功 ${ok} 张${fail > 0 ? `，失败 ${fail} 张（可再次点击重试）` : ""}`
+      );
     }
     return { open, close, refreshIfOpen };
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { uploadToImgbb } from './imgbb'
+import { isValidImgbbResult, uploadToImgbb } from './imgbb'
 
 /** 造一个假 fetch：记录收到的 FormData，返回指定 JSON */
 function fakeFetch(json: unknown, status = 200) {
@@ -46,5 +46,23 @@ describe('uploadToImgbb（功能①）', () => {
 
   it('空 Key 直接抛错，不发请求', async () => {
     await expect(uploadToImgbb('  ', 'QUJD')).rejects.toThrow('未配置')
+  })
+})
+
+describe('isValidImgbbResult（九期·响应校验）', () => {
+  it('URL 为 HTTPS 且 code 合法 → 有效', () => {
+    expect(isValidImgbbResult({ url: 'https://i.ibb.co/x/a.png', code: 'a.png' })).toBe(true)
+    expect(isValidImgbbResult({ url: 'https://i.ibb.co/x/a_b-c.1.webp', code: 'a_b-c.1.webp' })).toBe(
+      true,
+    )
+  })
+  it('非 HTTPS / 空 URL → 无效（不覆盖本地保底）', () => {
+    expect(isValidImgbbResult({ url: 'http://i.ibb.co/x/a.png', code: 'a.png' })).toBe(false)
+    expect(isValidImgbbResult({ url: '', code: 'a.png' })).toBe(false)
+  })
+  it('空/非法 code → 无效', () => {
+    expect(isValidImgbbResult({ url: 'https://i.ibb.co/x/a.png', code: '' })).toBe(false)
+    expect(isValidImgbbResult({ url: 'https://i.ibb.co/x/a.png', code: '../x.png' })).toBe(false)
+    expect(isValidImgbbResult({ url: 'https://i.ibb.co/x/a.png', code: 'a/b.png' })).toBe(false)
   })
 })

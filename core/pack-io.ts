@@ -138,8 +138,8 @@ export function importPack(jsonText: string): SpritePack {
   }
 }
 
-/** 把远程/本地 URL 图片转为 data URI */
-async function urlToDataUri(url: string): Promise<string> {
+/** 把远程/本地 URL 图片转为 data URI（补传图床、离线内嵌导出等复用） */
+export async function urlToDataUri(url: string): Promise<string> {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`fetch ${url} failed: ${res.status}`)
   const blob = await res.blob()

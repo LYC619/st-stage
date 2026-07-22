@@ -10,7 +10,7 @@
  */
 
 import type { PluginSettings, Sprite, SpritePack } from '../../core/types'
-import { getPackCover } from '../../core/types'
+import { getPackCover, getSpriteSource } from '../../core/types'
 import {
   bindPack,
   genId,
@@ -27,8 +27,8 @@ import {
   upsertPack,
   upsertSprite,
 } from '../../core/sprite-store'
-import { exportPack, importPack } from '../../core/pack-io'
-import { decodeShareString, encodeShareString, isValidImageCode } from '../../core/share-code'
+import { exportPack, importPack, urlToDataUri } from '../../core/pack-io'
+import { decodeShareString, encodeShareStringV2, isValidImageCode } from '../../core/share-code'
 import {
   normalizeTag,
   parseSpriteFileName,
@@ -305,7 +305,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     createRow.append(nameInput, createBtn)
 
     const importRow = el('div', 'so-row')
-    const shareInput = textInput('粘贴 stpack1: 开头的分享串…')
+    const shareInput = textInput('粘贴 stpack2:/stpack1: 分享串…')
     shareInput.classList.add('so-grow')
     const shareBtn = button('导入分享串', () => {
       if (!shareInput.value.trim()) return
@@ -408,14 +408,28 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         toast(body, `已导出「${pack.name}」`)
       }),
       button('复制分享串', async () => {
-        const result = encodeShareString(pack)
+        const result = encodeShareStringV2(pack)
         if (!result) {
-          toast(body, '该包没有图床图片，无法生成分享串（本地/内嵌图请用「导出 JSON」）')
+          toast(body, '该包没有可分享的远程图片（本地/内嵌图请用「导出 JSON」，或先上传 imgbb）')
           return
         }
+        // 完整性预检：残缺时显示 N/M 与缺失项，必须显式确认才复制，绝不静默复制残缺串
+        if (result.missing.length > 0) {
+          const preview = result.missing.slice(0, 8).join('、')
+          const more = result.missing.length > 8 ? ` 等 ${result.missing.length} 项` : ''
+          const go = window.confirm(
+            `分享串不完整：${result.included}/${result.total} 张有远程地址。\n` +
+              `缺少远程地址（不会包含在分享串里）：${preview}${more}\n\n` +
+              '这些图片对方将看不到。仍要复制残缺分享串吗？',
+          )
+          if (!go) return
+        }
         const ok = await copyText(result.text)
-        const skipNote = result.skipped.length > 0 ? `；跳过非图床立绘：${result.skipped.join('、')}` : ''
-        toast(body, ok ? `已复制分享串（${result.included} 张）${skipNote}` : '复制失败，请手动复制弹出的文本')
+        const note =
+          result.missing.length > 0
+            ? `（${result.included}/${result.total} 张，缺 ${result.missing.length} 张）`
+            : `（${result.included} 张，完整）`
+        toast(body, ok ? `已复制分享串${note}` : '复制失败，请手动复制弹出的文本')
         if (!ok) window.prompt('手动复制分享串：', result.text)
       }),
     )
@@ -510,6 +524,26 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
     // 添加立绘
     if (!readonly) {
+      // 待上传图床（失败重试）：本地/内嵌且无有效远程地址的立绘，可批量补传 imgbb
+      const pending = pack.sprites.filter(
+        (s) => getSpriteSource(s) !== 'hosted' && !(s.remoteUrl && /^https?:\/\//.test(s.remoteUrl)),
+      )
+      const { imgbbApiKey } = deps.getSettings()
+      if (pending.length > 0 && imgbbApiKey.trim()) {
+        const upSection = el('div', 'so-section')
+        const upTitle = el('div', 'so-section-title')
+        upTitle.textContent = '图床补传'
+        const upDesc = el('div', 'so-status')
+        upDesc.textContent = `${pending.length} 张立绘还没有远程地址（分享时对方看不到）。补传到 imgbb 后本地图仍保留。`
+        upSection.append(
+          upTitle,
+          upDesc,
+          button(`补传 ${pending.length} 张到 imgbb（失败可重试）`, () => {
+            void retryPendingUploads(body, pack.id)
+          }),
+        )
+        body.append(upSection)
+      }
       // 旧分组拆包：包内有 ≥2 个分组时提供「按分组拆成立绘包」
       const splitPreview = previewGroupSplit(pack)
       if (splitPreview.length >= 2) {
@@ -653,8 +687,38 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
             const target = latestPack()
             if (!target) return
             const g = spriteGroup(sprite)
-            commitPack(upsertSprite(target, { tag: sprite.tag, url, ...(g ? { group: g } : {}) }))
-            toast(body, `已替换「${sprite.tag}」（${formatBytes(result.bytes)}）`)
+            const o = sprite.outfit
+            // 替换图片：旧远程地址已失效，先只保留新本地 url（去掉旧 code/remoteUrl）
+            const base: Sprite = {
+              tag: sprite.tag,
+              url,
+              ...(g ? { group: g } : {}),
+              ...(o ? { outfit: o } : {}),
+            }
+            commitPack(upsertSprite(target, base))
+
+            // 按自动上传设置决定：开了就重新上传 imgbb 绑新远程，否则留待上传（无 remoteUrl）
+            const { autoUpload, imgbbApiKey } = deps.getSettings()
+            if (autoUpload && imgbbApiKey.trim()) {
+              try {
+                const up = await uploadToImgbb(imgbbApiKey, result.dataUri)
+                if (isValidImgbbResult(up)) {
+                  const latest = latestPack()
+                  if (latest) {
+                    commitPack(
+                      upsertSprite(latest, { ...base, code: up.code, remoteUrl: up.url }),
+                    )
+                    toast(body, `已替换「${sprite.tag}」并重传图床（${formatBytes(result.bytes)}）`)
+                    return
+                  }
+                }
+                toast(body, `已替换「${sprite.tag}」，但图床响应无效，标记为待上传`)
+              } catch {
+                toast(body, `已替换「${sprite.tag}」，图床上传失败，标记为待上传`)
+              }
+            } else {
+              toast(body, `已替换「${sprite.tag}」（${formatBytes(result.bytes)}），远程地址待上传`)
+            }
           } catch (err) {
             toast(body, err instanceof Error ? err.message : '替换失败')
           }
@@ -891,6 +955,58 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     if (failed > 0) parts.push(`失败 ${failed} 张`)
     if (useImgbb) parts.push(`imgbb 成功 ${hosted}${hostFailed > 0 ? `、失败 ${hostFailed}` : ''}`)
     toast(backdrop?.querySelector('.so-manager-body') as HTMLElement, parts.join('，'))
+  }
+
+  /** 补传待上传立绘到 imgbb（失败重试）：fetch 本地图 → 上传 → 绑 remoteUrl+code，本地 url 保留 */
+  async function retryPendingUploads(body: HTMLElement, packId: string): Promise<void> {
+    const { imgbbApiKey } = deps.getSettings()
+    if (!imgbbApiKey.trim()) {
+      toast(body, '请先在「图库」App 配置 imgbb API Key')
+      return
+    }
+    const pack = deps.getSettings().packs.find((p) => p.id === packId)
+    if (!pack) return
+    const pending = pack.sprites.filter(
+      (s) => getSpriteSource(s) !== 'hosted' && !(s.remoteUrl && /^https?:\/\//.test(s.remoteUrl)),
+    )
+    let ok = 0
+    let fail = 0
+    for (let i = 0; i < pending.length; i++) {
+      const sprite = pending[i]
+      toast(body, `补传中 ${i + 1}/${pending.length}：${sprite.tag}`)
+      try {
+        const dataUri = sprite.url.startsWith('data:') ? sprite.url : await urlToDataUri(sprite.url)
+        const up = await uploadToImgbb(imgbbApiKey, dataUri)
+        if (!isValidImgbbResult(up)) {
+          fail++
+          continue
+        }
+        const latest = deps.getSettings().packs.find((p) => p.id === packId)
+        const target = latest?.sprites.find(
+          (s) => s.tag === sprite.tag && (s.group ?? '') === (sprite.group ?? ''),
+        )
+        if (!latest || !target) {
+          fail++
+          continue
+        }
+        // 保留本地 url 作保底，补上远程 remoteUrl + code
+        deps.updateSettings(
+          upsertPack(
+            deps.getSettings(),
+            upsertSprite(latest, { ...target, code: up.code, remoteUrl: up.url }),
+          ),
+        )
+        ok++
+      } catch (err) {
+        console.warn('[sprite-overlay] 补传失败', err)
+        fail++
+      }
+    }
+    render()
+    toast(
+      backdrop?.querySelector('.so-manager-body') as HTMLElement,
+      `补传完成：成功 ${ok} 张${fail > 0 ? `，失败 ${fail} 张（可再次点击重试）` : ''}`,
+    )
   }
 
   return { open, close, refreshIfOpen }
