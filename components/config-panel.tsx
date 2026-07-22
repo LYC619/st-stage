@@ -10,7 +10,7 @@ import { DEFAULT_IMAGE_HOST } from '@/core/types'
 import { bindCharacter, genId, removePack, toggleBinding, upsertPack, upsertSprite } from '@/core/sprite-store'
 import { isPresetPack } from '@/core/presets'
 import { exportPack, importPack } from '@/core/pack-io'
-import { decodeShareString, encodeShareString } from '@/core/share-code'
+import { decodeShareString, encodeShareStringV2 } from '@/core/share-code'
 import { parseUploadName, sanitizePackName } from '@/core/naming'
 import { compressImage } from '@/core/image-compress'
 import { uploadToImgbb } from '@/core/imgbb'
@@ -125,15 +125,24 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
   }
 
   const handleCopyShare = async (pack: SpritePack) => {
-    const result = encodeShareString(pack)
+    const result = encodeShareStringV2(pack)
     if (!result) {
-      flash('该包没有图床图片，无法生成分享串（本地图请用「导出」）')
+      flash('该包没有可分享的远程图片（本地图请用「导出」，或先配 imgbb 上传）')
       return
+    }
+    if (result.missing.length > 0) {
+      const go = window.confirm(
+        `分享串不完整：${result.included}/${result.total} 张有远程地址。缺失项对方看不到，仍要复制吗？`,
+      )
+      if (!go) return
     }
     try {
       await navigator.clipboard.writeText(result.text)
-      const skipNote = result.skipped.length > 0 ? `，跳过 ${result.skipped.length} 张非图床图` : ''
-      flash(`已复制分享串（${result.included} 张）${skipNote}`)
+      const note =
+        result.missing.length > 0
+          ? `（${result.included}/${result.total} 张，缺 ${result.missing.length}）`
+          : `（${result.included} 张，完整）`
+      flash(`已复制分享串${note}`)
     } catch {
       window.prompt('手动复制分享串：', result.text)
     }
@@ -420,8 +429,11 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
               {/* 缩略图预览 */}
               {pack.sprites.length > 0 && (
                 <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
-                  {pack.sprites.map((s) => (
-                    <figure key={s.tag} className="shrink-0 text-center">
+                  {pack.sprites.map((s, i) => (
+                    <figure
+                      key={`${s.group ?? ''}/${s.outfit ?? ''}/${s.tag}#${i}`}
+                      className="shrink-0 text-center"
+                    >
                       <img
                         src={s.url || '/placeholder.svg'}
                         alt={`${pack.name} - ${s.tag}`}
@@ -429,7 +441,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
                         loading="lazy"
                       />
                       <figcaption className="mt-0.5 max-w-14 truncate text-[10px] text-muted-foreground">
-                        {s.group ? `${s.group}/${s.tag}` : s.tag}
+                        {[s.group, s.outfit, s.tag].filter(Boolean).join('/')}
                       </figcaption>
                     </figure>
                   ))}
@@ -479,7 +491,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) handleImportShare()
             }}
-            placeholder="粘贴 stpack1: 分享串…"
+            placeholder="粘贴 stpack2:/stpack1: 分享串…"
             className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring"
             aria-label="分享串输入框"
           />

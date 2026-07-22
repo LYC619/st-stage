@@ -1,8 +1,10 @@
 # st-stage 手机 App 开发规范（v1）
 
-st-stage 在 SillyTavern 聊天界面提供一个「手机」悬浮框架：一个可拖拽的 📱 图标，展开后是带状态栏和 Home 键的手机屏幕，屏幕上是 App 栅格。立绘、图库、设置都是内置 App。**第三方扩展可以把自己的功能注册成一个 App**，获得手机内的入口、页面容器和私有存储。
+st-stage 在 SillyTavern 聊天界面提供一个「手机」悬浮框架：一个可拖拽的 📱 图标，展开后是带状态栏、返回键、关闭键和圆形 Home 键的手机屏幕，屏幕上是 App 栅格。立绘（设置中心）、图库都是内置 App。
 
-## 一分钟接入
+> **方向说明（v0.5 起）**：st-stage 的定位是「一个插件、内部装配多个功能」。**新功能建议直接作为内部 App 模块开发**，放进 `st-extension/src/apps/`，加入 `apps/index.ts` 的统一列表，与 st-stage 一起构建发布——不需要拆成独立插件，也不走外部注册。下面的 `window.stStage.registerApp(...)` 外部注册入口**暂时保留兼容**旧用法，但不是当前推荐路径。内部 App 与外部 App 的对象结构完全一致，本规范同样适用。
+
+## 一分钟接入（外部注册，兼容保留）
 
 在你自己的 ST 扩展脚本里（st-stage 加载之后）：
 
@@ -12,7 +14,7 @@ window.stStage?.registerApp({
   id: 'dice-roller',        // 唯一 ID：小写字母开头，字母/数字/连字符，2–32 字符
   name: '骰子',              // Home 屏名称，建议 ≤ 4 个汉字
   icon: '🎲',               // 单个 emoji
-  order: 50,                // 排序权重，小的在前（内置：立绘 1、图库 2、设置 90）
+  order: 50,                // 排序权重，小的在前（内置：立绘 1、图库 2）
   mount(container, ctx) {
     // container：手机屏幕内的空 div，往里渲染原生 DOM
     const btn = document.createElement('div')
@@ -26,12 +28,14 @@ window.stStage?.registerApp({
     container.append(btn)
   },
   unmount() {
-    // 离开 App 时清理定时器/全局事件（可选）
+    // 离开 App 时清理定时器/全局事件（返回主屏/关手机/隐藏手机/切换 App 都会调用）
   },
 })
 ```
 
 `registerApp` 对非法/重复 id 会**抛错**，建议用 `try/catch` 包住，注册失败不应影响你扩展的其余功能。
+
+> ⚠️ **各内置/外部模块只刷新自己的状态**：手机、图库等模块的数据更新不会触发立绘刷新，反之亦然。新增工具的数据更新也不应连累立绘渲染。
 
 ## 生命周期
 

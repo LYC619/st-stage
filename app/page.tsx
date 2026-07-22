@@ -7,9 +7,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PluginSettings } from '@/core/types'
+import { formatAddress } from '@/core/types'
 import { extractTags } from '@/core/tag-parser'
-import { buildInjectionPrompt, buildMultiRolePrompt } from '@/core/prompt-builder'
-import { getActivePack, getAvailableTags, matchSprites, preloadPack } from '@/core/sprite-store'
+import { buildPrompt } from '@/core/prompt-builder'
+import {
+  getActiveAddresses,
+  getActivePacks,
+  preloadPack,
+  resolveSprites,
+} from '@/core/sprite-store'
 import { webAdapter } from '@/lib/web-adapter'
 import { ChatSimulator } from '@/components/chat-simulator'
 import { ConfigPanel } from '@/components/config-panel'
@@ -35,31 +41,25 @@ export default function Page() {
     saveTimer.current = setTimeout(() => webAdapter.saveSettings(next), 400)
   }, [])
 
-  const activePack = useMemo(
-    () => (settings ? getActivePack(settings, characterName) : null),
+  const activePacks = useMemo(
+    () => (settings ? getActivePacks(settings, characterName) : []),
     [settings, characterName],
   )
-  const availableTags = useMemo(
-    () => (settings ? getAvailableTags(settings, characterName) : []),
+  const activePack = activePacks[0] ?? null
+  const addresses = useMemo(
+    () => (settings ? getActiveAddresses(settings, characterName) : []),
     [settings, characterName],
   )
-  const injectionPrompt = useMemo(() => {
-    if (settings?.multiRole && activePack) {
-      return buildMultiRolePrompt(
-        activePack.sprites.map((s) => ({ group: s.group ?? '', tag: s.tag })),
-        settings.multiRolePromptMode,
-      )
-    }
-    return buildInjectionPrompt(availableTags)
-  }, [settings?.multiRole, settings?.multiRolePromptMode, activePack, availableTags])
+  const injectionPrompt = useMemo(
+    () =>
+      settings
+        ? buildPrompt(addresses, settings.multiRolePromptMode, settings.spriteCount)
+        : '',
+    [settings, addresses],
+  )
 
-  // 聊天模拟器的快捷触发项：多角色模式用「分组/图名」地址，否则用图名
-  const chatChoices = useMemo(() => {
-    if (settings?.multiRole && activePack) {
-      return activePack.sprites.map((s) => (s.group ? `${s.group}/${s.tag}` : s.tag))
-    }
-    return availableTags
-  }, [settings?.multiRole, activePack, availableTags])
+  // 聊天模拟器的快捷触发项：用完整三级地址（纯图名场景即图名）
+  const chatChoices = useMemo(() => addresses.map(formatAddress), [addresses])
 
   // 角色/包切换：预加载全部立绘，重置为第一张（单张）
   useEffect(() => {
@@ -67,20 +67,20 @@ export default function Page() {
       setSprites([])
       return
     }
-    preloadPack(activePack)
+    for (const p of activePacks) preloadPack(p)
     setSprites([{ url: activePack.sprites[0].url, tag: activePack.sprites[0].tag }])
-  }, [activePack])
+  }, [activePack, activePacks])
 
-  // 核心链路：收到 AI 消息 → 提取全部标签 → 匹配序列 → 悬浮窗排队展示（功能③）
+  // 核心链路：收到 AI 消息 → 提取全部标签 → 多包严格匹配序列 → 悬浮窗排队展示（功能③）
   const handleAiMessage = useCallback(
     (text: string) => {
-      if (!settings?.enabled || !activePack) return
-      const seq = matchSprites(activePack, extractTags(text))
+      if (!settings?.enabled || activePacks.length === 0) return
+      const seq = resolveSprites(activePacks, extractTags(text))
       if (seq.length > 0) {
         setSprites(seq.map((s) => ({ url: s.url, tag: s.tag })))
       }
     },
-    [settings?.enabled, activePack],
+    [settings?.enabled, activePacks],
   )
 
   if (!settings) {
