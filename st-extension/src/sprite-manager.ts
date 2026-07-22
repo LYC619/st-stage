@@ -31,12 +31,19 @@ import { exportPack, importPack } from '../../core/pack-io'
 import { decodeShareString, encodeShareString, isValidImageCode } from '../../core/share-code'
 import {
   normalizeTag,
-  parseUploadName,
+  parseSpriteFileName,
   sanitizeDescription,
   sanitizePackName,
 } from '../../core/naming'
+import {
+  planUploads,
+  previewGroupSplit,
+  splitPackByGroup,
+  type ConflictStrategy,
+  type UploadEntry,
+} from '../../core/pack-split'
 import { compressImage, formatBytes } from '../../core/image-compress'
-import { uploadToImgbb } from '../../core/imgbb'
+import { isValidImgbbResult, uploadToImgbb } from '../../core/imgbb'
 import { isPresetPack } from '../../core/presets'
 import type { STAdapter } from './st-adapter'
 
@@ -503,24 +510,46 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
     // 添加立绘
     if (!readonly) {
+      // 旧分组拆包：包内有 ≥2 个分组时提供「按分组拆成立绘包」
+      const splitPreview = previewGroupSplit(pack)
+      if (splitPreview.length >= 2) {
+        const splitSection = el('div', 'so-section')
+        const splitTitle = el('div', 'so-section-title')
+        splitTitle.textContent = '按分组拆成立绘包'
+        const splitDesc = el('div', 'so-status')
+        splitDesc.textContent = `检测到 ${splitPreview.length} 个分组：${splitPreview
+          .map((s) => `${s.roleName}(${s.count})`)
+          .join('、')}。拆分会新建这些包（原包与绑定保留，可稍后自行删除）。`
+        splitSection.append(
+          splitTitle,
+          splitDesc,
+          button('拆分（保留原包）', () => {
+            const preview = splitPreview.map((s) => `${s.roleName}：${s.count} 张`).join('\n')
+            if (!window.confirm(`将新建以下立绘包（原包保留）：\n${preview}\n\n确认拆分？`)) return
+            const newPacks = splitPackByGroup(pack)
+            let next = deps.getSettings()
+            for (const np of newPacks) next = upsertPack(next, np)
+            commit(next)
+            toast(body, `已拆出 ${newPacks.length} 个新包（原包「${pack.name}」保留）`)
+          }),
+        )
+        body.append(splitSection)
+      }
+
       const addSection = el('div', 'so-section')
       const addTitle = el('div', 'so-section-title')
       addTitle.textContent = '添加立绘'
       addSection.append(addTitle)
 
       const addRow = el('div', 'so-row')
-      const batchGroupInput = textInput('本批分组，可空')
       addRow.append(
-        labeled('分组', batchGroupInput),
-        button('上传图片（自动压缩）', () => {
-          pickFile('image/*', true, (files) =>
-            void handleUpload(body, pack.id, files, batchGroupInput.value),
-          )
+        button('批量上传（自动压缩+解析预览）', () => {
+          pickFile('image/*', true, (files) => openUploadPreview(pack.id, files))
         }),
       )
       const upHint = el('div', 'so-status')
       upHint.textContent =
-        '文件名含下划线自动拆分组：鸣人_微笑.png → 分组「鸣人」表情「微笑」；否则用「本批分组」。'
+        '文件名按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png），上传前可预览修正、选择不拆分。'
       addSection.append(addRow, upHint)
 
       const codeRow = el('div', 'so-row so-code-row')
@@ -657,50 +686,192 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     return cell
   }
 
-  /** 批量上传：压缩 → saveImage 本地保底 → upsertSprite；开了自动上传再异步传 imgbb 绑编号 */
-  async function handleUpload(
-    body: HTMLElement,
-    packId: string,
-    files: FileList,
-    batchGroup: string,
+  /**
+   * 批量上传预览弹窗（八期）：解析文件名 → 让用户修正/选择不拆分/选重名策略 → 确认后执行。
+   * 上传前必须预览，不静默落库。
+   */
+  function openUploadPreview(currentPackId: string, files: FileList): void {
+    const fileArr = Array.from(files)
+    // 每个文件解析出的可编辑条目（人名/服装/图名）
+    const parsed = fileArr.map((f) => parseSpriteFileName(f.name))
+    let autoSplit = true
+    let strategy: ConflictStrategy = 'skip'
+
+    const modal = el('div', 'so-upload-modal')
+    const panel = el('div', 'so-upload-panel')
+    const head = el('div', 'so-upload-head')
+    const title = el('b')
+    title.textContent = `批量上传预览（${fileArr.length} 张）`
+    head.append(title)
+
+    const rows = el('div', 'so-upload-rows')
+    const inputs: Array<{ role: HTMLInputElement; outfit: HTMLInputElement; tag: HTMLInputElement }> = []
+
+    function buildRows(): void {
+      rows.innerHTML = ''
+      inputs.length = 0
+      fileArr.forEach((file, i) => {
+        const row = el('div', 'so-upload-row')
+        const name = el('div', 'so-upload-fname')
+        name.textContent = file.name
+        name.title = file.name
+        const roleIn = textInput('人名')
+        const outfitIn = textInput('服装')
+        const tagIn = textInput('图名')
+        if (autoSplit) {
+          roleIn.value = parsed[i].role
+          outfitIn.value = parsed[i].outfit
+          tagIn.value = parsed[i].tag
+        } else {
+          // 不自动拆分：整名作图名，落入当前包
+          roleIn.value = ''
+          outfitIn.value = ''
+          tagIn.value = normalizeTag(file.name.replace(/\.[^.]+$/, ''))
+        }
+        roleIn.disabled = !autoSplit
+        outfitIn.disabled = !autoSplit
+        inputs.push({ role: roleIn, outfit: outfitIn, tag: tagIn })
+        row.append(
+          name,
+          labeled('人名', roleIn),
+          labeled('服装', outfitIn),
+          labeled('图名', tagIn),
+        )
+        rows.append(row)
+      })
+    }
+    buildRows()
+
+    const opts = el('div', 'so-upload-opts')
+    opts.append(
+      checkboxRow('自动拆分人名/服装（关闭则整名作图名落当前包）', autoSplit, (v) => {
+        autoSplit = v
+        buildRows()
+      }),
+    )
+    const stratWrap = el('div', 'so-row')
+    const stratLabel = el('span')
+    stratLabel.textContent = '重名时：'
+    const stratSel = document.createElement('select')
+    stratSel.className = 'text_pole'
+    for (const [val, lab] of [
+      ['skip', '跳过（默认）'],
+      ['rename', '自动改名'],
+      ['overwrite', '覆盖'],
+    ] as const) {
+      const o = document.createElement('option')
+      o.value = val
+      o.textContent = lab
+      stratSel.append(o)
+    }
+    stratSel.addEventListener('change', () => (strategy = stratSel.value as ConflictStrategy))
+    stratWrap.append(stratLabel, stratSel)
+    opts.append(stratWrap)
+
+    const status = el('div', 'so-upload-status')
+    const actions = el('div', 'so-row so-upload-actions')
+    const confirmBtn = button('开始上传', () => {
+      const entries: UploadEntry[] = fileArr.map((file, i) => ({
+        fileName: file.name,
+        role: autoSplit ? inputs[i].role.value : '',
+        outfit: autoSplit ? inputs[i].outfit.value : '',
+        tag: inputs[i].tag.value,
+      }))
+      void applyUploadPlan(currentPackId, fileArr, entries, strategy, status, () => modal.remove())
+    })
+    actions.append(
+      confirmBtn,
+      button('取消', () => modal.remove(), 'so-btn-danger'),
+    )
+
+    panel.append(head, rows, opts, status, actions)
+    modal.append(panel)
+    ;(backdrop ?? document.body).append(modal)
+  }
+
+  /** 执行上传计划：压缩 → saveImage 本地保底 → 落入目标包（按需新建）→ 可选 imgbb */
+  async function applyUploadPlan(
+    currentPackId: string,
+    files: File[],
+    entries: UploadEntry[],
+    strategy: ConflictStrategy,
+    status: HTMLElement,
+    done: () => void,
   ): Promise<void> {
-    let added = 0
-    let skipped = 0
-    let hosted = 0
-    let hostFailed = 0
-    let savedBytes = ''
+    const current = deps.getSettings().packs.find((p) => p.id === currentPackId) ?? null
+    const plans = planUploads(entries, deps.getSettings().packs, strategy, current?.name ?? '新包', current)
     const { autoUpload, imgbbApiKey } = deps.getSettings()
     const useImgbb = autoUpload && imgbbApiKey.trim() !== ''
-    for (const file of Array.from(files)) {
-      const { group, tag } = parseUploadName(file.name, batchGroup)
-      if (!tag) {
+
+    let added = 0
+    let skipped = 0
+    let failed = 0
+    let hosted = 0
+    let hostFailed = 0
+    // 本批新建的包：同 (role|outfit|packName) 复用同一个新 id
+    const newPackIds = new Map<string, string>()
+
+    for (let i = 0; i < plans.length; i++) {
+      const plan = plans[i]
+      const file = files[i]
+      status.textContent = `处理中 ${i + 1}/${plans.length}：${file.name}`
+      if (plan.action === 'skip' || !plan.finalTag) {
         skipped++
         continue
       }
       try {
         const result = await compressImage(file)
-        savedBytes = formatBytes(result.bytes)
         const url = await deps.adapter.saveImage(
           file.name,
           result.dataUri,
-          deps.adapter.getCurrentCharacterName() || packId,
+          deps.adapter.getCurrentCharacterName() || plan.targetPackName,
         )
-        const target = deps.getSettings().packs.find((p) => p.id === packId)
-        if (!target) return
-        const sprite: Sprite = group ? { tag, url, group } : { tag, url }
+
+        // 解析/新建目标包
+        let targetId = plan.targetPackId
+        if (!targetId) {
+          const role = plan.entry.role
+          const outfit = plan.entry.outfit
+          const key = `${role}|${outfit}|${plan.targetPackName}`
+          targetId = newPackIds.get(key) ?? null
+          if (!targetId) {
+            const np: SpritePack = {
+              id: genId(),
+              name: plan.targetPackName,
+              author: '我',
+              ...(role ? { roleName: role } : {}),
+              ...(outfit ? { outfit } : {}),
+              sprites: [],
+            }
+            deps.updateSettings(upsertPack(deps.getSettings(), np))
+            targetId = np.id
+            newPackIds.set(key, targetId)
+          }
+        }
+
+        const target = deps.getSettings().packs.find((p) => p.id === targetId)
+        if (!target) {
+          failed++
+          continue
+        }
+        // 自动拆分的包用 roleName/outfit，立绘只存图名；不拆分则可能带 group（此处 role 落到包级）
+        const sprite: Sprite = { tag: plan.finalTag, url }
         deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(target, sprite)))
         added++
+
         if (useImgbb) {
-          // 本地已保底；imgbb 成功则换成图床直链+编号，失败仅计数不回滚
           try {
             const up = await uploadToImgbb(imgbbApiKey, result.dataUri)
-            const latest = deps.getSettings().packs.find((p) => p.id === packId)
-            if (latest) {
-              const hostedSprite: Sprite = group
-                ? { tag, url: up.url, code: up.code, group }
-                : { tag, url: up.url, code: up.code }
-              deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(latest, hostedSprite)))
-              hosted++
+            if (isValidImgbbResult(up)) {
+              const latest = deps.getSettings().packs.find((p) => p.id === targetId)
+              if (latest) {
+                // 本地 url 作保底 remoteUrl 记远程；显示仍优先本地
+                const hostedSprite: Sprite = { tag: plan.finalTag, url, code: up.code, remoteUrl: up.url }
+                deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(latest, hostedSprite)))
+                hosted++
+              }
+            } else {
+              hostFailed++
             }
           } catch (err) {
             console.warn('[sprite-overlay] imgbb 上传失败（图片保留本地）', err)
@@ -709,18 +880,17 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         }
       } catch (err) {
         console.error('[sprite-overlay] 上传失败', err)
-        skipped++
+        failed++
       }
     }
+
+    done()
     render()
-    const note = skipped > 0 ? `，跳过 ${skipped} 张（文件名无效或保存失败）` : ''
-    const hostNote = useImgbb
-      ? `，imgbb 成功 ${hosted} 张${hostFailed > 0 ? `、失败 ${hostFailed} 张（已保留本地，可稍后手动补编号）` : ''}`
-      : ''
-    toast(
-      backdrop?.querySelector('.so-manager-body') as HTMLElement,
-      `已添加 ${added} 张立绘${added === 1 ? `（${savedBytes}）` : ''}${note}${hostNote}`,
-    )
+    const parts = [`已添加 ${added} 张`]
+    if (skipped > 0) parts.push(`跳过 ${skipped} 张（重名/无效）`)
+    if (failed > 0) parts.push(`失败 ${failed} 张`)
+    if (useImgbb) parts.push(`imgbb 成功 ${hosted}${hostFailed > 0 ? `、失败 ${hostFailed}` : ''}`)
+    toast(backdrop?.querySelector('.so-manager-body') as HTMLElement, parts.join('，'))
   }
 
   return { open, close, refreshIfOpen }

@@ -16,6 +16,19 @@ export interface ImgbbResult {
 }
 
 /**
+ * 校验 imgbb 结果是否可用（九期）：
+ * - url 非空且为 HTTPS
+ * - code（filename）非空且是合法图床编码格式
+ * 无效响应不得覆盖本地保底图。
+ */
+export function isValidImgbbResult(result: ImgbbResult): boolean {
+  if (!result.url || !/^https:\/\/.+/i.test(result.url)) return false
+  if (!result.code) return false
+  // 编码需形如 abc123.png：字母数字起头，允许 . _ -，无路径穿越
+  return /^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$/.test(result.code) && !result.code.includes('..')
+}
+
+/**
  * 直传一张图到 imgbb，返回直链与编号。
  * @param apiKey   imgbb API Key（本地设置，永久有效，无过期）
  * @param base64DataUri  data:image/...;base64,xxx 或裸 base64（自动剥前缀）

@@ -39,23 +39,86 @@ export function fileNameToTag(fileName: string): string {
   return normalizeTag(fileName.replace(/\.[^.]+$/, ''))
 }
 
+/** 批量文件名支持的分隔符：下划线、半角横杠、en dash、em dash、连续空白 */
+const NAME_SEPARATOR = /[_\-–—\s]+/
+
+/** 去扩展名 */
+function stripExt(fileName: string): string {
+  return fileName.replace(/\.[^.]+$/, '')
+}
+
+/** 文件名解析结果（三级） */
+export interface ParsedFileName {
+  /** 人名（可空） */
+  role: string
+  /** 服装（可空） */
+  outfit: string
+  /** 图名（去扩展名后剩余部分，清洗但保留内部分隔符） */
+  tag: string
+}
+
 /**
- * 上传文件名 → { 分组, 图名 }（功能②）。
- * 文件名含下划线时按**首个** `_` 拆分（鸣人_微笑 → 分组 鸣人 / 图名 微笑）；
- * 拆不出有效两段时退回 fallbackGroup（本批分组输入）+ 整名为图名。
+ * 上传文件名 → { 分组, 图名 }（功能②，旧签名保留给 Web 端）。
+ * 按**首个**分隔符（_ - – — 空白）拆「分组/图名」，其余全部保留为图名；
+ * 拆不出两段时退回 fallbackGroup + 整名为图名。
  */
 export function parseUploadName(
   fileName: string,
   fallbackGroup = '',
 ): { group: string; tag: string } {
-  const base = fileName.replace(/\.[^.]+$/, '')
-  const sep = base.indexOf('_')
-  if (sep > 0 && sep < base.length - 1) {
-    const group = normalizeTag(base.slice(0, sep))
-    const tag = normalizeTag(base.slice(sep + 1))
+  const base = stripExt(fileName)
+  const m = base.match(NAME_SEPARATOR)
+  if (m && m.index !== undefined && m.index > 0) {
+    const group = normalizeTag(base.slice(0, m.index))
+    const tag = normalizeTag(base.slice(m.index + m[0].length))
     if (group && tag) return { group, tag }
   }
   return { group: normalizeTag(fallbackGroup), tag: fileNameToTag(fileName) }
+}
+
+/**
+ * 三级文件名解析（八期）：按 _ - – — 空白 分隔，最多拆前两个分隔位置，其余全部保留为图名。
+ * - "鸣人-居家服-开心-闭眼.png" → role=鸣人, outfit=居家服, tag=「开心-闭眼」
+ * - "鸣人_微笑.png" → role=鸣人, outfit='', tag=微笑
+ * - "微笑.png" → role='', outfit='', tag=微笑
+ * 图名保留内部分隔符（normalizeTag 不剔除 - _，只清洗禁止字符）。
+ * 拆出的人名/服装清洗后为空则相应降级。
+ */
+export function parseSpriteFileName(fileName: string): ParsedFileName {
+  const base = stripExt(fileName).trim()
+  // 最多切成 3 段：前两个分隔符切开，第三段（含其内部分隔符）整体保留为图名
+  const parts = splitAtMost(base, NAME_SEPARATOR, 3)
+
+  if (parts.length >= 3) {
+    const role = normalizeTag(parts[0])
+    const outfit = normalizeTag(parts[1])
+    const tag = normalizeTag(parts[2])
+    if (role && outfit && tag) return { role, outfit, tag }
+    if (role && tag) return { role, outfit: '', tag } // 服装段清洗后为空 → 降为两级
+    return { role: '', outfit: '', tag: fileNameToTag(base) }
+  }
+  if (parts.length === 2) {
+    const role = normalizeTag(parts[0])
+    const tag = normalizeTag(parts[1])
+    if (role && tag) return { role, outfit: '', tag }
+    return { role: '', outfit: '', tag: fileNameToTag(base) }
+  }
+  return { role: '', outfit: '', tag: fileNameToTag(base) }
+}
+
+/** 按分隔符正则最多切 n 段：前 n-1 个分隔符切开，剩余整体作最后一段 */
+function splitAtMost(text: string, sep: RegExp, n: number): string[] {
+  const out: string[] = []
+  let rest = text
+  const single = new RegExp(sep.source)
+  while (out.length < n - 1) {
+    const m = single.exec(rest)
+    if (!m || m.index < 0) break
+    out.push(rest.slice(0, m.index))
+    rest = rest.slice(m.index + m[0].length)
+  }
+  out.push(rest)
+  return out
 }
 
 /** 清洗立绘包名/作者名。结果可能为空串，调用方需给默认值。 */

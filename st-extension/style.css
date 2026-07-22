@@ -390,6 +390,24 @@
   min-width: 0;
 }
 
+/* 多包绑定项：包名占满 + 排序/移除按钮 */
+.so-manager .so-bind-item {
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.so-manager .so-bind-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* 修复按钮文字竖排：强制不换行、宽度自适应 */
 .so-manager .menu_button.so-btn,
 .so-manager .menu_button {
@@ -754,4 +772,85 @@
 /* 加工标记元素（可逆渲染用），保险起见双保险隐藏 */
 #chat .so-processed-marker {
   display: none;
+}
+
+/* ---- 批量上传预览弹窗（八期） ---- */
+.so-upload-modal {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 12px;
+}
+
+.so-upload-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(560px, 100%);
+  max-height: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(24, 24, 30, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.so-upload-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.so-upload-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.so-upload-fname {
+  flex: 1 1 100%;
+  font-size: 11px;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.so-upload-row .so-labeled {
+  flex: 1 1 90px;
+}
+
+.so-upload-row .text_pole {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.so-upload-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.so-upload-status {
+  font-size: 12px;
+  opacity: 0.8;
+  min-height: 16px;
+}
+
+.so-upload-actions {
+  justify-content: flex-end;
 }

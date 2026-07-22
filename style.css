@@ -774,6 +774,87 @@
   display: none;
 }
 
+/* ---- 批量上传预览弹窗（八期） ---- */
+.so-upload-modal {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 12px;
+}
+
+.so-upload-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(560px, 100%);
+  max-height: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(24, 24, 30, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.so-upload-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.so-upload-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.so-upload-fname {
+  flex: 1 1 100%;
+  font-size: 11px;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.so-upload-row .so-labeled {
+  flex: 1 1 90px;
+}
+
+.so-upload-row .text_pole {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.so-upload-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.so-upload-status {
+  font-size: 12px;
+  opacity: 0.8;
+  min-height: 16px;
+}
+
+.so-upload-actions {
+  justify-content: flex-end;
+}
+
 /* 手机框架样式 — 双端共用（ST 由 build.mjs 拼进 style.css；Web 由 globals.css import） */
 
 /* ==================== 手机框架 ==================== */

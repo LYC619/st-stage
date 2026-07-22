@@ -179,15 +179,41 @@
   function fileNameToTag(fileName) {
     return normalizeTag(fileName.replace(/\.[^.]+$/, ""));
   }
-  function parseUploadName(fileName, fallbackGroup = "") {
-    const base = fileName.replace(/\.[^.]+$/, "");
-    const sep = base.indexOf("_");
-    if (sep > 0 && sep < base.length - 1) {
-      const group = normalizeTag(base.slice(0, sep));
-      const tag = normalizeTag(base.slice(sep + 1));
-      if (group && tag) return { group, tag };
+  var NAME_SEPARATOR = /[_\-–—\s]+/;
+  function stripExt(fileName) {
+    return fileName.replace(/\.[^.]+$/, "");
+  }
+  function parseSpriteFileName(fileName) {
+    const base = stripExt(fileName).trim();
+    const parts = splitAtMost(base, NAME_SEPARATOR, 3);
+    if (parts.length >= 3) {
+      const role = normalizeTag(parts[0]);
+      const outfit = normalizeTag(parts[1]);
+      const tag = normalizeTag(parts[2]);
+      if (role && outfit && tag) return { role, outfit, tag };
+      if (role && tag) return { role, outfit: "", tag };
+      return { role: "", outfit: "", tag: fileNameToTag(base) };
     }
-    return { group: normalizeTag(fallbackGroup), tag: fileNameToTag(fileName) };
+    if (parts.length === 2) {
+      const role = normalizeTag(parts[0]);
+      const tag = normalizeTag(parts[1]);
+      if (role && tag) return { role, outfit: "", tag };
+      return { role: "", outfit: "", tag: fileNameToTag(base) };
+    }
+    return { role: "", outfit: "", tag: fileNameToTag(base) };
+  }
+  function splitAtMost(text, sep, n) {
+    const out = [];
+    let rest = text;
+    const single = new RegExp(sep.source);
+    while (out.length < n - 1) {
+      const m = single.exec(rest);
+      if (!m || m.index < 0) break;
+      out.push(rest.slice(0, m.index));
+      rest = rest.slice(m.index + m[0].length);
+    }
+    out.push(rest);
+    return out;
   }
   function sanitizePackName(raw) {
     return raw.replace(CONTROL_CHARS, "").replace(PACK_NAME_FORBIDDEN, "").replace(/\s+/g, " ").trim().slice(0, PACK_NAME_MAX_LENGTH).trim();
@@ -1341,6 +1367,110 @@
     });
   }
 
+  // core/pack-split.ts
+  function previewGroupSplit(pack) {
+    const groups = /* @__PURE__ */ new Map();
+    for (const s of pack.sprites) {
+      const g = (s.group ?? "").trim();
+      if (!g) continue;
+      const arr = groups.get(g) ?? [];
+      arr.push(s);
+      groups.set(g, arr);
+    }
+    if (groups.size < 2) return [];
+    return [...groups.entries()].map(([roleName, sprites]) => ({
+      roleName,
+      packName: sanitizePackName(`${pack.name}·${roleName}`) || roleName,
+      count: sprites.length,
+      tags: sprites.map((s) => s.tag)
+    }));
+  }
+  function splitPackByGroup(pack) {
+    const preview = previewGroupSplit(pack);
+    if (preview.length === 0) return [];
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    return preview.map((item) => {
+      const sprites = pack.sprites.filter((s) => (s.group ?? "").trim() === item.roleName).map((s) => {
+        const next = { ...s };
+        delete next.group;
+        return next;
+      });
+      return {
+        id: genId(),
+        name: item.packName,
+        author: pack.author,
+        roleName: item.roleName,
+        ...pack.outfit ? { outfit: pack.outfit } : {},
+        sprites,
+        updatedAt: now
+      };
+    });
+  }
+  function packNameFor(role, outfit, batchPackName) {
+    if (role && outfit) return sanitizePackName(`${role}·${outfit}`) || `${role}·${outfit}`;
+    if (role) return sanitizePackName(role) || role;
+    return batchPackName;
+  }
+  function findPackFor(packs, role, outfit) {
+    return packs.find(
+      (p) => (p.roleName ?? "") === role && (p.outfit ?? "") === outfit && (role !== "" || outfit !== "")
+    ) ?? null;
+  }
+  function autoRenameTag(taken, desired) {
+    if (!taken.has(desired)) return desired;
+    for (let i = 2; i < 1e3; i++) {
+      const candidate = `${desired}_${i}`.slice(0, 20);
+      if (!taken.has(candidate)) return candidate;
+    }
+    return `${desired}_${Date.now().toString(36)}`;
+  }
+  function planUploads(entries, packs, strategy, batchPackName, defaultPack) {
+    const takenByPack = /* @__PURE__ */ new Map();
+    const newPackKey = (role, outfit, name) => `new:${role}|${outfit}|${name}`;
+    const keyTaken = (key, pack) => {
+      let set = takenByPack.get(key);
+      if (!set) {
+        set = new Set(pack ? pack.sprites.map((s) => s.tag) : []);
+        takenByPack.set(key, set);
+      }
+      return set;
+    };
+    const plans = [];
+    for (const entry of entries) {
+      const role = normalizeTag(entry.role);
+      const outfit = normalizeTag(entry.outfit);
+      const tag = normalizeTag(entry.tag);
+      const roleless = !role && !outfit;
+      const existing = roleless ? defaultPack ?? null : findPackFor(packs, role, outfit);
+      const packName = existing ? existing.name : packNameFor(role, outfit, batchPackName);
+      const key = existing ? `pack:${existing.id}` : newPackKey(role, outfit, packName);
+      const taken = keyTaken(key, existing);
+      const conflict = taken.has(tag);
+      let finalTag = tag;
+      let action = "add";
+      if (conflict) {
+        if (strategy === "skip") {
+          action = "skip";
+        } else if (strategy === "overwrite") {
+          action = "overwrite";
+        } else {
+          finalTag = autoRenameTag(taken, tag);
+          action = "add";
+        }
+      }
+      if (action !== "skip") taken.add(finalTag);
+      plans.push({
+        entry: { fileName: entry.fileName, role, outfit, tag },
+        targetPackId: existing?.id ?? null,
+        targetPackName: packName,
+        conflict,
+        finalTag,
+        action
+      });
+    }
+    return plans;
+  }
+
   // core/image-compress.ts
   function blobToDataUri(blob) {
     return new Promise((resolve, reject) => {
@@ -1406,6 +1536,11 @@
   }
 
   // core/imgbb.ts
+  function isValidImgbbResult(result) {
+    if (!result.url || !/^https:\/\/.+/i.test(result.url)) return false;
+    if (!result.code) return false;
+    return /^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$/.test(result.code) && !result.code.includes("..");
+  }
   async function uploadToImgbb(apiKey, base64DataUri, fetchImpl = fetch) {
     const key = apiKey.trim();
     if (!key) throw new Error("未配置 imgbb API Key");
@@ -1818,24 +1953,43 @@
         }
       }
       if (!readonly) {
+        const splitPreview = previewGroupSplit(pack);
+        if (splitPreview.length >= 2) {
+          const splitSection = el("div", "so-section");
+          const splitTitle = el("div", "so-section-title");
+          splitTitle.textContent = "按分组拆成立绘包";
+          const splitDesc = el("div", "so-status");
+          splitDesc.textContent = `检测到 ${splitPreview.length} 个分组：${splitPreview.map((s) => `${s.roleName}(${s.count})`).join("、")}。拆分会新建这些包（原包与绑定保留，可稍后自行删除）。`;
+          splitSection.append(
+            splitTitle,
+            splitDesc,
+            button("拆分（保留原包）", () => {
+              const preview = splitPreview.map((s) => `${s.roleName}：${s.count} 张`).join("\n");
+              if (!window.confirm(`将新建以下立绘包（原包保留）：
+${preview}
+
+确认拆分？`)) return;
+              const newPacks = splitPackByGroup(pack);
+              let next = deps.getSettings();
+              for (const np of newPacks) next = upsertPack(next, np);
+              commit(next);
+              toast(body, `已拆出 ${newPacks.length} 个新包（原包「${pack.name}」保留）`);
+            })
+          );
+          body.append(splitSection);
+        }
         const addSection = el("div", "so-section");
         const addTitle = el("div", "so-section-title");
         addTitle.textContent = "添加立绘";
         addSection.append(addTitle);
         const addRow = el("div", "so-row");
-        const batchGroupInput = textInput("本批分组，可空");
         addRow.append(
-          labeled("分组", batchGroupInput),
-          button("上传图片（自动压缩）", () => {
-            pickFile(
-              "image/*",
-              true,
-              (files) => void handleUpload(body, pack.id, files, batchGroupInput.value)
-            );
+          button("批量上传（自动压缩+解析预览）", () => {
+            pickFile("image/*", true, (files) => openUploadPreview(pack.id, files));
           })
         );
         const upHint = el("div", "so-status");
-        upHint.textContent = "文件名含下划线自动拆分组：鸣人_微笑.png → 分组「鸣人」表情「微笑」；否则用「本批分组」。";
+        upHint.textContent = "文件名按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png），上传前可预览修正、选择不拆分。";
         addSection.append(addRow, upHint);
         const codeRow = el("div", "so-row so-code-row");
         const tagInput = textInput("表情名，如 微笑");
@@ -1957,41 +2111,162 @@
       cell.append(bar);
       return cell;
     }
-    async function handleUpload(body, packId, files, batchGroup) {
-      let added = 0;
-      let skipped = 0;
-      let hosted = 0;
-      let hostFailed = 0;
-      let savedBytes = "";
+    function openUploadPreview(currentPackId, files) {
+      const fileArr = Array.from(files);
+      const parsed = fileArr.map((f) => parseSpriteFileName(f.name));
+      let autoSplit = true;
+      let strategy = "skip";
+      const modal = el("div", "so-upload-modal");
+      const panel = el("div", "so-upload-panel");
+      const head = el("div", "so-upload-head");
+      const title = el("b");
+      title.textContent = `批量上传预览（${fileArr.length} 张）`;
+      head.append(title);
+      const rows = el("div", "so-upload-rows");
+      const inputs = [];
+      function buildRows() {
+        rows.innerHTML = "";
+        inputs.length = 0;
+        fileArr.forEach((file, i) => {
+          const row = el("div", "so-upload-row");
+          const name = el("div", "so-upload-fname");
+          name.textContent = file.name;
+          name.title = file.name;
+          const roleIn = textInput("人名");
+          const outfitIn = textInput("服装");
+          const tagIn = textInput("图名");
+          if (autoSplit) {
+            roleIn.value = parsed[i].role;
+            outfitIn.value = parsed[i].outfit;
+            tagIn.value = parsed[i].tag;
+          } else {
+            roleIn.value = "";
+            outfitIn.value = "";
+            tagIn.value = normalizeTag(file.name.replace(/\.[^.]+$/, ""));
+          }
+          roleIn.disabled = !autoSplit;
+          outfitIn.disabled = !autoSplit;
+          inputs.push({ role: roleIn, outfit: outfitIn, tag: tagIn });
+          row.append(
+            name,
+            labeled("人名", roleIn),
+            labeled("服装", outfitIn),
+            labeled("图名", tagIn)
+          );
+          rows.append(row);
+        });
+      }
+      buildRows();
+      const opts = el("div", "so-upload-opts");
+      opts.append(
+        checkboxRow("自动拆分人名/服装（关闭则整名作图名落当前包）", autoSplit, (v) => {
+          autoSplit = v;
+          buildRows();
+        })
+      );
+      const stratWrap = el("div", "so-row");
+      const stratLabel = el("span");
+      stratLabel.textContent = "重名时：";
+      const stratSel = document.createElement("select");
+      stratSel.className = "text_pole";
+      for (const [val, lab] of [
+        ["skip", "跳过（默认）"],
+        ["rename", "自动改名"],
+        ["overwrite", "覆盖"]
+      ]) {
+        const o = document.createElement("option");
+        o.value = val;
+        o.textContent = lab;
+        stratSel.append(o);
+      }
+      stratSel.addEventListener("change", () => strategy = stratSel.value);
+      stratWrap.append(stratLabel, stratSel);
+      opts.append(stratWrap);
+      const status = el("div", "so-upload-status");
+      const actions = el("div", "so-row so-upload-actions");
+      const confirmBtn = button("开始上传", () => {
+        const entries = fileArr.map((file, i) => ({
+          fileName: file.name,
+          role: autoSplit ? inputs[i].role.value : "",
+          outfit: autoSplit ? inputs[i].outfit.value : "",
+          tag: inputs[i].tag.value
+        }));
+        void applyUploadPlan(currentPackId, fileArr, entries, strategy, status, () => modal.remove());
+      });
+      actions.append(
+        confirmBtn,
+        button("取消", () => modal.remove(), "so-btn-danger")
+      );
+      panel.append(head, rows, opts, status, actions);
+      modal.append(panel);
+      (backdrop ?? document.body).append(modal);
+    }
+    async function applyUploadPlan(currentPackId, files, entries, strategy, status, done) {
+      const current = deps.getSettings().packs.find((p) => p.id === currentPackId) ?? null;
+      const plans = planUploads(entries, deps.getSettings().packs, strategy, current?.name ?? "新包", current);
       const { autoUpload, imgbbApiKey } = deps.getSettings();
       const useImgbb = autoUpload && imgbbApiKey.trim() !== "";
-      for (const file of Array.from(files)) {
-        const { group, tag } = parseUploadName(file.name, batchGroup);
-        if (!tag) {
+      let added = 0;
+      let skipped = 0;
+      let failed = 0;
+      let hosted = 0;
+      let hostFailed = 0;
+      const newPackIds = /* @__PURE__ */ new Map();
+      for (let i = 0; i < plans.length; i++) {
+        const plan = plans[i];
+        const file = files[i];
+        status.textContent = `处理中 ${i + 1}/${plans.length}：${file.name}`;
+        if (plan.action === "skip" || !plan.finalTag) {
           skipped++;
           continue;
         }
         try {
           const result = await compressImage(file);
-          savedBytes = formatBytes(result.bytes);
           const url = await deps.adapter.saveImage(
             file.name,
             result.dataUri,
-            deps.adapter.getCurrentCharacterName() || packId
+            deps.adapter.getCurrentCharacterName() || plan.targetPackName
           );
-          const target = deps.getSettings().packs.find((p) => p.id === packId);
-          if (!target) return;
-          const sprite = group ? { tag, url, group } : { tag, url };
+          let targetId = plan.targetPackId;
+          if (!targetId) {
+            const role = plan.entry.role;
+            const outfit = plan.entry.outfit;
+            const key = `${role}|${outfit}|${plan.targetPackName}`;
+            targetId = newPackIds.get(key) ?? null;
+            if (!targetId) {
+              const np = {
+                id: genId(),
+                name: plan.targetPackName,
+                author: "我",
+                ...role ? { roleName: role } : {},
+                ...outfit ? { outfit } : {},
+                sprites: []
+              };
+              deps.updateSettings(upsertPack(deps.getSettings(), np));
+              targetId = np.id;
+              newPackIds.set(key, targetId);
+            }
+          }
+          const target = deps.getSettings().packs.find((p) => p.id === targetId);
+          if (!target) {
+            failed++;
+            continue;
+          }
+          const sprite = { tag: plan.finalTag, url };
           deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(target, sprite)));
           added++;
           if (useImgbb) {
             try {
               const up = await uploadToImgbb(imgbbApiKey, result.dataUri);
-              const latest = deps.getSettings().packs.find((p) => p.id === packId);
-              if (latest) {
-                const hostedSprite = group ? { tag, url: up.url, code: up.code, group } : { tag, url: up.url, code: up.code };
-                deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(latest, hostedSprite)));
-                hosted++;
+              if (isValidImgbbResult(up)) {
+                const latest = deps.getSettings().packs.find((p) => p.id === targetId);
+                if (latest) {
+                  const hostedSprite = { tag: plan.finalTag, url, code: up.code, remoteUrl: up.url };
+                  deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(latest, hostedSprite)));
+                  hosted++;
+                }
+              } else {
+                hostFailed++;
               }
             } catch (err) {
               console.warn("[sprite-overlay] imgbb 上传失败（图片保留本地）", err);
@@ -2000,16 +2275,16 @@
           }
         } catch (err) {
           console.error("[sprite-overlay] 上传失败", err);
-          skipped++;
+          failed++;
         }
       }
+      done();
       render();
-      const note = skipped > 0 ? `，跳过 ${skipped} 张（文件名无效或保存失败）` : "";
-      const hostNote = useImgbb ? `，imgbb 成功 ${hosted} 张${hostFailed > 0 ? `、失败 ${hostFailed} 张（已保留本地，可稍后手动补编号）` : ""}` : "";
-      toast(
-        backdrop?.querySelector(".so-manager-body"),
-        `已添加 ${added} 张立绘${added === 1 ? `（${savedBytes}）` : ""}${note}${hostNote}`
-      );
+      const parts = [`已添加 ${added} 张`];
+      if (skipped > 0) parts.push(`跳过 ${skipped} 张（重名/无效）`);
+      if (failed > 0) parts.push(`失败 ${failed} 张`);
+      if (useImgbb) parts.push(`imgbb 成功 ${hosted}${hostFailed > 0 ? `、失败 ${hostFailed}` : ""}`);
+      toast(backdrop?.querySelector(".so-manager-body"), parts.join("，"));
     }
     return { open, close, refreshIfOpen };
   }
