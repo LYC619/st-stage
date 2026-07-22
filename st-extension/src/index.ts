@@ -16,7 +16,7 @@ import { createOverlay, type OverlayController } from './overlay-dom'
 import { createSpriteManager } from './sprite-manager'
 import { mountSettingsPanel } from './settings-panel'
 import { mountMessagePostprocess, reprocessAllMessages } from './message-postprocess'
-import { createBuiltinApps } from './phone-apps'
+import { createBuiltinApps } from './apps'
 
 declare global {
   interface Window {
@@ -60,6 +60,10 @@ async function init(): Promise<void> {
     adapter,
     getSettings: () => settings,
     updateSettings,
+    // 从手机打开的弹窗关闭后：重新展开手机并回到「图库」页；悬浮窗齿轮来源则正常关闭
+    onClosed: (source) => {
+      if (source === 'phone') phone.openApp('gallery')
+    },
   })
 
   const overlay: OverlayController = createOverlay(
@@ -106,7 +110,13 @@ async function init(): Promise<void> {
     phone.setState(settings.phone)
   }
 
-  for (const app of createBuiltinApps({ overlay, manager, collapsePhone })) {
+  for (const app of createBuiltinApps({
+    // 从手机开图库弹窗：先收起手机（避免挡在弹窗上），来源标记=手机（关闭后回图库页）
+    openGalleryManager: () => {
+      collapsePhone()
+      manager.open('phone')
+    },
+  })) {
     registry.register(app)
   }
 

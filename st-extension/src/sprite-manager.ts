@@ -42,10 +42,15 @@ export interface ManagerDeps {
   adapter: STAdapter
   getSettings: () => PluginSettings
   updateSettings: (next: PluginSettings) => void
+  /** 弹窗关闭回调（带打开来源）：来源=手机时由 index.ts 重新展开手机回图库页 */
+  onClosed?: (source: ManagerSource) => void
 }
 
+/** 弹窗打开来源：悬浮窗齿轮 / 手机图库 App */
+export type ManagerSource = 'overlay' | 'phone'
+
 export interface ManagerController {
-  open(): void
+  open(source?: ManagerSource): void
   close(): void
   /** 弹窗打开时刷新内容（角色切换后调用） */
   refreshIfOpen(): void
@@ -56,6 +61,7 @@ type View = { kind: 'list' } | { kind: 'pack'; packId: string }
 export function createSpriteManager(deps: ManagerDeps): ManagerController {
   let backdrop: HTMLElement | null = null
   let view: View = { kind: 'list' }
+  let openedFrom: ManagerSource = 'overlay'
 
   /** 遮罩尺寸用 JS 按 innerWidth/Height 写死 px（与手机壳同一套定位路径）：
       移动端浏览器对 fixed+四边锚点/视口单位的解释五花八门，内联 px 最稳 */
@@ -67,7 +73,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     backdrop.style.height = `${window.innerHeight}px`
   }
 
-  function open(): void {
+  function open(source: ManagerSource = 'overlay'): void {
+    openedFrom = source
     if (backdrop) {
       render()
       return
@@ -128,10 +135,12 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   }
 
   function close(): void {
+    if (!backdrop) return
     document.removeEventListener('keydown', onEscape)
     window.removeEventListener('resize', applyBackdropSize)
-    backdrop?.remove()
+    backdrop.remove()
     backdrop = null
+    deps.onClosed?.(openedFrom)
   }
 
   function refreshIfOpen(): void {

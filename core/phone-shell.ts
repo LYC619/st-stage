@@ -53,7 +53,7 @@ export function createPhoneShell(
 
   const statusBar = document.createElement('div')
   statusBar.className = 'so-phone-status'
-  // App 内左上角返回键：比 Home 条更符合直觉的返回方式（Home 条仍可用）
+  // App 内左上角返回键：固定在顶部，滚到哪都能返回
   const backBtn = document.createElement('div')
   backBtn.className = 'so-phone-back'
   backBtn.textContent = '‹'
@@ -73,19 +73,39 @@ export function createPhoneShell(
   statusTitle.textContent = 'st-stage'
   const clock = document.createElement('span')
   clock.className = 'so-phone-clock'
-  statusBar.append(backBtn, statusTitle, clock)
+  // 右上角固定关闭键：收起手机壳，恢复为可拖动图标（App 会先 unmount）
+  const closeBtn = document.createElement('div')
+  closeBtn.className = 'so-phone-close'
+  closeBtn.textContent = '✕'
+  closeBtn.title = '收起手机'
+  closeBtn.setAttribute('role', 'button')
+  closeBtn.setAttribute('aria-label', '收起手机')
+  closeBtn.tabIndex = 0
+  const collapse = () => {
+    leaveApp()
+    commitState({ ...state, open: false })
+  }
+  closeBtn.addEventListener('click', collapse)
+  closeBtn.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      collapse()
+    }
+  })
+  statusBar.append(backBtn, statusTitle, clock, closeBtn)
 
   const screen = document.createElement('div')
   screen.className = 'so-phone-screen'
 
+  // 底部圆形 Home 键（≥44×44 命中区）：只负责返回主屏，收起手机用右上角 ✕
   const homeBar = document.createElement('div')
   homeBar.className = 'so-phone-homebar'
-  homeBar.title = '返回主屏 / 收起手机'
-  homeBar.setAttribute('role', 'button')
-  homeBar.setAttribute('aria-label', '返回主屏或收起手机')
-  homeBar.tabIndex = 0
   const homeBtn = document.createElement('div')
   homeBtn.className = 'so-phone-homebtn'
+  homeBtn.title = '返回主屏'
+  homeBtn.setAttribute('role', 'button')
+  homeBtn.setAttribute('aria-label', '返回主屏')
+  homeBtn.tabIndex = 0
   homeBar.append(homeBtn)
 
   shell.append(statusBar, screen, homeBar)
@@ -101,30 +121,42 @@ export function createPhoneShell(
   }
 
   /* ---- 布局 ---- */
+  /** 可视视口尺寸：优先 visualViewport（移动端地址栏伸缩/软键盘时更准） */
+  function viewportSize(): { w: number; h: number } {
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null
+    return {
+      w: Math.round(vv?.width ?? window.innerWidth),
+      h: Math.round(vv?.height ?? window.innerHeight),
+    }
+  }
+
   function applyLayout(): void {
     if (hidden) {
       fab.style.display = 'none'
       shell.style.display = 'none'
       return
     }
-    const clampedX = Math.max(0, Math.min(state.x, window.innerWidth - 56))
-    const clampedY = Math.max(0, Math.min(state.y, window.innerHeight - 56))
+    const { w: vw, h: vh } = viewportSize()
+    const clampedX = Math.max(0, Math.min(state.x, vw - 56))
+    const clampedY = Math.max(0, Math.min(state.y, vh - 56))
     fab.style.left = `${clampedX}px`
     fab.style.top = `${clampedY}px`
     fab.style.display = state.open ? 'none' : 'flex'
     shell.style.display = state.open ? 'flex' : 'none'
     if (state.open) {
-      // 手机展开位置：优先贴着图标，越界时收回视口内
-      const shellW = 320
-      const shellH = Math.min(580, window.innerHeight - 32)
+      // 手机按真实尺寸完整钳入视口：窄屏收窄、矮屏压高，保证四边都在可视区内
+      const shellW = Math.min(320, vw - 16)
+      const shellH = Math.min(580, vh - 16)
+      shell.style.width = `${shellW}px`
       shell.style.height = `${shellH}px`
-      shell.style.left = `${Math.max(8, Math.min(clampedX, window.innerWidth - shellW - 8))}px`
-      shell.style.top = `${Math.max(8, Math.min(clampedY, window.innerHeight - shellH - 8))}px`
+      shell.style.left = `${Math.max(8, Math.min(clampedX, vw - shellW - 8))}px`
+      shell.style.top = `${Math.max(8, Math.min(clampedY, vh - shellH - 8))}px`
     }
   }
   applyLayout()
-  // 旋转屏幕 / 移动端地址栏伸缩时重新钳位图标与壳的位置
+  // 旋转屏幕 / 移动端地址栏伸缩 / 软键盘弹出时重新钳位
   window.addEventListener('resize', applyLayout)
+  window.visualViewport?.addEventListener('resize', applyLayout)
 
   function commitState(next: PhoneState): void {
     state = next
@@ -172,17 +204,15 @@ export function createPhoneShell(
     window.addEventListener('pointercancel', onCancel)
   })
 
-  // 整条 Home 栏都是命中区（原来只有中间 96×5px 的细线能点，触屏几乎点不中）
+  // 圆形 Home 键：只返回主屏（在主屏时无动作）；收起手机走右上角 ✕
   const onHomePress = () => {
     if (activeApp) {
       leaveApp()
       renderScreen()
-    } else {
-      commitState({ ...state, open: false })
     }
   }
-  homeBar.addEventListener('click', onHomePress)
-  homeBar.addEventListener('keydown', (e) => {
+  homeBtn.addEventListener('click', onHomePress)
+  homeBtn.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
       onHomePress()
@@ -271,7 +301,10 @@ export function createPhoneShell(
 
   return {
     setState(next: PhoneState) {
+      const wasOpen = state.open
       state = { ...next }
+      // 收起（外部调用如 collapsePhone）也走完整生命周期：先卸载 App 清理定时器/监听
+      if (wasOpen && !state.open) leaveApp()
       applyLayout()
       if (state.open) renderScreen()
     },
@@ -285,11 +318,15 @@ export function createPhoneShell(
     },
     setVisible(visible: boolean) {
       hidden = !visible
+      // 整机隐藏时同样卸载 App（不可见的 App 不允许残留定时器）
+      if (hidden) leaveApp()
       applyLayout()
+      if (!hidden && state.open) renderScreen()
     },
     destroy() {
       clearInterval(clockTimer)
       window.removeEventListener('resize', applyLayout)
+      window.visualViewport?.removeEventListener('resize', applyLayout)
       unsubscribe()
       leaveApp()
       fab.remove()

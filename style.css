@@ -854,6 +854,29 @@
   opacity: 0.75;
 }
 
+/* 右上角固定关闭键：收起手机壳（App 会先 unmount） */
+.so-phone-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 26px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.85;
+  touch-action: manipulation;
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+
+.so-phone-close:hover,
+.so-phone-close:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  opacity: 1;
+  outline: none;
+}
+
 /* 屏幕 */
 .so-phone-screen {
   flex: 1;
@@ -863,36 +886,37 @@
   color: rgba(255, 255, 255, 0.92);
 }
 
-/* Home 键：整条栏都可点（视觉上仍是中间一条细线） */
+/* 底部 Home 栏：容纳圆形 Home 键 */
 .so-phone-homebar {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 36px;
+  padding: 5px 0 7px;
   flex-shrink: 0;
+}
+
+/* 圆形 Home 键：44×44 命中区（触屏最低可点标准），只负责返回主屏 */
+.so-phone-homebtn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.06);
+  box-sizing: border-box;
   cursor: pointer;
   touch-action: manipulation;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.1s ease;
 }
 
-.so-phone-homebtn {
-  width: 96px;
-  height: 5px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.45);
-  transition: background 0.12s ease, transform 0.1s ease;
-}
-
-.so-phone-homebar:hover .so-phone-homebtn,
-.so-phone-homebar:focus-visible .so-phone-homebtn {
-  background: rgba(255, 255, 255, 0.75);
-}
-
-.so-phone-homebar:focus-visible {
+.so-phone-homebtn:hover,
+.so-phone-homebtn:focus-visible {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.75);
   outline: none;
 }
 
-.so-phone-homebar:active .so-phone-homebtn {
-  transform: scaleX(0.92);
+.so-phone-homebtn:active {
+  transform: scale(0.92);
 }
 
 /* Home 屏 App 栅格 */
@@ -997,9 +1021,23 @@
   margin: 2px 0;
 }
 
+/* 数字输入行：标签左、输入框右靠 */
+.so-app-toggle .so-app-num {
+  margin-left: auto;
+  max-width: 84px;
+  box-sizing: border-box;
+}
+
 .so-app-input {
   width: 100%;
   box-sizing: border-box;
+}
+
+/* 文本/密码输入行（标题在上，输入框在下） */
+.so-app-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
 }
 
 .so-app-sprite-strip {

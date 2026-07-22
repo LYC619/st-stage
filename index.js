@@ -339,17 +339,35 @@
     statusTitle.textContent = "st-stage";
     const clock = document.createElement("span");
     clock.className = "so-phone-clock";
-    statusBar2.append(backBtn, statusTitle, clock);
+    const closeBtn = document.createElement("div");
+    closeBtn.className = "so-phone-close";
+    closeBtn.textContent = "✕";
+    closeBtn.title = "收起手机";
+    closeBtn.setAttribute("role", "button");
+    closeBtn.setAttribute("aria-label", "收起手机");
+    closeBtn.tabIndex = 0;
+    const collapse = () => {
+      leaveApp();
+      commitState({ ...state, open: false });
+    };
+    closeBtn.addEventListener("click", collapse);
+    closeBtn.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        collapse();
+      }
+    });
+    statusBar2.append(backBtn, statusTitle, clock, closeBtn);
     const screen = document.createElement("div");
     screen.className = "so-phone-screen";
     const homeBar = document.createElement("div");
     homeBar.className = "so-phone-homebar";
-    homeBar.title = "返回主屏 / 收起手机";
-    homeBar.setAttribute("role", "button");
-    homeBar.setAttribute("aria-label", "返回主屏或收起手机");
-    homeBar.tabIndex = 0;
     const homeBtn = document.createElement("div");
     homeBtn.className = "so-phone-homebtn";
+    homeBtn.title = "返回主屏";
+    homeBtn.setAttribute("role", "button");
+    homeBtn.setAttribute("aria-label", "返回主屏");
+    homeBtn.tabIndex = 0;
     homeBar.append(homeBtn);
     shell.append(statusBar2, screen, homeBar);
     document.body.append(fab, shell);
@@ -361,28 +379,38 @@
         minute: "2-digit"
       });
     }
+    function viewportSize() {
+      const vv = typeof window !== "undefined" ? window.visualViewport : null;
+      return {
+        w: Math.round(vv?.width ?? window.innerWidth),
+        h: Math.round(vv?.height ?? window.innerHeight)
+      };
+    }
     function applyLayout() {
       if (hidden) {
         fab.style.display = "none";
         shell.style.display = "none";
         return;
       }
-      const clampedX = Math.max(0, Math.min(state.x, window.innerWidth - 56));
-      const clampedY = Math.max(0, Math.min(state.y, window.innerHeight - 56));
+      const { w: vw, h: vh } = viewportSize();
+      const clampedX = Math.max(0, Math.min(state.x, vw - 56));
+      const clampedY = Math.max(0, Math.min(state.y, vh - 56));
       fab.style.left = `${clampedX}px`;
       fab.style.top = `${clampedY}px`;
       fab.style.display = state.open ? "none" : "flex";
       shell.style.display = state.open ? "flex" : "none";
       if (state.open) {
-        const shellW = 320;
-        const shellH = Math.min(580, window.innerHeight - 32);
+        const shellW = Math.min(320, vw - 16);
+        const shellH = Math.min(580, vh - 16);
+        shell.style.width = `${shellW}px`;
         shell.style.height = `${shellH}px`;
-        shell.style.left = `${Math.max(8, Math.min(clampedX, window.innerWidth - shellW - 8))}px`;
-        shell.style.top = `${Math.max(8, Math.min(clampedY, window.innerHeight - shellH - 8))}px`;
+        shell.style.left = `${Math.max(8, Math.min(clampedX, vw - shellW - 8))}px`;
+        shell.style.top = `${Math.max(8, Math.min(clampedY, vh - shellH - 8))}px`;
       }
     }
     applyLayout();
     window.addEventListener("resize", applyLayout);
+    window.visualViewport?.addEventListener("resize", applyLayout);
     function commitState(next) {
       state = next;
       applyLayout();
@@ -428,12 +456,10 @@
       if (activeApp) {
         leaveApp();
         renderScreen();
-      } else {
-        commitState({ ...state, open: false });
       }
     };
-    homeBar.addEventListener("click", onHomePress);
-    homeBar.addEventListener("keydown", (e) => {
+    homeBtn.addEventListener("click", onHomePress);
+    homeBtn.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         onHomePress();
@@ -511,7 +537,9 @@
     }
     return {
       setState(next) {
+        const wasOpen = state.open;
         state = { ...next };
+        if (wasOpen && !state.open) leaveApp();
         applyLayout();
         if (state.open) renderScreen();
       },
@@ -525,11 +553,14 @@
       },
       setVisible(visible) {
         hidden = !visible;
+        if (hidden) leaveApp();
         applyLayout();
+        if (!hidden && state.open) renderScreen();
       },
       destroy() {
         clearInterval(clockTimer);
         window.removeEventListener("resize", applyLayout);
+        window.visualViewport?.removeEventListener("resize", applyLayout);
         unsubscribe();
         leaveApp();
         fab.remove();
@@ -1251,6 +1282,7 @@
   function createSpriteManager(deps) {
     let backdrop = null;
     let view = { kind: "list" };
+    let openedFrom = "overlay";
     function applyBackdropSize() {
       if (!backdrop) return;
       backdrop.style.left = "0";
@@ -1258,7 +1290,8 @@
       backdrop.style.width = `${window.innerWidth}px`;
       backdrop.style.height = `${window.innerHeight}px`;
     }
-    function open() {
+    function open(source = "overlay") {
+      openedFrom = source;
       if (backdrop) {
         render();
         return;
@@ -1313,10 +1346,12 @@
       }
     }
     function close() {
+      if (!backdrop) return;
       document.removeEventListener("keydown", onEscape);
       window.removeEventListener("resize", applyBackdropSize);
-      backdrop?.remove();
+      backdrop.remove();
       backdrop = null;
+      deps.onClosed?.(openedFrom);
     }
     function refreshIfOpen() {
       if (backdrop) render();
@@ -1928,121 +1963,21 @@
     const settings = deps.getSettings();
     content.append(
       checkboxRow2(
-        "启用立绘悬浮窗",
+        "启用立绘功能",
         settings.enabled,
         (v) => deps.updateSettings({ ...deps.getSettings(), enabled: v }),
-        "总开关：把可用立绘清单注入给 AI，并根据回复中的 [立绘:xxx] 标签在悬浮窗展示对应立绘。关闭后两者都停用。"
+        "总开关：注入立绘清单给 AI 并展示回复中的立绘。关闭后清空注入、停止解析、隐藏悬浮窗并把楼层恢复原文；手机与其他工具不受影响。"
       ),
       checkboxRow2(
-        "显示手机框（关闭则回退纯悬浮窗）",
+        "显示手机",
         settings.showPhone,
         (v) => deps.updateSettings({ ...deps.getSettings(), showPhone: v }),
-        "在屏幕上显示可拖动的 📱 图标，点击展开手机面板（立绘 / 图库 / 设置 App）。关闭后仅保留立绘悬浮窗本体。"
-      ),
-      checkboxRow2(
-        "消息中隐藏 [立绘:xxx] 标签",
-        settings.hideTagInMessage,
-        (v) => deps.updateSettings({ ...deps.getSettings(), hideTagInMessage: v }),
-        "[立绘:xxx] 是 AI 用来切换立绘的控制标签。开启后聊天气泡里不再显示这串文字，仅在后台生效；消息原文不变，可随时关闭。"
-      ),
-      selectRow(
-        "立绘显示位置",
-        settings.spriteDisplayMode,
-        [
-          { value: "overlay", label: "悬浮窗（默认）" },
-          { value: "inline", label: "楼层内（消息里原位显示）" },
-          { value: "both", label: "两者都显示" }
-        ],
-        (v) => deps.updateSettings({
-          ...deps.getSettings(),
-          spriteDisplayMode: v === "inline" || v === "both" ? v : "overlay"
-        }),
-        "楼层内：把消息中的 [立绘:xxx] 标签原位替换成立绘图片，本地上传、内嵌和图床图源都支持；此模式下悬浮窗隐藏。匹配不到的标签仍按上面「隐藏标签」设置处理。只影响显示，消息原文不变。"
-      ),
-      checkboxRow2(
-        "渲染消息内插图（<img>编码</img>）",
-        settings.renderInlineImages,
-        (v) => deps.updateSettings({ ...deps.getSettings(), renderInlineImages: v }),
-        "把 AI 回复中的 <img>图床编码</img> 渲染成真实图片，编码会自动拼接下方「图床前缀」。适合让 AI 在正文里插图。"
-      ),
-      checkboxRow2(
-        "多立绘自动轮播（一条消息含多张立绘时）",
-        settings.autoSwitch,
-        (v) => deps.updateSettings({ ...deps.getSettings(), autoSwitch: v }),
-        "一条回复命中多张立绘时，悬浮窗按下方间隔自动逐张播放；关闭后需点击悬浮窗手动切换。"
-      ),
-      numberRow(
-        "轮播间隔（秒）",
-        settings.autoSwitchSeconds,
-        (v) => deps.updateSettings({ ...deps.getSettings(), autoSwitchSeconds: v }),
-        "自动轮播时每张立绘的停留时长，范围 1–60 秒。"
-      ),
-      checkboxRow2(
-        "多角色/分组模式（按 [立绘:分组/图名] 寻址）",
-        settings.multiRole,
-        (v) => deps.updateSettings({ ...deps.getSettings(), multiRole: v }),
-        "立绘包内用「分组」区分多个角色或形态时开启：AI 会用 [立绘:分组/图名]（如 [立绘:鸣人/微笑]）精确指定立绘。单角色包保持关闭即可。"
-      ),
-      selectRow(
-        "分组 prompt 模式",
-        settings.multiRolePromptMode,
-        [
-          { value: "full", label: "全量（枚举全部组合）" },
-          { value: "repeat", label: "重复（分组×共享情绪名·省 token）" }
-        ],
-        (v) => deps.updateSettings({
-          ...deps.getSettings(),
-          multiRolePromptMode: v === "repeat" ? "repeat" : "full"
-        }),
-        "注入给 AI 的立绘清单写法。全量：逐一列出每个「分组/图名」组合，最直观；重复：只列分组名和共享的表情名，各分组图名一致时更省 token。"
-      ),
-      hostRow(
-        settings.imageHost,
-        (v) => deps.updateSettings({ ...deps.getSettings(), imageHost: v }),
-        "拼在「图床编码」前面的 URL，用于按编码添加立绘、分享串和消息内插图。默认 catbox，一般无需修改。"
+        "屏幕上显示可拖动的 📱 图标，点击展开小手机（st-stage 各功能的统一入口）。"
       )
-    );
-    const imgbbHint = document.createElement("div");
-    imgbbHint.className = "so-status";
-    imgbbHint.textContent = "自动上传需 imgbb API Key（免费申请：https://api.imgbb.com/）";
-    const autoRow = document.createElement("label");
-    autoRow.className = "so-row checkbox_label";
-    const autoInput = document.createElement("input");
-    autoInput.type = "checkbox";
-    autoInput.checked = settings.autoUpload;
-    autoInput.addEventListener("change", () => {
-      const cur = deps.getSettings();
-      if (autoInput.checked && !cur.imgbbApiKey.trim()) {
-        autoInput.checked = false;
-        imgbbHint.textContent = "请先填写 imgbb API Key（免费申请：https://api.imgbb.com/）";
-        return;
-      }
-      if (autoInput.checked) {
-        imgbbHint.textContent = "API Key 仅存储在本地浏览器中，不会上传到任何服务器；申请：https://api.imgbb.com/";
-      }
-      deps.updateSettings({ ...cur, autoUpload: autoInput.checked });
-    });
-    const autoSpan = document.createElement("span");
-    autoSpan.textContent = "导入时自动上传到 imgbb 图床并绑定编号";
-    autoSpan.append(
-      helpIcon(
-        "上传立绘时自动同步到 imgbb 图床并记录编号，这样「复制分享串」分享给别人时对方才能看到图。上传失败时图片仍保留在本地。"
-      )
-    );
-    autoRow.append(autoInput, autoSpan);
-    content.append(
-      passwordRow(
-        "imgbb API Key",
-        settings.imgbbApiKey,
-        (v) => deps.updateSettings({ ...deps.getSettings(), imgbbApiKey: v }),
-        "开启「自动上传」所需的 imgbb 账号密钥，仅保存在本地浏览器、不会上传到别处。免费申请：api.imgbb.com"
-      ),
-      autoRow,
-      imgbbHint
     );
     const hint = document.createElement("div");
     hint.className = "so-status";
-    hint.textContent = "立绘包管理与角色绑定：点击聊天界面悬浮窗右上角的 ⚙ 按钮。";
+    hint.textContent = "立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。";
     content.append(hint);
   }
   function helpIcon(tip) {
@@ -2069,97 +2004,6 @@
     span.textContent = label;
     if (help) span.append(helpIcon(help));
     row.append(input, span);
-    return row;
-  }
-  function numberRow(label, value, onChange, help, min = 1, max = 60) {
-    const row = document.createElement("div");
-    row.className = "so-row";
-    const span = document.createElement("span");
-    span.textContent = label;
-    if (help) span.append(helpIcon(help));
-    const input = document.createElement("input");
-    input.type = "number";
-    input.className = "text_pole";
-    input.min = String(min);
-    input.max = String(max);
-    input.step = "1";
-    input.value = String(value);
-    input.style.maxWidth = "90px";
-    input.addEventListener("change", () => {
-      const n = Math.round(Number(input.value));
-      const clamped = Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min;
-      input.value = String(clamped);
-      onChange(clamped);
-    });
-    row.append(span, input);
-    return row;
-  }
-  function passwordRow(label, value, onChange, help) {
-    const row = document.createElement("div");
-    row.className = "so-row";
-    const span = document.createElement("span");
-    span.textContent = label;
-    if (help) span.append(helpIcon(help));
-    const input = document.createElement("input");
-    input.type = "password";
-    input.className = "text_pole";
-    input.value = value;
-    input.autocomplete = "off";
-    input.addEventListener("change", () => onChange(input.value.trim()));
-    const eye = document.createElement("div");
-    eye.className = "menu_button";
-    eye.textContent = "👁";
-    eye.title = "显示/隐藏 Key";
-    eye.setAttribute("role", "button");
-    eye.setAttribute("aria-label", "显示或隐藏 API Key");
-    eye.addEventListener("click", () => {
-      input.type = input.type === "password" ? "text" : "password";
-    });
-    row.append(span, input, eye);
-    return row;
-  }
-  function selectRow(label, value, options, onChange, help) {
-    const row = document.createElement("div");
-    row.className = "so-row";
-    const span = document.createElement("span");
-    span.textContent = label;
-    if (help) span.append(helpIcon(help));
-    const select = document.createElement("select");
-    select.className = "text_pole";
-    for (const opt of options) {
-      const o = document.createElement("option");
-      o.value = opt.value;
-      o.textContent = opt.label;
-      if (opt.value === value) o.selected = true;
-      select.append(o);
-    }
-    select.addEventListener("change", () => onChange(select.value));
-    row.append(span, select);
-    return row;
-  }
-  function hostRow(value, onChange, help) {
-    const row = document.createElement("div");
-    row.className = "so-row";
-    const span = document.createElement("span");
-    span.textContent = "图床前缀";
-    if (help) span.append(helpIcon(help));
-    const input = document.createElement("input");
-    input.type = "text";
-    input.className = "text_pole";
-    input.value = value;
-    input.placeholder = DEFAULT_IMAGE_HOST;
-    input.addEventListener("blur", () => {
-      const raw = input.value.trim() || DEFAULT_IMAGE_HOST;
-      if (!/^https?:\/\/.+/.test(raw)) {
-        input.value = DEFAULT_IMAGE_HOST;
-        onChange(DEFAULT_IMAGE_HOST);
-        return;
-      }
-      const normalized = raw.endsWith("/") ? raw : `${raw}/`;
-      input.value = normalized;
-      onChange(normalized);
-    });
-    row.append(span, input);
     return row;
   }
 
@@ -2370,152 +2214,7 @@
     return wrap;
   }
 
-  // st-extension/src/phone-apps.ts
-  function createBuiltinApps(deps) {
-    return [spritesApp(deps), galleryApp(deps), settingsApp()];
-  }
-  function spritesApp(deps) {
-    return {
-      id: "sprites",
-      name: "立绘",
-      icon: "🎭",
-      order: 1,
-      mount(container, ctx) {
-        const settings = ctx.getSettings();
-        const characterName = ctx.getCharacterName();
-        const pack = getActivePack(settings, characterName);
-        const info = el2("div", "so-app-section");
-        const title = el2("div", "so-app-title");
-        title.textContent = characterName ? `当前角色：${characterName}` : "尚未打开角色聊天";
-        const detail = el2("div", "so-app-desc");
-        detail.textContent = pack ? `已绑定「${pack.name}」（${pack.sprites.length} 个表情）` : "未绑定立绘包 — 到「图库」App 里绑定";
-        info.append(title, detail);
-        const actions = el2("div", "so-app-section");
-        actions.append(
-          appButton("把立绘窗拉回视口", () => {
-            const next = { ...ctx.getSettings(), overlay: { x: 24, y: 80, width: ctx.getSettings().overlay.width } };
-            ctx.updateSettings(next);
-            deps.overlay.setLayout(next.overlay);
-            deps.overlay.setVisible(true);
-          }),
-          appButton(settings.enabled ? "关闭立绘悬浮窗" : "开启立绘悬浮窗", () => {
-            ctx.updateSettings({ ...ctx.getSettings(), enabled: !ctx.getSettings().enabled });
-            ctx.goHome();
-          })
-        );
-        container.append(info, actions);
-        if (pack && pack.sprites.length > 0) {
-          const grid = el2("div", "so-app-sprite-strip");
-          for (const sprite of pack.sprites) {
-            const img = document.createElement("img");
-            img.src = sprite.url;
-            img.alt = sprite.tag;
-            img.title = `点击预览「${sprite.tag}」`;
-            img.loading = "lazy";
-            img.addEventListener("click", () => {
-              deps.overlay.setImage(sprite.url, sprite.tag);
-              deps.overlay.setVisible(true);
-            });
-            grid.append(img);
-          }
-          container.append(grid);
-          const hint = el2("div", "so-app-desc");
-          hint.textContent = "点缩略图可直接预览表情。";
-          container.append(hint);
-        }
-      }
-    };
-  }
-  function galleryApp(deps) {
-    return {
-      id: "gallery",
-      name: "图库",
-      icon: "🗂",
-      order: 2,
-      mount(container, ctx) {
-        const section = el2("div", "so-app-section");
-        const desc = el2("div", "so-app-desc");
-        desc.textContent = "立绘包管理：新建/上传/导入导出/分享串/角色绑定。";
-        section.append(
-          desc,
-          appButton("打开立绘包管理", () => {
-            deps.collapsePhone();
-            deps.manager.open();
-          })
-        );
-        container.append(section);
-        const settings = ctx.getSettings();
-        const list = el2("div", "so-app-section");
-        const title = el2("div", "so-app-title");
-        title.textContent = `共 ${settings.packs.length} 个立绘包`;
-        list.append(title);
-        for (const pack of settings.packs) {
-          const row = el2("div", "so-app-desc");
-          row.textContent = `· ${pack.name}（${pack.sprites.length} 张）`;
-          list.append(row);
-        }
-        container.append(list);
-      }
-    };
-  }
-  function settingsApp() {
-    return {
-      id: "settings",
-      name: "设置",
-      icon: "⚙️",
-      order: 90,
-      mount(container, ctx) {
-        const settings = ctx.getSettings();
-        const section = el2("div", "so-app-section");
-        section.append(
-          toggleRow(
-            "启用立绘悬浮窗",
-            settings.enabled,
-            (v) => ctx.updateSettings({ ...ctx.getSettings(), enabled: v })
-          ),
-          toggleRow(
-            "隐藏 [立绘:xxx] 标签",
-            settings.hideTagInMessage,
-            (v) => ctx.updateSettings({ ...ctx.getSettings(), hideTagInMessage: v })
-          ),
-          selectRow2(
-            "立绘显示位置",
-            settings.spriteDisplayMode,
-            [
-              { value: "overlay", label: "悬浮窗（默认）" },
-              { value: "inline", label: "楼层内（消息里原位显示）" },
-              { value: "both", label: "两者都显示" }
-            ],
-            (v) => ctx.updateSettings({
-              ...ctx.getSettings(),
-              spriteDisplayMode: v === "inline" || v === "both" ? v : "overlay"
-            })
-          ),
-          toggleRow(
-            "渲染消息内插图",
-            settings.renderInlineImages,
-            (v) => ctx.updateSettings({ ...ctx.getSettings(), renderInlineImages: v })
-          )
-        );
-        const hostSection = el2("div", "so-app-section");
-        const hostLabel = el2("div", "so-app-title");
-        hostLabel.textContent = "图床前缀";
-        const hostInput = document.createElement("input");
-        hostInput.type = "text";
-        hostInput.className = "text_pole so-app-input";
-        hostInput.value = settings.imageHost;
-        hostInput.placeholder = DEFAULT_IMAGE_HOST;
-        hostInput.addEventListener("blur", () => {
-          const raw = hostInput.value.trim() || DEFAULT_IMAGE_HOST;
-          const value = /^https?:\/\/.+/.test(raw) ? raw.endsWith("/") ? raw : `${raw}/` : DEFAULT_IMAGE_HOST;
-          hostInput.value = value;
-          ctx.updateSettings({ ...ctx.getSettings(), imageHost: value });
-        });
-        hostSection.append(hostLabel, hostInput);
-        container.append(section, hostSection);
-      }
-    };
-  }
+  // st-extension/src/apps/widgets.ts
   function el2(tag, className) {
     const node = document.createElement(tag);
     node.className = className;
@@ -2546,7 +2245,7 @@
     row.append(input, span);
     return row;
   }
-  function selectRow2(label, value, options, onChange) {
+  function selectRow(label, value, options, onChange) {
     const row = el2("label", "so-app-toggle");
     const span = document.createElement("span");
     span.textContent = label;
@@ -2562,6 +2261,228 @@
     select.addEventListener("change", () => onChange(select.value));
     row.append(span, select);
     return row;
+  }
+  function numberRow(label, value, min, max, onChange) {
+    const row = el2("label", "so-app-toggle");
+    const span = document.createElement("span");
+    span.textContent = label;
+    const input = document.createElement("input");
+    input.type = "number";
+    input.className = "text_pole so-app-num";
+    input.min = String(min);
+    input.max = String(max);
+    input.step = "1";
+    input.value = String(value);
+    input.addEventListener("change", () => {
+      const n = Math.round(Number(input.value));
+      const clamped = Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min;
+      input.value = String(clamped);
+      onChange(clamped);
+    });
+    row.append(span, input);
+    return row;
+  }
+  function textRow(label, value, placeholder, onCommit, type = "text") {
+    const wrap = el2("div", "so-app-field");
+    const title = el2("div", "so-app-title");
+    title.textContent = label;
+    const input = document.createElement("input");
+    input.type = type;
+    input.className = "text_pole so-app-input";
+    input.value = value;
+    input.placeholder = placeholder;
+    input.autocomplete = "off";
+    input.addEventListener("change", () => onCommit(input.value));
+    wrap.append(title, input);
+    return wrap;
+  }
+
+  // st-extension/src/apps/sprite-app.ts
+  function spriteApp() {
+    return {
+      id: "sprites",
+      name: "立绘",
+      icon: "🎭",
+      order: 1,
+      mount(container, ctx) {
+        const settings = ctx.getSettings();
+        const characterName = ctx.getCharacterName();
+        const pack = getActivePack(settings, characterName);
+        const stateSection = el2("div", "so-app-section");
+        const title = el2("div", "so-app-title");
+        title.textContent = characterName ? `当前角色：${characterName}` : "尚未打开角色聊天";
+        const detail = el2("div", "so-app-desc");
+        detail.textContent = settings.enabled ? pack ? `立绘功能运行中 — 已绑定「${pack.name}」（${pack.sprites.length} 张）` : "立绘功能已开启，但当前角色未绑定立绘包（到「图库」绑定）" : "立绘功能已关闭：不注入 Prompt、不解析标签，旧楼层已恢复原文";
+        stateSection.append(
+          title,
+          toggleRow(
+            "启用立绘功能",
+            settings.enabled,
+            (v) => ctx.updateSettings({ ...ctx.getSettings(), enabled: v })
+          ),
+          detail
+        );
+        const displaySection = el2("div", "so-app-section");
+        const displayTitle = el2("div", "so-app-title");
+        displayTitle.textContent = "显示";
+        displaySection.append(
+          displayTitle,
+          selectRow(
+            "显示位置",
+            settings.spriteDisplayMode,
+            [
+              { value: "overlay", label: "悬浮窗" },
+              { value: "inline", label: "仅楼层" },
+              { value: "both", label: "两者" }
+            ],
+            (v) => ctx.updateSettings({
+              ...ctx.getSettings(),
+              spriteDisplayMode: v === "inline" || v === "both" ? v : "overlay"
+            })
+          ),
+          toggleRow(
+            "显示悬浮窗",
+            !settings.overlayHidden,
+            (v) => ctx.updateSettings({ ...ctx.getSettings(), overlayHidden: !v })
+          ),
+          appButton("把悬浮窗拉回视口", () => {
+            const cur = ctx.getSettings();
+            if (cur.spriteDisplayMode === "inline") return;
+            ctx.updateSettings({
+              ...cur,
+              overlayHidden: false,
+              overlay: { ...cur.overlay, x: 24, y: 80 }
+            });
+          }),
+          numberRow(
+            "最近渲染楼层数",
+            settings.recentFloors,
+            RECENT_FLOORS_MIN,
+            RECENT_FLOORS_MAX,
+            (v) => ctx.updateSettings({ ...ctx.getSettings(), recentFloors: v })
+          ),
+          toggleRow(
+            "隐藏 [立绘:xxx] 标签",
+            settings.hideTagInMessage,
+            (v) => ctx.updateSettings({ ...ctx.getSettings(), hideTagInMessage: v })
+          ),
+          toggleRow(
+            "渲染消息内插图",
+            settings.renderInlineImages,
+            (v) => ctx.updateSettings({ ...ctx.getSettings(), renderInlineImages: v })
+          )
+        );
+        const displayHint = el2("div", "so-app-desc");
+        displayHint.textContent = "「仅楼层」把 [立绘:xxx] 原位替换为图片且不弹悬浮窗；楼层数限制加载聊天时补渲染的范围（新回复不受限）。";
+        displaySection.append(displayHint);
+        const autoSection = el2("div", "so-app-section");
+        const autoTitle = el2("div", "so-app-title");
+        autoTitle.textContent = "多立绘轮播";
+        autoSection.append(
+          autoTitle,
+          toggleRow(
+            "自动轮播（一条回复多张立绘时）",
+            settings.autoSwitch,
+            (v) => ctx.updateSettings({ ...ctx.getSettings(), autoSwitch: v })
+          ),
+          numberRow(
+            "轮播间隔（秒）",
+            settings.autoSwitchSeconds,
+            1,
+            60,
+            (v) => ctx.updateSettings({ ...ctx.getSettings(), autoSwitchSeconds: v })
+          )
+        );
+        const promptSection = el2("div", "so-app-section");
+        const promptTitle = el2("div", "so-app-title");
+        promptTitle.textContent = "Prompt";
+        promptSection.append(
+          promptTitle,
+          toggleRow(
+            "多角色/分组模式（[立绘:分组/图名] 寻址）",
+            settings.multiRole,
+            (v) => ctx.updateSettings({ ...ctx.getSettings(), multiRole: v })
+          ),
+          selectRow(
+            "Prompt 模式",
+            settings.multiRolePromptMode,
+            [
+              { value: "full", label: "全量（枚举全部地址）" },
+              { value: "repeat", label: "精简（分组×共享图名）" }
+            ],
+            (v) => ctx.updateSettings({
+              ...ctx.getSettings(),
+              multiRolePromptMode: v === "repeat" ? "repeat" : "full"
+            })
+          )
+        );
+        container.append(stateSection, displaySection, autoSection, promptSection);
+      }
+    };
+  }
+
+  // st-extension/src/apps/gallery-app.ts
+  function galleryApp(deps) {
+    return {
+      id: "gallery",
+      name: "图库",
+      icon: "🗂",
+      order: 2,
+      mount(container, ctx) {
+        const settings = ctx.getSettings();
+        const section = el2("div", "so-app-section");
+        const desc = el2("div", "so-app-desc");
+        desc.textContent = "立绘包管理：新建/上传/导入导出/分享串/角色绑定。";
+        section.append(desc, appButton("打开立绘包管理", () => deps.openManager()));
+        container.append(section);
+        const list = el2("div", "so-app-section");
+        const title = el2("div", "so-app-title");
+        title.textContent = `共 ${settings.packs.length} 个立绘包`;
+        list.append(title);
+        for (const pack of settings.packs) {
+          const row = el2("div", "so-app-desc");
+          row.textContent = `· ${pack.name}（${pack.sprites.length} 张）`;
+          list.append(row);
+        }
+        container.append(list);
+        const hostSection = el2("div", "so-app-section");
+        const hostTitle = el2("div", "so-app-title");
+        hostTitle.textContent = "图床";
+        const hint = el2("div", "so-app-desc");
+        hint.textContent = "Key 仅保存在本地浏览器；上传失败时图片仍保留本地。分享串/插图编码使用上面的图床前缀。";
+        hostSection.append(hostTitle);
+        hostSection.append(
+          textRow("图床前缀", settings.imageHost, DEFAULT_IMAGE_HOST, (raw) => {
+            const v = raw.trim() || DEFAULT_IMAGE_HOST;
+            const value = /^https?:\/\/.+/.test(v) ? v.endsWith("/") ? v : `${v}/` : DEFAULT_IMAGE_HOST;
+            ctx.updateSettings({ ...ctx.getSettings(), imageHost: value });
+          }),
+          textRow(
+            "imgbb API Key（仅存本地）",
+            settings.imgbbApiKey,
+            "免费申请：api.imgbb.com",
+            (raw) => ctx.updateSettings({ ...ctx.getSettings(), imgbbApiKey: raw.trim() }),
+            "password"
+          ),
+          toggleRow("上传时自动直传 imgbb 并绑定编号", settings.autoUpload, (v) => {
+            const cur = ctx.getSettings();
+            if (v && !cur.imgbbApiKey.trim()) {
+              hint.textContent = "请先填写 imgbb API Key（免费申请：https://api.imgbb.com/）";
+              ctx.updateSettings({ ...cur, autoUpload: false });
+              return;
+            }
+            ctx.updateSettings({ ...cur, autoUpload: v });
+          })
+        );
+        hostSection.append(hint);
+        container.append(hostSection);
+      }
+    };
+  }
+
+  // st-extension/src/apps/index.ts
+  function createBuiltinApps(deps) {
+    return [spriteApp(), galleryApp({ openManager: deps.openGalleryManager })];
   }
 
   // st-extension/src/index.ts
@@ -2588,7 +2509,11 @@
     const manager = createSpriteManager({
       adapter,
       getSettings: () => settings,
-      updateSettings
+      updateSettings,
+      // 从手机打开的弹窗关闭后：重新展开手机并回到「图库」页；悬浮窗齿轮来源则正常关闭
+      onClosed: (source) => {
+        if (source === "phone") phone.openApp("gallery");
+      }
     });
     const overlay = createOverlay(
       settings.overlay,
@@ -2627,7 +2552,13 @@
       adapter.saveSettings(settings);
       phone.setState(settings.phone);
     }
-    for (const app of createBuiltinApps({ overlay, manager, collapsePhone })) {
+    for (const app of createBuiltinApps({
+      // 从手机开图库弹窗：先收起手机（避免挡在弹窗上），来源标记=手机（关闭后回图库页）
+      openGalleryManager: () => {
+        collapsePhone();
+        manager.open("phone");
+      }
+    })) {
       registry.register(app);
     }
     window.stStage = {
