@@ -22,6 +22,7 @@ export async function exportPack(pack: SpritePack, embedHosted = false): Promise
   for (const sprite of pack.sprites) {
     const source = getSpriteSource(sprite)
     const extra = {
+      ...remoteField(sprite),
       ...(sprite.group ? { group: sprite.group } : {}),
       ...(sprite.outfit ? { outfit: sprite.outfit } : {}),
     }
@@ -55,6 +56,12 @@ export async function exportPack(pack: SpritePack, embedHosted = false): Promise
 function codeField(url: string, code?: string): { code?: string } {
   const resolved = code ?? extractImageCode(url)
   return resolved ? { code: resolved } : {}
+}
+
+/** 导出时的远程直链字段：仅保留合法的 HTTPS remoteUrl（分享用），本地 url/data 另行保留 */
+function remoteField(sprite: SpritePack['sprites'][number]): { remoteUrl?: string } {
+  const r = sprite.remoteUrl
+  return r && /^https:\/\/.+/i.test(r) ? { remoteUrl: r } : {}
 }
 
 /** 解析导入的 JSON 文本为 SpritePack（@2 与 @1 均可）。格式非法时抛出带说明的 Error。 */
@@ -104,10 +111,16 @@ export function importPack(jsonText: string): SpritePack {
     seen.add(key)
     const code =
       typeof item.code === 'string' && item.code ? item.code : (extractImageCode(url) ?? undefined)
+    // remoteUrl 只接受 http/https，非法值直接丢弃；本地 url/data 与 remoteUrl 并存
+    const remoteUrl =
+      typeof item.remoteUrl === 'string' && /^https?:\/\/.+/i.test(item.remoteUrl)
+        ? item.remoteUrl
+        : ''
     sprites.push({
       tag,
       url,
       ...(code ? { code } : {}),
+      ...(remoteUrl ? { remoteUrl } : {}),
       ...(group ? { group } : {}),
       ...(outfit ? { outfit } : {}),
     })

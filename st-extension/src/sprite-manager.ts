@@ -658,7 +658,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         const target = latestPack()
         if (!target) return
         try {
-          commitPack(renameSprite(target, sprite.tag, next, spriteGroup(sprite)))
+          commitPack(renameSprite(target, sprite.tag, next, spriteGroup(sprite), sprite.outfit ?? ''))
         } catch (err) {
           toast(body, err instanceof Error ? err.message : '改名失败')
         }
@@ -670,7 +670,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         const target = latestPack()
         if (!target) return
         try {
-          commitPack(setSpriteGroup(target, sprite.tag, cur, next))
+          commitPack(setSpriteGroup(target, sprite.tag, cur, next, sprite.outfit ?? ''))
         } catch (err) {
           toast(body, err instanceof Error ? err.message : '改分组失败')
         }
@@ -743,7 +743,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         if (!window.confirm(`删除立绘「${sprite.tag}」？`)) return
         const target = latestPack()
         if (!target) return
-        commitPack(removeSprite(target, sprite.tag, spriteGroup(sprite)))
+        commitPack(removeSprite(target, sprite.tag, spriteGroup(sprite), sprite.outfit ?? ''))
       }),
     )
     cell.append(bar)
@@ -983,7 +983,10 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         }
         const latest = deps.getSettings().packs.find((p) => p.id === packId)
         const target = latest?.sprites.find(
-          (s) => s.tag === sprite.tag && (s.group ?? '') === (sprite.group ?? ''),
+          (s) =>
+            s.tag === sprite.tag &&
+            (s.group ?? '') === (sprite.group ?? '') &&
+            (s.outfit ?? '') === (sprite.outfit ?? ''),
         )
         if (!latest || !target) {
           fail++

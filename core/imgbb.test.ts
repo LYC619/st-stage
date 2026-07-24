@@ -38,6 +38,29 @@ describe('uploadToImgbb（功能①）', () => {
     await expect(uploadToImgbb('k1', 'QUJD', impl)).rejects.toThrow('bad key')
   })
 
+  it('success:true 但 URL 非 HTTPS → 抛错（不返回空串覆盖本地）', async () => {
+    const { impl } = fakeFetch({
+      success: true,
+      data: { url: 'http://i.ibb.co/x/a.png', image: { filename: 'a.png' } },
+    })
+    await expect(uploadToImgbb('k1', 'QUJD', impl)).rejects.toThrow('无效')
+  })
+
+  it('success:true 但 URL 缺失 → 抛错', async () => {
+    const { impl } = fakeFetch({ success: true, data: { image: { filename: 'a.png' } } })
+    await expect(uploadToImgbb('k1', 'QUJD', impl)).rejects.toThrow('无效')
+  })
+
+  it('success:true 但 filename 缺失/非法 → 抛错', async () => {
+    const missing = fakeFetch({ success: true, data: { url: 'https://i.ibb.co/x/a.png', image: {} } })
+    await expect(uploadToImgbb('k1', 'QUJD', missing.impl)).rejects.toThrow('无效')
+    const bad = fakeFetch({
+      success: true,
+      data: { url: 'https://i.ibb.co/x/a.png', image: { filename: '../x.png' } },
+    })
+    await expect(uploadToImgbb('k1', 'QUJD', bad.impl)).rejects.toThrow('无效')
+  })
+
   it('非 JSON 响应抛 HTTP 状态', async () => {
     const impl = (async () =>
       ({ status: 502, json: async () => Promise.reject(new Error('not json')) }) as unknown as Response) as typeof fetch

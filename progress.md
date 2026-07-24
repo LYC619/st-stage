@@ -56,3 +56,19 @@
 - 真机反馈修复②：管理弹窗"打开没反应"三连 —— (1) 弹窗背景改主题色叠实底 + backdrop blur（部分 ST 主题 BlurTint 极透，弹窗整个看穿）；(2) 图库 App 打开管理前先收起手机壳（新增 collapsePhone dep）；(3) render() 兜错显示在弹窗内（移动端无控制台）。另：aspect-ratio 老内核兜底、README 补"更新后清浏览器缓存"提示。
 - 真机反馈修复③：老内核浏览器（Chromium <87，常见国产壳浏览器）不支持 `inset` 简写 → 弹窗遮罩失去四边锚点整个塌成顶部一条黑条（页面也不变暗）。全部 inset:0 改四边长写 top/right/bottom/left:0。img 上的 aspect-ratio 老内核自然退化，无需处理。
 - 真机反馈修复④：弹窗遮罩定位改为与手机壳同一套路径 —— JS 内联 px（innerWidth/Height + resize 重算），不再依赖 CSS 视口单位/四边锚点（各家移动端浏览器解释不一，手机壳的做法在真机上已验证可靠）。
+
+## 会话 5 · 2026-07-24（codex 审查后 7 项修复收尾）
+
+上个会话（session b1717ec2）按 codex 审查实现了 7 项修复，但在最后阶段（文档同步 + build:ext）遇 429 中断，未跑最终验证、未报告。本会话核实 7 项均已落地并跑通全套验证：
+
+- **一 · 三级图片身份（group+outfit+tag）**：`sprite-store.ts` 抽出 `sameIdentity(s,tag,group,outfit)`，`upsert/remove/rename/setSpriteGroup` 均加 `outfit` 参数按三级定位；`sprite-manager.ts` 三处调用点（rename/setGroup/remove）传 `sprite.outfit ?? ''`。鸣人/居家服/微笑 与 鸣人/工作服/微笑 不再互相覆盖。
+- **二 · 多包用包名兜底**：新增 `resolveRole(pack,sprite,multiPack)` = group > roleName > (多包时 `normalizeTag(pack.name)`)，**prompt 生成（getActiveAddresses）与解析（flatten→resolveSprite）共用同一函数**，杜绝「Prompt 写了包名但解析找不到」。单包仍简写 `[立绘:微笑]`。旧 `spriteRole` 只余 `share-code.ts`（单包分享，本就不该注入包名，正确）。
+- **三 · remoteUrl 导入导出**：`types.ts` SpritePackFile 加 `remoteUrl`；`pack-io.ts` 导出保留合法 HTTPS remoteUrl（`remoteField`），导入只收 http/https 丢非法值；本地 url/data 与 remoteUrl 并存；round-trip 测试 + @1 兼容。
+- **四 · imgbb 校验内置**：`imgbb.ts` 新增 `isValidImgbbResult`（success + HTTPS url + 合法 filename，拒 `../`、`a/b`），`uploadToImgbb` 无效直接抛错不返回空串；ST/Web 调用方仍保留本地保底。
+- **五 · Web 迁移新 API**：`config-panel.tsx`/`phone-mount.tsx` 改用 `getActivePacks`（多包）、`parseSpriteFileName`（三级）、`createPhoneAppContext`；上传先存本地 data URI，imgbb 成功后写 remoteUrl/code，失败仍显示本地图。
+- **六 · 真实 NUL 字节**：`prompt-builder.ts` sceneKey 已改 `|` 分隔（上个会话）。本会话补扫全树控制字节，发现并修复 `naming.test.ts` 残留的真实 0x00 与 0x1F（改 `\0`/`\x1f` 转义字面量，运行时不变）；全树 + index.js/style.css 零 C0 控制字节。
+- **七 · setAppData 解耦**：`phone-registry.ts` 新增 `saveSettingsOnly` 路径 + `createPhoneAppContext`；`st index.ts`/`phone-mount.tsx` 接线，手机壳状态保存也走 saveSettingsOnly；`docs/APP-SPEC.md` 更新为真实行为。
+
+- 范围守则遵守：characterName 绑定不动、multiRole 保留迁移字段、coverTag 分组歧义仅注释说明不改结构。
+- 验证：**176 单测 ✅ lint ✅ typecheck ✅ build:ext ✅（index.js 126kb，产物与源码 SHA 一致）next build ✅**。git diff 无临时文件/调试代码/NUL。产物 index.js 已重建（style.css 无变化），**待用户提交**。
+- 未处理（不在本次 7 项范围）：next.config `ignoreBuildErrors:true` 仍在（P2）、`.pnpm-store/` 未 gitignore、coverTag 分组歧义。

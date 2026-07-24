@@ -35,7 +35,7 @@ window.stStage?.registerApp({
 
 `registerApp` 对非法/重复 id 会**抛错**，建议用 `try/catch` 包住，注册失败不应影响你扩展的其余功能。
 
-> ⚠️ **各内置/外部模块只刷新自己的状态**：手机、图库等模块的数据更新不会触发立绘刷新，反之亦然。新增工具的数据更新也不应连累立绘渲染。
+> ⚠️ **App 私有数据更新不触发立绘刷新**：`ctx.setAppData(...)` 只持久化你的私有存储，**不会**触发立绘 refresh / Prompt 重注入 / 楼层重渲染（内部走 `saveSettingsOnly`）。只有当你调用 `ctx.updateSettings(...)` 修改**核心设置**时才会触发框架刷新——所以除非确有必要，App 状态一律用 `setAppData`。
 
 ## 生命周期
 
@@ -56,10 +56,10 @@ window.stStage?.registerApp({
 | 方法 | 说明 |
 | --- | --- |
 | `getSettings()` | 读 st-stage 当前完整设置（只读视角，每次调用取最新） |
-| `updateSettings(next)` | 提交新设置（持久化 + 框架刷新）。**除非你明确要改核心设置，否则用 setAppData** |
+| `updateSettings(next)` | 提交**核心设置**（持久化 + 触发框架刷新：立绘 refresh / Prompt 重注入 / 楼层重渲染）。**除非你明确要改核心设置，否则用 setAppData** |
 | `getCharacterName()` | 当前对话角色名，无对话为空串 |
 | `getAppData<T>()` | 读你的私有存储（`settings.apps[你的id]`），无则 `undefined` |
-| `setAppData<T>(data)` | 写私有存储（整体替换）。必须可 JSON 序列化；**不要存 base64 图片**（settings 体积敏感），图片走图床 URL |
+| `setAppData<T>(data)` | 写私有存储（整体替换，**仅持久化、不触发立绘刷新**）。必须可 JSON 序列化；**不要存 base64 图片**（settings 体积敏感），图片走图床 URL |
 | `goHome()` | 编程式返回 Home 屏（会触发你的 unmount） |
 
 ## 样式
@@ -83,10 +83,13 @@ window.stStage?.registerApp({
 
 ## 内置 App 一览（参考实现）
 
+内置 App 各自成模块，放在 `st-extension/src/apps/`，由 `apps/index.ts` 统一装配。
+旧的独立「设置」App 已移除：立绘设置迁入「立绘」App，图床/图包设置迁入「图库」App。
+
 | id | 名称 | 说明 | 源码 |
 | --- | --- | --- | --- |
-| `sprites` | 立绘 | 当前绑定概览、表情预览、拉回悬浮窗 | `st-extension/src/phone-apps.ts` |
-| `gallery` | 图库 | 打开立绘包管理弹窗 | 同上 |
-| `settings` | 设置 | 开关与图床前缀 | 同上 |
+| `sprites` | 立绘 | 当前绑定概览、显示/轮播/Prompt 设置 | `st-extension/src/apps/sprite-app.ts` |
+| `gallery` | 图库 | 打开立绘包管理弹窗、图包概览、图床设置（前缀/imgbb Key/自动上传） | `st-extension/src/apps/gallery-app.ts` |
 
-框架源码：注册表 `core/phone-registry.ts`、手机壳 `core/phone-shell.ts`、样式 `core/phone-shell.css`。
+装配清单：`st-extension/src/apps/index.ts`。
+框架源码：注册表 `core/phone-registry.ts`（含 `createPhoneAppContext`）、手机壳 `core/phone-shell.ts`、样式 `core/phone-shell.css`。

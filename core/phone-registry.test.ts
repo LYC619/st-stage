@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { PhoneAppRegistry, type PhoneApp } from './phone-registry'
+import { PhoneAppRegistry, createPhoneAppContext, type PhoneApp } from './phone-registry'
+import { createDefaultSettings } from './types'
 
 function app(id: string, order?: number): PhoneApp {
   return { id, name: id, icon: '📦', order, mount: () => {} }
@@ -41,5 +42,53 @@ describe('PhoneAppRegistry', () => {
     off()
     reg.register(app('two'))
     expect(calls).toBe(2)
+  })
+})
+
+describe('createPhoneAppContext（阶段7·App 私有数据与立绘刷新解耦）', () => {
+  function harness() {
+    let settings = createDefaultSettings()
+    const calls = { update: 0, saveOnly: 0 }
+    const ctx = createPhoneAppContext({
+      appId: 'dice',
+      getSettings: () => settings,
+      updateSettings: (next) => {
+        calls.update++
+        settings = next
+      },
+      saveSettingsOnly: (next) => {
+        calls.saveOnly++
+        settings = next
+      },
+      getCharacterName: () => '小雪',
+      goHome: () => {},
+    })
+    return { ctx, calls, getSettings: () => settings }
+  }
+
+  it('setAppData 走 saveSettingsOnly（不触发 updateSettings/立绘刷新）', () => {
+    const h = harness()
+    h.ctx.setAppData({ last: 20 })
+    expect(h.calls.saveOnly).toBe(1)
+    expect(h.calls.update).toBe(0) // 关键：不走会触发 refresh 的核心路径
+    expect(h.getSettings().apps.dice).toEqual({ last: 20 })
+  })
+
+  it('setAppData 只改自己的命名空间，不动其他 App 数据与核心设置', () => {
+    const h = harness()
+    h.ctx.setAppData({ a: 1 })
+    h.ctx.setAppData({ a: 2 })
+    expect(h.getSettings().apps.dice).toEqual({ a: 2 })
+    expect(h.getSettings().enabled).toBe(true) // 核心设置未被连累
+    expect(h.calls.update).toBe(0)
+  })
+
+  it('getAppData 读取自己的私有存储；updateSettings 仍走核心刷新路径', () => {
+    const h = harness()
+    expect(h.ctx.getAppData()).toBeUndefined()
+    h.ctx.setAppData({ n: 7 })
+    expect(h.ctx.getAppData()).toEqual({ n: 7 })
+    h.ctx.updateSettings({ ...h.getSettings(), enabled: false })
+    expect(h.calls.update).toBe(1) // 核心设置仍触发 updateSettings
   })
 })

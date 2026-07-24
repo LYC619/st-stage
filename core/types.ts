@@ -256,6 +256,8 @@ export interface SpritePackFile {
     data?: string
     /** 图床编码（可选，随 url 一起导出） */
     code?: string
+    /** 远程分享直链（九期·stpack2，仅接受合法 http/https；与本地 url/data 并存） */
+    remoteUrl?: string
     /** 分组标签/人名（功能②，可选） */
     group?: string
     /** 服装（六期，可选） */

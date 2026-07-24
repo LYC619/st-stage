@@ -7,11 +7,20 @@
 import { useRef, useState } from 'react'
 import type { PluginSettings, SpritePack } from '@/core/types'
 import { DEFAULT_IMAGE_HOST } from '@/core/types'
-import { bindCharacter, genId, removePack, toggleBinding, upsertPack, upsertSprite } from '@/core/sprite-store'
+import {
+  bindPack,
+  genId,
+  getActivePacks,
+  removePack,
+  toggleBinding,
+  unbindPack,
+  upsertPack,
+  upsertSprite,
+} from '@/core/sprite-store'
 import { isPresetPack } from '@/core/presets'
 import { exportPack, importPack } from '@/core/pack-io'
 import { decodeShareString, encodeShareStringV2 } from '@/core/share-code'
-import { parseUploadName, sanitizePackName } from '@/core/naming'
+import { normalizeTag, parseSpriteFileName, sanitizePackName } from '@/core/naming'
 import { compressImage } from '@/core/image-compress'
 import { uploadToImgbb } from '@/core/imgbb'
 
@@ -32,37 +41,49 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
   const [uploadTargetPack, setUploadTargetPack] = useState<string | null>(null)
 
   const binding = settings.bindings.find((b) => b.characterName === characterName)
-  const boundPack = binding ? settings.packs.find((p) => p.id === binding.packIds[0]) : null
+  const boundIds = binding?.packIds ?? []
+  const activePacks = getActivePacks(settings, characterName)
 
   const flash = (msg: string) => {
     setStatus(msg)
     setTimeout(() => setStatus(null), 2500)
   }
 
-  /** 上传图片到指定包：文件名拆 分组/图名（或用「本批分组」）；压缩后本地保底，开了自动上传再传 imgbb 绑编号 */
+  /**
+   * 上传图片到指定包（三级寻址）：文件名按 parseSpriteFileName 拆「人名/服装/图名」，
+   * 未拆出人名时用「本批分组」兜底；压缩后先写本地 data URI 保底，开了自动上传再传 imgbb，
+   * 成功仅补 remoteUrl+code（保留本地 url 显示），失败仅计数、本地图不动。
+   */
   const handleUpload = async (files: FileList | null) => {
     if (!files || !uploadTargetPack) return
     const pack = settings.packs.find((p) => p.id === uploadTargetPack)
     if (!pack) return
     const useImgbb = settings.autoUpload && settings.imgbbApiKey.trim() !== ''
+    const fallbackGroup = normalizeTag(uploadGroup)
     let target = pack
     let added = 0
     let hosted = 0
     let hostFailed = 0
     for (const file of Array.from(files)) {
-      const { group, tag } = parseUploadName(file.name, uploadGroup)
+      const parsed = parseSpriteFileName(file.name)
+      const tag = parsed.tag
       if (!tag) continue
+      const group = parsed.role || fallbackGroup
       const { dataUri } = await compressImage(file)
-      target = upsertSprite(target, group ? { tag, url: dataUri, group } : { tag, url: dataUri })
+      // 本地 data URI 先保底；三级身份 group+outfit+tag 唯一
+      const local = {
+        tag,
+        url: dataUri,
+        ...(group ? { group } : {}),
+        ...(parsed.outfit ? { outfit: parsed.outfit } : {}),
+      }
+      target = upsertSprite(target, local)
       added++
       if (useImgbb) {
-        // 本地 data URI 已保底；imgbb 成功则换直链+编号，失败仅计数
         try {
           const up = await uploadToImgbb(settings.imgbbApiKey, dataUri)
-          target = upsertSprite(
-            target,
-            group ? { tag, url: up.url, code: up.code, group } : { tag, url: up.url, code: up.code },
-          )
+          // 保留本地 url 显示与保底，仅补远程 remoteUrl + code（不覆盖本地图）
+          target = upsertSprite(target, { ...local, code: up.code, remoteUrl: up.url })
           hosted++
         } catch {
           hostFailed++
@@ -238,15 +259,6 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
             aria-label="轮播间隔秒数"
           />
         </label>
-        <label className="flex items-center justify-between text-sm text-foreground">
-          多角色/分组模式（[立绘:分组/图名]）
-          <input
-            type="checkbox"
-            checked={settings.multiRole}
-            onChange={(e) => onSettingsChange({ ...settings, multiRole: e.target.checked })}
-            className="h-4 w-4 accent-primary"
-          />
-        </label>
         <label className="flex items-center justify-between gap-2 text-sm text-foreground">
           分组 prompt 模式
           <select
@@ -321,7 +333,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
         </label>
       </section>
 
-      {/* 当前角色与绑定 */}
+      {/* 当前角色与绑定（多包） */}
       <section className="flex flex-col gap-2 border-t border-border pt-4">
         <h3 className="text-xs font-semibold text-muted-foreground">当前角色</h3>
         <input
@@ -331,37 +343,74 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
           className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
           aria-label="当前角色名"
         />
-        <div className="flex items-center gap-2">
-          <select
-            value={binding?.packIds[0] ?? ''}
-            onChange={(e) => {
-              if (e.target.value) onSettingsChange(bindCharacter(settings, characterName, e.target.value))
-            }}
-            className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-            aria-label="绑定立绘包"
-          >
-            <option value="">选择立绘包…</option>
-            {settings.packs.map((p) => (
+
+        {/* 已启用的包（可移除、整体启停；顺序即多包寻址优先级） */}
+        {boundIds.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">
+                已启用 {boundIds.length} 个包（顺序影响多包寻址优先级）
+              </span>
+              {binding && (
+                <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={binding.enabled}
+                    onChange={(e) => onSettingsChange(toggleBinding(settings, characterName, e.target.checked))}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  全部启用
+                </label>
+              )}
+            </div>
+            <ul className="flex flex-col gap-1">
+              {boundIds.map((id, index) => {
+                const p = settings.packs.find((pk) => pk.id === id)
+                return (
+                  <li
+                    key={id}
+                    className="flex items-center justify-between gap-2 rounded-md border border-border px-2 py-1 text-xs text-foreground"
+                  >
+                    <span className="min-w-0 truncate">
+                      {index + 1}. {p ? `${p.name}（${p.sprites.length} 张）` : `（已删除的包 ${id}）`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onSettingsChange(unbindPack(settings, characterName, id))}
+                      className="shrink-0 rounded border border-border px-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                      aria-label={`停用包 ${p?.name ?? id}`}
+                    >
+                      停用
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )}
+
+        {/* 追加一个包 */}
+        <select
+          value=""
+          onChange={(e) => {
+            if (e.target.value) onSettingsChange(bindPack(settings, characterName, e.target.value))
+          }}
+          className="min-w-0 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+          aria-label="添加启用立绘包"
+        >
+          <option value="">{boundIds.length > 0 ? '再启用一个包…' : '选择要启用的包…'}</option>
+          {settings.packs
+            .filter((p) => !boundIds.includes(p.id))
+            .map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}（{p.sprites.length} 张）
               </option>
             ))}
-          </select>
-          {binding && (
-            <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={binding.enabled}
-                onChange={(e) => onSettingsChange(toggleBinding(settings, characterName, e.target.checked))}
-                className="h-4 w-4 accent-primary"
-              />
-              启用
-            </label>
-          )}
-        </div>
-        {boundPack && (
+        </select>
+
+        {activePacks.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            已绑定「{boundPack.name}」：{boundPack.sprites.map((s) => s.tag).join('、')}
+            当前生效：{activePacks.map((p) => p.name).join('、')}
           </p>
         )}
       </section>
@@ -370,7 +419,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
       <section className="flex flex-col gap-2.5 border-t border-border pt-4">
         <h3 className="text-xs font-semibold text-muted-foreground">立绘包管理</h3>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          本批分组（上传时用；也可用文件名 鸣人_微笑.png 自动拆分组）
+          本批分组（上传时兜底；文件名 鸣人-居家服-微笑.png 会自动拆人名/服装/图名）
           <input
             type="text"
             value={uploadGroup}

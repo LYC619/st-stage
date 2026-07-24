@@ -104,7 +104,7 @@
     return `请根据回复内容，按情节顺序选择 ${count} 张立绘，并依次输出 ${count} 个 [立绘:...] 标签（每个单独一行）。`;
   }
   function sceneKey(a) {
-    return `${a.role}\0${a.outfit}`;
+    return `${a.role}|${a.outfit}`;
   }
   function sceneLabel(a) {
     if (a.role && a.outfit) return `${a.role}/${a.outfit}`;
@@ -238,17 +238,32 @@
     const byId = new Map(settings.packs.map((p) => [p.id, p]));
     return binding.packIds.map((id) => byId.get(id)).filter((p) => p != null);
   }
+  function resolveRole(pack, sprite, multiPack) {
+    const g = (sprite.group ?? "").trim();
+    if (g) return g;
+    const rn = (pack.roleName ?? "").trim();
+    if (rn) return rn;
+    return multiPack ? normalizeTag(pack.name ?? "") : "";
+  }
   function getActiveAddresses(settings, characterName) {
+    const packs = getActivePacks(settings, characterName);
+    const multiPack = packs.length > 1;
     const out = [];
-    for (const pack of getActivePacks(settings, characterName)) {
+    for (const pack of packs) {
       for (const s of pack.sprites) {
-        out.push({ role: spriteRole(pack, s), outfit: spriteOutfit(pack, s), tag: s.tag });
+        out.push({ role: resolveRole(pack, s, multiPack), outfit: spriteOutfit(pack, s), tag: s.tag });
       }
     }
     return out;
   }
   function spriteGroup(sprite) {
     return sprite.group ?? "";
+  }
+  function spriteOutfitTag(sprite) {
+    return sprite.outfit ?? "";
+  }
+  function sameIdentity(s, tag, group, outfit) {
+    return s.tag === tag && spriteGroup(s) === group && spriteOutfitTag(s) === outfit;
   }
   function getGroups(pack) {
     const seen = [];
@@ -259,10 +274,16 @@
     return seen;
   }
   function flatten(packs) {
+    const multiPack = packs.length > 1;
     const out = [];
     for (const pack of packs) {
       for (const sprite of pack.sprites) {
-        out.push({ pack, sprite, role: spriteRole(pack, sprite), outfit: spriteOutfit(pack, sprite) });
+        out.push({
+          pack,
+          sprite,
+          role: resolveRole(pack, sprite, multiPack),
+          outfit: spriteOutfit(pack, sprite)
+        });
       }
     }
     return out;
@@ -366,40 +387,41 @@
   }
   function upsertSprite(pack, sprite) {
     const g = spriteGroup(sprite);
-    const idx = pack.sprites.findIndex((s) => s.tag === sprite.tag && spriteGroup(s) === g);
+    const o = spriteOutfitTag(sprite);
+    const idx = pack.sprites.findIndex((s) => sameIdentity(s, sprite.tag, g, o));
     const sprites = idx >= 0 ? pack.sprites.map((s, i) => i === idx ? sprite : s) : [...pack.sprites, sprite];
     return touchPack(pack, sprites);
   }
-  function removeSprite(pack, tag, group = "") {
+  function removeSprite(pack, tag, group = "", outfit = "") {
     const next = touchPack(
       pack,
-      pack.sprites.filter((s) => !(s.tag === tag && spriteGroup(s) === group))
+      pack.sprites.filter((s) => !sameIdentity(s, tag, group, outfit))
     );
     if (next.coverTag === tag && !next.sprites.some((s) => s.tag === tag)) delete next.coverTag;
     return next;
   }
-  function renameSprite(pack, oldTag, newTagRaw, group = "") {
+  function renameSprite(pack, oldTag, newTagRaw, group = "", outfit = "") {
     const newTag = normalizeTag(newTagRaw);
     if (!newTag) throw new Error("表情名不能为空，且不能包含 [ ] / : | = @ 等符号");
     if (newTag === oldTag) return pack;
-    if (pack.sprites.some((s) => s.tag === newTag && spriteGroup(s) === group)) {
+    if (pack.sprites.some((s) => sameIdentity(s, newTag, group, outfit))) {
       throw new Error(`表情名「${newTag}」在该分组中已存在`);
     }
     const sprites = pack.sprites.map(
-      (s) => s.tag === oldTag && spriteGroup(s) === group ? { ...s, tag: newTag } : s
+      (s) => sameIdentity(s, oldTag, group, outfit) ? { ...s, tag: newTag } : s
     );
     const next = touchPack(pack, sprites);
     if (next.coverTag === oldTag) next.coverTag = newTag;
     return next;
   }
-  function setSpriteGroup(pack, tag, fromGroup, toGroupRaw) {
+  function setSpriteGroup(pack, tag, fromGroup, toGroupRaw, outfit = "") {
     const toGroup = normalizeTag(toGroupRaw);
     if (toGroup === fromGroup) return pack;
-    if (pack.sprites.some((s) => s.tag === tag && spriteGroup(s) === toGroup)) {
+    if (pack.sprites.some((s) => sameIdentity(s, tag, toGroup, outfit))) {
       throw new Error(`分组「${toGroup || "未分组"}」中已存在表情「${tag}」`);
     }
     const sprites = pack.sprites.map((s) => {
-      if (!(s.tag === tag && spriteGroup(s) === fromGroup)) return s;
+      if (!sameIdentity(s, tag, fromGroup, outfit)) return s;
       const next = { ...s };
       if (toGroup) next.group = toGroup;
       else delete next.group;
@@ -435,6 +457,19 @@
   }
 
   // core/phone-registry.ts
+  function createPhoneAppContext(deps) {
+    return {
+      getSettings: () => deps.getSettings(),
+      updateSettings: (next) => deps.updateSettings(next),
+      getCharacterName: () => deps.getCharacterName(),
+      getAppData: () => deps.getSettings().apps[deps.appId],
+      setAppData: (data) => deps.saveSettingsOnly({
+        ...deps.getSettings(),
+        apps: { ...deps.getSettings().apps, [deps.appId]: data }
+      }),
+      goHome: deps.goHome
+    };
+  }
   var APP_ID_REGEX = /^[a-z][a-z0-9-]{1,31}$/;
   var PhoneAppRegistry = class {
     constructor() {
@@ -1331,6 +1366,7 @@
     for (const sprite of pack.sprites) {
       const source = getSpriteSource(sprite);
       const extra = {
+        ...remoteField(sprite),
         ...sprite.group ? { group: sprite.group } : {},
         ...sprite.outfit ? { outfit: sprite.outfit } : {}
       };
@@ -1363,6 +1399,10 @@
     const resolved = code ?? extractImageCode(url);
     return resolved ? { code: resolved } : {};
   }
+  function remoteField(sprite) {
+    const r = sprite.remoteUrl;
+    return r && /^https:\/\/.+/i.test(r) ? { remoteUrl: r } : {};
+  }
   function importPack(jsonText) {
     let raw;
     try {
@@ -1391,10 +1431,12 @@
       if (seen.has(key)) continue;
       seen.add(key);
       const code = typeof item.code === "string" && item.code ? item.code : extractImageCode(url) ?? void 0;
+      const remoteUrl = typeof item.remoteUrl === "string" && /^https?:\/\/.+/i.test(item.remoteUrl) ? item.remoteUrl : "";
       sprites.push({
         tag,
         url,
         ...code ? { code } : {},
+        ...remoteUrl ? { remoteUrl } : {},
         ...group ? { group } : {},
         ...outfit2 ? { outfit: outfit2 } : {}
       });
@@ -1616,7 +1658,11 @@
     if (!json?.success || !json.data?.image) {
       throw new Error(`imgbb 上传失败：${json?.error?.message ?? `HTTP ${res.status}`}`);
     }
-    return { url: json.data.url ?? "", code: json.data.image.filename ?? "" };
+    const result = { url: json.data.url ?? "", code: json.data.image.filename ?? "" };
+    if (!isValidImgbbResult(result)) {
+      throw new Error("imgbb 返回无效：缺少合法的 HTTPS 直链或文件名");
+    }
+    return result;
   }
 
   // st-extension/src/sprite-manager.ts
@@ -2143,7 +2189,7 @@ ${preview}
           const target = latestPack();
           if (!target) return;
           try {
-            commitPack(renameSprite(target, sprite.tag, next, spriteGroup(sprite)));
+            commitPack(renameSprite(target, sprite.tag, next, spriteGroup(sprite), sprite.outfit ?? ""));
           } catch (err) {
             toast(body, err instanceof Error ? err.message : "改名失败");
           }
@@ -2155,7 +2201,7 @@ ${preview}
           const target = latestPack();
           if (!target) return;
           try {
-            commitPack(setSpriteGroup(target, sprite.tag, cur, next));
+            commitPack(setSpriteGroup(target, sprite.tag, cur, next, sprite.outfit ?? ""));
           } catch (err) {
             toast(body, err instanceof Error ? err.message : "改分组失败");
           }
@@ -2225,7 +2271,7 @@ ${preview}
           if (!window.confirm(`删除立绘「${sprite.tag}」？`)) return;
           const target = latestPack();
           if (!target) return;
-          commitPack(removeSprite(target, sprite.tag, spriteGroup(sprite)));
+          commitPack(removeSprite(target, sprite.tag, spriteGroup(sprite), sprite.outfit ?? ""));
         })
       );
       cell.append(bar);
@@ -2431,7 +2477,7 @@ ${preview}
           }
           const latest = deps.getSettings().packs.find((p) => p.id === packId);
           const target = latest?.sprites.find(
-            (s) => s.tag === sprite.tag && (s.group ?? "") === (sprite.group ?? "")
+            (s) => s.tag === sprite.tag && (s.group ?? "") === (sprite.group ?? "") && (s.outfit ?? "") === (sprite.outfit ?? "")
           );
           if (!latest || !target) {
             fail++;
@@ -3137,6 +3183,10 @@ ${preview}
       refresh();
       if (displayChanged) reprocessAllMessages(settings);
     }
+    function saveSettingsOnly(next) {
+      settings = next;
+      adapter.saveSettings(settings);
+    }
     const manager = createSpriteManager({
       adapter,
       getSettings: () => settings,
@@ -3159,23 +3209,20 @@ ${preview}
     overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds);
     const registry = new PhoneAppRegistry();
     function createAppContext(appId, goHome) {
-      return {
+      return createPhoneAppContext({
+        appId,
         getSettings: () => settings,
         updateSettings,
+        saveSettingsOnly,
         getCharacterName: () => adapter.getCurrentCharacterName(),
-        getAppData: () => settings.apps[appId],
-        setAppData: (data) => {
-          updateSettings({ ...settings, apps: { ...settings.apps, [appId]: data } });
-        },
         goHome
-      };
+      });
     }
     const phone = createPhoneShell(settings.phone, {
       registry,
       createAppContext,
       onStateChange: (state) => {
-        settings = { ...settings, phone: state };
-        adapter.saveSettings(settings);
+        saveSettingsOnly({ ...settings, phone: state });
       }
     });
     function collapsePhone() {

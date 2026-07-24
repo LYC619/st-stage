@@ -14,7 +14,7 @@ import {
   preloadPack,
   resolveSprites,
 } from '../../core/sprite-store'
-import { PhoneAppRegistry, type PhoneAppContext } from '../../core/phone-registry'
+import { PhoneAppRegistry, createPhoneAppContext, type PhoneAppContext } from '../../core/phone-registry'
 import { createPhoneShell } from '../../core/phone-shell'
 import { STAdapter } from './st-adapter'
 import { createOverlay, type OverlayController } from './overlay-dom'
@@ -61,6 +61,16 @@ async function init(): Promise<void> {
     if (displayChanged) reprocessAllMessages(settings)
   }
 
+  /**
+   * 仅持久化设置（阶段7）：不触发立绘 refresh / Prompt 重注入 / 楼层重渲染 / 悬浮窗布局刷新。
+   * 供 App 私有数据（setAppData）与手机壳状态保存使用——这些变更与立绘渲染无关，
+   * 不应连累立绘。改核心设置仍走 updateSettings 触发正常 refresh。
+   */
+  function saveSettingsOnly(next: PluginSettings): void {
+    settings = next
+    adapter.saveSettings(settings)
+  }
+
   const manager = createSpriteManager({
     adapter,
     getSettings: () => settings,
@@ -87,24 +97,22 @@ async function init(): Promise<void> {
   const registry = new PhoneAppRegistry()
 
   function createAppContext(appId: string, goHome: () => void): PhoneAppContext {
-    return {
+    return createPhoneAppContext({
+      appId,
       getSettings: () => settings,
       updateSettings,
+      saveSettingsOnly,
       getCharacterName: () => adapter.getCurrentCharacterName(),
-      getAppData: <T,>() => settings.apps[appId] as T | undefined,
-      setAppData: <T,>(data: T) => {
-        updateSettings({ ...settings, apps: { ...settings.apps, [appId]: data } })
-      },
       goHome,
-    }
+    })
   }
 
   const phone = createPhoneShell(settings.phone, {
     registry,
     createAppContext,
     onStateChange: (state) => {
-      settings = { ...settings, phone: state }
-      adapter.saveSettings(settings)
+      // 手机壳位置/展开态与立绘无关，走仅保存路径
+      saveSettingsOnly({ ...settings, phone: state })
     },
   })
 

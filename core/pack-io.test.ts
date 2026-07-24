@@ -107,3 +107,69 @@ describe('exportPack', () => {
     expect(reimported.sprites[0].url).toBe('https://x.com/a.png')
   })
 })
+
+describe('remoteUrl 导入导出（阶段7）', () => {
+  it('导出保留合法 HTTPS remoteUrl，本地 data 与 remoteUrl 并存', async () => {
+    const pack: SpritePack = {
+      id: 'p1',
+      name: '远程包',
+      sprites: [
+        // 本地 data URI（显示保底）+ 远程直链（分享用）
+        { tag: '微笑', url: 'data:image/webp;base64,AAA', remoteUrl: 'https://i.ibb.co/x/a.png', code: 'a.png' },
+      ],
+    }
+    const file = await exportPack(pack)
+    expect(file.sprites[0]).toEqual({
+      tag: '微笑',
+      data: 'data:image/webp;base64,AAA',
+      remoteUrl: 'https://i.ibb.co/x/a.png',
+    })
+  })
+
+  it('导出丢弃非 HTTPS remoteUrl', async () => {
+    const pack: SpritePack = {
+      id: 'p1',
+      name: '包',
+      sprites: [{ tag: '微笑', url: 'https://x.com/a.png', remoteUrl: 'http://i.ibb.co/x/a.png' }],
+    }
+    const file = await exportPack(pack)
+    expect(file.sprites[0].remoteUrl).toBeUndefined()
+  })
+
+  it('导入校验 remoteUrl：接受 http/https，丢弃非法值', () => {
+    const file = {
+      format: 'sprite-pack@2',
+      name: '包',
+      sprites: [
+        { tag: 'a', data: 'data:image/png;base64,AAA', remoteUrl: 'https://i.ibb.co/a.png' },
+        { tag: 'b', data: 'data:image/png;base64,BBB', remoteUrl: 'http://i.ibb.co/b.png' },
+        { tag: 'c', data: 'data:image/png;base64,CCC', remoteUrl: 'javascript:alert(1)' },
+        { tag: 'd', data: 'data:image/png;base64,DDD', remoteUrl: 42 },
+      ],
+    }
+    const pack = importPack(JSON.stringify(file))
+    const byTag = Object.fromEntries(pack.sprites.map((s) => [s.tag, s.remoteUrl]))
+    expect(byTag.a).toBe('https://i.ibb.co/a.png')
+    expect(byTag.b).toBe('http://i.ibb.co/b.png')
+    expect(byTag.c).toBeUndefined() // 非法协议丢弃
+    expect(byTag.d).toBeUndefined() // 非字符串丢弃
+  })
+
+  it('JSON round-trip 不丢 remoteUrl（本地 url + remoteUrl 都保留）', async () => {
+    const pack: SpritePack = {
+      id: 'p1',
+      name: '回环远程包',
+      sprites: [
+        { tag: '微笑', url: 'data:image/webp;base64,ZZZ', remoteUrl: 'https://i.ibb.co/x/z.png', code: 'z.png' },
+      ],
+    }
+    const reimported = importPack(JSON.stringify(await exportPack(pack)))
+    expect(reimported.sprites[0].url).toBe('data:image/webp;base64,ZZZ') // 本地保底显示
+    expect(reimported.sprites[0].remoteUrl).toBe('https://i.ibb.co/x/z.png') // 分享用
+  })
+
+  it('@1 无 remoteUrl 字段仍可导入', () => {
+    const pack = importPack(V1_JSON)
+    expect(pack.sprites.every((s) => s.remoteUrl === undefined)).toBe(true)
+  })
+})

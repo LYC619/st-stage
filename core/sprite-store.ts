@@ -4,7 +4,7 @@
  */
 
 import type { PluginSettings, Sprite, SpriteAddress, SpritePack } from './types'
-import { parseAddress, spriteOutfit, spriteRole } from './types'
+import { parseAddress, spriteOutfit } from './types'
 import { normalizeTag } from './naming'
 
 /** 生成简单唯一 ID */
@@ -25,15 +25,33 @@ export function getActivePack(settings: PluginSettings, characterName: string): 
   return getActivePacks(settings, characterName)[0] ?? null
 }
 
+/**
+ * 三级寻址下某张立绘的人名（含多包兜底）：
+ * sprite.group > 包级 roleName > 多包时用包名兜底 > 空串。
+ * 单包时无人名维度返回空串（保持 [立绘:图名] 简写）；多包且既无 group 又无 roleName 时，
+ * 用包名当人名前缀，避免两个无 roleName 的旧包生成同名 `[立绘:微笑]`。
+ * normalizeTag(pack.name) 保证前缀不含 `/` 等地址分隔符；prompt 生成（getActiveAddresses）
+ * 与解析（flatten→resolveSprite）共用本函数，杜绝「Prompt 写了包名但解析找不到」。
+ */
+function resolveRole(pack: SpritePack, sprite: Sprite, multiPack: boolean): string {
+  const g = (sprite.group ?? '').trim()
+  if (g) return g
+  const rn = (pack.roleName ?? '').trim()
+  if (rn) return rn
+  return multiPack ? normalizeTag(pack.name ?? '') : ''
+}
+
 /** 某角色全部启用包的完整地址坐标（用于 prompt 注入） */
 export function getActiveAddresses(
   settings: PluginSettings,
   characterName: string,
 ): SpriteAddress[] {
+  const packs = getActivePacks(settings, characterName)
+  const multiPack = packs.length > 1
   const out: SpriteAddress[] = []
-  for (const pack of getActivePacks(settings, characterName)) {
+  for (const pack of packs) {
     for (const s of pack.sprites) {
-      out.push({ role: spriteRole(pack, s), outfit: spriteOutfit(pack, s), tag: s.tag })
+      out.push({ role: resolveRole(pack, s, multiPack), outfit: spriteOutfit(pack, s), tag: s.tag })
     }
   }
   return out
@@ -48,6 +66,20 @@ export function getAvailableTags(settings: PluginSettings, characterName: string
 /** 立绘的分组标签（功能②），缺省为空串 */
 export function spriteGroup(sprite: Sprite): string {
   return sprite.group ?? ''
+}
+
+/** 立绘身份的服装维度（sprite 自身字段，缺省空串） */
+function spriteOutfitTag(sprite: Sprite): string {
+  return sprite.outfit ?? ''
+}
+
+/**
+ * 图片身份判定（六期·三级寻址修复）：group + outfit + tag 三级一致才是同一张。
+ * 旧数据缺省的 group/outfit 一律按空串处理，保证 upsert/remove/rename/setGroup 定位一致。
+ * 例：鸣人/居家服/微笑 与 鸣人/工作服/微笑 tag+group 相同、outfit 不同，属两张，绝不互相覆盖。
+ */
+function sameIdentity(s: Sprite, tag: string, group: string, outfit: string): boolean {
+  return s.tag === tag && spriteGroup(s) === group && spriteOutfitTag(s) === outfit
 }
 
 /** 包内出现过的分组（非空、按首次出现顺序去重），用于 UI 与 prompt 枚举 */
@@ -69,10 +101,16 @@ interface Candidate {
 }
 
 function flatten(packs: SpritePack[]): Candidate[] {
+  const multiPack = packs.length > 1
   const out: Candidate[] = []
   for (const pack of packs) {
     for (const sprite of pack.sprites) {
-      out.push({ pack, sprite, role: spriteRole(pack, sprite), outfit: spriteOutfit(pack, sprite) })
+      out.push({
+        pack,
+        sprite,
+        role: resolveRole(pack, sprite, multiPack),
+        outfit: spriteOutfit(pack, sprite),
+      })
     }
   }
   return out
@@ -282,10 +320,11 @@ function touchPack(pack: SpritePack, sprites: Sprite[]): SpritePack {
   return { ...pack, sprites, updatedAt: new Date().toISOString() }
 }
 
-/** 在包内新增或替换立绘（同 分组+tag 覆盖 url/code） */
+/** 在包内新增或替换立绘（同 group+outfit+tag 覆盖 url/code/remoteUrl） */
 export function upsertSprite(pack: SpritePack, sprite: Sprite): SpritePack {
   const g = spriteGroup(sprite)
-  const idx = pack.sprites.findIndex((s) => s.tag === sprite.tag && spriteGroup(s) === g)
+  const o = spriteOutfitTag(sprite)
+  const idx = pack.sprites.findIndex((s) => sameIdentity(s, sprite.tag, g, o))
   const sprites =
     idx >= 0
       ? pack.sprites.map((s, i) => (i === idx ? sprite : s))
@@ -293,34 +332,35 @@ export function upsertSprite(pack: SpritePack, sprite: Sprite): SpritePack {
   return touchPack(pack, sprites)
 }
 
-/** 删除包内一张立绘（按 分组+tag 定位）；若该 tag 已无任何立绘且是封面则清掉 coverTag */
-export function removeSprite(pack: SpritePack, tag: string, group = ''): SpritePack {
+/** 删除包内一张立绘（按 group+outfit+tag 定位）；若该 tag 已无任何立绘且是封面则清掉 coverTag */
+export function removeSprite(pack: SpritePack, tag: string, group = '', outfit = ''): SpritePack {
   const next = touchPack(
     pack,
-    pack.sprites.filter((s) => !(s.tag === tag && spriteGroup(s) === group)),
+    pack.sprites.filter((s) => !sameIdentity(s, tag, group, outfit)),
   )
   if (next.coverTag === tag && !next.sprites.some((s) => s.tag === tag)) delete next.coverTag
   return next
 }
 
 /**
- * 重命名立绘 tag（在其所在分组内）。失败时抛出带中文说明的 Error：
- * 新 tag 清洗后为空、或与同分组内其他立绘重名。
+ * 重命名立绘 tag（在其所在 group+outfit 内）。失败时抛出带中文说明的 Error：
+ * 新 tag 清洗后为空、或与同 group+outfit 内其他立绘重名。
  */
 export function renameSprite(
   pack: SpritePack,
   oldTag: string,
   newTagRaw: string,
   group = '',
+  outfit = '',
 ): SpritePack {
   const newTag = normalizeTag(newTagRaw)
   if (!newTag) throw new Error('表情名不能为空，且不能包含 [ ] / : | = @ 等符号')
   if (newTag === oldTag) return pack
-  if (pack.sprites.some((s) => s.tag === newTag && spriteGroup(s) === group)) {
+  if (pack.sprites.some((s) => sameIdentity(s, newTag, group, outfit))) {
     throw new Error(`表情名「${newTag}」在该分组中已存在`)
   }
   const sprites = pack.sprites.map((s) =>
-    s.tag === oldTag && spriteGroup(s) === group ? { ...s, tag: newTag } : s,
+    sameIdentity(s, oldTag, group, outfit) ? { ...s, tag: newTag } : s,
   )
   const next = touchPack(pack, sprites)
   if (next.coverTag === oldTag) next.coverTag = newTag
@@ -328,22 +368,23 @@ export function renameSprite(
 }
 
 /**
- * 修改某张立绘的分组（按当前 分组+tag 定位，功能②）。
- * 目标分组内若已有同 tag 立绘则抛错避免撞车；toGroup 清洗后为空表示移出分组。
+ * 修改某张立绘的分组（按当前 group+outfit+tag 定位，功能②）。
+ * 目标分组内若已有同 outfit+tag 立绘则抛错避免撞车；toGroup 清洗后为空表示移出分组。
  */
 export function setSpriteGroup(
   pack: SpritePack,
   tag: string,
   fromGroup: string,
   toGroupRaw: string,
+  outfit = '',
 ): SpritePack {
   const toGroup = normalizeTag(toGroupRaw)
   if (toGroup === fromGroup) return pack
-  if (pack.sprites.some((s) => s.tag === tag && spriteGroup(s) === toGroup)) {
+  if (pack.sprites.some((s) => sameIdentity(s, tag, toGroup, outfit))) {
     throw new Error(`分组「${toGroup || '未分组'}」中已存在表情「${tag}」`)
   }
   const sprites = pack.sprites.map((s) => {
-    if (!(s.tag === tag && spriteGroup(s) === fromGroup)) return s
+    if (!sameIdentity(s, tag, fromGroup, outfit)) return s
     const next = { ...s }
     if (toGroup) next.group = toGroup
     else delete next.group

@@ -42,6 +42,42 @@ export interface PhoneApp {
   unmount?(): void
 }
 
+/** 构造 PhoneAppContext 的依赖（把「核心设置」与「App 私有数据」两条持久化路径分开） */
+export interface AppContextDeps {
+  /** 本 App 的命名空间键 */
+  appId: string
+  /** 读当前设置（引用每次最新） */
+  getSettings(): PluginSettings
+  /** 提交核心设置：持久化 + 触发框架刷新（立绘 refresh / Prompt 重注入 / 楼层重渲染） */
+  updateSettings(next: PluginSettings): void
+  /** 仅持久化设置：不触发立绘刷新/Prompt 重注入/楼层重渲染（App 私有数据、手机壳状态走这里） */
+  saveSettingsOnly(next: PluginSettings): void
+  /** 当前对话角色名（无对话为空串） */
+  getCharacterName(): string
+  /** 返回 Home 屏 */
+  goHome(): void
+}
+
+/**
+ * 构造 App 运行时上下文（双端共用）。
+ * 关键解耦（阶段7）：setAppData 走 saveSettingsOnly —— 任何 App 保存私有数据都**不会**
+ * 触发立绘 refresh / Prompt 重注入 / 楼层重渲染；只有改核心设置（updateSettings）才刷新。
+ */
+export function createPhoneAppContext(deps: AppContextDeps): PhoneAppContext {
+  return {
+    getSettings: () => deps.getSettings(),
+    updateSettings: (next) => deps.updateSettings(next),
+    getCharacterName: () => deps.getCharacterName(),
+    getAppData: <T,>() => deps.getSettings().apps[deps.appId] as T | undefined,
+    setAppData: <T,>(data: T) =>
+      deps.saveSettingsOnly({
+        ...deps.getSettings(),
+        apps: { ...deps.getSettings().apps, [deps.appId]: data },
+      }),
+    goHome: deps.goHome,
+  }
+}
+
 const APP_ID_REGEX = /^[a-z][a-z0-9-]{1,31}$/
 
 export class PhoneAppRegistry {

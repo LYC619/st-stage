@@ -60,5 +60,11 @@ export async function uploadToImgbb(
   if (!json?.success || !json.data?.image) {
     throw new Error(`imgbb 上传失败：${json?.error?.message ?? `HTTP ${res.status}`}`)
   }
-  return { url: json.data.url ?? '', code: json.data.image.filename ?? '' }
+  // 结果自校验（九期→本期内置）：success 为真但 url/filename 缺失或非法时，绝不返回
+  // { url:'', code:'' } 让调用方误当成功覆盖本地保底图；直接抛错，调用方按失败处理。
+  const result: ImgbbResult = { url: json.data.url ?? '', code: json.data.image.filename ?? '' }
+  if (!isValidImgbbResult(result)) {
+    throw new Error('imgbb 返回无效：缺少合法的 HTTPS 直链或文件名')
+  }
+  return result
 }

@@ -213,7 +213,7 @@ pnpm build:ext  # 重新打包 ST 扩展（产物输出到根目录 index.js / s
 | `st-extension/src/` | ST 扩展源码（适配器 + 原生 DOM UI），经 esbuild 打包为根目录 `index.js` |
 | `app/` `components/` `lib/` | Next.js 网页测试环境 |
 | `public/presets/` | 内置预设立绘图片（随扩展安装一起分发） |
-| `docs/APP-SPEC.md` | 手机 App 开发规范（面向第三方开发者） |
+| `docs/APP-SPEC.md` | 手机 App 开发规范（内部 App 模块为主，兼容旧的第三方注册） |
 
 > 注意：修改 `core/` 或 `st-extension/src/` 后必须运行 `pnpm build:ext` 并提交根目录产物，GitHub 安装的用户才能拿到更新。
 
