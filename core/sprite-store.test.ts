@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { PluginSettings, SpritePack } from './types'
 import { createDefaultSettings, formatAddress, getPackCover, getSpriteSource } from './types'
 import {
+  bindCharacter,
+  bindPack,
   getActiveAddresses,
   getActivePacks,
   getGroups,
@@ -9,10 +11,15 @@ import {
   matchSprite,
   matchSprites,
   moveSprite,
+  previewBindingAddressChanges,
   removeSprite,
   renameSprite,
   resolveSprite,
+  setBinding,
   setSpriteGroup,
+  toggleBinding,
+  unbindPack,
+  upsertPack,
   upsertSprite,
 } from './sprite-store'
 
@@ -228,7 +235,13 @@ describe('多包无 roleName 时用包名兜底', () => {
   it('两个无 roleName 旧包同时启用：地址含包名前缀', () => {
     const s = settingsWith(['p_naruto', 'p_sasuke'])
     const addrs = getActiveAddresses(s, '阿珍').map(formatAddress)
-    expect(addrs).toEqual(['鸣人包/微笑', '鸣人包/生气', '佐助包/微笑', '佐助包/生气'])
+    expect(addrs).toEqual([
+      '鸣人包/微笑',
+      '鸣人包/生气',
+      '佐助包/微笑',
+      '佐助包/生气',
+    ])
+    expect(addrs.every((address) => !address.includes('@p=') && !address.includes('@r='))).toBe(true)
   })
 
   it('同名图片能按包名解析到对应包（Prompt 与解析同一套规则）', () => {
@@ -261,5 +274,318 @@ describe('多包无 roleName 时用包名兜底', () => {
     ])
     const packs = getActivePacks(s, '阿珍')
     expect(resolveSprite(packs, '佐助/微笑')!.url).toBe('p_b-smile')
+  })
+
+  it('从多包停用回单包后，唯一裸包名仍作为短地址兼容', () => {
+    const s = settingsWith(['p_naruto'])
+    const packs = getActivePacks(s, '阿珍')
+    expect(resolveSprite(packs, '鸣人包/微笑')!.url).toBe('p_naruto-smile')
+    expect(resolveSprite(packs, '微笑')!.url).toBe('p_naruto-smile')
+    expect(resolveSprite(packs, '佐助包/微笑')).toBeNull()
+  })
+})
+
+describe('多包短语义地址的冲突防线', () => {
+  function oneSprite(id: string, name: string): SpritePack {
+    return { id, name, sprites: [{ tag: '微笑', url: `${id}-smile` }] }
+  }
+  function twoSameName(idA: string, idB: string): PluginSettings {
+    return {
+      ...createDefaultSettings(),
+      packs: [oneSprite(idA, '同名包'), oneSprite(idB, '同名包')],
+      bindings: [{ characterName: '阿珍', packIds: [idA, idB], enabled: true }],
+    }
+  }
+
+  it('有效 role 与另一包裸包名相撞时仍按 role 解析 Prompt 地址', () => {
+    const packs: SpritePack[] = [
+      { id: 'a', name: 'A包', roleName: '鸣人', sprites: [{ tag: '微笑', url: 'a' }] },
+      { id: 'b', name: '鸣人', roleName: '佐助', sprites: [{ tag: '微笑', url: 'b' }] },
+    ]
+
+    expect(resolveSprite(packs, '鸣人/微笑')?.url).toBe('a')
+    expect(resolveSprite(packs, '佐助/微笑')?.url).toBe('b')
+  })
+
+  it('脏设置中的同名同址不注入 Prompt，解析也不猜第一个包', () => {
+    const s = twoSameName('p_a', 'p_b')
+    const addrs = getActiveAddresses(s, '阿珍').map(formatAddress)
+    expect(addrs).toEqual([])
+    const packs = getActivePacks(s, '阿珍')
+    expect(resolveSprite(packs, '同名包/微笑')).toBeNull()
+    expect(resolveSprite(packs, '微笑')).toBeNull()
+  })
+
+  it('冲突地址被排除时，两个包中的非冲突地址仍保留', () => {
+    const a: SpritePack = {
+      id: 'p_a',
+      name: '鸣人',
+      sprites: [
+        { tag: '微笑', url: 'a-smile' },
+        { tag: '生气', url: 'a-angry' },
+      ],
+    }
+    const b: SpritePack = {
+      id: 'p_b',
+      name: '佐助包',
+      roleName: '鸣人',
+      sprites: [
+        { tag: '微笑', url: 'b-smile' },
+        { tag: '冷漠', url: 'b-cold' },
+      ],
+    }
+    const s: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [a, b],
+      bindings: [{ characterName: '阿珍', packIds: ['p_a', 'p_b'], enabled: true }],
+    }
+    const packs = getActivePacks(s, '阿珍')
+    expect(getActiveAddresses(s, '阿珍').map(formatAddress)).toEqual(['鸣人/生气', '鸣人/冷漠'])
+    expect(resolveSprite(packs, '鸣人/微笑')).toBeNull()
+  })
+
+  it('含 @ 的实验 canonical 文本不再进入正常短地址解析', () => {
+    const s = twoSameName('p_a', 'p_b')
+    expect(resolveSprite(getActivePacks(s, '阿珍'), '同名包@p=p_a/微笑')).toBeNull()
+  })
+})
+
+describe('服装地址可逆性', () => {
+  it('role/tag 只表示空 outfit，不会落到同角色的服装变体', () => {
+    const p: SpritePack = {
+      id: 'p',
+      name: '鸣人包',
+      roleName: '鸣人',
+      sprites: [
+        { tag: '微笑', url: 'plain' },
+        { tag: '微笑', outfit: '居家服', url: 'home' },
+      ],
+    }
+    expect(resolveSprite([p], '鸣人/微笑')?.url).toBe('plain')
+    expect(resolveSprite([p], '鸣人/居家服/微笑')?.url).toBe('home')
+  })
+
+  it('只有服装变体时 role/tag 返回 null', () => {
+    const p: SpritePack = {
+      id: 'p',
+      name: '鸣人包',
+      roleName: '鸣人',
+      sprites: [{ tag: '微笑', outfit: '居家服', url: 'home' }],
+    }
+    expect(resolveSprite([p], '鸣人/微笑')).toBeNull()
+  })
+
+  it('单包无人名但有 outfit 时用包名生成可逆三级地址', () => {
+    const p: SpritePack = {
+      id: 'p',
+      name: '鸣人包',
+      outfit: '居家服',
+      sprites: [{ tag: '微笑', url: 'home' }],
+    }
+    const s: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [p],
+      bindings: [{ characterName: '阿珍', packIds: ['p'], enabled: true }],
+    }
+    expect(getActiveAddresses(s, '阿珍').map(formatAddress)).toEqual(['鸣人包/居家服/微笑'])
+    expect(resolveSprite([p], '鸣人包/居家服/微笑')?.url).toBe('home')
+  })
+})
+
+describe('冲突检查的原子设置变更契约', () => {
+  const conflictPacks = (): SpritePack[] => [
+    {
+      id: 'a',
+      name: 'A',
+      roleName: '鸣人',
+      sprites: [{ tag: '微笑', url: 'a-smile' }],
+    },
+    {
+      id: 'b',
+      name: 'B',
+      roleName: '鸣人',
+      sprites: [{ tag: '微笑', url: 'b-smile' }],
+    },
+  ]
+
+  it('bindPack 成功返回 ok/settings，冲突返回完整报告且原设置不变', () => {
+    const initial: PluginSettings = { ...createDefaultSettings(), packs: conflictPacks() }
+    const first = bindPack(initial, '阿珍', 'a')
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error('first bind should succeed')
+
+    const beforeBindings = first.settings.bindings
+    const second = bindPack(first.settings, '阿珍', 'b')
+    expect(second.ok).toBe(false)
+    if (second.ok) throw new Error('second bind should conflict')
+    expect(second.conflicts).toEqual([
+      expect.objectContaining({
+        characterName: '阿珍',
+        formattedAddress: '鸣人/微笑',
+        owners: [
+          { packId: 'a', packName: 'A', spriteUrl: 'a-smile' },
+          { packId: 'b', packName: 'B', spriteUrl: 'b-smile' },
+        ],
+      }),
+    ])
+    expect(first.settings.bindings).toBe(beforeBindings)
+    expect(first.settings.bindings[0].packIds).toEqual(['a'])
+  })
+
+  it('setBinding 在最终 multiPack 文脉重算两个包的 fallback', () => {
+    const sameName: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [
+        { id: 'a', name: '同名', sprites: [{ tag: '微笑', url: 'a' }] },
+        { id: 'b', name: '同名', sprites: [{ tag: '微笑', url: 'b' }] },
+      ],
+    }
+    const result = setBinding(sameName, '阿珍', ['a', 'b'])
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.conflicts[0].formattedAddress).toBe('同名/微笑')
+    expect(sameName.bindings).toEqual([])
+  })
+
+  it('toggle 关闭永远成功；脏集合重新开启失败，解绑冲突包后可恢复', () => {
+    const dirty: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: conflictPacks(),
+      bindings: [{ characterName: '阿珍', packIds: ['a', 'b'], enabled: true }],
+    }
+    const off = toggleBinding(dirty, '阿珍', false)
+    expect(off.ok).toBe(true)
+    if (!off.ok) throw new Error('disable should always succeed')
+    expect(off.settings.bindings[0].enabled).toBe(false)
+
+    const blocked = toggleBinding(off.settings, '阿珍', true)
+    expect(blocked.ok).toBe(false)
+    if (!blocked.ok) expect(blocked.conflicts[0].formattedAddress).toBe('鸣人/微笑')
+
+    const repaired = unbindPack(off.settings, '阿珍', 'b')
+    const enabled = toggleBinding(repaired, '阿珍', true)
+    expect(enabled.ok).toBe(true)
+    if (enabled.ok) expect(enabled.settings.bindings[0]).toMatchObject({ packIds: ['a'], enabled: true })
+  })
+
+  it('bindCharacter 使用相同判别联合契约', () => {
+    const settings: PluginSettings = { ...createDefaultSettings(), packs: conflictPacks() }
+    const result = bindCharacter(settings, '阿珍', 'a')
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.settings.bindings[0].packIds).toEqual(['a'])
+  })
+
+  it('upsertPack 拒绝让活动包内容制造冲突，并报告所有受影响角色', () => {
+    const [a, b] = conflictPacks()
+    b.sprites = [{ tag: '生气', url: 'b-angry' }]
+    const settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [a, b],
+      bindings: [
+        { characterName: '阿珍', packIds: ['a', 'b'], enabled: true },
+        { characterName: '阿强', packIds: ['a', 'b'], enabled: true },
+      ],
+    }
+    const changed: SpritePack = { ...b, sprites: [{ tag: '微笑', url: 'b-smile' }] }
+    const result = upsertPack(settings, changed)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.conflicts.map((conflict) => conflict.characterName)).toEqual(['阿珍', '阿强'])
+    }
+    expect(settings.packs[1].sprites[0].tag).toBe('生气')
+  })
+
+  it('upsertPack 允许安装未绑定新包，也允许不产生冲突的活动包更新', () => {
+    const [a, b] = conflictPacks()
+    b.sprites = [{ tag: '生气', url: 'b-angry' }]
+    const settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [a, b],
+      bindings: [{ characterName: '阿珍', packIds: ['a', 'b'], enabled: true }],
+    }
+    const installed = upsertPack(settings, {
+      id: 'c',
+      name: '未绑定',
+      roleName: '鸣人',
+      sprites: [{ tag: '微笑', url: 'c-smile' }],
+    })
+    expect(installed.ok).toBe(true)
+    if (!installed.ok) throw new Error('unbound install should succeed')
+
+    const safe = upsertPack(installed.settings, {
+      ...b,
+      sprites: [{ tag: '生气', url: 'b-angry-v2' }],
+    })
+    expect(safe.ok).toBe(true)
+    if (safe.ok) expect(safe.settings.packs.find((pack) => pack.id === 'b')?.sprites[0].url).toBe('b-angry-v2')
+  })
+
+  it('预览单包追加第二包造成的短地址变化', () => {
+    const settings = settingsWith(['p_naruto'])
+    const result = bindPack(settings, '阿珍', 'p_sasuke')
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('second distinct pack should bind')
+    expect(previewBindingAddressChanges(settings, result.settings, '阿珍')).toEqual({
+      removed: ['微笑', '生气'],
+      added: ['鸣人包/微笑', '鸣人包/生气', '佐助包/微笑', '佐助包/生气'],
+    })
+  })
+})
+
+/* ---------- 阶段7·CRUD 身份按「有效地址」（含包级继承） ---------- */
+
+describe('三级身份按有效地址（含包级 roleName/outfit 继承）', () => {
+  it('显式 group/outfit 与包级默认值相同 → 视为同一张覆盖，不重复，并清冗余字段', () => {
+    const base: SpritePack = {
+      id: 'p1',
+      name: '鸣人',
+      roleName: '鸣人',
+      outfit: '居家服',
+      sprites: [{ tag: '微笑', url: 'v1' }], // 靠包级继承的一张
+    }
+    // Web 上传路径可能显式写入与包级相同的 group/outfit
+    const p = upsertSprite(base, { tag: '微笑', url: 'v2', group: '鸣人', outfit: '居家服' })
+    expect(p.sprites).toHaveLength(1) // 覆盖而非新增（同一有效地址）
+    expect(p.sprites[0].url).toBe('v2')
+    expect(p.sprites[0].group).toBeUndefined() // 冗余字段被规范化清除
+    expect(p.sprites[0].outfit).toBeUndefined()
+    expect(matchAddress(p, '鸣人/居家服/微笑')!.url).toBe('v2')
+  })
+
+  it('删除/改名用有效地址定位：传入与包级相同的显式 group 也能命中', () => {
+    const base: SpritePack = {
+      id: 'p1',
+      name: '鸣人',
+      roleName: '鸣人',
+      sprites: [{ tag: '微笑', url: 'v1' }],
+    }
+    expect(removeSprite(base, '微笑', '鸣人', '').sprites).toHaveLength(0)
+    const renamed = renameSprite(base, '微笑', '浅笑', '鸣人', '')
+    expect(renamed.sprites[0].tag).toBe('浅笑')
+  })
+
+  it('设置为包级继承人名时规范化为未分组，不与自己冲突', () => {
+    const base: SpritePack = {
+      id: 'p1',
+      name: '鸣人包',
+      roleName: '鸣人',
+      sprites: [{ tag: '微笑', url: 'v1' }],
+    }
+    const next = setSpriteGroup(base, '微笑', '', '鸣人')
+    expect(next.sprites[0].group).toBeUndefined()
+    expect(getGroups(next)).toEqual([])
+  })
+
+  it('upsert 清理历史遗留的相同有效地址重复项', () => {
+    const base: SpritePack = {
+      id: 'p1',
+      name: '鸣人包',
+      roleName: '鸣人',
+      sprites: [
+        { tag: '微笑', url: 'old-a' },
+        { tag: '微笑', url: 'old-b', group: '鸣人' },
+      ],
+    }
+    const next = upsertSprite(base, { tag: '微笑', url: 'new', group: '鸣人' })
+    expect(next.sprites).toEqual([{ tag: '微笑', url: 'new' }])
   })
 })

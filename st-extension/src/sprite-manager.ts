@@ -10,16 +10,20 @@
  */
 
 import type { PluginSettings, Sprite, SpritePack } from '../../core/types'
-import { getPackCover, getSpriteSource } from '../../core/types'
+import { formatAddress, getPackCover, getSpriteSource } from '../../core/types'
 import {
+  type BindingConflict,
+  type ConflictCheckedSettingsResult,
   bindPack,
   genId,
   getGroups,
   moveSprite,
+  previewBindingAddressChanges,
   removePack,
   removeSprite,
   renameSprite,
   reorderBinding,
+  setBinding,
   setSpriteGroup,
   spriteGroup,
   toggleBinding,
@@ -27,6 +31,14 @@ import {
   upsertPack,
   upsertSprite,
 } from '../../core/sprite-store'
+import {
+  applyPackMerge,
+  inspectPackImport,
+  PackMergeChoiceError,
+  previewPackMerge,
+  type PackMergeChoice,
+  validatePackMergeChoices,
+} from '../../core/pack-merge'
 import { exportPack, importPack, urlToDataUri } from '../../core/pack-io'
 import { decodeShareString, encodeShareStringV2, isValidImageCode } from '../../core/share-code'
 import {
@@ -161,9 +173,196 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     render()
   }
 
+  function conflictText(conflicts: BindingConflict[]): string {
+    return conflicts
+      .slice(0, 3)
+      .map(
+        (conflict) =>
+          `${conflict.characterName}：${conflict.formattedAddress}（${conflict.owners.map((owner) => owner.packName).join(' / ')}）`,
+      )
+      .join('；')
+  }
+
+  function showConflicts(conflicts: BindingConflict[]): void {
+    const message = `操作未生效，存在地址冲突：${conflictText(conflicts)}`
+    const body = backdrop?.querySelector('.so-manager-body') as HTMLElement | null
+    if (body) toast(body, message)
+    else window.alert(message)
+  }
+
+  function rejectConflicts(conflicts: BindingConflict[]): false {
+    render()
+    showConflicts(conflicts)
+    return false
+  }
+
+  function checkedSettings(result: ConflictCheckedSettingsResult): PluginSettings | null {
+    if (!result.ok) {
+      showConflicts(result.conflicts)
+      return null
+    }
+    return result.settings
+  }
+
+  function updateChecked(result: ConflictCheckedSettingsResult): boolean {
+    const next = checkedSettings(result)
+    if (!next) return false
+    deps.updateSettings(next)
+    return true
+  }
+
+  function commitChecked(result: ConflictCheckedSettingsResult): boolean {
+    if (!result.ok) return rejectConflicts(result.conflicts)
+    commit(result.settings)
+    return true
+  }
+
+  function rejectPackMergeError(error: unknown, body: HTMLElement): null {
+    if (error instanceof PackMergeChoiceError) {
+      toast(body, `合并已取消：选择无效（${error.message}）`)
+      return null
+    }
+    console.error('合并立绘包失败', error)
+    toast(body, '合并失败，请查看控制台日志')
+    return null
+  }
+
+  function mergeWithPrompts(
+    packs: SpritePack[],
+    defaultName: string,
+    body: HTMLElement,
+  ): SpritePack | null {
+    const preview = previewPackMerge(packs)
+    const choices: PackMergeChoice[] = []
+    for (const conflict of preview.conflicts) {
+      const options = conflict.candidates
+        .map((candidate, index) => `${index + 1}. ${candidate.sourcePackName} — ${candidate.sprite.url}`)
+        .join('\n')
+      const raw = window.prompt(
+        `地址「${formatAddress(conflict.address)}」有不同图片，请输入要保留的序号：\n${options}`,
+        '1',
+      )
+      if (raw === null) return null
+      choices.push({ key: conflict.key, candidateIndex: Number(raw) - 1 })
+    }
+    try {
+      validatePackMergeChoices(packs, choices)
+    } catch (error) {
+      return rejectPackMergeError(error, body)
+    }
+    const rawName = window.prompt('合并结果的包名：', defaultName)
+    if (rawName === null) return null
+    const name = sanitizePackName(rawName)
+    if (!name) {
+      toast(body, '合并已取消：包名不能为空')
+      return null
+    }
+    try {
+      return applyPackMerge(packs, choices, { id: genId(), name })
+    } catch (error) {
+      return rejectPackMergeError(error, body)
+    }
+  }
+
+  function installImportedPack(pack: SpritePack, body: HTMLElement): boolean {
+    const settings = deps.getSettings()
+    const related = settings.packs.filter((existing) => {
+      const inspection = inspectPackImport(existing, pack)
+      return inspection.sameName || inspection.conflicts.length > 0
+    })
+    if (related.length === 0) {
+      if (!updateChecked(upsertPack(settings, pack))) return false
+      toast(body, `已导入立绘包「${pack.name}」（${pack.sprites.length} 张）`)
+      return true
+    }
+
+    const answer = window.prompt(
+      `检测到同名或地址重叠：${related.map((item) => item.name).join('、')}\n` +
+        '输入 1 合并为新包，2 重命名后安装，3 仅安装不启用；其他输入取消。',
+      '1',
+    )
+    if (answer === '1') {
+      const merged = mergeWithPrompts([...related, pack], related[0]?.name || pack.name, body)
+      if (!merged || !updateChecked(upsertPack(settings, merged))) return false
+      toast(body, `已生成合并包「${merged.name}」（${merged.sprites.length} 张），源包仍保留`)
+      return true
+    }
+    if (answer === '2') {
+      const rawName = window.prompt('请输入新的包名：', `${pack.name} 新`)
+      if (rawName === null) return false
+      const name = sanitizePackName(rawName)
+      if (!name || settings.packs.some((existing) => existing.name === name)) {
+        toast(body, '未安装：新包名为空或仍与现有包同名')
+        return false
+      }
+      if (!updateChecked(upsertPack(settings, { ...pack, name }))) return false
+      toast(body, `已重命名并安装「${name}」（未启用）`)
+      return true
+    }
+    if (answer === '3') {
+      if (!updateChecked(upsertPack(settings, pack))) return false
+      toast(body, `已安装「${pack.name}」，未加入当前角色`)
+      return true
+    }
+    return false
+  }
+
+  function bindPackWithChoices(characterName: string, packId: string, body: HTMLElement): void {
+    const settings = deps.getSettings()
+    const result = bindPack(settings, characterName, packId)
+    if (result.ok) {
+      const changes = previewBindingAddressChanges(settings, result.settings, characterName)
+      if (
+        changes.removed.length > 0 &&
+        !window.confirm(
+          `启用后以下旧地址将变化：${changes.removed.slice(0, 6).join('、')}\n` +
+            `新地址示例：${changes.added.slice(0, 6).join('、')}\n仍要继续吗？`,
+        )
+      ) return
+      commit(result.settings)
+      return
+    }
+    const answer = window.prompt(
+      `启用会产生地址冲突：${conflictText(result.conflicts)}\n` +
+        '输入 1 替换当前冲突包，2 合并为新包后启用；其他输入取消。',
+      '1',
+    )
+    const sourceIds = new Set(result.conflicts.flatMap((conflict) => conflict.owners.map((owner) => owner.packId)))
+    sourceIds.add(packId)
+    const binding = settings.bindings.find((item) => item.characterName === characterName)
+    const boundIds = binding?.packIds ?? []
+    if (answer === '1') {
+      sourceIds.delete(packId)
+      const nextIds = boundIds.filter((id) => !sourceIds.has(id))
+      if (!nextIds.includes(packId)) nextIds.push(packId)
+      commitChecked(setBinding(settings, characterName, nextIds))
+      return
+    }
+    if (answer === '2') {
+      const sources = settings.packs.filter((candidate) => sourceIds.has(candidate.id))
+      const incoming = settings.packs.find((candidate) => candidate.id === packId)
+      const merged = mergeWithPrompts(sources, incoming ? `${incoming.name} 合并` : '合并立绘包', body)
+      if (!merged) return
+      const installed = upsertPack(settings, merged)
+      if (!installed.ok) {
+        rejectConflicts(installed.conflicts)
+        return
+      }
+      const nextIds = boundIds.filter((id) => !sourceIds.has(id))
+      nextIds.push(merged.id)
+      const rebound = setBinding(installed.settings, characterName, nextIds)
+      if (!rebound.ok) {
+        rejectConflicts(rebound.conflicts)
+        return
+      }
+      commit(rebound.settings)
+      toast(body, `已生成并启用合并包「${merged.name}」；源包仍保留`)
+    }
+  }
+
   /** 修改单个包并提交 */
   function commitPack(pack: SpritePack): void {
-    commit(upsertPack(deps.getSettings(), pack))
+    commitChecked(upsertPack(deps.getSettings(), pack))
   }
 
   function render(): void {
@@ -254,14 +453,16 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         select.append(opt)
       }
       select.addEventListener('change', () => {
-        if (!select.value) return
-        commit(bindPack(deps.getSettings(), characterName, select.value))
+        const packId = select.value
+        if (!packId) return
+        select.value = ''
+        bindPackWithChoices(characterName, packId, body)
       })
       bindRow.append(select)
       if (binding) {
         bindRow.append(
           checkboxRow('全部启用', binding.enabled, (v) =>
-            commit(toggleBinding(deps.getSettings(), characterName, v)),
+            commitChecked(toggleBinding(deps.getSettings(), characterName, v)),
           ),
         )
       }
@@ -295,7 +496,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         return
       }
       const pack: SpritePack = { id: genId(), name, author: '我', sprites: [] }
-      deps.updateSettings(upsertPack(deps.getSettings(), pack))
+      if (!updateChecked(upsertPack(deps.getSettings(), pack))) return
       view = { kind: 'pack', packId: pack.id }
       render()
     })
@@ -311,9 +512,10 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       if (!shareInput.value.trim()) return
       try {
         const pack = decodeShareString(shareInput.value)
-        deps.updateSettings(upsertPack(deps.getSettings(), pack))
+        if (!installImportedPack(pack, body)) return
         shareInput.value = ''
-        view = { kind: 'pack', packId: pack.id }
+        const installed = deps.getSettings().packs.find((item) => item.id === pack.id)
+        if (installed) view = { kind: 'pack', packId: installed.id }
         render()
       } catch (err) {
         toast(body, err instanceof Error ? err.message : '分享串解析失败')
@@ -326,8 +528,9 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         pickFile('.json,application/json', false, async (files) => {
           try {
             const pack = importPack(await files[0].text())
-            deps.updateSettings(upsertPack(deps.getSettings(), pack))
-            view = { kind: 'pack', packId: pack.id }
+            if (!installImportedPack(pack, body)) return
+            const installed = deps.getSettings().packs.find((item) => item.id === pack.id)
+            if (installed) view = { kind: 'pack', packId: installed.id }
             render()
           } catch (err) {
             toast(body, err instanceof Error ? err.message : '导入失败')
@@ -562,7 +765,11 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
             if (!window.confirm(`将新建以下立绘包（原包保留）：\n${preview}\n\n确认拆分？`)) return
             const newPacks = splitPackByGroup(pack)
             let next = deps.getSettings()
-            for (const np of newPacks) next = upsertPack(next, np)
+            for (const np of newPacks) {
+              const updated = checkedSettings(upsertPack(next, np))
+              if (!updated) return
+              next = updated
+            }
             commit(next)
             toast(body, `已拆出 ${newPacks.length} 个新包（原包「${pack.name}」保留）`)
           }),
@@ -907,7 +1114,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
               ...(outfit ? { outfit } : {}),
               sprites: [],
             }
-            deps.updateSettings(upsertPack(deps.getSettings(), np))
+            if (!updateChecked(upsertPack(deps.getSettings(), np))) return
             targetId = np.id
             newPackIds.set(key, targetId)
           }
@@ -920,7 +1127,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         }
         // 自动拆分的包用 roleName/outfit，立绘只存图名；不拆分则可能带 group（此处 role 落到包级）
         const sprite: Sprite = { tag: plan.finalTag, url }
-        deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(target, sprite)))
+        if (!updateChecked(upsertPack(deps.getSettings(), upsertSprite(target, sprite)))) return
         added++
 
         if (useImgbb) {
@@ -931,7 +1138,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
               if (latest) {
                 // 本地 url 作保底 remoteUrl 记远程；显示仍优先本地
                 const hostedSprite: Sprite = { tag: plan.finalTag, url, code: up.code, remoteUrl: up.url }
-                deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(latest, hostedSprite)))
+                if (!updateChecked(upsertPack(deps.getSettings(), upsertSprite(latest, hostedSprite)))) return
                 hosted++
               }
             } else {
@@ -993,12 +1200,14 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           continue
         }
         // 保留本地 url 作保底，补上远程 remoteUrl + code
-        deps.updateSettings(
-          upsertPack(
-            deps.getSettings(),
-            upsertSprite(latest, { ...target, code: up.code, remoteUrl: up.url }),
-          ),
-        )
+        if (
+          !updateChecked(
+            upsertPack(
+              deps.getSettings(),
+              upsertSprite(latest, { ...target, code: up.code, remoteUrl: up.url }),
+            ),
+          )
+        ) return
         ok++
       } catch (err) {
         console.warn('[sprite-overlay] 补传失败', err)

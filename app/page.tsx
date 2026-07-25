@@ -13,9 +13,9 @@ import { buildPrompt } from '@/core/prompt-builder'
 import {
   getActiveAddresses,
   getActivePacks,
-  preloadPack,
   resolveSprites,
 } from '@/core/sprite-store'
+import { preloadMatchedSprites, preloadOnActivate } from '@/core/sprite-preload'
 import { webAdapter } from '@/lib/web-adapter'
 import { ChatSimulator } from '@/components/chat-simulator'
 import { ConfigPanel } from '@/components/config-panel'
@@ -61,13 +61,13 @@ export default function Page() {
   // 聊天模拟器的快捷触发项：用完整三级地址（纯图名场景即图名）
   const chatChoices = useMemo(() => addresses.map(formatAddress), [addresses])
 
-  // 角色/包切换：预加载全部立绘，重置为第一张（单张）
+  // 角色/包切换：有界预加载每包首图，重置为第一张（单张）
   useEffect(() => {
     if (!activePack || activePack.sprites.length === 0) {
       setSprites([])
       return
     }
-    for (const p of activePacks) preloadPack(p)
+    preloadOnActivate(activePacks)
     setSprites([{ url: activePack.sprites[0].url, tag: activePack.sprites[0].tag }])
   }, [activePack, activePacks])
 
@@ -77,6 +77,7 @@ export default function Page() {
       if (!settings?.enabled || activePacks.length === 0) return
       const seq = resolveSprites(activePacks, extractTags(text))
       if (seq.length > 0) {
+        preloadMatchedSprites(seq)
         setSprites(seq.map((s) => ({ url: s.url, tag: s.tag })))
       }
     },
@@ -143,7 +144,6 @@ export default function Page() {
         settings={settings}
         characterName={characterName}
         onSettingsChange={updateSettings}
-        onPreviewSprite={(url, tag) => setSprites([{ url, tag }])}
       />
     </main>
   )

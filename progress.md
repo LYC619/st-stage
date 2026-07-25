@@ -70,5 +70,62 @@
 - **七 · setAppData 解耦**：`phone-registry.ts` 新增 `saveSettingsOnly` 路径 + `createPhoneAppContext`；`st index.ts`/`phone-mount.tsx` 接线，手机壳状态保存也走 saveSettingsOnly；`docs/APP-SPEC.md` 更新为真实行为。
 
 - 范围守则遵守：characterName 绑定不动、multiRole 保留迁移字段、coverTag 分组歧义仅注释说明不改结构。
-- 验证：**176 单测 ✅ lint ✅ typecheck ✅ build:ext ✅（index.js 126kb，产物与源码 SHA 一致）next build ✅**。git diff 无临时文件/调试代码/NUL。产物 index.js 已重建（style.css 无变化），**待用户提交**。
+- 验证：**176 单测 ✅ lint ✅ typecheck ✅ build:ext ✅（index.js 126kb，产物与源码 SHA 一致）next build ✅**。git diff 无临时文件/调试代码/NUL。产物 index.js 已重建（style.css 无变化）。**已提交并推送 `8856cf0` → origin/main**。
 - 未处理（不在本次 7 项范围）：next.config `ignoreBuildErrors:true` 仍在（P2）、`.pnpm-store/` 未 gitignore、coverTag 分组歧义。
+
+## 会话 6 · 2026-07-24（codex 复审 3 项加固）
+
+`8856cf0` 后 codex 复审提出 2 个重要逻辑缺口 + 1 个 UX 回退，本会话全部修复：
+
+- **P1 · CRUD 身份统一为「有效地址」**：`sameIdentity` 原先只比 sprite 自身 group/outfit，而地址解析会继承 `pack.roleName/outfit`；显式写入与包级相同的字段会被当成两张、却映射到同一地址（Web 上传路径可造此数据）。改为 `sameIdentity(pack,s,tag,group,outfit)` 按 `effectiveRole/effectiveOutfitOf`（含包级继承）判定；`upsertSprite` 写入前经 `normalizeIdentityFields` 清除与包级相同的冗余 group/outfit，存储恒为最简有效地址。upsert/remove/rename/setSpriteGroup 全部改传 pack。
+- **P1 · 包名别名稳定唯一 + 单包兼容**：解析新增 `lockByRole`——先按语义人名锁定，无匹配再按裸包名兜底（**单包也认包名**，多包停用回单包后历史 `[立绘:包名/图名]` 仍可解析）。`flatten`/`getActiveAddresses` 共用同一前缀。
+- **P2 · Web 立绘 App 去掉缩略图**：`phone-mount.tsx` 删除 `so-app-sprite-strip` 预览块与 `onPreviewSprite`，立绘 App 只保留状态 + 设置（与 ST 端及既定产品分工一致：立绘负责设置、图库负责图片/图包）；`page.tsx` 同步移除 prop。
+
+## 会话 7 · 2026-07-24（codex 再审：别名设计返工）
+
+会话 6 的别名方案被 codex 判定有确定缺陷（P1×2，另两项已确认修好，本轮只动别名）：
+1) 4 位截断哈希 `shortId` 真实 genId 格式下会碰撞（`pack_mdy0_000000` 与 `pack_mdy0_000001` 都得 `1wke`）；
+2) 后缀只在当前启用集合冲突时才加，同名包停用一个后剩余包别名回退无后缀，历史带后缀地址失效；
+3) 裸包名可能与另一包的 `roleName`/图片 `group` 冲突，`lockByRole` 仍命中第一个。
+
+返工后的稳定唯一方案（`core/sprite-store.ts`）：
+- **规范别名 = `包名@判别码`**：判别码 `packDisc` 取**完整** pack.id（去 `pack_`、只留 tag 安全字符），无截断无哈希 → 不同 id 必不同码，且与启用集合无关（修 ①②）。分隔符 `@` 在包名与 tag/group/roleName 中均被禁止，故地址含 `@` 必为规范别名，可无歧义识别。
+- **prompt 前缀 `buildPromptPrefixes`**：默认裸包名；当裸包名与**其他包**的 roleName / 任意 sprite.group / 另一裸包名冲突时才升级为规范别名，保证生成地址真正唯一（修 ③）。升级只影响显示。
+- **解析 `lockByRole`**：地址含 `@` → 只按 `canonicalAlias` 精确匹配（全局唯一、与启用集合无关；目标包不在启用集则严格 null，绝不误落别包）；不含 `@` → 先语义人名、再裸包名兜底。规范别名恒可复算，故停用/切换后历史带后缀地址永久兼容（修 ②）。
+- 验证：**184 单测 ✅（同名包唯一+各归各 / 完整 id 无碰撞含 codex 复现对 / 规范别名停用后仍解析且不误落 / 别名与启用序无关 / 别名⇄roleName 冲突升级；另 CRUD 有效地址与单包兼容测试保留）lint ✅ typecheck ✅ build:ext ✅（index.js 128.2kb，含 buildPromptPrefixes/packCanonicalAlias/packDisc/ALIAS_SEP）全树+产物零控制字节**。
+
+## 会话 8 · 2026-07-25（Codex 接手：规范 token 与安全旧址解析）
+
+会话 7 的过滤式完整 ID 与按冲突升级前缀仍不能提供严格单射、全量稳定的多包地址。本轮按书面规格重新实现，并以本节为当前最终状态：
+
+- **多包统一规范 token**：每个候选均使用 `<可读名称>@<p|r>=<完整ID编码>`；`p` 表示无语义人名的包名兜底，`r` 表示 `sprite.group` / `pack.roleName`。单包继续输出原有简写。
+- **ID 编码严格单射**：保留 `[0-9A-Za-z_-]`，其他 UTF-16 code unit 编为 `~hhhh`，不删除 `pack_`、不截断、不哈希；空 ID 使用专用值 `~e`。覆盖相邻生成 ID、标点、Unicode、`~`、控制字符与空串边界。
+- **规范解析按 ID 锁包**：`p` 忽略可变的可读包名，因此包改名后历史地址仍有效；`r` 同时精确校验当前语义人名；含 `@` 但格式错误、目标包停用或类型不符时严格返回 `null`。
+- **旧裸地址安全兼容**：语义人名与裸包名共同参与候选过滤，跨包多解返回 `null`，不再静默落到第一个包；同一包内多个分组/服装共享纯图名时仍保留旧的首项行为。
+- **CRUD 有效地址修复保留并补强**：`upsertSprite()` 清理历史重复有效地址，`setSpriteGroup()` 排除源项自身并规范化继承字段；Prompt 最终地址按首次出现顺序去重。
+- 设计与实施记录：`docs/superpowers/specs/2026-07-24-stable-sprite-alias-design.md`、`docs/superpowers/plans/2026-07-24-stable-sprite-alias.md`。
+- 最终复验：**190 单测 ✅ TypeScript ✅ ESLint ✅ build:ext ✅（index.js 129.5kb）Next.js build ✅；新 helper 已进入 bundle，旧 `buildPromptPrefixes/packDisc/shortId/buildPackAliases` 均不存在，源码/测试/产物控制字节为 0，工作树保持未提交供 Claude 复审。**
+
+## 会话 9 · 2026-07-25（大图包 token 成本策略草案）
+
+用户确认不把“切换图包后主动重绘旧楼层”作为核心功能，因此上一节的“始终 canonical”实现不再是最终产品方向。本轮仅形成待审设计，尚未改代码；绑定变化只保证后续新消息和当前悬浮窗，不增加全楼层 fingerprint/重处理链路：
+
+- 上游在导入/合并/绑定时检查有效 `role + outfit + tag` 冲突；允许安装同名包，但阻止会产生歧义的启用集合，并提供替换/合并/取消。
+- 下游恢复短语义地址，异常脏数据仍跨包多解返回 `null`；不再让每张图片携带完整包 ID。
+- `full` 改为按场景分组，`repeat` 改为共有表情 + 场景增量；大系列建议按角色拆包、统一 tag 词表。
+- 大包运行时改为命中式/有界预加载，避免激活时遍历全部图片。
+- 完整草案：`docs/superpowers/specs/2026-07-25-semantic-sprite-address-and-large-pack-design.md`，等待 Claude Code 审查和用户确认后再实施。
+
+## 会话 10 · 2026-07-25（短语义地址与大图包方案实现）
+
+Claude Code 复审 v2 规格后，用户批准按“取消主动换肤、上游约束冲突、下游短地址失败安全”的方向实施。本轮已完成：
+
+- **短语义地址取代 canonical token**：多包 Prompt 恢复 `角色/表情`、`角色/服装/表情`；运行时不再生成或解析 `@p=` / `@r=`。脏数据若跨包多解则严格返回 `null`，冲突地址也不会进入 Prompt。解析先匹配 Prompt 的最终有效 role，仅完全无命中时才回退裸包名兼容别名，避免“某包角色名 = 另一包包名”让合法地址失效。二段地址严格表示空服装，服装图只能由三级地址命中。
+- **核心冲突边界原子化**：新增 `core/address-policy.ts`，以变更后的最终包集合计算有效坐标；`bindPack`、`setBinding`、`bindCharacter`、`toggleBinding`、活动包 `upsertPack` 均返回判别联合，冲突时设置不发生部分修改。Web/ST 只提交 `ok: true` 的 settings。
+- **Prompt 压缩且可逆**：`full` 按场景列出表情，`repeat` 使用“共有表情（适用于全部场景）+ 各场景其余表情”；比较完整字符串的 UTF-16 `length`，同长选择 full。50 角色 × 20 共有表情（1000 组合）已有回归测试。
+- **大包加载有界**：新增 `core/sprite-preload.ts`；激活预加载最多 4 张、命中序列最多 10 张并按 URL 去重，超出部分按需加载。inline 楼层仍由 `recentFloors` 独立限制，不扫描整包。
+- **导入/绑定合并策略**：新增 `core/pack-merge.ts`；同 URL 自动去重，不同 URL 按候选序号选择；同一脏包同址多图也可精确选择。choice 对未知/重复 key、非安全整数、负数、越界和缺失选择均严格拒绝，输入顺序不改变结果；双端在询问结果包名前预检，并区分用户选择错误与内部异常。导入只在同名或真实有效地址冲突时提示，不再把不同包名的普通同 tag 误报为冲突。绑定合并始终包含待启用包，源包保留供其他角色使用。
+- **双端交互一致**：Web/ST 导入支持合并、重命名、仅安装、取消；绑定冲突支持替换、合并、取消；单包追加第二包前预览地址变化。ST 冲突/取消会重置 selector，最终校验失败先重渲染再提示，避免控件与持久化设置不一致。
+- **明确不做**：不因 packs/bindings 变化重处理历史 inline 楼层，不修改消息 fingerprint；切包只影响后续消息和当前悬浮立绘。
+- **最终验证**：**18 个测试文件 / 228 tests passed**；TypeScript `--noEmit`、ESLint、扩展构建、Next 生产构建均通过。`index.js` 已重建为 **149118 bytes（约 145.6kb）**，包含 `findAddressConflicts`、有效 role 优先解析、`inspectPackImport`、严格 choice 校验、有界 preload 与 ST 失败重绘逻辑；运行时 canonical helper/标记搜索为 0。59 个源码/测试/产物文件控制字节为 0，含规划文档的 68 文件复扫也为 0；`git diff --check` 通过（仅 CRLF 提示）。
+- 工作树按用户要求保持**未提交、未推送**，供 Claude Code 继续复审；用户既有 `components/phone-mount.tsx` 修改已保留。

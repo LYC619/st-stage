@@ -12,6 +12,16 @@ import {
   unbindPack,
 } from './sprite-store'
 
+function successfulSettings(
+  result:
+    | { ok: true; settings: PluginSettings }
+    | { ok: false; conflicts: unknown[] },
+): PluginSettings {
+  expect(result.ok).toBe(true)
+  if (!result.ok) throw new Error('expected binding change to succeed')
+  return result.settings
+}
+
 /* ---------- 地址解析 ---------- */
 
 describe('parseAddress / formatAddress', () => {
@@ -80,7 +90,7 @@ describe('resolveSprite — 三级严格寻址', () => {
     expect(resolveSprite(packs, '雏田/微笑')).toBeNull()
   })
 
-  it('纯图名（简写）跨包取首个命中', () => {
+  it('纯图名（简写）跨包只有一个匹配时命中', () => {
     expect(resolveSprite(packs, '冷漠')!.url).toBe('s-cold')
   })
 
@@ -117,21 +127,21 @@ function baseSettings(): PluginSettings {
 describe('多包绑定', () => {
   it('bindPack 追加多个包，getActivePacks 按顺序返回', () => {
     let s = baseSettings()
-    s = bindPack(s, '小队', 'naruto-home')
-    s = bindPack(s, '小队', 'sasuke')
+    s = successfulSettings(bindPack(s, '小队', 'naruto-home'))
+    s = successfulSettings(bindPack(s, '小队', 'sasuke'))
     expect(getActivePacks(s, '小队').map((p) => p.id)).toEqual(['naruto-home', 'sasuke'])
   })
 
   it('bindPack 幂等（重复加不产生重复）', () => {
     let s = baseSettings()
-    s = bindPack(s, '小队', 'naruto-home')
-    s = bindPack(s, '小队', 'naruto-home')
+    s = successfulSettings(bindPack(s, '小队', 'naruto-home'))
+    s = successfulSettings(bindPack(s, '小队', 'naruto-home'))
     expect(s.bindings.find((b) => b.characterName === '小队')!.packIds).toEqual(['naruto-home'])
   })
 
   it('unbindPack 移除单包；移空则整条绑定消失', () => {
     let s = baseSettings()
-    s = setBinding(s, '小队', ['naruto-home', 'sasuke'])
+    s = successfulSettings(setBinding(s, '小队', ['naruto-home', 'sasuke']))
     s = unbindPack(s, '小队', 'naruto-home')
     expect(getActivePacks(s, '小队').map((p) => p.id)).toEqual(['sasuke'])
     s = unbindPack(s, '小队', 'sasuke')
@@ -140,21 +150,21 @@ describe('多包绑定', () => {
 
   it('reorderBinding 调整包顺序', () => {
     let s = baseSettings()
-    s = setBinding(s, '小队', ['naruto-home', 'naruto-ninja', 'sasuke'])
+    s = successfulSettings(setBinding(s, '小队', ['naruto-home', 'naruto-ninja', 'sasuke']))
     s = reorderBinding(s, '小队', 2, 0)
     expect(getActivePacks(s, '小队').map((p) => p.id)).toEqual(['sasuke', 'naruto-home', 'naruto-ninja'])
   })
 
   it('未启用的绑定不返回包', () => {
     let s = baseSettings()
-    s = setBinding(s, '小队', ['sasuke'])
+    s = successfulSettings(setBinding(s, '小队', ['sasuke']))
     s.bindings = s.bindings.map((b) => ({ ...b, enabled: false }))
     expect(getActivePacks(s, '小队')).toEqual([])
   })
 
   it('getActiveAddresses 汇总所有启用包的三级坐标', () => {
     let s = baseSettings()
-    s = setBinding(s, '小队', ['naruto-home', 'sasuke'])
+    s = successfulSettings(setBinding(s, '小队', ['naruto-home', 'sasuke']))
     const addrs = getActiveAddresses(s, '小队').map(formatAddress)
     expect(addrs).toContain('鸣人/居家服/微笑')
     expect(addrs).toContain('佐助/微笑')

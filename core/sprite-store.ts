@@ -4,8 +4,14 @@
  */
 
 import type { PluginSettings, Sprite, SpriteAddress, SpritePack } from './types'
-import { parseAddress, spriteOutfit } from './types'
+import { formatAddress, parseAddress } from './types'
 import { normalizeTag } from './naming'
+import {
+  type AddressConflict,
+  addressConflictKey,
+  effectiveSpriteAddress,
+  findAddressConflicts,
+} from './address-policy'
 
 /** 生成简单唯一 ID */
 export function genId(): string {
@@ -25,20 +31,9 @@ export function getActivePack(settings: PluginSettings, characterName: string): 
   return getActivePacks(settings, characterName)[0] ?? null
 }
 
-/**
- * 三级寻址下某张立绘的人名（含多包兜底）：
- * sprite.group > 包级 roleName > 多包时用包名兜底 > 空串。
- * 单包时无人名维度返回空串（保持 [立绘:图名] 简写）；多包且既无 group 又无 roleName 时，
- * 用包名当人名前缀，避免两个无 roleName 的旧包生成同名 `[立绘:微笑]`。
- * normalizeTag(pack.name) 保证前缀不含 `/` 等地址分隔符；prompt 生成（getActiveAddresses）
- * 与解析（flatten→resolveSprite）共用本函数，杜绝「Prompt 写了包名但解析找不到」。
- */
-function resolveRole(pack: SpritePack, sprite: Sprite, multiPack: boolean): string {
-  const g = (sprite.group ?? '').trim()
-  if (g) return g
-  const rn = (pack.roleName ?? '').trim()
-  if (rn) return rn
-  return multiPack ? normalizeTag(pack.name ?? '') : ''
+/** 包名前缀的可读基名：空名使用「包」占位。 */
+function packBaseAlias(pack: SpritePack): string {
+  return normalizeTag(pack.name ?? '') || '包'
 }
 
 /** 某角色全部启用包的完整地址坐标（用于 prompt 注入） */
@@ -47,12 +42,16 @@ export function getActiveAddresses(
   characterName: string,
 ): SpriteAddress[] {
   const packs = getActivePacks(settings, characterName)
-  const multiPack = packs.length > 1
+  const conflicted = new Set(findAddressConflicts(packs).map((conflict) => conflict.key))
   const out: SpriteAddress[] = []
-  for (const pack of packs) {
-    for (const s of pack.sprites) {
-      out.push({ role: resolveRole(pack, s, multiPack), outfit: spriteOutfit(pack, s), tag: s.tag })
-    }
+  const seen = new Set<string>()
+  for (const c of flatten(packs)) {
+    const address = { role: c.role, outfit: c.outfit, tag: c.sprite.tag }
+    if (conflicted.has(addressConflictKey(address))) continue
+    const key = formatAddress(address)
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(address)
   }
   return out
 }
@@ -74,12 +73,86 @@ function spriteOutfitTag(sprite: Sprite): string {
 }
 
 /**
- * 图片身份判定（六期·三级寻址修复）：group + outfit + tag 三级一致才是同一张。
- * 旧数据缺省的 group/outfit 一律按空串处理，保证 upsert/remove/rename/setGroup 定位一致。
- * 例：鸣人/居家服/微笑 与 鸣人/工作服/微笑 tag+group 相同、outfit 不同，属两张，绝不互相覆盖。
+ * 有效人名/服装（含包级继承）：与地址解析 spriteRole/spriteOutfit 同源。
+ * group/outfit 为空时继承包级 roleName/outfit。CRUD 身份按「有效地址」判定，
+ * 杜绝「显式写 group=鸣人 与包级 roleName=鸣人 被当成两张、却解析到同一地址」。
  */
-function sameIdentity(s: Sprite, tag: string, group: string, outfit: string): boolean {
-  return s.tag === tag && spriteGroup(s) === group && spriteOutfitTag(s) === outfit
+function effectiveRole(pack: SpritePack, group: string): string {
+  return group.trim() || (pack.roleName ?? '').trim()
+}
+function effectiveOutfitOf(pack: SpritePack, outfit: string): string {
+  return outfit.trim() || (pack.outfit ?? '').trim()
+}
+
+/**
+ * 写入规范化：与包级 roleName/outfit 相同的显式 group/outfit 属冗余，清空，
+ * 让存储恒为「有效地址」的最简形式（避免 getGroups 把包级人名列成分组、
+ * 避免同址两张字段不一致而重复）。
+ */
+function normalizeIdentityFields(pack: SpritePack, sprite: Sprite): Sprite {
+  const next = { ...sprite }
+  if ((next.group ?? '').trim() === (pack.roleName ?? '').trim()) delete next.group
+  if ((next.outfit ?? '').trim() === (pack.outfit ?? '').trim()) delete next.outfit
+  return next
+}
+
+/**
+ * 图片身份判定（三级寻址·有效地址版）：tag + 有效人名 + 有效服装 一致才是同一张。
+ * 「有效」先取 sprite 自身字段、空则继承包级，保证 upsert/remove/rename/setGroup
+ * 与解析地址定位一致。例：包 roleName=鸣人 时 {tag:微笑} 与 {group:鸣人,tag:微笑} 属同一张；
+ * 鸣人/居家服/微笑 与 鸣人/工作服/微笑 outfit 不同属两张，绝不互相覆盖。
+ */
+function sameIdentity(
+  pack: SpritePack,
+  s: Sprite,
+  tag: string,
+  group: string,
+  outfit: string,
+): boolean {
+  return (
+    s.tag === tag &&
+    effectiveRole(pack, spriteGroup(s)) === effectiveRole(pack, group) &&
+    effectiveOutfitOf(pack, spriteOutfitTag(s)) === effectiveOutfitOf(pack, outfit)
+  )
+}
+
+/** 有效地址身份键；JSON 数组避免字符串分隔符与内容碰撞。 */
+function identityKey(pack: SpritePack, sprite: Sprite): string {
+  return JSON.stringify([
+    effectiveRole(pack, spriteGroup(sprite)),
+    effectiveOutfitOf(pack, spriteOutfitTag(sprite)),
+    sprite.tag,
+  ])
+}
+
+/** 规范化冗余字段，并按有效地址保留首次出现项。 */
+function dedupeSprites(pack: SpritePack, sprites: Sprite[]): Sprite[] {
+  const seen = new Set<string>()
+  const out: Sprite[] = []
+  for (const raw of sprites) {
+    const sprite = normalizeIdentityFields(pack, raw)
+    const key = identityKey(pack, sprite)
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(sprite)
+  }
+  return out
+}
+
+/** 绑定变更前后 Prompt 地址差异，用于在单包→多包等语义变化前给用户预览。 */
+export function previewBindingAddressChanges(
+  before: PluginSettings,
+  after: PluginSettings,
+  characterName: string,
+): { removed: string[]; added: string[] } {
+  const oldAddresses = getActiveAddresses(before, characterName).map(formatAddress)
+  const newAddresses = getActiveAddresses(after, characterName).map(formatAddress)
+  const oldSet = new Set(oldAddresses)
+  const newSet = new Set(newAddresses)
+  return {
+    removed: oldAddresses.filter((address) => !newSet.has(address)),
+    added: newAddresses.filter((address) => !oldSet.has(address)),
+  }
 }
 
 /** 包内出现过的分组（非空、按首次出现顺序去重），用于 UI 与 prompt 枚举 */
@@ -92,24 +165,29 @@ export function getGroups(pack: SpritePack): string[] {
   return seen
 }
 
-/** 展平的立绘候选：携带所属包及三级坐标，供严格解析用 */
+/** 展平的立绘候选：携带所属包与最终集合中的短语义坐标。 */
 interface Candidate {
   pack: SpritePack
   sprite: Sprite
   role: string
   outfit: string
+  /** 裸包名（旧地址兼容） */
+  baseAlias: string
 }
 
 function flatten(packs: SpritePack[]): Candidate[] {
   const multiPack = packs.length > 1
   const out: Candidate[] = []
   for (const pack of packs) {
+    const base = packBaseAlias(pack)
     for (const sprite of pack.sprites) {
+      const address = effectiveSpriteAddress(pack, sprite, multiPack)
       out.push({
         pack,
         sprite,
-        role: resolveRole(pack, sprite, multiPack),
-        outfit: spriteOutfit(pack, sprite),
+        role: address.role,
+        outfit: address.outfit,
+        baseAlias: base,
       })
     }
   }
@@ -122,33 +200,46 @@ function nameMatches(actual: string, query: string): boolean {
   return actual.length > 0 && (actual.includes(query) || query.includes(actual))
 }
 
-/**
- * 按人名锁定候选（严格·禁止跨角色回退）：
- * 先取精确同名；无精确时用子串匹配，但锁定到「首个匹配到的那个人名」，
- * 不把多个不同人名混在一起（避免 鸣人 误匹配 雷鸣 后又混入其他人）。
- * 请求的人名在候选中完全不存在时返回空数组（调用方据此判定失败，不跨包回退）。
- */
-function lockByName(pool: Candidate[], query: string, of: (c: Candidate) => string): Candidate[] {
+/** 按名称过滤：精确优先；无精确时保留全部模糊候选，交给最终唯一性判断。 */
+function filterByName(pool: Candidate[], query: string, of: (c: Candidate) => string): Candidate[] {
   const exact = pool.filter((c) => of(c) === query)
   if (exact.length > 0) return exact
-  const fuzzy = pool.filter((c) => nameMatches(of(c), query))
-  if (fuzzy.length === 0) return []
-  const locked = of(fuzzy[0])
-  return fuzzy.filter((c) => of(c) === locked)
+  return pool.filter((c) => nameMatches(of(c), query))
 }
 
-/** 在已锁定人名/服装的候选池内按图名匹配（精确→双向子串） */
-function matchTagInPool(pool: Candidate[], tag: string): Sprite | null {
-  const exact = pool.find((c) => c.sprite.tag === tag)
-  if (exact) return exact.sprite
-  const partial = pool.find((c) => c.sprite.tag.includes(tag) || tag.includes(c.sprite.tag))
-  return partial?.sprite ?? null
+/**
+ * 短地址的人名锁定：先匹配最终有效 role；完全无命中时才用裸包名兼容旧地址。
+ * `@`/`=` 属于已废弃实验格式，严格拒绝。
+ */
+function lockByRole(pool: Candidate[], query: string): Candidate[] {
+  if (/[@=]/.test(query)) return []
+  const roleMatches = filterByName(pool, query, (c) => c.role)
+  if (roleMatches.length > 0) return roleMatches
+  return filterByName(pool, query, (c) => c.baseAlias)
+}
+
+/** 在已锁定的人名/服装候选池内匹配图名；多解时安全返回 null。 */
+function matchUniqueTagInPool(pool: Candidate[], tag: string): Sprite | null {
+  const exact = pool.filter((c) => c.sprite.tag === tag)
+  if (exact.length === 1) return exact[0].sprite
+  if (exact.length > 1) {
+    const packIds = new Set(exact.map((c) => c.pack.id))
+    return packIds.size === 1 ? exact[0].sprite : null
+  }
+  const fuzzy = pool.filter((c) => nameMatches(c.sprite.tag, tag))
+  if (fuzzy.length === 1) return fuzzy[0].sprite
+  if (fuzzy.length > 1) {
+    const packIds = new Set(fuzzy.map((c) => c.pack.id))
+    return packIds.size === 1 ? fuzzy[0].sprite : null
+  }
+  return null
 }
 
 /**
  * 多包严格地址解析（六期核心）：地址 → 立绘。
- * - 「图名」：全局按图名匹配（单包简写；多包时取首个命中）
- * - 「人名/图名」：先严格锁人名，锁定后在该人名范围内匹配图名；人名不存在→null
+ * - 「图名」：全局按图名匹配；跨包多解时返回 null，
+ *   同一包内多个分组仍保留旧的首项兼容行为
+ * - 「人名/图名」：先严格锁人名（含包名别名兜底），锁定后在该人名范围内匹配图名；均不存在→null
  * - 「人名/服装/图名」：依次严格锁人名、锁服装，再匹配图名；任一层不存在→null
  * 禁止跨包回退：人名/服装指定后，绝不落到其他角色的同名图名上。
  */
@@ -160,14 +251,18 @@ export function resolveSprite(packs: SpritePack[], address: string): Sprite | nu
 
   let pool = flatten(packs)
   if (role) {
-    pool = lockByName(pool, role, (c) => c.role)
-    if (pool.length === 0) return null // 严格：请求人名不存在，不跨角色回退
+    pool = lockByRole(pool, role)
+    if (pool.length === 0) return null // 严格：请求人名/包名均不存在，不跨角色回退
+    if (!outfit) {
+      pool = pool.filter((c) => c.outfit === '')
+      if (pool.length === 0) return null // 两段 role/tag 明确表示无服装，不落入任一服装变体
+    }
   }
   if (outfit) {
-    pool = lockByName(pool, outfit, (c) => c.outfit)
+    pool = filterByName(pool, outfit, (c) => c.outfit)
     if (pool.length === 0) return null // 严格：请求服装不存在，不跨服装回退
   }
-  return matchTagInPool(pool, tag)
+  return matchUniqueTagInPool(pool, tag)
 }
 
 /**
@@ -206,13 +301,64 @@ export function matchSprites(pack: SpritePack, addresses: string[]): Sprite[] {
   return resolveSprites([pack], addresses)
 }
 
-/** 添加/更新立绘包（同 id 覆盖），返回新 settings */
-export function upsertPack(settings: PluginSettings, pack: SpritePack): PluginSettings {
-  const exists = settings.packs.some((p) => p.id === pack.id)
+export interface BindingConflict extends AddressConflict {
+  characterName: string
+}
+
+export type ConflictCheckedSettingsResult =
+  | { ok: true; settings: PluginSettings }
+  | { ok: false; conflicts: BindingConflict[] }
+
+export type BindingChangeResult = ConflictCheckedSettingsResult
+export type PackChangeResult = ConflictCheckedSettingsResult
+
+function success(settings: PluginSettings): ConflictCheckedSettingsResult {
+  return { ok: true, settings }
+}
+
+function conflictsForBinding(
+  settings: PluginSettings,
+  characterName: string,
+  packIds: string[],
+): BindingConflict[] {
+  const byId = new Map(settings.packs.map((pack) => [pack.id, pack]))
+  const packs = packIds.map((id) => byId.get(id)).filter((pack): pack is SpritePack => pack != null)
+  return findAddressConflicts(packs).map((conflict) => ({ ...conflict, characterName }))
+}
+
+function uniquePackIds(packIds: string[]): string[] {
+  const ids: string[] = []
+  for (const id of packIds) if (id && !ids.includes(id)) ids.push(id)
+  return ids
+}
+
+function withBinding(
+  settings: PluginSettings,
+  characterName: string,
+  packIds: string[],
+  enabled: boolean,
+): PluginSettings {
+  const others = settings.bindings.filter((binding) => binding.characterName !== characterName)
+  if (packIds.length === 0) return { ...settings, bindings: others }
   return {
+    ...settings,
+    bindings: [...others, { characterName, packIds, enabled }],
+  }
+}
+
+/** 添加/更新立绘包（同 id 覆盖）；活动包变更同样必须保持跨包地址唯一。 */
+export function upsertPack(settings: PluginSettings, pack: SpritePack): PackChangeResult {
+  const exists = settings.packs.some((p) => p.id === pack.id)
+  const next: PluginSettings = {
     ...settings,
     packs: exists ? settings.packs.map((p) => (p.id === pack.id ? pack : p)) : [...settings.packs, pack],
   }
+  const conflicts: BindingConflict[] = []
+  for (const binding of next.bindings) {
+    if (!binding.enabled || !binding.packIds.includes(pack.id)) continue
+    conflicts.push(...conflictsForBinding(next, binding.characterName, binding.packIds))
+  }
+  return conflicts.length > 0 ? { ok: false, conflicts } : success(next)
 }
 
 /** 删除立绘包，并从所有绑定中摘除该包（绑定变空时整条移除） */
@@ -232,23 +378,12 @@ export function bindPack(
   settings: PluginSettings,
   characterName: string,
   packId: string,
-): PluginSettings {
+): BindingChangeResult {
   const existing = settings.bindings.find((b) => b.characterName === characterName)
-  if (existing) {
-    if (existing.packIds.includes(packId)) {
-      return { ...settings, bindings: settings.bindings.map((b) => (b === existing ? { ...b, enabled: true } : b)) }
-    }
-    return {
-      ...settings,
-      bindings: settings.bindings.map((b) =>
-        b === existing ? { ...b, packIds: [...b.packIds, packId], enabled: true } : b,
-      ),
-    }
-  }
-  return {
-    ...settings,
-    bindings: [...settings.bindings, { characterName, packIds: [packId], enabled: true }],
-  }
+  const ids = uniquePackIds([...(existing?.packIds ?? []), packId])
+  const conflicts = conflictsForBinding(settings, characterName, ids)
+  if (conflicts.length > 0) return { ok: false, conflicts }
+  return success(withBinding(settings, characterName, ids, true))
 }
 
 /** 从角色的启用包集合中移除一个包（绑定变空时整条移除） */
@@ -272,16 +407,12 @@ export function setBinding(
   settings: PluginSettings,
   characterName: string,
   packIds: string[],
-): PluginSettings {
-  const ids: string[] = []
-  for (const id of packIds) if (id && !ids.includes(id)) ids.push(id)
-  const others = settings.bindings.filter((b) => b.characterName !== characterName)
-  if (ids.length === 0) return { ...settings, bindings: others }
+): BindingChangeResult {
+  const ids = uniquePackIds(packIds)
+  const conflicts = conflictsForBinding(settings, characterName, ids)
+  if (conflicts.length > 0) return { ok: false, conflicts }
   const prev = settings.bindings.find((b) => b.characterName === characterName)
-  return {
-    ...settings,
-    bindings: [...others, { characterName, packIds: ids, enabled: prev?.enabled ?? true }],
-  }
+  return success(withBinding(settings, characterName, ids, prev?.enabled ?? true))
 }
 
 /** 调整角色启用包的顺序（把 packId 从 fromIndex 移到 toIndex） */
@@ -309,8 +440,10 @@ export function bindCharacter(
   settings: PluginSettings,
   characterName: string,
   packId: string,
-): PluginSettings {
-  return setBinding(settings, characterName, [packId])
+): BindingChangeResult {
+  const conflicts = conflictsForBinding(settings, characterName, [packId])
+  if (conflicts.length > 0) return { ok: false, conflicts }
+  return success(withBinding(settings, characterName, [packId], true))
 }
 
 /* ---------- 单张立绘操作（M2 图库管理） ---------- */
@@ -320,23 +453,32 @@ function touchPack(pack: SpritePack, sprites: Sprite[]): SpritePack {
   return { ...pack, sprites, updatedAt: new Date().toISOString() }
 }
 
-/** 在包内新增或替换立绘（同 group+outfit+tag 覆盖 url/code/remoteUrl） */
+/** 在包内新增或替换立绘（同「有效地址」group+outfit+tag 覆盖 url/code/remoteUrl） */
 export function upsertSprite(pack: SpritePack, sprite: Sprite): SpritePack {
-  const g = spriteGroup(sprite)
-  const o = spriteOutfitTag(sprite)
-  const idx = pack.sprites.findIndex((s) => sameIdentity(s, sprite.tag, g, o))
-  const sprites =
-    idx >= 0
-      ? pack.sprites.map((s, i) => (i === idx ? sprite : s))
-      : [...pack.sprites, sprite]
-  return touchPack(pack, sprites)
+  const stored = normalizeIdentityFields(pack, sprite)
+  const g = spriteGroup(stored)
+  const o = spriteOutfitTag(stored)
+  const sprites: Sprite[] = []
+  let replaced = false
+  for (const current of pack.sprites) {
+    if (sameIdentity(pack, current, stored.tag, g, o)) {
+      if (!replaced) {
+        sprites.push(stored)
+        replaced = true
+      }
+      continue
+    }
+    sprites.push(current)
+  }
+  if (!replaced) sprites.push(stored)
+  return touchPack(pack, dedupeSprites(pack, sprites))
 }
 
-/** 删除包内一张立绘（按 group+outfit+tag 定位）；若该 tag 已无任何立绘且是封面则清掉 coverTag */
+/** 删除包内一张立绘（按有效地址 group+outfit+tag 定位）；若该 tag 已无任何立绘且是封面则清掉 coverTag */
 export function removeSprite(pack: SpritePack, tag: string, group = '', outfit = ''): SpritePack {
   const next = touchPack(
     pack,
-    pack.sprites.filter((s) => !sameIdentity(s, tag, group, outfit)),
+    pack.sprites.filter((s) => !sameIdentity(pack, s, tag, group, outfit)),
   )
   if (next.coverTag === tag && !next.sprites.some((s) => s.tag === tag)) delete next.coverTag
   return next
@@ -356,11 +498,11 @@ export function renameSprite(
   const newTag = normalizeTag(newTagRaw)
   if (!newTag) throw new Error('表情名不能为空，且不能包含 [ ] / : | = @ 等符号')
   if (newTag === oldTag) return pack
-  if (pack.sprites.some((s) => sameIdentity(s, newTag, group, outfit))) {
+  if (pack.sprites.some((s) => sameIdentity(pack, s, newTag, group, outfit))) {
     throw new Error(`表情名「${newTag}」在该分组中已存在`)
   }
   const sprites = pack.sprites.map((s) =>
-    sameIdentity(s, oldTag, group, outfit) ? { ...s, tag: newTag } : s,
+    sameIdentity(pack, s, oldTag, group, outfit) ? { ...s, tag: newTag } : s,
   )
   const next = touchPack(pack, sprites)
   if (next.coverTag === oldTag) next.coverTag = newTag
@@ -379,18 +521,24 @@ export function setSpriteGroup(
   outfit = '',
 ): SpritePack {
   const toGroup = normalizeTag(toGroupRaw)
-  if (toGroup === fromGroup) return pack
-  if (pack.sprites.some((s) => sameIdentity(s, tag, toGroup, outfit))) {
+  const sources = new Set(
+    pack.sprites.filter((s) => sameIdentity(pack, s, tag, fromGroup, outfit)),
+  )
+  if (
+    pack.sprites.some(
+      (s) => !sources.has(s) && sameIdentity(pack, s, tag, toGroup, outfit),
+    )
+  ) {
     throw new Error(`分组「${toGroup || '未分组'}」中已存在表情「${tag}」`)
   }
   const sprites = pack.sprites.map((s) => {
-    if (!sameIdentity(s, tag, fromGroup, outfit)) return s
+    if (!sources.has(s)) return s
     const next = { ...s }
     if (toGroup) next.group = toGroup
     else delete next.group
-    return next
+    return normalizeIdentityFields(pack, next)
   })
-  return touchPack(pack, sprites)
+  return touchPack(pack, dedupeSprites(pack, sprites))
 }
 
 /** 移动立绘顺序（fromIndex → toIndex，越界时原样返回） */
@@ -406,21 +554,20 @@ export function moveSprite(pack: SpritePack, fromIndex: number, toIndex: number)
 }
 
 /** 切换角色绑定的启用状态 */
-export function toggleBinding(settings: PluginSettings, characterName: string, enabled: boolean): PluginSettings {
-  return {
+export function toggleBinding(
+  settings: PluginSettings,
+  characterName: string,
+  enabled: boolean,
+): BindingChangeResult {
+  const binding = settings.bindings.find((item) => item.characterName === characterName)
+  if (enabled && binding) {
+    const conflicts = conflictsForBinding(settings, characterName, binding.packIds)
+    if (conflicts.length > 0) return { ok: false, conflicts }
+  }
+  return success({
     ...settings,
     bindings: settings.bindings.map((b) =>
       b.characterName === characterName ? { ...b, enabled } : b,
     ),
-  }
-}
-
-/** 预加载一个立绘包的全部图片（浏览器环境） */
-export function preloadPack(pack: SpritePack): void {
-  if (typeof window === 'undefined' || typeof Image === 'undefined') return
-  for (const sprite of pack.sprites) {
-    const img = new Image()
-    img.crossOrigin = 'anonymous'
-    img.src = sprite.url
-  }
+  })
 }

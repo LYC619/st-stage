@@ -3,8 +3,9 @@
 /**
  * Web 端手机壳挂载：把平台无关的 createPhoneShell（原生 DOM）挂进 Next 页面，
  * 与 ST 端共用同一套壳与样式，验证手机框架全链路。
- * 内置 App 分工与 ST 端一致：立绘 = 立绘设置 + 预览；图库 = 图包/图床概览（管理在右侧配置面板）。
- * 不再保留旧的独立「设置」App。
+ * 内置 App 分工与 ST 端一致：立绘 App 只负责状态 + 设置（不展示图片）；
+ * 图库 App 负责图包/图床概览（图片与图包管理在右侧配置面板）。
+ * 不再保留旧的独立「设置」App，也不在立绘 App 内做缩略图预览。
  */
 
 import { useEffect, useRef } from 'react'
@@ -23,15 +24,13 @@ interface PhoneMountProps {
   settings: PluginSettings
   characterName: string
   onSettingsChange: (next: PluginSettings) => void
-  /** 立绘 App 点缩略图时预览表情 */
-  onPreviewSprite: (url: string, tag: string) => void
 }
 
-export function PhoneMount({ settings, characterName, onSettingsChange, onPreviewSprite }: PhoneMountProps) {
+export function PhoneMount({ settings, characterName, onSettingsChange }: PhoneMountProps) {
   const shellRef = useRef<PhoneShellController | null>(null)
   // React 状态进 ref，让原生 DOM 回调永远读到最新值
-  const latest = useRef({ settings, characterName, onSettingsChange, onPreviewSprite })
-  latest.current = { settings, characterName, onSettingsChange, onPreviewSprite }
+  const latest = useRef({ settings, characterName, onSettingsChange })
+  latest.current = { settings, characterName, onSettingsChange }
 
   useEffect(() => {
     const registry = new PhoneAppRegistry()
@@ -83,17 +82,16 @@ function createWebApps(
     settings: PluginSettings
     characterName: string
     onSettingsChange: (next: PluginSettings) => void
-    onPreviewSprite: (url: string, tag: string) => void
   },
 ): PhoneApp[] {
-  // 立绘 App：当前角色多包概览 + 预览 + 立绘设置（与 ST 端「立绘」App 对齐）
+  // 立绘 App：当前角色多包状态 + 立绘设置（与 ST 端「立绘」App 对齐，不展示图片缩略图）
   const spritesApp: PhoneApp = {
     id: 'sprites',
     name: '立绘',
     icon: '🎭',
     order: 1,
     mount(container, ctx) {
-      const { characterName, onPreviewSprite } = getLatest()
+      const { characterName } = getLatest()
       const settings = ctx.getSettings()
       const packs = getActivePacks(settings, characterName)
       const total = packs.reduce((n, p) => n + p.sprites.length, 0)
@@ -110,24 +108,6 @@ function createWebApps(
         ),
       )
       container.append(info)
-
-      // 预览：跨全部启用包（点击回传预览）
-      if (total > 0) {
-        const strip = document.createElement('div')
-        strip.className = 'so-app-sprite-strip'
-        for (const pack of packs) {
-          for (const sprite of pack.sprites) {
-            const img = document.createElement('img')
-            img.src = sprite.url
-            img.alt = sprite.tag
-            img.title = `点击预览「${sprite.tag}」`
-            img.loading = 'lazy'
-            img.addEventListener('click', () => onPreviewSprite(sprite.url, sprite.tag))
-            strip.append(img)
-          }
-        }
-        container.append(strip, desc('点缩略图可直接预览表情。'))
-      }
 
       // 立绘设置
       const settingsSec = section()

@@ -3,13 +3,12 @@
  *
  * 七期：
  * - 全量（full）：列出所有实际存在的完整地址
- * - 智能精简（repeat/smart）：多个「场景（人名/服装）」共有的图名合并列出，
- *   其余不共有的放「其他图片」并写完整地址（不生成不存在的组合）
+ * - 智能精简（repeat）：多个「场景（人名/服装）」共有的表情只列一次，
+ *   各场景其余表情按行增量列出（不生成不存在的组合）
  * - 每次回复立绘数量 N：要求 AI 按情节顺序输出 N 个 [立绘:...] 标签
  */
 
 import type { SpriteAddress } from './types'
-import { formatAddress } from './types'
 
 /** 收尾说明：N=1 保持旧的单标签语义；N>1 要求按情节顺序输出多个 */
 function countInstruction(count: number): string {
@@ -34,70 +33,103 @@ function sceneLabel(a: SpriteAddress): string {
   return '默认'
 }
 
-/** 全量：逐条列出全部完整地址 */
-function buildFull(addresses: SpriteAddress[], count: number): string {
-  const list = addresses.map(formatAddress)
+interface PromptScene {
+  key: string
+  label: string
+  prefix: string
+  tags: string[]
+}
+
+function scenePrefix(a: SpriteAddress): string {
+  if (a.role && a.outfit) return `${a.role}/${a.outfit}`
+  if (a.role) return a.role
+  return ''
+}
+
+/** 地址列表 → 有序场景；场景内 tag 去重并保持首次出现顺序。 */
+function buildScenes(addresses: SpriteAddress[]): PromptScene[] {
+  const scenes = new Map<string, PromptScene & { seen: Set<string> }>()
+  for (const address of addresses) {
+    const key = sceneKey(address)
+    let scene = scenes.get(key)
+    if (!scene) {
+      scene = {
+        key,
+        label: sceneLabel(address),
+        prefix: scenePrefix(address),
+        tags: [],
+        seen: new Set(),
+      }
+      scenes.set(key, scene)
+    }
+    if (!scene.seen.has(address.tag)) {
+      scene.seen.add(address.tag)
+      scene.tags.push(address.tag)
+    }
+  }
+  return [...scenes.values()].map(({ seen: _seen, ...scene }) => scene)
+}
+
+/** full：每个 role/outfit 场景只写一次，仍完整覆盖所有实际组合。 */
+function buildGroupedFull(addresses: SpriteAddress[], count: number): string {
+  const scenes = buildScenes(addresses)
   return [
     '[角色立绘系统]',
-    `可用立绘：${list.join('、')}`,
+    '可用立绘（按场景）：',
+    ...scenes.map((scene) => `- ${scene.label}：${scene.tags.join('、')}`),
+    '输出格式：默认场景直接写 [立绘:表情]；其他场景写 [立绘:场景/表情]。两段地址表示无服装，三级地址表示指定服装。',
     countInstruction(count),
-    `只能使用上述列表中存在的名称（例如 [立绘:${list[0]}]）。`,
+    '只能使用上述场景中实际列出的表情，不要自行拼造不存在的角色/服装/表情组合。',
   ].join('\n')
 }
 
 /**
- * 智能精简：按场景（人名/服装）分组，抽出所有场景共有的图名合并列出，
- * 其余图名按完整地址列在「其他图片」。只有一个场景时退化为纯图名清单。
+ * repeat：按场景分组，抽出所有场景共有的表情，剩余项仍按所在场景列出。
+ * 两部分合起来可以还原完整的场景 × tag 关系，不生成笛卡尔积之外的组合。
  */
-function buildSmart(addresses: SpriteAddress[], count: number): string {
-  // 场景 → 该场景的图名集合
-  const scenes = new Map<string, { label: string; tags: Set<string> }>()
-  for (const a of addresses) {
-    const key = sceneKey(a)
-    let scene = scenes.get(key)
-    if (!scene) {
-      scene = { label: sceneLabel(a), tags: new Set() }
-      scenes.set(key, scene)
-    }
-    scene.tags.add(a.tag)
-  }
-  const sceneList = [...scenes.values()]
+function buildShared(addresses: SpriteAddress[], count: number): string {
+  const scenes = buildScenes(addresses)
+  if (scenes.length <= 1) return buildGroupedFull(addresses, count)
 
-  // 所有场景共有的图名（在每个场景里都出现）
-  const allTags = new Set<string>()
-  for (const a of addresses) allTags.add(a.tag)
-  const sharedTags = [...allTags].filter((tag) => sceneList.every((s) => s.tags.has(tag)))
+  const allTags: string[] = []
+  const seenTags = new Set<string>()
+  for (const scene of scenes) {
+    for (const tag of scene.tags) {
+      if (seenTags.has(tag)) continue
+      seenTags.add(tag)
+      allTags.push(tag)
+    }
+  }
+  const sharedTags = allTags.filter((tag) => scenes.every((scene) => scene.tags.includes(tag)))
+  if (sharedTags.length === 0) return buildGroupedFull(addresses, count)
   const sharedSet = new Set(sharedTags)
+  const remainders = scenes.map((scene) => ({
+    scene,
+    tags: scene.tags.filter((tag) => !sharedSet.has(tag)),
+  }))
 
-  // 未共有的：按完整地址列出（去重，保持出现顺序）
-  const others: string[] = []
-  const seen = new Set<string>()
-  for (const a of addresses) {
-    if (sharedSet.has(a.tag)) continue
-    const addr = formatAddress(a)
-    if (!seen.has(addr)) {
-      seen.add(addr)
-      others.push(addr)
-    }
+  const labels = scenes.map((scene) =>
+    scene.prefix ? scene.label : `${scene.label}（直接写表情）`,
+  )
+  const lines = [
+    '[角色立绘系统]',
+    `可用场景：${labels.join('、')}`,
+    `共有表情（适用于全部场景）：${sharedTags.join('、')}`,
+  ]
+  const withRemainder = remainders.filter((item) => item.tags.length > 0)
+  if (withRemainder.length > 0) {
+    lines.push('各场景其余表情：')
+    lines.push(...withRemainder.map(({ scene, tags }) => `- ${scene.label}：${tags.join('、')}`))
   }
-
-  // 单场景（或无人名/服装维度）：等价全量的纯清单
-  if (sceneList.length <= 1) {
-    return buildFull(addresses, count)
-  }
-
-  const lines = ['[角色立绘系统]']
-  lines.push(`可用角色/服装：${sceneList.map((s) => s.label).join('、')}`)
-  if (sharedTags.length > 0) {
-    lines.push(`各角色共有表情：${sharedTags.join('、')}`)
-    lines.push('共有表情请写成 [立绘:角色/表情] 或 [立绘:角色/服装/表情]（表情取自共有表情清单）。')
-  }
-  if (others.length > 0) {
-    lines.push(`其他图片（请照抄完整地址）：${others.join('、')}`)
-  }
+  lines.push('共有表情可与任一已列场景组合；各场景其余表情只按所在行使用。默认场景直接写 [立绘:表情]，其他场景写 [立绘:场景/表情]。')
   lines.push(countInstruction(count))
   lines.push('只能使用实际存在的组合，不要自行拼造不存在的角色/服装/表情。')
   return lines.join('\n')
+}
+
+/** UTF-16 string.length 确定性比较；平局选更直观的分组精确格式。 */
+export function chooseShorterPrompt(grouped: string, shared: string): string {
+  return shared.length < grouped.length ? shared : grouped
 }
 
 /**
@@ -111,7 +143,9 @@ export function buildPrompt(
 ): string {
   if (addresses.length === 0) return ''
   const n = Math.max(1, Math.round(count) || 1)
-  return mode === 'repeat' ? buildSmart(addresses, n) : buildFull(addresses, n)
+  const grouped = buildGroupedFull(addresses, n)
+  if (mode === 'full') return grouped
+  return chooseShorterPrompt(grouped, buildShared(addresses, n))
 }
 
 /* ---------- 向后兼容旧签名（Web 模拟器仍在用；阶段6统一迁移） ---------- */

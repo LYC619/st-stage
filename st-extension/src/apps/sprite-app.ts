@@ -122,7 +122,7 @@ export function spriteApp(): PhoneApp {
           settings.multiRolePromptMode,
           [
             { value: 'full', label: '全量（枚举全部地址）' },
-            { value: 'repeat', label: '智能精简（共有图名合并）' },
+            { value: 'repeat', label: '智能精简（共有表情 + 场景其余）' },
           ],
           (v) =>
             ctx.updateSettings({

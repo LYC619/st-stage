@@ -11,9 +11,9 @@ import { buildPrompt } from '../../core/prompt-builder'
 import {
   getActiveAddresses,
   getActivePacks,
-  preloadPack,
   resolveSprites,
 } from '../../core/sprite-store'
+import { preloadMatchedSprites, preloadOnActivate } from '../../core/sprite-preload'
 import { PhoneAppRegistry, createPhoneAppContext, type PhoneAppContext } from '../../core/phone-registry'
 import { createPhoneShell } from '../../core/phone-shell'
 import { STAdapter } from './st-adapter'
@@ -171,7 +171,7 @@ async function init(): Promise<void> {
     if (contentKey !== lastOverlayContentKey) {
       lastOverlayContentKey = contentKey
       if (pack && pack.sprites.length > 0) {
-        for (const p of packs) preloadPack(p)
+        preloadOnActivate(packs)
         overlay.setImage(pack.sprites[0].url, pack.sprites[0].tag)
       } else if (characterName) {
         // 未绑定：显示占位提示，保留 ⚙ 管理入口
@@ -191,6 +191,7 @@ async function init(): Promise<void> {
     const packs = getActivePacks(settings, characterName)
     if (packs.length === 0) return
     const seq = resolveSprites(packs, extractTags(text))
+    preloadMatchedSprites(seq)
     // 仅楼层模式/手动关闭时不弹悬浮窗（楼层立绘由消息后处理负责）
     if (seq.length > 0 && overlayAllowed()) {
       overlay.setSprites(seq)

@@ -27,6 +27,107 @@
     return new RegExp(TAG_REGEX.source).test(text);
   }
 
+  // core/prompt-builder.ts
+  function countInstruction(count) {
+    if (count <= 1) {
+      return "请在每次回复的末尾，选择一个最贴合当前情境与角色情绪的立绘，以 [立绘:名称] 的格式单独标注。";
+    }
+    return `请根据回复内容，按情节顺序选择 ${count} 张立绘，并依次输出 ${count} 个 [立绘:...] 标签（每个单独一行）。`;
+  }
+  function sceneKey(a) {
+    return `${a.role}|${a.outfit}`;
+  }
+  function sceneLabel(a) {
+    if (a.role && a.outfit) return `${a.role}/${a.outfit}`;
+    if (a.role) return a.role;
+    return "默认";
+  }
+  function scenePrefix(a) {
+    if (a.role && a.outfit) return `${a.role}/${a.outfit}`;
+    if (a.role) return a.role;
+    return "";
+  }
+  function buildScenes(addresses) {
+    const scenes = /* @__PURE__ */ new Map();
+    for (const address of addresses) {
+      const key = sceneKey(address);
+      let scene = scenes.get(key);
+      if (!scene) {
+        scene = {
+          key,
+          label: sceneLabel(address),
+          prefix: scenePrefix(address),
+          tags: [],
+          seen: /* @__PURE__ */ new Set()
+        };
+        scenes.set(key, scene);
+      }
+      if (!scene.seen.has(address.tag)) {
+        scene.seen.add(address.tag);
+        scene.tags.push(address.tag);
+      }
+    }
+    return [...scenes.values()].map(({ seen: _seen, ...scene }) => scene);
+  }
+  function buildGroupedFull(addresses, count) {
+    const scenes = buildScenes(addresses);
+    return [
+      "[角色立绘系统]",
+      "可用立绘（按场景）：",
+      ...scenes.map((scene) => `- ${scene.label}：${scene.tags.join("、")}`),
+      "输出格式：默认场景直接写 [立绘:表情]；其他场景写 [立绘:场景/表情]。两段地址表示无服装，三级地址表示指定服装。",
+      countInstruction(count),
+      "只能使用上述场景中实际列出的表情，不要自行拼造不存在的角色/服装/表情组合。"
+    ].join("\n");
+  }
+  function buildShared(addresses, count) {
+    const scenes = buildScenes(addresses);
+    if (scenes.length <= 1) return buildGroupedFull(addresses, count);
+    const allTags = [];
+    const seenTags = /* @__PURE__ */ new Set();
+    for (const scene of scenes) {
+      for (const tag of scene.tags) {
+        if (seenTags.has(tag)) continue;
+        seenTags.add(tag);
+        allTags.push(tag);
+      }
+    }
+    const sharedTags = allTags.filter((tag) => scenes.every((scene) => scene.tags.includes(tag)));
+    if (sharedTags.length === 0) return buildGroupedFull(addresses, count);
+    const sharedSet = new Set(sharedTags);
+    const remainders = scenes.map((scene) => ({
+      scene,
+      tags: scene.tags.filter((tag) => !sharedSet.has(tag))
+    }));
+    const labels = scenes.map(
+      (scene) => scene.prefix ? scene.label : `${scene.label}（直接写表情）`
+    );
+    const lines = [
+      "[角色立绘系统]",
+      `可用场景：${labels.join("、")}`,
+      `共有表情（适用于全部场景）：${sharedTags.join("、")}`
+    ];
+    const withRemainder = remainders.filter((item) => item.tags.length > 0);
+    if (withRemainder.length > 0) {
+      lines.push("各场景其余表情：");
+      lines.push(...withRemainder.map(({ scene, tags }) => `- ${scene.label}：${tags.join("、")}`));
+    }
+    lines.push("共有表情可与任一已列场景组合；各场景其余表情只按所在行使用。默认场景直接写 [立绘:表情]，其他场景写 [立绘:场景/表情]。");
+    lines.push(countInstruction(count));
+    lines.push("只能使用实际存在的组合，不要自行拼造不存在的角色/服装/表情。");
+    return lines.join("\n");
+  }
+  function chooseShorterPrompt(grouped, shared) {
+    return shared.length < grouped.length ? shared : grouped;
+  }
+  function buildPrompt(addresses, mode, count) {
+    if (addresses.length === 0) return "";
+    const n = Math.max(1, Math.round(count) || 1);
+    const grouped = buildGroupedFull(addresses, n);
+    if (mode === "full") return grouped;
+    return chooseShorterPrompt(grouped, buildShared(addresses, n));
+  }
+
   // core/types.ts
   var SETTINGS_VERSION = 3;
   var RECENT_FLOORS_DEFAULT = 6;
@@ -96,78 +197,6 @@
     };
   }
 
-  // core/prompt-builder.ts
-  function countInstruction(count) {
-    if (count <= 1) {
-      return "请在每次回复的末尾，选择一个最贴合当前情境与角色情绪的立绘，以 [立绘:名称] 的格式单独标注。";
-    }
-    return `请根据回复内容，按情节顺序选择 ${count} 张立绘，并依次输出 ${count} 个 [立绘:...] 标签（每个单独一行）。`;
-  }
-  function sceneKey(a) {
-    return `${a.role}|${a.outfit}`;
-  }
-  function sceneLabel(a) {
-    if (a.role && a.outfit) return `${a.role}/${a.outfit}`;
-    if (a.role) return a.role;
-    return "默认";
-  }
-  function buildFull(addresses, count) {
-    const list = addresses.map(formatAddress);
-    return [
-      "[角色立绘系统]",
-      `可用立绘：${list.join("、")}`,
-      countInstruction(count),
-      `只能使用上述列表中存在的名称（例如 [立绘:${list[0]}]）。`
-    ].join("\n");
-  }
-  function buildSmart(addresses, count) {
-    const scenes = /* @__PURE__ */ new Map();
-    for (const a of addresses) {
-      const key = sceneKey(a);
-      let scene = scenes.get(key);
-      if (!scene) {
-        scene = { label: sceneLabel(a), tags: /* @__PURE__ */ new Set() };
-        scenes.set(key, scene);
-      }
-      scene.tags.add(a.tag);
-    }
-    const sceneList = [...scenes.values()];
-    const allTags = /* @__PURE__ */ new Set();
-    for (const a of addresses) allTags.add(a.tag);
-    const sharedTags = [...allTags].filter((tag) => sceneList.every((s) => s.tags.has(tag)));
-    const sharedSet = new Set(sharedTags);
-    const others = [];
-    const seen = /* @__PURE__ */ new Set();
-    for (const a of addresses) {
-      if (sharedSet.has(a.tag)) continue;
-      const addr = formatAddress(a);
-      if (!seen.has(addr)) {
-        seen.add(addr);
-        others.push(addr);
-      }
-    }
-    if (sceneList.length <= 1) {
-      return buildFull(addresses, count);
-    }
-    const lines = ["[角色立绘系统]"];
-    lines.push(`可用角色/服装：${sceneList.map((s) => s.label).join("、")}`);
-    if (sharedTags.length > 0) {
-      lines.push(`各角色共有表情：${sharedTags.join("、")}`);
-      lines.push("共有表情请写成 [立绘:角色/表情] 或 [立绘:角色/服装/表情]（表情取自共有表情清单）。");
-    }
-    if (others.length > 0) {
-      lines.push(`其他图片（请照抄完整地址）：${others.join("、")}`);
-    }
-    lines.push(countInstruction(count));
-    lines.push("只能使用实际存在的组合，不要自行拼造不存在的角色/服装/表情。");
-    return lines.join("\n");
-  }
-  function buildPrompt(addresses, mode, count) {
-    if (addresses.length === 0) return "";
-    const n = Math.max(1, Math.round(count) || 1);
-    return mode === "repeat" ? buildSmart(addresses, n) : buildFull(addresses, n);
-  }
-
   // core/naming.ts
   var TAG_MAX_LENGTH = 20;
   var PACK_NAME_MAX_LENGTH = 30;
@@ -228,6 +257,50 @@
     return raw.replace(CONTROL_CHARS, "").replace(PATH_SEGMENT_ALLOWED, "").replace(/\.{2,}/g, ".").replace(/^[. ]+|[. ]+$/g, "").slice(0, 40).trim();
   }
 
+  // core/address-policy.ts
+  function addressConflictKey(address) {
+    return JSON.stringify([address.role, address.outfit, address.tag]);
+  }
+  function effectiveSpriteAddress(pack, sprite, multiPack) {
+    const outfit = spriteOutfit(pack, sprite);
+    const semanticRole = (sprite.group ?? "").trim() || (pack.roleName ?? "").trim();
+    const role = semanticRole || (multiPack || outfit ? normalizeTag(pack.name) : "");
+    return { role, outfit, tag: sprite.tag };
+  }
+  function findAddressConflicts(packs) {
+    const multiPack = packs.length > 1;
+    const grouped = /* @__PURE__ */ new Map();
+    for (const pack of packs) {
+      for (const sprite of pack.sprites) {
+        const address = effectiveSpriteAddress(pack, sprite, multiPack);
+        const key = addressConflictKey(address);
+        let entry = grouped.get(key);
+        if (!entry) {
+          entry = { address, owners: /* @__PURE__ */ new Map() };
+          grouped.set(key, entry);
+        }
+        if (!entry.owners.has(pack.id)) {
+          entry.owners.set(pack.id, {
+            packId: pack.id,
+            packName: pack.name,
+            spriteUrl: sprite.url
+          });
+        }
+      }
+    }
+    const conflicts = [];
+    for (const [key, entry] of grouped) {
+      if (entry.owners.size < 2) continue;
+      conflicts.push({
+        key,
+        address: entry.address,
+        formattedAddress: formatAddress(entry.address),
+        owners: [...entry.owners.values()]
+      });
+    }
+    return conflicts;
+  }
+
   // core/sprite-store.ts
   function genId() {
     return `pack_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -238,21 +311,21 @@
     const byId = new Map(settings.packs.map((p) => [p.id, p]));
     return binding.packIds.map((id) => byId.get(id)).filter((p) => p != null);
   }
-  function resolveRole(pack, sprite, multiPack) {
-    const g = (sprite.group ?? "").trim();
-    if (g) return g;
-    const rn = (pack.roleName ?? "").trim();
-    if (rn) return rn;
-    return multiPack ? normalizeTag(pack.name ?? "") : "";
+  function packBaseAlias(pack) {
+    return normalizeTag(pack.name ?? "") || "包";
   }
   function getActiveAddresses(settings, characterName) {
     const packs = getActivePacks(settings, characterName);
-    const multiPack = packs.length > 1;
+    const conflicted = new Set(findAddressConflicts(packs).map((conflict) => conflict.key));
     const out = [];
-    for (const pack of packs) {
-      for (const s of pack.sprites) {
-        out.push({ role: resolveRole(pack, s, multiPack), outfit: spriteOutfit(pack, s), tag: s.tag });
-      }
+    const seen = /* @__PURE__ */ new Set();
+    for (const c of flatten(packs)) {
+      const address = { role: c.role, outfit: c.outfit, tag: c.sprite.tag };
+      if (conflicted.has(addressConflictKey(address))) continue;
+      const key = formatAddress(address);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(address);
     }
     return out;
   }
@@ -262,8 +335,49 @@
   function spriteOutfitTag(sprite) {
     return sprite.outfit ?? "";
   }
-  function sameIdentity(s, tag, group, outfit) {
-    return s.tag === tag && spriteGroup(s) === group && spriteOutfitTag(s) === outfit;
+  function effectiveRole(pack, group) {
+    return group.trim() || (pack.roleName ?? "").trim();
+  }
+  function effectiveOutfitOf(pack, outfit) {
+    return outfit.trim() || (pack.outfit ?? "").trim();
+  }
+  function normalizeIdentityFields(pack, sprite) {
+    const next = { ...sprite };
+    if ((next.group ?? "").trim() === (pack.roleName ?? "").trim()) delete next.group;
+    if ((next.outfit ?? "").trim() === (pack.outfit ?? "").trim()) delete next.outfit;
+    return next;
+  }
+  function sameIdentity(pack, s, tag, group, outfit) {
+    return s.tag === tag && effectiveRole(pack, spriteGroup(s)) === effectiveRole(pack, group) && effectiveOutfitOf(pack, spriteOutfitTag(s)) === effectiveOutfitOf(pack, outfit);
+  }
+  function identityKey(pack, sprite) {
+    return JSON.stringify([
+      effectiveRole(pack, spriteGroup(sprite)),
+      effectiveOutfitOf(pack, spriteOutfitTag(sprite)),
+      sprite.tag
+    ]);
+  }
+  function dedupeSprites(pack, sprites) {
+    const seen = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const raw of sprites) {
+      const sprite = normalizeIdentityFields(pack, raw);
+      const key = identityKey(pack, sprite);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(sprite);
+    }
+    return out;
+  }
+  function previewBindingAddressChanges(before, after, characterName) {
+    const oldAddresses = getActiveAddresses(before, characterName).map(formatAddress);
+    const newAddresses = getActiveAddresses(after, characterName).map(formatAddress);
+    const oldSet = new Set(oldAddresses);
+    const newSet = new Set(newAddresses);
+    return {
+      removed: oldAddresses.filter((address) => !newSet.has(address)),
+      added: newAddresses.filter((address) => !oldSet.has(address))
+    };
   }
   function getGroups(pack) {
     const seen = [];
@@ -277,12 +391,15 @@
     const multiPack = packs.length > 1;
     const out = [];
     for (const pack of packs) {
+      const base = packBaseAlias(pack);
       for (const sprite of pack.sprites) {
+        const address = effectiveSpriteAddress(pack, sprite, multiPack);
         out.push({
           pack,
           sprite,
-          role: resolveRole(pack, sprite, multiPack),
-          outfit: spriteOutfit(pack, sprite)
+          role: address.role,
+          outfit: address.outfit,
+          baseAlias: base
         });
       }
     }
@@ -292,19 +409,31 @@
     if (actual === query) return true;
     return actual.length > 0 && (actual.includes(query) || query.includes(actual));
   }
-  function lockByName(pool, query, of) {
+  function filterByName(pool, query, of) {
     const exact = pool.filter((c) => of(c) === query);
     if (exact.length > 0) return exact;
-    const fuzzy = pool.filter((c) => nameMatches(of(c), query));
-    if (fuzzy.length === 0) return [];
-    const locked = of(fuzzy[0]);
-    return fuzzy.filter((c) => of(c) === locked);
+    return pool.filter((c) => nameMatches(of(c), query));
   }
-  function matchTagInPool(pool, tag) {
-    const exact = pool.find((c) => c.sprite.tag === tag);
-    if (exact) return exact.sprite;
-    const partial = pool.find((c) => c.sprite.tag.includes(tag) || tag.includes(c.sprite.tag));
-    return partial?.sprite ?? null;
+  function lockByRole(pool, query) {
+    if (/[@=]/.test(query)) return [];
+    const roleMatches = filterByName(pool, query, (c) => c.role);
+    if (roleMatches.length > 0) return roleMatches;
+    return filterByName(pool, query, (c) => c.baseAlias);
+  }
+  function matchUniqueTagInPool(pool, tag) {
+    const exact = pool.filter((c) => c.sprite.tag === tag);
+    if (exact.length === 1) return exact[0].sprite;
+    if (exact.length > 1) {
+      const packIds = new Set(exact.map((c) => c.pack.id));
+      return packIds.size === 1 ? exact[0].sprite : null;
+    }
+    const fuzzy = pool.filter((c) => nameMatches(c.sprite.tag, tag));
+    if (fuzzy.length === 1) return fuzzy[0].sprite;
+    if (fuzzy.length > 1) {
+      const packIds = new Set(fuzzy.map((c) => c.pack.id));
+      return packIds.size === 1 ? fuzzy[0].sprite : null;
+    }
+    return null;
   }
   function resolveSprite(packs, address) {
     const raw = address.trim();
@@ -313,14 +442,18 @@
     if (!tag) return null;
     let pool = flatten(packs);
     if (role) {
-      pool = lockByName(pool, role, (c) => c.role);
+      pool = lockByRole(pool, role);
       if (pool.length === 0) return null;
+      if (!outfit) {
+        pool = pool.filter((c) => c.outfit === "");
+        if (pool.length === 0) return null;
+      }
     }
     if (outfit) {
-      pool = lockByName(pool, outfit, (c) => c.outfit);
+      pool = filterByName(pool, outfit, (c) => c.outfit);
       if (pool.length === 0) return null;
     }
-    return matchTagInPool(pool, tag);
+    return matchUniqueTagInPool(pool, tag);
   }
   function resolveSprites(packs, addresses) {
     const out = [];
@@ -330,12 +463,39 @@
     }
     return out;
   }
+  function success(settings) {
+    return { ok: true, settings };
+  }
+  function conflictsForBinding(settings, characterName, packIds) {
+    const byId = new Map(settings.packs.map((pack) => [pack.id, pack]));
+    const packs = packIds.map((id) => byId.get(id)).filter((pack) => pack != null);
+    return findAddressConflicts(packs).map((conflict) => ({ ...conflict, characterName }));
+  }
+  function uniquePackIds(packIds) {
+    const ids = [];
+    for (const id of packIds) if (id && !ids.includes(id)) ids.push(id);
+    return ids;
+  }
+  function withBinding(settings, characterName, packIds, enabled) {
+    const others = settings.bindings.filter((binding) => binding.characterName !== characterName);
+    if (packIds.length === 0) return { ...settings, bindings: others };
+    return {
+      ...settings,
+      bindings: [...others, { characterName, packIds, enabled }]
+    };
+  }
   function upsertPack(settings, pack) {
     const exists = settings.packs.some((p) => p.id === pack.id);
-    return {
+    const next = {
       ...settings,
       packs: exists ? settings.packs.map((p) => p.id === pack.id ? pack : p) : [...settings.packs, pack]
     };
+    const conflicts = [];
+    for (const binding of next.bindings) {
+      if (!binding.enabled || !binding.packIds.includes(pack.id)) continue;
+      conflicts.push(...conflictsForBinding(next, binding.characterName, binding.packIds));
+    }
+    return conflicts.length > 0 ? { ok: false, conflicts } : success(next);
   }
   function removePack(settings, packId) {
     const bindings = settings.bindings.map((b) => ({ ...b, packIds: b.packIds.filter((id) => id !== packId) })).filter((b) => b.packIds.length > 0);
@@ -347,27 +507,23 @@
   }
   function bindPack(settings, characterName, packId) {
     const existing = settings.bindings.find((b) => b.characterName === characterName);
-    if (existing) {
-      if (existing.packIds.includes(packId)) {
-        return { ...settings, bindings: settings.bindings.map((b) => b === existing ? { ...b, enabled: true } : b) };
-      }
-      return {
-        ...settings,
-        bindings: settings.bindings.map(
-          (b) => b === existing ? { ...b, packIds: [...b.packIds, packId], enabled: true } : b
-        )
-      };
-    }
-    return {
-      ...settings,
-      bindings: [...settings.bindings, { characterName, packIds: [packId], enabled: true }]
-    };
+    const ids = uniquePackIds([...existing?.packIds ?? [], packId]);
+    const conflicts = conflictsForBinding(settings, characterName, ids);
+    if (conflicts.length > 0) return { ok: false, conflicts };
+    return success(withBinding(settings, characterName, ids, true));
   }
   function unbindPack(settings, characterName, packId) {
     const bindings = settings.bindings.map(
       (b) => b.characterName === characterName ? { ...b, packIds: b.packIds.filter((id) => id !== packId) } : b
     ).filter((b) => b.packIds.length > 0);
     return { ...settings, bindings };
+  }
+  function setBinding(settings, characterName, packIds) {
+    const ids = uniquePackIds(packIds);
+    const conflicts = conflictsForBinding(settings, characterName, ids);
+    if (conflicts.length > 0) return { ok: false, conflicts };
+    const prev = settings.bindings.find((b) => b.characterName === characterName);
+    return success(withBinding(settings, characterName, ids, prev?.enabled ?? true));
   }
   function reorderBinding(settings, characterName, fromIndex, toIndex) {
     return {
@@ -386,16 +542,28 @@
     return { ...pack, sprites, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
   }
   function upsertSprite(pack, sprite) {
-    const g = spriteGroup(sprite);
-    const o = spriteOutfitTag(sprite);
-    const idx = pack.sprites.findIndex((s) => sameIdentity(s, sprite.tag, g, o));
-    const sprites = idx >= 0 ? pack.sprites.map((s, i) => i === idx ? sprite : s) : [...pack.sprites, sprite];
-    return touchPack(pack, sprites);
+    const stored = normalizeIdentityFields(pack, sprite);
+    const g = spriteGroup(stored);
+    const o = spriteOutfitTag(stored);
+    const sprites = [];
+    let replaced = false;
+    for (const current of pack.sprites) {
+      if (sameIdentity(pack, current, stored.tag, g, o)) {
+        if (!replaced) {
+          sprites.push(stored);
+          replaced = true;
+        }
+        continue;
+      }
+      sprites.push(current);
+    }
+    if (!replaced) sprites.push(stored);
+    return touchPack(pack, dedupeSprites(pack, sprites));
   }
   function removeSprite(pack, tag, group = "", outfit = "") {
     const next = touchPack(
       pack,
-      pack.sprites.filter((s) => !sameIdentity(s, tag, group, outfit))
+      pack.sprites.filter((s) => !sameIdentity(pack, s, tag, group, outfit))
     );
     if (next.coverTag === tag && !next.sprites.some((s) => s.tag === tag)) delete next.coverTag;
     return next;
@@ -404,11 +572,11 @@
     const newTag = normalizeTag(newTagRaw);
     if (!newTag) throw new Error("表情名不能为空，且不能包含 [ ] / : | = @ 等符号");
     if (newTag === oldTag) return pack;
-    if (pack.sprites.some((s) => sameIdentity(s, newTag, group, outfit))) {
+    if (pack.sprites.some((s) => sameIdentity(pack, s, newTag, group, outfit))) {
       throw new Error(`表情名「${newTag}」在该分组中已存在`);
     }
     const sprites = pack.sprites.map(
-      (s) => sameIdentity(s, oldTag, group, outfit) ? { ...s, tag: newTag } : s
+      (s) => sameIdentity(pack, s, oldTag, group, outfit) ? { ...s, tag: newTag } : s
     );
     const next = touchPack(pack, sprites);
     if (next.coverTag === oldTag) next.coverTag = newTag;
@@ -416,18 +584,22 @@
   }
   function setSpriteGroup(pack, tag, fromGroup, toGroupRaw, outfit = "") {
     const toGroup = normalizeTag(toGroupRaw);
-    if (toGroup === fromGroup) return pack;
-    if (pack.sprites.some((s) => sameIdentity(s, tag, toGroup, outfit))) {
+    const sources = new Set(
+      pack.sprites.filter((s) => sameIdentity(pack, s, tag, fromGroup, outfit))
+    );
+    if (pack.sprites.some(
+      (s) => !sources.has(s) && sameIdentity(pack, s, tag, toGroup, outfit)
+    )) {
       throw new Error(`分组「${toGroup || "未分组"}」中已存在表情「${tag}」`);
     }
     const sprites = pack.sprites.map((s) => {
-      if (!sameIdentity(s, tag, fromGroup, outfit)) return s;
+      if (!sources.has(s)) return s;
       const next = { ...s };
       if (toGroup) next.group = toGroup;
       else delete next.group;
-      return next;
+      return normalizeIdentityFields(pack, next);
     });
-    return touchPack(pack, sprites);
+    return touchPack(pack, dedupeSprites(pack, sprites));
   }
   function moveSprite(pack, fromIndex, toIndex) {
     const len = pack.sprites.length;
@@ -440,20 +612,47 @@
     return touchPack(pack, sprites);
   }
   function toggleBinding(settings, characterName, enabled) {
-    return {
+    const binding = settings.bindings.find((item) => item.characterName === characterName);
+    if (enabled && binding) {
+      const conflicts = conflictsForBinding(settings, characterName, binding.packIds);
+      if (conflicts.length > 0) return { ok: false, conflicts };
+    }
+    return success({
       ...settings,
       bindings: settings.bindings.map(
         (b) => b.characterName === characterName ? { ...b, enabled } : b
       )
-    };
+    });
   }
-  function preloadPack(pack) {
-    if (typeof window === "undefined" || typeof Image === "undefined") return;
-    for (const sprite of pack.sprites) {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.src = sprite.url;
+
+  // core/sprite-preload.ts
+  var PRELOAD_ON_ACTIVATE_MAX = 4;
+  var PRELOAD_MATCH_MAX = 10;
+  function preloadSprites(sprites, max) {
+    if (typeof Image === "undefined" || max <= 0) return;
+    const seen = /* @__PURE__ */ new Set();
+    let loaded = 0;
+    for (const sprite of sprites) {
+      const url = sprite.url;
+      if (!url || seen.has(url)) continue;
+      seen.add(url);
+      const image = new Image();
+      image.crossOrigin = "anonymous";
+      image.src = url;
+      loaded++;
+      if (loaded >= max) break;
     }
+  }
+  function preloadOnActivate(packs) {
+    const firstSprites = [];
+    for (const pack of packs) {
+      const first = pack.sprites[0];
+      if (first) firstSprites.push(first);
+    }
+    preloadSprites(firstSprites, PRELOAD_ON_ACTIVATE_MAX);
+  }
+  function preloadMatchedSprites(sprites) {
+    preloadSprites(sprites, PRELOAD_MATCH_MAX);
   }
 
   // core/phone-registry.ts
@@ -1360,6 +1559,130 @@
     };
   }
 
+  // core/pack-merge.ts
+  var PackMergeChoiceError = class extends Error {
+    constructor() {
+      super(...arguments);
+      this.name = "PackMergeChoiceError";
+    }
+  };
+  function mergeAddress(pack, sprite) {
+    return {
+      role: (sprite.group ?? "").trim() || (pack.roleName ?? "").trim(),
+      outfit: spriteOutfit(pack, sprite),
+      tag: sprite.tag
+    };
+  }
+  function buildGroups(packs) {
+    const groups = /* @__PURE__ */ new Map();
+    for (const pack of packs) {
+      for (const sprite of pack.sprites) {
+        const address = mergeAddress(pack, sprite);
+        const key = addressConflictKey(address);
+        let group = groups.get(key);
+        if (!group) {
+          group = { key, address, candidates: [] };
+          groups.set(key, group);
+        }
+        group.candidates.push({
+          sourcePackId: pack.id,
+          sourcePackName: pack.name,
+          address,
+          sprite
+        });
+      }
+    }
+    return [...groups.values()];
+  }
+  function isAutomatic(group) {
+    return new Set(group.candidates.map((candidate) => candidate.sprite.url)).size <= 1;
+  }
+  function previewPackMerge(packs) {
+    const names = packs.map((pack) => pack.name.trim()).filter(Boolean);
+    const sameName = new Set(names).size < names.length;
+    const automatic = [];
+    const conflicts = [];
+    let overlapCount = 0;
+    for (const group of buildGroups(packs)) {
+      if (group.candidates.length > 1) overlapCount++;
+      if (isAutomatic(group)) automatic.push(group.candidates[0]);
+      else conflicts.push({ key: group.key, address: group.address, candidates: group.candidates });
+    }
+    return { sameName, overlapCount, automatic, conflicts };
+  }
+  function inspectPackImport(existing, incoming) {
+    return {
+      sameName: existing.name.trim() === incoming.name.trim(),
+      conflicts: findAddressConflicts([existing, incoming])
+    };
+  }
+  function commonNonEmpty(values) {
+    if (values.length === 0 || !values[0]) return "";
+    return values.every((value) => value === values[0]) ? values[0] : "";
+  }
+  function validateChoicesForGroups(groups, choices) {
+    const conflicts = groups.filter((group) => !isAutomatic(group));
+    const conflictByKey = new Map(conflicts.map((group) => [group.key, group]));
+    const choiceByKey = /* @__PURE__ */ new Map();
+    for (const choice of choices) {
+      const group = conflictByKey.get(choice.key);
+      if (!group) {
+        throw new PackMergeChoiceError(`未知冲突选择 key：${choice.key}`);
+      }
+      if (choiceByKey.has(choice.key)) {
+        throw new PackMergeChoiceError(`地址「${group.address.tag}」存在重复选择`);
+      }
+      if (!Number.isSafeInteger(choice.candidateIndex) || choice.candidateIndex < 0 || choice.candidateIndex >= group.candidates.length) {
+        throw new PackMergeChoiceError(`地址「${group.address.tag}」的候选序号无效`);
+      }
+      choiceByKey.set(choice.key, choice.candidateIndex);
+    }
+    for (const group of conflicts) {
+      if (!choiceByKey.has(group.key)) {
+        throw new PackMergeChoiceError(`地址「${group.address.tag}」的冲突图片尚未选择`);
+      }
+    }
+    return choiceByKey;
+  }
+  function validatePackMergeChoices(packs, choices) {
+    validateChoicesForGroups(buildGroups(packs), choices);
+  }
+  function applyPackMerge(packs, choices, result) {
+    const groups = buildGroups(packs);
+    const choiceByKey = validateChoicesForGroups(groups, choices);
+    const selected = [];
+    for (const group of groups) {
+      if (isAutomatic(group)) {
+        selected.push(group.candidates[0]);
+        continue;
+      }
+      selected.push(group.candidates[choiceByKey.get(group.key)]);
+    }
+    const commonRole = commonNonEmpty(selected.map((candidate) => candidate.address.role));
+    const commonOutfit = commonNonEmpty(selected.map((candidate) => candidate.address.outfit));
+    const sprites = selected.map((candidate) => {
+      const sprite = { ...candidate.sprite };
+      delete sprite.group;
+      delete sprite.outfit;
+      if (!commonRole && candidate.address.role) sprite.group = candidate.address.role;
+      if (!commonOutfit && candidate.address.outfit) sprite.outfit = candidate.address.outfit;
+      return sprite;
+    });
+    const first = packs[0];
+    const coverTag = first?.coverTag && sprites.some((sprite) => sprite.tag === first.coverTag) ? first.coverTag : sprites[0]?.tag;
+    return {
+      id: result.id,
+      name: result.name,
+      ...first?.author ? { author: first.author } : {},
+      ...first?.description ? { description: first.description } : {},
+      ...commonRole ? { roleName: commonRole } : {},
+      ...commonOutfit ? { outfit: commonOutfit } : {},
+      ...coverTag ? { coverTag } : {},
+      sprites,
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+  }
+
   // core/pack-io.ts
   async function exportPack(pack, embedHosted = false) {
     const sprites = [];
@@ -1747,8 +2070,173 @@
       deps.updateSettings(next);
       render();
     }
+    function conflictText(conflicts) {
+      return conflicts.slice(0, 3).map(
+        (conflict) => `${conflict.characterName}：${conflict.formattedAddress}（${conflict.owners.map((owner) => owner.packName).join(" / ")}）`
+      ).join("；");
+    }
+    function showConflicts(conflicts) {
+      const message = `操作未生效，存在地址冲突：${conflictText(conflicts)}`;
+      const body = backdrop?.querySelector(".so-manager-body");
+      if (body) toast(body, message);
+      else window.alert(message);
+    }
+    function rejectConflicts(conflicts) {
+      render();
+      showConflicts(conflicts);
+      return false;
+    }
+    function checkedSettings(result) {
+      if (!result.ok) {
+        showConflicts(result.conflicts);
+        return null;
+      }
+      return result.settings;
+    }
+    function updateChecked(result) {
+      const next = checkedSettings(result);
+      if (!next) return false;
+      deps.updateSettings(next);
+      return true;
+    }
+    function commitChecked(result) {
+      if (!result.ok) return rejectConflicts(result.conflicts);
+      commit(result.settings);
+      return true;
+    }
+    function rejectPackMergeError(error, body) {
+      if (error instanceof PackMergeChoiceError) {
+        toast(body, `合并已取消：选择无效（${error.message}）`);
+        return null;
+      }
+      console.error("合并立绘包失败", error);
+      toast(body, "合并失败，请查看控制台日志");
+      return null;
+    }
+    function mergeWithPrompts(packs, defaultName, body) {
+      const preview = previewPackMerge(packs);
+      const choices = [];
+      for (const conflict of preview.conflicts) {
+        const options = conflict.candidates.map((candidate, index) => `${index + 1}. ${candidate.sourcePackName} — ${candidate.sprite.url}`).join("\n");
+        const raw = window.prompt(
+          `地址「${formatAddress(conflict.address)}」有不同图片，请输入要保留的序号：
+${options}`,
+          "1"
+        );
+        if (raw === null) return null;
+        choices.push({ key: conflict.key, candidateIndex: Number(raw) - 1 });
+      }
+      try {
+        validatePackMergeChoices(packs, choices);
+      } catch (error) {
+        return rejectPackMergeError(error, body);
+      }
+      const rawName = window.prompt("合并结果的包名：", defaultName);
+      if (rawName === null) return null;
+      const name = sanitizePackName(rawName);
+      if (!name) {
+        toast(body, "合并已取消：包名不能为空");
+        return null;
+      }
+      try {
+        return applyPackMerge(packs, choices, { id: genId(), name });
+      } catch (error) {
+        return rejectPackMergeError(error, body);
+      }
+    }
+    function installImportedPack(pack, body) {
+      const settings = deps.getSettings();
+      const related = settings.packs.filter((existing) => {
+        const inspection = inspectPackImport(existing, pack);
+        return inspection.sameName || inspection.conflicts.length > 0;
+      });
+      if (related.length === 0) {
+        if (!updateChecked(upsertPack(settings, pack))) return false;
+        toast(body, `已导入立绘包「${pack.name}」（${pack.sprites.length} 张）`);
+        return true;
+      }
+      const answer = window.prompt(
+        `检测到同名或地址重叠：${related.map((item) => item.name).join("、")}
+输入 1 合并为新包，2 重命名后安装，3 仅安装不启用；其他输入取消。`,
+        "1"
+      );
+      if (answer === "1") {
+        const merged = mergeWithPrompts([...related, pack], related[0]?.name || pack.name, body);
+        if (!merged || !updateChecked(upsertPack(settings, merged))) return false;
+        toast(body, `已生成合并包「${merged.name}」（${merged.sprites.length} 张），源包仍保留`);
+        return true;
+      }
+      if (answer === "2") {
+        const rawName = window.prompt("请输入新的包名：", `${pack.name} 新`);
+        if (rawName === null) return false;
+        const name = sanitizePackName(rawName);
+        if (!name || settings.packs.some((existing) => existing.name === name)) {
+          toast(body, "未安装：新包名为空或仍与现有包同名");
+          return false;
+        }
+        if (!updateChecked(upsertPack(settings, { ...pack, name }))) return false;
+        toast(body, `已重命名并安装「${name}」（未启用）`);
+        return true;
+      }
+      if (answer === "3") {
+        if (!updateChecked(upsertPack(settings, pack))) return false;
+        toast(body, `已安装「${pack.name}」，未加入当前角色`);
+        return true;
+      }
+      return false;
+    }
+    function bindPackWithChoices(characterName, packId, body) {
+      const settings = deps.getSettings();
+      const result = bindPack(settings, characterName, packId);
+      if (result.ok) {
+        const changes = previewBindingAddressChanges(settings, result.settings, characterName);
+        if (changes.removed.length > 0 && !window.confirm(
+          `启用后以下旧地址将变化：${changes.removed.slice(0, 6).join("、")}
+新地址示例：${changes.added.slice(0, 6).join("、")}
+仍要继续吗？`
+        )) return;
+        commit(result.settings);
+        return;
+      }
+      const answer = window.prompt(
+        `启用会产生地址冲突：${conflictText(result.conflicts)}
+输入 1 替换当前冲突包，2 合并为新包后启用；其他输入取消。`,
+        "1"
+      );
+      const sourceIds = new Set(result.conflicts.flatMap((conflict) => conflict.owners.map((owner) => owner.packId)));
+      sourceIds.add(packId);
+      const binding = settings.bindings.find((item) => item.characterName === characterName);
+      const boundIds = binding?.packIds ?? [];
+      if (answer === "1") {
+        sourceIds.delete(packId);
+        const nextIds = boundIds.filter((id) => !sourceIds.has(id));
+        if (!nextIds.includes(packId)) nextIds.push(packId);
+        commitChecked(setBinding(settings, characterName, nextIds));
+        return;
+      }
+      if (answer === "2") {
+        const sources = settings.packs.filter((candidate) => sourceIds.has(candidate.id));
+        const incoming = settings.packs.find((candidate) => candidate.id === packId);
+        const merged = mergeWithPrompts(sources, incoming ? `${incoming.name} 合并` : "合并立绘包", body);
+        if (!merged) return;
+        const installed = upsertPack(settings, merged);
+        if (!installed.ok) {
+          rejectConflicts(installed.conflicts);
+          return;
+        }
+        const nextIds = boundIds.filter((id) => !sourceIds.has(id));
+        nextIds.push(merged.id);
+        const rebound = setBinding(installed.settings, characterName, nextIds);
+        if (!rebound.ok) {
+          rejectConflicts(rebound.conflicts);
+          return;
+        }
+        commit(rebound.settings);
+        toast(body, `已生成并启用合并包「${merged.name}」；源包仍保留`);
+      }
+    }
     function commitPack(pack) {
-      commit(upsertPack(deps.getSettings(), pack));
+      commitChecked(upsertPack(deps.getSettings(), pack));
     }
     function render() {
       if (!backdrop) return;
@@ -1828,8 +2316,10 @@
           select.append(opt);
         }
         select.addEventListener("change", () => {
-          if (!select.value) return;
-          commit(bindPack(deps.getSettings(), characterName, select.value));
+          const packId = select.value;
+          if (!packId) return;
+          select.value = "";
+          bindPackWithChoices(characterName, packId, body);
         });
         bindRow.append(select);
         if (binding) {
@@ -1837,7 +2327,7 @@
             checkboxRow(
               "全部启用",
               binding.enabled,
-              (v) => commit(toggleBinding(deps.getSettings(), characterName, v))
+              (v) => commitChecked(toggleBinding(deps.getSettings(), characterName, v))
             )
           );
         }
@@ -1867,7 +2357,7 @@
           return;
         }
         const pack = { id: genId(), name, author: "我", sprites: [] };
-        deps.updateSettings(upsertPack(deps.getSettings(), pack));
+        if (!updateChecked(upsertPack(deps.getSettings(), pack))) return;
         view = { kind: "pack", packId: pack.id };
         render();
       });
@@ -1882,9 +2372,10 @@
         if (!shareInput.value.trim()) return;
         try {
           const pack = decodeShareString(shareInput.value);
-          deps.updateSettings(upsertPack(deps.getSettings(), pack));
+          if (!installImportedPack(pack, body)) return;
           shareInput.value = "";
-          view = { kind: "pack", packId: pack.id };
+          const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
+          if (installed) view = { kind: "pack", packId: installed.id };
           render();
         } catch (err) {
           toast(body, err instanceof Error ? err.message : "分享串解析失败");
@@ -1897,8 +2388,9 @@
           pickFile(".json,application/json", false, async (files) => {
             try {
               const pack = importPack(await files[0].text());
-              deps.updateSettings(upsertPack(deps.getSettings(), pack));
-              view = { kind: "pack", packId: pack.id };
+              if (!installImportedPack(pack, body)) return;
+              const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
+              if (installed) view = { kind: "pack", packId: installed.id };
               render();
             } catch (err) {
               toast(body, err instanceof Error ? err.message : "导入失败");
@@ -2110,7 +2602,11 @@ ${preview}
 确认拆分？`)) return;
               const newPacks = splitPackByGroup(pack);
               let next = deps.getSettings();
-              for (const np of newPacks) next = upsertPack(next, np);
+              for (const np of newPacks) {
+                const updated = checkedSettings(upsertPack(next, np));
+                if (!updated) return;
+                next = updated;
+              }
               commit(next);
               toast(body, `已拆出 ${newPacks.length} 个新包（原包「${pack.name}」保留）`);
             })
@@ -2408,7 +2904,7 @@ ${preview}
                 ...outfit ? { outfit } : {},
                 sprites: []
               };
-              deps.updateSettings(upsertPack(deps.getSettings(), np));
+              if (!updateChecked(upsertPack(deps.getSettings(), np))) return;
               targetId = np.id;
               newPackIds.set(key, targetId);
             }
@@ -2419,7 +2915,7 @@ ${preview}
             continue;
           }
           const sprite = { tag: plan.finalTag, url };
-          deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(target, sprite)));
+          if (!updateChecked(upsertPack(deps.getSettings(), upsertSprite(target, sprite)))) return;
           added++;
           if (useImgbb) {
             try {
@@ -2428,7 +2924,7 @@ ${preview}
                 const latest = deps.getSettings().packs.find((p) => p.id === targetId);
                 if (latest) {
                   const hostedSprite = { tag: plan.finalTag, url, code: up.code, remoteUrl: up.url };
-                  deps.updateSettings(upsertPack(deps.getSettings(), upsertSprite(latest, hostedSprite)));
+                  if (!updateChecked(upsertPack(deps.getSettings(), upsertSprite(latest, hostedSprite)))) return;
                   hosted++;
                 }
               } else {
@@ -2483,12 +2979,12 @@ ${preview}
             fail++;
             continue;
           }
-          deps.updateSettings(
+          if (!updateChecked(
             upsertPack(
               deps.getSettings(),
               upsertSprite(latest, { ...target, code: up.code, remoteUrl: up.url })
             )
-          );
+          )) return;
           ok++;
         } catch (err) {
           console.warn("[sprite-overlay] 补传失败", err);
@@ -3082,7 +3578,7 @@ ${preview}
             settings.multiRolePromptMode,
             [
               { value: "full", label: "全量（枚举全部地址）" },
-              { value: "repeat", label: "智能精简（共有图名合并）" }
+              { value: "repeat", label: "智能精简（共有表情 + 场景其余）" }
             ],
             (v) => ctx.updateSettings({
               ...ctx.getSettings(),
@@ -3266,7 +3762,7 @@ ${preview}
       if (contentKey !== lastOverlayContentKey) {
         lastOverlayContentKey = contentKey;
         if (pack && pack.sprites.length > 0) {
-          for (const p of packs) preloadPack(p);
+          preloadOnActivate(packs);
           overlay.setImage(pack.sprites[0].url, pack.sprites[0].tag);
         } else if (characterName) {
           overlay.setPlaceholder("未绑定立绘包\n点击 ⚙ 进行绑定");
@@ -3282,6 +3778,7 @@ ${preview}
       const packs = getActivePacks(settings, characterName);
       if (packs.length === 0) return;
       const seq = resolveSprites(packs, extractTags(text));
+      preloadMatchedSprites(seq);
       if (seq.length > 0 && overlayAllowed()) {
         overlay.setSprites(seq);
         overlay.setVisible(true);

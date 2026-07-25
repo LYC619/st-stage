@@ -6,17 +6,29 @@
 
 import { useRef, useState } from 'react'
 import type { PluginSettings, SpritePack } from '@/core/types'
-import { DEFAULT_IMAGE_HOST } from '@/core/types'
+import { DEFAULT_IMAGE_HOST, formatAddress } from '@/core/types'
 import {
+  type BindingConflict,
+  type ConflictCheckedSettingsResult,
   bindPack,
   genId,
   getActivePacks,
+  previewBindingAddressChanges,
   removePack,
+  setBinding,
   toggleBinding,
   unbindPack,
   upsertPack,
   upsertSprite,
 } from '@/core/sprite-store'
+import {
+  applyPackMerge,
+  inspectPackImport,
+  PackMergeChoiceError,
+  previewPackMerge,
+  type PackMergeChoice,
+  validatePackMergeChoices,
+} from '@/core/pack-merge'
 import { isPresetPack } from '@/core/presets'
 import { exportPack, importPack } from '@/core/pack-io'
 import { decodeShareString, encodeShareStringV2 } from '@/core/share-code'
@@ -47,6 +59,159 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
   const flash = (msg: string) => {
     setStatus(msg)
     setTimeout(() => setStatus(null), 2500)
+  }
+
+  const describeConflicts = (conflicts: BindingConflict[]): string =>
+    conflicts
+      .slice(0, 3)
+      .map((conflict) =>
+        `${conflict.characterName}：${conflict.formattedAddress}（${conflict.owners.map((owner) => owner.packName).join(' / ')}）`,
+      )
+      .join('；')
+
+  const commitChecked = (result: ConflictCheckedSettingsResult): boolean => {
+    if (!result.ok) {
+      flash(`操作未生效，存在地址冲突：${describeConflicts(result.conflicts)}`)
+      return false
+    }
+    onSettingsChange(result.settings)
+    return true
+  }
+
+  const rejectPackMergeError = (error: unknown): null => {
+    if (error instanceof PackMergeChoiceError) {
+      flash(`合并已取消：选择无效（${error.message}）`)
+      return null
+    }
+    console.error('合并立绘包失败', error)
+    flash('合并失败，请查看控制台日志')
+    return null
+  }
+
+  const mergeWithPrompts = (packs: SpritePack[], defaultName: string): SpritePack | null => {
+    const preview = previewPackMerge(packs)
+    const choices: PackMergeChoice[] = []
+    for (const conflict of preview.conflicts) {
+      const options = conflict.candidates
+        .map((candidate, index) => `${index + 1}. ${candidate.sourcePackName} — ${candidate.sprite.url}`)
+        .join('\n')
+      const raw = window.prompt(
+        `地址「${formatAddress(conflict.address)}」有不同图片，请输入要保留的序号：\n${options}`,
+        '1',
+      )
+      if (raw === null) return null
+      choices.push({ key: conflict.key, candidateIndex: Number(raw) - 1 })
+    }
+    try {
+      validatePackMergeChoices(packs, choices)
+    } catch (error) {
+      return rejectPackMergeError(error)
+    }
+    const rawName = window.prompt('合并结果的包名：', defaultName)
+    if (rawName === null) return null
+    const name = sanitizePackName(rawName)
+    if (!name) {
+      flash('合并已取消：包名不能为空')
+      return null
+    }
+    try {
+      return applyPackMerge(packs, choices, { id: genId(), name })
+    } catch (error) {
+      return rejectPackMergeError(error)
+    }
+  }
+
+  const installImportedPack = (pack: SpritePack): boolean => {
+    const related = settings.packs.filter((existing) => {
+      const inspection = inspectPackImport(existing, pack)
+      return inspection.sameName || inspection.conflicts.length > 0
+    })
+    if (related.length === 0) {
+      if (!commitChecked(upsertPack(settings, pack))) return false
+      flash(`已导入立绘包「${pack.name}」（${pack.sprites.length} 张）`)
+      return true
+    }
+
+    const answer = window.prompt(
+      `检测到同名或地址重叠：${related.map((item) => item.name).join('、')}\n` +
+        '输入 1 合并为新包，2 重命名后安装，3 仅安装不启用；其他输入取消。',
+      '1',
+    )
+    if (answer === '1') {
+      const merged = mergeWithPrompts([...related, pack], related[0]?.name || pack.name)
+      if (!merged || !commitChecked(upsertPack(settings, merged))) return false
+      flash(`已生成合并包「${merged.name}」（${merged.sprites.length} 张），源包仍保留`)
+      return true
+    }
+    if (answer === '2') {
+      const rawName = window.prompt('请输入新的包名：', `${pack.name} 新`)
+      if (rawName === null) return false
+      const name = sanitizePackName(rawName)
+      if (!name || settings.packs.some((existing) => existing.name === name)) {
+        flash('未安装：新包名为空或仍与现有包同名')
+        return false
+      }
+      const renamed = { ...pack, name }
+      if (!commitChecked(upsertPack(settings, renamed))) return false
+      flash(`已重命名并安装「${name}」（未启用）`)
+      return true
+    }
+    if (answer === '3') {
+      if (!commitChecked(upsertPack(settings, pack))) return false
+      flash(`已安装「${pack.name}」，未加入当前角色`)
+      return true
+    }
+    return false
+  }
+
+  const bindPackWithChoices = (packId: string): void => {
+    const result = bindPack(settings, characterName, packId)
+    if (result.ok) {
+      const changes = previewBindingAddressChanges(settings, result.settings, characterName)
+      if (
+        changes.removed.length > 0 &&
+        !window.confirm(
+          `启用后以下旧地址将变化：${changes.removed.slice(0, 6).join('、')}\n` +
+            `新地址示例：${changes.added.slice(0, 6).join('、')}\n仍要继续吗？`,
+        )
+      ) return
+      onSettingsChange(result.settings)
+      return
+    }
+    const answer = window.prompt(
+      `启用会产生地址冲突：${describeConflicts(result.conflicts)}\n` +
+        '输入 1 替换当前冲突包，2 合并为新包后启用；其他输入取消。',
+      '1',
+    )
+    const sourceIds = new Set(result.conflicts.flatMap((conflict) => conflict.owners.map((owner) => owner.packId)))
+    sourceIds.add(packId)
+    if (answer === '1') {
+      sourceIds.delete(packId)
+      const nextIds = boundIds.filter((id) => !sourceIds.has(id))
+      if (!nextIds.includes(packId)) nextIds.push(packId)
+      commitChecked(setBinding(settings, characterName, nextIds))
+      return
+    }
+    if (answer === '2') {
+      const sources = settings.packs.filter((candidate) => sourceIds.has(candidate.id))
+      const incoming = settings.packs.find((candidate) => candidate.id === packId)
+      const merged = mergeWithPrompts(sources, incoming ? `${incoming.name} 合并` : '合并立绘包')
+      if (!merged) return
+      const installed = upsertPack(settings, merged)
+      if (!installed.ok) {
+        flash(`合并结果未安装：${describeConflicts(installed.conflicts)}`)
+        return
+      }
+      const nextIds = boundIds.filter((id) => !sourceIds.has(id))
+      nextIds.push(merged.id)
+      const rebound = setBinding(installed.settings, characterName, nextIds)
+      if (!rebound.ok) {
+        flash(`合并结果未启用：${describeConflicts(rebound.conflicts)}`)
+        return
+      }
+      onSettingsChange(rebound.settings)
+      flash(`已生成并启用合并包「${merged.name}」；源包仍保留`)
+    }
   }
 
   /**
@@ -90,7 +255,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
         }
       }
     }
-    onSettingsChange(upsertPack(settings, target))
+    if (!commitChecked(upsertPack(settings, target))) return
     const hostNote = useImgbb
       ? `，imgbb 成功 ${hosted} 张${hostFailed > 0 ? `、失败 ${hostFailed} 张（保留本地）` : ''}`
       : ''
@@ -101,7 +266,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
     const name = sanitizePackName(newPackName)
     if (!name) return
     const pack: SpritePack = { id: genId(), name, author: '我', sprites: [] }
-    onSettingsChange(upsertPack(settings, pack))
+    if (!commitChecked(upsertPack(settings, pack))) return
     setNewPackName('')
     flash(`已创建立绘包「${name}」，请上传图片（文件名即标签）`)
   }
@@ -124,8 +289,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
     try {
       const text = await files[0].text()
       const pack = importPack(text)
-      onSettingsChange(upsertPack(settings, pack))
-      flash(`已导入立绘包「${pack.name}」（${pack.sprites.length} 张）`)
+      installImportedPack(pack)
     } catch (err) {
       flash(err instanceof Error ? err.message : '导入失败')
     }
@@ -137,9 +301,8 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
     if (!shareInput.trim()) return
     try {
       const pack = decodeShareString(shareInput)
-      onSettingsChange(upsertPack(settings, pack))
+      if (!installImportedPack(pack)) return
       setShareInput('')
-      flash(`已导入分享串「${pack.name}」（${pack.sprites.length} 张）`)
     } catch (err) {
       flash(err instanceof Error ? err.message : '分享串解析失败')
     }
@@ -273,7 +436,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
             aria-label="分组 prompt 模式"
           >
             <option value="full">全量（枚举全部组合）</option>
-            <option value="repeat">重复（分组×共享情绪名·省 token）</option>
+            <option value="repeat">智能精简（共有表情 + 场景其余）</option>
           </select>
         </label>
         <label className="flex flex-col gap-1 text-sm text-foreground">
@@ -356,7 +519,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
                   <input
                     type="checkbox"
                     checked={binding.enabled}
-                    onChange={(e) => onSettingsChange(toggleBinding(settings, characterName, e.target.checked))}
+                    onChange={(e) => commitChecked(toggleBinding(settings, characterName, e.target.checked))}
                     className="h-4 w-4 accent-primary"
                   />
                   全部启用
@@ -393,7 +556,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
         <select
           value=""
           onChange={(e) => {
-            if (e.target.value) onSettingsChange(bindPack(settings, characterName, e.target.value))
+            if (e.target.value) bindPackWithChoices(e.target.value)
           }}
           className="min-w-0 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
           aria-label="添加启用立绘包"
