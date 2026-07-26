@@ -3352,7 +3352,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-27 01:59"}）`;
+  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-27 02:14"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -5074,6 +5074,15 @@ function readConnection() {
     includeHeaders: readStr(oai, "custom_include_headers")
   };
 }
+function onOnlineStatusChanged(handler) {
+  const st = getST3();
+  const eventName = st?.event_types?.ONLINE_STATUS_CHANGED ?? "online_status_changed";
+  const source = st?.eventSource;
+  if (!source) return () => {
+  };
+  source.on(eventName, handler);
+  return () => source.removeListener(eventName, handler);
+}
 async function writeSecret(st, key) {
   const headers = st.getRequestHeaders?.() ?? { "Content-Type": "application/json" };
   const res = await fetch("/api/secrets/write", {
@@ -5156,13 +5165,22 @@ function toast2(kind, message) {
   t?.[kind]?.(message, "API 切换");
 }
 function apiApp(deps) {
+  let unsubscribe = null;
   return {
     id: API_APP_ID,
     name: "API",
     icon: "📡",
     order: 6,
     mount(container, ctx) {
-      render2(container, ctx, deps, { busy: false });
+      const state = { busy: false };
+      render2(container, ctx, deps, state);
+      unsubscribe = onOnlineStatusChanged(() => {
+        if (!state.busy && container.isConnected) render2(container, ctx, deps, state);
+      });
+    },
+    unmount() {
+      unsubscribe?.();
+      unsubscribe = null;
     }
   };
 }
@@ -5227,9 +5245,9 @@ function render2(container, ctx, deps, state) {
     }
     state.busy = true;
     say(`正在切换到「${p.name}」…`);
+    sites.querySelectorAll(".stapi-row").forEach((r) => r.classList.add("stapi-row-busy"));
     applyProfile(p).then(() => {
-      toast2("success", `已切换到「${p.name}」`);
-      return new Promise((resolve) => setTimeout(resolve, 800));
+      toast2("success", `已切换到「${p.name}」，正在连接…`);
     }).catch((err) => {
       const msg = err instanceof Error ? err.message : String(err);
       toast2("error", msg);
@@ -6932,7 +6950,7 @@ async function init() {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-27 01:59"}`;
+  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-27 02:14"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {

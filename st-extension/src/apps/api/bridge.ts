@@ -20,6 +20,11 @@ interface BridgeContext {
   saveSettingsDebounced?: () => void
   onlineStatus?: string
   mainApi?: string
+  eventSource?: {
+    on(event: string, handler: () => void): void
+    removeListener(event: string, handler: () => void): void
+  }
+  event_types?: Record<string, string>
 }
 
 function getST(): BridgeContext | undefined {
@@ -62,6 +67,20 @@ export function readConnection(): ConnectionInfo | null {
     excludeBody: readStr(oai, 'custom_exclude_body'),
     includeHeaders: readStr(oai, 'custom_include_headers'),
   }
+}
+
+/**
+ * 订阅 ST 在线状态变化（连接成功/失败/断开都会触发），返回退订函数。
+ * 参考项目没有生命周期只能定时猜状态；我们的 App 有 unmount，走真事件。
+ * 旧版 ST 缺事件时返回空退订，调用方自然退化为「切换后刷新一次」。
+ */
+export function onOnlineStatusChanged(handler: () => void): () => void {
+  const st = getST()
+  const eventName = st?.event_types?.ONLINE_STATUS_CHANGED ?? 'online_status_changed'
+  const source = st?.eventSource
+  if (!source) return () => {}
+  source.on(eventName, handler)
+  return () => source.removeListener(eventName, handler)
 }
 
 async function writeSecret(st: BridgeContext, key: string): Promise<void> {

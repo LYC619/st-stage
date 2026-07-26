@@ -691,6 +691,11 @@
   border-color: rgba(130, 200, 255, 0.55);
   background: rgba(130, 200, 255, 0.08);
 }
+/* 切换进行中：整列表降透明并锁点击（busy 守卫之外的视觉反馈） */
+.stapi-row-busy {
+  opacity: 0.55;
+  pointer-events: none;
+}
 .stapi-row-main {
   flex: 1;
   min-width: 0;

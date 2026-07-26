@@ -10,7 +10,7 @@
 import type { PhoneApp, PhoneAppContext } from '../../../core/phone-registry'
 import { el, appButton } from './widgets'
 import { API_APP_ID, sanitizeAppData, findActiveProfile, type ApiProfile } from './api/core'
-import { readConnection, applyProfile } from './api/bridge'
+import { readConnection, applyProfile, onOnlineStatusChanged } from './api/bridge'
 
 export interface ApiAppDeps {
   /** 打开站点管理弹窗（index.ts 负责收起手机并在关闭后回本页） */
@@ -24,13 +24,24 @@ function toast(kind: 'success' | 'error', message: string): void {
 }
 
 export function apiApp(deps: ApiAppDeps): PhoneApp {
+  let unsubscribe: (() => void) | null = null
   return {
     id: API_APP_ID,
     name: 'API',
     icon: '📡',
     order: 6,
     mount(container, ctx) {
-      render(container, ctx, deps, { busy: false })
+      const state = { busy: false }
+      render(container, ctx, deps, state)
+      // 连接结果异步返回：订阅 ST 在线状态事件实时刷新状态点
+      // （切换中不打断反馈行，等切换流程自己收尾刷新）
+      unsubscribe = onOnlineStatusChanged(() => {
+        if (!state.busy && container.isConnected) render(container, ctx, deps, state)
+      })
+    },
+    unmount() {
+      unsubscribe?.()
+      unsubscribe = null
     },
   }
 }
@@ -114,11 +125,11 @@ function render(
     }
     state.busy = true
     say(`正在切换到「${p.name}」…`)
+    // 切换期间列表整体降透明防连点（busy 守卫是硬保险，这只是视觉反馈）
+    sites.querySelectorAll('.stapi-row').forEach((r) => r.classList.add('stapi-row-busy'))
     applyProfile(p)
       .then(() => {
-        toast('success', `已切换到「${p.name}」`)
-        // 连接结果异步返回，稍等一拍再刷新在线状态
-        return new Promise<void>((resolve) => setTimeout(resolve, 800))
+        toast('success', `已切换到「${p.name}」，正在连接…`)
       })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err)
