@@ -49,6 +49,7 @@ st-stage 的定位是「一个插件、内部装配多个 App」。加新功能 
 pnpm vitest run        # 纯逻辑请抽成独立模块并带单测
 pnpm eslint <改动文件>
 pnpm build:ext         # 构建成功
+pnpm test:mobile       # 改了手机壳/共享样式/触摸交互时加跑（Playwright 移动端 E2E）
 ```
 
 不要用 `pnpm typecheck` 做门禁：它在 main 上就失败（st-adapter 全局声明冲突的历史遗留，

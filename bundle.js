@@ -871,6 +871,15 @@ function createPhoneShell(initialState, deps) {
       if (moved) {
         commitState(state);
       } else {
+        const swallowGhostClick = (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+        };
+        window.addEventListener("click", swallowGhostClick, { capture: true, once: true });
+        setTimeout(
+          () => window.removeEventListener("click", swallowGhostClick, { capture: true }),
+          400
+        );
         commitState({ ...state, open: true });
         renderScreen();
       }
@@ -3343,7 +3352,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 21:02"}）`;
+  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 23:38"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -6248,7 +6257,7 @@ async function init() {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 21:02"}`;
+  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 23:38"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {

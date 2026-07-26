@@ -111,6 +111,7 @@ Claude Code 会自动发现这个 skill；其他工具就在提示词开头加�
 pnpm install
 pnpm dev        # 启动网页测试环境 http://localhost:3000
 pnpm test       # core 层单元测试（vitest）
+pnpm test:mobile # 移动端 E2E（Playwright 移动视口跑 Web 模拟器；首次先 npx playwright install chromium）
 pnpm lint       # ESLint
 pnpm typecheck  # tsc --noEmit
 pnpm build:ext  # 重新打包 ST 扩展（产物：根目录 index.js / bundle.js / version.json / style.css，全部需提交）

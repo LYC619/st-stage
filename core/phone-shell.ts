@@ -185,6 +185,18 @@ export function createPhoneShell(
       if (moved) {
         commitState(state)
       } else {
+        // 触屏 tap（桌面鼠标同理）在 pointerup 后还会在同一坐标补发一个合成 click；
+        // 此时图标已隐藏、壳已渲染，这发 click 会"幽灵点击"落点下的 App 图标。
+        // 展开前挂一个一次性捕获监听吞掉它（未补发则 400ms 后自清）。
+        const swallowGhostClick = (e: MouseEvent) => {
+          e.stopPropagation()
+          e.preventDefault()
+        }
+        window.addEventListener('click', swallowGhostClick, { capture: true, once: true })
+        setTimeout(
+          () => window.removeEventListener('click', swallowGhostClick, { capture: true }),
+          400,
+        )
         commitState({ ...state, open: true })
         renderScreen()
       }
