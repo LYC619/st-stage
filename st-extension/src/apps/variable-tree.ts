@@ -12,8 +12,12 @@
  */
 
 import { el, appButton } from './widgets'
+import { splitPath, getNested, setNested, deleteNested } from './path-utils'
 
-// —— 通用值判定与嵌套路径工具（点号路径，纯 JS，两 App 共用） —— //
+// 路径工具从 path-utils 引入并转出，历史依赖方（mvu-app 等）仍从本模块导入
+export { splitPath, getNested, setNested, deleteNested }
+
+// —— 通用值判定（两 App 共用） —— //
 
 export function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v != null && typeof v === 'object' && !Array.isArray(v)
@@ -25,43 +29,6 @@ export function isPlainObject(v: unknown): v is Record<string, unknown> {
  */
 export function isTupleLeaf(v: unknown): v is [unknown, string] {
   return Array.isArray(v) && v.length === 2 && typeof v[1] === 'string' && !Array.isArray(v[0])
-}
-
-export function splitPath(path: string): string[] {
-  return path.split('.').filter((seg) => seg.length > 0)
-}
-
-export function getNested(obj: Record<string, unknown>, path: string): unknown {
-  let cur: unknown = obj
-  for (const seg of splitPath(path)) {
-    if (cur == null || typeof cur !== 'object') return undefined
-    cur = (cur as Record<string, unknown>)[seg]
-  }
-  return cur
-}
-
-export function setNested(obj: Record<string, unknown>, path: string, value: unknown): void {
-  const segs = splitPath(path)
-  if (segs.length === 0) return
-  let cur: Record<string, unknown> = obj
-  for (let i = 0; i < segs.length - 1; i++) {
-    const seg = segs[i]
-    const next = cur[seg]
-    if (next == null || typeof next !== 'object' || Array.isArray(next)) cur[seg] = {}
-    cur = cur[seg] as Record<string, unknown>
-  }
-  cur[segs[segs.length - 1]] = value
-}
-
-export function deleteNested(obj: Record<string, unknown>, path: string): void {
-  const segs = splitPath(path)
-  if (segs.length === 0) return
-  let cur: unknown = obj
-  for (let i = 0; i < segs.length - 1; i++) {
-    if (cur == null || typeof cur !== 'object') return
-    cur = (cur as Record<string, unknown>)[segs[i]]
-  }
-  if (cur != null && typeof cur === 'object') delete (cur as Record<string, unknown>)[segs[segs.length - 1]]
 }
 
 /** 把 message 变量包归一化到「变量根」：有 stat_data 子树就用它（MVU 结构），否则视为扁平 */

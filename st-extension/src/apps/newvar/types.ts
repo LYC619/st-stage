@@ -1,0 +1,62 @@
+/**
+ * 「新变量」内置轻量变量追踪 —— 类型定义。
+ *
+ * 与 MVU App 的区别：MVU 适配外部框架；新变量是我们自建的一套，给没装 MVU 脚本的角色卡用。
+ * 用户在 GUI 里定义变量（VariableSchema），插件据此：注入状态+更新规则给 AI、解析 AI 输出的
+ * <UpdateVariable> 块、把状态快照存进消息（message.extra，逐楼一份）。
+ */
+
+/** 变量叶子类型（对象嵌套用点号路径表达，不设独立 object 类型） */
+export type VarType = 'number' | 'string' | 'boolean' | 'enum'
+
+export interface VariableDefinition {
+  /** 点号路径，如 "状态.体力" / "好感度" */
+  key: string
+  type: VarType
+  /** 默认值（初始化状态用） */
+  default: unknown
+  /** 给 AI 看、也在 UI 显示的说明 */
+  description: string
+  /** 仅 number：闭区间 [min, max]，越界自动 clip */
+  range?: [number, number]
+  /** 仅 enum：允许的取值 */
+  enum?: string[]
+  /** 是否对 AI 隐藏（内部计算用，不注入提示词） */
+  hidden?: boolean
+}
+
+export interface VariableSchema {
+  id: string
+  name: string
+  version: number
+  variables: VariableDefinition[]
+}
+
+/** AI 输出的变量更新格式：JSON Patch（新版 MVU，默认）/ lodash set（老版兼容） */
+export type OutputFormat = 'json_patch' | 'lodash_set'
+
+/** 归一化后的一条更新操作（path 为内部点号路径） */
+export interface PatchOp {
+  op: 'replace' | 'add' | 'remove'
+  path: string
+  value?: unknown
+}
+
+export interface ParsedBlock {
+  /** 是否在文本里找到了 <UpdateVariable> 块 */
+  found: boolean
+  ops: PatchOp[]
+  /** 解析阶段的错误（块存在但内容非法时） */
+  error?: string
+}
+
+export interface ApplyLogEntry {
+  path: string
+  status: 'accepted' | 'corrected' | 'rejected' | 'removed'
+  detail?: string
+}
+
+export interface ApplyResult {
+  state: Record<string, unknown>
+  log: ApplyLogEntry[]
+}

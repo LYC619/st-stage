@@ -3288,7 +3288,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 19:02"}）`;
+  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 19:12"}）`;
   hint.textContent = `立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -4096,13 +4096,7 @@ function render(container, ctx) {
   container.append(buildGuide());
 }
 
-// st-extension/src/apps/variable-tree.ts
-function isPlainObject(v) {
-  return v != null && typeof v === "object" && !Array.isArray(v);
-}
-function isTupleLeaf(v) {
-  return Array.isArray(v) && v.length === 2 && typeof v[1] === "string" && !Array.isArray(v[0]);
-}
+// st-extension/src/apps/path-utils.ts
 function splitPath(path) {
   return path.split(".").filter((seg) => seg.length > 0);
 }
@@ -4135,6 +4129,14 @@ function deleteNested(obj, path) {
     cur = cur[segs[i]];
   }
   if (cur != null && typeof cur === "object") delete cur[segs[segs.length - 1]];
+}
+
+// st-extension/src/apps/variable-tree.ts
+function isPlainObject(v) {
+  return v != null && typeof v === "object" && !Array.isArray(v);
+}
+function isTupleLeaf(v) {
+  return Array.isArray(v) && v.length === 2 && typeof v[1] === "string" && !Array.isArray(v[0]);
 }
 function extractStatRootFrom(wrapper) {
   if (isPlainObject(wrapper.stat_data)) return { root: wrapper.stat_data, wrapped: true };
@@ -4944,7 +4946,7 @@ async function init() {
   refresh();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 19:02"}`;
+  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 19:12"}`;
   console.log(`[sprite-overlay] 角色立绘悬浮窗扩展已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {
