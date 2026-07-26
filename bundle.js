@@ -3288,7 +3288,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 18:33"}）`;
+  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 19:02"}）`;
   hint.textContent = `立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -4096,29 +4096,7 @@ function render(container, ctx) {
   container.append(buildGuide());
 }
 
-// st-extension/src/apps/variable-app.ts
-function getMvu() {
-  const w = window;
-  return w.parent?.Mvu ?? w.Mvu;
-}
-function getHelper() {
-  const w = window;
-  return w.parent?.TavernHelper ?? w.TavernHelper;
-}
-function getST2() {
-  try {
-    return window.SillyTavern?.getContext();
-  } catch {
-    return void 0;
-  }
-}
-function isMvuAvailable() {
-  const mvu = getMvu();
-  return typeof mvu?.getMvuData === "function" && typeof mvu?.replaceMvuData === "function";
-}
-function delay(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+// st-extension/src/apps/variable-tree.ts
 function isPlainObject(v) {
   return v != null && typeof v === "object" && !Array.isArray(v);
 }
@@ -4158,161 +4136,9 @@ function deleteNested(obj, path) {
   }
   if (cur != null && typeof cur === "object") delete cur[segs[segs.length - 1]];
 }
-function extractStatRoot(wrapper) {
+function extractStatRootFrom(wrapper) {
   if (isPlainObject(wrapper.stat_data)) return { root: wrapper.stat_data, wrapped: true };
   return { root: wrapper, wrapped: false };
-}
-function getLastMessageId(st) {
-  const helper = getHelper();
-  if (typeof helper?.getLastMessageId === "function") {
-    try {
-      const id = helper.getLastMessageId();
-      if (Number.isInteger(id) && id >= 0) return id;
-    } catch {
-    }
-  }
-  const chat = st?.chat;
-  if (Array.isArray(chat) && chat.length > 0) return chat.length - 1;
-  return -1;
-}
-async function waitForMvuInitialized(timeoutMs) {
-  const w = window;
-  const waitFn = w.parent?.waitGlobalInitialized ?? w.waitGlobalInitialized;
-  if (typeof waitFn !== "function") return;
-  await Promise.race([Promise.resolve(waitFn("Mvu")).catch(() => void 0), delay(timeoutMs)]);
-}
-async function readMvuDataWithRetry(scope, timeoutMs, intervalMs) {
-  const mvu = getMvu();
-  const start = Date.now();
-  let attempts = 0;
-  let data;
-  for (; ; ) {
-    attempts++;
-    data = await Promise.resolve(mvu.getMvuData(scope)) ?? {};
-    const stat = data.stat_data;
-    if (stat && Object.keys(stat).length > 0) return { data, attempts };
-    if (Date.now() - start >= timeoutMs) return { data, attempts };
-    await delay(intervalMs);
-  }
-}
-async function readHelperWrapper(scope) {
-  const helper = getHelper();
-  if (typeof helper?.getVariables !== "function") return null;
-  const vars = await Promise.resolve(helper.getVariables(scope));
-  return vars && typeof vars === "object" ? vars : {};
-}
-async function readVariables(scope, messageId) {
-  const meta = {
-    source: "none",
-    waitedMvu: false,
-    attempts: 0,
-    mvuInitiallyAvailable: isMvuAvailable(),
-    mvuAvailableAfterWait: false
-  };
-  const base = { isMvu: false, wrapped: true, messageId, meta };
-  if (messageId < 0) return { status: "empty", data: {}, ...base };
-  if (!isMvuAvailable()) {
-    await waitForMvuInitialized(1200);
-    meta.waitedMvu = true;
-  }
-  meta.mvuAvailableAfterWait = isMvuAvailable();
-  if (isMvuAvailable()) {
-    try {
-      const { data, attempts } = await readMvuDataWithRetry(scope, 1200, 120);
-      meta.attempts = attempts;
-      const stat = data.stat_data ?? {};
-      if (Object.keys(stat).length > 0) {
-        meta.source = "mvu";
-        return { status: "ready", data: stat, isMvu: true, wrapped: true, messageId, meta };
-      }
-      const helperFallback = await readHelperFallback(scope, messageId, meta);
-      if (helperFallback) return helperFallback;
-      return { status: "empty", data: {}, isMvu: true, wrapped: true, messageId, meta };
-    } catch (err) {
-      const helperFallback = await readHelperFallback(scope, messageId, meta);
-      if (helperFallback) return helperFallback;
-      return {
-        status: "error",
-        data: {},
-        isMvu: false,
-        wrapped: true,
-        messageId,
-        meta,
-        error: err instanceof Error ? err.message : String(err)
-      };
-    }
-  }
-  const wrapper = await readHelperWrapper(scope).catch(() => null);
-  if (wrapper) {
-    const { root, wrapped } = extractStatRoot(wrapper);
-    meta.source = Object.keys(root).length > 0 ? "tavern-helper" : "none";
-    return {
-      status: Object.keys(root).length > 0 ? "ready" : "empty",
-      data: root,
-      isMvu: false,
-      wrapped,
-      messageId,
-      meta
-    };
-  }
-  return { status: "unavailable", data: {}, isMvu: false, wrapped: true, messageId, meta };
-}
-async function readHelperFallback(scope, messageId, meta) {
-  const wrapper = await readHelperWrapper(scope).catch(() => null);
-  if (!wrapper) return null;
-  const { root, wrapped } = extractStatRoot(wrapper);
-  if (Object.keys(root).length === 0) return null;
-  meta.source = "tavern-helper";
-  return { status: "ready", data: root, isMvu: false, wrapped, messageId, meta };
-}
-function fullPath(wrapped, path) {
-  return wrapped ? `stat_data.${path}` : path;
-}
-function applySet(container, wrapped, path, value) {
-  const fp = fullPath(wrapped, path);
-  const old = getNested(container, fp);
-  const final = isTupleLeaf(old) ? [value, old[1]] : value;
-  setNested(container, fp, final);
-}
-async function setFloorVariable(scope, wrapped, path, value) {
-  const mvu = getMvu();
-  if (isMvuAvailable()) {
-    const wrapper = await Promise.resolve(mvu.getMvuData(scope)) ?? {};
-    applySet(wrapper, true, path, value);
-    await Promise.resolve(mvu.replaceMvuData(wrapper, scope));
-    return;
-  }
-  await writeHelper(scope, (vars) => applySet(vars, wrapped, path, value));
-}
-async function deleteFloorVariable(scope, wrapped, path) {
-  const mvu = getMvu();
-  if (isMvuAvailable()) {
-    const wrapper = await Promise.resolve(mvu.getMvuData(scope)) ?? {};
-    deleteNested(wrapper, fullPath(true, path));
-    await Promise.resolve(mvu.replaceMvuData(wrapper, scope));
-    return;
-  }
-  await writeHelper(scope, (vars) => deleteNested(vars, fullPath(wrapped, path)));
-}
-async function writeHelper(scope, mutate) {
-  const helper = getHelper();
-  if (typeof helper?.updateVariablesWith === "function") {
-    await Promise.resolve(
-      helper.updateVariablesWith((vars) => {
-        const v = isPlainObject(vars) ? vars : {};
-        mutate(v);
-        return v;
-      }, scope)
-    );
-    return;
-  }
-  if (typeof helper?.getVariables === "function" && typeof helper?.replaceVariables === "function") {
-    const vars = await Promise.resolve(helper.getVariables(scope)) ?? {};
-    mutate(vars);
-    await Promise.resolve(helper.replaceVariables(vars, scope));
-    return;
-  }
-  throw new Error("无可用的变量写入通道（MVU / 酒馆助手均不可用）");
 }
 function formatValue(v) {
   if (typeof v === "string") return v;
@@ -4353,124 +4179,72 @@ function valueTypeLabel(v, tuple) {
   if (typeof inner === "object") return "对象";
   return typeof inner === "number" ? "数字" : typeof inner === "boolean" ? "布尔" : "文本";
 }
-function createInstance(container, _ctx) {
-  let disposed = false;
-  let seq = 0;
-  let lastResult = null;
+function jsonEqual(a, b) {
+  if (a === b) return true;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+}
+function computeDelta(current, prev, isMvu) {
+  const delta = /* @__PURE__ */ new Map();
+  if (!prev) return delta;
+  const walk = (obj, prefix) => {
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      const path = prefix ? `${prefix}.${key}` : key;
+      const tuple = isMvu && isTupleLeaf(val);
+      if (!tuple && isPlainObject(val) && Object.keys(val).length > 0) {
+        walk(val, path);
+        continue;
+      }
+      const curLeaf = tuple ? val[0] : val;
+      const prevRaw = getNested(prev, path);
+      if (prevRaw === void 0) {
+        delta.set(path, { kind: "added" });
+        continue;
+      }
+      const prevLeaf = isMvu && isTupleLeaf(prevRaw) ? prevRaw[0] : prevRaw;
+      if (typeof curLeaf === "number" && typeof prevLeaf === "number") {
+        if (curLeaf !== prevLeaf) delta.set(path, { kind: curLeaf > prevLeaf ? "inc" : "dec", diff: curLeaf - prevLeaf });
+      } else if (!jsonEqual(curLeaf, prevLeaf)) {
+        delta.set(path, { kind: "changed" });
+      }
+    }
+  };
+  walk(current, "");
+  return delta;
+}
+function createVariableTreeView(container, handlers) {
   let editingPath = null;
-  let pendingRefresh = false;
-  let refreshTimer = null;
-  const unsubs = [];
-  function isStale(token) {
-    return disposed || token !== seq || !container.isConnected;
-  }
-  async function load() {
-    const token = ++seq;
-    editingPath = null;
-    const st = getST2();
-    const messageId = getLastMessageId(st);
-    renderLoading();
-    const result = await readVariables({ type: "message", message_id: messageId }, messageId);
-    if (isStale(token)) return;
-    lastResult = result;
-    render2();
-  }
-  function scheduleRefresh() {
-    if (disposed) return;
-    if (editingPath !== null) {
-      pendingRefresh = true;
-      return;
-    }
-    if (refreshTimer) clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(() => {
-      refreshTimer = null;
-      if (!disposed && editingPath === null) void load();
-    }, 300);
-  }
-  function subscribeEvents() {
-    const st = getST2();
-    const es = st?.eventSource;
-    if (!es) return;
-    const mvu = getMvu();
-    const names = /* @__PURE__ */ new Set([
-      mvu?.events?.VARIABLE_UPDATE_ENDED ?? "mag_variable_update_ended",
-      mvu?.events?.VARIABLE_INITIALIZED ?? "mag_variable_initialized",
-      // 楼层导航类：切对话 / 划动 / 删除消息会改变「最后一层」
-      st?.eventTypes?.CHAT_CHANGED ?? "chat_id_changed",
-      st?.eventTypes?.MESSAGE_SWIPED ?? "message_swiped",
-      st?.eventTypes?.MESSAGE_DELETED ?? "message_deleted"
-    ]);
-    for (const name of names) {
-      if (!name) continue;
-      const handler = () => scheduleRefresh();
-      es.on(name, handler);
-      unsubs.push(() => {
-        try {
-          es.removeListener(name, handler);
-        } catch {
-        }
-      });
-    }
-  }
-  function renderLoading() {
-    if (lastResult) return;
-    container.textContent = "";
-    const section = el2("div", "so-app-section");
-    const d = el2("div", "so-app-desc");
-    d.textContent = "正在读取楼层变量…";
-    section.append(d);
-    container.append(section);
-  }
-  function sourceLabel(r) {
-    if (r.meta.source === "mvu") return "MVU";
-    if (r.meta.source === "tavern-helper") return "酒馆助手";
-    return "—";
-  }
-  function currentScope() {
-    return { type: "message", message_id: lastResult?.messageId ?? getLastMessageId(getST2()) };
-  }
-  function currentWrapped() {
-    return lastResult?.wrapped ?? true;
-  }
   function render2() {
-    const r = lastResult;
-    if (!r) {
-      renderLoading();
-      return;
-    }
+    const model = handlers.getModel();
     container.textContent = "";
     const head = el2("div", "so-app-section vm-head");
     const line = el2("div", "vm-statusrow");
     const status = el2("div", "so-app-desc vm-status");
-    status.textContent = `来源：${sourceLabel(r)} · ${r.messageId >= 0 ? `楼层 #${r.messageId}` : "无对话"}`;
-    line.append(status);
+    status.textContent = model.statusText;
     const refreshBtn = el2("button", "menu_button vm-refresh");
     refreshBtn.setAttribute("role", "button");
     refreshBtn.textContent = "刷新";
-    refreshBtn.addEventListener("click", () => void load());
-    line.append(refreshBtn);
+    refreshBtn.addEventListener("click", () => handlers.requestRefresh());
+    line.append(status, refreshBtn);
     head.append(line);
     container.append(head);
-    if (r.status === "unavailable") {
-      appendNotice(
-        "未检测到 MVU 框架或酒馆助手（Web 模拟器中仅可查看本说明）。在 SillyTavern 内、且安装了 MVU/酒馆助手时才能读写楼层变量。"
-      );
-      return;
+    if (model.noticeText) {
+      appendNotice(model.noticeText);
+      if (model.status === "unavailable") return;
     }
-    if (r.status === "error") {
-      appendNotice(`读取变量出错：${r.error ?? "未知错误"}。可点「刷新」重试。`);
-    }
-    const keys = Object.keys(r.data);
+    const keys = Object.keys(model.data);
     if (keys.length === 0) {
-      appendNotice(
-        r.status === "empty" && r.meta.waitedMvu ? "当前楼层暂无变量（已等待 MVU 初始化）。有变量的楼层刷新后会显示在这里。" : "当前楼层暂无变量。"
-      );
+      appendNotice(model.emptyText);
     } else {
       const tree = el2("div", "vm-tree");
-      for (const key of keys) renderNode(tree, key, r.data[key], key, r.isMvu, 0);
+      for (const key of keys) renderNode(model, tree, key, model.data[key], key, 0);
       container.append(tree);
     }
-    container.append(buildAddSection(r));
+    container.append(buildAddSection(model));
   }
   function appendNotice(text) {
     const note = el2("div", "so-app-section");
@@ -4479,8 +4253,8 @@ function createInstance(container, _ctx) {
     note.append(d);
     container.append(note);
   }
-  function renderNode(parent, key, value, path, isMvu, depth) {
-    const tuple = isMvu && isTupleLeaf(value);
+  function renderNode(model, parent, key, value, path, depth) {
+    const tuple = model.isMvu && isTupleLeaf(value);
     if (!tuple && isPlainObject(value) && Object.keys(value).length > 0) {
       const details = document.createElement("details");
       details.className = "so-app-fold vm-group";
@@ -4490,17 +4264,17 @@ function createInstance(container, _ctx) {
       summary.textContent = `${key}（${Object.keys(value).length}）`;
       const body = el2("div", "so-app-fold-body vm-group-body");
       for (const childKey of Object.keys(value)) {
-        renderNode(body, childKey, value[childKey], `${path}.${childKey}`, isMvu, depth + 1);
+        renderNode(model, body, childKey, value[childKey], `${path}.${childKey}`, depth + 1);
       }
       details.append(summary, body);
       parent.append(details);
       return;
     }
-    renderLeaf(parent, key, value, path, tuple);
+    renderLeaf(model, parent, key, value, path, tuple);
   }
-  function renderLeaf(parent, key, value, path, tuple) {
+  function renderLeaf(model, parent, key, value, path, tuple) {
     if (editingPath === path) {
-      parent.append(buildEditForm(key, value, path, tuple));
+      parent.append(buildEditForm(model, key, value, path, tuple));
       return;
     }
     const card = el2("div", "vm-leaf");
@@ -4512,37 +4286,55 @@ function createInstance(container, _ctx) {
     valEl.textContent = shown.length > 80 ? `${shown.slice(0, 80)}…` : shown;
     valEl.title = `类型：${valueTypeLabel(value, tuple)}`;
     main.append(keyEl, valEl);
+    const d = model.delta.get(path);
+    if (d) main.append(buildDeltaBadge(d));
     if (tuple) {
       const desc = el2("div", "vm-desc");
       desc.textContent = value[1];
       main.append(desc);
     }
-    main.setAttribute("role", "button");
-    main.tabIndex = 0;
-    const enterEdit = () => {
-      editingPath = path;
-      render2();
-    };
-    main.addEventListener("click", enterEdit);
-    main.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        enterEdit();
-      }
-    });
-    const del = el2("button", "vm-del");
-    del.setAttribute("aria-label", "删除变量");
-    del.title = "删除该变量";
-    del.textContent = "✕";
-    del.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (!window.confirm(`删除变量「${path}」？此操作不可撤销。`)) return;
-      void runWrite(() => deleteFloorVariable(currentScope(), currentWrapped(), path));
-    });
-    card.append(main, del);
+    if (model.canWrite) {
+      main.setAttribute("role", "button");
+      main.tabIndex = 0;
+      const enterEdit = () => {
+        editingPath = path;
+        render2();
+      };
+      main.addEventListener("click", enterEdit);
+      main.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          enterEdit();
+        }
+      });
+    }
+    card.append(main);
+    if (model.canWrite) {
+      const del = el2("button", "vm-del");
+      del.setAttribute("aria-label", "删除变量");
+      del.title = "删除该变量";
+      del.textContent = "✕";
+      del.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!window.confirm(`删除变量「${path}」？此操作不可撤销。`)) return;
+        editingPath = null;
+        handlers.commitDelete(path);
+      });
+      card.append(del);
+    }
     parent.append(card);
   }
-  function buildEditForm(key, value, path, tuple) {
+  function buildDeltaBadge(d) {
+    const badge = el2("span", `vm-badge vm-badge-${d.kind}`);
+    if (d.kind === "inc" || d.kind === "dec") {
+      const n = d.diff ?? 0;
+      badge.textContent = `${n > 0 ? "+" : ""}${n}`;
+    } else {
+      badge.textContent = d.kind === "added" ? "新" : "改";
+    }
+    return badge;
+  }
+  function buildEditForm(model, key, value, path, tuple) {
     const inner = tuple ? value[0] : value;
     const kind = editKind(inner);
     const wrap = el2("div", "vm-leaf vm-editing");
@@ -4607,33 +4399,28 @@ function createInstance(container, _ctx) {
         err.hidden = false;
         return;
       }
-      void runWrite(() => setFloorVariable(currentScope(), currentWrapped(), path, r.value));
+      editingPath = null;
+      handlers.commitSet(path, r.value);
     });
     const cancel = el2("button", "menu_button vm-act vm-act-ghost");
     cancel.textContent = "取消";
     cancel.addEventListener("click", () => {
       editingPath = null;
-      if (pendingRefresh) {
-        pendingRefresh = false;
-        void load();
-      } else {
-        render2();
-      }
+      render2();
     });
     actions.append(save, cancel);
     wrap.append(actions);
     return wrap;
   }
-  function buildAddSection(r) {
+  function buildAddSection(model) {
     const box = document.createElement("details");
     box.className = "so-app-fold so-app-section";
     const summary = document.createElement("summary");
     summary.className = "so-app-title";
     summary.textContent = "＋ 新增变量";
     const body = el2("div", "so-app-fold-body");
-    const canWrite = r.status !== "unavailable";
     const hint = el2("div", "so-app-desc");
-    hint.textContent = canWrite ? "路径用点号表示层级，如 角色.络络.好感度。值支持 数字 / true / false / null / JSON / 文本。" : "当前环境不可写入变量。";
+    hint.textContent = model.addHint;
     body.append(hint);
     const pathInput = document.createElement("input");
     pathInput.type = "text";
@@ -4657,17 +4444,318 @@ function createInstance(container, _ctx) {
           err.hidden = false;
           return;
         }
-        if (!canWrite) {
+        if (!model.canWrite) {
           err.textContent = "当前环境不可写入变量。";
           err.hidden = false;
           return;
         }
-        const parsed = parseInputValue(valInput.value);
-        void runWrite(() => setFloorVariable(currentScope(), currentWrapped(), path, parsed));
+        handlers.commitSet(path, parseInputValue(valInput.value));
       })
     );
     box.append(summary, body);
     return box;
+  }
+  return {
+    render: render2,
+    resetEditing() {
+      editingPath = null;
+    },
+    isEditing() {
+      return editingPath !== null;
+    }
+  };
+}
+
+// st-extension/src/apps/mvu-app.ts
+function getMvu() {
+  const w = window;
+  return w.parent?.Mvu ?? w.Mvu;
+}
+function getHelper() {
+  const w = window;
+  return w.parent?.TavernHelper ?? w.TavernHelper;
+}
+function getST2() {
+  try {
+    return window.SillyTavern?.getContext();
+  } catch {
+    return void 0;
+  }
+}
+function isMvuAvailable() {
+  const mvu = getMvu();
+  return typeof mvu?.getMvuData === "function" && typeof mvu?.replaceMvuData === "function";
+}
+function delay(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+function getLastMessageId(st) {
+  const helper = getHelper();
+  if (typeof helper?.getLastMessageId === "function") {
+    try {
+      const id = helper.getLastMessageId();
+      if (Number.isInteger(id) && id >= 0) return id;
+    } catch {
+    }
+  }
+  const chat = st?.chat;
+  if (Array.isArray(chat) && chat.length > 0) return chat.length - 1;
+  return -1;
+}
+async function waitForMvuInitialized(timeoutMs) {
+  const w = window;
+  const waitFn = w.parent?.waitGlobalInitialized ?? w.waitGlobalInitialized;
+  if (typeof waitFn !== "function") return;
+  await Promise.race([Promise.resolve(waitFn("Mvu")).catch(() => void 0), delay(timeoutMs)]);
+}
+async function readMvuDataWithRetry(scope, timeoutMs, intervalMs) {
+  const mvu = getMvu();
+  const start = Date.now();
+  let attempts = 0;
+  let data;
+  for (; ; ) {
+    attempts++;
+    data = await Promise.resolve(mvu.getMvuData(scope)) ?? {};
+    const stat = data.stat_data;
+    if (stat && Object.keys(stat).length > 0) return { data, attempts };
+    if (Date.now() - start >= timeoutMs) return { data, attempts };
+    await delay(intervalMs);
+  }
+}
+async function readHelperWrapper(scope) {
+  const helper = getHelper();
+  if (typeof helper?.getVariables !== "function") return null;
+  const vars = await Promise.resolve(helper.getVariables(scope));
+  return vars && typeof vars === "object" ? vars : {};
+}
+async function readStatRootAt(messageId) {
+  if (messageId < 0) return null;
+  const scope = { type: "message", message_id: messageId };
+  try {
+    if (isMvuAvailable()) {
+      const data = await Promise.resolve(getMvu().getMvuData(scope)) ?? {};
+      return isPlainObject(data.stat_data) ? data.stat_data : null;
+    }
+    const wrapper = await readHelperWrapper(scope);
+    return wrapper ? extractStatRootFrom(wrapper).root : null;
+  } catch {
+    return null;
+  }
+}
+async function readVariables(scope, messageId) {
+  const meta = { source: "none", waitedMvu: false };
+  const base = { isMvu: false, wrapped: true, messageId, meta };
+  if (messageId < 0) return { status: "empty", data: {}, ...base };
+  if (!isMvuAvailable()) {
+    await waitForMvuInitialized(1200);
+    meta.waitedMvu = true;
+  }
+  if (isMvuAvailable()) {
+    try {
+      const { data } = await readMvuDataWithRetry(scope, 1200, 120);
+      const stat = data.stat_data ?? {};
+      if (Object.keys(stat).length > 0) {
+        meta.source = "mvu";
+        return { status: "ready", data: stat, isMvu: true, wrapped: true, messageId, meta };
+      }
+      const fb = await readHelperFallback(scope, messageId, meta);
+      if (fb) return fb;
+      return { status: "empty", data: {}, isMvu: true, wrapped: true, messageId, meta };
+    } catch (err) {
+      const fb = await readHelperFallback(scope, messageId, meta);
+      if (fb) return fb;
+      return {
+        status: "error",
+        data: {},
+        isMvu: false,
+        wrapped: true,
+        messageId,
+        meta,
+        error: err instanceof Error ? err.message : String(err)
+      };
+    }
+  }
+  const wrapper = await readHelperWrapper(scope).catch(() => null);
+  if (wrapper) {
+    const { root, wrapped } = extractStatRootFrom(wrapper);
+    meta.source = Object.keys(root).length > 0 ? "tavern-helper" : "none";
+    return {
+      status: Object.keys(root).length > 0 ? "ready" : "empty",
+      data: root,
+      isMvu: false,
+      wrapped,
+      messageId,
+      meta
+    };
+  }
+  return { status: "unavailable", data: {}, isMvu: false, wrapped: true, messageId, meta };
+}
+async function readHelperFallback(scope, messageId, meta) {
+  const wrapper = await readHelperWrapper(scope).catch(() => null);
+  if (!wrapper) return null;
+  const { root, wrapped } = extractStatRootFrom(wrapper);
+  if (Object.keys(root).length === 0) return null;
+  meta.source = "tavern-helper";
+  return { status: "ready", data: root, isMvu: false, wrapped, messageId, meta };
+}
+function fullPath(wrapped, path) {
+  return wrapped ? `stat_data.${path}` : path;
+}
+function applySet(container, wrapped, path, value) {
+  const fp = fullPath(wrapped, path);
+  const old = getNested(container, fp);
+  const final = isTupleLeaf(old) ? [value, old[1]] : value;
+  setNested(container, fp, final);
+}
+async function setFloorVariable(scope, wrapped, path, value) {
+  const mvu = getMvu();
+  if (isMvuAvailable()) {
+    const wrapper = await Promise.resolve(mvu.getMvuData(scope)) ?? {};
+    applySet(wrapper, true, path, value);
+    await Promise.resolve(mvu.replaceMvuData(wrapper, scope));
+    return;
+  }
+  await writeHelper(scope, (vars) => applySet(vars, wrapped, path, value));
+}
+async function deleteFloorVariable(scope, wrapped, path) {
+  const mvu = getMvu();
+  if (isMvuAvailable()) {
+    const wrapper = await Promise.resolve(mvu.getMvuData(scope)) ?? {};
+    deleteNested(wrapper, fullPath(true, path));
+    await Promise.resolve(mvu.replaceMvuData(wrapper, scope));
+    return;
+  }
+  await writeHelper(scope, (vars) => deleteNested(vars, fullPath(wrapped, path)));
+}
+async function writeHelper(scope, mutate) {
+  const helper = getHelper();
+  if (typeof helper?.updateVariablesWith === "function") {
+    await Promise.resolve(
+      helper.updateVariablesWith((vars) => {
+        const v = isPlainObject(vars) ? vars : {};
+        mutate(v);
+        return v;
+      }, scope)
+    );
+    return;
+  }
+  if (typeof helper?.getVariables === "function" && typeof helper?.replaceVariables === "function") {
+    const vars = await Promise.resolve(helper.getVariables(scope)) ?? {};
+    mutate(vars);
+    await Promise.resolve(helper.replaceVariables(vars, scope));
+    return;
+  }
+  throw new Error("无可用的变量写入通道（MVU / 酒馆助手均不可用）");
+}
+function createInstance(container, _ctx) {
+  let disposed = false;
+  let seq = 0;
+  let lastResult = null;
+  let delta = /* @__PURE__ */ new Map();
+  let refreshTimer = null;
+  const unsubs = [];
+  const view = createVariableTreeView(container, {
+    getModel: () => buildModel(),
+    commitSet: (path, value) => void runWrite(() => setFloorVariable(currentScope(), currentWrapped(), path, value)),
+    commitDelete: (path) => void runWrite(() => deleteFloorVariable(currentScope(), currentWrapped(), path)),
+    requestRefresh: () => void load()
+  });
+  function currentScope() {
+    return { type: "message", message_id: lastResult?.messageId ?? getLastMessageId(getST2()) };
+  }
+  function currentWrapped() {
+    return lastResult?.wrapped ?? true;
+  }
+  function sourceLabel(r) {
+    if (r.meta.source === "mvu") return "MVU";
+    if (r.meta.source === "tavern-helper") return "酒馆助手";
+    return "—";
+  }
+  function buildModel() {
+    const r = lastResult;
+    if (!r) {
+      return {
+        data: {},
+        isMvu: true,
+        delta: /* @__PURE__ */ new Map(),
+        status: "empty",
+        statusText: "正在读取…",
+        emptyText: "正在读取楼层变量…",
+        canWrite: false,
+        addHint: ""
+      };
+    }
+    const canWrite = r.status !== "unavailable";
+    let noticeText;
+    if (r.status === "unavailable") {
+      noticeText = "未检测到 MVU 框架或酒馆助手（Web 模拟器中仅可查看本说明）。在 SillyTavern 内、且安装了 MVU/酒馆助手时才能读写楼层变量。";
+    } else if (r.status === "error") {
+      noticeText = `读取变量出错：${r.error ?? "未知错误"}。可点「刷新」重试。`;
+    }
+    return {
+      data: r.data,
+      isMvu: r.isMvu,
+      delta,
+      status: r.status,
+      statusText: `来源：${sourceLabel(r)} · ${r.messageId >= 0 ? `楼层 #${r.messageId}` : "无对话"}`,
+      emptyText: r.status === "empty" && r.meta.waitedMvu ? "当前楼层暂无变量（已等待 MVU 初始化）。有变量的楼层刷新后会显示在这里。" : "当前楼层暂无变量。",
+      noticeText,
+      canWrite,
+      addHint: canWrite ? "路径用点号表示层级，如 角色.络络.好感度。值支持 数字 / true / false / null / JSON / 文本。" : "当前环境不可写入变量。"
+    };
+  }
+  function isStale(token) {
+    return disposed || token !== seq || !container.isConnected;
+  }
+  async function load() {
+    const token = ++seq;
+    view.resetEditing();
+    if (!lastResult) view.render();
+    const st = getST2();
+    const messageId = getLastMessageId(st);
+    const result = await readVariables({ type: "message", message_id: messageId }, messageId);
+    if (isStale(token)) return;
+    let nextDelta = /* @__PURE__ */ new Map();
+    if (result.status === "ready" && messageId > 0) {
+      const prev = await readStatRootAt(messageId - 1);
+      if (isStale(token)) return;
+      nextDelta = computeDelta(result.data, prev, result.isMvu);
+    }
+    lastResult = result;
+    delta = nextDelta;
+    view.render();
+  }
+  function scheduleRefresh() {
+    if (disposed || view.isEditing()) return;
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      if (!disposed && !view.isEditing()) void load();
+    }, 300);
+  }
+  function subscribeEvents() {
+    const st = getST2();
+    const es = st?.eventSource;
+    if (!es) return;
+    const mvu = getMvu();
+    const names = /* @__PURE__ */ new Set([
+      mvu?.events?.VARIABLE_UPDATE_ENDED ?? "mag_variable_update_ended",
+      mvu?.events?.VARIABLE_INITIALIZED ?? "mag_variable_initialized",
+      st?.eventTypes?.CHAT_CHANGED ?? "chat_id_changed",
+      st?.eventTypes?.MESSAGE_SWIPED ?? "message_swiped",
+      st?.eventTypes?.MESSAGE_DELETED ?? "message_deleted"
+    ]);
+    for (const name of names) {
+      if (!name) continue;
+      const handler = () => scheduleRefresh();
+      es.on(name, handler);
+      unsubs.push(() => {
+        try {
+          es.removeListener(name, handler);
+        } catch {
+        }
+      });
+    }
   }
   async function runWrite(op) {
     try {
@@ -4692,11 +4780,11 @@ function createInstance(container, _ctx) {
     }
   };
 }
-function variableApp() {
+function mvuApp() {
   let inst = null;
   return {
-    id: "variables",
-    name: "变量",
+    id: "mvu",
+    name: "MVU",
     icon: "🔢",
     order: 4,
     mount(container, ctx) {
@@ -4713,7 +4801,7 @@ function variableApp() {
 
 // st-extension/src/apps/index.ts
 function createBuiltinApps(deps) {
-  return [spriteApp(), galleryApp({ openManager: deps.openGalleryManager }), butlerApp(), variableApp()];
+  return [spriteApp(), galleryApp({ openManager: deps.openGalleryManager }), butlerApp(), mvuApp()];
 }
 
 // st-extension/src/index.ts
@@ -4856,7 +4944,7 @@ async function init() {
   refresh();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 18:33"}`;
+  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 19:02"}`;
   console.log(`[sprite-overlay] 角色立绘悬浮窗扩展已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {
