@@ -85,6 +85,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   let backdrop: HTMLElement | null = null
   let view: View = { kind: 'list' }
   let openedFrom: ManagerSource = 'overlay'
+  /** 当前打开的放大查看器的清理函数；弹窗整体关闭时必须先走它退订全局 keydown */
+  let closeLightbox: (() => void) | null = null
 
   /** 遮罩尺寸用 JS 按 innerWidth/Height 写死 px（与手机壳同一套定位路径）：
       移动端浏览器对 fixed+四边锚点/视口单位的解释五花八门，内联 px 最稳 */
@@ -166,6 +168,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
   function close(): void {
     if (!backdrop) return
+    closeLightbox?.()
     document.removeEventListener('keydown', onEscape)
     window.removeEventListener('resize', applyBackdropSize)
     backdrop.remove()
@@ -936,7 +939,9 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     const closeBox = () => {
       document.removeEventListener('keydown', onKey, true)
       box.remove()
+      closeLightbox = null
     }
+    closeLightbox = closeBox
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft') {
         e.preventDefault()

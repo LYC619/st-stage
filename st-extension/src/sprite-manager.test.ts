@@ -114,4 +114,36 @@ describe('createSpriteManager binding conflict UI', () => {
     expect(document.querySelector('.so-manager-title')?.textContent).toBe('测试包')
     manager.close()
   })
+
+  it('unhooks the lightbox keydown listener when the manager closes over it', () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [
+        {
+          id: 'p1',
+          name: '测试包',
+          sprites: [
+            { tag: '微笑', url: 'https://img.test/a.png' },
+            { tag: '生气', url: 'https://img.test/b.png' },
+          ],
+        },
+      ],
+    }
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    ;([...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+      .find((c) => c.textContent?.includes('测试包')))!.click()
+    document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
+    expect(document.querySelector('.so-lightbox')).not.toBeNull()
+
+    // 灯箱还开着时整体关闭弹窗：全局方向键不能再被残留监听 preventDefault
+    manager.close()
+    const arrow = new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true })
+    document.dispatchEvent(arrow)
+    expect(arrow.defaultPrevented).toBe(false)
+  })
 })

@@ -2058,6 +2058,7 @@ function createSpriteManager(deps) {
   let backdrop = null;
   let view = { kind: "list" };
   let openedFrom = "overlay";
+  let closeLightbox = null;
   function applyBackdropSize() {
     if (!backdrop) return;
     backdrop.style.left = "0";
@@ -2125,6 +2126,7 @@ function createSpriteManager(deps) {
   }
   function close() {
     if (!backdrop) return;
+    closeLightbox?.();
     document.removeEventListener("keydown", onEscape);
     window.removeEventListener("resize", applyBackdropSize);
     backdrop.remove();
@@ -2816,7 +2818,9 @@ ${preview}
     const closeBox = () => {
       document.removeEventListener("keydown", onKey, true);
       box.remove();
+      closeLightbox = null;
     };
+    closeLightbox = closeBox;
     const onKey = (e) => {
       if (e.key === "ArrowLeft") {
         e.preventDefault();
@@ -3339,7 +3343,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 20:44"}）`;
+  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 21:02"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -6244,7 +6248,7 @@ async function init() {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 20:44"}`;
+  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 21:02"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {
