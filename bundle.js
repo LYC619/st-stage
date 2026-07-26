@@ -3288,7 +3288,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 17:28"}）`;
+  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 18:00"}）`;
   hint.textContent = `立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -4096,9 +4096,566 @@ function render(container, ctx) {
   container.append(buildGuide());
 }
 
+// st-extension/src/apps/variable-app.ts
+function getMvu() {
+  return window.Mvu;
+}
+function getHelper() {
+  return window.TavernHelper;
+}
+function getST2() {
+  try {
+    return window.SillyTavern?.getContext();
+  } catch {
+    return void 0;
+  }
+}
+function isMvuAvailable() {
+  return typeof getMvu()?.getMvuData === "function";
+}
+function delay(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+function getLastMessageId(st) {
+  const helper = getHelper();
+  if (typeof helper?.getLastMessageId === "function") {
+    try {
+      const id = helper.getLastMessageId();
+      if (Number.isInteger(id) && id >= 0) return id;
+    } catch {
+    }
+  }
+  const chat = st?.chat;
+  if (Array.isArray(chat) && chat.length > 0) return chat.length - 1;
+  return -1;
+}
+async function waitForMvuInitialized(timeoutMs) {
+  const waitFn = globalThis.waitGlobalInitialized;
+  if (typeof waitFn !== "function") return;
+  await Promise.race([
+    Promise.resolve(waitFn("Mvu")).catch(() => void 0),
+    delay(timeoutMs)
+  ]);
+}
+async function readMvuDataWithRetry(scope, timeoutMs, intervalMs) {
+  const mvu = getMvu();
+  const start = Date.now();
+  let attempts = 0;
+  let data;
+  for (; ; ) {
+    attempts++;
+    data = await Promise.resolve(mvu.getMvuData(scope)) ?? {};
+    const stat = data.stat_data;
+    if (stat && Object.keys(stat).length > 0) return { data, attempts };
+    if (Date.now() - start >= timeoutMs) return { data, attempts };
+    await delay(intervalMs);
+  }
+}
+async function readHelperVars(scope) {
+  const helper = getHelper();
+  if (typeof helper?.getVariables !== "function") return null;
+  const vars = await Promise.resolve(helper.getVariables(scope));
+  return vars && typeof vars === "object" ? vars : {};
+}
+async function readVariables(scope) {
+  const meta = {
+    source: "none",
+    waitedMvu: false,
+    attempts: 0,
+    mvuInitiallyAvailable: isMvuAvailable(),
+    mvuAvailableAfterWait: false
+  };
+  if (scope.message_id < 0) {
+    return { status: "empty", data: {}, isMvu: false, messageId: scope.message_id, meta };
+  }
+  if (!isMvuAvailable()) {
+    await waitForMvuInitialized(1200);
+    meta.waitedMvu = true;
+  }
+  meta.mvuAvailableAfterWait = isMvuAvailable();
+  if (isMvuAvailable()) {
+    try {
+      const { data, attempts } = await readMvuDataWithRetry(scope, 1200, 120);
+      meta.attempts = attempts;
+      const stat = data.stat_data ?? {};
+      if (Object.keys(stat).length > 0) {
+        meta.source = "mvu";
+        return { status: "ready", data: stat, isMvu: true, messageId: scope.message_id, meta };
+      }
+      const helperVars2 = await readHelperVars(scope).catch(() => null);
+      if (helperVars2 && Object.keys(helperVars2).length > 0) {
+        meta.source = "tavern-helper";
+        return { status: "ready", data: helperVars2, isMvu: false, messageId: scope.message_id, meta };
+      }
+      return { status: "empty", data: {}, isMvu: true, messageId: scope.message_id, meta };
+    } catch (err) {
+      const helperVars2 = await readHelperVars(scope).catch(() => null);
+      if (helperVars2 && Object.keys(helperVars2).length > 0) {
+        meta.source = "tavern-helper";
+        return { status: "ready", data: helperVars2, isMvu: false, messageId: scope.message_id, meta };
+      }
+      return {
+        status: "error",
+        data: {},
+        isMvu: false,
+        messageId: scope.message_id,
+        meta,
+        error: err instanceof Error ? err.message : String(err)
+      };
+    }
+  }
+  const helperVars = await readHelperVars(scope).catch(() => null);
+  if (helperVars) {
+    meta.source = Object.keys(helperVars).length > 0 ? "tavern-helper" : "none";
+    return {
+      status: Object.keys(helperVars).length > 0 ? "ready" : "empty",
+      data: helperVars,
+      isMvu: false,
+      messageId: scope.message_id,
+      meta
+    };
+  }
+  return { status: "unavailable", data: {}, isMvu: false, messageId: scope.message_id, meta };
+}
+function splitPath(path) {
+  return path.split(".").filter((seg) => seg.length > 0);
+}
+function getNested(obj, path) {
+  let cur = obj;
+  for (const seg of splitPath(path)) {
+    if (cur == null || typeof cur !== "object") return void 0;
+    cur = cur[seg];
+  }
+  return cur;
+}
+function setNested(obj, path, value) {
+  const segs = splitPath(path);
+  if (segs.length === 0) return;
+  let cur = obj;
+  for (let i = 0; i < segs.length - 1; i++) {
+    const seg = segs[i];
+    const next = cur[seg];
+    if (next == null || typeof next !== "object" || Array.isArray(next)) {
+      cur[seg] = {};
+    }
+    cur = cur[seg];
+  }
+  cur[segs[segs.length - 1]] = value;
+}
+function deleteNested(obj, path) {
+  const segs = splitPath(path);
+  if (segs.length === 0) return;
+  let cur = obj;
+  for (let i = 0; i < segs.length - 1; i++) {
+    if (cur == null || typeof cur !== "object") return;
+    cur = cur[segs[i]];
+  }
+  if (cur != null && typeof cur === "object") {
+    delete cur[segs[segs.length - 1]];
+  }
+}
+async function writeHelper(scope, mutate) {
+  const helper = getHelper();
+  if (typeof helper?.getVariables === "function" && typeof helper?.replaceVariables === "function") {
+    const vars = await Promise.resolve(helper.getVariables(scope)) ?? {};
+    mutate(vars);
+    await Promise.resolve(helper.replaceVariables(vars, scope));
+    return;
+  }
+  throw new Error("无可用的变量写入通道（MVU / 酒馆助手均不可用）");
+}
+async function setFloorVariable(scope, path, value) {
+  const mvu = getMvu();
+  if (typeof mvu?.getMvuData === "function" && typeof mvu?.replaceMvuData === "function") {
+    const data = await Promise.resolve(mvu.getMvuData(scope)) ?? {};
+    if (!data.stat_data) data.stat_data = {};
+    const stat = data.stat_data;
+    const oldLeaf = getNested(stat, path);
+    const oldDesc = Array.isArray(oldLeaf) && oldLeaf.length >= 2 && typeof oldLeaf[1] === "string" ? oldLeaf[1] : void 0;
+    if (typeof mvu.setMvuVariable === "function") {
+      await Promise.resolve(mvu.setMvuVariable(data, path, value, { reason: "st-stage 变量管理器手动编辑" }));
+    } else {
+      setNested(stat, path, value);
+    }
+    if (oldDesc !== void 0) {
+      const cur = getNested(data.stat_data, path);
+      if (!Array.isArray(cur)) setNested(data.stat_data, path, [value, oldDesc]);
+    }
+    await Promise.resolve(mvu.replaceMvuData(data, scope));
+    return;
+  }
+  await writeHelper(scope, (vars) => setNested(vars, path, value));
+}
+async function deleteFloorVariable(scope, path) {
+  const mvu = getMvu();
+  if (typeof mvu?.getMvuData === "function" && typeof mvu?.replaceMvuData === "function") {
+    const data = await Promise.resolve(mvu.getMvuData(scope)) ?? {};
+    if (data.stat_data) deleteNested(data.stat_data, path);
+    if (data.display_data) deleteNested(data.display_data, path);
+    if (data.delta_data) deleteNested(data.delta_data, path);
+    await Promise.resolve(mvu.replaceMvuData(data, scope));
+    return;
+  }
+  await writeHelper(scope, (vars) => deleteNested(vars, path));
+}
+function isPlainObject(v) {
+  return v != null && typeof v === "object" && !Array.isArray(v);
+}
+function isTupleLeaf(v) {
+  return Array.isArray(v) && v.length === 2 && typeof v[1] === "string" && (v[0] === null || typeof v[0] !== "object");
+}
+function formatValue(v) {
+  if (typeof v === "string") return v;
+  if (v === null) return "null";
+  if (v === void 0) return "";
+  if (typeof v === "object") {
+    try {
+      return JSON.stringify(v, null, 2);
+    } catch {
+      return String(v);
+    }
+  }
+  return String(v);
+}
+function parseInputValue(raw) {
+  const t = raw.trim();
+  if (t === "null") return null;
+  if (t === "true") return true;
+  if (t === "false") return false;
+  if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
+  if (t.startsWith("{") || t.startsWith("[")) {
+    try {
+      return JSON.parse(t);
+    } catch {
+    }
+  }
+  return raw;
+}
+function valueTypeLabel(v, tuple) {
+  const inner = tuple ? v[0] : v;
+  if (inner === null) return "null";
+  if (Array.isArray(inner)) return `数组[${inner.length}]`;
+  if (typeof inner === "object") return "对象";
+  return typeof inner === "number" ? "数字" : typeof inner === "boolean" ? "布尔" : "文本";
+}
+var EVENT_KEYS = ["MESSAGE_RECEIVED", "MESSAGE_EDITED", "MESSAGE_SWIPED", "MESSAGE_DELETED", "CHAT_CHANGED"];
+var EVENT_FALLBACK = {
+  MESSAGE_RECEIVED: "message_received",
+  MESSAGE_EDITED: "message_edited",
+  MESSAGE_SWIPED: "message_swiped",
+  MESSAGE_DELETED: "message_deleted",
+  CHAT_CHANGED: "chat_id_changed"
+};
+function createInstance(container, _ctx) {
+  let disposed = false;
+  let seq = 0;
+  let lastResult = null;
+  let editingPath = null;
+  let pendingRefresh = false;
+  let refreshTimer = null;
+  const unsubs = [];
+  function isStale(token) {
+    return disposed || token !== seq || !container.isConnected;
+  }
+  async function load() {
+    const token = ++seq;
+    editingPath = null;
+    const st = getST2();
+    const messageId = getLastMessageId(st);
+    renderLoading();
+    const result = await readVariables({ type: "message", message_id: messageId });
+    if (isStale(token)) return;
+    lastResult = result;
+    render2();
+  }
+  function scheduleRefresh() {
+    if (disposed) return;
+    if (editingPath !== null) {
+      pendingRefresh = true;
+      return;
+    }
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      if (!disposed && editingPath === null) void load();
+    }, 300);
+  }
+  function subscribeEvents() {
+    const st = getST2();
+    const es = st?.eventSource;
+    if (!es) return;
+    for (const key of EVENT_KEYS) {
+      const name = st?.eventTypes?.[key] ?? EVENT_FALLBACK[key];
+      if (!name) continue;
+      const handler = () => scheduleRefresh();
+      es.on(name, handler);
+      unsubs.push(() => {
+        try {
+          es.removeListener(name, handler);
+        } catch {
+        }
+      });
+    }
+  }
+  function renderLoading() {
+    if (lastResult) return;
+    container.textContent = "";
+    const section = el2("div", "so-app-section");
+    const d = el2("div", "so-app-desc");
+    d.textContent = "正在读取楼层变量…";
+    section.append(d);
+    container.append(section);
+  }
+  function sourceLabel(r) {
+    if (r.meta.source === "mvu") return "MVU";
+    if (r.meta.source === "tavern-helper") return "酒馆助手";
+    return "—";
+  }
+  function render2() {
+    const r = lastResult;
+    if (!r) {
+      renderLoading();
+      return;
+    }
+    container.textContent = "";
+    const head = el2("div", "so-app-section vm-head");
+    const line = el2("div", "vm-statusrow");
+    const status = el2("div", "so-app-desc vm-status");
+    const floorText = r.messageId >= 0 ? `楼层 #${r.messageId}` : "无对话";
+    status.textContent = `来源：${sourceLabel(r)} · ${floorText}`;
+    line.append(status);
+    const refreshBtn = el2("button", "menu_button vm-refresh");
+    refreshBtn.setAttribute("role", "button");
+    refreshBtn.textContent = "刷新";
+    refreshBtn.addEventListener("click", () => void load());
+    line.append(refreshBtn);
+    head.append(line);
+    container.append(head);
+    if (r.status === "unavailable") {
+      const note = el2("div", "so-app-section");
+      const d = el2("div", "so-app-desc");
+      d.textContent = "未检测到 MVU 框架或酒馆助手（Web 模拟器中仅可查看本说明）。在 SillyTavern 内、且安装了 MVU/酒馆助手时才能读写楼层变量。";
+      note.append(d);
+      container.append(note);
+      return;
+    }
+    if (r.status === "error") {
+      const note = el2("div", "so-app-section");
+      const d = el2("div", "so-app-desc");
+      d.textContent = `读取变量出错：${r.error ?? "未知错误"}。可点「刷新」重试。`;
+      note.append(d);
+      container.append(note);
+    }
+    const keys = Object.keys(r.data);
+    if (keys.length === 0) {
+      const note = el2("div", "so-app-section");
+      const d = el2("div", "so-app-desc");
+      d.textContent = r.status === "empty" ? r.meta.waitedMvu ? "当前楼层暂无变量（已等待 MVU 初始化）。有变量的楼层刷新后会显示在这里。" : "当前楼层暂无变量。" : "当前楼层暂无变量。";
+      note.append(d);
+      container.append(note);
+    } else {
+      const tree = el2("div", "vm-tree");
+      for (const key of keys) {
+        renderNode(tree, key, r.data[key], key, r.isMvu, 0);
+      }
+      container.append(tree);
+    }
+    container.append(buildAddSection(r));
+  }
+  function renderNode(parent, key, value, path, isMvu, depth) {
+    const tuple = isMvu && isTupleLeaf(value);
+    if (!tuple && isPlainObject(value) && Object.keys(value).length > 0) {
+      const details = document.createElement("details");
+      details.className = "so-app-fold vm-group";
+      details.open = depth < 1;
+      const summary = document.createElement("summary");
+      summary.className = "so-app-title vm-group-title";
+      summary.textContent = `${key}（${Object.keys(value).length}）`;
+      const body = el2("div", "so-app-fold-body vm-group-body");
+      for (const childKey of Object.keys(value)) {
+        renderNode(body, childKey, value[childKey], `${path}.${childKey}`, isMvu, depth + 1);
+      }
+      details.append(summary, body);
+      parent.append(details);
+      return;
+    }
+    renderLeaf(parent, key, value, path, tuple);
+  }
+  function renderLeaf(parent, key, value, path, tuple) {
+    if (editingPath === path) {
+      parent.append(buildEditForm(key, value, path, tuple));
+      return;
+    }
+    const card = el2("div", "vm-leaf");
+    const main = el2("div", "vm-leaf-main");
+    const keyEl = el2("span", "vm-key");
+    keyEl.textContent = key;
+    const valEl = el2("span", "vm-val");
+    const shown = formatValue(tuple ? value[0] : value);
+    valEl.textContent = shown.length > 80 ? `${shown.slice(0, 80)}…` : shown;
+    valEl.title = `类型：${valueTypeLabel(value, tuple)}`;
+    main.append(keyEl, valEl);
+    if (tuple) {
+      const desc = el2("div", "vm-desc");
+      desc.textContent = value[1];
+      main.append(desc);
+    }
+    main.setAttribute("role", "button");
+    main.tabIndex = 0;
+    const enterEdit = () => {
+      editingPath = path;
+      render2();
+    };
+    main.addEventListener("click", enterEdit);
+    main.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        enterEdit();
+      }
+    });
+    const del = el2("button", "vm-del");
+    del.setAttribute("aria-label", "删除变量");
+    del.title = "删除该变量";
+    del.textContent = "✕";
+    del.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!window.confirm(`删除变量「${path}」？此操作不可撤销。`)) return;
+      void runWrite(() => deleteFloorVariable(currentScope(), path));
+    });
+    card.append(main, del);
+    parent.append(card);
+  }
+  function buildEditForm(key, value, path, tuple) {
+    const wrap = el2("div", "vm-leaf vm-editing");
+    const title = el2("div", "so-app-title vm-edit-title");
+    title.textContent = key;
+    wrap.append(title);
+    if (tuple) {
+      const desc = el2("div", "vm-desc");
+      desc.textContent = `描述：${value[1]}（保留不变，仅编辑值）`;
+      wrap.append(desc);
+    }
+    const ta = document.createElement("textarea");
+    ta.className = "text_pole so-app-input vm-edit-input";
+    ta.rows = 3;
+    ta.value = formatValue(tuple ? value[0] : value);
+    wrap.append(ta);
+    const actions = el2("div", "vm-actions");
+    const save = el2("button", "menu_button vm-act");
+    save.textContent = "保存";
+    save.addEventListener("click", () => {
+      const parsed = parseInputValue(ta.value);
+      void runWrite(() => setFloorVariable(currentScope(), path, parsed));
+    });
+    const cancel = el2("button", "menu_button vm-act vm-act-ghost");
+    cancel.textContent = "取消";
+    cancel.addEventListener("click", () => {
+      editingPath = null;
+      if (pendingRefresh) {
+        pendingRefresh = false;
+        void load();
+      } else {
+        render2();
+      }
+    });
+    actions.append(save, cancel);
+    wrap.append(actions);
+    setTimeout(() => ta.focus(), 0);
+    return wrap;
+  }
+  function buildAddSection(r) {
+    const box = document.createElement("details");
+    box.className = "so-app-fold so-app-section";
+    const summary = document.createElement("summary");
+    summary.className = "so-app-title";
+    summary.textContent = "＋ 新增变量";
+    const body = el2("div", "so-app-fold-body");
+    const canWrite = r.status !== "unavailable";
+    const hint = el2("div", "so-app-desc");
+    hint.textContent = canWrite ? "路径用点号表示层级，如 角色.络络.好感度。值支持 数字 / true / false / null / JSON / 文本。" : "当前环境不可写入变量。";
+    body.append(hint);
+    const pathInput = document.createElement("input");
+    pathInput.type = "text";
+    pathInput.className = "text_pole so-app-input";
+    pathInput.placeholder = "变量路径（如 状态.体力）";
+    pathInput.autocomplete = "off";
+    const valInput = document.createElement("input");
+    valInput.type = "text";
+    valInput.className = "text_pole so-app-input";
+    valInput.placeholder = "值（如 80 / 健康 / true）";
+    valInput.autocomplete = "off";
+    body.append(pathInput, valInput);
+    const err = el2("div", "so-app-desc vm-add-err");
+    err.hidden = true;
+    body.append(err);
+    body.append(
+      appButton("添加", () => {
+        const path = pathInput.value.trim();
+        if (!path) {
+          err.textContent = "请填写变量路径。";
+          err.hidden = false;
+          return;
+        }
+        if (!canWrite) {
+          err.textContent = "当前环境不可写入变量。";
+          err.hidden = false;
+          return;
+        }
+        const parsed = parseInputValue(valInput.value);
+        void runWrite(() => setFloorVariable(currentScope(), path, parsed));
+      })
+    );
+    box.append(summary, body);
+    return box;
+  }
+  function currentScope() {
+    return { type: "message", message_id: lastResult?.messageId ?? getLastMessageId(getST2()) };
+  }
+  async function runWrite(op) {
+    try {
+      await op();
+    } catch (err) {
+      console.error("[st-stage] 变量写入失败", err);
+      window.alert(`写入失败：${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (!disposed) await load();
+  }
+  return {
+    start() {
+      subscribeEvents();
+      void load();
+    },
+    dispose() {
+      disposed = true;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = null;
+      for (const off of unsubs) off();
+      unsubs.length = 0;
+    }
+  };
+}
+function variableApp() {
+  let inst = null;
+  return {
+    id: "variables",
+    name: "变量",
+    icon: "🔢",
+    order: 4,
+    mount(container, ctx) {
+      inst?.dispose();
+      inst = createInstance(container, ctx);
+      inst.start();
+    },
+    unmount() {
+      inst?.dispose();
+      inst = null;
+    }
+  };
+}
+
 // st-extension/src/apps/index.ts
 function createBuiltinApps(deps) {
-  return [spriteApp(), galleryApp({ openManager: deps.openGalleryManager }), butlerApp()];
+  return [spriteApp(), galleryApp({ openManager: deps.openGalleryManager }), butlerApp(), variableApp()];
 }
 
 // st-extension/src/index.ts
@@ -4241,7 +4798,7 @@ async function init() {
   refresh();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 17:28"}`;
+  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 18:00"}`;
   console.log(`[sprite-overlay] 角色立绘悬浮窗扩展已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {
