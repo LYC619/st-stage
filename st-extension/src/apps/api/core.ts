@@ -77,10 +77,10 @@ export function newProfileId(): string {
 
 /** 校验草稿；返回错误消息，通过返回 null */
 export function validateDraft(draft: Pick<ProfileDraft, 'name' | 'url'>): string | null {
-  if (!draft.name.trim()) return '请填写站点名称。'
+  if (!draft.name.trim()) return '给站点起个名称吧。'
   const url = normalizeUrl(draft.url)
-  if (!url) return '请填写接口地址 URL。'
-  if (!/^https?:\/\//i.test(url)) return 'URL 需以 http:// 或 https:// 开头。'
+  if (!url) return '接口地址 URL 还没填。'
+  if (!/^https?:\/\//i.test(url)) return '接口地址要以 http:// 或 https:// 开头。'
   return null
 }
 
@@ -97,7 +97,7 @@ export function upsertProfile(
   if (invalid) return { error: invalid }
   const name = draft.name.trim()
   const dup = profiles.find((p) => p.name === name && p.id !== editingId)
-  if (dup) return { error: `已存在同名站点「${name}」。` }
+  if (dup) return { error: `站点名「${name}」已被占用，换一个吧。` }
 
   const clean: Omit<ApiProfile, 'id'> = {
     name,
@@ -118,11 +118,42 @@ export function upsertProfile(
   return { profiles: [...profiles, { ...clean, id: newProfileId() }] }
 }
 
-/** 按归一化 URL 匹配当前生效站点（Key 出于安全读不回来，URL 是唯一可靠锚点） */
-export function findActiveProfile(profiles: ApiProfile[], currentUrl: string): ApiProfile | undefined {
+/** 找与 url 同地址的另一个站点（同 URL 多配置合法——如同一网关不同模型——仅用于保存时提示） */
+export function findUrlDuplicate(
+  profiles: ApiProfile[],
+  url: string,
+  excludeId: string | null,
+): ApiProfile | undefined {
+  const target = normalizeUrl(url)
+  if (!target) return undefined
+  return profiles.find((p) => p.id !== excludeId && normalizeUrl(p.url) === target)
+}
+
+/** 把站点在列表里上移/下移一位（delta=-1/1）；越界或找不到时原样返回 */
+export function moveProfile(profiles: ApiProfile[], id: string, delta: -1 | 1): ApiProfile[] {
+  const from = profiles.findIndex((p) => p.id === id)
+  const to = from + delta
+  if (from < 0 || to < 0 || to >= profiles.length) return profiles
+  const next = [...profiles]
+  const [item] = next.splice(from, 1)
+  next.splice(to, 0, item)
+  return next
+}
+
+/**
+ * 匹配当前生效站点：先按归一化 URL（Key 出于安全读不回来，URL 是唯一可靠锚点）；
+ * 同 URL 存了多个配置（同一网关不同模型）时，用当前模型进一步区分，都不中取第一个。
+ */
+export function findActiveProfile(
+  profiles: ApiProfile[],
+  currentUrl: string,
+  currentModel = '',
+): ApiProfile | undefined {
   const cur = normalizeUrl(currentUrl)
   if (!cur) return undefined
-  return profiles.find((p) => normalizeUrl(p.url) === cur)
+  const sameUrl = profiles.filter((p) => normalizeUrl(p.url) === cur)
+  if (sameUrl.length <= 1) return sameUrl[0]
+  return sameUrl.find((p) => p.model !== '' && p.model === currentModel) ?? sameUrl[0]
 }
 
 /**
@@ -132,7 +163,7 @@ export function findActiveProfile(profiles: ApiProfile[], currentUrl: string): A
 export function parseModelList(json: unknown): string[] {
   if (json && typeof json === 'object' && 'error' in json && (json as { error: unknown }).error) {
     const msg = (json as { message?: unknown }).message
-    throw new Error(typeof msg === 'string' && msg ? msg : '接口报错')
+    throw new Error(typeof msg === 'string' && msg ? msg : '站点接口返回了错误')
   }
   const box = json as { data?: unknown; models?: unknown } | unknown[]
   const arr = Array.isArray(box) ? box : Array.isArray(box?.data) ? box.data : Array.isArray(box?.models) ? box.models : []
@@ -146,6 +177,6 @@ export function parseModelList(json: unknown): string[] {
       return ''
     })
     .filter((s: string) => s !== '')
-  if (names.length === 0) throw new Error('接口没有返回模型列表')
+  if (names.length === 0) throw new Error('站点没有返回任何模型')
   return [...new Set(names)].sort()
 }

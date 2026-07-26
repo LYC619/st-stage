@@ -90,7 +90,7 @@ async function writeSecret(st: BridgeContext, key: string): Promise<void> {
     headers,
     body: JSON.stringify({ key: 'api_key_custom', value: key ?? '' }),
   })
-  if (!res.ok) throw new Error(`写入密钥失败：HTTP ${res.status}`)
+  if (!res.ok) throw new Error(`密钥写入 ST 失败（HTTP ${res.status}）`)
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -120,7 +120,7 @@ export async function applyProfile(p: ApiProfile): Promise<void> {
   const urlInput = document.querySelector<HTMLInputElement>('#custom_api_url_text')
   const connectBtn = document.querySelector<HTMLElement>('#api_button_openai')
   if (!mainApiSel || !sourceSel || !urlInput || !connectBtn) {
-    throw new Error('未找到 ST 连接面板（酒馆版本过旧？需 1.12+）')
+    throw new Error('找不到 ST 的连接设置面板，可能是酒馆版本太老（需 1.12+）')
   }
 
   await writeSecret(st, p.key)
@@ -169,7 +169,7 @@ export async function fetchModels(url: string, key: string, restoreKey: string):
     } finally {
       clearTimeout(timer)
     }
-    if (!res.ok) throw new Error(`接口返回 HTTP ${res.status}`)
+    if (!res.ok) throw new Error(`模型列表请求失败（HTTP ${res.status}）`)
     return parseModelList(await res.json())
   } finally {
     if (wrote && prevKey) {

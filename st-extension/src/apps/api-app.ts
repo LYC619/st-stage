@@ -55,7 +55,8 @@ function render(
   container.textContent = ''
   const data = sanitizeAppData(ctx.getAppData())
   const conn = readConnection()
-  const active = conn ? findActiveProfile(data.profiles, conn.url) : undefined
+  // 同 URL 存了多份配置（同一网关不同模型）时，用当前模型进一步区分
+  const active = conn ? findActiveProfile(data.profiles, conn.url, conn.model) : undefined
   const rerender = () => {
     // 切换是异步的：期间用户可能已退出本 App（container 随之失效）
     if (container.isConnected) render(container, ctx, deps, state)
@@ -82,7 +83,7 @@ function render(
     site.textContent = active
       ? `站点：${active.name}`
       : conn.url
-        ? `接口：${conn.url}（未存为站点，可在管理页「读取当前连接」录入）`
+        ? `接口：${conn.url}（还没存成站点，可在管理页「导入当前连接」一键录入）`
         : '尚未配置自定义接口。'
     status.append(site)
     if (conn.model) {
@@ -129,7 +130,7 @@ function render(
     sites.querySelectorAll('.stapi-row').forEach((r) => r.classList.add('stapi-row-busy'))
     applyProfile(p)
       .then(() => {
-        toast('success', `已切换到「${p.name}」，正在连接…`)
+        toast('success', `「${p.name}」配置已应用，正在连接…`)
       })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err)

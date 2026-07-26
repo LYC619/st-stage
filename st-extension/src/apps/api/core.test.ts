@@ -5,6 +5,8 @@ import {
   validateDraft,
   upsertProfile,
   findActiveProfile,
+  findUrlDuplicate,
+  moveProfile,
   parseModelList,
   emptyDraft,
   type ApiProfile,
@@ -112,6 +114,45 @@ describe('findActiveProfile', () => {
   it('当前 URL 为空不匹配任何站点', () => {
     expect(findActiveProfile([profile()], '')).toBeUndefined()
   })
+  it('同 URL 多配置：按当前模型进一步区分', () => {
+    const list = [
+      profile({ id: 'p1', name: 'A·快', model: 'fast' }),
+      profile({ id: 'p2', name: 'A·强', model: 'smart' }),
+    ]
+    expect(findActiveProfile(list, 'https://a.com/v1', 'smart')?.id).toBe('p2')
+  })
+  it('同 URL 多配置但模型都不中：取第一个', () => {
+    const list = [
+      profile({ id: 'p1', model: 'fast' }),
+      profile({ id: 'p2', name: 'B', model: 'smart' }),
+    ]
+    expect(findActiveProfile(list, 'https://a.com/v1', 'other')?.id).toBe('p1')
+  })
+})
+
+describe('findUrlDuplicate', () => {
+  it('找到同地址的另一个站点（忽略自身）', () => {
+    const list = [profile(), profile({ id: 'p2', name: 'B', url: 'https://a.com/v1/' })]
+    expect(findUrlDuplicate(list, 'https://a.com/v1', 'p2')?.id).toBe('p1')
+    expect(findUrlDuplicate([profile()], 'https://a.com/v1', 'p1')).toBeUndefined()
+  })
+})
+
+describe('moveProfile', () => {
+  const list = () => [
+    profile({ id: 'p1' }),
+    profile({ id: 'p2', name: 'B' }),
+    profile({ id: 'p3', name: 'C' }),
+  ]
+  it('上移/下移交换相邻位置', () => {
+    expect(moveProfile(list(), 'p2', -1).map((p) => p.id)).toEqual(['p2', 'p1', 'p3'])
+    expect(moveProfile(list(), 'p2', 1).map((p) => p.id)).toEqual(['p1', 'p3', 'p2'])
+  })
+  it('越界或 id 不存在时原样返回', () => {
+    expect(moveProfile(list(), 'p1', -1).map((p) => p.id)).toEqual(['p1', 'p2', 'p3'])
+    expect(moveProfile(list(), 'p3', 1).map((p) => p.id)).toEqual(['p1', 'p2', 'p3'])
+    expect(moveProfile(list(), 'ghost', 1).map((p) => p.id)).toEqual(['p1', 'p2', 'p3'])
+  })
 })
 
 describe('parseModelList', () => {
@@ -124,7 +165,7 @@ describe('parseModelList', () => {
     expect(parseModelList(['b', 'a', 'b', '', { junk: 1 }])).toEqual(['a', 'b'])
   })
   it('空列表与 error 响应抛错', () => {
-    expect(() => parseModelList([])).toThrow('模型列表')
+    expect(() => parseModelList([])).toThrow('任何模型')
     expect(() => parseModelList({ error: true, message: '密钥无效' })).toThrow('密钥无效')
   })
 })

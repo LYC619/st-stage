@@ -696,6 +696,18 @@
   opacity: 0.55;
   pointer-events: none;
 }
+/* 管理弹窗站点行的排序按钮：沿用 vm-del 的几何，中性配色区别于删除 */
+.stapi-move {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.65);
+}
+.stapi-move:hover,
+.stapi-move:focus-visible {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.14);
+}
 .stapi-row-main {
   flex: 1;
   min-width: 0;

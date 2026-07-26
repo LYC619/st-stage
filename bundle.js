@@ -3352,7 +3352,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-27 02:14"}）`;
+  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-27 02:22"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -4994,10 +4994,10 @@ function newProfileId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 function validateDraft(draft) {
-  if (!draft.name.trim()) return "请填写站点名称。";
+  if (!draft.name.trim()) return "给站点起个名称吧。";
   const url = normalizeUrl(draft.url);
-  if (!url) return "请填写接口地址 URL。";
-  if (!/^https?:\/\//i.test(url)) return "URL 需以 http:// 或 https:// 开头。";
+  if (!url) return "接口地址 URL 还没填。";
+  if (!/^https?:\/\//i.test(url)) return "接口地址要以 http:// 或 https:// 开头。";
   return null;
 }
 function upsertProfile(profiles, draft, editingId) {
@@ -5005,7 +5005,7 @@ function upsertProfile(profiles, draft, editingId) {
   if (invalid) return { error: invalid };
   const name = draft.name.trim();
   const dup = profiles.find((p) => p.name === name && p.id !== editingId);
-  if (dup) return { error: `已存在同名站点「${name}」。` };
+  if (dup) return { error: `站点名「${name}」已被占用，换一个吧。` };
   const clean = {
     name,
     url: normalizeUrl(draft.url),
@@ -5024,15 +5024,31 @@ function upsertProfile(profiles, draft, editingId) {
   }
   return { profiles: [...profiles, { ...clean, id: newProfileId() }] };
 }
-function findActiveProfile(profiles, currentUrl) {
+function findUrlDuplicate(profiles, url, excludeId) {
+  const target = normalizeUrl(url);
+  if (!target) return void 0;
+  return profiles.find((p) => p.id !== excludeId && normalizeUrl(p.url) === target);
+}
+function moveProfile(profiles, id, delta) {
+  const from = profiles.findIndex((p) => p.id === id);
+  const to = from + delta;
+  if (from < 0 || to < 0 || to >= profiles.length) return profiles;
+  const next = [...profiles];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+function findActiveProfile(profiles, currentUrl, currentModel = "") {
   const cur = normalizeUrl(currentUrl);
   if (!cur) return void 0;
-  return profiles.find((p) => normalizeUrl(p.url) === cur);
+  const sameUrl = profiles.filter((p) => normalizeUrl(p.url) === cur);
+  if (sameUrl.length <= 1) return sameUrl[0];
+  return sameUrl.find((p) => p.model !== "" && p.model === currentModel) ?? sameUrl[0];
 }
 function parseModelList(json) {
   if (json && typeof json === "object" && "error" in json && json.error) {
     const msg = json.message;
-    throw new Error(typeof msg === "string" && msg ? msg : "接口报错");
+    throw new Error(typeof msg === "string" && msg ? msg : "站点接口返回了错误");
   }
   const box = json;
   const arr = Array.isArray(box) ? box : Array.isArray(box?.data) ? box.data : Array.isArray(box?.models) ? box.models : [];
@@ -5044,7 +5060,7 @@ function parseModelList(json) {
     }
     return "";
   }).filter((s) => s !== "");
-  if (names.length === 0) throw new Error("接口没有返回模型列表");
+  if (names.length === 0) throw new Error("站点没有返回任何模型");
   return [...new Set(names)].sort();
 }
 
@@ -5090,7 +5106,7 @@ async function writeSecret(st, key) {
     headers,
     body: JSON.stringify({ key: "api_key_custom", value: key ?? "" })
   });
-  if (!res.ok) throw new Error(`写入密钥失败：HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`密钥写入 ST 失败（HTTP ${res.status}）`);
 }
 var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function setInput(input, value) {
@@ -5111,7 +5127,7 @@ async function applyProfile(p) {
   const urlInput = document.querySelector("#custom_api_url_text");
   const connectBtn = document.querySelector("#api_button_openai");
   if (!mainApiSel || !sourceSel || !urlInput || !connectBtn) {
-    throw new Error("未找到 ST 连接面板（酒馆版本过旧？需 1.12+）");
+    throw new Error("找不到 ST 的连接设置面板，可能是酒馆版本太老（需 1.12+）");
   }
   await writeSecret(st, p.key);
   setSelect(mainApiSel, "openai");
@@ -5150,7 +5166,7 @@ async function fetchModels(url, key, restoreKey) {
     } finally {
       clearTimeout(timer);
     }
-    if (!res.ok) throw new Error(`接口返回 HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`模型列表请求失败（HTTP ${res.status}）`);
     return parseModelList(await res.json());
   } finally {
     if (wrote && prevKey) {
@@ -5188,7 +5204,7 @@ function render2(container, ctx, deps, state) {
   container.textContent = "";
   const data = sanitizeAppData(ctx.getAppData());
   const conn = readConnection();
-  const active = conn ? findActiveProfile(data.profiles, conn.url) : void 0;
+  const active = conn ? findActiveProfile(data.profiles, conn.url, conn.model) : void 0;
   const rerender = () => {
     if (container.isConnected) render2(container, ctx, deps, state);
   };
@@ -5208,7 +5224,7 @@ function render2(container, ctx, deps, state) {
     line.append(dot, text);
     status.append(line);
     const site = el2("div", "so-app-desc");
-    site.textContent = active ? `站点：${active.name}` : conn.url ? `接口：${conn.url}（未存为站点，可在管理页「读取当前连接」录入）` : "尚未配置自定义接口。";
+    site.textContent = active ? `站点：${active.name}` : conn.url ? `接口：${conn.url}（还没存成站点，可在管理页「导入当前连接」一键录入）` : "尚未配置自定义接口。";
     status.append(site);
     if (conn.model) {
       const model = el2("div", "so-app-desc");
@@ -5247,7 +5263,7 @@ function render2(container, ctx, deps, state) {
     say(`正在切换到「${p.name}」…`);
     sites.querySelectorAll(".stapi-row").forEach((r) => r.classList.add("stapi-row-busy"));
     applyProfile(p).then(() => {
-      toast2("success", `已切换到「${p.name}」，正在连接…`);
+      toast2("success", `「${p.name}」配置已应用，正在连接…`);
     }).catch((err) => {
       const msg = err instanceof Error ? err.message : String(err);
       toast2("error", msg);
@@ -6540,9 +6556,12 @@ function createApiManager(deps) {
   function buildListSection() {
     const data = deps.getData();
     const box = section(`站点（${data.profiles.length}）`);
-    const activeId = findActiveProfile(data.profiles, readConnection()?.url ?? "")?.id;
+    const conn = readConnection();
+    const activeId = findActiveProfile(data.profiles, conn?.url ?? "", conn?.model ?? "")?.id;
     if (data.profiles.length === 0) {
-      descLine2(box, "还没有站点。点下方「＋ 添加站点」，或先在 ST 连好一个接口再「读取当前连接」快速录入。");
+      descLine2(box, "列表还是空的。点下方「＋ 添加站点」，或先在 ST 里连好一个接口再用「导入当前连接」一键录入。");
+    } else {
+      descLine2(box, "列表顺序即手机页顺序，常用的用 ↑ 排前面。");
     }
     for (const p of data.profiles) {
       const row = el2("div", `vm-leaf${editingId === p.id ? " nv-def-selected" : ""}`);
@@ -6552,7 +6571,7 @@ function createApiManager(deps) {
       const meta = el2("span", "vm-val");
       const parts = [p.url];
       if (p.model) parts.push(p.model);
-      parts.push(p.key ? "KEY ✓" : "无 KEY");
+      parts.push(p.key ? "已配 Key" : "缺 Key");
       if (p.includeBody.trim() || p.excludeBody.trim() || p.includeHeaders.trim()) parts.push("附加参数 ✓");
       meta.textContent = parts.join(" · ");
       main.append(name, meta);
@@ -6580,6 +6599,17 @@ function createApiManager(deps) {
           edit();
         }
       });
+      const moveBtn = (label, delta) => {
+        const btn = el2("button", "vm-del stapi-move");
+        btn.setAttribute("aria-label", delta < 0 ? "上移" : "下移");
+        btn.title = delta < 0 ? "上移（列表顺序即手机页顺序）" : "下移";
+        btn.textContent = label;
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          save({ profiles: moveProfile(deps.getData().profiles, p.id, delta) });
+        });
+        return btn;
+      };
       const del = el2("button", "vm-del");
       del.setAttribute("aria-label", "删除站点");
       del.title = "删除该站点";
@@ -6593,7 +6623,7 @@ function createApiManager(deps) {
         }
         save({ profiles: deps.getData().profiles.filter((x) => x.id !== p.id) });
       });
-      row.append(main, del);
+      row.append(main, moveBtn("↑", -1), moveBtn("↓", 1), del);
       box.append(row);
     }
     box.append(
@@ -6625,14 +6655,14 @@ function createApiManager(deps) {
       notice.hidden = false;
     };
     box.append(
-      textRow("站点名称", d.name, "如：公益站A", (v) => d.name = v),
-      textRow("接口地址 URL", d.url, "如 https://xx.com/v1", (v) => d.url = v),
-      textRow("API Key", d.key, "明文存于本机 settings，仅建议个人设备使用", (v) => d.key = v.trim(), "password"),
-      textRow("模型 ID（可空）", d.model, "可点下方按钮从接口获取", (v) => d.model = v),
-      appButton("从接口获取模型列表", () => {
+      textRow("站点名称", d.name, "起个好认的名字，如：主力中转", (v) => d.name = v),
+      textRow("接口地址 URL", d.url, "形如 https://example.com/v1", (v) => d.url = v),
+      textRow("API Key", d.key, "只存在你本机的 ST 设置里（明文），公用设备慎用", (v) => d.key = v.trim(), "password"),
+      textRow("模型 ID（可空）", d.model, "留空则切换时沿用 ST 当前模型", (v) => d.model = v),
+      appButton("从站点拉取模型列表", () => {
         const url = normalizeUrl(d.url);
         if (!url) {
-          showNotice("请先填写接口地址 URL。");
+          showNotice("先把接口地址 URL 填上，才能拉模型。");
           return;
         }
         openPicker(url, d.key, (m) => {
@@ -6649,16 +6679,24 @@ function createApiManager(deps) {
     extraDesc.textContent = "对应 ST 连接面板的「附加参数」，YAML 格式原样透传；切换到本站点时自动写入，无需再去 ST 里手改。";
     extra.body.append(
       extraDesc,
-      textareaRow("包括主体参数（YAML 对象）", d.includeBody, "示例：\ntop_k: 20\nrepetition_penalty: 1.1", (v) => d.includeBody = v),
-      textareaRow("排除主体参数（每行一个）", d.excludeBody, "示例：\ntop_p", (v) => d.excludeBody = v),
-      textareaRow("包含请求标头（YAML 对象）", d.includeHeaders, "示例：\nCustomHeader: 自定义值", (v) => d.includeHeaders = v)
+      textareaRow("包括主体参数（YAML 对象）", d.includeBody, "写进每次请求主体的参数，一行一条：\ntop_k: 20\nrepetition_penalty: 1.1", (v) => d.includeBody = v),
+      textareaRow("排除主体参数（每行一个）", d.excludeBody, "不想让 ST 发出去的参数名，一行一个：\ntop_p", (v) => d.excludeBody = v),
+      textareaRow("包含请求标头（YAML 对象）", d.includeHeaders, "随请求附带的自定义 Header：\nX-My-Header: 某值", (v) => d.includeHeaders = v)
     );
     box.append(extra.box);
     const actions = el2("div", "vm-actions");
     const saveBtn = el2("button", "menu_button vm-act");
     saveBtn.textContent = editingId === null ? "保存站点" : "保存修改";
     saveBtn.addEventListener("click", () => {
-      const r = upsertProfile(deps.getData().profiles, d, editingId);
+      const cur = deps.getData().profiles;
+      const urlDup = findUrlDuplicate(cur, d.url, editingId);
+      if (urlDup && !window.confirm(
+        `站点「${urlDup.name}」已经在用这个地址了。
+同地址多配置是允许的（比如同一网关配不同模型），确定再存一份吗？`
+      )) {
+        return;
+      }
+      const r = upsertProfile(cur, d, editingId);
       if ("error" in r) {
         showNotice(r.error);
         return;
@@ -6675,12 +6713,12 @@ function createApiManager(deps) {
       render3();
     });
     const readCur = el2("button", "menu_button vm-act vm-act-ghost");
-    readCur.textContent = "读取当前连接";
-    readCur.title = "把 ST 正在使用的 URL/模型/附加参数填入表单（Key 读不回，需手填）";
+    readCur.textContent = "导入当前连接";
+    readCur.title = "把 ST 正在使用的 URL/模型/附加参数填进表单（Key 读不回，需手填）";
     readCur.addEventListener("click", () => {
       const conn = readConnection();
       if (!conn) {
-        showNotice("未检测到 SillyTavern 运行时，无法读取。");
+        showNotice("未检测到 SillyTavern 运行时，导入不了。");
         return;
       }
       d.url = conn.url;
@@ -6688,7 +6726,7 @@ function createApiManager(deps) {
       d.includeBody = conn.includeBody;
       d.excludeBody = conn.excludeBody;
       d.includeHeaders = conn.includeHeaders;
-      formNotice = "已填入当前 URL/模型/附加参数；Key 出于安全无法读取，请手动填写。";
+      formNotice = "已导入当前 URL/模型/附加参数；Key 出于安全读不回来，请手动补上。";
       render3();
     });
     actions.append(saveBtn, cancel, readCur);
@@ -6697,8 +6735,8 @@ function createApiManager(deps) {
   }
   function buildNoteSection() {
     const box = section("说明");
-    descLine2(box, "Key 明文存于本机 settings（ST 扩展设置通用机制），仅建议个人设备使用。");
-    descLine2(box, "切换在手机「API」页：点站点行即写入 Key → 切到自定义(OpenAI 兼容)接口 → 自动连接。");
+    descLine2(box, "Key 随 ST 设置明文保存在你自己的设备上（扩展设置的通用机制），公用设备上请谨慎。");
+    descLine2(box, "切换在手机「API」页进行：点站点行 → 写入 Key、切到自定义(OpenAI 兼容)接口、写附加参数 → 自动连接。");
     return box;
   }
   function closePicker() {
@@ -6721,11 +6759,11 @@ function createApiManager(deps) {
     const filter = document.createElement("input");
     filter.type = "text";
     filter.className = "text_pole so-app-input";
-    filter.placeholder = "搜索模型…";
+    filter.placeholder = "输入关键字筛选";
     filter.autocomplete = "off";
     const list = el2("div", "stapi-picker-list");
     const loading = el2("div", "so-app-desc");
-    loading.textContent = "正在从接口获取模型列表…";
+    loading.textContent = "正在向站点请求模型列表…";
     list.append(loading);
     box.append(head, filter, list);
     picker.append(box);
@@ -6742,7 +6780,7 @@ function createApiManager(deps) {
         const subset = models.filter((m) => m.toLowerCase().includes(f));
         if (subset.length === 0) {
           const empty = el2("div", "so-app-desc");
-          empty.textContent = "没有匹配的模型";
+          empty.textContent = "没有筛到匹配的模型";
           list.append(empty);
           return;
         }
@@ -6772,7 +6810,7 @@ function createApiManager(deps) {
       if (!picker) return;
       list.textContent = "";
       const fail = el2("div", "so-app-desc");
-      fail.textContent = `获取失败：${err instanceof Error ? err.message : String(err)}`;
+      fail.textContent = `拉取失败：${err instanceof Error ? err.message : String(err)}`;
       list.append(fail);
     });
   }
@@ -6950,7 +6988,7 @@ async function init() {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-27 02:14"}`;
+  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-27 02:22"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {
