@@ -1,5 +1,5 @@
 /**
- * 角色立绘悬浮窗 — SillyTavern 扩展入口。
+ * 掌柜的（原「角色立绘悬浮窗」）— SillyTavern 扩展入口。酒馆里的事，掌柜的都管。
  * 链路：加载设置 → 注入 prompt → 监听 AI 消息 → 提取标签 → 悬浮窗切换。
  * 消息后处理：隐藏 [立绘:xxx] 标签、渲染消息内插图（message-postprocess）。
  * 手机框架：悬浮 📱 图标 → Home 屏 → 内置 App（立绘/图库/设置）；见 docs/APP-SPEC.md。
@@ -249,7 +249,7 @@ async function init(): Promise<void> {
   phone.setVisible(settings.showPhone)
   const version =
     typeof __EXT_VERSION__ === 'undefined' ? 'dev' : `v${__EXT_VERSION__} · ${__BUILD_TIME__}`
-  console.log(`[sprite-overlay] 角色立绘悬浮窗扩展已加载（含手机框架）${version}`)
+  console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`)
 }
 
 // ST 扩展脚本在 app ready 后加载，直接初始化即可；保险起见等 DOM ready

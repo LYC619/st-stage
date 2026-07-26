@@ -2111,6 +2111,7 @@ function createSpriteManager(deps) {
   }
   function onEscape(e) {
     if (e.key !== "Escape") return;
+    if (backdrop?.querySelector(".so-lightbox")) return;
     if (backdrop?.querySelector(".so-popover")) {
       closePopovers();
       return;
@@ -2794,6 +2795,60 @@ ${preview}
     }
     body.append(statusBar());
   }
+  function openLightbox(packId, startIndex) {
+    if (!backdrop) return;
+    const sprites = deps.getSettings().packs.find((p) => p.id === packId)?.sprites ?? [];
+    if (sprites.length === 0) return;
+    let idx = Math.min(startIndex, sprites.length - 1);
+    const box = el("div", "so-lightbox");
+    const img = document.createElement("img");
+    const caption = el("div", "so-lightbox-caption");
+    const show = () => {
+      const sprite = sprites[idx];
+      img.src = sprite.url;
+      img.alt = sprite.tag;
+      caption.textContent = `${sprite.tag}（${idx + 1}/${sprites.length}）`;
+    };
+    const step = (d) => {
+      idx = (idx + d + sprites.length) % sprites.length;
+      show();
+    };
+    const closeBox = () => {
+      document.removeEventListener("keydown", onKey, true);
+      box.remove();
+    };
+    const onKey = (e) => {
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        step(-1);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        step(1);
+      } else if (e.key === "Escape") {
+        e.stopPropagation();
+        closeBox();
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    box.addEventListener("click", (e) => {
+      if (e.target === box) closeBox();
+    });
+    box.append(img, caption);
+    if (sprites.length > 1) {
+      img.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const rect = img.getBoundingClientRect();
+        step(e.clientX < rect.left + rect.width / 2 ? -1 : 1);
+      });
+      box.append(
+        iconButton("◀", "上一张（← 方向键）", () => step(-1), "so-lightbox-nav so-lightbox-prev"),
+        iconButton("▶", "下一张（→ 方向键）", () => step(1), "so-lightbox-nav so-lightbox-next")
+      );
+    }
+    box.append(iconButton("✕", "关闭（Esc）", () => closeBox(), "so-lightbox-close"));
+    show();
+    backdrop.append(box);
+  }
   function renderSpriteCell(body, pack, sprite, index, readonly) {
     const cell = el("div", "so-sprite-cell");
     if (pack.coverTag === sprite.tag) cell.classList.add("so-cover");
@@ -2806,6 +2861,7 @@ ${preview}
     tagEl.textContent = sprite.tag;
     tagEl.title = sprite.tag;
     cell.append(img, tagEl);
+    cell.addEventListener("click", () => openLightbox(pack.id, index));
     if (readonly) return cell;
     const latestPack = () => deps.getSettings().packs.find((p) => p.id === pack.id);
     const bar = el("div", "so-sprite-actions");
@@ -3258,7 +3314,7 @@ function mountSettingsPanel(deps) {
   wrapper.innerHTML = `
     <div class="inline-drawer">
       <div class="inline-drawer-toggle inline-drawer-header">
-        <b>角色立绘悬浮窗</b>
+        <b>掌柜的</b>
         <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
       </div>
       <div class="inline-drawer-content" id="so-panel-content"></div>
@@ -3279,21 +3335,12 @@ function mountSettingsPanel(deps) {
       settings.showPhone,
       (v) => deps.updateSettings({ ...deps.getSettings(), showPhone: v }),
       "屏幕上显示可拖动的 📱 图标，点击展开小手机（st-stage 各功能的统一入口）。"
-    ),
-    checkboxRow2(
-      "智能精简 Prompt（省 token）",
-      settings.multiRolePromptMode === "repeat",
-      (v) => deps.updateSettings({
-        ...deps.getSettings(),
-        multiRolePromptMode: v ? "repeat" : "full"
-      }),
-      "把多场景共有的表情合并列出。按实际长度自动取更短的一版：场景/表情较少时仍会显示全量格式，属正常现象。"
     )
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 20:21"}）`;
-  hint.textContent = `立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
+  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 20:44"}）`;
+  hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
 function helpIcon(tip) {
@@ -3823,10 +3870,20 @@ function galleryApp(deps) {
       const title = el2("div", "so-app-title");
       title.textContent = `共 ${settings.packs.length} 个立绘包`;
       list.append(title);
-      for (const pack of settings.packs) {
+      const boundIds = new Set(settings.bindings.flatMap((b) => b.packIds));
+      const sorted = [...settings.packs].sort(
+        (a, b) => Number(boundIds.has(b.id)) - Number(boundIds.has(a.id))
+      );
+      const MAX_SHOWN = 5;
+      for (const pack of sorted.slice(0, MAX_SHOWN)) {
         const row = el2("div", "so-app-desc");
-        row.textContent = `· ${pack.name}（${pack.sprites.length} 张）`;
+        row.textContent = `· ${pack.name}（${pack.sprites.length} 张）${boundIds.has(pack.id) ? "　使用中" : ""}`;
         list.append(row);
+      }
+      if (settings.packs.length > MAX_SHOWN) {
+        const more = el2("div", "so-app-desc");
+        more.textContent = `…还有 ${settings.packs.length - MAX_SHOWN} 个，全部在「立绘包管理」查看`;
+        list.append(more);
       }
       container.append(list);
       const hostSection = el2("div", "so-app-section");
@@ -6187,8 +6244,8 @@ async function init() {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 20:21"}`;
-  console.log(`[sprite-overlay] 角色立绘悬浮窗扩展已加载（含手机框架）${version}`);
+  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 20:44"}`;
+  console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => void init());

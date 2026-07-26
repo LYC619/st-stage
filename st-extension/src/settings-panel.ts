@@ -1,6 +1,6 @@
 /**
  * ST 扩展设置面板（原生 DOM，挂载到 #extensions_settings）。
- * 只保留两项：启用立绘功能（总开关）、显示手机。
+ * 只保留两项：启用立绘功能（总开关）、显示手机——只有「要不要启用」级别的开关配留在这。
  * 其余设置全部在手机 App 内：「立绘」App 管显示/轮播/Prompt，「图库」App 管图包与图床。
  */
 
@@ -23,7 +23,7 @@ export function mountSettingsPanel(deps: PanelDeps): void {
   wrapper.innerHTML = `
     <div class="inline-drawer">
       <div class="inline-drawer-toggle inline-drawer-header">
-        <b>角色立绘悬浮窗</b>
+        <b>掌柜的</b>
         <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
       </div>
       <div class="inline-drawer-content" id="so-panel-content"></div>
@@ -47,16 +47,6 @@ export function mountSettingsPanel(deps: PanelDeps): void {
       (v) => deps.updateSettings({ ...deps.getSettings(), showPhone: v }),
       '屏幕上显示可拖动的 📱 图标，点击展开小手机（st-stage 各功能的统一入口）。',
     ),
-    checkboxRow(
-      '智能精简 Prompt（省 token）',
-      settings.multiRolePromptMode === 'repeat',
-      (v) =>
-        deps.updateSettings({
-          ...deps.getSettings(),
-          multiRolePromptMode: v ? 'repeat' : 'full',
-        }),
-      '把多场景共有的表情合并列出。按实际长度自动取更短的一版：场景/表情较少时仍会显示全量格式，属正常现象。',
-    ),
   )
 
   const hint = document.createElement('div')
@@ -65,7 +55,7 @@ export function mountSettingsPanel(deps: PanelDeps): void {
   const version =
     typeof __EXT_VERSION__ === 'undefined' ? '' : ` v${__EXT_VERSION__}（构建 ${__BUILD_TIME__}）`
   hint.textContent =
-    `立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`
+    `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`
   content.append(hint)
 }
 

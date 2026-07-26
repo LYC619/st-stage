@@ -77,4 +77,41 @@ describe('createSpriteManager binding conflict UI', () => {
     expect(document.querySelector('.so-popover')).toBeNull()
     manager.close()
   })
+
+  it('opens the lightbox from a sprite cell, steps with arrow keys, closes with Escape', () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [
+        {
+          id: 'p1',
+          name: '测试包',
+          sprites: [
+            { tag: '微笑', url: 'https://img.test/a.png' },
+            { tag: '生气', url: 'https://img.test/b.png' },
+          ],
+        },
+      ],
+    }
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    ;([...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+      .find((c) => c.textContent?.includes('测试包')))!.click()
+
+    document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
+    const img = document.querySelector<HTMLImageElement>('.so-lightbox img')
+    expect(img?.src).toBe('https://img.test/a.png')
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(img?.src).toBe('https://img.test/b.png')
+
+    // Esc 只关查看器，不退出详情页
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(document.querySelector('.so-lightbox')).toBeNull()
+    expect(document.querySelector('.so-manager-title')?.textContent).toBe('测试包')
+    manager.close()
+  })
 })

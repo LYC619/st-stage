@@ -4,7 +4,8 @@
  * - 列表页：头部工具栏（启用选择 + 新建/导入下拉浮层）、当前角色启用条（chips 可排序/停用）、
  *   包封面卡片墙（使用中绿框标识）
  * - 详情页：右上角「添加立绘」下拉（直接上传 / 粘贴编码批量添加），包信息折叠面板，
- *   立绘网格（改名/替换/删除/设封面/排序）、导出 JSON / 复制分享串
+ *   立绘网格（改名/替换/删除/设封面/排序，点图放大查看可左右/方向键切换）、
+ *   导出 JSON / 复制分享串
  *
  * 安全：所有用户可控文本（包名/tag/作者）一律 textContent，不进 innerHTML。
  * 预设包只读（加载时由代码清单重建，改了也会丢），仅允许绑定/导出/分享。
@@ -148,6 +149,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
   function onEscape(e: KeyboardEvent): void {
     if (e.key !== 'Escape') return
+    // 放大查看器自己处理 Esc（capture + stopPropagation），这里兜底不动视图
+    if (backdrop?.querySelector('.so-lightbox')) return
     // 先关下拉浮层，再谈返回/关闭
     if (backdrop?.querySelector('.so-popover')) {
       closePopovers()
@@ -911,6 +914,62 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     body.append(statusBar())
   }
 
+  /** 图片放大查看：◀▶/点图左右半区/方向键切换，Esc/点空白/✕ 关闭 */
+  function openLightbox(packId: string, startIndex: number): void {
+    if (!backdrop) return
+    const sprites = deps.getSettings().packs.find((p) => p.id === packId)?.sprites ?? []
+    if (sprites.length === 0) return
+    let idx = Math.min(startIndex, sprites.length - 1)
+    const box = el('div', 'so-lightbox')
+    const img = document.createElement('img')
+    const caption = el('div', 'so-lightbox-caption')
+    const show = () => {
+      const sprite = sprites[idx]
+      img.src = sprite.url
+      img.alt = sprite.tag
+      caption.textContent = `${sprite.tag}（${idx + 1}/${sprites.length}）`
+    }
+    const step = (d: number) => {
+      idx = (idx + d + sprites.length) % sprites.length
+      show()
+    }
+    const closeBox = () => {
+      document.removeEventListener('keydown', onKey, true)
+      box.remove()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        step(-1)
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        step(1)
+      } else if (e.key === 'Escape') {
+        e.stopPropagation()
+        closeBox()
+      }
+    }
+    document.addEventListener('keydown', onKey, true)
+    box.addEventListener('click', (e) => {
+      if (e.target === box) closeBox()
+    })
+    box.append(img, caption)
+    if (sprites.length > 1) {
+      img.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const rect = img.getBoundingClientRect()
+        step(e.clientX < rect.left + rect.width / 2 ? -1 : 1)
+      })
+      box.append(
+        iconButton('◀', '上一张（← 方向键）', () => step(-1), 'so-lightbox-nav so-lightbox-prev'),
+        iconButton('▶', '下一张（→ 方向键）', () => step(1), 'so-lightbox-nav so-lightbox-next'),
+      )
+    }
+    box.append(iconButton('✕', '关闭（Esc）', () => closeBox(), 'so-lightbox-close'))
+    show()
+    backdrop.append(box)
+  }
+
   function renderSpriteCell(
     body: HTMLElement,
     pack: SpritePack,
@@ -932,6 +991,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     tagEl.title = sprite.tag
 
     cell.append(img, tagEl)
+    // 点击放大查看（操作按钮自带 stopPropagation，互不干扰）
+    cell.addEventListener('click', () => openLightbox(pack.id, index))
     if (readonly) return cell
 
     const latestPack = () => deps.getSettings().packs.find((p) => p.id === pack.id)

@@ -29,15 +29,26 @@ export function galleryApp(deps: GalleryAppDeps): PhoneApp {
       section.append(desc, appButton('打开立绘包管理', () => deps.openManager()))
       container.append(section)
 
-      // 概览：包列表
+      // 概览：包列表——包多了会把手机页拉得很长，只露使用中的 + 截断提示（用户实测反馈）
       const list = el('div', 'so-app-section')
       const title = el('div', 'so-app-title')
       title.textContent = `共 ${settings.packs.length} 个立绘包`
       list.append(title)
-      for (const pack of settings.packs) {
+      const boundIds = new Set(settings.bindings.flatMap((b) => b.packIds))
+      // ponytail: 没有使用时间戳，「最近使用」用「绑定到任意角色」近似；要真按时间排得给包加 lastUsedAt
+      const sorted = [...settings.packs].sort(
+        (a, b) => Number(boundIds.has(b.id)) - Number(boundIds.has(a.id)),
+      )
+      const MAX_SHOWN = 5
+      for (const pack of sorted.slice(0, MAX_SHOWN)) {
         const row = el('div', 'so-app-desc')
-        row.textContent = `· ${pack.name}（${pack.sprites.length} 张）`
+        row.textContent = `· ${pack.name}（${pack.sprites.length} 张）${boundIds.has(pack.id) ? '　使用中' : ''}`
         list.append(row)
+      }
+      if (settings.packs.length > MAX_SHOWN) {
+        const more = el('div', 'so-app-desc')
+        more.textContent = `…还有 ${settings.packs.length - MAX_SHOWN} 个，全部在「立绘包管理」查看`
+        list.append(more)
       }
       container.append(list)
 

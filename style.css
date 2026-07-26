@@ -1,4 +1,4 @@
-/* 角色立绘悬浮窗 — SillyTavern 扩展样式 */
+/* 掌柜的（st-stage）— SillyTavern 扩展样式 */
 
 #sprite-overlay-root {
   position: fixed;
@@ -776,6 +776,11 @@
   border-radius: 8px;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.2);
+  cursor: zoom-in; /* 点击放大查看 */
+}
+
+.so-manager .so-sprite-actions {
+  cursor: zoom-in; /* 悬浮操作层空白区仍可点击放大 */
 }
 
 .so-manager .so-sprite-cell.so-cover {
@@ -885,6 +890,89 @@
   .so-manager .so-pack-card:active {
     transform: none;
   }
+}
+
+/* ---- 图片放大查看（lightbox） ---- */
+
+.so-lightbox {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10005;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.88);
+}
+
+.so-lightbox img {
+  max-width: calc(100% - 32px);
+  max-height: calc(100% - 72px);
+  object-fit: contain;
+  border-radius: 8px;
+  cursor: pointer; /* 左半区上一张 / 右半区下一张 */
+}
+
+.so-lightbox-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.so-lightbox-nav,
+.so-lightbox-close {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(30, 30, 36, 0.6);
+  color: #fff;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.12s ease;
+}
+
+.so-lightbox-nav {
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 56px;
+  font-size: 18px;
+}
+
+.so-lightbox-prev {
+  left: 10px;
+}
+
+.so-lightbox-next {
+  right: 10px;
+}
+
+.so-lightbox-close {
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+}
+
+.so-lightbox-nav:hover,
+.so-lightbox-close:hover {
+  background: rgba(70, 70, 80, 0.9);
 }
 
 /* ---- 消息内插图（message-postprocess） ---- */
