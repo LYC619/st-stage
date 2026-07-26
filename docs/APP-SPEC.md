@@ -101,6 +101,10 @@ window.stStage?.registerApp({
 | `sprites` | 立绘 | 当前绑定概览、显示/轮播/Prompt 设置 | `st-extension/src/apps/sprite-app.ts` |
 | `gallery` | 图库 | 打开立绘包管理弹窗、图包概览、图床设置（前缀/imgbb Key/自动上传） | `st-extension/src/apps/gallery-app.ts` |
 | `butler` | 管家 | ST 性能管家：一键性能模式 + 改动前快照还原、power_user 手动微调、体检与优化指南（仅 ST 内生效，Web 模拟器降级为只读指南） | `st-extension/src/apps/butler-app.ts` |
+| `mvu` | MVU | MVU 楼层变量可视化/编辑：树状卡片 + 类型感知编辑 + delta 高亮 + 精准事件刷新（MVU/酒馆助手双通道，模拟器只读） | `st-extension/src/apps/mvu-app.ts` |
+| `newvar` | 新变量 | 内置轻量变量追踪：GUI 定义 schema → 注入状态+规则 → 解析 `<UpdateVariable>` → 逐楼快照。手机页仅开关+状态树，设计走全屏弹窗 | `st-extension/src/apps/newvar-app.ts` + `newvar/` |
 
 装配清单：`st-extension/src/apps/index.ts`。
+
+两个变量 App 复用共享视图 `apps/variable-tree.ts`（折叠分组/类型感知编辑/delta 徽标，「模型+回调」契约）。「新变量」的注入走**命名注入通道** `adapter.injectChannel(channel, prompt, depth)`（ST 端每通道一个独立 `setExtensionPrompt` 槽位，key=`st-stage::<channel>`）——以后任何 App 需要注入提示词都用自己的 channel，互不覆盖，也不会碰立绘的注入。
 框架源码：注册表 `core/phone-registry.ts`（含 `createPhoneAppContext`）、手机壳 `core/phone-shell.ts`、样式 `core/phone-shell.css`。

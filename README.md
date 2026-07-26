@@ -16,6 +16,8 @@ st-stage 是一个 SillyTavern 扩展形态的**功能平台**：装好后聊天
 | 🎭 **立绘** | 给任何纯文字角色卡加视觉小说式立绘（旗舰功能，见下） |
 | 🗂 **图库** | 立绘包管理：上传/分组/绑定/分享/图床 |
 | 🧹 **管家** | ST 性能管家：一键性能模式 + 改动前快照还原、逐项微调、体检与优化指南（[说明](docs/BUTLER.md)） |
+| 🔢 **MVU** | MVU 版角色卡的变量面板：树状查看/编辑/删除 + 变化高亮（[说明](docs/VARIABLES.md)） |
+| 🧮 **新变量** | 内置轻量变量追踪：任何普通卡 GUI 定义变量，AI 自动维护，模板一键起步（[说明](docs/VARIABLES.md)） |
 
 ---
 
@@ -71,6 +73,17 @@ https://github.com/LYC619/st-stage
 **📖 每个选项的含义、推荐值与何时调整：[docs/BUTLER.md](docs/BUTLER.md)**
 
 > 管家改的是 ST 自身的性能设置（`power_user`）。在网页模拟器里会降级为只读指南，请到真实 SillyTavern 里使用。
+
+---
+
+## 🔢🧮 变量：看见 AI 维护的故事状态
+
+两个变量 App，覆盖两种场景（可同装、互不干扰）：
+
+- **🔢 MVU**——角色卡是 MVU 版？直接得到一块变量面板：树状展开好感度/状态/时间等所有变量，点值就能改（`[值,描述]` 二元组的描述自动保留），AI 回复后自动刷新并给出**绿涨红跌变化徽标**。
+- **🧮 新变量**——普通卡也想要变量系统？不依赖 MVU/酒馆助手/世界书：在**全屏「变量设计」弹窗**里 GUI 定义变量（类型/范围/枚举/更新规则），或从**内置模板**（恋爱单/多角色、RPG、日常）一键导入；启用后自动向 AI 注入状态与规则、解析回复末尾的更新块、逐楼保存快照，越界值自动修正、未定义路径自动拒绝（解析日志逐条可查）。做好的变量系统还能**存成自定义模板**换卡复用。
+
+**📖 两个 App 怎么选、变量设计详解、更新规则写法与 FAQ：[docs/VARIABLES.md](docs/VARIABLES.md)**
 
 ---
 
@@ -135,10 +148,17 @@ st-extension/             ST 端（esbuild 打包为根目录产物）
    ├─ st-adapter.ts       ST 平台适配（设置持久化/存图/prompt 注入/事件）
    ├─ settings-panel.ts   ST 扩展设置页（总开关 + 版本号显示）
    ├─ apps/               ★ 功能 App 都住这里（新功能从这加）
-   │  ├─ index.ts         内置 App 装配清单
+   │  ├─ index.ts         内置 App 装配清单（BuiltinAppDeps 注入框架能力）
    │  ├─ widgets.ts       App 共享 UI 小部件
+   │  ├─ variable-tree.ts 共享变量树视图（折叠/类型感知编辑/delta 徽标，两变量 App 复用）
+   │  ├─ path-utils.ts    点号路径嵌套读写（纯函数）
    │  ├─ sprite-app.ts    「立绘」App（显示/轮播/Prompt 设置）
-   │  └─ gallery-app.ts   「图库」App（包管理入口/图床双通道设置）
+   │  ├─ gallery-app.ts   「图库」App（包管理入口/图床双通道设置）
+   │  ├─ butler-app.ts    「管家」App（ST 性能调优）
+   │  ├─ mvu-app.ts       「MVU」App（MVU 楼层变量数据层）
+   │  ├─ newvar-app.ts    「新变量」App（手机页：开关+状态树）
+   │  └─ newvar/          「新变量」引擎：engine(解析/门禁/注入,带单测)、runtime(常驻编排)、
+   │                      config、templates(内置模板)、designer(变量设计弹窗)
    ├─ sprite-manager.ts   图库管理弹窗（上传/导入导出/分享/绑定，图库 App 打开）
    ├─ overlay-dom.ts      立绘悬浮窗
    └─ message-postprocess.ts   楼层内标签→图片渲染
@@ -146,6 +166,8 @@ st-extension/             ST 端（esbuild 打包为根目录产物）
 app/ components/ lib/     Next.js 网页模拟器（同一套 core + 手机壳，本地开发调试用）
 public/presets/           内置预设立绘图片（随扩展分发）
 docs/SPRITE.md            ★ 立绘 App 完整使用指南（含数据格式）
+docs/VARIABLES.md         ★ 变量 App 指南（MVU + 新变量：选择、设计、更新规则、FAQ）
+docs/BUTLER.md            ★ 管家 App 指南（每个性能选项的含义与推荐值）
 docs/APP-SPEC.md          ★ App 开发规范：契约、ctx、样式、安全红线、三步接入
 docs/superpowers/         历史设计文档（plans/specs，归档参考）
 ```
