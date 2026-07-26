@@ -1,9 +1,10 @@
 /**
  * 立绘包管理弹窗（ST 端）：从悬浮窗齿轮按钮打开。
  * 两级视图：
- * - 列表页：当前角色绑定、包卡片（封面/统计）、新建、导入（JSON 文件 / 一行分享串）
- * - 详情页：包元数据编辑、立绘网格（改名/替换/删除/设封面/排序）、上传（自动压缩）、
- *   按图床编码批量添加、导出 JSON / 复制分享串
+ * - 列表页：头部工具栏（启用选择 + 新建/导入下拉浮层）、当前角色启用条（chips 可排序/停用）、
+ *   包封面卡片墙（使用中绿框标识）
+ * - 详情页：右上角「添加立绘」下拉（直接上传 / 粘贴编码批量添加），包信息折叠面板，
+ *   立绘网格（改名/替换/删除/设封面/排序）、导出 JSON / 复制分享串
  *
  * 安全：所有用户可控文本（包名/tag/作者）一律 textContent，不进 innerHTML。
  * 预设包只读（加载时由代码清单重建，改了也会丢），仅允许绑定/导出/分享。
@@ -130,11 +131,13 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       }
     })
     const title = el('b', 'so-manager-title')
+    // 头部操作区（列表页放启用选择 + 新建/导入下拉；详情页留空自动隐藏）
+    const actions = el('div', 'so-manager-actions')
     const closeBtn = el('div', 'menu_button so-manager-close')
     closeBtn.title = '关闭'
     closeBtn.textContent = '✕'
     closeBtn.addEventListener('click', () => close())
-    header.append(backBtn, title, closeBtn)
+    header.append(backBtn, title, actions, closeBtn)
 
     const body = el('div', 'so-manager-body')
     dialog.append(header, body)
@@ -145,6 +148,11 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
   function onEscape(e: KeyboardEvent): void {
     if (e.key !== 'Escape') return
+    // 先关下拉浮层，再谈返回/关闭
+    if (backdrop?.querySelector('.so-popover')) {
+      closePopovers()
+      return
+    }
     if (view.kind === 'pack') {
       view = { kind: 'list' }
       render()
@@ -381,12 +389,43 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     commitChecked(upsertPack(deps.getSettings(), pack))
   }
 
+  function closePopovers(): void {
+    backdrop?.querySelectorAll('.so-popover').forEach((n) => n.remove())
+  }
+
+  /** 头部下拉：按钮 + 锚在头部下方靠右的浮层；同时只开一个，Esc/点外部/重渲染关闭 */
+  function dropdownButton(label: string, build: (panel: HTMLElement) => void): HTMLElement {
+    const btn = button(`${label} ▾`, () => {
+      const header = backdrop?.querySelector('.so-manager-header')
+      if (!header) return
+      const existing = header.querySelector(`.so-popover[data-pop="${label}"]`)
+      closePopovers()
+      if (existing) return
+      const panel = el('div', 'so-popover')
+      panel.dataset.pop = label
+      build(panel)
+      header.append(panel)
+      ;(panel.querySelector('input, textarea') as HTMLElement | null)?.focus()
+      const onDocClick = (e: MouseEvent) => {
+        // 点开关按钮本身交给按钮的 toggle 逻辑处理
+        if (panel.contains(e.target as Node) || btn.contains(e.target as Node)) return
+        panel.remove()
+        document.removeEventListener('click', onDocClick, true)
+      }
+      document.addEventListener('click', onDocClick, true)
+    })
+    return btn
+  }
+
   function render(): void {
     if (!backdrop) return
     const backBtn = backdrop.querySelector('.so-manager-back') as HTMLElement
     const title = backdrop.querySelector('.so-manager-title') as HTMLElement
+    const actions = backdrop.querySelector('.so-manager-actions') as HTMLElement
     const body = backdrop.querySelector('.so-manager-body') as HTMLElement
     body.innerHTML = ''
+    actions.innerHTML = ''
+    closePopovers()
 
     // 渲染兜错：任何异常都显示在弹窗里，不留“只有标题栏”的空壳（移动端无控制台可查）
     try {
@@ -396,14 +435,14 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         if (pack) {
           backBtn.style.display = 'inline-flex'
           title.textContent = pack.name
-          renderPackDetail(body, pack)
+          renderPackDetail(body, actions, pack)
           return
         }
         view = { kind: 'list' }
       }
       backBtn.style.display = 'none'
       title.textContent = '立绘包管理'
-      renderList(body)
+      renderList(body, actions)
     } catch (err) {
       console.error('[sprite-overlay] 管理弹窗渲染失败', err)
       const msg = el('div', 'so-status')
@@ -427,48 +466,16 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
   /* ---------------- 列表页 ---------------- */
 
-  function renderList(body: HTMLElement): void {
+  function renderList(body: HTMLElement, actions: HTMLElement): void {
     const settings = deps.getSettings()
     const characterName = deps.adapter.getCurrentCharacterName()
     const binding = settings.bindings.find((b) => b.characterName === characterName)
     const boundIds = binding?.packIds ?? []
 
-    // 当前角色绑定（六期：一个聊天可启用多个包，可增删、排序、整体启停）
-    const bindSection = el('div', 'so-section')
-    const bindTitle = el('div', 'so-section-title')
-    bindTitle.textContent = characterName ? `当前角色：${characterName}` : '当前角色绑定'
-    bindSection.append(bindTitle)
+    // 头部操作区：启用选择 + 新建/导入下拉（替代旧的底部折叠面板）
     if (characterName) {
-      // 已启用的包（可排序、移除）
-      if (boundIds.length > 0) {
-        const boundLabel = el('div', 'so-status')
-        boundLabel.textContent = `已启用 ${boundIds.length} 个包（顺序影响多包寻址优先级）：`
-        bindSection.append(boundLabel)
-        boundIds.forEach((id, index) => {
-          const pack = settings.packs.find((p) => p.id === id)
-          const row = el('div', 'so-row so-bind-item')
-          const name = el('span', 'so-bind-name')
-          name.textContent = pack ? `${index + 1}. ${pack.name}（${pack.sprites.length} 张）` : `（已删除的包 ${id}）`
-          row.append(
-            name,
-            iconButton('▲', '上移', () => {
-              if (index > 0) commit(reorderBinding(deps.getSettings(), characterName, index, index - 1))
-            }),
-            iconButton('▼', '下移', () => {
-              commit(reorderBinding(deps.getSettings(), characterName, index, index + 1))
-            }),
-            iconButton('✕', '停用此包', () => {
-              commit(unbindPack(deps.getSettings(), characterName, id))
-            }),
-          )
-          bindSection.append(row)
-        })
-      }
-
-      // 添加一个包 + 整体启停
-      const bindRow = el('div', 'so-row so-bind-row')
       const select = document.createElement('select')
-      select.className = 'text_pole'
+      select.className = 'text_pole so-header-select'
       select.setAttribute('aria-label', `为「${characterName}」添加启用立绘包`)
       const placeholder = document.createElement('option')
       placeholder.value = ''
@@ -487,21 +494,125 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         select.value = ''
         bindPackWithChoices(characterName, packId, body)
       })
-      bindRow.append(select)
+      actions.append(select)
+    }
+    actions.append(
+      dropdownButton('新建', (panel) => {
+        const heading = el('div', 'so-popover-title')
+        heading.textContent = '新建立绘包'
+        const nameInput = textInput('输入新包名称…')
+        nameInput.maxLength = 40
+        const createBtn = button('创建', () => {
+          const name = sanitizePackName(nameInput.value)
+          if (!name) {
+            toast(body, '包名不能为空（| = @ < > 等符号会被剔除）')
+            return
+          }
+          const pack: SpritePack = { id: genId(), name, author: '我', sprites: [] }
+          if (!updateChecked(upsertPack(deps.getSettings(), pack))) return
+          view = { kind: 'pack', packId: pack.id }
+          render()
+        })
+        nameInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && !e.isComposing) createBtn.click()
+        })
+        panel.append(heading, nameInput, createBtn)
+      }),
+      dropdownButton('导入', (panel) => {
+        const shareHeading = el('div', 'so-popover-title')
+        shareHeading.textContent = '从分享字符串导入'
+        const shareInput = document.createElement('textarea')
+        shareInput.className = 'text_pole'
+        shareInput.rows = 3
+        shareInput.placeholder = '粘贴 stpack2:/stpack1: 分享串…'
+        const shareBtn = button('导入', () => {
+          if (!shareInput.value.trim()) return
+          try {
+            const pack = decodeShareString(shareInput.value)
+            if (!installImportedPack(pack, body)) return
+            const installed = deps.getSettings().packs.find((item) => item.id === pack.id)
+            if (installed) view = { kind: 'pack', packId: installed.id }
+            render()
+          } catch (err) {
+            toast(body, err instanceof Error ? err.message : '分享串解析失败')
+          }
+        })
+        const jsonHeading = el('div', 'so-popover-title')
+        jsonHeading.textContent = '从 JSON 文件导入'
+        const jsonBtn = button('选择 JSON 文件…', () => {
+          pickFile('.json,application/json', false, async (files) => {
+            try {
+              const text = await files[0].text()
+              // ponytail: 2MB 阈值是拍脑袋值——只为在大 base64 包上提醒云端内存风险，不做环境检测
+              if (
+                text.length > 2 * 1024 * 1024 &&
+                !window.confirm(
+                  `这个 JSON 有 ${(text.length / 1024 / 1024).toFixed(1)}MB（内嵌 base64 图）。云端部署的酒馆导入大包容易内存爆满，建议让对方先传图床再发分享串。仍要导入吗？`,
+                )
+              )
+                return
+              const pack = importPack(text)
+              if (!installImportedPack(pack, body)) return
+              const installed = deps.getSettings().packs.find((item) => item.id === pack.id)
+              if (installed) view = { kind: 'pack', packId: installed.id }
+              render()
+            } catch (err) {
+              toast(body, err instanceof Error ? err.message : '导入失败')
+            }
+          })
+        })
+        panel.append(shareHeading, shareInput, shareBtn, jsonHeading, jsonBtn)
+      }),
+    )
+
+    // 当前角色启用条：横向 chips（可排序/停用）+ 整体启停（六期：一个聊天可启用多个包）
+    const strip = el('div', 'so-row so-bind-strip')
+    if (characterName) {
+      const label = el('span', 'so-bind-label')
+      label.textContent =
+        boundIds.length > 0
+          ? `${characterName} · 已启用 ${boundIds.length} 个：`
+          : `${characterName} · 尚未启用立绘包（用右上角选择启用）`
+      strip.append(label)
+      boundIds.forEach((id, index) => {
+        const pack = settings.packs.find((p) => p.id === id)
+        const chip = el('span', 'so-chip')
+        const name = el('span', 'so-chip-name')
+        name.textContent = pack
+          ? `${index + 1}. ${pack.name}（${pack.sprites.length} 张）`
+          : `（已删除的包 ${id}）`
+        chip.append(name)
+        if (boundIds.length > 1) {
+          chip.append(
+            iconButton('◀', '前移（多包寻址优先级更高）', () => {
+              if (index > 0) commit(reorderBinding(deps.getSettings(), characterName, index, index - 1))
+            }, 'so-chip-btn'),
+            iconButton('▶', '后移', () => {
+              commit(reorderBinding(deps.getSettings(), characterName, index, index + 1))
+            }, 'so-chip-btn'),
+          )
+        }
+        chip.append(
+          iconButton('✕', '停用此包', () => {
+            commit(unbindPack(deps.getSettings(), characterName, id))
+          }, 'so-chip-btn'),
+        )
+        strip.append(chip)
+      })
       if (binding) {
-        bindRow.append(
+        strip.append(
+          el('span', 'so-spacer'),
           checkboxRow('全部启用', binding.enabled, (v) =>
             commitChecked(toggleBinding(deps.getSettings(), characterName, v)),
           ),
         )
       }
-      bindSection.append(bindRow)
     } else {
-      const tip = el('div', 'so-status')
-      tip.textContent = '请先打开一个角色聊天，再回来绑定立绘包。'
-      bindSection.append(tip)
+      const tip = el('span', 'so-status')
+      tip.textContent = '请先打开一个角色聊天，再回来启用立绘包。'
+      strip.append(tip)
     }
-    body.append(bindSection)
+    body.append(strip)
 
     // 包封面图墙：立绘包是图片集合，用卡片网格浏览（同 ST 角色列表的卡片墙模式）
     const grid = el('div', 'so-pack-grid')
@@ -510,72 +621,6 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       grid.append(renderPackCard(pack, bound))
     }
     body.append(grid)
-
-    // 新建 / 导入（折叠：图墙占主位）
-    const addPanel = collapsible('新建 / 导入')
-    const createRow = el('div', 'so-row')
-    const nameInput = textInput('新立绘包名称…')
-    nameInput.classList.add('so-grow')
-    const createBtn = button('新建立绘包', () => {
-      const name = sanitizePackName(nameInput.value)
-      if (!name) {
-        toast(body, '包名不能为空（| = @ < > 等符号会被剔除）')
-        return
-      }
-      const pack: SpritePack = { id: genId(), name, author: '我', sprites: [] }
-      if (!updateChecked(upsertPack(deps.getSettings(), pack))) return
-      view = { kind: 'pack', packId: pack.id }
-      render()
-    })
-    nameInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.isComposing) createBtn.click()
-    })
-    createRow.append(nameInput, createBtn)
-
-    const importRow = el('div', 'so-row')
-    const shareInput = textInput('粘贴 stpack2:/stpack1: 分享串…')
-    shareInput.classList.add('so-grow')
-    const shareBtn = button('导入分享串', () => {
-      if (!shareInput.value.trim()) return
-      try {
-        const pack = decodeShareString(shareInput.value)
-        if (!installImportedPack(pack, body)) return
-        shareInput.value = ''
-        const installed = deps.getSettings().packs.find((item) => item.id === pack.id)
-        if (installed) view = { kind: 'pack', packId: installed.id }
-        render()
-      } catch (err) {
-        toast(body, err instanceof Error ? err.message : '分享串解析失败')
-      }
-    })
-    importRow.append(
-      shareInput,
-      shareBtn,
-      button('导入 JSON 文件', () => {
-        pickFile('.json,application/json', false, async (files) => {
-          try {
-            const text = await files[0].text()
-            // ponytail: 2MB 阈值是拍脑袋值——只为在大 base64 包上提醒云端内存风险，不做环境检测
-            if (
-              text.length > 2 * 1024 * 1024 &&
-              !window.confirm(
-                `这个 JSON 有 ${(text.length / 1024 / 1024).toFixed(1)}MB（内嵌 base64 图）。云端部署的酒馆导入大包容易内存爆满，建议让对方先传图床再发分享串。仍要导入吗？`,
-              )
-            )
-              return
-            const pack = importPack(text)
-            if (!installImportedPack(pack, body)) return
-            const installed = deps.getSettings().packs.find((item) => item.id === pack.id)
-            if (installed) view = { kind: 'pack', packId: installed.id }
-            render()
-          } catch (err) {
-            toast(body, err instanceof Error ? err.message : '导入失败')
-          }
-        })
-      }),
-    )
-    addPanel.body.append(createRow, importRow)
-    body.append(addPanel.box)
 
     body.append(statusBar())
   }
@@ -600,6 +645,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       coverBox.textContent = '暂无立绘'
     }
     if (bound) {
+      // 使用中：角标 + 卡片绿色描边双重标识（概念图）
+      if (bound === 'active') card.classList.add('so-card-active')
       const badge = el('span', bound === 'active' ? 'so-card-badge' : 'so-card-badge so-card-badge-off')
       badge.textContent = bound === 'active' ? '使用中' : '已停用'
       coverBox.append(badge)
@@ -634,8 +681,61 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
   /* ---------------- 详情页 ---------------- */
 
-  function renderPackDetail(body: HTMLElement, pack: SpritePack): void {
+  function renderPackDetail(body: HTMLElement, actions: HTMLElement, pack: SpritePack): void {
     const readonly = isPresetPack(pack.id)
+
+    // 添加立绘：头部下拉（两种方式——直接上传 / 粘贴编码），不占正文空间
+    if (!readonly) {
+      actions.append(
+        dropdownButton('添加立绘', (panel) => {
+          const upHeading = el('div', 'so-popover-title')
+          upHeading.textContent = '直接上传'
+          const upBtn = button('选择图片（自动压缩+解析预览）', () => {
+            closePopovers()
+            pickFile('image/*', true, (files) => openUploadPreview(pack.id, files))
+          })
+          const upHint = el('div', 'so-status')
+          upHint.textContent =
+            '文件名按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png），上传前可预览修正。'
+
+          const codeHeading = el('div', 'so-popover-title')
+          codeHeading.textContent = '按编码添加'
+          const codeInput = document.createElement('textarea')
+          codeInput.className = 'text_pole'
+          codeInput.rows = 3
+          codeInput.placeholder = '粘贴编码，可多个（空格/逗号/换行分隔）'
+          const codeBtn = button('添加', () => {
+            const codes = codeInput.value.split(/[\s,，、;；|]+/).filter(Boolean)
+            if (codes.length === 0) {
+              toast(body, '请填写图床编码，如 ab12cd.png（可一次粘贴多个）')
+              return
+            }
+            const bad = codes.filter((c) => !isValidImageCode(c))
+            if (bad.length > 0) {
+              toast(body, `编码格式不对：${bad.slice(0, 3).join('、')}${bad.length > 3 ? ' 等' : ''}`)
+              return
+            }
+            const current = deps.getSettings()
+            const target = current.packs.find((p) => p.id === pack.id)
+            if (!target) return
+            const host = current.imageHost.endsWith('/') ? current.imageHost : `${current.imageHost}/`
+            let next = target
+            let added = 0
+            for (const code of codes) {
+              const tag = normalizeTag(code.replace(/\.[^.]+$/, ''))
+              if (!tag) continue
+              next = upsertSprite(next, { tag, url: host + code, code })
+              added++
+            }
+            commitPack(next)
+            toast(body, `已按编码添加 ${added} 张（图名取编码名，可在图卡上改名）`)
+          })
+          const codeHint = el('div', 'so-status')
+          codeHint.textContent = `编码拼接图床前缀 ${deps.getSettings().imageHost} 成直链，图名自动取编码名；改名/分组用图卡上的 ✎ / 🏷。`
+          panel.append(upHeading, upBtn, upHint, codeHeading, codeInput, codeBtn, codeHint)
+        }),
+      )
+    }
 
     // 顶部操作（返回键在固定头部）：导出/分享靠左，删除靠右与其隔开
     const topRow = el('div', 'so-row so-detail-top')
@@ -685,8 +785,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     }
     body.append(topRow)
 
-    // 元数据编辑（折叠，且排在图墙之后——图片占主位）
-    let metaBox: HTMLElement | null = null
+    // 包信息：折叠面板（默认收起——顶部留给图墙；展开后输入框均分一行、窄屏自动换行）
     if (readonly) {
       const note = el('div', 'so-status')
       note.textContent = '预设包随扩展分发、只读；想改动可先「导出 JSON」再导入为自定义包。'
@@ -707,10 +806,10 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       metaRow.append(
         labeled('包名', nameInput),
         labeled('作者', authorInput),
-        labeled('描述', descInput),
         labeled('人名', roleInput),
         labeled('服装', outfitInput),
-        button('保存信息', () => {
+        labeled('描述', descInput),
+        button('保存', () => {
           const name = sanitizePackName(nameInput.value)
           if (!name) {
             toast(body, '包名不能为空')
@@ -732,13 +831,13 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       metaHint.textContent =
         '人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。'
       metaPanel.body.append(metaRow, metaHint)
-      metaBox = metaPanel.box
+      body.append(metaPanel.box)
     }
 
     // 立绘网格：有分组则按分组分区展示（功能②），否则单一网格
     if (pack.sprites.length === 0) {
       const empty = el('div', 'so-status')
-      empty.textContent = '还没有立绘，用下方按钮上传图片（文件名即表情名）。'
+      empty.textContent = '还没有立绘：点右上角「添加立绘」上传图片或粘贴编码。'
       body.append(empty)
     } else {
       const groups = getGroups(pack)
@@ -759,9 +858,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         body.append(grid)
       }
     }
-    if (metaBox) body.append(metaBox)
-
-    // 添加立绘
+    // 维护类功能（补传/拆分）低频，排在图墙之后
     if (!readonly) {
       // 待上传图床（失败重试）：本地/内嵌且无有效远程地址的立绘，可批量补传 imgbb
       const pending = pack.sprites.filter(
@@ -809,69 +906,6 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         )
         body.append(splitPanel.box)
       }
-
-      // 添加立绘（折叠；空包时默认展开，否则用户不知道从哪加图）
-      const addPanel = collapsible('添加立绘', pack.sprites.length === 0)
-
-      const addRow = el('div', 'so-row')
-      addRow.append(
-        button('批量上传（自动压缩+解析预览）', () => {
-          pickFile('image/*', true, (files) => openUploadPreview(pack.id, files))
-        }),
-      )
-      const upHint = el('div', 'so-status')
-      upHint.textContent =
-        '文件名按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png），上传前可预览修正、选择不拆分。'
-      addPanel.body.append(addRow, upHint)
-
-      const codeRow = el('div', 'so-row so-code-row')
-      const tagInput = textInput('图名，留空=取编码名')
-      const codeInput = textInput('编码，可粘贴多个（空格/逗号分隔）')
-      const codeGroupInput = textInput('分组，可空')
-      codeRow.append(
-        labeled('表情', tagInput),
-        labeled('编码', codeInput),
-        labeled('分组', codeGroupInput),
-        button('按编码添加', () => {
-          const codes = codeInput.value.split(/[\s,，、;；|]+/).filter(Boolean)
-          if (codes.length === 0) {
-            toast(body, '请填写图床编码，如 ab12cd.png（可一次粘贴多个）')
-            return
-          }
-          const bad = codes.filter((c) => !isValidImageCode(c))
-          if (bad.length > 0) {
-            toast(body, `编码格式不对：${bad.slice(0, 3).join('、')}${bad.length > 3 ? ' 等' : ''}`)
-            return
-          }
-          const manualTag = normalizeTag(tagInput.value)
-          if (codes.length > 1 && manualTag) {
-            toast(body, '多个编码时图名自动取各自编码名，请把图名留空')
-            return
-          }
-          const current = deps.getSettings()
-          const target = current.packs.find((p) => p.id === pack.id)
-          if (!target) return
-          const host = current.imageHost.endsWith('/') ? current.imageHost : `${current.imageHost}/`
-          const group = normalizeTag(codeGroupInput.value)
-          let next = target
-          let added = 0
-          for (const code of codes) {
-            const tag = manualTag || normalizeTag(code.replace(/\.[^.]+$/, ''))
-            if (!tag) continue
-            next = upsertSprite(next, { tag, url: host + code, code, ...(group ? { group } : {}) })
-            added++
-          }
-          commitPack(next)
-          toast(body, `已按编码添加 ${added} 张`)
-          tagInput.value = ''
-          codeInput.value = ''
-          codeGroupInput.value = ''
-        }),
-      )
-      const codeHint = el('div', 'so-status')
-      codeHint.textContent = `手动通道：编码拼接图床前缀 ${deps.getSettings().imageHost}（与 imgbb 自动直传互不影响）`
-      addPanel.body.append(codeRow, codeHint)
-      body.append(addPanel.box)
     }
 
     body.append(statusBar())
@@ -1329,8 +1363,8 @@ function button(label: string, onClick: () => void, extraClass = ''): HTMLElemen
   return btn
 }
 
-function iconButton(icon: string, title: string, onClick: () => void): HTMLElement {
-  const btn = el('div', 'so-icon-btn')
+function iconButton(icon: string, title: string, onClick: () => void, className = 'so-icon-btn'): HTMLElement {
+  const btn = el('div', className)
   btn.textContent = icon
   btn.title = title
   btn.setAttribute('role', 'button')

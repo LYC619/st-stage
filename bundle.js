@@ -2093,11 +2093,12 @@ function createSpriteManager(deps) {
       }
     });
     const title = el("b", "so-manager-title");
+    const actions = el("div", "so-manager-actions");
     const closeBtn = el("div", "menu_button so-manager-close");
     closeBtn.title = "关闭";
     closeBtn.textContent = "✕";
     closeBtn.addEventListener("click", () => close());
-    header.append(backBtn, title, closeBtn);
+    header.append(backBtn, title, actions, closeBtn);
     const body = el("div", "so-manager-body");
     dialog.append(header, body);
     backdrop.append(dialog);
@@ -2106,6 +2107,10 @@ function createSpriteManager(deps) {
   }
   function onEscape(e) {
     if (e.key !== "Escape") return;
+    if (backdrop?.querySelector(".so-popover")) {
+      closePopovers();
+      return;
+    }
     if (view.kind === "pack") {
       view = { kind: "list" };
       render2();
@@ -2316,12 +2321,39 @@ ${options}`,
   function commitPack(pack) {
     commitChecked(upsertPack(deps.getSettings(), pack));
   }
+  function closePopovers() {
+    backdrop?.querySelectorAll(".so-popover").forEach((n) => n.remove());
+  }
+  function dropdownButton(label, build) {
+    const btn = button(`${label} ▾`, () => {
+      const header = backdrop?.querySelector(".so-manager-header");
+      if (!header) return;
+      const existing = header.querySelector(`.so-popover[data-pop="${label}"]`);
+      closePopovers();
+      if (existing) return;
+      const panel = el("div", "so-popover");
+      panel.dataset.pop = label;
+      build(panel);
+      header.append(panel);
+      panel.querySelector("input, textarea")?.focus();
+      const onDocClick = (e) => {
+        if (panel.contains(e.target) || btn.contains(e.target)) return;
+        panel.remove();
+        document.removeEventListener("click", onDocClick, true);
+      };
+      document.addEventListener("click", onDocClick, true);
+    });
+    return btn;
+  }
   function render2() {
     if (!backdrop) return;
     const backBtn = backdrop.querySelector(".so-manager-back");
     const title = backdrop.querySelector(".so-manager-title");
+    const actions = backdrop.querySelector(".so-manager-actions");
     const body = backdrop.querySelector(".so-manager-body");
     body.innerHTML = "";
+    actions.innerHTML = "";
+    closePopovers();
     try {
       if (view.kind === "pack") {
         const packId = view.packId;
@@ -2329,14 +2361,14 @@ ${options}`,
         if (pack) {
           backBtn.style.display = "inline-flex";
           title.textContent = pack.name;
-          renderPackDetail(body, pack);
+          renderPackDetail(body, actions, pack);
           return;
         }
         view = { kind: "list" };
       }
       backBtn.style.display = "none";
       title.textContent = "立绘包管理";
-      renderList(body);
+      renderList(body, actions);
     } catch (err) {
       console.error("[sprite-overlay] 管理弹窗渲染失败", err);
       const msg = el("div", "so-status");
@@ -2355,43 +2387,14 @@ ${options}`,
     box.append(summary, inner);
     return { box, body: inner };
   }
-  function renderList(body) {
+  function renderList(body, actions) {
     const settings = deps.getSettings();
     const characterName = deps.adapter.getCurrentCharacterName();
     const binding = settings.bindings.find((b) => b.characterName === characterName);
     const boundIds = binding?.packIds ?? [];
-    const bindSection = el("div", "so-section");
-    const bindTitle = el("div", "so-section-title");
-    bindTitle.textContent = characterName ? `当前角色：${characterName}` : "当前角色绑定";
-    bindSection.append(bindTitle);
     if (characterName) {
-      if (boundIds.length > 0) {
-        const boundLabel = el("div", "so-status");
-        boundLabel.textContent = `已启用 ${boundIds.length} 个包（顺序影响多包寻址优先级）：`;
-        bindSection.append(boundLabel);
-        boundIds.forEach((id, index) => {
-          const pack = settings.packs.find((p) => p.id === id);
-          const row = el("div", "so-row so-bind-item");
-          const name = el("span", "so-bind-name");
-          name.textContent = pack ? `${index + 1}. ${pack.name}（${pack.sprites.length} 张）` : `（已删除的包 ${id}）`;
-          row.append(
-            name,
-            iconButton("▲", "上移", () => {
-              if (index > 0) commit(reorderBinding(deps.getSettings(), characterName, index, index - 1));
-            }),
-            iconButton("▼", "下移", () => {
-              commit(reorderBinding(deps.getSettings(), characterName, index, index + 1));
-            }),
-            iconButton("✕", "停用此包", () => {
-              commit(unbindPack(deps.getSettings(), characterName, id));
-            })
-          );
-          bindSection.append(row);
-        });
-      }
-      const bindRow = el("div", "so-row so-bind-row");
       const select = document.createElement("select");
-      select.className = "text_pole";
+      select.className = "text_pole so-header-select";
       select.setAttribute("aria-label", `为「${characterName}」添加启用立绘包`);
       const placeholder = document.createElement("option");
       placeholder.value = "";
@@ -2410,9 +2413,103 @@ ${options}`,
         select.value = "";
         bindPackWithChoices(characterName, packId, body);
       });
-      bindRow.append(select);
+      actions.append(select);
+    }
+    actions.append(
+      dropdownButton("新建", (panel) => {
+        const heading = el("div", "so-popover-title");
+        heading.textContent = "新建立绘包";
+        const nameInput = textInput("输入新包名称…");
+        nameInput.maxLength = 40;
+        const createBtn = button("创建", () => {
+          const name = sanitizePackName(nameInput.value);
+          if (!name) {
+            toast(body, "包名不能为空（| = @ < > 等符号会被剔除）");
+            return;
+          }
+          const pack = { id: genId(), name, author: "我", sprites: [] };
+          if (!updateChecked(upsertPack(deps.getSettings(), pack))) return;
+          view = { kind: "pack", packId: pack.id };
+          render2();
+        });
+        nameInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && !e.isComposing) createBtn.click();
+        });
+        panel.append(heading, nameInput, createBtn);
+      }),
+      dropdownButton("导入", (panel) => {
+        const shareHeading = el("div", "so-popover-title");
+        shareHeading.textContent = "从分享字符串导入";
+        const shareInput = document.createElement("textarea");
+        shareInput.className = "text_pole";
+        shareInput.rows = 3;
+        shareInput.placeholder = "粘贴 stpack2:/stpack1: 分享串…";
+        const shareBtn = button("导入", () => {
+          if (!shareInput.value.trim()) return;
+          try {
+            const pack = decodeShareString(shareInput.value);
+            if (!installImportedPack(pack, body)) return;
+            const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
+            if (installed) view = { kind: "pack", packId: installed.id };
+            render2();
+          } catch (err) {
+            toast(body, err instanceof Error ? err.message : "分享串解析失败");
+          }
+        });
+        const jsonHeading = el("div", "so-popover-title");
+        jsonHeading.textContent = "从 JSON 文件导入";
+        const jsonBtn = button("选择 JSON 文件…", () => {
+          pickFile(".json,application/json", false, async (files) => {
+            try {
+              const text = await files[0].text();
+              if (text.length > 2 * 1024 * 1024 && !window.confirm(
+                `这个 JSON 有 ${(text.length / 1024 / 1024).toFixed(1)}MB（内嵌 base64 图）。云端部署的酒馆导入大包容易内存爆满，建议让对方先传图床再发分享串。仍要导入吗？`
+              ))
+                return;
+              const pack = importPack(text);
+              if (!installImportedPack(pack, body)) return;
+              const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
+              if (installed) view = { kind: "pack", packId: installed.id };
+              render2();
+            } catch (err) {
+              toast(body, err instanceof Error ? err.message : "导入失败");
+            }
+          });
+        });
+        panel.append(shareHeading, shareInput, shareBtn, jsonHeading, jsonBtn);
+      })
+    );
+    const strip = el("div", "so-row so-bind-strip");
+    if (characterName) {
+      const label = el("span", "so-bind-label");
+      label.textContent = boundIds.length > 0 ? `${characterName} · 已启用 ${boundIds.length} 个：` : `${characterName} · 尚未启用立绘包（用右上角选择启用）`;
+      strip.append(label);
+      boundIds.forEach((id, index) => {
+        const pack = settings.packs.find((p) => p.id === id);
+        const chip = el("span", "so-chip");
+        const name = el("span", "so-chip-name");
+        name.textContent = pack ? `${index + 1}. ${pack.name}（${pack.sprites.length} 张）` : `（已删除的包 ${id}）`;
+        chip.append(name);
+        if (boundIds.length > 1) {
+          chip.append(
+            iconButton("◀", "前移（多包寻址优先级更高）", () => {
+              if (index > 0) commit(reorderBinding(deps.getSettings(), characterName, index, index - 1));
+            }, "so-chip-btn"),
+            iconButton("▶", "后移", () => {
+              commit(reorderBinding(deps.getSettings(), characterName, index, index + 1));
+            }, "so-chip-btn")
+          );
+        }
+        chip.append(
+          iconButton("✕", "停用此包", () => {
+            commit(unbindPack(deps.getSettings(), characterName, id));
+          }, "so-chip-btn")
+        );
+        strip.append(chip);
+      });
       if (binding) {
-        bindRow.append(
+        strip.append(
+          el("span", "so-spacer"),
           checkboxRow(
             "全部启用",
             binding.enabled,
@@ -2420,78 +2517,18 @@ ${options}`,
           )
         );
       }
-      bindSection.append(bindRow);
     } else {
-      const tip = el("div", "so-status");
-      tip.textContent = "请先打开一个角色聊天，再回来绑定立绘包。";
-      bindSection.append(tip);
+      const tip = el("span", "so-status");
+      tip.textContent = "请先打开一个角色聊天，再回来启用立绘包。";
+      strip.append(tip);
     }
-    body.append(bindSection);
+    body.append(strip);
     const grid = el("div", "so-pack-grid");
     for (const pack of settings.packs) {
       const bound = boundIds.includes(pack.id) ? binding?.enabled ? "active" : "off" : null;
       grid.append(renderPackCard(pack, bound));
     }
     body.append(grid);
-    const addPanel = collapsible("新建 / 导入");
-    const createRow = el("div", "so-row");
-    const nameInput = textInput("新立绘包名称…");
-    nameInput.classList.add("so-grow");
-    const createBtn = button("新建立绘包", () => {
-      const name = sanitizePackName(nameInput.value);
-      if (!name) {
-        toast(body, "包名不能为空（| = @ < > 等符号会被剔除）");
-        return;
-      }
-      const pack = { id: genId(), name, author: "我", sprites: [] };
-      if (!updateChecked(upsertPack(deps.getSettings(), pack))) return;
-      view = { kind: "pack", packId: pack.id };
-      render2();
-    });
-    nameInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.isComposing) createBtn.click();
-    });
-    createRow.append(nameInput, createBtn);
-    const importRow = el("div", "so-row");
-    const shareInput = textInput("粘贴 stpack2:/stpack1: 分享串…");
-    shareInput.classList.add("so-grow");
-    const shareBtn = button("导入分享串", () => {
-      if (!shareInput.value.trim()) return;
-      try {
-        const pack = decodeShareString(shareInput.value);
-        if (!installImportedPack(pack, body)) return;
-        shareInput.value = "";
-        const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
-        if (installed) view = { kind: "pack", packId: installed.id };
-        render2();
-      } catch (err) {
-        toast(body, err instanceof Error ? err.message : "分享串解析失败");
-      }
-    });
-    importRow.append(
-      shareInput,
-      shareBtn,
-      button("导入 JSON 文件", () => {
-        pickFile(".json,application/json", false, async (files) => {
-          try {
-            const text = await files[0].text();
-            if (text.length > 2 * 1024 * 1024 && !window.confirm(
-              `这个 JSON 有 ${(text.length / 1024 / 1024).toFixed(1)}MB（内嵌 base64 图）。云端部署的酒馆导入大包容易内存爆满，建议让对方先传图床再发分享串。仍要导入吗？`
-            ))
-              return;
-            const pack = importPack(text);
-            if (!installImportedPack(pack, body)) return;
-            const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
-            if (installed) view = { kind: "pack", packId: installed.id };
-            render2();
-          } catch (err) {
-            toast(body, err instanceof Error ? err.message : "导入失败");
-          }
-        });
-      })
-    );
-    addPanel.body.append(createRow, importRow);
-    body.append(addPanel.box);
     body.append(statusBar());
   }
   function renderPackCard(pack, bound) {
@@ -2512,6 +2549,7 @@ ${options}`,
       coverBox.textContent = "暂无立绘";
     }
     if (bound) {
+      if (bound === "active") card.classList.add("so-card-active");
       const badge = el("span", bound === "active" ? "so-card-badge" : "so-card-badge so-card-badge-off");
       badge.textContent = bound === "active" ? "使用中" : "已停用";
       coverBox.append(badge);
@@ -2541,8 +2579,57 @@ ${options}`,
     });
     return card;
   }
-  function renderPackDetail(body, pack) {
+  function renderPackDetail(body, actions, pack) {
     const readonly = isPresetPack(pack.id);
+    if (!readonly) {
+      actions.append(
+        dropdownButton("添加立绘", (panel) => {
+          const upHeading = el("div", "so-popover-title");
+          upHeading.textContent = "直接上传";
+          const upBtn = button("选择图片（自动压缩+解析预览）", () => {
+            closePopovers();
+            pickFile("image/*", true, (files) => openUploadPreview(pack.id, files));
+          });
+          const upHint = el("div", "so-status");
+          upHint.textContent = "文件名按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png），上传前可预览修正。";
+          const codeHeading = el("div", "so-popover-title");
+          codeHeading.textContent = "按编码添加";
+          const codeInput = document.createElement("textarea");
+          codeInput.className = "text_pole";
+          codeInput.rows = 3;
+          codeInput.placeholder = "粘贴编码，可多个（空格/逗号/换行分隔）";
+          const codeBtn = button("添加", () => {
+            const codes = codeInput.value.split(/[\s,，、;；|]+/).filter(Boolean);
+            if (codes.length === 0) {
+              toast(body, "请填写图床编码，如 ab12cd.png（可一次粘贴多个）");
+              return;
+            }
+            const bad = codes.filter((c) => !isValidImageCode(c));
+            if (bad.length > 0) {
+              toast(body, `编码格式不对：${bad.slice(0, 3).join("、")}${bad.length > 3 ? " 等" : ""}`);
+              return;
+            }
+            const current = deps.getSettings();
+            const target = current.packs.find((p) => p.id === pack.id);
+            if (!target) return;
+            const host = current.imageHost.endsWith("/") ? current.imageHost : `${current.imageHost}/`;
+            let next = target;
+            let added = 0;
+            for (const code of codes) {
+              const tag = normalizeTag(code.replace(/\.[^.]+$/, ""));
+              if (!tag) continue;
+              next = upsertSprite(next, { tag, url: host + code, code });
+              added++;
+            }
+            commitPack(next);
+            toast(body, `已按编码添加 ${added} 张（图名取编码名，可在图卡上改名）`);
+          });
+          const codeHint = el("div", "so-status");
+          codeHint.textContent = `编码拼接图床前缀 ${deps.getSettings().imageHost} 成直链，图名自动取编码名；改名/分组用图卡上的 ✎ / 🏷。`;
+          panel.append(upHeading, upBtn, upHint, codeHeading, codeInput, codeBtn, codeHint);
+        })
+      );
+    }
     const topRow = el("div", "so-row so-detail-top");
     topRow.append(
       button("导出 JSON", async () => {
@@ -2585,7 +2672,6 @@ ${options}`,
       );
     }
     body.append(topRow);
-    let metaBox = null;
     if (readonly) {
       const note = el("div", "so-status");
       note.textContent = "预设包随扩展分发、只读；想改动可先「导出 JSON」再导入为自定义包。";
@@ -2606,10 +2692,10 @@ ${options}`,
       metaRow.append(
         labeled("包名", nameInput),
         labeled("作者", authorInput),
-        labeled("描述", descInput),
         labeled("人名", roleInput),
         labeled("服装", outfitInput),
-        button("保存信息", () => {
+        labeled("描述", descInput),
+        button("保存", () => {
           const name = sanitizePackName(nameInput.value);
           if (!name) {
             toast(body, "包名不能为空");
@@ -2630,11 +2716,11 @@ ${options}`,
       const metaHint = el("div", "so-status");
       metaHint.textContent = "人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。";
       metaPanel.body.append(metaRow, metaHint);
-      metaBox = metaPanel.box;
+      body.append(metaPanel.box);
     }
     if (pack.sprites.length === 0) {
       const empty = el("div", "so-status");
-      empty.textContent = "还没有立绘，用下方按钮上传图片（文件名即表情名）。";
+      empty.textContent = "还没有立绘：点右上角「添加立绘」上传图片或粘贴编码。";
       body.append(empty);
     } else {
       const groups = getGroups(pack);
@@ -2655,7 +2741,6 @@ ${options}`,
         body.append(grid);
       }
     }
-    if (metaBox) body.append(metaBox);
     if (!readonly) {
       const pending = pack.sprites.filter(
         (s) => getSpriteSource(s) !== "hosted" && !(s.remoteUrl && /^https?:\/\//.test(s.remoteUrl))
@@ -2702,64 +2787,6 @@ ${preview}
         );
         body.append(splitPanel.box);
       }
-      const addPanel = collapsible("添加立绘", pack.sprites.length === 0);
-      const addRow = el("div", "so-row");
-      addRow.append(
-        button("批量上传（自动压缩+解析预览）", () => {
-          pickFile("image/*", true, (files) => openUploadPreview(pack.id, files));
-        })
-      );
-      const upHint = el("div", "so-status");
-      upHint.textContent = "文件名按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png），上传前可预览修正、选择不拆分。";
-      addPanel.body.append(addRow, upHint);
-      const codeRow = el("div", "so-row so-code-row");
-      const tagInput = textInput("图名，留空=取编码名");
-      const codeInput = textInput("编码，可粘贴多个（空格/逗号分隔）");
-      const codeGroupInput = textInput("分组，可空");
-      codeRow.append(
-        labeled("表情", tagInput),
-        labeled("编码", codeInput),
-        labeled("分组", codeGroupInput),
-        button("按编码添加", () => {
-          const codes = codeInput.value.split(/[\s,，、;；|]+/).filter(Boolean);
-          if (codes.length === 0) {
-            toast(body, "请填写图床编码，如 ab12cd.png（可一次粘贴多个）");
-            return;
-          }
-          const bad = codes.filter((c) => !isValidImageCode(c));
-          if (bad.length > 0) {
-            toast(body, `编码格式不对：${bad.slice(0, 3).join("、")}${bad.length > 3 ? " 等" : ""}`);
-            return;
-          }
-          const manualTag = normalizeTag(tagInput.value);
-          if (codes.length > 1 && manualTag) {
-            toast(body, "多个编码时图名自动取各自编码名，请把图名留空");
-            return;
-          }
-          const current = deps.getSettings();
-          const target = current.packs.find((p) => p.id === pack.id);
-          if (!target) return;
-          const host = current.imageHost.endsWith("/") ? current.imageHost : `${current.imageHost}/`;
-          const group = normalizeTag(codeGroupInput.value);
-          let next = target;
-          let added = 0;
-          for (const code of codes) {
-            const tag = manualTag || normalizeTag(code.replace(/\.[^.]+$/, ""));
-            if (!tag) continue;
-            next = upsertSprite(next, { tag, url: host + code, code, ...group ? { group } : {} });
-            added++;
-          }
-          commitPack(next);
-          toast(body, `已按编码添加 ${added} 张`);
-          tagInput.value = "";
-          codeInput.value = "";
-          codeGroupInput.value = "";
-        })
-      );
-      const codeHint = el("div", "so-status");
-      codeHint.textContent = `手动通道：编码拼接图床前缀 ${deps.getSettings().imageHost}（与 imgbb 自动直传互不影响）`;
-      addPanel.body.append(codeRow, codeHint);
-      body.append(addPanel.box);
     }
     body.append(statusBar());
   }
@@ -3152,8 +3179,8 @@ function button(label, onClick, extraClass = "") {
   });
   return btn;
 }
-function iconButton(icon, title, onClick) {
-  const btn = el("div", "so-icon-btn");
+function iconButton(icon, title, onClick, className = "so-icon-btn") {
+  const btn = el("div", className);
   btn.textContent = icon;
   btn.title = title;
   btn.setAttribute("role", "button");
@@ -3261,7 +3288,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 16:41"}）`;
+  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 17:28"}）`;
   hint.textContent = `立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -4214,7 +4241,7 @@ async function init() {
   refresh();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 16:41"}`;
+  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 17:28"}`;
   console.log(`[sprite-overlay] 角色立绘悬浮窗扩展已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {

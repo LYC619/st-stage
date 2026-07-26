@@ -309,9 +309,24 @@
     grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
     gap: 8px;
   }
+
+  /* 头部工具栏挤不下：操作区整体换到第二行，右对齐 */
+  .so-manager-header {
+    flex-wrap: wrap;
+  }
+
+  .so-manager .so-manager-actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
+
+  .so-manager .so-header-select {
+    flex: 1 1 auto;
+  }
 }
 
 .so-manager-header {
+  position: relative; /* 新建/导入下拉浮层的锚点 */
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -320,6 +335,70 @@
   margin-bottom: 10px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.12));
+}
+
+/* 头部操作区（列表页）：启用选择 + 新建/导入下拉按钮；详情页为空时隐藏 */
+.so-manager .so-manager-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.so-manager .so-manager-actions:empty {
+  display: none;
+}
+
+.so-manager .so-header-select {
+  width: auto;
+  flex: 0 1 210px;
+  min-width: 100px;
+}
+
+/* 下拉浮层：锚在头部下方靠右；实底防看穿到图墙 */
+.so-manager .so-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(320px, 100%);
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.16));
+  background: rgba(18, 18, 24, 0.98);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+}
+
+.so-manager .so-popover-title {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+/* 浮层内第二段（JSON 导入）与分享串导入分隔 */
+.so-manager .so-popover .so-popover-title:not(:first-child) {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.so-manager .so-popover .text_pole {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.so-manager .so-popover textarea.text_pole {
+  resize: vertical;
+  min-height: 64px;
+}
+
+.so-manager .so-popover .menu_button {
+  width: auto;
+  text-align: center;
 }
 
 .so-manager-title {
@@ -412,30 +491,61 @@
   gap: 8px;
 }
 
-/* 绑定行 / 新建导入行：输入控件占满剩余宽度，与按钮同行 */
-.so-manager .so-bind-row .text_pole,
+/* 行内输入控件占满剩余宽度，与按钮同行 */
 .so-manager .text_pole.so-grow {
   width: auto;
   flex: 1 1 180px;
   min-width: 0;
 }
 
-/* 多包绑定项：包名占满 + 排序/移除按钮 */
-.so-manager .so-bind-item {
+/* 当前角色启用条：横向 chips（可排序/停用）+ 整体启停 */
+.so-manager .so-bind-strip {
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
+  margin: 8px 0 2px;
 }
 
-.so-manager .so-bind-name {
-  flex: 1 1 auto;
-  min-width: 0;
+.so-manager .so-bind-label {
   font-size: 13px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.so-manager .so-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 3px 6px 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.16));
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+}
+
+.so-manager .so-chip-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.so-manager .so-chip-btn {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.65;
+  touch-action: manipulation;
+}
+
+.so-manager .so-chip-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.14);
 }
 
 /* 修复按钮文字竖排：强制不换行、宽度自适应 */
@@ -503,6 +613,12 @@
 
 .so-manager .so-pack-card:active {
   transform: scale(0.98);
+}
+
+/* 使用中的包卡片：绿色描边呼应「使用中」角标 */
+.so-manager .so-pack-card.so-card-active {
+  border-color: rgba(74, 189, 126, 0.75);
+  box-shadow: 0 0 0 1px rgba(74, 189, 126, 0.35);
 }
 
 /* 老内核不支持 aspect-ratio 时给封面兜底高度，避免卡片塌成一行字 */
@@ -621,9 +737,13 @@
   flex: 1;
 }
 
-.so-manager .so-meta-row,
-.so-manager .so-code-row {
+/* 包信息一行式：输入框均分宽度，窄屏自动换行 */
+.so-manager .so-meta-row {
   align-items: stretch;
+}
+
+.so-manager .so-meta-row .so-labeled {
+  flex: 1 1 150px;
 }
 
 /* 分组分区标题（功能②） */

@@ -49,4 +49,32 @@ describe('createSpriteManager binding conflict UI', () => {
     expect(document.querySelector<HTMLSelectElement>('select[aria-label*="添加启用立绘包"]')?.value).toBe('')
     manager.close()
   })
+
+  it('creates a pack from the header 新建 dropdown and enters its detail view', () => {
+    let settings: PluginSettings = createDefaultSettings()
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+
+    const newBtn = [...document.querySelectorAll<HTMLElement>('.so-manager-actions .menu_button')]
+      .find((b) => b.textContent?.includes('新建'))
+    expect(newBtn).toBeDefined()
+    newBtn!.click()
+
+    const input = document.querySelector<HTMLInputElement>('.so-popover input')
+    expect(input).not.toBeNull()
+    input!.value = '新包'
+    const createBtn = [...document.querySelectorAll<HTMLElement>('.so-popover .menu_button')]
+      .find((b) => b.textContent === '创建')
+    createBtn!.click()
+
+    expect(settings.packs.some((p) => p.name === '新包')).toBe(true)
+    // 创建成功直接进入详情页，且下拉浮层随重渲染关闭
+    expect(document.querySelector('.so-manager-title')?.textContent).toBe('新包')
+    expect(document.querySelector('.so-popover')).toBeNull()
+    manager.close()
+  })
 })
