@@ -3261,7 +3261,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 16:21"}）`;
+  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 16:41"}）`;
   hint.textContent = `立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -3590,6 +3590,30 @@ function textareaRow(label, value, placeholder, onCommit) {
   input.placeholder = placeholder;
   input.addEventListener("change", () => onCommit(input.value));
   wrap.append(title, input);
+  return wrap;
+}
+function hintField(row, hint) {
+  const wrap = el2("div", "so-app-hintwrap");
+  const line = el2("div", "so-app-hintrow");
+  row.classList.add("so-app-hintrow-main");
+  const badge = document.createElement("button");
+  badge.type = "button";
+  badge.className = "so-app-hint-badge";
+  badge.textContent = "ⓘ";
+  badge.title = hint;
+  badge.setAttribute("aria-label", "说明");
+  badge.setAttribute("aria-expanded", "false");
+  const detail = el2("div", "so-app-hint");
+  detail.textContent = hint;
+  detail.hidden = true;
+  badge.addEventListener("click", (e) => {
+    e.preventDefault();
+    detail.hidden = !detail.hidden;
+    badge.classList.toggle("so-app-hint-badge-on", !detail.hidden);
+    badge.setAttribute("aria-expanded", String(!detail.hidden));
+  });
+  line.append(row, badge);
+  wrap.append(line, detail);
   return wrap;
 }
 function textRow(label, value, placeholder, onCommit, type = "text") {
@@ -3962,7 +3986,12 @@ function render(container, ctx) {
   const main = el2("div", "so-app-section");
   const title = el2("div", "so-app-title");
   title.textContent = data.perfOn ? "一键性能模式（已开启）" : "一键性能模式";
-  main.append(title);
+  main.append(
+    hintField(
+      title,
+      "第一次开启前会把你当前的这些设置整组拍成快照存起来；“还原”就是把快照原样写回。所以放心开——不满意随时一键还原到开启前的样子，不会丢你原来的偏好。"
+    )
+  );
   descLine(
     main,
     `关闭背景模糊/阴影/动画/平滑流式，流式帧率降到 15，消息加载数降到 ${mobile ? "20（移动端）" : "50"}。改动前自动保存原设置快照。`
@@ -3983,27 +4012,48 @@ function render(container, ctx) {
   container.append(main);
   const tweak = foldSection("手动微调");
   tweak.body.append(
-    toggleRow("No Blur（关闭背景模糊）", readBool(pu, "fast_ui_mode", true), (v) => {
-      void writeField(ctx, st, "fast_ui_mode", v);
-    }),
-    toggleRow("减少动画（完全生效需刷新页面）", readBool(pu, "reduced_motion", false), (v) => {
-      void writeField(ctx, st, "reduced_motion", v);
-    }),
-    toggleRow("关闭阴影", readBool(pu, "noShadows", false), (v) => {
-      void writeField(ctx, st, "noShadows", v);
-    }),
-    toggleRow("平滑流式（卡顿建议关）", readBool(pu, "smooth_streaming", false), (v) => {
-      void writeField(ctx, st, "smooth_streaming", v);
-    }),
-    toggleRow("流式淡入", readBool(pu, "stream_fade_in", false), (v) => {
-      void writeField(ctx, st, "stream_fade_in", v);
-    }),
-    numberRow("流式帧率 FPS（低端机建议 10–15）", readNum(pu, "streaming_fps", 30), 5, 100, (v) => {
-      void writeField(ctx, st, "streaming_fps", v);
-    }),
-    numberRow("消息加载数（0=全部，改后自动重载对话）", readNum(pu, "chat_truncation", 100), 0, 1e5, (v) => {
-      void writeField(ctx, st, "chat_truncation", v);
-    })
+    hintField(
+      toggleRow("No Blur（关背景模糊）", readBool(pu, "fast_ui_mode", true), (v) => {
+        void writeField(ctx, st, "fast_ui_mode", v);
+      }),
+      "关闭聊天框、弹窗背后的毛玻璃模糊。模糊很吃 GPU，几乎所有卡顿场景都建议开启（=关模糊）。官方公认最有效的提速项之一。"
+    ),
+    hintField(
+      toggleRow("减少动画", readBool(pu, "reduced_motion", false), (v) => {
+        void writeField(ctx, st, "reduced_motion", v);
+      }),
+      "关闭界面过渡动画（展开/淡入等）。低端机、长聊天滚动卡顿时开。改此项需刷新页面才完全生效。"
+    ),
+    hintField(
+      toggleRow("关闭阴影", readBool(pu, "noShadows", false), (v) => {
+        void writeField(ctx, st, "noShadows", v);
+      }),
+      "去掉界面元素投影，减少重绘。视觉略扁平，但换来更顺滑的滚动。追求性能可开。"
+    ),
+    hintField(
+      toggleRow("平滑流式", readBool(pu, "smooth_streaming", false), (v) => {
+        void writeField(ctx, st, "smooth_streaming", v);
+      }),
+      "AI 回复逐字平滑吐字的动画。好看但持续占用渲染；出字卡顿、掉帧时建议关闭。"
+    ),
+    hintField(
+      toggleRow("流式淡入", readBool(pu, "stream_fade_in", false), (v) => {
+        void writeField(ctx, st, "stream_fade_in", v);
+      }),
+      "新出的文字带淡入效果。同样是额外渲染开销，卡顿时关。"
+    ),
+    hintField(
+      numberRow("流式帧率 FPS", readNum(pu, "streaming_fps", 30), 5, 100, (v) => {
+        void writeField(ctx, st, "streaming_fps", v);
+      }),
+      "AI 回复刷新的帧率。越高越顺滑但越吃性能。默认约 30；低端机/手机官方建议降到 10–15，肉眼几乎无差却明显省电省算力。"
+    ),
+    hintField(
+      numberRow("消息加载数", readNum(pu, "chat_truncation", 100), 0, 1e5, (v) => {
+        void writeField(ctx, st, "chat_truncation", v);
+      }),
+      "打开对话时载入 DOM 的最近消息条数（0=全部）。长聊天最主要的卡顿来源。手机建议 15–20、桌面 50 左右；往上翻能继续加载更早的消息，不会丢。改后自动重载当前对话。"
+    )
   );
   container.append(tweak.box);
   const check = foldSection("体检");
@@ -4164,7 +4214,7 @@ async function init() {
   refresh();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 16:21"}`;
+  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 16:41"}`;
   console.log(`[sprite-overlay] 角色立绘悬浮窗扩展已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {

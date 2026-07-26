@@ -311,6 +311,56 @@
   gap: 5px;
 }
 
+/* ⓘ 说明行：左侧原控件占满，右侧 ⓘ 徽标；点开后下方展示行内说明块 */
+.so-app-hintwrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.so-app-hintrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.so-app-hintrow > .so-app-hintrow-main {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.so-app-hint-badge {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  line-height: 1;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  cursor: help;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.so-app-hint-badge:hover,
+.so-app-hint-badge:focus-visible,
+.so-app-hint-badge-on {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.6);
+  outline: none;
+}
+.so-app-hint {
+  font-size: 12px;
+  opacity: 0.78;
+  line-height: 1.5;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 2px solid rgba(255, 255, 255, 0.28);
+}
+
 .so-app-sprite-strip {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

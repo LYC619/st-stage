@@ -125,6 +125,41 @@ export function textareaRow(
   return wrap
 }
 
+/**
+ * 给任意一行挂一个 ⓘ 说明：
+ * - 桌面：悬浮到 ⓘ 上由浏览器原生 title 气泡显示（“悬浮的解释”）
+ * - 移动端（无 hover）：点 ⓘ 展开/收起行内说明块
+ * 传入的 row 会被塞进弹性行，ⓘ 固定在右侧。
+ */
+export function hintField(row: HTMLElement, hint: string): HTMLElement {
+  const wrap = el('div', 'so-app-hintwrap')
+  const line = el('div', 'so-app-hintrow')
+  row.classList.add('so-app-hintrow-main')
+
+  const badge = document.createElement('button')
+  badge.type = 'button'
+  badge.className = 'so-app-hint-badge'
+  badge.textContent = 'ⓘ'
+  badge.title = hint
+  badge.setAttribute('aria-label', '说明')
+  badge.setAttribute('aria-expanded', 'false')
+
+  const detail = el('div', 'so-app-hint')
+  detail.textContent = hint
+  detail.hidden = true
+
+  badge.addEventListener('click', (e) => {
+    e.preventDefault()
+    detail.hidden = !detail.hidden
+    badge.classList.toggle('so-app-hint-badge-on', !detail.hidden)
+    badge.setAttribute('aria-expanded', String(!detail.hidden))
+  })
+
+  line.append(row, badge)
+  wrap.append(line, detail)
+  return wrap
+}
+
 /** 文本输入行（blur 提交），transform 可在保存前清洗/校验值 */
 export function textRow(
   label: string,
