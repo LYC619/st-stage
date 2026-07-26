@@ -324,7 +324,9 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
     const badge = el('span', `vm-badge vm-badge-${d.kind}`)
     if (d.kind === 'inc' || d.kind === 'dec') {
       const n = d.diff ?? 0
-      badge.textContent = `${n > 0 ? '+' : ''}${n}`
+      // 浮点差值舍到两位，避免 0.1+0.2 类的长尾（+0.30000000000000004）
+      const shown = Number.isInteger(n) ? String(n) : String(Number(n.toFixed(2)))
+      badge.textContent = `${n > 0 ? '+' : ''}${shown}`
     } else {
       badge.textContent = d.kind === 'added' ? '新' : '改'
     }

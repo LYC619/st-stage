@@ -22,6 +22,8 @@ import { createSpriteManager } from './sprite-manager'
 import { mountSettingsPanel } from './settings-panel'
 import { mountMessagePostprocess, reprocessAllMessages } from './message-postprocess'
 import { createBuiltinApps } from './apps'
+import { createNewvarRuntime } from './apps/newvar/runtime'
+import { NEWVAR_CHANNEL } from './apps/newvar/config'
 
 declare global {
   interface Window {
@@ -123,12 +125,19 @@ async function init(): Promise<void> {
     phone.setState(settings.phone)
   }
 
+  // 「新变量」运行时：注入走独立命名通道（与立绘 injectPrompt 互不覆盖），解析/存储常驻
+  const newvarRuntime = createNewvarRuntime({
+    getSettings: () => settings,
+    inject: (prompt, depth) => adapter.injectChannel(NEWVAR_CHANNEL, prompt, depth),
+  })
+
   for (const app of createBuiltinApps({
     // 从手机开图库弹窗：先收起手机（避免挡在弹窗上），来源标记=手机（关闭后回图库页）
     openGalleryManager: () => {
       collapsePhone()
       manager.open('phone')
     },
+    newvarRuntime,
   })) {
     registry.register(app)
   }
@@ -218,6 +227,7 @@ async function init(): Promise<void> {
   })
 
   refresh()
+  newvarRuntime.start()
   phone.setState(settings.phone)
   phone.setVisible(settings.showPhone)
   const version =

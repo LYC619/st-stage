@@ -165,7 +165,7 @@ async function readHelperWrapper(scope: MvuScope): Promise<Record<string, unknow
   return vars && typeof vars === 'object' ? vars : {}
 }
 
-/** 读某楼层的 stat 根（供 delta 用上一楼；best-effort，失败返回 null） */
+/** 读某楼层的 stat 根（供 delta 对比；best-effort，失败返回 null） */
 async function readStatRootAt(messageId: number): Promise<Record<string, unknown> | null> {
   if (messageId < 0) return null
   const scope: MvuScope = { type: 'message', message_id: messageId }
@@ -179,6 +179,19 @@ async function readStatRootAt(messageId: number): Promise<Record<string, unknown
   } catch {
     return null
   }
+}
+
+/**
+ * 从 fromId 向前回溯，找最近一个有变量的楼层（用户楼层通常没有变量，
+ * 固定取「上一楼」会让 delta 恒为空）。maxScan 限制回溯范围。
+ */
+async function findPrevStatRoot(fromId: number, maxScan = 20): Promise<Record<string, unknown> | null> {
+  const stop = Math.max(0, fromId - maxScan + 1)
+  for (let id = fromId; id >= stop; id--) {
+    const root = await readStatRootAt(id)
+    if (root && Object.keys(root).length > 0) return root
+  }
+  return null
 }
 
 async function readVariables(scope: MvuScope, messageId: number): Promise<ReadResult> {
@@ -391,10 +404,10 @@ function createInstance(container: HTMLElement, _ctx: PhoneAppContext): Instance
     const messageId = getLastMessageId(st)
     const result = await readVariables({ type: 'message', message_id: messageId }, messageId)
     if (isStale(token)) return
-    // 变化高亮：读上一楼 deep-diff（best-effort）
+    // 变化高亮：向前回溯最近一个有变量的楼层做 deep-diff（best-effort）
     let nextDelta = new Map<string, DeltaInfo>()
     if (result.status === 'ready' && messageId > 0) {
-      const prev = await readStatRootAt(messageId - 1)
+      const prev = await findPrevStatRoot(messageId - 1)
       if (isStale(token)) return
       nextDelta = computeDelta(result.data, prev, result.isMvu)
     }

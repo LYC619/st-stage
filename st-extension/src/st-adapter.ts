@@ -138,6 +138,12 @@ export class STAdapter implements PlatformAdapter {
     ctx.setExtensionPrompt(MODULE_NAME, prompt, 1, depth)
   }
 
+  injectChannel(channel: string, prompt: string, depth = INJECTION_DEPTH_DEFAULT): void {
+    const ctx = getContext()
+    // setExtensionPrompt 以 key 为槽位：每个通道独立 key，通道间及与立绘（MODULE_NAME）互不覆盖
+    ctx.setExtensionPrompt(`st-stage::${channel}`, prompt, 1, depth)
+  }
+
   onMessageReceived(handler: (messageText: string) => void): () => void {
     const ctx = getContext()
     const eventName =

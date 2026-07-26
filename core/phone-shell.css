@@ -554,3 +554,26 @@
 .vm-add-err {
   color: rgba(255, 150, 150, 0.9);
 }
+
+/* —— 新变量 App（nv-*） —— */
+.nv-box {
+  display: flex;
+  flex-direction: column;
+}
+.nv-pre {
+  font-family: var(--monoFontFamily, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px;
+  max-height: 240px;
+  overflow: auto;
+}
+.nv-log-line {
+  font-family: var(--monoFontFamily, ui-monospace, monospace);
+  opacity: 0.85;
+}

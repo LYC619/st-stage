@@ -10,12 +10,22 @@ import { spriteApp } from './sprite-app'
 import { galleryApp } from './gallery-app'
 import { butlerApp } from './butler-app'
 import { mvuApp } from './mvu-app'
+import { newvarApp } from './newvar-app'
+import type { NewvarRuntime } from './newvar/runtime'
 
 export interface BuiltinAppDeps {
   /** 从手机打开图库管理弹窗（收起手机 + 记录来源，关闭后回手机图库页） */
   openGalleryManager: () => void
+  /** 「新变量」运行时：入口创建并 start（注入/解析/存储常驻），App 只是它的控制台 */
+  newvarRuntime: NewvarRuntime
 }
 
 export function createBuiltinApps(deps: BuiltinAppDeps): PhoneApp[] {
-  return [spriteApp(), galleryApp({ openManager: deps.openGalleryManager }), butlerApp(), mvuApp()]
+  return [
+    spriteApp(),
+    galleryApp({ openManager: deps.openGalleryManager }),
+    butlerApp(),
+    mvuApp(),
+    newvarApp({ runtime: deps.newvarRuntime }),
+  ]
 }

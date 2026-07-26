@@ -70,6 +70,19 @@ export class WebAdapter implements PlatformAdapter {
     this.onInjectionChange?.(prompt)
   }
 
+  /** 命名通道注入：各通道独立记录，供页面按通道显示「注入预览」 */
+  public onChannelInjectionChange: ((channel: string, prompt: string) => void) | null = null
+  private channelInjections = new Map<string, string>()
+
+  injectChannel(channel: string, prompt: string): void {
+    this.channelInjections.set(channel, prompt)
+    this.onChannelInjectionChange?.(channel, prompt)
+  }
+
+  getChannelInjection(channel: string): string {
+    return this.channelInjections.get(channel) ?? ''
+  }
+
   onMessageReceived(handler: MessageHandler): () => void {
     this.messageHandlers.add(handler)
     return () => this.messageHandlers.delete(handler)

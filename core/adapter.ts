@@ -24,6 +24,13 @@ export interface PlatformAdapter {
    */
   injectPrompt(prompt: string, depth?: number): void
   /**
+   * 命名注入通道：每个 channel 一个独立槽位，通道之间、以及与立绘的 injectPrompt 之间互不覆盖。
+   * 供内置 App / 后续功能各自注入提示词（如「新变量」的变量状态+更新规则）。
+   * ST 端 key = `st-stage::<channel>`（独立 setExtensionPrompt 槽位）；Web 端更新对应通道的预览。
+   * 传空字符串清除该通道。
+   */
+  injectChannel(channel: string, prompt: string, depth?: number): void
+  /**
    * 订阅「收到 AI 消息」事件，回调收到消息全文。
    * 返回取消订阅函数。
    */

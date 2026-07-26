@@ -1359,6 +1359,10 @@ var STAdapter = class {
     const ctx = getContext();
     ctx.setExtensionPrompt(MODULE_NAME, prompt, 1, depth);
   }
+  injectChannel(channel, prompt, depth = INJECTION_DEPTH_DEFAULT) {
+    const ctx = getContext();
+    ctx.setExtensionPrompt(`st-stage::${channel}`, prompt, 1, depth);
+  }
   onMessageReceived(handler) {
     const ctx = getContext();
     const eventName = ctx.eventTypes?.MESSAGE_RECEIVED ?? ctx.event_types?.MESSAGE_RECEIVED ?? "message_received";
@@ -3288,7 +3292,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 19:12"}）`;
+  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 19:28"}）`;
   hint.textContent = `立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -4330,7 +4334,8 @@ function createVariableTreeView(container, handlers) {
     const badge = el2("span", `vm-badge vm-badge-${d.kind}`);
     if (d.kind === "inc" || d.kind === "dec") {
       const n = d.diff ?? 0;
-      badge.textContent = `${n > 0 ? "+" : ""}${n}`;
+      const shown = Number.isInteger(n) ? String(n) : String(Number(n.toFixed(2)));
+      badge.textContent = `${n > 0 ? "+" : ""}${shown}`;
     } else {
       badge.textContent = d.kind === "added" ? "新" : "改";
     }
@@ -4544,6 +4549,14 @@ async function readStatRootAt(messageId) {
     return null;
   }
 }
+async function findPrevStatRoot(fromId, maxScan = 20) {
+  const stop = Math.max(0, fromId - maxScan + 1);
+  for (let id = fromId; id >= stop; id--) {
+    const root = await readStatRootAt(id);
+    if (root && Object.keys(root).length > 0) return root;
+  }
+  return null;
+}
 async function readVariables(scope, messageId) {
   const meta = { source: "none", waitedMvu: false };
   const base = { isMvu: false, wrapped: true, messageId, meta };
@@ -4719,7 +4732,7 @@ function createInstance(container, _ctx) {
     if (isStale(token)) return;
     let nextDelta = /* @__PURE__ */ new Map();
     if (result.status === "ready" && messageId > 0) {
-      const prev = await readStatRootAt(messageId - 1);
+      const prev = await findPrevStatRoot(messageId - 1);
       if (isStale(token)) return;
       nextDelta = computeDelta(result.data, prev, result.isMvu);
     }
@@ -4801,9 +4814,789 @@ function mvuApp() {
   };
 }
 
+// st-extension/src/apps/newvar-app.ts
+function draftFromDef(def) {
+  return {
+    key: def.key,
+    type: def.type,
+    defaultText: formatValue(def.default),
+    description: def.description,
+    rangeText: def.range ? `${def.range[0]}~${def.range[1]}` : "",
+    enumText: (def.enum ?? []).join(", "),
+    hidden: def.hidden === true
+  };
+}
+function emptyDraft() {
+  return { key: "", type: "number", defaultText: "0", description: "", rangeText: "", enumText: "", hidden: false };
+}
+function draftToDef(draft) {
+  const key = draft.key.trim();
+  if (!key) return { error: "请填写变量路径。" };
+  const def = { key, type: draft.type, default: void 0, description: draft.description.trim() };
+  if (draft.hidden) def.hidden = true;
+  if (draft.type === "number") {
+    const range = parseRange(draft.rangeText);
+    if (range === false) return { error: "范围格式应为「最小~最大」，如 0~100。" };
+    if (range) def.range = range;
+    const n = Number(draft.defaultText.trim());
+    let dflt = Number.isFinite(n) ? n : 0;
+    if (def.range) dflt = Math.min(def.range[1], Math.max(def.range[0], dflt));
+    def.default = dflt;
+  } else if (draft.type === "boolean") {
+    def.default = draft.defaultText.trim() === "true";
+  } else if (draft.type === "enum") {
+    const options = draft.enumText.split(/[,，]/).map((s) => s.trim()).filter((s) => s !== "");
+    if (options.length === 0) return { error: "枚举类型至少需要一个选项（逗号分隔）。" };
+    def.enum = options;
+    def.default = options.includes(draft.defaultText.trim()) ? draft.defaultText.trim() : options[0];
+  } else {
+    def.default = draft.defaultText;
+  }
+  return { def };
+}
+function parseRange(text) {
+  const t = text.trim();
+  if (!t) return null;
+  const m = /^(-?\d+(?:\.\d+)?)\s*~\s*(-?\d+(?:\.\d+)?)$/.exec(t);
+  if (!m) return false;
+  const min = Number(m[1]);
+  const max = Number(m[2]);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min > max) return false;
+  return [min, max];
+}
+var TYPE_LABELS = { number: "数字", string: "文本", boolean: "布尔", enum: "枚举" };
+function newvarApp(deps) {
+  let unsub = null;
+  return {
+    id: "newvar",
+    name: "新变量",
+    icon: "🧮",
+    order: 5,
+    mount(container, ctx) {
+      unsub?.();
+      unsub = mountApp(container, ctx, deps.runtime);
+    },
+    unmount() {
+      unsub?.();
+      unsub = null;
+    }
+  };
+}
+function mountApp(container, ctx, runtime) {
+  const cfgBox = el2("div", "nv-box");
+  const stateBox = el2("div", "nv-box");
+  const schemaWrap = el2("div", "nv-box");
+  const previewBox = el2("div", "nv-box");
+  const logBox = el2("div", "nv-box");
+  container.append(cfgBox, stateBox, schemaWrap, previewBox, logBox);
+  let formDraft = null;
+  let editingIndex = null;
+  function data() {
+    return runtime.getData();
+  }
+  function saveData(next) {
+    ctx.setAppData(next);
+    runtime.onConfigChanged();
+  }
+  function renderCfg() {
+    cfgBox.textContent = "";
+    const d = data();
+    const section = el2("div", "so-app-section");
+    const title = el2("div", "so-app-title");
+    title.textContent = "内置变量追踪";
+    const desc = el2("div", "so-app-desc");
+    desc.textContent = "不依赖 MVU/酒馆助手：定义变量后自动向 AI 注入当前状态与更新规则，解析回复中的 <UpdateVariable> 并逐楼保存快照。任何角色卡都能用。";
+    section.append(
+      title,
+      desc,
+      toggleRow("启用（注入 + 解析）", d.enabled, (v) => {
+        saveData({ ...data(), enabled: v });
+        renderCfg();
+      }),
+      selectRow(
+        "输出格式",
+        d.format,
+        [
+          { value: "json_patch", label: "JSON Patch（推荐）" },
+          { value: "lodash_set", label: "_.set（老版 MVU 兼容）" }
+        ],
+        (v) => saveData({ ...data(), format: v === "lodash_set" ? "lodash_set" : "json_patch" })
+      ),
+      numberRow(
+        "注入深度（距末尾楼层数）",
+        d.injectionDepth,
+        0,
+        20,
+        (v) => saveData({ ...data(), injectionDepth: v })
+      )
+    );
+    cfgBox.append(section);
+  }
+  const tree = createVariableTreeView(stateBox, {
+    getModel: buildTreeModel,
+    commitSet: (path, value) => runtime.setVariable(path, value),
+    commitDelete: (path) => runtime.deleteVariable(path),
+    requestRefresh: () => renderVolatile()
+  });
+  function buildTreeModel() {
+    const st = runtime.isSTAvailable();
+    const d = data();
+    const state = runtime.getCurrentState();
+    return {
+      data: state,
+      isMvu: false,
+      delta: computeDelta(state, runtime.getPrevState(), false),
+      status: st ? "ready" : "unavailable",
+      statusText: st ? `内置追踪 · ${d.enabled ? "已启用" : "未启用"}` : "内置追踪 · 模拟器",
+      emptyText: "暂无变量。启用追踪并在下方定义变量，AI 回复后这里会显示逐楼状态。",
+      noticeText: st ? void 0 : "未检测到 SillyTavern：模拟器中仅可编辑变量定义与预览注入文本，状态快照在 ST 内才会产生。",
+      canWrite: st,
+      addHint: "手动新增只写入当前楼的状态快照（不会加进变量定义）。路径用点号分层。"
+    };
+  }
+  function renderSchema() {
+    schemaWrap.textContent = "";
+    const d = data();
+    const fold = foldSection(`变量定义（${d.schema.variables.length}）`, d.schema.variables.length === 0);
+    for (let i = 0; i < d.schema.variables.length; i++) {
+      fold.body.append(buildDefRow(d.schema.variables[i], i));
+    }
+    if (formDraft) {
+      fold.body.append(buildDefForm());
+    } else {
+      fold.body.append(
+        appButton("＋ 添加变量定义", () => {
+          formDraft = emptyDraft();
+          editingIndex = null;
+          renderSchema();
+        })
+      );
+    }
+    schemaWrap.append(fold.box);
+  }
+  function buildDefRow(def, index) {
+    const card = el2("div", "vm-leaf");
+    const main = el2("div", "vm-leaf-main");
+    const keyEl = el2("span", "vm-key");
+    keyEl.textContent = def.key;
+    const meta = el2("span", "vm-val");
+    const parts = [TYPE_LABELS[def.type], `默认 ${formatValue(def.default)}`];
+    if (def.range) parts.push(`范围 ${def.range[0]}~${def.range[1]}`);
+    if (def.enum) parts.push(`枚举 ${def.enum.join("/")}`);
+    if (def.hidden) parts.push("对 AI 隐藏");
+    meta.textContent = parts.join(" · ");
+    main.append(keyEl, meta);
+    if (def.description) {
+      const desc = el2("div", "vm-desc");
+      desc.textContent = def.description;
+      main.append(desc);
+    }
+    main.setAttribute("role", "button");
+    main.tabIndex = 0;
+    const edit = () => {
+      formDraft = draftFromDef(def);
+      editingIndex = index;
+      renderSchema();
+    };
+    main.addEventListener("click", edit);
+    main.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        edit();
+      }
+    });
+    const del = el2("button", "vm-del");
+    del.setAttribute("aria-label", "删除定义");
+    del.title = "删除该变量定义";
+    del.textContent = "✕";
+    del.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!window.confirm(`删除变量定义「${def.key}」？（已保存的楼层快照不受影响）`)) return;
+      const cur = data();
+      const variables = cur.schema.variables.filter((_, i) => i !== index);
+      if (editingIndex === index) {
+        formDraft = null;
+        editingIndex = null;
+      }
+      saveData({ ...cur, schema: { ...cur.schema, variables } });
+      renderSchema();
+    });
+    card.append(main, del);
+    return card;
+  }
+  function buildDefForm() {
+    const draft = formDraft;
+    const wrap = el2("div", "vm-leaf vm-editing");
+    const title = el2("div", "so-app-title vm-edit-title");
+    title.textContent = editingIndex === null ? "新变量定义" : `编辑：${draft.key || "（未命名）"}`;
+    wrap.append(title);
+    const err = el2("div", "so-app-desc vm-add-err");
+    err.hidden = true;
+    wrap.append(
+      textRow("路径（点号分层）", draft.key, "如 状态.体力", (v) => draft.key = v),
+      selectRow(
+        "类型",
+        draft.type,
+        Object.keys(TYPE_LABELS).map((t) => ({ value: t, label: TYPE_LABELS[t] })),
+        (v) => {
+          draft.type = v;
+          renderSchema();
+        }
+      ),
+      textRow("默认值", draft.defaultText, draft.type === "boolean" ? "true / false" : "", (v) => draft.defaultText = v),
+      textRow("描述（给 AI 看）", draft.description, "如 角色对用户的好感", (v) => draft.description = v)
+    );
+    if (draft.type === "number") {
+      wrap.append(textRow("范围（可空）", draft.rangeText, "如 0~100，越界自动修正", (v) => draft.rangeText = v));
+    }
+    if (draft.type === "enum") {
+      wrap.append(textRow("枚举选项（逗号分隔）", draft.enumText, "如 开心, 平静, 烦躁", (v) => draft.enumText = v));
+    }
+    wrap.append(toggleRow("对 AI 隐藏（内部计算用）", draft.hidden, (v) => draft.hidden = v), err);
+    const actions = el2("div", "vm-actions");
+    const save = el2("button", "menu_button vm-act");
+    save.textContent = "保存定义";
+    save.addEventListener("click", () => {
+      const r = draftToDef(draft);
+      if (!r.def) {
+        err.textContent = r.error ?? "输入无效。";
+        err.hidden = false;
+        return;
+      }
+      const cur = data();
+      const dup = cur.schema.variables.findIndex((v, i) => v.key === r.def.key && i !== editingIndex);
+      if (dup >= 0) {
+        err.textContent = `路径「${r.def.key}」已有定义。`;
+        err.hidden = false;
+        return;
+      }
+      const variables = [...cur.schema.variables];
+      if (editingIndex !== null && editingIndex < variables.length) variables[editingIndex] = r.def;
+      else variables.push(r.def);
+      formDraft = null;
+      editingIndex = null;
+      saveData({ ...cur, schema: { ...cur.schema, variables } });
+      renderSchema();
+    });
+    const cancel = el2("button", "menu_button vm-act vm-act-ghost");
+    cancel.textContent = "取消";
+    cancel.addEventListener("click", () => {
+      formDraft = null;
+      editingIndex = null;
+      renderSchema();
+    });
+    actions.append(save, cancel);
+    wrap.append(actions);
+    return wrap;
+  }
+  function renderPreview() {
+    previewBox.textContent = "";
+    const fold = foldSection("注入预览");
+    const text = runtime.buildPreview();
+    if (text) {
+      const pre = el2("div", "nv-pre");
+      pre.textContent = text;
+      fold.body.append(pre);
+    } else {
+      const desc = el2("div", "so-app-desc");
+      desc.textContent = "（未启用或未定义任何变量时不注入。）";
+      fold.body.append(desc);
+    }
+    previewBox.append(fold.box);
+  }
+  const LOG_ICONS = { accepted: "✅", corrected: "⚠️", rejected: "❌", removed: "🗑️" };
+  function renderLog() {
+    logBox.textContent = "";
+    const fold = foldSection("解析日志");
+    const report = runtime.getLastParse();
+    if (!report) {
+      const desc = el2("div", "so-app-desc");
+      desc.textContent = "尚无解析记录。AI 回复包含 <UpdateVariable> 块时，这里显示逐条接受/修正/拒绝结果。";
+      fold.body.append(desc);
+    } else {
+      const head = el2("div", "so-app-desc");
+      head.textContent = `楼层 #${report.messageId}${report.error ? ` · 解析出错：${report.error}` : ""}`;
+      fold.body.append(head);
+      for (const entry of report.log) {
+        const line = el2("div", "so-app-desc nv-log-line");
+        line.textContent = `${LOG_ICONS[entry.status] ?? "·"} ${entry.path}${entry.detail ? ` — ${entry.detail}` : ""}`;
+        fold.body.append(line);
+      }
+    }
+    logBox.append(fold.box);
+  }
+  function renderVolatile() {
+    if (!tree.isEditing()) tree.render();
+    renderPreview();
+    renderLog();
+  }
+  renderCfg();
+  tree.render();
+  renderSchema();
+  renderPreview();
+  renderLog();
+  const offRuntime = runtime.subscribe(renderVolatile);
+  return () => offRuntime();
+}
+
 // st-extension/src/apps/index.ts
 function createBuiltinApps(deps) {
-  return [spriteApp(), galleryApp({ openManager: deps.openGalleryManager }), butlerApp(), mvuApp()];
+  return [
+    spriteApp(),
+    galleryApp({ openManager: deps.openGalleryManager }),
+    butlerApp(),
+    mvuApp(),
+    newvarApp({ runtime: deps.newvarRuntime })
+  ];
+}
+
+// st-extension/src/apps/newvar/engine.ts
+function initStateFromSchema(schema) {
+  const state = {};
+  for (const def of schema.variables) {
+    setNested(state, def.key, clone(def.default));
+  }
+  return state;
+}
+function clone(v) {
+  if (v == null || typeof v !== "object") return v;
+  try {
+    return JSON.parse(JSON.stringify(v));
+  } catch {
+    return v;
+  }
+}
+function validateValue(def, raw) {
+  switch (def.type) {
+    case "number": {
+      if (typeof raw !== "number" || !Number.isFinite(raw)) {
+        return { ok: false, error: `期望数字，得到 ${describe(raw)}` };
+      }
+      if (def.range) {
+        const [min, max] = def.range;
+        if (raw < min || raw > max) {
+          const clipped = Math.max(min, Math.min(max, raw));
+          return { ok: true, value: clipped, corrected: true };
+        }
+      }
+      return { ok: true, value: raw };
+    }
+    case "string":
+      if (typeof raw !== "string") return { ok: false, error: `期望文本，得到 ${describe(raw)}` };
+      return { ok: true, value: raw };
+    case "boolean":
+      if (typeof raw !== "boolean") return { ok: false, error: `期望布尔，得到 ${describe(raw)}` };
+      return { ok: true, value: raw };
+    case "enum": {
+      const options = def.enum ?? [];
+      if (typeof raw !== "string" || !options.includes(raw)) {
+        return { ok: false, error: `值 ${describe(raw)} 不在枚举 [${options.join(", ")}] 中` };
+      }
+      return { ok: true, value: raw };
+    }
+    default:
+      return { ok: true, value: raw };
+  }
+}
+function describe(v) {
+  if (v === null) return "null";
+  if (typeof v === "string") return `"${v}"`;
+  if (typeof v === "object") return Array.isArray(v) ? "数组" : "对象";
+  return String(v);
+}
+var BLOCK_RE = /<UpdateVariable>([\s\S]*?)<\/UpdateVariable>/i;
+var ANALYSIS_RE = /<Analysis>[\s\S]*?<\/Analysis>/gi;
+var LODASH_RE = /_\.set\(\s*['"]([^'"]+)['"]\s*,\s*(?:[^,]*?,\s*)?([\s\S]*?)\)\s*;?/gi;
+function parseUpdateBlock(text, format) {
+  if (typeof text !== "string") return { found: false, ops: [] };
+  const m = BLOCK_RE.exec(text);
+  if (!m) return { found: false, ops: [] };
+  const inner = m[1].replace(ANALYSIS_RE, "").trim();
+  if (!inner) return { found: true, ops: [] };
+  if (format === "lodash_set") {
+    return parseLodash(inner);
+  }
+  return parseJsonPatch(inner);
+}
+function parseJsonPatch(inner) {
+  const arrText = extractJsonArray(inner);
+  if (arrText === null) return { found: true, ops: [], error: "未找到 JSON Patch 数组" };
+  let parsed;
+  try {
+    parsed = JSON.parse(arrText);
+  } catch (e) {
+    return { found: true, ops: [], error: `JSON 解析失败：${e instanceof Error ? e.message : String(e)}` };
+  }
+  if (!Array.isArray(parsed)) return { found: true, ops: [], error: "JSON Patch 应为数组" };
+  const ops = [];
+  for (const raw of parsed) {
+    if (!raw || typeof raw !== "object") continue;
+    const o = raw;
+    const op = o.op;
+    const pointer = o.path;
+    if (op !== "replace" && op !== "add" && op !== "remove" || typeof pointer !== "string") continue;
+    ops.push({ op, path: pointerToDotted(pointer), value: o.value });
+  }
+  return { found: true, ops };
+}
+function extractJsonArray(inner) {
+  const start = inner.indexOf("[");
+  const end = inner.lastIndexOf("]");
+  if (start < 0 || end <= start) return null;
+  return inner.slice(start, end + 1);
+}
+function pointerToDotted(pointer) {
+  const p = pointer.startsWith("/") ? pointer.slice(1) : pointer;
+  if (p === "") return "";
+  return p.split("/").map((seg) => seg.replace(/~1/g, "/").replace(/~0/g, "~")).join(".");
+}
+function parseLodash(inner) {
+  const ops = [];
+  let m;
+  LODASH_RE.lastIndex = 0;
+  while ((m = LODASH_RE.exec(inner)) !== null) {
+    const path = m[1];
+    const valueText = stripTrailingComment(m[2]).trim();
+    ops.push({ op: "replace", path, value: coerceScalar(valueText) });
+  }
+  return { found: true, ops };
+}
+function stripTrailingComment(s) {
+  const idx = s.indexOf("//");
+  return idx >= 0 ? s.slice(0, idx) : s;
+}
+function coerceScalar(t) {
+  if (t === "") return "";
+  try {
+    return JSON.parse(t);
+  } catch {
+    return t.replace(/^['"]|['"]$/g, "");
+  }
+}
+function applyOps(state, ops, schema) {
+  const next = clone(state);
+  const log = [];
+  const defByKey = new Map(schema.variables.map((v) => [v.key, v]));
+  const hasSchema = schema.variables.length > 0;
+  for (const op of ops) {
+    if (op.op === "remove") {
+      deleteNested(next, op.path);
+      log.push({ path: op.path, status: "removed" });
+      continue;
+    }
+    const def = defByKey.get(op.path);
+    if (!def) {
+      if (hasSchema) {
+        log.push({ path: op.path, status: "rejected", detail: "未定义的变量路径" });
+        continue;
+      }
+      setNested(next, op.path, op.value);
+      log.push({ path: op.path, status: "accepted" });
+      continue;
+    }
+    const outcome = validateValue(def, op.value);
+    if (!outcome.ok) {
+      log.push({ path: op.path, status: "rejected", detail: outcome.error });
+      continue;
+    }
+    setNested(next, op.path, outcome.value);
+    log.push({
+      path: op.path,
+      status: outcome.corrected ? "corrected" : "accepted",
+      detail: outcome.corrected ? `已修正为 ${JSON.stringify(outcome.value)}` : void 0
+    });
+  }
+  return { state: next, log };
+}
+function buildInjection(state, schema, format) {
+  const visible = schema.variables.filter((v) => !v.hidden);
+  const lines = visible.map((v) => {
+    const value = getNested(state, v.key);
+    const desc = v.description ? `  // ${v.description}` : "";
+    return `  ${v.key}: ${JSON.stringify(value)}${desc}`;
+  });
+  const rule = format === "lodash_set" ? [
+    "在回复的最末尾，用以下格式输出所有发生变化的变量（仅输出有变化的）：",
+    "<UpdateVariable>",
+    "_.set('变量路径', 旧值, 新值);//变化原因",
+    "</UpdateVariable>"
+  ].join("\n") : [
+    "在回复的最末尾，用 JSON Patch (RFC6902) 输出所有发生变化的变量（仅输出有变化的）：",
+    "<UpdateVariable>",
+    '[{"op":"replace","path":"/变量路径","value":新值}]',
+    "</UpdateVariable>",
+    "只能用 replace / add / remove 三种操作；path 用斜杠分隔层级；本轮无变化则不要输出该块。"
+  ].join("\n");
+  return [
+    "<variable_state>",
+    "当前追踪变量状态：",
+    lines.join("\n"),
+    "</variable_state>",
+    "",
+    "<variable_update_instruction>",
+    rule,
+    "</variable_update_instruction>"
+  ].join("\n");
+}
+
+// st-extension/src/apps/newvar/config.ts
+var NEWVAR_APP_ID = "newvar";
+var NEWVAR_CHANNEL = "newvar";
+var NEWVAR_EXTRA_KEY = "st_stage_newvar";
+function defaultNewvarData() {
+  return {
+    enabled: false,
+    format: "json_patch",
+    injectionDepth: 4,
+    schema: { id: "default", name: "默认方案", version: 1, variables: [] }
+  };
+}
+var VAR_TYPES = ["number", "string", "boolean", "enum"];
+function normalizeNewvarData(raw) {
+  const d = defaultNewvarData();
+  if (!raw || typeof raw !== "object") return d;
+  const r = raw;
+  if (typeof r.enabled === "boolean") d.enabled = r.enabled;
+  if (r.format === "json_patch" || r.format === "lodash_set") d.format = r.format;
+  if (typeof r.injectionDepth === "number" && Number.isInteger(r.injectionDepth)) {
+    d.injectionDepth = Math.min(100, Math.max(0, r.injectionDepth));
+  }
+  const schema = r.schema;
+  if (schema && typeof schema === "object") {
+    const s = schema;
+    if (typeof s.id === "string" && s.id) d.schema.id = s.id;
+    if (typeof s.name === "string" && s.name) d.schema.name = s.name;
+    if (typeof s.version === "number") d.schema.version = s.version;
+    if (Array.isArray(s.variables)) {
+      d.schema.variables = s.variables.map(normalizeDefinition).filter((v) => v !== null);
+    }
+  }
+  return d;
+}
+function normalizeDefinition(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw;
+  if (typeof r.key !== "string" || r.key.trim() === "") return null;
+  const type = VAR_TYPES.includes(r.type) ? r.type : "string";
+  const def = {
+    key: r.key.trim(),
+    type,
+    default: r.default,
+    description: typeof r.description === "string" ? r.description : ""
+  };
+  if (r.hidden === true) def.hidden = true;
+  if (type === "number" && Array.isArray(r.range) && r.range.length === 2 && typeof r.range[0] === "number" && typeof r.range[1] === "number" && r.range[0] <= r.range[1]) {
+    def.range = [r.range[0], r.range[1]];
+  }
+  if (type === "enum") {
+    const options = Array.isArray(r.enum) ? r.enum.filter((x) => typeof x === "string" && x !== "") : [];
+    if (options.length === 0) return null;
+    def.enum = options;
+  }
+  def.default = coerceDefault(def, def.default);
+  return def;
+}
+function coerceDefault(def, raw) {
+  switch (def.type) {
+    case "number": {
+      const n = typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
+      if (def.range) return Math.min(def.range[1], Math.max(def.range[0], n));
+      return n;
+    }
+    case "boolean":
+      return typeof raw === "boolean" ? raw : false;
+    case "enum": {
+      const options = def.enum ?? [];
+      return typeof raw === "string" && options.includes(raw) ? raw : options[0];
+    }
+    default:
+      return typeof raw === "string" ? raw : raw == null ? "" : String(raw);
+  }
+}
+
+// st-extension/src/apps/newvar/runtime.ts
+function createNewvarRuntime(deps) {
+  let lastParse = null;
+  let warnedSave = false;
+  const listeners = /* @__PURE__ */ new Set();
+  const unsubs = [];
+  function getST3() {
+    try {
+      return window.SillyTavern?.getContext();
+    } catch {
+      return void 0;
+    }
+  }
+  function getData() {
+    return normalizeNewvarData(deps.getSettings().apps[NEWVAR_APP_ID]);
+  }
+  function notify() {
+    for (const l of listeners) {
+      try {
+        l();
+      } catch (err) {
+        console.error("[st-stage] 新变量订阅回调出错", err);
+      }
+    }
+  }
+  function floorSnapshot(msg) {
+    const entry = msg?.extra?.[NEWVAR_EXTRA_KEY];
+    if (!entry || typeof entry !== "object") return null;
+    const stat = entry.stat_data;
+    return stat && typeof stat === "object" && !Array.isArray(stat) ? stat : null;
+  }
+  function clone2(v) {
+    try {
+      return JSON.parse(JSON.stringify(v));
+    } catch {
+      return v;
+    }
+  }
+  function findSnapshotBefore(chat, fromId) {
+    for (let i = Math.min(fromId, chat.length - 1); i >= 0; i--) {
+      const snap = floorSnapshot(chat[i]);
+      if (snap) return clone2(snap);
+    }
+    return null;
+  }
+  function getCurrentState() {
+    const chat = getST3()?.chat;
+    if (Array.isArray(chat)) {
+      const snap = findSnapshotBefore(chat, chat.length - 1);
+      if (snap) return snap;
+    }
+    return initStateFromSchema(getData().schema);
+  }
+  function getPrevState() {
+    const chat = getST3()?.chat;
+    if (!Array.isArray(chat)) return null;
+    for (let i = chat.length - 1; i >= 0; i--) {
+      if (floorSnapshot(chat[i])) return findSnapshotBefore(chat, i - 1);
+    }
+    return null;
+  }
+  function writeSnapshot(st, messageId, state) {
+    const msg = st.chat?.[messageId];
+    if (!msg) return;
+    if (!msg.extra || typeof msg.extra !== "object") msg.extra = {};
+    msg.extra[NEWVAR_EXTRA_KEY] = { stat_data: state };
+    saveChat(st);
+  }
+  function saveChat(st) {
+    try {
+      if (typeof st.saveChatDebounced === "function") {
+        st.saveChatDebounced();
+      } else if (typeof st.saveChat === "function") {
+        void st.saveChat();
+      } else if (!warnedSave) {
+        warnedSave = true;
+        console.warn("[st-stage] 新变量：当前 ST 版本 context 无 saveChat，快照仅存内存（重载对话丢失）");
+      }
+    } catch (err) {
+      console.warn("[st-stage] 新变量：保存对话失败", err);
+    }
+  }
+  function buildPreview() {
+    const data = getData();
+    if (!data.enabled || data.schema.variables.length === 0) return "";
+    return buildInjection(getCurrentState(), data.schema, data.format);
+  }
+  function reinject() {
+    const data = getData();
+    deps.inject(buildPreview(), data.injectionDepth);
+  }
+  function handleMessageReceived(...args) {
+    const data = getData();
+    if (!data.enabled) return;
+    const st = getST3();
+    const chat = st?.chat;
+    if (!st || !Array.isArray(chat)) return;
+    const rawId = args[0];
+    const idNum = typeof rawId === "number" ? rawId : typeof rawId === "string" && rawId.trim() !== "" ? Number(rawId) : NaN;
+    const messageId = Number.isInteger(idNum) && idNum >= 0 && idNum < chat.length ? idNum : chat.length - 1;
+    const msg = chat[messageId];
+    if (!msg || msg.is_user || typeof msg.mes !== "string") return;
+    const parsed = parseUpdateBlock(msg.mes, data.format);
+    if (!parsed.found) return;
+    if (parsed.error) {
+      lastParse = { messageId, found: true, error: parsed.error, log: [] };
+      notify();
+      return;
+    }
+    const base = findSnapshotBefore(chat, messageId - 1) ?? initStateFromSchema(data.schema);
+    const result = applyOps(base, parsed.ops, data.schema);
+    writeSnapshot(st, messageId, result.state);
+    lastParse = { messageId, found: true, log: result.log };
+    reinject();
+    notify();
+  }
+  function mutateCurrent(mutate) {
+    const st = getST3();
+    const chat = st?.chat;
+    if (!st || !Array.isArray(chat) || chat.length === 0) return;
+    const state = getCurrentState();
+    mutate(state);
+    writeSnapshot(st, chat.length - 1, state);
+    reinject();
+    notify();
+  }
+  function subscribeEvents() {
+    const st = getST3();
+    const es = st?.eventSource;
+    if (!es) return;
+    const et = st?.eventTypes ?? {};
+    const bind = (name, fallback, handler) => {
+      const event = name ?? fallback;
+      es.on(event, handler);
+      unsubs.push(() => {
+        try {
+          es.removeListener(event, handler);
+        } catch {
+        }
+      });
+    };
+    bind(et.MESSAGE_RECEIVED, "message_received", handleMessageReceived);
+    const onNav = () => {
+      reinject();
+      notify();
+    };
+    bind(et.CHAT_CHANGED, "chat_id_changed", onNav);
+    bind(et.MESSAGE_SWIPED, "message_swiped", onNav);
+    bind(et.MESSAGE_DELETED, "message_deleted", onNav);
+  }
+  return {
+    start() {
+      subscribeEvents();
+      reinject();
+    },
+    dispose() {
+      for (const off of unsubs) off();
+      unsubs.length = 0;
+      listeners.clear();
+    },
+    isSTAvailable() {
+      return Array.isArray(getST3()?.chat);
+    },
+    getData,
+    getCurrentState,
+    getPrevState,
+    setVariable(path, value) {
+      mutateCurrent((state) => setNested(state, path, value));
+    },
+    deleteVariable(path) {
+      mutateCurrent((state) => deleteNested(state, path));
+    },
+    onConfigChanged() {
+      reinject();
+      notify();
+    },
+    buildPreview,
+    getLastParse: () => lastParse,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    }
+  };
 }
 
 // st-extension/src/index.ts
@@ -4874,12 +5667,17 @@ async function init() {
     adapter.saveSettings(settings);
     phone.setState(settings.phone);
   }
+  const newvarRuntime = createNewvarRuntime({
+    getSettings: () => settings,
+    inject: (prompt, depth) => adapter.injectChannel(NEWVAR_CHANNEL, prompt, depth)
+  });
   for (const app of createBuiltinApps({
     // 从手机开图库弹窗：先收起手机（避免挡在弹窗上），来源标记=手机（关闭后回图库页）
     openGalleryManager: () => {
       collapsePhone();
       manager.open("phone");
-    }
+    },
+    newvarRuntime
   })) {
     registry.register(app);
   }
@@ -4944,9 +5742,10 @@ async function init() {
     updateSettings
   });
   refresh();
+  newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 19:12"}`;
+  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 19:28"}`;
   console.log(`[sprite-overlay] 角色立绘悬浮窗扩展已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {
