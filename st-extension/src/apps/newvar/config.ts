@@ -68,6 +68,7 @@ function normalizeDefinition(raw: unknown): VariableDefinition | null {
     description: typeof r.description === 'string' ? r.description : '',
   }
   if (r.hidden === true) def.hidden = true
+  if (typeof r.updateRule === 'string' && r.updateRule.trim() !== '') def.updateRule = r.updateRule
   if (
     type === 'number' &&
     Array.isArray(r.range) &&

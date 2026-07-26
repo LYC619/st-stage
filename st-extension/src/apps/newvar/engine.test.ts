@@ -6,6 +6,7 @@ import {
   pointerToDotted,
   applyOps,
   buildInjection,
+  fillDefaults,
 } from './engine'
 import type { VariableSchema } from './types'
 
@@ -139,16 +140,39 @@ describe('applyOps — 自由模式（无 schema）', () => {
   })
 })
 
-describe('buildInjection', () => {
+describe('buildInjection（三段式，对齐参考世界书）', () => {
   const state = initStateFromSchema(schema)
-  it('含状态、描述与 JSON Patch 规则', () => {
+  it('含状态段、逐变量规则段、输出格式段与 Analysis 示例', () => {
     const out = buildInjection(state, schema, 'json_patch')
+    expect(out).toContain('<status_current_variable>')
     expect(out).toContain('好感度: 0')
     expect(out).toContain('// 角色好感')
+    expect(out).toContain('<variable_update_rule>')
+    expect(out).toContain('范围 -100~100')
+    expect(out).toContain('只能取：开心 / 平静 / 烦躁')
+    expect(out).toContain('<variable_update_format>')
+    expect(out).toContain('<Analysis>')
     expect(out).toContain('JSON Patch')
-    expect(out).toContain('<variable_update_instruction>')
   })
-  it('隐藏变量不注入', () => {
+  it('用户自定义 updateRule 逐行注入', () => {
+    const s2: VariableSchema = {
+      ...schema,
+      variables: [
+        {
+          key: '好感度',
+          type: 'number',
+          default: 0,
+          description: '',
+          range: [0, 100],
+          updateRule: '正面互动 +1~3\n重大事件 ±5',
+        },
+      ],
+    }
+    const out = buildInjection(initStateFromSchema(s2), s2, 'json_patch')
+    expect(out).toContain('- 正面互动 +1~3')
+    expect(out).toContain('- 重大事件 ±5')
+  })
+  it('隐藏变量既不进状态也不进规则', () => {
     const s2: VariableSchema = {
       ...schema,
       variables: [...schema.variables, { key: '内部计数', type: 'number', default: 0, description: '', hidden: true }],
@@ -157,5 +181,16 @@ describe('buildInjection', () => {
   })
   it('lodash 格式给出 _.set 规则', () => {
     expect(buildInjection(state, schema, 'lodash_set')).toContain('_.set(')
+  })
+})
+
+describe('fillDefaults', () => {
+  it('补齐快照里缺失的新定义变量，已有值不动', () => {
+    const snap = { 好感度: 42 }
+    const merged = fillDefaults(snap, schema)
+    expect(merged.好感度).toBe(42)
+    expect((merged.状态 as Record<string, unknown>).体力).toBe(100)
+    expect(merged.场景).toBe('教室')
+    expect(snap).toEqual({ 好感度: 42 }) // 纯函数
   })
 })

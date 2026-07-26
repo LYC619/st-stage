@@ -23,7 +23,8 @@ import { mountSettingsPanel } from './settings-panel'
 import { mountMessagePostprocess, reprocessAllMessages } from './message-postprocess'
 import { createBuiltinApps } from './apps'
 import { createNewvarRuntime } from './apps/newvar/runtime'
-import { NEWVAR_CHANNEL } from './apps/newvar/config'
+import { createNewvarDesigner } from './apps/newvar/designer'
+import { NEWVAR_CHANNEL, NEWVAR_APP_ID } from './apps/newvar/config'
 
 declare global {
   interface Window {
@@ -131,6 +132,18 @@ async function init(): Promise<void> {
     inject: (prompt, depth) => adapter.injectChannel(NEWVAR_CHANNEL, prompt, depth),
   })
 
+  // 「变量设计」弹窗：配置写 App 私有存储（saveSettingsOnly，不触发立绘刷新）后通知运行时重注入
+  const newvarDesigner = createNewvarDesigner({
+    getData: () => newvarRuntime.getData(),
+    setData: (next) => {
+      saveSettingsOnly({ ...settings, apps: { ...settings.apps, [NEWVAR_APP_ID]: next } })
+      newvarRuntime.onConfigChanged()
+    },
+    buildPreview: () => newvarRuntime.buildPreview(),
+    getLastParse: () => newvarRuntime.getLastParse(),
+    onClosed: () => phone.openApp('newvar'),
+  })
+
   for (const app of createBuiltinApps({
     // 从手机开图库弹窗：先收起手机（避免挡在弹窗上），来源标记=手机（关闭后回图库页）
     openGalleryManager: () => {
@@ -138,6 +151,10 @@ async function init(): Promise<void> {
       manager.open('phone')
     },
     newvarRuntime,
+    openNewvarDesigner: () => {
+      collapsePhone()
+      newvarDesigner.open()
+    },
   })) {
     registry.register(app)
   }

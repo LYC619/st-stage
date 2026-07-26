@@ -577,3 +577,15 @@
   font-family: var(--monoFontFamily, ui-monospace, monospace);
   opacity: 0.85;
 }
+/* 变量设计弹窗：模板卡右侧的 替换/追加 双按钮 */
+.nv-tpl-actions {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.nv-tpl-actions .vm-act {
+  flex: none;
+  padding: 3px 12px;
+  font-size: 12px;
+}

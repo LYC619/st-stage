@@ -17,7 +17,7 @@
 
 import type { PluginSettings } from '../../../../core/types'
 import { setNested, deleteNested } from '../path-utils'
-import { initStateFromSchema, parseUpdateBlock, applyOps, buildInjection } from './engine'
+import { initStateFromSchema, parseUpdateBlock, applyOps, buildInjection, fillDefaults } from './engine'
 import { NEWVAR_APP_ID, NEWVAR_EXTRA_KEY, normalizeNewvarData, type NewvarData } from './config'
 import type { ApplyLogEntry } from './types'
 
@@ -130,12 +130,14 @@ export function createNewvarRuntime(deps: NewvarRuntimeDeps): NewvarRuntime {
   }
 
   function getCurrentState(): Record<string, unknown> {
+    const schema = getData().schema
     const chat = getST()?.chat
     if (Array.isArray(chat)) {
       const snap = findSnapshotBefore(chat, chat.length - 1)
-      if (snap) return snap
+      // 快照后新定义的变量不在旧快照里：用默认值补齐（否则树上看不到、注入出现 undefined）
+      if (snap) return fillDefaults(snap, schema)
     }
-    return initStateFromSchema(getData().schema)
+    return initStateFromSchema(schema)
   }
 
   function getPrevState(): Record<string, unknown> | null {
@@ -206,8 +208,10 @@ export function createNewvarRuntime(deps: NewvarRuntimeDeps): NewvarRuntime {
       notify()
       return
     }
-    // 基态 = 本楼之前最近的快照（没有则 schema 默认值）——swipe/重roll 天然以上一楼为基
-    const base = findSnapshotBefore(chat, messageId - 1) ?? initStateFromSchema(data.schema)
+    // 基态 = 本楼之前最近的快照（没有则 schema 默认值）——swipe/重roll 天然以上一楼为基；
+    // fillDefaults 补齐快照缺失的新定义变量
+    const snapBase = findSnapshotBefore(chat, messageId - 1)
+    const base = snapBase ? fillDefaults(snapBase, data.schema) : initStateFromSchema(data.schema)
     const result = applyOps(base, parsed.ops, data.schema)
     writeSnapshot(st, messageId, result.state)
     lastParse = { messageId, found: true, log: result.log }

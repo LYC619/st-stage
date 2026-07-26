@@ -387,7 +387,7 @@ function createInstance(container: HTMLElement, _ctx: PhoneAppContext): Instance
       noticeText,
       canWrite,
       addHint: canWrite
-        ? '路径用点号表示层级，如 角色.络络.好感度。值支持 数字 / true / false / null / JSON / 文本。'
+        ? '正常情况下变量由 MVU 框架按角色卡规则维护，无需手动新增；这里仅用于修补卡片缺失的变量或调试（卡的更新规则里没有的路径，AI 不会主动维护）。路径点号分层，值支持 数字/true/false/null/JSON/文本。'
         : '当前环境不可写入变量。',
     }
   }

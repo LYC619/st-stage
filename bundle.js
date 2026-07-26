@@ -3292,7 +3292,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 19:28"}）`;
+  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 20:08"}）`;
   hint.textContent = `立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -4224,6 +4224,8 @@ function computeDelta(current, prev, isMvu) {
 }
 function createVariableTreeView(container, handlers) {
   let editingPath = null;
+  const groupOpen = /* @__PURE__ */ new Map();
+  let addOpen = false;
   function render2() {
     const model = handlers.getModel();
     container.textContent = "";
@@ -4264,7 +4266,8 @@ function createVariableTreeView(container, handlers) {
     if (!tuple && isPlainObject(value) && Object.keys(value).length > 0) {
       const details = document.createElement("details");
       details.className = "so-app-fold vm-group";
-      details.open = depth < 1;
+      details.open = groupOpen.get(path) ?? depth < 1;
+      details.addEventListener("toggle", () => groupOpen.set(path, details.open));
       const summary = document.createElement("summary");
       summary.className = "so-app-title vm-group-title";
       summary.textContent = `${key}（${Object.keys(value).length}）`;
@@ -4422,6 +4425,8 @@ function createVariableTreeView(container, handlers) {
   function buildAddSection(model) {
     const box = document.createElement("details");
     box.className = "so-app-fold so-app-section";
+    box.open = addOpen;
+    box.addEventListener("toggle", () => addOpen = box.open);
     const summary = document.createElement("summary");
     summary.className = "so-app-title";
     summary.textContent = "＋ 新增变量";
@@ -4716,7 +4721,7 @@ function createInstance(container, _ctx) {
       emptyText: r.status === "empty" && r.meta.waitedMvu ? "当前楼层暂无变量（已等待 MVU 初始化）。有变量的楼层刷新后会显示在这里。" : "当前楼层暂无变量。",
       noticeText,
       canWrite,
-      addHint: canWrite ? "路径用点号表示层级，如 角色.络络.好感度。值支持 数字 / true / false / null / JSON / 文本。" : "当前环境不可写入变量。"
+      addHint: canWrite ? "正常情况下变量由 MVU 框架按角色卡规则维护，无需手动新增；这里仅用于修补卡片缺失的变量或调试（卡的更新规则里没有的路径，AI 不会主动维护）。路径点号分层，值支持 数字/true/false/null/JSON/文本。" : "当前环境不可写入变量。"
     };
   }
   function isStale(token) {
@@ -4815,56 +4820,6 @@ function mvuApp() {
 }
 
 // st-extension/src/apps/newvar-app.ts
-function draftFromDef(def) {
-  return {
-    key: def.key,
-    type: def.type,
-    defaultText: formatValue(def.default),
-    description: def.description,
-    rangeText: def.range ? `${def.range[0]}~${def.range[1]}` : "",
-    enumText: (def.enum ?? []).join(", "),
-    hidden: def.hidden === true
-  };
-}
-function emptyDraft() {
-  return { key: "", type: "number", defaultText: "0", description: "", rangeText: "", enumText: "", hidden: false };
-}
-function draftToDef(draft) {
-  const key = draft.key.trim();
-  if (!key) return { error: "请填写变量路径。" };
-  const def = { key, type: draft.type, default: void 0, description: draft.description.trim() };
-  if (draft.hidden) def.hidden = true;
-  if (draft.type === "number") {
-    const range = parseRange(draft.rangeText);
-    if (range === false) return { error: "范围格式应为「最小~最大」，如 0~100。" };
-    if (range) def.range = range;
-    const n = Number(draft.defaultText.trim());
-    let dflt = Number.isFinite(n) ? n : 0;
-    if (def.range) dflt = Math.min(def.range[1], Math.max(def.range[0], dflt));
-    def.default = dflt;
-  } else if (draft.type === "boolean") {
-    def.default = draft.defaultText.trim() === "true";
-  } else if (draft.type === "enum") {
-    const options = draft.enumText.split(/[,，]/).map((s) => s.trim()).filter((s) => s !== "");
-    if (options.length === 0) return { error: "枚举类型至少需要一个选项（逗号分隔）。" };
-    def.enum = options;
-    def.default = options.includes(draft.defaultText.trim()) ? draft.defaultText.trim() : options[0];
-  } else {
-    def.default = draft.defaultText;
-  }
-  return { def };
-}
-function parseRange(text) {
-  const t = text.trim();
-  if (!t) return null;
-  const m = /^(-?\d+(?:\.\d+)?)\s*~\s*(-?\d+(?:\.\d+)?)$/.exec(t);
-  if (!m) return false;
-  const min = Number(m[1]);
-  const max = Number(m[2]);
-  if (!Number.isFinite(min) || !Number.isFinite(max) || min > max) return false;
-  return [min, max];
-}
-var TYPE_LABELS = { number: "数字", string: "文本", boolean: "布尔", enum: "枚举" };
 function newvarApp(deps) {
   let unsub = null;
   return {
@@ -4874,269 +4829,60 @@ function newvarApp(deps) {
     order: 5,
     mount(container, ctx) {
       unsub?.();
-      unsub = mountApp(container, ctx, deps.runtime);
+      const { runtime, openDesigner } = deps;
+      const cfgBox = el2("div", "nv-box");
+      const stateBox = el2("div", "nv-box");
+      container.append(cfgBox, stateBox);
+      function renderCfg() {
+        cfgBox.textContent = "";
+        const d = runtime.getData();
+        const section = el2("div", "so-app-section");
+        section.append(
+          hintField(
+            toggleRow("启用变量追踪", d.enabled, (v) => {
+              ctx.setAppData({ ...runtime.getData(), enabled: v });
+              runtime.onConfigChanged();
+              renderCfg();
+            }),
+            "不依赖 MVU/酒馆助手：按你的变量定义自动向 AI 注入当前状态与更新规则，解析回复末尾的 <UpdateVariable> 并逐楼保存快照，任何角色卡都能用。变量定义、模板、注入预览都在「变量设计」里。"
+          ),
+          appButton("打开变量设计", openDesigner)
+        );
+        cfgBox.append(section);
+      }
+      const tree = createVariableTreeView(stateBox, {
+        getModel: () => {
+          const st = runtime.isSTAvailable();
+          const d = runtime.getData();
+          const state = runtime.getCurrentState();
+          return {
+            data: state,
+            isMvu: false,
+            delta: computeDelta(state, runtime.getPrevState(), false),
+            status: st ? "ready" : "unavailable",
+            statusText: st ? `内置追踪 · ${d.enabled ? "已启用" : "未启用"}` : "内置追踪 · 模拟器",
+            emptyText: "暂无变量。点上方「打开变量设计」定义或导入模板，启用后 AI 回复会逐楼更新这里。",
+            noticeText: st ? void 0 : "未检测到 SillyTavern：模拟器中可打开变量设计编辑定义与预览注入，状态快照在 ST 内才会产生。",
+            canWrite: st,
+            addHint: "手动新增只写入当前楼的状态快照（不会加进变量定义）。路径用点号分层。"
+          };
+        },
+        commitSet: (path, value) => runtime.setVariable(path, value),
+        commitDelete: (path) => runtime.deleteVariable(path),
+        requestRefresh: () => tree.render()
+      });
+      renderCfg();
+      tree.render();
+      const offRuntime = runtime.subscribe(() => {
+        if (!tree.isEditing()) tree.render();
+      });
+      unsub = () => offRuntime();
     },
     unmount() {
       unsub?.();
       unsub = null;
     }
   };
-}
-function mountApp(container, ctx, runtime) {
-  const cfgBox = el2("div", "nv-box");
-  const stateBox = el2("div", "nv-box");
-  const schemaWrap = el2("div", "nv-box");
-  const previewBox = el2("div", "nv-box");
-  const logBox = el2("div", "nv-box");
-  container.append(cfgBox, stateBox, schemaWrap, previewBox, logBox);
-  let formDraft = null;
-  let editingIndex = null;
-  function data() {
-    return runtime.getData();
-  }
-  function saveData(next) {
-    ctx.setAppData(next);
-    runtime.onConfigChanged();
-  }
-  function renderCfg() {
-    cfgBox.textContent = "";
-    const d = data();
-    const section = el2("div", "so-app-section");
-    const title = el2("div", "so-app-title");
-    title.textContent = "内置变量追踪";
-    const desc = el2("div", "so-app-desc");
-    desc.textContent = "不依赖 MVU/酒馆助手：定义变量后自动向 AI 注入当前状态与更新规则，解析回复中的 <UpdateVariable> 并逐楼保存快照。任何角色卡都能用。";
-    section.append(
-      title,
-      desc,
-      toggleRow("启用（注入 + 解析）", d.enabled, (v) => {
-        saveData({ ...data(), enabled: v });
-        renderCfg();
-      }),
-      selectRow(
-        "输出格式",
-        d.format,
-        [
-          { value: "json_patch", label: "JSON Patch（推荐）" },
-          { value: "lodash_set", label: "_.set（老版 MVU 兼容）" }
-        ],
-        (v) => saveData({ ...data(), format: v === "lodash_set" ? "lodash_set" : "json_patch" })
-      ),
-      numberRow(
-        "注入深度（距末尾楼层数）",
-        d.injectionDepth,
-        0,
-        20,
-        (v) => saveData({ ...data(), injectionDepth: v })
-      )
-    );
-    cfgBox.append(section);
-  }
-  const tree = createVariableTreeView(stateBox, {
-    getModel: buildTreeModel,
-    commitSet: (path, value) => runtime.setVariable(path, value),
-    commitDelete: (path) => runtime.deleteVariable(path),
-    requestRefresh: () => renderVolatile()
-  });
-  function buildTreeModel() {
-    const st = runtime.isSTAvailable();
-    const d = data();
-    const state = runtime.getCurrentState();
-    return {
-      data: state,
-      isMvu: false,
-      delta: computeDelta(state, runtime.getPrevState(), false),
-      status: st ? "ready" : "unavailable",
-      statusText: st ? `内置追踪 · ${d.enabled ? "已启用" : "未启用"}` : "内置追踪 · 模拟器",
-      emptyText: "暂无变量。启用追踪并在下方定义变量，AI 回复后这里会显示逐楼状态。",
-      noticeText: st ? void 0 : "未检测到 SillyTavern：模拟器中仅可编辑变量定义与预览注入文本，状态快照在 ST 内才会产生。",
-      canWrite: st,
-      addHint: "手动新增只写入当前楼的状态快照（不会加进变量定义）。路径用点号分层。"
-    };
-  }
-  function renderSchema() {
-    schemaWrap.textContent = "";
-    const d = data();
-    const fold = foldSection(`变量定义（${d.schema.variables.length}）`, d.schema.variables.length === 0);
-    for (let i = 0; i < d.schema.variables.length; i++) {
-      fold.body.append(buildDefRow(d.schema.variables[i], i));
-    }
-    if (formDraft) {
-      fold.body.append(buildDefForm());
-    } else {
-      fold.body.append(
-        appButton("＋ 添加变量定义", () => {
-          formDraft = emptyDraft();
-          editingIndex = null;
-          renderSchema();
-        })
-      );
-    }
-    schemaWrap.append(fold.box);
-  }
-  function buildDefRow(def, index) {
-    const card = el2("div", "vm-leaf");
-    const main = el2("div", "vm-leaf-main");
-    const keyEl = el2("span", "vm-key");
-    keyEl.textContent = def.key;
-    const meta = el2("span", "vm-val");
-    const parts = [TYPE_LABELS[def.type], `默认 ${formatValue(def.default)}`];
-    if (def.range) parts.push(`范围 ${def.range[0]}~${def.range[1]}`);
-    if (def.enum) parts.push(`枚举 ${def.enum.join("/")}`);
-    if (def.hidden) parts.push("对 AI 隐藏");
-    meta.textContent = parts.join(" · ");
-    main.append(keyEl, meta);
-    if (def.description) {
-      const desc = el2("div", "vm-desc");
-      desc.textContent = def.description;
-      main.append(desc);
-    }
-    main.setAttribute("role", "button");
-    main.tabIndex = 0;
-    const edit = () => {
-      formDraft = draftFromDef(def);
-      editingIndex = index;
-      renderSchema();
-    };
-    main.addEventListener("click", edit);
-    main.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        edit();
-      }
-    });
-    const del = el2("button", "vm-del");
-    del.setAttribute("aria-label", "删除定义");
-    del.title = "删除该变量定义";
-    del.textContent = "✕";
-    del.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (!window.confirm(`删除变量定义「${def.key}」？（已保存的楼层快照不受影响）`)) return;
-      const cur = data();
-      const variables = cur.schema.variables.filter((_, i) => i !== index);
-      if (editingIndex === index) {
-        formDraft = null;
-        editingIndex = null;
-      }
-      saveData({ ...cur, schema: { ...cur.schema, variables } });
-      renderSchema();
-    });
-    card.append(main, del);
-    return card;
-  }
-  function buildDefForm() {
-    const draft = formDraft;
-    const wrap = el2("div", "vm-leaf vm-editing");
-    const title = el2("div", "so-app-title vm-edit-title");
-    title.textContent = editingIndex === null ? "新变量定义" : `编辑：${draft.key || "（未命名）"}`;
-    wrap.append(title);
-    const err = el2("div", "so-app-desc vm-add-err");
-    err.hidden = true;
-    wrap.append(
-      textRow("路径（点号分层）", draft.key, "如 状态.体力", (v) => draft.key = v),
-      selectRow(
-        "类型",
-        draft.type,
-        Object.keys(TYPE_LABELS).map((t) => ({ value: t, label: TYPE_LABELS[t] })),
-        (v) => {
-          draft.type = v;
-          renderSchema();
-        }
-      ),
-      textRow("默认值", draft.defaultText, draft.type === "boolean" ? "true / false" : "", (v) => draft.defaultText = v),
-      textRow("描述（给 AI 看）", draft.description, "如 角色对用户的好感", (v) => draft.description = v)
-    );
-    if (draft.type === "number") {
-      wrap.append(textRow("范围（可空）", draft.rangeText, "如 0~100，越界自动修正", (v) => draft.rangeText = v));
-    }
-    if (draft.type === "enum") {
-      wrap.append(textRow("枚举选项（逗号分隔）", draft.enumText, "如 开心, 平静, 烦躁", (v) => draft.enumText = v));
-    }
-    wrap.append(toggleRow("对 AI 隐藏（内部计算用）", draft.hidden, (v) => draft.hidden = v), err);
-    const actions = el2("div", "vm-actions");
-    const save = el2("button", "menu_button vm-act");
-    save.textContent = "保存定义";
-    save.addEventListener("click", () => {
-      const r = draftToDef(draft);
-      if (!r.def) {
-        err.textContent = r.error ?? "输入无效。";
-        err.hidden = false;
-        return;
-      }
-      const cur = data();
-      const dup = cur.schema.variables.findIndex((v, i) => v.key === r.def.key && i !== editingIndex);
-      if (dup >= 0) {
-        err.textContent = `路径「${r.def.key}」已有定义。`;
-        err.hidden = false;
-        return;
-      }
-      const variables = [...cur.schema.variables];
-      if (editingIndex !== null && editingIndex < variables.length) variables[editingIndex] = r.def;
-      else variables.push(r.def);
-      formDraft = null;
-      editingIndex = null;
-      saveData({ ...cur, schema: { ...cur.schema, variables } });
-      renderSchema();
-    });
-    const cancel = el2("button", "menu_button vm-act vm-act-ghost");
-    cancel.textContent = "取消";
-    cancel.addEventListener("click", () => {
-      formDraft = null;
-      editingIndex = null;
-      renderSchema();
-    });
-    actions.append(save, cancel);
-    wrap.append(actions);
-    return wrap;
-  }
-  function renderPreview() {
-    previewBox.textContent = "";
-    const fold = foldSection("注入预览");
-    const text = runtime.buildPreview();
-    if (text) {
-      const pre = el2("div", "nv-pre");
-      pre.textContent = text;
-      fold.body.append(pre);
-    } else {
-      const desc = el2("div", "so-app-desc");
-      desc.textContent = "（未启用或未定义任何变量时不注入。）";
-      fold.body.append(desc);
-    }
-    previewBox.append(fold.box);
-  }
-  const LOG_ICONS = { accepted: "✅", corrected: "⚠️", rejected: "❌", removed: "🗑️" };
-  function renderLog() {
-    logBox.textContent = "";
-    const fold = foldSection("解析日志");
-    const report = runtime.getLastParse();
-    if (!report) {
-      const desc = el2("div", "so-app-desc");
-      desc.textContent = "尚无解析记录。AI 回复包含 <UpdateVariable> 块时，这里显示逐条接受/修正/拒绝结果。";
-      fold.body.append(desc);
-    } else {
-      const head = el2("div", "so-app-desc");
-      head.textContent = `楼层 #${report.messageId}${report.error ? ` · 解析出错：${report.error}` : ""}`;
-      fold.body.append(head);
-      for (const entry of report.log) {
-        const line = el2("div", "so-app-desc nv-log-line");
-        line.textContent = `${LOG_ICONS[entry.status] ?? "·"} ${entry.path}${entry.detail ? ` — ${entry.detail}` : ""}`;
-        fold.body.append(line);
-      }
-    }
-    logBox.append(fold.box);
-  }
-  function renderVolatile() {
-    if (!tree.isEditing()) tree.render();
-    renderPreview();
-    renderLog();
-  }
-  renderCfg();
-  tree.render();
-  renderSchema();
-  renderPreview();
-  renderLog();
-  const offRuntime = runtime.subscribe(renderVolatile);
-  return () => offRuntime();
 }
 
 // st-extension/src/apps/index.ts
@@ -5146,7 +4892,7 @@ function createBuiltinApps(deps) {
     galleryApp({ openManager: deps.openGalleryManager }),
     butlerApp(),
     mvuApp(),
-    newvarApp({ runtime: deps.newvarRuntime })
+    newvarApp({ runtime: deps.newvarRuntime, openDesigner: deps.openNewvarDesigner })
   ];
 }
 
@@ -5165,6 +4911,13 @@ function clone(v) {
   } catch {
     return v;
   }
+}
+function fillDefaults(state, schema) {
+  const next = clone(state);
+  for (const def of schema.variables) {
+    if (getNested(next, def.key) === void 0) setNested(next, def.key, clone(def.default));
+  }
+  return next;
 }
 function validateValue(def, raw) {
   switch (def.type) {
@@ -5310,32 +5063,67 @@ function applyOps(state, ops, schema) {
 }
 function buildInjection(state, schema, format) {
   const visible = schema.variables.filter((v) => !v.hidden);
-  const lines = visible.map((v) => {
+  const stateLines = visible.map((v) => {
     const value = getNested(state, v.key);
     const desc = v.description ? `  // ${v.description}` : "";
     return `  ${v.key}: ${JSON.stringify(value)}${desc}`;
   });
-  const rule = format === "lodash_set" ? [
-    "在回复的最末尾，用以下格式输出所有发生变化的变量（仅输出有变化的）：",
+  const ruleLines = [];
+  for (const v of visible) {
+    const checks = [];
+    if (v.type === "number") {
+      checks.push(v.range ? `数字，范围 ${v.range[0]}~${v.range[1]}（超出会被裁剪）` : "数字");
+      checks.push('输出更新后的完整数值（禁止输出 "+3" 这类增量表达式，自己算好结果）');
+    } else if (v.type === "enum") {
+      checks.push(`只能取：${(v.enum ?? []).join(" / ")}`);
+    } else if (v.type === "boolean") {
+      checks.push("布尔值 true / false");
+    } else {
+      checks.push("文本");
+    }
+    if (v.updateRule) {
+      for (const line of v.updateRule.split("\n")) {
+        const t = line.trim();
+        if (t) checks.push(t);
+      }
+    }
+    ruleLines.push(`  ${v.key}:`);
+    for (const c of checks) ruleLines.push(`    - ${c}`);
+  }
+  const example = visible[0]?.key ?? "变量路径";
+  const examplePointer = `/${example.split(".").join("/")}`;
+  const formatLines = format === "lodash_set" ? [
+    "- 在回复正文全部结束后，若本轮有变量变化，追加一个 <UpdateVariable> 块；没有变化则不要输出该块",
+    "- 块内每行一条命令：_.set('变量路径', 旧值, 新值);//变化原因",
+    "格式示例：",
     "<UpdateVariable>",
-    "_.set('变量路径', 旧值, 新值);//变化原因",
+    `_.set('${example}', 旧值, 新值);//原因`,
     "</UpdateVariable>"
-  ].join("\n") : [
-    "在回复的最末尾，用 JSON Patch (RFC6902) 输出所有发生变化的变量（仅输出有变化的）：",
+  ] : [
+    "- 在回复正文全部结束后，若本轮有变量变化，追加一个 <UpdateVariable> 块；没有变化则不要输出该块",
+    "- 块内先写 <Analysis>（中文，不超过 60 字）：逐条对照上面的更新规则，说明哪些变量该更新、更新到多少",
+    "- 然后输出严格符合 JSON Patch (RFC 6902) 的 JSON 数组，只允许 replace / add / remove 三种操作",
+    "- path 用斜杠分隔层级（如 /状态/体力）；value 是更新后的完整值",
+    "格式示例：",
     "<UpdateVariable>",
-    '[{"op":"replace","path":"/变量路径","value":新值}]',
-    "</UpdateVariable>",
-    "只能用 replace / add / remove 三种操作；path 用斜杠分隔层级；本轮无变化则不要输出该块。"
-  ].join("\n");
+    "<Analysis>好感度因赠礼小幅上升 +2。</Analysis>",
+    `[{"op":"replace","path":"${examplePointer}","value":新值}]`,
+    "</UpdateVariable>"
+  ];
   return [
-    "<variable_state>",
-    "当前追踪变量状态：",
-    lines.join("\n"),
-    "</variable_state>",
+    "<status_current_variable>",
+    "当前变量状态：",
+    stateLines.join("\n"),
+    "</status_current_variable>",
     "",
-    "<variable_update_instruction>",
-    rule,
-    "</variable_update_instruction>"
+    "<variable_update_rule>",
+    "各变量的更新规则（check 条件不满足时，不要更新对应变量）：",
+    ruleLines.join("\n"),
+    "</variable_update_rule>",
+    "",
+    "<variable_update_format>",
+    formatLines.join("\n"),
+    "</variable_update_format>"
   ].join("\n");
 }
 
@@ -5385,6 +5173,7 @@ function normalizeDefinition(raw) {
     description: typeof r.description === "string" ? r.description : ""
   };
   if (r.hidden === true) def.hidden = true;
+  if (typeof r.updateRule === "string" && r.updateRule.trim() !== "") def.updateRule = r.updateRule;
   if (type === "number" && Array.isArray(r.range) && r.range.length === 2 && typeof r.range[0] === "number" && typeof r.range[1] === "number" && r.range[0] <= r.range[1]) {
     def.range = [r.range[0], r.range[1]];
   }
@@ -5460,12 +5249,13 @@ function createNewvarRuntime(deps) {
     return null;
   }
   function getCurrentState() {
+    const schema = getData().schema;
     const chat = getST3()?.chat;
     if (Array.isArray(chat)) {
       const snap = findSnapshotBefore(chat, chat.length - 1);
-      if (snap) return snap;
+      if (snap) return fillDefaults(snap, schema);
     }
-    return initStateFromSchema(getData().schema);
+    return initStateFromSchema(schema);
   }
   function getPrevState() {
     const chat = getST3()?.chat;
@@ -5523,7 +5313,8 @@ function createNewvarRuntime(deps) {
       notify();
       return;
     }
-    const base = findSnapshotBefore(chat, messageId - 1) ?? initStateFromSchema(data.schema);
+    const snapBase = findSnapshotBefore(chat, messageId - 1);
+    const base = snapBase ? fillDefaults(snapBase, data.schema) : initStateFromSchema(data.schema);
     const result = applyOps(base, parsed.ops, data.schema);
     writeSnapshot(st, messageId, result.state);
     lastParse = { messageId, found: true, log: result.log };
@@ -5599,6 +5390,564 @@ function createNewvarRuntime(deps) {
   };
 }
 
+// st-extension/src/apps/newvar/templates.ts
+var TIME_SLOT = {
+  key: "时间.当前时段",
+  type: "enum",
+  default: "下午",
+  description: "当前时间段",
+  enum: ["清晨", "上午", "中午", "下午", "傍晚", "夜晚", "深夜"],
+  updateRule: "按剧情累计推进：对话约 5~15 分钟，场景移动 10~30 分钟，重大事件 30 分钟以上\n累计跨过时段边界时才切换，禁止无故跳时段"
+};
+var romanceSingle = {
+  id: "romance-single",
+  name: "恋爱 · 单角色",
+  description: "好感度/关系阶段/心情/时间地点。好感度小步进、阶段须事件驱动，适合大多数单角色卡。",
+  variables: [
+    {
+      key: "好感度",
+      type: "number",
+      default: 20,
+      description: "角色对用户的好感（0~100）",
+      range: [0, 100],
+      updateRule: "正面互动 +1~3；重大事件（告白、共渡难关）±5~10；负面言行 -1~5\n无实质互动时保持不变，禁止无缘由跳变"
+    },
+    {
+      key: "关系阶段",
+      type: "enum",
+      default: "陌生",
+      description: "与用户的关系阶段",
+      enum: ["陌生", "熟识", "朋友", "暧昧", "恋人"],
+      updateRule: "只有好感度达到相应水平且发生标志性事件时才推进一级，不可跳级\n没有重大变故不要倒退"
+    },
+    {
+      key: "心情",
+      type: "enum",
+      default: "平静",
+      description: "角色当前心情",
+      enum: ["开心", "平静", "害羞", "烦躁", "难过"]
+    },
+    {
+      key: "当前状态",
+      type: "string",
+      default: "初次见面",
+      description: "正在做什么、与用户的互动状态（一句话）"
+    },
+    TIME_SLOT,
+    { key: "地点.当前地点", type: "string", default: "教室", description: "当前所在地点" }
+  ]
+};
+function roleVars(role) {
+  return [
+    {
+      key: `角色.${role}.是否在场`,
+      type: "boolean",
+      default: role === "角色A",
+      description: "是否出现在当前场景",
+      updateRule: "只有实际出现在当前场景才为 true\n不在场角色的其他变量（除所在位置外）不要更新"
+    },
+    {
+      key: `角色.${role}.好感度`,
+      type: "number",
+      default: 20,
+      description: `${role}对用户的好感（0~100）`,
+      range: [0, 100],
+      updateRule: "正面互动 +1~3；重大事件 ±5~10；输出更新后的完整数值"
+    },
+    { key: `角色.${role}.当前状态`, type: "string", default: "——", description: "在做什么/情绪（一句话）" },
+    { key: `角色.${role}.所在位置`, type: "string", default: "未知", description: "当前所在位置" },
+    { key: `角色.${role}.穿着`, type: "string", default: "日常便服", description: "当前穿着" }
+  ];
+}
+var romanceMulti = {
+  id: "romance-multi",
+  name: "恋爱 · 多角色",
+  description: "两个示例角色（角色A/角色B）各自维护在场/好感/状态/位置/穿着。导入后点击各条定义，把路径里的「角色A」改成你卡里的名字。",
+  variables: [...roleVars("角色A"), ...roleVars("角色B"), TIME_SLOT, {
+    key: "地点.当前地点",
+    type: "string",
+    default: "客厅",
+    description: "用户当前所在地点"
+  }]
+};
+var rpg = {
+  id: "rpg",
+  name: "RPG 冒险",
+  description: "生命/法力/金币/等级/状态。数值全部要求输出计算后的完整值，等级须事件驱动。",
+  variables: [
+    {
+      key: "生命值",
+      type: "number",
+      default: 100,
+      description: "当前生命（0~100）",
+      range: [0, 100],
+      updateRule: "战斗受伤 -10~30；休息/治疗恢复；归零进入昏迷"
+    },
+    { key: "法力值", type: "number", default: 50, description: "当前法力（0~100）", range: [0, 100] },
+    {
+      key: "金币",
+      type: "number",
+      default: 0,
+      description: "持有金币",
+      range: [0, 999999],
+      updateRule: "交易/战利品/悬赏时增减；输出计算后的总额，禁止输出增量"
+    },
+    {
+      key: "等级",
+      type: "number",
+      default: 1,
+      description: "冒险者等级（1~99）",
+      range: [1, 99],
+      updateRule: "只有明确的升级事件才 +1，严禁随剧情自动增长"
+    },
+    { key: "当前地点", type: "string", default: "新手村", description: "当前所在地" },
+    {
+      key: "状态",
+      type: "enum",
+      default: "正常",
+      description: "身体状态",
+      enum: ["正常", "受伤", "中毒", "昏迷"],
+      updateRule: "由战斗/事件驱动；生命值归零时置为 昏迷"
+    }
+  ]
+};
+var daily = {
+  id: "daily",
+  name: "日常陪伴",
+  description: "好感/心情/体力/当前活动/时间地点，适合慢节奏日常卡。",
+  variables: [
+    {
+      key: "好感度",
+      type: "number",
+      default: 30,
+      description: "角色对用户的好感（0~100）",
+      range: [0, 100],
+      updateRule: "日常互动 +1~2；特别的时刻 +3~5；冷落或伤害 -1~5"
+    },
+    {
+      key: "心情",
+      type: "enum",
+      default: "平静",
+      description: "当前心情",
+      enum: ["开心", "平静", "疲惫", "低落", "兴奋"]
+    },
+    {
+      key: "体力",
+      type: "number",
+      default: 100,
+      description: "体力（0~100）",
+      range: [0, 100],
+      updateRule: "活动消耗 5~15；休息恢复；清晨重置为 100"
+    },
+    { key: "当前活动", type: "string", default: "闲聊", description: "正在做的事（一句话）" },
+    TIME_SLOT,
+    { key: "地点.当前地点", type: "string", default: "家里", description: "当前所在地点" }
+  ]
+};
+var NEWVAR_TEMPLATES = [romanceSingle, romanceMulti, rpg, daily];
+
+// st-extension/src/apps/newvar/designer.ts
+var TYPE_LABELS = { number: "数字", string: "文本", boolean: "布尔", enum: "枚举" };
+function draftFromDef(def) {
+  return {
+    key: def.key,
+    type: def.type,
+    defaultText: formatValue(def.default),
+    description: def.description,
+    rangeText: def.range ? `${def.range[0]}~${def.range[1]}` : "",
+    enumText: (def.enum ?? []).join(", "),
+    updateRule: def.updateRule ?? "",
+    hidden: def.hidden === true
+  };
+}
+function emptyDraft() {
+  return {
+    key: "",
+    type: "number",
+    defaultText: "0",
+    description: "",
+    rangeText: "",
+    enumText: "",
+    updateRule: "",
+    hidden: false
+  };
+}
+function draftToDef(draft) {
+  const key = draft.key.trim();
+  if (!key) return { error: "请填写变量路径。" };
+  const def = { key, type: draft.type, default: void 0, description: draft.description.trim() };
+  if (draft.hidden) def.hidden = true;
+  if (draft.updateRule.trim()) def.updateRule = draft.updateRule.trim();
+  if (draft.type === "number") {
+    const range = parseRange(draft.rangeText);
+    if (range === false) return { error: "范围格式应为「最小~最大」，如 0~100。" };
+    if (range) def.range = range;
+    const n = Number(draft.defaultText.trim());
+    let dflt = Number.isFinite(n) ? n : 0;
+    if (def.range) dflt = Math.min(def.range[1], Math.max(def.range[0], dflt));
+    def.default = dflt;
+  } else if (draft.type === "boolean") {
+    def.default = draft.defaultText.trim() === "true";
+  } else if (draft.type === "enum") {
+    const options = draft.enumText.split(/[,，]/).map((s) => s.trim()).filter((s) => s !== "");
+    if (options.length === 0) return { error: "枚举类型至少需要一个选项（逗号分隔）。" };
+    def.enum = options;
+    def.default = options.includes(draft.defaultText.trim()) ? draft.defaultText.trim() : options[0];
+  } else {
+    def.default = draft.defaultText;
+  }
+  return { def };
+}
+function cloneDefs(defs) {
+  return JSON.parse(JSON.stringify(defs));
+}
+function parseRange(text) {
+  const t = text.trim();
+  if (!t) return null;
+  const m = /^(-?\d+(?:\.\d+)?)\s*~\s*(-?\d+(?:\.\d+)?)$/.exec(t);
+  if (!m) return false;
+  const min = Number(m[1]);
+  const max = Number(m[2]);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min > max) return false;
+  return [min, max];
+}
+function createNewvarDesigner(deps) {
+  let backdrop = null;
+  let body = null;
+  let formDraft = null;
+  let editingIndex = null;
+  function applyBackdropSize() {
+    if (!backdrop) return;
+    backdrop.style.left = "0";
+    backdrop.style.top = "0";
+    backdrop.style.width = `${window.innerWidth}px`;
+    backdrop.style.height = `${window.innerHeight}px`;
+  }
+  function onEscape(e) {
+    if (e.key === "Escape") close();
+  }
+  function open() {
+    if (backdrop) {
+      render2();
+      return;
+    }
+    formDraft = null;
+    editingIndex = null;
+    backdrop = el2("div", "so-manager-backdrop");
+    document.addEventListener("keydown", onEscape);
+    window.addEventListener("resize", applyBackdropSize);
+    applyBackdropSize();
+    const dialog = el2("div", "so-manager");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-label", "变量设计");
+    const header = el2("div", "so-manager-header");
+    const title = el2("div", "so-manager-title");
+    title.textContent = "变量设计";
+    const closeBtn = el2("div", "menu_button so-manager-close");
+    closeBtn.textContent = "✕";
+    closeBtn.title = "关闭";
+    closeBtn.setAttribute("role", "button");
+    closeBtn.tabIndex = 0;
+    closeBtn.addEventListener("click", close);
+    closeBtn.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        close();
+      }
+    });
+    header.append(title, closeBtn);
+    body = el2("div", "so-manager-body");
+    dialog.append(header, body);
+    backdrop.append(dialog);
+    document.body.append(backdrop);
+    render2();
+  }
+  function close() {
+    if (!backdrop) return;
+    document.removeEventListener("keydown", onEscape);
+    window.removeEventListener("resize", applyBackdropSize);
+    backdrop.remove();
+    backdrop = null;
+    body = null;
+    formDraft = null;
+    editingIndex = null;
+    deps.onClosed?.();
+  }
+  function save(next) {
+    deps.setData(next);
+    render2();
+  }
+  function render2() {
+    if (!body) return;
+    try {
+      body.textContent = "";
+      body.append(buildTemplateSection(), buildDefsSection(), buildSettingsSection(), buildPreviewSection(), buildLogSection());
+    } catch (err) {
+      console.error("[st-stage] 变量设计弹窗渲染失败", err);
+    }
+  }
+  function section(titleText) {
+    const box = el2("div", "so-section");
+    const title = el2("div", "so-section-title");
+    title.textContent = titleText;
+    box.append(title);
+    return { box, body: box };
+  }
+  function descLine2(parent, text) {
+    const d = el2("div", "so-app-desc");
+    d.textContent = text;
+    parent.append(d);
+  }
+  function buildTemplateSection() {
+    const { box } = section("模板库（一键起步）");
+    descLine2(box, "内置模板已写好变量与更新规则（取材社区实测表现好的写法）。「替换」清空现有定义后导入；「追加」跳过重名路径合并进来。");
+    for (const tpl of NEWVAR_TEMPLATES) {
+      const card = el2("div", "vm-leaf nv-tpl");
+      const main = el2("div", "vm-leaf-main");
+      const name = el2("span", "vm-key");
+      name.textContent = `${tpl.name}（${tpl.variables.length} 项）`;
+      const desc = el2("div", "vm-desc");
+      desc.textContent = tpl.description;
+      main.append(name, desc);
+      const actions = el2("div", "nv-tpl-actions");
+      const replaceBtn = el2("button", "menu_button vm-act");
+      replaceBtn.textContent = "替换";
+      replaceBtn.addEventListener("click", () => {
+        const cur = deps.getData();
+        if (cur.schema.variables.length > 0 && !window.confirm(`用「${tpl.name}」替换现有 ${cur.schema.variables.length} 条定义？（楼层快照不受影响）`)) {
+          return;
+        }
+        formDraft = null;
+        editingIndex = null;
+        save({ ...cur, schema: { ...cur.schema, name: tpl.name, variables: cloneDefs(tpl.variables) } });
+      });
+      const appendBtn = el2("button", "menu_button vm-act vm-act-ghost");
+      appendBtn.textContent = "追加";
+      appendBtn.addEventListener("click", () => {
+        const cur = deps.getData();
+        const existing = new Set(cur.schema.variables.map((v) => v.key));
+        const added = tpl.variables.filter((v) => !existing.has(v.key));
+        if (added.length === 0) {
+          window.alert("该模板的变量路径都已存在，没有可追加的项。");
+          return;
+        }
+        save({
+          ...cur,
+          schema: { ...cur.schema, variables: [...cur.schema.variables, ...cloneDefs(added)] }
+        });
+      });
+      actions.append(replaceBtn, appendBtn);
+      card.append(main, actions);
+      box.append(card);
+    }
+    return box;
+  }
+  function buildDefsSection() {
+    const data = deps.getData();
+    const { box } = section(`变量定义（${data.schema.variables.length}）`);
+    if (data.schema.variables.length === 0 && !formDraft) {
+      descLine2(box, "还没有变量。从上方模板一键导入，或点下方「添加变量」逐条定义。");
+    }
+    for (let i = 0; i < data.schema.variables.length; i++) {
+      box.append(buildDefRow(data.schema.variables[i], i));
+    }
+    if (formDraft) {
+      box.append(buildDefForm());
+    } else {
+      box.append(
+        appButton("＋ 添加变量", () => {
+          formDraft = emptyDraft();
+          editingIndex = null;
+          render2();
+        })
+      );
+    }
+    return box;
+  }
+  function buildDefRow(def, index) {
+    const card = el2("div", "vm-leaf");
+    const main = el2("div", "vm-leaf-main");
+    const keyEl = el2("span", "vm-key");
+    keyEl.textContent = def.key;
+    const meta = el2("span", "vm-val");
+    const parts = [TYPE_LABELS[def.type], `默认 ${formatValue(def.default)}`];
+    if (def.range) parts.push(`范围 ${def.range[0]}~${def.range[1]}`);
+    if (def.enum) parts.push(`枚举 ${def.enum.join("/")}`);
+    if (def.hidden) parts.push("对 AI 隐藏");
+    meta.textContent = parts.join(" · ");
+    main.append(keyEl, meta);
+    if (def.description) {
+      const desc = el2("div", "vm-desc");
+      desc.textContent = def.description;
+      main.append(desc);
+    }
+    if (def.updateRule) {
+      const rule = el2("div", "vm-desc");
+      rule.textContent = `规则：${def.updateRule.split("\n").join("；")}`;
+      main.append(rule);
+    }
+    main.setAttribute("role", "button");
+    main.tabIndex = 0;
+    const edit = () => {
+      formDraft = draftFromDef(def);
+      editingIndex = index;
+      render2();
+    };
+    main.addEventListener("click", edit);
+    main.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        edit();
+      }
+    });
+    const del = el2("button", "vm-del");
+    del.setAttribute("aria-label", "删除定义");
+    del.title = "删除该变量定义";
+    del.textContent = "✕";
+    del.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!window.confirm(`删除变量定义「${def.key}」？（已保存的楼层快照不受影响）`)) return;
+      const cur = deps.getData();
+      if (editingIndex === index) {
+        formDraft = null;
+        editingIndex = null;
+      }
+      save({ ...cur, schema: { ...cur.schema, variables: cur.schema.variables.filter((_, i) => i !== index) } });
+    });
+    card.append(main, del);
+    return card;
+  }
+  function buildDefForm() {
+    const draft = formDraft;
+    const wrap = el2("div", "vm-leaf vm-editing");
+    const title = el2("div", "so-app-title vm-edit-title");
+    title.textContent = editingIndex === null ? "新变量定义" : `编辑：${draft.key || "（未命名）"}`;
+    wrap.append(title);
+    const err = el2("div", "so-app-desc vm-add-err");
+    err.hidden = true;
+    wrap.append(
+      textRow("路径（点号分层）", draft.key, "如 状态.体力 / 角色.小雪.好感度", (v) => draft.key = v),
+      selectRow(
+        "类型",
+        draft.type,
+        Object.keys(TYPE_LABELS).map((t) => ({ value: t, label: TYPE_LABELS[t] })),
+        (v) => {
+          draft.type = v;
+          render2();
+        }
+      ),
+      textRow("默认值", draft.defaultText, draft.type === "boolean" ? "true / false" : "", (v) => draft.defaultText = v),
+      textRow("描述（给 AI 看）", draft.description, "如 角色对用户的好感", (v) => draft.description = v)
+    );
+    if (draft.type === "number") {
+      wrap.append(textRow("范围（可空）", draft.rangeText, "如 0~100，越界自动修正", (v) => draft.rangeText = v));
+    }
+    if (draft.type === "enum") {
+      wrap.append(textRow("枚举选项（逗号分隔）", draft.enumText, "如 开心, 平静, 烦躁", (v) => draft.enumText = v));
+    }
+    wrap.append(
+      textareaRow(
+        "更新规则（每行一条，注入给 AI）",
+        draft.updateRule,
+        "如：正面互动 +1~3\n重大事件 ±5~10\n禁止无缘由跳变",
+        (v) => draft.updateRule = v
+      ),
+      toggleRow("对 AI 隐藏（内部计算用）", draft.hidden, (v) => draft.hidden = v),
+      err
+    );
+    const actions = el2("div", "vm-actions");
+    const saveBtn = el2("button", "menu_button vm-act");
+    saveBtn.textContent = "保存定义";
+    saveBtn.addEventListener("click", () => {
+      const r = draftToDef(draft);
+      if (!r.def) {
+        err.textContent = r.error ?? "输入无效。";
+        err.hidden = false;
+        return;
+      }
+      const cur = deps.getData();
+      const dup = cur.schema.variables.findIndex((v, i) => v.key === r.def.key && i !== editingIndex);
+      if (dup >= 0) {
+        err.textContent = `路径「${r.def.key}」已有定义。`;
+        err.hidden = false;
+        return;
+      }
+      const variables = [...cur.schema.variables];
+      if (editingIndex !== null && editingIndex < variables.length) variables[editingIndex] = r.def;
+      else variables.push(r.def);
+      formDraft = null;
+      editingIndex = null;
+      save({ ...cur, schema: { ...cur.schema, variables } });
+    });
+    const cancel = el2("button", "menu_button vm-act vm-act-ghost");
+    cancel.textContent = "取消";
+    cancel.addEventListener("click", () => {
+      formDraft = null;
+      editingIndex = null;
+      render2();
+    });
+    actions.append(saveBtn, cancel);
+    wrap.append(actions);
+    return wrap;
+  }
+  function buildSettingsSection() {
+    const data = deps.getData();
+    const { box } = section("生成设置");
+    box.append(
+      selectRow(
+        "输出格式",
+        data.format,
+        [
+          { value: "json_patch", label: "JSON Patch（推荐）" },
+          { value: "lodash_set", label: "_.set（老版 MVU 兼容）" }
+        ],
+        (v) => save({ ...deps.getData(), format: v === "lodash_set" ? "lodash_set" : "json_patch" })
+      ),
+      numberRow(
+        "注入深度（距末尾楼层数）",
+        data.injectionDepth,
+        0,
+        20,
+        (v) => save({ ...deps.getData(), injectionDepth: v })
+      )
+    );
+    return box;
+  }
+  function buildPreviewSection() {
+    const fold = foldSection("注入预览");
+    const text = deps.buildPreview();
+    if (text) {
+      const pre = el2("div", "nv-pre");
+      pre.textContent = text;
+      fold.body.append(pre);
+    } else {
+      descLine2(fold.body, "（未启用或未定义任何变量时不注入。启用开关在手机「新变量」页。）");
+    }
+    const wrap = el2("div", "so-section");
+    wrap.append(fold.box);
+    return wrap;
+  }
+  function buildLogSection() {
+    const fold = foldSection("解析日志");
+    const report = deps.getLastParse();
+    if (!report) {
+      descLine2(fold.body, "尚无解析记录。AI 回复包含 <UpdateVariable> 块时，这里显示逐条接受/修正/拒绝结果。");
+    } else {
+      descLine2(fold.body, `楼层 #${report.messageId}${report.error ? ` · 解析出错：${report.error}` : ""}`);
+      const icons = { accepted: "✅", corrected: "⚠️", rejected: "❌", removed: "🗑️" };
+      for (const entry of report.log) {
+        const line = el2("div", "so-app-desc nv-log-line");
+        line.textContent = `${icons[entry.status] ?? "·"} ${entry.path}${entry.detail ? ` — ${entry.detail}` : ""}`;
+        fold.body.append(line);
+      }
+    }
+    const wrap = el2("div", "so-section");
+    wrap.append(fold.box);
+    return wrap;
+  }
+  return { open, close, isOpen: () => backdrop !== null };
+}
+
 // st-extension/src/index.ts
 async function init() {
   const adapter = new STAdapter();
@@ -5671,13 +6020,27 @@ async function init() {
     getSettings: () => settings,
     inject: (prompt, depth) => adapter.injectChannel(NEWVAR_CHANNEL, prompt, depth)
   });
+  const newvarDesigner = createNewvarDesigner({
+    getData: () => newvarRuntime.getData(),
+    setData: (next) => {
+      saveSettingsOnly({ ...settings, apps: { ...settings.apps, [NEWVAR_APP_ID]: next } });
+      newvarRuntime.onConfigChanged();
+    },
+    buildPreview: () => newvarRuntime.buildPreview(),
+    getLastParse: () => newvarRuntime.getLastParse(),
+    onClosed: () => phone.openApp("newvar")
+  });
   for (const app of createBuiltinApps({
     // 从手机开图库弹窗：先收起手机（避免挡在弹窗上），来源标记=手机（关闭后回图库页）
     openGalleryManager: () => {
       collapsePhone();
       manager.open("phone");
     },
-    newvarRuntime
+    newvarRuntime,
+    openNewvarDesigner: () => {
+      collapsePhone();
+      newvarDesigner.open();
+    }
   })) {
     registry.register(app);
   }
@@ -5745,7 +6108,7 @@ async function init() {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 19:28"}`;
+  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 20:08"}`;
   console.log(`[sprite-overlay] 角色立绘悬浮窗扩展已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {

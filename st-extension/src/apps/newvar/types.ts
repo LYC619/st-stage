@@ -23,6 +23,11 @@ export interface VariableDefinition {
   enum?: string[]
   /** 是否对 AI 隐藏（内部计算用，不注入提示词） */
   hidden?: boolean
+  /**
+   * 更新规则（多行文本，每行一条 check，注入给 AI）：什么时候更新、幅度多大、什么条件下禁止更新。
+   * 参考 MVU 世界书 [mvu_update]变量更新规则 里逐变量的 check 列表——这是变量不乱跳的关键。
+   */
+  updateRule?: string
 }
 
 export interface VariableSchema {

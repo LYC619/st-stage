@@ -18,6 +18,8 @@ export interface BuiltinAppDeps {
   openGalleryManager: () => void
   /** 「新变量」运行时：入口创建并 start（注入/解析/存储常驻），App 只是它的控制台 */
   newvarRuntime: NewvarRuntime
+  /** 打开「变量设计」弹窗（收起手机，关闭后回「新变量」页） */
+  openNewvarDesigner: () => void
 }
 
 export function createBuiltinApps(deps: BuiltinAppDeps): PhoneApp[] {
@@ -26,6 +28,6 @@ export function createBuiltinApps(deps: BuiltinAppDeps): PhoneApp[] {
     galleryApp({ openManager: deps.openGalleryManager }),
     butlerApp(),
     mvuApp(),
-    newvarApp({ runtime: deps.newvarRuntime }),
+    newvarApp({ runtime: deps.newvarRuntime, openDesigner: deps.openNewvarDesigner }),
   ]
 }

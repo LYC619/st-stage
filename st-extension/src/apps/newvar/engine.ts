@@ -39,6 +39,18 @@ function clone<T>(v: T): T {
   }
 }
 
+/**
+ * 用 schema 默认值补齐状态里缺失的路径（快照存在后新定义的变量不会凭空出现在旧快照里——
+ * 不补齐会导致树上看不到、注入里出现 undefined）。已有值一律不动，返回新对象。
+ */
+export function fillDefaults(state: Record<string, unknown>, schema: VariableSchema): Record<string, unknown> {
+  const next = clone(state)
+  for (const def of schema.variables) {
+    if (getNested(next, def.key) === undefined) setNested(next, def.key, clone(def.default))
+  }
+  return next
+}
+
 // —— 校验 —— //
 
 export interface ValidateOutcome {
@@ -224,42 +236,86 @@ export function applyOps(
 
 // —— 注入提示词 —— //
 
+/**
+ * 生成注入文本。三段式结构对齐 MVU 世界书的三个条目（当前变量列表 / 变量更新规则 / 变量输出格式）：
+ * 逐变量 check 规则 + 先 <Analysis> 后命令，是参考卡里让 AI 稳定守规矩的关键写法。
+ */
 export function buildInjection(
   state: Record<string, unknown>,
   schema: VariableSchema,
   format: OutputFormat,
 ): string {
   const visible = schema.variables.filter((v) => !v.hidden)
-  const lines = visible.map((v) => {
+
+  // ① 当前状态
+  const stateLines = visible.map((v) => {
     const value = getNested(state, v.key)
     const desc = v.description ? `  // ${v.description}` : ''
     return `  ${v.key}: ${JSON.stringify(value)}${desc}`
   })
 
-  const rule =
+  // ② 逐变量更新规则：自动约束行（类型/范围/枚举）+ 用户自定义 check 行
+  const ruleLines: string[] = []
+  for (const v of visible) {
+    const checks: string[] = []
+    if (v.type === 'number') {
+      checks.push(v.range ? `数字，范围 ${v.range[0]}~${v.range[1]}（超出会被裁剪）` : '数字')
+      checks.push('输出更新后的完整数值（禁止输出 "+3" 这类增量表达式，自己算好结果）')
+    } else if (v.type === 'enum') {
+      checks.push(`只能取：${(v.enum ?? []).join(' / ')}`)
+    } else if (v.type === 'boolean') {
+      checks.push('布尔值 true / false')
+    } else {
+      checks.push('文本')
+    }
+    if (v.updateRule) {
+      for (const line of v.updateRule.split('\n')) {
+        const t = line.trim()
+        if (t) checks.push(t)
+      }
+    }
+    ruleLines.push(`  ${v.key}:`)
+    for (const c of checks) ruleLines.push(`    - ${c}`)
+  }
+
+  // ③ 输出格式（含 <Analysis>：先逐条分析再输出命令，参考卡实测能显著减少乱填）
+  const example = visible[0]?.key ?? '变量路径'
+  const examplePointer = `/${example.split('.').join('/')}`
+  const formatLines =
     format === 'lodash_set'
       ? [
-          '在回复的最末尾，用以下格式输出所有发生变化的变量（仅输出有变化的）：',
+          '- 在回复正文全部结束后，若本轮有变量变化，追加一个 <UpdateVariable> 块；没有变化则不要输出该块',
+          '- 块内每行一条命令：_.set(\'变量路径\', 旧值, 新值);//变化原因',
+          '格式示例：',
           '<UpdateVariable>',
-          "_.set('变量路径', 旧值, 新值);//变化原因",
+          `_.set('${example}', 旧值, 新值);//原因`,
           '</UpdateVariable>',
-        ].join('\n')
+        ]
       : [
-          '在回复的最末尾，用 JSON Patch (RFC6902) 输出所有发生变化的变量（仅输出有变化的）：',
+          '- 在回复正文全部结束后，若本轮有变量变化，追加一个 <UpdateVariable> 块；没有变化则不要输出该块',
+          '- 块内先写 <Analysis>（中文，不超过 60 字）：逐条对照上面的更新规则，说明哪些变量该更新、更新到多少',
+          '- 然后输出严格符合 JSON Patch (RFC 6902) 的 JSON 数组，只允许 replace / add / remove 三种操作',
+          '- path 用斜杠分隔层级（如 /状态/体力）；value 是更新后的完整值',
+          '格式示例：',
           '<UpdateVariable>',
-          '[{"op":"replace","path":"/变量路径","value":新值}]',
+          '<Analysis>好感度因赠礼小幅上升 +2。</Analysis>',
+          `[{"op":"replace","path":"${examplePointer}","value":新值}]`,
           '</UpdateVariable>',
-          '只能用 replace / add / remove 三种操作；path 用斜杠分隔层级；本轮无变化则不要输出该块。',
-        ].join('\n')
+        ]
 
   return [
-    '<variable_state>',
-    '当前追踪变量状态：',
-    lines.join('\n'),
-    '</variable_state>',
+    '<status_current_variable>',
+    '当前变量状态：',
+    stateLines.join('\n'),
+    '</status_current_variable>',
     '',
-    '<variable_update_instruction>',
-    rule,
-    '</variable_update_instruction>',
+    '<variable_update_rule>',
+    '各变量的更新规则（check 条件不满足时，不要更新对应变量）：',
+    ruleLines.join('\n'),
+    '</variable_update_rule>',
+    '',
+    '<variable_update_format>',
+    formatLines.join('\n'),
+    '</variable_update_format>',
   ].join('\n')
 }

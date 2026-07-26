@@ -184,6 +184,9 @@ export interface VariableTreeView {
 
 export function createVariableTreeView(container: HTMLElement, handlers: VariableTreeHandlers): VariableTreeView {
   let editingPath: string | null = null
+  // 分组展开状态跨渲染保留（进入编辑/自动刷新会整树重渲染，不记就会折叠回默认——用户实测反馈）
+  const groupOpen = new Map<string, boolean>()
+  let addOpen = false
 
   function render(): void {
     const model = handlers.getModel()
@@ -239,7 +242,9 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
     if (!tuple && isPlainObject(value) && Object.keys(value).length > 0) {
       const details = document.createElement('details')
       details.className = 'so-app-fold vm-group'
-      details.open = depth < 1
+      details.open = groupOpen.get(path) ?? depth < 1
+      // toggle 只在用户点击后触发（插入前赋值不触发），记录真实操作
+      details.addEventListener('toggle', () => groupOpen.set(path, details.open))
       const summary = document.createElement('summary')
       summary.className = 'so-app-title vm-group-title'
       summary.textContent = `${key}（${Object.keys(value).length}）`
@@ -425,6 +430,8 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
   function buildAddSection(model: VariableTreeModel): HTMLElement {
     const box = document.createElement('details')
     box.className = 'so-app-fold so-app-section'
+    box.open = addOpen
+    box.addEventListener('toggle', () => (addOpen = box.open))
     const summary = document.createElement('summary')
     summary.className = 'so-app-title'
     summary.textContent = '＋ 新增变量'
