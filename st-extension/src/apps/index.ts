@@ -11,6 +11,7 @@ import { galleryApp } from './gallery-app'
 import { butlerApp } from './butler-app'
 import { mvuApp } from './mvu-app'
 import { newvarApp } from './newvar-app'
+import { apiApp } from './api-app'
 import type { NewvarRuntime } from './newvar/runtime'
 
 export interface BuiltinAppDeps {
@@ -20,6 +21,8 @@ export interface BuiltinAppDeps {
   newvarRuntime: NewvarRuntime
   /** 打开「变量设计」弹窗（收起手机，关闭后回「新变量」页） */
   openNewvarDesigner: () => void
+  /** 打开「API 站点管理」弹窗（收起手机，关闭后回「API」页） */
+  openApiManager: () => void
 }
 
 export function createBuiltinApps(deps: BuiltinAppDeps): PhoneApp[] {
@@ -29,5 +32,6 @@ export function createBuiltinApps(deps: BuiltinAppDeps): PhoneApp[] {
     butlerApp(),
     mvuApp(),
     newvarApp({ runtime: deps.newvarRuntime, openDesigner: deps.openNewvarDesigner }),
+    apiApp({ openManager: deps.openApiManager }),
   ]
 }

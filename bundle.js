@@ -2078,7 +2078,7 @@ function createSpriteManager(deps) {
   function open(source = "overlay") {
     openedFrom = source;
     if (backdrop) {
-      render2();
+      render3();
       return;
     }
     view = { kind: "list" };
@@ -2097,7 +2097,7 @@ function createSpriteManager(deps) {
     backBtn.tabIndex = 0;
     const goBack = () => {
       view = { kind: "list" };
-      render2();
+      render3();
     };
     backBtn.addEventListener("click", goBack);
     backBtn.addEventListener("keydown", (e) => {
@@ -2117,7 +2117,7 @@ function createSpriteManager(deps) {
     dialog.append(header, body);
     backdrop.append(dialog);
     document.body.append(backdrop);
-    render2();
+    render3();
   }
   function onEscape(e) {
     if (e.key !== "Escape") return;
@@ -2128,7 +2128,7 @@ function createSpriteManager(deps) {
     }
     if (view.kind === "pack") {
       view = { kind: "list" };
-      render2();
+      render3();
     } else {
       close();
     }
@@ -2143,11 +2143,11 @@ function createSpriteManager(deps) {
     deps.onClosed?.(openedFrom);
   }
   function refreshIfOpen() {
-    if (backdrop) render2();
+    if (backdrop) render3();
   }
   function commit(next) {
     deps.updateSettings(next);
-    render2();
+    render3();
   }
   function conflictText(conflicts) {
     return conflicts.slice(0, 3).map(
@@ -2161,7 +2161,7 @@ function createSpriteManager(deps) {
     else window.alert(message);
   }
   function rejectConflicts(conflicts) {
-    render2();
+    render3();
     showConflicts(conflicts);
     return false;
   }
@@ -2361,7 +2361,7 @@ ${options}`,
     });
     return btn;
   }
-  function render2() {
+  function render3() {
     if (!backdrop) return;
     const backBtn = backdrop.querySelector(".so-manager-back");
     const title = backdrop.querySelector(".so-manager-title");
@@ -2446,7 +2446,7 @@ ${options}`,
           const pack = { id: genId(), name, author: "我", sprites: [] };
           if (!updateChecked(upsertPack(deps.getSettings(), pack))) return;
           view = { kind: "pack", packId: pack.id };
-          render2();
+          render3();
         });
         nameInput.addEventListener("keydown", (e) => {
           if (e.key === "Enter" && !e.isComposing) createBtn.click();
@@ -2467,7 +2467,7 @@ ${options}`,
             if (!installImportedPack(pack, body)) return;
             const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
             if (installed) view = { kind: "pack", packId: installed.id };
-            render2();
+            render3();
           } catch (err) {
             toast(body, err instanceof Error ? err.message : "分享串解析失败");
           }
@@ -2486,7 +2486,7 @@ ${options}`,
               if (!installImportedPack(pack, body)) return;
               const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
               if (installed) view = { kind: "pack", packId: installed.id };
-              render2();
+              render3();
             } catch (err) {
               toast(body, err instanceof Error ? err.message : "导入失败");
             }
@@ -2584,7 +2584,7 @@ ${options}`,
     card.append(coverBox, info);
     const enter = () => {
       view = { kind: "pack", packId: pack.id };
-      render2();
+      render3();
     };
     card.addEventListener("click", enter);
     card.addEventListener("keydown", (e) => {
@@ -3150,7 +3150,7 @@ ${preview}
       }
     }
     done();
-    render2();
+    render3();
     const parts = [`已添加 ${added} 张`];
     if (skipped > 0) parts.push(`跳过 ${skipped} 张（重名/无效）`);
     if (failed > 0) parts.push(`失败 ${failed} 张`);
@@ -3200,7 +3200,7 @@ ${preview}
         fail++;
       }
     }
-    render2();
+    render3();
     toast(
       backdrop?.querySelector(".so-manager-body"),
       `补传完成：成功 ${ok} 张${fail > 0 ? `，失败 ${fail} 张（可再次点击重试）` : ""}`
@@ -3352,7 +3352,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 23:38"}）`;
+  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-27 01:59"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -4296,7 +4296,7 @@ function createVariableTreeView(container, handlers) {
   let editingPath = null;
   const groupOpen = /* @__PURE__ */ new Map();
   let addOpen = false;
-  function render2() {
+  function render3() {
     const model = handlers.getModel();
     container.textContent = "";
     const head = el2("div", "so-app-section vm-head");
@@ -4377,7 +4377,7 @@ function createVariableTreeView(container, handlers) {
       main.tabIndex = 0;
       const enterEdit = () => {
         editingPath = path;
-        render2();
+        render3();
       };
       main.addEventListener("click", enterEdit);
       main.addEventListener("keydown", (e) => {
@@ -4486,7 +4486,7 @@ function createVariableTreeView(container, handlers) {
     cancel.textContent = "取消";
     cancel.addEventListener("click", () => {
       editingPath = null;
-      render2();
+      render3();
     });
     actions.append(save, cancel);
     wrap.append(actions);
@@ -4538,7 +4538,7 @@ function createVariableTreeView(container, handlers) {
     return box;
   }
   return {
-    render: render2,
+    render: render3,
     resetEditing() {
       editingPath = null;
     },
@@ -4955,6 +4955,326 @@ function newvarApp(deps) {
   };
 }
 
+// st-extension/src/apps/api/core.ts
+var API_APP_ID = "api";
+function emptyDraft() {
+  return { name: "", url: "", key: "", model: "", includeBody: "", excludeBody: "", includeHeaders: "" };
+}
+function normalizeUrl(u) {
+  return String(u ?? "").trim().replace(/\/+$/, "");
+}
+function str(v) {
+  return typeof v === "string" ? v : "";
+}
+function sanitizeAppData(raw) {
+  const profiles = [];
+  const list = raw?.profiles;
+  if (Array.isArray(list)) {
+    for (const item of list) {
+      if (!item || typeof item !== "object") continue;
+      const p = item;
+      const name = str(p.name).trim();
+      const url = normalizeUrl(str(p.url));
+      if (!name || !url) continue;
+      profiles.push({
+        id: str(p.id) || newProfileId(),
+        name,
+        url,
+        key: str(p.key),
+        model: str(p.model).trim(),
+        includeBody: str(p.includeBody),
+        excludeBody: str(p.excludeBody),
+        includeHeaders: str(p.includeHeaders)
+      });
+    }
+  }
+  return { profiles };
+}
+function newProfileId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+function validateDraft(draft) {
+  if (!draft.name.trim()) return "请填写站点名称。";
+  const url = normalizeUrl(draft.url);
+  if (!url) return "请填写接口地址 URL。";
+  if (!/^https?:\/\//i.test(url)) return "URL 需以 http:// 或 https:// 开头。";
+  return null;
+}
+function upsertProfile(profiles, draft, editingId) {
+  const invalid = validateDraft(draft);
+  if (invalid) return { error: invalid };
+  const name = draft.name.trim();
+  const dup = profiles.find((p) => p.name === name && p.id !== editingId);
+  if (dup) return { error: `已存在同名站点「${name}」。` };
+  const clean = {
+    name,
+    url: normalizeUrl(draft.url),
+    key: draft.key,
+    model: draft.model.trim(),
+    includeBody: draft.includeBody,
+    excludeBody: draft.excludeBody,
+    includeHeaders: draft.includeHeaders
+  };
+  if (editingId !== null) {
+    const idx = profiles.findIndex((p) => p.id === editingId);
+    if (idx < 0) return { error: "要编辑的站点已不存在。" };
+    const next = [...profiles];
+    next[idx] = { ...clean, id: editingId };
+    return { profiles: next };
+  }
+  return { profiles: [...profiles, { ...clean, id: newProfileId() }] };
+}
+function findActiveProfile(profiles, currentUrl) {
+  const cur = normalizeUrl(currentUrl);
+  if (!cur) return void 0;
+  return profiles.find((p) => normalizeUrl(p.url) === cur);
+}
+function parseModelList(json) {
+  if (json && typeof json === "object" && "error" in json && json.error) {
+    const msg = json.message;
+    throw new Error(typeof msg === "string" && msg ? msg : "接口报错");
+  }
+  const box = json;
+  const arr = Array.isArray(box) ? box : Array.isArray(box?.data) ? box.data : Array.isArray(box?.models) ? box.models : [];
+  const names = arr.map((m) => {
+    if (typeof m === "string") return m;
+    if (m && typeof m === "object") {
+      const o = m;
+      return str(o.id) || str(o.model) || str(o.name);
+    }
+    return "";
+  }).filter((s) => s !== "");
+  if (names.length === 0) throw new Error("接口没有返回模型列表");
+  return [...new Set(names)].sort();
+}
+
+// st-extension/src/apps/api/bridge.ts
+function getST3() {
+  try {
+    return window.SillyTavern?.getContext();
+  } catch {
+    return void 0;
+  }
+}
+function readStr(obj, key) {
+  const v = obj[key];
+  return typeof v === "string" ? v : "";
+}
+function readConnection() {
+  const st = getST3();
+  const oai = st?.chatCompletionSettings;
+  if (!st || !oai) return null;
+  return {
+    url: readStr(oai, "custom_url"),
+    model: readStr(oai, "custom_model"),
+    isCustomSource: st.mainApi === "openai" && readStr(oai, "chat_completion_source") === "custom",
+    online: (st.onlineStatus ?? "no_connection") !== "no_connection",
+    includeBody: readStr(oai, "custom_include_body"),
+    excludeBody: readStr(oai, "custom_exclude_body"),
+    includeHeaders: readStr(oai, "custom_include_headers")
+  };
+}
+async function writeSecret(st, key) {
+  const headers = st.getRequestHeaders?.() ?? { "Content-Type": "application/json" };
+  const res = await fetch("/api/secrets/write", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ key: "api_key_custom", value: key ?? "" })
+  });
+  if (!res.ok) throw new Error(`写入密钥失败：HTTP ${res.status}`);
+}
+var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+function setInput(input, value) {
+  input.value = value;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+function setSelect(select, value) {
+  select.value = value;
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+async function applyProfile(p) {
+  const st = getST3();
+  const oai = st?.chatCompletionSettings;
+  if (!st || !oai) throw new Error("未检测到 SillyTavern 运行时");
+  const mainApiSel = document.querySelector("#main_api");
+  const sourceSel = document.querySelector("#chat_completion_source");
+  const urlInput = document.querySelector("#custom_api_url_text");
+  const connectBtn = document.querySelector("#api_button_openai");
+  if (!mainApiSel || !sourceSel || !urlInput || !connectBtn) {
+    throw new Error("未找到 ST 连接面板（酒馆版本过旧？需 1.12+）");
+  }
+  await writeSecret(st, p.key);
+  setSelect(mainApiSel, "openai");
+  setSelect(sourceSel, "custom");
+  await sleep(150);
+  setInput(urlInput, p.url);
+  const keyInput = document.querySelector("#api_key_custom");
+  if (keyInput) setInput(keyInput, p.key);
+  const modelInput = document.querySelector("#custom_model_id");
+  if (modelInput && p.model) setInput(modelInput, p.model);
+  oai["custom_include_body"] = p.includeBody;
+  oai["custom_exclude_body"] = p.excludeBody;
+  oai["custom_include_headers"] = p.includeHeaders;
+  st.saveSettingsDebounced?.();
+  await sleep(150);
+  connectBtn.click();
+}
+async function fetchModels(url, key, restoreKey) {
+  const st = getST3();
+  if (!st) throw new Error("未检测到 SillyTavern 运行时");
+  const visibleKey = document.querySelector("#api_key_custom")?.value ?? "";
+  const prevKey = visibleKey || restoreKey;
+  const wrote = !!key && key !== prevKey;
+  if (wrote) await writeSecret(st, key);
+  try {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 2e4);
+    let res;
+    try {
+      res = await fetch("/api/backends/chat-completions/status", {
+        method: "POST",
+        headers: st.getRequestHeaders?.() ?? { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_completion_source: "custom", custom_url: url }),
+        signal: ac.signal
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!res.ok) throw new Error(`接口返回 HTTP ${res.status}`);
+    return parseModelList(await res.json());
+  } finally {
+    if (wrote && prevKey) {
+      writeSecret(st, prevKey).catch((err) => console.warn("[st-stage] API：还原密钥失败", err));
+    }
+  }
+}
+
+// st-extension/src/apps/api-app.ts
+function toast2(kind, message) {
+  const t = window.toastr;
+  t?.[kind]?.(message, "API 切换");
+}
+function apiApp(deps) {
+  return {
+    id: API_APP_ID,
+    name: "API",
+    icon: "📡",
+    order: 6,
+    mount(container, ctx) {
+      render2(container, ctx, deps, { busy: false });
+    }
+  };
+}
+function render2(container, ctx, deps, state) {
+  container.textContent = "";
+  const data = sanitizeAppData(ctx.getAppData());
+  const conn = readConnection();
+  const active = conn ? findActiveProfile(data.profiles, conn.url) : void 0;
+  const rerender = () => {
+    if (container.isConnected) render2(container, ctx, deps, state);
+  };
+  const status = el2("div", "so-app-section");
+  const title = el2("div", "so-app-title");
+  title.textContent = "当前连接";
+  status.append(title);
+  if (!conn) {
+    const d = el2("div", "so-app-desc");
+    d.textContent = "未检测到 SillyTavern 运行时（Web 模拟器中仅展示站点列表）。";
+    status.append(d);
+  } else {
+    const line = el2("div", "so-app-desc");
+    const dot = el2("span", `stapi-dot${conn.online ? " stapi-dot-on" : ""}`);
+    const text = document.createElement("span");
+    text.textContent = conn.online ? "已连接" : "未连接";
+    line.append(dot, text);
+    status.append(line);
+    const site = el2("div", "so-app-desc");
+    site.textContent = active ? `站点：${active.name}` : conn.url ? `接口：${conn.url}（未存为站点，可在管理页「读取当前连接」录入）` : "尚未配置自定义接口。";
+    status.append(site);
+    if (conn.model) {
+      const model = el2("div", "so-app-desc");
+      model.textContent = `模型：${conn.model}`;
+      status.append(model);
+    }
+    if (!conn.isCustomSource) {
+      const warn = el2("div", "so-app-desc");
+      warn.textContent = "当前没有走「自定义(OpenAI 兼容)」接口；点下方任一站点即可切换接管。";
+      status.append(warn);
+    }
+  }
+  container.append(status);
+  const sites = el2("div", "so-app-section");
+  const sitesTitle = el2("div", "so-app-title");
+  sitesTitle.textContent = `站点（${data.profiles.length}）`;
+  sites.append(sitesTitle);
+  const feedback = el2("div", "so-app-desc");
+  feedback.hidden = true;
+  const say = (text) => {
+    feedback.textContent = text;
+    feedback.hidden = false;
+  };
+  if (data.profiles.length === 0) {
+    const empty = el2("div", "so-app-desc");
+    empty.textContent = "还没有站点，点下方「管理站点」添加。";
+    sites.append(empty);
+  }
+  const doSwitch = (p) => {
+    if (state.busy) return;
+    if (!conn) {
+      say("仅在 SillyTavern 内可切换。");
+      return;
+    }
+    state.busy = true;
+    say(`正在切换到「${p.name}」…`);
+    applyProfile(p).then(() => {
+      toast2("success", `已切换到「${p.name}」`);
+      return new Promise((resolve) => setTimeout(resolve, 800));
+    }).catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast2("error", msg);
+      say(`切换失败：${msg}`);
+      console.error("[st-stage] API 切换失败", err);
+    }).then(() => {
+      state.busy = false;
+      rerender();
+    });
+  };
+  for (const p of data.profiles) {
+    const isActive = active?.id === p.id;
+    const row = el2("div", `stapi-row${isActive ? " stapi-row-on" : ""}`);
+    row.setAttribute("role", "button");
+    row.tabIndex = 0;
+    const main = el2("div", "stapi-row-main");
+    const name = el2("div", "stapi-row-name");
+    name.textContent = p.name;
+    main.append(name);
+    const subParts = [p.model || "模型沿用当前"];
+    if (p.includeBody.trim() || p.excludeBody.trim() || p.includeHeaders.trim()) subParts.push("附加参数");
+    const sub = el2("div", "stapi-row-sub");
+    sub.textContent = subParts.join(" · ");
+    main.append(sub);
+    const mark = el2("div", "stapi-row-mark");
+    mark.textContent = isActive ? "✓" : "›";
+    row.append(main, mark);
+    row.addEventListener("click", () => doSwitch(p));
+    row.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        doSwitch(p);
+      }
+    });
+    sites.append(row);
+  }
+  sites.append(feedback);
+  container.append(sites);
+  const manage = el2("div", "so-app-section");
+  const manageDesc = el2("div", "so-app-desc");
+  manageDesc.textContent = "添加/编辑站点 · 从接口获取模型 · 附加参数（随站点切换）。";
+  manage.append(manageDesc, appButton("管理站点", () => deps.openManager()));
+  container.append(manage);
+}
+
 // st-extension/src/apps/index.ts
 function createBuiltinApps(deps) {
   return [
@@ -4962,7 +5282,8 @@ function createBuiltinApps(deps) {
     galleryApp({ openManager: deps.openGalleryManager }),
     butlerApp(),
     mvuApp(),
-    newvarApp({ runtime: deps.newvarRuntime, openDesigner: deps.openNewvarDesigner })
+    newvarApp({ runtime: deps.newvarRuntime, openDesigner: deps.openNewvarDesigner }),
+    apiApp({ openManager: deps.openApiManager })
   ];
 }
 
@@ -5296,7 +5617,7 @@ function createNewvarRuntime(deps) {
   let warnedSave = false;
   const listeners = /* @__PURE__ */ new Set();
   const unsubs = [];
-  function getST3() {
+  function getST4() {
     try {
       return window.SillyTavern?.getContext();
     } catch {
@@ -5337,7 +5658,7 @@ function createNewvarRuntime(deps) {
   }
   function getCurrentState() {
     const schema = getData().schema;
-    const chat = getST3()?.chat;
+    const chat = getST4()?.chat;
     if (Array.isArray(chat)) {
       const snap = findSnapshotBefore(chat, chat.length - 1);
       if (snap) return fillDefaults(snap, schema);
@@ -5345,7 +5666,7 @@ function createNewvarRuntime(deps) {
     return initStateFromSchema(schema);
   }
   function getPrevState() {
-    const chat = getST3()?.chat;
+    const chat = getST4()?.chat;
     if (!Array.isArray(chat)) return null;
     for (let i = chat.length - 1; i >= 0; i--) {
       if (floorSnapshot(chat[i])) return findSnapshotBefore(chat, i - 1);
@@ -5385,7 +5706,7 @@ function createNewvarRuntime(deps) {
   function handleMessageReceived(...args) {
     const data = getData();
     if (!data.enabled) return;
-    const st = getST3();
+    const st = getST4();
     const chat = st?.chat;
     if (!st || !Array.isArray(chat)) return;
     const rawId = args[0];
@@ -5409,7 +5730,7 @@ function createNewvarRuntime(deps) {
     notify();
   }
   function mutateCurrent(mutate) {
-    const st = getST3();
+    const st = getST4();
     const chat = st?.chat;
     if (!st || !Array.isArray(chat) || chat.length === 0) return;
     const state = getCurrentState();
@@ -5419,7 +5740,7 @@ function createNewvarRuntime(deps) {
     notify();
   }
   function subscribeEvents() {
-    const st = getST3();
+    const st = getST4();
     const es = st?.eventSource;
     if (!es) return;
     const et = st?.eventTypes ?? {};
@@ -5453,7 +5774,7 @@ function createNewvarRuntime(deps) {
       listeners.clear();
     },
     isSTAvailable() {
-      return Array.isArray(getST3()?.chat);
+      return Array.isArray(getST4()?.chat);
     },
     getData,
     getCurrentState,
@@ -5647,7 +5968,7 @@ function draftFromDef(def) {
     hidden: def.hidden === true
   };
 }
-function emptyDraft() {
+function emptyDraft2() {
   return {
     key: "",
     type: "number",
@@ -5716,7 +6037,7 @@ function createNewvarDesigner(deps) {
   }
   function open() {
     if (backdrop) {
-      render2();
+      render3();
       return;
     }
     formDraft = null;
@@ -5748,7 +6069,7 @@ function createNewvarDesigner(deps) {
     dialog.append(header, body);
     backdrop.append(dialog);
     document.body.append(backdrop);
-    render2();
+    render3();
   }
   function close() {
     if (!backdrop) return;
@@ -5763,9 +6084,9 @@ function createNewvarDesigner(deps) {
   }
   function save(next) {
     deps.setData(next);
-    render2();
+    render3();
   }
-  function render2() {
+  function render3() {
     if (!body) return;
     try {
       body.textContent = "";
@@ -5900,10 +6221,10 @@ function createNewvarDesigner(deps) {
       editor.append(
         hint,
         appButton("＋ 添加变量", () => {
-          formDraft = emptyDraft();
+          formDraft = emptyDraft2();
           editingIndex = null;
           scrollToEditor = true;
-          render2();
+          render3();
         })
       );
     }
@@ -5940,7 +6261,7 @@ function createNewvarDesigner(deps) {
       formDraft = draftFromDef(def);
       editingIndex = index;
       scrollToEditor = true;
-      render2();
+      render3();
     };
     main.addEventListener("click", edit);
     main.addEventListener("keydown", (e) => {
@@ -5982,7 +6303,7 @@ function createNewvarDesigner(deps) {
         Object.keys(TYPE_LABELS).map((t) => ({ value: t, label: TYPE_LABELS[t] })),
         (v) => {
           draft.type = v;
-          render2();
+          render3();
         }
       ),
       textRow("默认值", draft.defaultText, draft.type === "boolean" ? "true / false" : "", (v) => draft.defaultText = v),
@@ -6033,7 +6354,7 @@ function createNewvarDesigner(deps) {
     cancel.addEventListener("click", () => {
       formDraft = null;
       editingIndex = null;
-      render2();
+      render3();
     });
     actions.append(saveBtn, cancel);
     wrap.append(actions);
@@ -6093,6 +6414,349 @@ function createNewvarDesigner(deps) {
     const wrap = el2("div", "so-section");
     wrap.append(fold.box);
     return wrap;
+  }
+  return { open, close, isOpen: () => backdrop !== null };
+}
+
+// st-extension/src/apps/api/manager.ts
+function createApiManager(deps) {
+  let backdrop = null;
+  let dialog = null;
+  let body = null;
+  let picker = null;
+  let draft = null;
+  let editingId = null;
+  let formNotice = "";
+  let scrollToEditor = false;
+  function applyBackdropSize() {
+    if (!backdrop) return;
+    backdrop.style.left = "0";
+    backdrop.style.top = "0";
+    backdrop.style.width = `${window.innerWidth}px`;
+    backdrop.style.height = `${window.innerHeight}px`;
+  }
+  function onEscape(e) {
+    if (e.key !== "Escape") return;
+    if (picker) closePicker();
+    else close();
+  }
+  function open() {
+    if (backdrop) {
+      render3();
+      return;
+    }
+    draft = null;
+    editingId = null;
+    formNotice = "";
+    backdrop = el2("div", "so-manager-backdrop");
+    document.addEventListener("keydown", onEscape);
+    window.addEventListener("resize", applyBackdropSize);
+    applyBackdropSize();
+    dialog = el2("div", "so-manager");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-label", "API 站点管理");
+    const header = el2("div", "so-manager-header");
+    const title = el2("div", "so-manager-title");
+    title.textContent = "API 站点管理";
+    const closeBtn = el2("div", "menu_button so-manager-close");
+    closeBtn.textContent = "✕";
+    closeBtn.title = "关闭";
+    closeBtn.setAttribute("role", "button");
+    closeBtn.tabIndex = 0;
+    closeBtn.addEventListener("click", close);
+    closeBtn.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        close();
+      }
+    });
+    header.append(title, closeBtn);
+    body = el2("div", "so-manager-body");
+    dialog.append(header, body);
+    backdrop.append(dialog);
+    document.body.append(backdrop);
+    render3();
+  }
+  function close() {
+    if (!backdrop) return;
+    document.removeEventListener("keydown", onEscape);
+    window.removeEventListener("resize", applyBackdropSize);
+    backdrop.remove();
+    backdrop = null;
+    dialog = null;
+    body = null;
+    picker = null;
+    draft = null;
+    editingId = null;
+    deps.onClosed?.();
+  }
+  function save(next) {
+    deps.setData(next);
+    render3();
+  }
+  function render3() {
+    if (!body) return;
+    try {
+      body.textContent = "";
+      body.append(buildListSection(), buildEditorSection(), buildNoteSection());
+      if (scrollToEditor) {
+        scrollToEditor = false;
+        body.querySelector(".stapi-editor")?.scrollIntoView({ block: "nearest" });
+      }
+    } catch (err) {
+      console.error("[st-stage] API 站点管理弹窗渲染失败", err);
+    }
+  }
+  function section(titleText) {
+    const box = el2("div", "so-section");
+    const title = el2("div", "so-section-title");
+    title.textContent = titleText;
+    box.append(title);
+    return box;
+  }
+  function descLine2(parent, text) {
+    const d = el2("div", "so-app-desc");
+    d.textContent = text;
+    parent.append(d);
+  }
+  function buildListSection() {
+    const data = deps.getData();
+    const box = section(`站点（${data.profiles.length}）`);
+    const activeId = findActiveProfile(data.profiles, readConnection()?.url ?? "")?.id;
+    if (data.profiles.length === 0) {
+      descLine2(box, "还没有站点。点下方「＋ 添加站点」，或先在 ST 连好一个接口再「读取当前连接」快速录入。");
+    }
+    for (const p of data.profiles) {
+      const row = el2("div", `vm-leaf${editingId === p.id ? " nv-def-selected" : ""}`);
+      const main = el2("div", "vm-leaf-main");
+      const name = el2("span", "vm-key");
+      name.textContent = p.id === activeId ? `${p.name} · 使用中` : p.name;
+      const meta = el2("span", "vm-val");
+      const parts = [p.url];
+      if (p.model) parts.push(p.model);
+      parts.push(p.key ? "KEY ✓" : "无 KEY");
+      if (p.includeBody.trim() || p.excludeBody.trim() || p.includeHeaders.trim()) parts.push("附加参数 ✓");
+      meta.textContent = parts.join(" · ");
+      main.append(name, meta);
+      main.setAttribute("role", "button");
+      main.tabIndex = 0;
+      const edit = () => {
+        draft = {
+          name: p.name,
+          url: p.url,
+          key: p.key,
+          model: p.model,
+          includeBody: p.includeBody,
+          excludeBody: p.excludeBody,
+          includeHeaders: p.includeHeaders
+        };
+        editingId = p.id;
+        formNotice = "";
+        scrollToEditor = true;
+        render3();
+      };
+      main.addEventListener("click", edit);
+      main.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          edit();
+        }
+      });
+      const del = el2("button", "vm-del");
+      del.setAttribute("aria-label", "删除站点");
+      del.title = "删除该站点";
+      del.textContent = "✕";
+      del.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!window.confirm(`删除站点「${p.name}」？（不影响 ST 当前连接）`)) return;
+        if (editingId === p.id) {
+          draft = null;
+          editingId = null;
+        }
+        save({ profiles: deps.getData().profiles.filter((x) => x.id !== p.id) });
+      });
+      row.append(main, del);
+      box.append(row);
+    }
+    box.append(
+      appButton("＋ 添加站点", () => {
+        draft = emptyDraft();
+        editingId = null;
+        formNotice = "";
+        scrollToEditor = true;
+        render3();
+      })
+    );
+    return box;
+  }
+  function buildEditorSection() {
+    const box = section(!draft ? "站点编辑" : editingId === null ? "新增站点" : `编辑：${draft.name || "（未命名）"}`);
+    box.classList.add("stapi-editor");
+    if (!draft) {
+      descLine2(box, "点击上方站点进行编辑，或「＋ 添加站点」新建。");
+      return box;
+    }
+    const d = draft;
+    const notice = el2("div", "so-app-desc vm-add-err");
+    notice.textContent = formNotice;
+    notice.hidden = formNotice === "";
+    formNotice = "";
+    box.append(notice);
+    const showNotice = (text) => {
+      notice.textContent = text;
+      notice.hidden = false;
+    };
+    box.append(
+      textRow("站点名称", d.name, "如：公益站A", (v) => d.name = v),
+      textRow("接口地址 URL", d.url, "如 https://xx.com/v1", (v) => d.url = v),
+      textRow("API Key", d.key, "明文存于本机 settings，仅建议个人设备使用", (v) => d.key = v.trim(), "password"),
+      textRow("模型 ID（可空）", d.model, "可点下方按钮从接口获取", (v) => d.model = v),
+      appButton("从接口获取模型列表", () => {
+        const url = normalizeUrl(d.url);
+        if (!url) {
+          showNotice("请先填写接口地址 URL。");
+          return;
+        }
+        openPicker(url, d.key, (m) => {
+          d.model = m;
+          render3();
+        });
+      })
+    );
+    const extra = foldSection(
+      "附加参数（可选，随站点一起切换）",
+      Boolean(d.includeBody.trim() || d.excludeBody.trim() || d.includeHeaders.trim())
+    );
+    const extraDesc = el2("div", "so-app-desc");
+    extraDesc.textContent = "对应 ST 连接面板的「附加参数」，YAML 格式原样透传；切换到本站点时自动写入，无需再去 ST 里手改。";
+    extra.body.append(
+      extraDesc,
+      textareaRow("包括主体参数（YAML 对象）", d.includeBody, "示例：\ntop_k: 20\nrepetition_penalty: 1.1", (v) => d.includeBody = v),
+      textareaRow("排除主体参数（每行一个）", d.excludeBody, "示例：\ntop_p", (v) => d.excludeBody = v),
+      textareaRow("包含请求标头（YAML 对象）", d.includeHeaders, "示例：\nCustomHeader: 自定义值", (v) => d.includeHeaders = v)
+    );
+    box.append(extra.box);
+    const actions = el2("div", "vm-actions");
+    const saveBtn = el2("button", "menu_button vm-act");
+    saveBtn.textContent = editingId === null ? "保存站点" : "保存修改";
+    saveBtn.addEventListener("click", () => {
+      const r = upsertProfile(deps.getData().profiles, d, editingId);
+      if ("error" in r) {
+        showNotice(r.error);
+        return;
+      }
+      draft = null;
+      editingId = null;
+      save({ profiles: r.profiles });
+    });
+    const cancel = el2("button", "menu_button vm-act vm-act-ghost");
+    cancel.textContent = "取消";
+    cancel.addEventListener("click", () => {
+      draft = null;
+      editingId = null;
+      render3();
+    });
+    const readCur = el2("button", "menu_button vm-act vm-act-ghost");
+    readCur.textContent = "读取当前连接";
+    readCur.title = "把 ST 正在使用的 URL/模型/附加参数填入表单（Key 读不回，需手填）";
+    readCur.addEventListener("click", () => {
+      const conn = readConnection();
+      if (!conn) {
+        showNotice("未检测到 SillyTavern 运行时，无法读取。");
+        return;
+      }
+      d.url = conn.url;
+      d.model = conn.model;
+      d.includeBody = conn.includeBody;
+      d.excludeBody = conn.excludeBody;
+      d.includeHeaders = conn.includeHeaders;
+      formNotice = "已填入当前 URL/模型/附加参数；Key 出于安全无法读取，请手动填写。";
+      render3();
+    });
+    actions.append(saveBtn, cancel, readCur);
+    box.append(actions);
+    return box;
+  }
+  function buildNoteSection() {
+    const box = section("说明");
+    descLine2(box, "Key 明文存于本机 settings（ST 扩展设置通用机制），仅建议个人设备使用。");
+    descLine2(box, "切换在手机「API」页：点站点行即写入 Key → 切到自定义(OpenAI 兼容)接口 → 自动连接。");
+    return box;
+  }
+  function closePicker() {
+    picker?.remove();
+    picker = null;
+  }
+  function openPicker(url, key, onPick) {
+    if (!dialog) return;
+    closePicker();
+    picker = el2("div", "stapi-picker");
+    const box = el2("div", "stapi-picker-box");
+    const head = el2("div", "stapi-picker-head");
+    const title = el2("div", "so-section-title");
+    title.textContent = "选择模型";
+    const closeBtn = el2("button", "menu_button vm-act vm-act-ghost");
+    closeBtn.textContent = "✕";
+    closeBtn.setAttribute("aria-label", "关闭");
+    closeBtn.addEventListener("click", closePicker);
+    head.append(title, closeBtn);
+    const filter = document.createElement("input");
+    filter.type = "text";
+    filter.className = "text_pole so-app-input";
+    filter.placeholder = "搜索模型…";
+    filter.autocomplete = "off";
+    const list = el2("div", "stapi-picker-list");
+    const loading = el2("div", "so-app-desc");
+    loading.textContent = "正在从接口获取模型列表…";
+    list.append(loading);
+    box.append(head, filter, list);
+    picker.append(box);
+    picker.addEventListener("click", (e) => {
+      if (e.target === picker) closePicker();
+    });
+    dialog.append(picker);
+    const restoreKey = findActiveProfile(deps.getData().profiles, readConnection()?.url ?? "")?.key ?? "";
+    fetchModels(url, key, restoreKey).then((models) => {
+      if (!picker) return;
+      const renderList = (kw) => {
+        list.textContent = "";
+        const f = kw.trim().toLowerCase();
+        const subset = models.filter((m) => m.toLowerCase().includes(f));
+        if (subset.length === 0) {
+          const empty = el2("div", "so-app-desc");
+          empty.textContent = "没有匹配的模型";
+          list.append(empty);
+          return;
+        }
+        for (const m of subset) {
+          const item = el2("div", "stapi-picker-item");
+          item.textContent = m;
+          item.setAttribute("role", "button");
+          item.tabIndex = 0;
+          const pick = () => {
+            closePicker();
+            onPick(m);
+          };
+          item.addEventListener("click", pick);
+          item.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              pick();
+            }
+          });
+          list.append(item);
+        }
+      };
+      renderList("");
+      filter.addEventListener("input", () => renderList(filter.value));
+      filter.focus();
+    }).catch((err) => {
+      if (!picker) return;
+      list.textContent = "";
+      const fail = el2("div", "so-app-desc");
+      fail.textContent = `获取失败：${err instanceof Error ? err.message : String(err)}`;
+      list.append(fail);
+    });
   }
   return { open, close, isOpen: () => backdrop !== null };
 }
@@ -6179,6 +6843,13 @@ async function init() {
     getLastParse: () => newvarRuntime.getLastParse(),
     onClosed: () => phone.openApp("newvar")
   });
+  const apiManager = createApiManager({
+    getData: () => sanitizeAppData(settings.apps[API_APP_ID]),
+    setData: (next) => {
+      saveSettingsOnly({ ...settings, apps: { ...settings.apps, [API_APP_ID]: next } });
+    },
+    onClosed: () => phone.openApp("api")
+  });
   for (const app of createBuiltinApps({
     // 从手机开图库弹窗：先收起手机（避免挡在弹窗上），来源标记=手机（关闭后回图库页）
     openGalleryManager: () => {
@@ -6189,6 +6860,10 @@ async function init() {
     openNewvarDesigner: () => {
       collapsePhone();
       newvarDesigner.open();
+    },
+    openApiManager: () => {
+      collapsePhone();
+      apiManager.open();
     }
   })) {
     registry.register(app);
@@ -6257,7 +6932,7 @@ async function init() {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 23:38"}`;
+  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-27 01:59"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {

@@ -25,6 +25,8 @@ import { createBuiltinApps } from './apps'
 import { createNewvarRuntime } from './apps/newvar/runtime'
 import { createNewvarDesigner } from './apps/newvar/designer'
 import { NEWVAR_CHANNEL, NEWVAR_APP_ID } from './apps/newvar/config'
+import { createApiManager } from './apps/api/manager'
+import { API_APP_ID, sanitizeAppData } from './apps/api/core'
 
 declare global {
   interface Window {
@@ -144,6 +146,15 @@ async function init(): Promise<void> {
     onClosed: () => phone.openApp('newvar'),
   })
 
+  // 「API 站点管理」弹窗：站点档案存 App 私有存储（saveSettingsOnly，不触发立绘刷新）
+  const apiManager = createApiManager({
+    getData: () => sanitizeAppData(settings.apps[API_APP_ID]),
+    setData: (next) => {
+      saveSettingsOnly({ ...settings, apps: { ...settings.apps, [API_APP_ID]: next } })
+    },
+    onClosed: () => phone.openApp('api'),
+  })
+
   for (const app of createBuiltinApps({
     // 从手机开图库弹窗：先收起手机（避免挡在弹窗上），来源标记=手机（关闭后回图库页）
     openGalleryManager: () => {
@@ -154,6 +165,10 @@ async function init(): Promise<void> {
     openNewvarDesigner: () => {
       collapsePhone()
       newvarDesigner.open()
+    },
+    openApiManager: () => {
+      collapsePhone()
+      apiManager.open()
     },
   })) {
     registry.register(app)

@@ -1760,3 +1760,118 @@
     position: static;
   }
 }
+
+/* ============ 「API」App（stapi-）：站点快速切换行 / 状态点 / 模型选择覆盖层 ============ */
+
+/* 手机页站点行：整行可点即切换，使用中高亮 + ✓ */
+.stapi-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+}
+.stapi-row:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.stapi-row:focus-visible {
+  outline: 1px solid rgba(255, 255, 255, 0.4);
+  outline-offset: 2px;
+}
+.stapi-row-on {
+  border-color: rgba(130, 200, 255, 0.55);
+  background: rgba(130, 200, 255, 0.08);
+}
+.stapi-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stapi-row-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stapi-row-sub {
+  font-size: 11.5px;
+  opacity: 0.65;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stapi-row-mark {
+  flex: none;
+  opacity: 0.8;
+}
+
+/* 连接状态点（当前连接卡） */
+.stapi-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #d05c5c;
+  vertical-align: middle;
+}
+.stapi-dot-on {
+  background: #57c98a;
+}
+
+/* 模型选择覆盖层：挂在管理弹窗 .so-manager（relative）内部 */
+.stapi-picker {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 12px;
+}
+.stapi-picker-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(480px, 92%);
+  max-height: 72%;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(22, 22, 28, 0.97);
+}
+.stapi-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.stapi-picker-list {
+  overflow: auto;
+  min-height: 80px;
+}
+.stapi-picker-item {
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: var(--monoFontFamily, ui-monospace, monospace);
+  font-size: 12.5px;
+}
+.stapi-picker-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.stapi-picker-item:focus-visible {
+  outline: 1px solid rgba(255, 255, 255, 0.4);
+  outline-offset: -1px;
+}
