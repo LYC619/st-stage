@@ -12,7 +12,7 @@
 
 import type { PlatformAdapter } from '../../core/adapter'
 import type { PluginSettings } from '../../core/types'
-import { createDefaultSettings } from '../../core/types'
+import { createDefaultSettings, INJECTION_DEPTH_DEFAULT } from '../../core/types'
 import { migrateSettings } from '../../core/migrate'
 import { getPresetPacks, isPresetPack } from '../../core/presets'
 import { sanitizePathSegment } from '../../core/naming'
@@ -131,10 +131,11 @@ export class STAdapter implements PlatformAdapter {
     return ctx.name2 ?? ''
   }
 
-  injectPrompt(prompt: string): void {
+  injectPrompt(prompt: string, depth = INJECTION_DEPTH_DEFAULT): void {
     const ctx = getContext()
-    // position 1 = IN_PROMPT（拼接到 prompt 中），depth 4 = 距末尾 4 层，贴近对话又不干扰最新消息
-    ctx.setExtensionPrompt(MODULE_NAME, prompt, 1, 4)
+    // position 1 = IN_CHAT：以 system 角色按 depth 插入对话楼层流（2026-07 实测确认，非 IN_PROMPT）
+    // depth 默认 4 = 距末尾 4 层，贴近对话又不干扰最新消息；可在「立绘」App 调整
+    ctx.setExtensionPrompt(MODULE_NAME, prompt, 1, depth)
   }
 
   onMessageReceived(handler: (messageText: string) => void): () => void {

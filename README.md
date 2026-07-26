@@ -22,7 +22,7 @@ https://github.com/LYC619/st-stage
    - 一个**立绘悬浮窗**（初次是「未绑定立绘包」的占位提示）
    - 一个可拖动的 **📱 悬浮图标**（小手机入口，立绘设置和图库都在里面）
 
-> ⚠️ **更新扩展后界面没变化？**多半是浏览器缓存了旧文件：电脑 Ctrl+F5 强制刷新；手机浏览器请在站点设置里清除缓存后重进（ST 加载扩展文件没有缓存刷新机制）。
+> ⚠️ **更新扩展后界面没变化？**先看 ST 扩展设置面板底部的版本号（v0.6 起显示 `vX.Y.Z（构建 时间）`）：版本号变了说明已加载新版；没变则多半是**仓库没重新构建/提交**，不是缓存。v0.6 起 `index.js` 是稳定加载器，每次都用 `version.json` 拉最新版本号给 `bundle.js`/`style.css` 破缓存，正常情况无需手动清缓存；极端情况电脑 Ctrl+F5 兜底。
 
 > 📍 **设置在哪？** ST 扩展设置页只留两个总开关（**启用立绘功能**、**显示手机**）。立绘的显示方式、楼层数、轮播、Prompt 模式在手机「🎭 立绘」App 里；图包管理、上传、分享、imgbb/图床设置在手机「🗂 图库」App 里。
 
@@ -201,21 +201,60 @@ pnpm dev        # 启动网页测试环境 http://localhost:3000
 pnpm test       # core 层单元测试（vitest）
 pnpm lint       # ESLint
 pnpm typecheck  # tsc --noEmit
-pnpm build:ext  # 重新打包 ST 扩展（产物输出到根目录 index.js / style.css，需提交）
+pnpm build:ext  # 重新打包 ST 扩展（产物：根目录 index.js / bundle.js / version.json / style.css，全部需提交）
 ```
 
-### 目录结构
+### 目录结构（平台 / 功能 App / 产物）
 
-| 路径 | 说明 |
-| --- | --- |
-| `manifest.json` / `index.js` / `style.css` | ST 扩展产物（根目录，供 GitHub 链接安装） |
-| `core/` | 平台无关核心逻辑（标签解析、prompt 构建、包管理、导入导出、分享串、迁移、压缩、手机框架）+ 单元测试 |
-| `st-extension/src/` | ST 扩展源码（适配器 + 原生 DOM UI），经 esbuild 打包为根目录 `index.js` |
-| `app/` `components/` `lib/` | Next.js 网页测试环境 |
-| `public/presets/` | 内置预设立绘图片（随扩展安装一起分发） |
-| `docs/APP-SPEC.md` | 手机 App 开发规范（内部 App 模块为主，兼容旧的第三方注册） |
+st-stage 的定位是「手机底座平台 + 可插拔功能 App」。**加新功能 = 在 `st-extension/src/apps/` 写一个 App 模块**（三步接入见 [docs/APP-SPEC.md](docs/APP-SPEC.md)），不需要新写 ST 扩展插件。
 
-> 注意：修改 `core/` 或 `st-extension/src/` 后必须运行 `pnpm build:ext` 并提交根目录产物，GitHub 安装的用户才能拿到更新。
+```
+根目录（ST 扩展产物，构建生成、必须提交）
+├─ manifest.json          ST 扩展清单（版本号唯一定义点，发版记得 bump）
+├─ index.js               加载器 stub（字节跨版本稳定，热更新入口）
+├─ bundle.js              真实扩展代码（esbuild 单文件 ESM）
+├─ version.json           热更新版本探针（stub 以 no-store 读取破缓存）
+└─ style.css              st-extension/style.css + core/phone-shell.css 拼接
+
+core/                     平台无关核心逻辑（双端共用，vitest 单测在旁边）
+│  ── 手机平台框架 ──
+├─ phone-registry.ts      App 注册表 + PhoneApp/PhoneAppContext 契约 + ctx 工厂
+├─ phone-shell.ts/.css    手机壳（图标/状态栏/Home 栅格/App 生命周期驱动）
+├─ adapter.ts             PlatformAdapter 接口（ST 端/Web 端各自实现）
+├─ types.ts / migrate.ts  设置模型、默认值与版本迁移（含 apps 私有存储命名空间）
+│  ── 立绘功能（首个功能域）──
+├─ sprite-store.ts        包/绑定 CRUD + 三级寻址（resolveSprite）
+├─ address-policy.ts      有效地址与跨包冲突检测
+├─ prompt-builder.ts      注入 prompt（full/精简/few-shot/自定义模板）
+├─ tag-parser.ts          AI 回复中 [立绘:...] 标签提取
+├─ inline-image.ts        楼层内插图标记解析
+├─ pack-io/share-code/pack-split/pack-merge.ts   JSON 导入导出 / 分享串 / 拆包 / 合并
+├─ imgbb.ts / image-compress.ts / sprite-preload.ts   图床直传 / 压缩 / 有界预加载
+└─ naming.ts / presets.ts 名称清洗 / 内置预设包
+
+st-extension/             ST 端（esbuild 打包为根目录产物）
+├─ build.mjs              打包脚本（版本注入 + 热更新三段式产物）
+├─ style.css              扩展基础样式（源文件）
+└─ src/
+   ├─ index.ts            接线层：初始化、注册内置 App、暴露 window.stStage
+   ├─ st-adapter.ts       ST 平台适配（设置持久化/存图/prompt 注入/事件）
+   ├─ settings-panel.ts   ST 扩展设置页（总开关 + 版本号显示）
+   ├─ apps/               ★ 功能 App 都住这里（新功能从这加）
+   │  ├─ index.ts         内置 App 装配清单
+   │  ├─ widgets.ts       App 共享 UI 小部件
+   │  ├─ sprite-app.ts    「立绘」App（显示/轮播/Prompt 设置）
+   │  └─ gallery-app.ts   「图库」App（包管理入口/图床双通道设置）
+   ├─ sprite-manager.ts   图库管理弹窗（上传/导入导出/分享/绑定，图库 App 打开）
+   ├─ overlay-dom.ts      立绘悬浮窗
+   └─ message-postprocess.ts   楼层内标签→图片渲染
+
+app/ components/ lib/     Next.js 网页模拟器（同一套 core + 手机壳，本地开发调试用）
+public/presets/           内置预设立绘图片（随扩展分发）
+docs/APP-SPEC.md          ★ App 开发规范：契约、ctx、样式、安全红线、三步接入
+docs/superpowers/         历史设计文档（plans/specs，归档参考）
+```
+
+> 注意：修改 `core/` 或 `st-extension/src/` 后必须运行 `pnpm build:ext` 并提交根目录产物，GitHub 安装的用户才能拿到更新（热更新会让他们免清缓存）。`.planning/`、`_analysis/`、`reference/` 等本地工作区目录已 gitignore，不随仓库分发。
 
 ### 数据格式
 

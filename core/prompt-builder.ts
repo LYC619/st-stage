@@ -15,7 +15,7 @@ function countInstruction(count: number): string {
   if (count <= 1) {
     return '请在每次回复的末尾，选择一个最贴合当前情境与角色情绪的立绘，以 [立绘:名称] 的格式单独标注。'
   }
-  return `请根据回复内容，按情节顺序选择 ${count} 张立绘，并依次输出 ${count} 个 [立绘:...] 标签（每个单独一行）。`
+  return `请根据回复内容，按情节顺序选择 ${count} 张立绘。每个 [立绘:...] 标签单独占一行，插在触发它的剧情段落之后——随剧情分散在正文中，不要集中堆在回复结尾。`
 }
 
 /**
@@ -70,6 +70,26 @@ function buildScenes(addresses: SpriteAddress[]): PromptScene[] {
   return [...scenes.values()].map(({ seen: _seen, ...scene }) => scene)
 }
 
+/**
+ * N>1 时的插入位置 few-shot：演示标签随剧情分散在正文中。
+ * 示例图名取第一个场景实际存在的 tag——绝不虚构，避免教 AI 拼造不存在的组合。
+ */
+function fewShotExample(scenes: PromptScene[], count: number): string[] {
+  if (count <= 1) return []
+  const scene = scenes[0]
+  if (!scene || scene.tags.length === 0) return []
+  const addr = (tag: string) => (scene.prefix ? `${scene.prefix}/${tag}` : tag)
+  const first = scene.tags[0]
+  const second = scene.tags[1] ?? scene.tags[0]
+  return [
+    '插入位置示例（省略号代表你的正文段落）：',
+    '…剧情段落一…',
+    `[立绘:${addr(first)}]`,
+    '…剧情段落二…',
+    `[立绘:${addr(second)}]`,
+  ]
+}
+
 /** full：每个 role/outfit 场景只写一次，仍完整覆盖所有实际组合。 */
 function buildGroupedFull(addresses: SpriteAddress[], count: number): string {
   const scenes = buildScenes(addresses)
@@ -79,6 +99,7 @@ function buildGroupedFull(addresses: SpriteAddress[], count: number): string {
     ...scenes.map((scene) => `- ${scene.label}：${scene.tags.join('、')}`),
     '输出格式：默认场景直接写 [立绘:表情]；其他场景写 [立绘:场景/表情]。两段地址表示无服装，三级地址表示指定服装。',
     countInstruction(count),
+    ...fewShotExample(scenes, count),
     '只能使用上述场景中实际列出的表情，不要自行拼造不存在的角色/服装/表情组合。',
   ].join('\n')
 }
@@ -123,6 +144,7 @@ function buildShared(addresses: SpriteAddress[], count: number): string {
   }
   lines.push('共有表情可与任一已列场景组合；各场景其余表情只按所在行使用。默认场景直接写 [立绘:表情]，其他场景写 [立绘:场景/表情]。')
   lines.push(countInstruction(count))
+  lines.push(...fewShotExample(scenes, count))
   lines.push('只能使用实际存在的组合，不要自行拼造不存在的角色/服装/表情。')
   return lines.join('\n')
 }
@@ -135,14 +157,25 @@ export function chooseShorterPrompt(grouped: string, shared: string): string {
 /**
  * 主入口：根据三级地址列表构建注入 prompt。
  * addresses 为空时返回空字符串（不注入）。
+ * template 非空时整体替换内置 prompt（用户自定义提示词），支持占位符：
+ *   {清单} → 按场景分组的立绘清单（- 场景：tag、tag…）
+ *   {数量} → 每次回复的立绘数量 N
  */
 export function buildPrompt(
   addresses: SpriteAddress[],
   mode: 'full' | 'repeat',
   count: number,
+  template = '',
 ): string {
   if (addresses.length === 0) return ''
   const n = Math.max(1, Math.round(count) || 1)
+  const custom = template.trim()
+  if (custom) {
+    const list = buildScenes(addresses)
+      .map((scene) => `- ${scene.label}：${scene.tags.join('、')}`)
+      .join('\n')
+    return custom.replace(/\{清单\}/g, list).replace(/\{数量\}/g, String(n))
+  }
   const grouped = buildGroupedFull(addresses, n)
   if (mode === 'full') return grouped
   return chooseShorterPrompt(grouped, buildShared(addresses, n))

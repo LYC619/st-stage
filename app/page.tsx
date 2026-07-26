@@ -53,7 +53,12 @@ export default function Page() {
   const injectionPrompt = useMemo(
     () =>
       settings
-        ? buildPrompt(addresses, settings.multiRolePromptMode, settings.spriteCount)
+        ? buildPrompt(
+            addresses,
+            settings.multiRolePromptMode,
+            settings.spriteCount,
+            settings.promptTemplate,
+          )
         : '',
     [settings, addresses],
   )

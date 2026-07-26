@@ -109,6 +109,19 @@ describe('migrateSettings', () => {
     expect(migrateSettings({ ...V1_SAVED, autoUpload: 'yes' }).autoUpload).toBe(false)
   })
 
+  it('promptTemplate 缺失/非字符串回退空串，已有值保留', () => {
+    expect(migrateSettings(V1_SAVED).promptTemplate).toBe('')
+    expect(migrateSettings({ ...V1_SAVED, promptTemplate: '自定义 {清单}' }).promptTemplate).toBe('自定义 {清单}')
+    expect(migrateSettings({ ...V1_SAVED, promptTemplate: 42 }).promptTemplate).toBe('')
+  })
+
+  it('injectionDepth 缺失/非法回退 4，合法值钳位保留', () => {
+    expect(migrateSettings(V1_SAVED).injectionDepth).toBe(4)
+    expect(migrateSettings({ ...V1_SAVED, injectionDepth: 7 }).injectionDepth).toBe(7)
+    expect(migrateSettings({ ...V1_SAVED, injectionDepth: -3 }).injectionDepth).toBe(0) // 钳位下限
+    expect(migrateSettings({ ...V1_SAVED, injectionDepth: '4' }).injectionDepth).toBe(4) // 类型不对回退默认
+  })
+
   it('spriteDisplayMode 缺失/非法回退 overlay，合法值保留（四期）', () => {
     expect(migrateSettings(V1_SAVED).spriteDisplayMode).toBe('overlay')
     expect(migrateSettings({ ...V1_SAVED, spriteDisplayMode: 'inline' }).spriteDisplayMode).toBe('inline')

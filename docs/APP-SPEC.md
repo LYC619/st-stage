@@ -4,6 +4,16 @@ st-stage 在 SillyTavern 聊天界面提供一个「手机」悬浮框架：一�
 
 > **方向说明（v0.5 起）**：st-stage 的定位是「一个插件、内部装配多个功能」。**新功能建议直接作为内部 App 模块开发**，放进 `st-extension/src/apps/`，加入 `apps/index.ts` 的统一列表，与 st-stage 一起构建发布——不需要拆成独立插件，也不走外部注册。下面的 `window.stStage.registerApp(...)` 外部注册入口**暂时保留兼容**旧用法，但不是当前推荐路径。内部 App 与外部 App 的对象结构完全一致，本规范同样适用。
 
+## 内部 App 三步接入（推荐路径）
+
+以后给 st-stage 加任何新功能，都不用再写独立 ST 扩展，三步：
+
+1. **新建模块**：`st-extension/src/apps/<你的功能>-app.ts`，导出一个返回 `PhoneApp` 对象的工厂函数（结构见下方外部注册示例，`mount`/`ctx` 完全相同；UI 小部件直接复用 `./widgets` 里的 `appButton/toggleRow/selectRow/numberRow/textRow/textareaRow`）。
+2. **加入装配清单**：在 `st-extension/src/apps/index.ts` 的 `createBuiltinApps` 返回数组里加一行。需要访问框架能力（如打开弹窗）就照 `galleryApp` 的样子通过 `BuiltinAppDeps` 传入。
+3. **构建发布**：`pnpm build:ext` 并提交根目录产物。热更新（v0.6 加载器）会让已安装用户在 git pull 后自动拿到新代码，无需清缓存。
+
+App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发立绘刷新）；只有确实要改核心设置才用 `ctx.updateSettings`。
+
 ## 一分钟接入（外部注册，兼容保留）
 
 在你自己的 ST 扩展脚本里（st-stage 加载之后）：

@@ -41,20 +41,19 @@ export function galleryApp(deps: GalleryAppDeps): PhoneApp {
       }
       container.append(list)
 
-      // 图床设置
+      // 图床设置：两条通道并存，界面上明确区分（用户实测反馈有割裂感）
       const hostSection = el('div', 'so-app-section')
       const hostTitle = el('div', 'so-app-title')
-      hostTitle.textContent = '图床'
-      const hint = el('div', 'so-app-desc')
-      hint.textContent =
-        'Key 仅保存在本地浏览器；上传失败时图片仍保留本地。分享串/插图编码使用上面的图床前缀。'
+      hostTitle.textContent = '图床（两条通道，互不影响）'
       hostSection.append(hostTitle)
+
+      const autoDesc = el('div', 'so-app-desc')
+      autoDesc.textContent =
+        '① 自动直传（imgbb）：上传/替换图片时自动传 imgbb 并绑定编号，本地图保留作显示保底，直链用于分享串。'
+      const hint = el('div', 'so-app-desc')
+      hint.textContent = 'Key 仅保存在本地浏览器；上传失败时图片仍保留本地，可稍后补传。'
       hostSection.append(
-        textRow('图床前缀', settings.imageHost, DEFAULT_IMAGE_HOST, (raw) => {
-          const v = raw.trim() || DEFAULT_IMAGE_HOST
-          const value = /^https?:\/\/.+/.test(v) ? (v.endsWith('/') ? v : `${v}/`) : DEFAULT_IMAGE_HOST
-          ctx.updateSettings({ ...ctx.getSettings(), imageHost: value })
-        }),
+        autoDesc,
         textRow(
           'imgbb API Key（仅存本地）',
           settings.imgbbApiKey,
@@ -71,8 +70,20 @@ export function galleryApp(deps: GalleryAppDeps): PhoneApp {
           }
           ctx.updateSettings({ ...cur, autoUpload: v })
         }),
+        hint,
       )
-      hostSection.append(hint)
+
+      const manualDesc = el('div', 'so-app-desc')
+      manualDesc.textContent =
+        '② 手动编码通道：「按编码添加」和分享串/插图编码解析时，用下面前缀拼接完整地址（默认 catbox）。'
+      hostSection.append(
+        manualDesc,
+        textRow('图床前缀', settings.imageHost, DEFAULT_IMAGE_HOST, (raw) => {
+          const v = raw.trim() || DEFAULT_IMAGE_HOST
+          const value = /^https?:\/\/.+/.test(v) ? (v.endsWith('/') ? v : `${v}/`) : DEFAULT_IMAGE_HOST
+          ctx.updateSettings({ ...ctx.getSettings(), imageHost: value })
+        }),
+      )
       container.append(hostSection)
     },
   }

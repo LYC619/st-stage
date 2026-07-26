@@ -20,9 +20,9 @@ export interface PlatformAdapter {
   getCurrentCharacterName(): string
   /**
    * 注入/更新 system prompt。传空字符串表示清除注入。
-   * ST 端使用 setExtensionPrompt；Web 端更新「注入预览」状态。
+   * ST 端使用 setExtensionPrompt（depth = IN_CHAT 距末尾楼层数，缺省 4）；Web 端更新「注入预览」状态。
    */
-  injectPrompt(prompt: string): void
+  injectPrompt(prompt: string, depth?: number): void
   /**
    * 订阅「收到 AI 消息」事件，回调收到消息全文。
    * 返回取消订阅函数。

@@ -15,6 +15,8 @@
 import type { CharacterBinding, PluginSettings, SpritePack } from './types'
 import {
   createDefaultSettings,
+  INJECTION_DEPTH_MAX,
+  INJECTION_DEPTH_MIN,
   RECENT_FLOORS_MAX,
   RECENT_FLOORS_MIN,
   SETTINGS_VERSION,
@@ -81,6 +83,12 @@ export function migrateSettings(saved: unknown): PluginSettings {
       typeof raw.spriteCount === 'number' && Number.isFinite(raw.spriteCount)
         ? Math.min(SPRITE_COUNT_MAX, Math.max(SPRITE_COUNT_MIN, Math.round(raw.spriteCount)))
         : defaults.spriteCount,
+    injectionDepth:
+      typeof raw.injectionDepth === 'number' && Number.isFinite(raw.injectionDepth)
+        ? Math.min(INJECTION_DEPTH_MAX, Math.max(INJECTION_DEPTH_MIN, Math.round(raw.injectionDepth)))
+        : defaults.injectionDepth,
+    promptTemplate:
+      typeof raw.promptTemplate === 'string' ? raw.promptTemplate : defaults.promptTemplate,
     imgbbApiKey: typeof raw.imgbbApiKey === 'string' ? raw.imgbbApiKey : defaults.imgbbApiKey,
     autoUpload: typeof raw.autoUpload === 'boolean' ? raw.autoUpload : defaults.autoUpload,
     packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],

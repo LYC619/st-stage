@@ -79,6 +79,15 @@ export class WebAdapter implements PlatformAdapter {
   emitMessage(text: string): void {
     for (const handler of this.messageHandlers) handler(text)
   }
+
+  /**
+   * 清空本地持久化数据（localStorage 残留是「硬刷新也不更新」的真正原因——
+   * Ctrl+Shift+R 不清 localStorage，换浏览器等于换一份空存储）
+   */
+  clearStorage(): void {
+    if (typeof window === 'undefined') return
+    window.localStorage.removeItem(STORAGE_KEY)
+  }
 }
 
 export const webAdapter = new WebAdapter()

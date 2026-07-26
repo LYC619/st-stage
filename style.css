@@ -259,8 +259,9 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  width: min(760px, 94vw);
-  max-height: 84vh;
+  /* 管理立绘时不需要同时用 ST 其他功能，窗口尽量大（用户实测反馈） */
+  width: min(1200px, 96vw);
+  max-height: 92vh;
   padding: 16px;
   border-radius: 12px;
   border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));

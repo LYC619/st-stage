@@ -1,0 +1,3952 @@
+// core/tag-parser.ts
+var TAG_REGEX = /[[【]\s*立绘\s*[:：]\s*([^\]】]+?)\s*[\]】]/g;
+function extractTags(text) {
+  const tags = [];
+  let match;
+  const regex = new RegExp(TAG_REGEX.source, "g");
+  while ((match = regex.exec(text)) !== null) {
+    const tag = match[1].trim();
+    if (tag) tags.push(tag);
+  }
+  return tags;
+}
+function stripTags(text) {
+  return text.replace(new RegExp(TAG_REGEX.source, "g"), "").replace(/[ \t]+$/gm, "");
+}
+function replaceTags(text, replacer) {
+  return text.replace(new RegExp(TAG_REGEX.source, "g"), (raw, address) => {
+    const trimmed = address.trim();
+    if (!trimmed) return raw;
+    const out = replacer(trimmed, raw);
+    return out === null ? raw : out;
+  });
+}
+function hasTag(text) {
+  return new RegExp(TAG_REGEX.source).test(text);
+}
+
+// core/prompt-builder.ts
+function countInstruction(count) {
+  if (count <= 1) {
+    return "请在每次回复的末尾，选择一个最贴合当前情境与角色情绪的立绘，以 [立绘:名称] 的格式单独标注。";
+  }
+  return `请根据回复内容，按情节顺序选择 ${count} 张立绘。每个 [立绘:...] 标签单独占一行，插在触发它的剧情段落之后——随剧情分散在正文中，不要集中堆在回复结尾。`;
+}
+function sceneKey(a) {
+  return `${a.role}|${a.outfit}`;
+}
+function sceneLabel(a) {
+  if (a.role && a.outfit) return `${a.role}/${a.outfit}`;
+  if (a.role) return a.role;
+  return "默认";
+}
+function scenePrefix(a) {
+  if (a.role && a.outfit) return `${a.role}/${a.outfit}`;
+  if (a.role) return a.role;
+  return "";
+}
+function buildScenes(addresses) {
+  const scenes = /* @__PURE__ */ new Map();
+  for (const address of addresses) {
+    const key = sceneKey(address);
+    let scene = scenes.get(key);
+    if (!scene) {
+      scene = {
+        key,
+        label: sceneLabel(address),
+        prefix: scenePrefix(address),
+        tags: [],
+        seen: /* @__PURE__ */ new Set()
+      };
+      scenes.set(key, scene);
+    }
+    if (!scene.seen.has(address.tag)) {
+      scene.seen.add(address.tag);
+      scene.tags.push(address.tag);
+    }
+  }
+  return [...scenes.values()].map(({ seen: _seen, ...scene }) => scene);
+}
+function fewShotExample(scenes, count) {
+  if (count <= 1) return [];
+  const scene = scenes[0];
+  if (!scene || scene.tags.length === 0) return [];
+  const addr = (tag) => scene.prefix ? `${scene.prefix}/${tag}` : tag;
+  const first = scene.tags[0];
+  const second = scene.tags[1] ?? scene.tags[0];
+  return [
+    "插入位置示例（省略号代表你的正文段落）：",
+    "…剧情段落一…",
+    `[立绘:${addr(first)}]`,
+    "…剧情段落二…",
+    `[立绘:${addr(second)}]`
+  ];
+}
+function buildGroupedFull(addresses, count) {
+  const scenes = buildScenes(addresses);
+  return [
+    "[角色立绘系统]",
+    "可用立绘（按场景）：",
+    ...scenes.map((scene) => `- ${scene.label}：${scene.tags.join("、")}`),
+    "输出格式：默认场景直接写 [立绘:表情]；其他场景写 [立绘:场景/表情]。两段地址表示无服装，三级地址表示指定服装。",
+    countInstruction(count),
+    ...fewShotExample(scenes, count),
+    "只能使用上述场景中实际列出的表情，不要自行拼造不存在的角色/服装/表情组合。"
+  ].join("\n");
+}
+function buildShared(addresses, count) {
+  const scenes = buildScenes(addresses);
+  if (scenes.length <= 1) return buildGroupedFull(addresses, count);
+  const allTags = [];
+  const seenTags = /* @__PURE__ */ new Set();
+  for (const scene of scenes) {
+    for (const tag of scene.tags) {
+      if (seenTags.has(tag)) continue;
+      seenTags.add(tag);
+      allTags.push(tag);
+    }
+  }
+  const sharedTags = allTags.filter((tag) => scenes.every((scene) => scene.tags.includes(tag)));
+  if (sharedTags.length === 0) return buildGroupedFull(addresses, count);
+  const sharedSet = new Set(sharedTags);
+  const remainders = scenes.map((scene) => ({
+    scene,
+    tags: scene.tags.filter((tag) => !sharedSet.has(tag))
+  }));
+  const labels = scenes.map(
+    (scene) => scene.prefix ? scene.label : `${scene.label}（直接写表情）`
+  );
+  const lines = [
+    "[角色立绘系统]",
+    `可用场景：${labels.join("、")}`,
+    `共有表情（适用于全部场景）：${sharedTags.join("、")}`
+  ];
+  const withRemainder = remainders.filter((item) => item.tags.length > 0);
+  if (withRemainder.length > 0) {
+    lines.push("各场景其余表情：");
+    lines.push(...withRemainder.map(({ scene, tags }) => `- ${scene.label}：${tags.join("、")}`));
+  }
+  lines.push("共有表情可与任一已列场景组合；各场景其余表情只按所在行使用。默认场景直接写 [立绘:表情]，其他场景写 [立绘:场景/表情]。");
+  lines.push(countInstruction(count));
+  lines.push(...fewShotExample(scenes, count));
+  lines.push("只能使用实际存在的组合，不要自行拼造不存在的角色/服装/表情。");
+  return lines.join("\n");
+}
+function chooseShorterPrompt(grouped, shared) {
+  return shared.length < grouped.length ? shared : grouped;
+}
+function buildPrompt(addresses, mode, count, template = "") {
+  if (addresses.length === 0) return "";
+  const n = Math.max(1, Math.round(count) || 1);
+  const custom = template.trim();
+  if (custom) {
+    const list = buildScenes(addresses).map((scene) => `- ${scene.label}：${scene.tags.join("、")}`).join("\n");
+    return custom.replace(/\{清单\}/g, list).replace(/\{数量\}/g, String(n));
+  }
+  const grouped = buildGroupedFull(addresses, n);
+  if (mode === "full") return grouped;
+  return chooseShorterPrompt(grouped, buildShared(addresses, n));
+}
+
+// core/types.ts
+var SETTINGS_VERSION = 3;
+var RECENT_FLOORS_DEFAULT = 6;
+var RECENT_FLOORS_MIN = 1;
+var RECENT_FLOORS_MAX = 50;
+var SPRITE_COUNT_DEFAULT = 1;
+var SPRITE_COUNT_MIN = 1;
+var SPRITE_COUNT_MAX = 10;
+var INJECTION_DEPTH_DEFAULT = 4;
+var INJECTION_DEPTH_MIN = 0;
+var INJECTION_DEPTH_MAX = 100;
+var DEFAULT_IMAGE_HOST = "https://files.catbox.moe/";
+function getSpriteSource(sprite) {
+  if (sprite.url.startsWith("data:")) return "embedded";
+  if (/^https?:\/\//.test(sprite.url)) return "hosted";
+  return "local";
+}
+function getPackCover(pack) {
+  if (pack.coverTag) {
+    const cover = pack.sprites.find((s) => s.tag === pack.coverTag);
+    if (cover) return cover;
+  }
+  return pack.sprites[0] ?? null;
+}
+function spriteRole(pack, sprite) {
+  return (sprite.group ?? "").trim() || (pack.roleName ?? "").trim();
+}
+function spriteOutfit(pack, sprite) {
+  return (sprite.outfit ?? "").trim() || (pack.outfit ?? "").trim();
+}
+function spriteAddress(pack, sprite) {
+  return { role: spriteRole(pack, sprite), outfit: spriteOutfit(pack, sprite), tag: sprite.tag };
+}
+function formatAddress(a) {
+  if (a.role && a.outfit) return `${a.role}/${a.outfit}/${a.tag}`;
+  if (a.role) return `${a.role}/${a.tag}`;
+  return a.tag;
+}
+function parseAddress(address) {
+  const parts = address.split("/").map((s) => s.trim());
+  if (parts.length >= 3) {
+    return { role: parts[0], outfit: parts[1], tag: parts.slice(2).join("/") };
+  }
+  if (parts.length === 2) return { role: parts[0], outfit: "", tag: parts[1] };
+  return { role: "", outfit: "", tag: parts[0] ?? "" };
+}
+function createDefaultSettings() {
+  return {
+    settingsVersion: SETTINGS_VERSION,
+    enabled: true,
+    hideTagInMessage: false,
+    spriteDisplayMode: "overlay",
+    renderInlineImages: false,
+    imageHost: DEFAULT_IMAGE_HOST,
+    overlay: { x: 24, y: 80, width: 220 },
+    overlayHidden: false,
+    recentFloors: RECENT_FLOORS_DEFAULT,
+    phone: { x: 24, y: 320, open: false },
+    showPhone: true,
+    autoSwitch: false,
+    autoSwitchSeconds: 3,
+    multiRole: false,
+    multiRolePromptMode: "full",
+    spriteCount: SPRITE_COUNT_DEFAULT,
+    injectionDepth: INJECTION_DEPTH_DEFAULT,
+    promptTemplate: "",
+    imgbbApiKey: "",
+    autoUpload: false,
+    packs: [],
+    bindings: [],
+    apps: {}
+  };
+}
+
+// core/naming.ts
+var TAG_MAX_LENGTH = 20;
+var PACK_NAME_MAX_LENGTH = 30;
+var DESCRIPTION_MAX_LENGTH = 200;
+var CONTROL_CHARS = new RegExp("[\\u0000-\\u001f\\u007f]", "g");
+var TAG_FORBIDDEN = /[[\]【】|=,，:：@/\\<>"'`]/g;
+var PACK_NAME_FORBIDDEN = /[|=@<>"'`]/g;
+var PATH_SEGMENT_ALLOWED = /[^0-9A-Za-z一-鿿぀-ヿ .\-_]/g;
+function normalizeTag(raw) {
+  return raw.replace(CONTROL_CHARS, "").replace(TAG_FORBIDDEN, "").replace(/\s+/g, " ").trim().slice(0, TAG_MAX_LENGTH).trim();
+}
+function fileNameToTag(fileName) {
+  return normalizeTag(fileName.replace(/\.[^.]+$/, ""));
+}
+var NAME_SEPARATOR = /[_\-–—\s]+/;
+function stripExt(fileName) {
+  return fileName.replace(/\.[^.]+$/, "");
+}
+function parseSpriteFileName(fileName) {
+  const base = stripExt(fileName).trim();
+  const parts = splitAtMost(base, NAME_SEPARATOR, 3);
+  if (parts.length >= 3) {
+    const role = normalizeTag(parts[0]);
+    const outfit = normalizeTag(parts[1]);
+    const tag = normalizeTag(parts[2]);
+    if (role && outfit && tag) return { role, outfit, tag };
+    if (role && tag) return { role, outfit: "", tag };
+    return { role: "", outfit: "", tag: fileNameToTag(base) };
+  }
+  if (parts.length === 2) {
+    const role = normalizeTag(parts[0]);
+    const tag = normalizeTag(parts[1]);
+    if (role && tag) return { role, outfit: "", tag };
+    return { role: "", outfit: "", tag: fileNameToTag(base) };
+  }
+  return { role: "", outfit: "", tag: fileNameToTag(base) };
+}
+function splitAtMost(text, sep, n) {
+  const out = [];
+  let rest = text;
+  const single = new RegExp(sep.source);
+  while (out.length < n - 1) {
+    const m = single.exec(rest);
+    if (!m || m.index < 0) break;
+    out.push(rest.slice(0, m.index));
+    rest = rest.slice(m.index + m[0].length);
+  }
+  out.push(rest);
+  return out;
+}
+function sanitizePackName(raw) {
+  return raw.replace(CONTROL_CHARS, "").replace(PACK_NAME_FORBIDDEN, "").replace(/\s+/g, " ").trim().slice(0, PACK_NAME_MAX_LENGTH).trim();
+}
+function sanitizeDescription(raw) {
+  return raw.replace(CONTROL_CHARS, "").replace(/[<>]/g, "").trim().slice(0, DESCRIPTION_MAX_LENGTH).trim();
+}
+function sanitizePathSegment(raw) {
+  return raw.replace(CONTROL_CHARS, "").replace(PATH_SEGMENT_ALLOWED, "").replace(/\.{2,}/g, ".").replace(/^[. ]+|[. ]+$/g, "").slice(0, 40).trim();
+}
+
+// core/address-policy.ts
+function addressConflictKey(address) {
+  return JSON.stringify([address.role, address.outfit, address.tag]);
+}
+function effectiveSpriteAddress(pack, sprite, multiPack) {
+  const outfit = spriteOutfit(pack, sprite);
+  const semanticRole = (sprite.group ?? "").trim() || (pack.roleName ?? "").trim();
+  const role = semanticRole || (multiPack || outfit ? normalizeTag(pack.name) : "");
+  return { role, outfit, tag: sprite.tag };
+}
+function findAddressConflicts(packs) {
+  const multiPack = packs.length > 1;
+  const grouped = /* @__PURE__ */ new Map();
+  for (const pack of packs) {
+    for (const sprite of pack.sprites) {
+      const address = effectiveSpriteAddress(pack, sprite, multiPack);
+      const key = addressConflictKey(address);
+      let entry = grouped.get(key);
+      if (!entry) {
+        entry = { address, owners: /* @__PURE__ */ new Map() };
+        grouped.set(key, entry);
+      }
+      if (!entry.owners.has(pack.id)) {
+        entry.owners.set(pack.id, {
+          packId: pack.id,
+          packName: pack.name,
+          spriteUrl: sprite.url
+        });
+      }
+    }
+  }
+  const conflicts = [];
+  for (const [key, entry] of grouped) {
+    if (entry.owners.size < 2) continue;
+    conflicts.push({
+      key,
+      address: entry.address,
+      formattedAddress: formatAddress(entry.address),
+      owners: [...entry.owners.values()]
+    });
+  }
+  return conflicts;
+}
+
+// core/sprite-store.ts
+function genId() {
+  return `pack_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+function getActivePacks(settings, characterName) {
+  const binding = settings.bindings.find((b) => b.characterName === characterName && b.enabled);
+  if (!binding) return [];
+  const byId = new Map(settings.packs.map((p) => [p.id, p]));
+  return binding.packIds.map((id) => byId.get(id)).filter((p) => p != null);
+}
+function packBaseAlias(pack) {
+  return normalizeTag(pack.name ?? "") || "包";
+}
+function getActiveAddresses(settings, characterName) {
+  const packs = getActivePacks(settings, characterName);
+  const conflicted = new Set(findAddressConflicts(packs).map((conflict) => conflict.key));
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const c of flatten(packs)) {
+    const address = { role: c.role, outfit: c.outfit, tag: c.sprite.tag };
+    if (conflicted.has(addressConflictKey(address))) continue;
+    const key = formatAddress(address);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(address);
+  }
+  return out;
+}
+function spriteGroup(sprite) {
+  return sprite.group ?? "";
+}
+function spriteOutfitTag(sprite) {
+  return sprite.outfit ?? "";
+}
+function effectiveRole(pack, group) {
+  return group.trim() || (pack.roleName ?? "").trim();
+}
+function effectiveOutfitOf(pack, outfit) {
+  return outfit.trim() || (pack.outfit ?? "").trim();
+}
+function normalizeIdentityFields(pack, sprite) {
+  const next = { ...sprite };
+  if ((next.group ?? "").trim() === (pack.roleName ?? "").trim()) delete next.group;
+  if ((next.outfit ?? "").trim() === (pack.outfit ?? "").trim()) delete next.outfit;
+  return next;
+}
+function sameIdentity(pack, s, tag, group, outfit) {
+  return s.tag === tag && effectiveRole(pack, spriteGroup(s)) === effectiveRole(pack, group) && effectiveOutfitOf(pack, spriteOutfitTag(s)) === effectiveOutfitOf(pack, outfit);
+}
+function identityKey(pack, sprite) {
+  return JSON.stringify([
+    effectiveRole(pack, spriteGroup(sprite)),
+    effectiveOutfitOf(pack, spriteOutfitTag(sprite)),
+    sprite.tag
+  ]);
+}
+function dedupeSprites(pack, sprites) {
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  for (const raw of sprites) {
+    const sprite = normalizeIdentityFields(pack, raw);
+    const key = identityKey(pack, sprite);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(sprite);
+  }
+  return out;
+}
+function previewBindingAddressChanges(before, after, characterName) {
+  const oldAddresses = getActiveAddresses(before, characterName).map(formatAddress);
+  const newAddresses = getActiveAddresses(after, characterName).map(formatAddress);
+  const oldSet = new Set(oldAddresses);
+  const newSet = new Set(newAddresses);
+  return {
+    removed: oldAddresses.filter((address) => !newSet.has(address)),
+    added: newAddresses.filter((address) => !oldSet.has(address))
+  };
+}
+function getGroups(pack) {
+  const seen = [];
+  for (const s of pack.sprites) {
+    const g = spriteGroup(s);
+    if (g && !seen.includes(g)) seen.push(g);
+  }
+  return seen;
+}
+function flatten(packs) {
+  const multiPack = packs.length > 1;
+  const out = [];
+  for (const pack of packs) {
+    const base = packBaseAlias(pack);
+    for (const sprite of pack.sprites) {
+      const address = effectiveSpriteAddress(pack, sprite, multiPack);
+      out.push({
+        pack,
+        sprite,
+        role: address.role,
+        outfit: address.outfit,
+        baseAlias: base
+      });
+    }
+  }
+  return out;
+}
+function nameMatches(actual, query) {
+  if (actual === query) return true;
+  return actual.length > 0 && (actual.includes(query) || query.includes(actual));
+}
+function filterByName(pool, query, of) {
+  const exact = pool.filter((c) => of(c) === query);
+  if (exact.length > 0) return exact;
+  return pool.filter((c) => nameMatches(of(c), query));
+}
+function lockByRole(pool, query) {
+  if (/[@=]/.test(query)) return [];
+  const roleMatches = filterByName(pool, query, (c) => c.role);
+  if (roleMatches.length > 0) return roleMatches;
+  return filterByName(pool, query, (c) => c.baseAlias);
+}
+function matchUniqueTagInPool(pool, tag) {
+  const exact = pool.filter((c) => c.sprite.tag === tag);
+  if (exact.length === 1) return exact[0].sprite;
+  if (exact.length > 1) {
+    const packIds = new Set(exact.map((c) => c.pack.id));
+    return packIds.size === 1 ? exact[0].sprite : null;
+  }
+  const fuzzy = pool.filter((c) => nameMatches(c.sprite.tag, tag));
+  if (fuzzy.length === 1) return fuzzy[0].sprite;
+  if (fuzzy.length > 1) {
+    const packIds = new Set(fuzzy.map((c) => c.pack.id));
+    return packIds.size === 1 ? fuzzy[0].sprite : null;
+  }
+  return null;
+}
+function resolveSprite(packs, address) {
+  const raw = address.trim();
+  if (!raw) return null;
+  const { role, outfit, tag } = parseAddress(raw);
+  if (!tag) return null;
+  let pool = flatten(packs);
+  if (role) {
+    pool = lockByRole(pool, role);
+    if (pool.length === 0) return null;
+    if (!outfit) {
+      pool = pool.filter((c) => c.outfit === "");
+      if (pool.length === 0) return null;
+    }
+  }
+  if (outfit) {
+    pool = filterByName(pool, outfit, (c) => c.outfit);
+    if (pool.length === 0) return null;
+  }
+  return matchUniqueTagInPool(pool, tag);
+}
+function resolveSprites(packs, addresses) {
+  const out = [];
+  for (const address of addresses) {
+    const sprite = resolveSprite(packs, address);
+    if (sprite && out[out.length - 1] !== sprite) out.push(sprite);
+  }
+  return out;
+}
+function success(settings) {
+  return { ok: true, settings };
+}
+function conflictsForBinding(settings, characterName, packIds) {
+  const byId = new Map(settings.packs.map((pack) => [pack.id, pack]));
+  const packs = packIds.map((id) => byId.get(id)).filter((pack) => pack != null);
+  return findAddressConflicts(packs).map((conflict) => ({ ...conflict, characterName }));
+}
+function uniquePackIds(packIds) {
+  const ids = [];
+  for (const id of packIds) if (id && !ids.includes(id)) ids.push(id);
+  return ids;
+}
+function withBinding(settings, characterName, packIds, enabled) {
+  const others = settings.bindings.filter((binding) => binding.characterName !== characterName);
+  if (packIds.length === 0) return { ...settings, bindings: others };
+  return {
+    ...settings,
+    bindings: [...others, { characterName, packIds, enabled }]
+  };
+}
+function upsertPack(settings, pack) {
+  const exists = settings.packs.some((p) => p.id === pack.id);
+  const next = {
+    ...settings,
+    packs: exists ? settings.packs.map((p) => p.id === pack.id ? pack : p) : [...settings.packs, pack]
+  };
+  const conflicts = [];
+  for (const binding of next.bindings) {
+    if (!binding.enabled || !binding.packIds.includes(pack.id)) continue;
+    conflicts.push(...conflictsForBinding(next, binding.characterName, binding.packIds));
+  }
+  return conflicts.length > 0 ? { ok: false, conflicts } : success(next);
+}
+function removePack(settings, packId) {
+  const bindings = settings.bindings.map((b) => ({ ...b, packIds: b.packIds.filter((id) => id !== packId) })).filter((b) => b.packIds.length > 0);
+  return {
+    ...settings,
+    packs: settings.packs.filter((p) => p.id !== packId),
+    bindings
+  };
+}
+function bindPack(settings, characterName, packId) {
+  const existing = settings.bindings.find((b) => b.characterName === characterName);
+  const ids = uniquePackIds([...existing?.packIds ?? [], packId]);
+  const conflicts = conflictsForBinding(settings, characterName, ids);
+  if (conflicts.length > 0) return { ok: false, conflicts };
+  return success(withBinding(settings, characterName, ids, true));
+}
+function unbindPack(settings, characterName, packId) {
+  const bindings = settings.bindings.map(
+    (b) => b.characterName === characterName ? { ...b, packIds: b.packIds.filter((id) => id !== packId) } : b
+  ).filter((b) => b.packIds.length > 0);
+  return { ...settings, bindings };
+}
+function setBinding(settings, characterName, packIds) {
+  const ids = uniquePackIds(packIds);
+  const conflicts = conflictsForBinding(settings, characterName, ids);
+  if (conflicts.length > 0) return { ok: false, conflicts };
+  const prev = settings.bindings.find((b) => b.characterName === characterName);
+  return success(withBinding(settings, characterName, ids, prev?.enabled ?? true));
+}
+function reorderBinding(settings, characterName, fromIndex, toIndex) {
+  return {
+    ...settings,
+    bindings: settings.bindings.map((b) => {
+      if (b.characterName !== characterName) return b;
+      const ids = [...b.packIds];
+      if (fromIndex < 0 || fromIndex >= ids.length || toIndex < 0 || toIndex >= ids.length) return b;
+      const [moved] = ids.splice(fromIndex, 1);
+      ids.splice(toIndex, 0, moved);
+      return { ...b, packIds: ids };
+    })
+  };
+}
+function touchPack(pack, sprites) {
+  return { ...pack, sprites, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+}
+function upsertSprite(pack, sprite) {
+  const stored = normalizeIdentityFields(pack, sprite);
+  const g = spriteGroup(stored);
+  const o = spriteOutfitTag(stored);
+  const sprites = [];
+  let replaced = false;
+  for (const current of pack.sprites) {
+    if (sameIdentity(pack, current, stored.tag, g, o)) {
+      if (!replaced) {
+        sprites.push(stored);
+        replaced = true;
+      }
+      continue;
+    }
+    sprites.push(current);
+  }
+  if (!replaced) sprites.push(stored);
+  return touchPack(pack, dedupeSprites(pack, sprites));
+}
+function removeSprite(pack, tag, group = "", outfit = "") {
+  const next = touchPack(
+    pack,
+    pack.sprites.filter((s) => !sameIdentity(pack, s, tag, group, outfit))
+  );
+  if (next.coverTag === tag && !next.sprites.some((s) => s.tag === tag)) delete next.coverTag;
+  return next;
+}
+function renameSprite(pack, oldTag, newTagRaw, group = "", outfit = "") {
+  const newTag = normalizeTag(newTagRaw);
+  if (!newTag) throw new Error("表情名不能为空，且不能包含 [ ] / : | = @ 等符号");
+  if (newTag === oldTag) return pack;
+  if (pack.sprites.some((s) => sameIdentity(pack, s, newTag, group, outfit))) {
+    throw new Error(`表情名「${newTag}」在该分组中已存在`);
+  }
+  const sprites = pack.sprites.map(
+    (s) => sameIdentity(pack, s, oldTag, group, outfit) ? { ...s, tag: newTag } : s
+  );
+  const next = touchPack(pack, sprites);
+  if (next.coverTag === oldTag) next.coverTag = newTag;
+  return next;
+}
+function setSpriteGroup(pack, tag, fromGroup, toGroupRaw, outfit = "") {
+  const toGroup = normalizeTag(toGroupRaw);
+  const sources = new Set(
+    pack.sprites.filter((s) => sameIdentity(pack, s, tag, fromGroup, outfit))
+  );
+  if (pack.sprites.some(
+    (s) => !sources.has(s) && sameIdentity(pack, s, tag, toGroup, outfit)
+  )) {
+    throw new Error(`分组「${toGroup || "未分组"}」中已存在表情「${tag}」`);
+  }
+  const sprites = pack.sprites.map((s) => {
+    if (!sources.has(s)) return s;
+    const next = { ...s };
+    if (toGroup) next.group = toGroup;
+    else delete next.group;
+    return normalizeIdentityFields(pack, next);
+  });
+  return touchPack(pack, dedupeSprites(pack, sprites));
+}
+function moveSprite(pack, fromIndex, toIndex) {
+  const len = pack.sprites.length;
+  if (fromIndex === toIndex || fromIndex < 0 || fromIndex >= len || toIndex < 0 || toIndex >= len) {
+    return pack;
+  }
+  const sprites = [...pack.sprites];
+  const [moved] = sprites.splice(fromIndex, 1);
+  sprites.splice(toIndex, 0, moved);
+  return touchPack(pack, sprites);
+}
+function toggleBinding(settings, characterName, enabled) {
+  const binding = settings.bindings.find((item) => item.characterName === characterName);
+  if (enabled && binding) {
+    const conflicts = conflictsForBinding(settings, characterName, binding.packIds);
+    if (conflicts.length > 0) return { ok: false, conflicts };
+  }
+  return success({
+    ...settings,
+    bindings: settings.bindings.map(
+      (b) => b.characterName === characterName ? { ...b, enabled } : b
+    )
+  });
+}
+
+// core/sprite-preload.ts
+var PRELOAD_ON_ACTIVATE_MAX = 4;
+var PRELOAD_MATCH_MAX = 10;
+function preloadSprites(sprites, max) {
+  if (typeof Image === "undefined" || max <= 0) return;
+  const seen = /* @__PURE__ */ new Set();
+  let loaded = 0;
+  for (const sprite of sprites) {
+    const url = sprite.url;
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.src = url;
+    loaded++;
+    if (loaded >= max) break;
+  }
+}
+function preloadOnActivate(packs) {
+  const firstSprites = [];
+  for (const pack of packs) {
+    const first = pack.sprites[0];
+    if (first) firstSprites.push(first);
+  }
+  preloadSprites(firstSprites, PRELOAD_ON_ACTIVATE_MAX);
+}
+function preloadMatchedSprites(sprites) {
+  preloadSprites(sprites, PRELOAD_MATCH_MAX);
+}
+
+// core/phone-registry.ts
+function createPhoneAppContext(deps) {
+  return {
+    getSettings: () => deps.getSettings(),
+    updateSettings: (next) => deps.updateSettings(next),
+    getCharacterName: () => deps.getCharacterName(),
+    getAppData: () => deps.getSettings().apps[deps.appId],
+    setAppData: (data) => deps.saveSettingsOnly({
+      ...deps.getSettings(),
+      apps: { ...deps.getSettings().apps, [deps.appId]: data }
+    }),
+    goHome: deps.goHome
+  };
+}
+var APP_ID_REGEX = /^[a-z][a-z0-9-]{1,31}$/;
+var PhoneAppRegistry = class {
+  constructor() {
+    this.apps = /* @__PURE__ */ new Map();
+    this.listeners = /* @__PURE__ */ new Set();
+  }
+  /** 注册 App；id 非法或重复时抛错（第三方 App 装载失败不应拖垮框架，调用方自行 catch） */
+  register(app) {
+    if (!APP_ID_REGEX.test(app.id)) {
+      throw new Error(`App id「${app.id}」非法：需匹配 ${APP_ID_REGEX}`);
+    }
+    if (this.apps.has(app.id)) {
+      throw new Error(`App id「${app.id}」已被注册`);
+    }
+    this.apps.set(app.id, app);
+    this.notify();
+  }
+  unregister(id) {
+    if (this.apps.delete(id)) this.notify();
+  }
+  get(id) {
+    return this.apps.get(id);
+  }
+  /** 按 order 升序返回全部 App */
+  list() {
+    return [...this.apps.values()].sort((a, b) => (a.order ?? 100) - (b.order ?? 100));
+  }
+  /** 订阅注册表变化（Home 屏据此重绘），返回退订函数 */
+  subscribe(listener) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+  notify() {
+    for (const l of this.listeners) l();
+  }
+};
+
+// core/phone-shell.ts
+var DRAG_THRESHOLD = 6;
+function createPhoneShell(initialState, deps) {
+  let state = { ...initialState };
+  let activeApp = null;
+  let hidden = false;
+  const fab = document.createElement("div");
+  fab.className = "so-phone-fab";
+  fab.title = "打开手机";
+  fab.textContent = "📱";
+  fab.setAttribute("role", "button");
+  fab.setAttribute("aria-label", "打开手机面板");
+  const shell = document.createElement("div");
+  shell.className = "so-phone-shell";
+  shell.style.display = "none";
+  const statusBar2 = document.createElement("div");
+  statusBar2.className = "so-phone-status";
+  const backBtn = document.createElement("div");
+  backBtn.className = "so-phone-back";
+  backBtn.textContent = "‹";
+  backBtn.title = "返回主屏";
+  backBtn.setAttribute("role", "button");
+  backBtn.setAttribute("aria-label", "返回主屏");
+  backBtn.tabIndex = 0;
+  backBtn.addEventListener("click", () => goHome());
+  backBtn.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      goHome();
+    }
+  });
+  const statusTitle = document.createElement("span");
+  statusTitle.className = "so-phone-status-title";
+  statusTitle.textContent = "st-stage";
+  const clock = document.createElement("span");
+  clock.className = "so-phone-clock";
+  const closeBtn = document.createElement("div");
+  closeBtn.className = "so-phone-close";
+  closeBtn.textContent = "✕";
+  closeBtn.title = "收起手机";
+  closeBtn.setAttribute("role", "button");
+  closeBtn.setAttribute("aria-label", "收起手机");
+  closeBtn.tabIndex = 0;
+  const collapse = () => {
+    leaveApp();
+    commitState({ ...state, open: false });
+  };
+  closeBtn.addEventListener("click", collapse);
+  closeBtn.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      collapse();
+    }
+  });
+  statusBar2.append(backBtn, statusTitle, clock, closeBtn);
+  const screen = document.createElement("div");
+  screen.className = "so-phone-screen";
+  const homeBar = document.createElement("div");
+  homeBar.className = "so-phone-homebar";
+  const homeBtn = document.createElement("div");
+  homeBtn.className = "so-phone-homebtn";
+  homeBtn.title = "返回主屏";
+  homeBtn.setAttribute("role", "button");
+  homeBtn.setAttribute("aria-label", "返回主屏");
+  homeBtn.tabIndex = 0;
+  homeBar.append(homeBtn);
+  shell.append(statusBar2, screen, homeBar);
+  document.body.append(fab, shell);
+  const clockTimer = setInterval(updateClock, 3e4);
+  updateClock();
+  function updateClock() {
+    clock.textContent = (/* @__PURE__ */ new Date()).toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  }
+  function viewportSize() {
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    return {
+      w: Math.round(vv?.width ?? window.innerWidth),
+      h: Math.round(vv?.height ?? window.innerHeight)
+    };
+  }
+  function applyLayout() {
+    if (hidden) {
+      fab.style.display = "none";
+      shell.style.display = "none";
+      return;
+    }
+    const { w: vw, h: vh } = viewportSize();
+    const clampedX = Math.max(0, Math.min(state.x, vw - 56));
+    const clampedY = Math.max(0, Math.min(state.y, vh - 56));
+    fab.style.left = `${clampedX}px`;
+    fab.style.top = `${clampedY}px`;
+    fab.style.display = state.open ? "none" : "flex";
+    shell.style.display = state.open ? "flex" : "none";
+    if (state.open) {
+      const shellW = Math.min(320, vw - 16);
+      const shellH = Math.min(580, vh - 16);
+      shell.style.width = `${shellW}px`;
+      shell.style.height = `${shellH}px`;
+      shell.style.left = `${Math.max(8, Math.min(clampedX, vw - shellW - 8))}px`;
+      shell.style.top = `${Math.max(8, Math.min(clampedY, vh - shellH - 8))}px`;
+    }
+  }
+  applyLayout();
+  window.addEventListener("resize", applyLayout);
+  window.visualViewport?.addEventListener("resize", applyLayout);
+  function commitState(next) {
+    state = next;
+    applyLayout();
+    deps.onStateChange(state);
+  }
+  fab.addEventListener("pointerdown", (startEvent) => {
+    startEvent.preventDefault();
+    const startX = startEvent.clientX;
+    const startY = startEvent.clientY;
+    const origin = { ...state };
+    let moved = false;
+    const onMove = (ev) => {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+      moved = true;
+      state = { ...origin, x: origin.x + dx, y: origin.y + dy };
+      applyLayout();
+    };
+    const onUp = () => {
+      cleanup();
+      if (moved) {
+        commitState(state);
+      } else {
+        commitState({ ...state, open: true });
+        renderScreen();
+      }
+    };
+    const onCancel = () => {
+      cleanup();
+      if (moved) commitState(state);
+    };
+    function cleanup() {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+  });
+  const onHomePress = () => {
+    if (activeApp) {
+      leaveApp();
+      renderScreen();
+    }
+  };
+  homeBtn.addEventListener("click", onHomePress);
+  homeBtn.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onHomePress();
+    }
+  });
+  const unsubscribe = deps.registry.subscribe(() => {
+    if (state.open && !activeApp) renderScreen();
+  });
+  function leaveApp() {
+    if (activeApp) {
+      try {
+        activeApp.unmount?.();
+      } catch (err) {
+        console.error(`[sprite-overlay] App「${activeApp.id}」unmount 失败`, err);
+      }
+      activeApp = null;
+    }
+  }
+  function renderScreen() {
+    screen.innerHTML = "";
+    backBtn.style.display = activeApp ? "flex" : "none";
+    if (activeApp) {
+      statusTitle.textContent = activeApp.name;
+      const container = document.createElement("div");
+      container.className = "so-phone-app-container";
+      screen.append(container);
+      try {
+        activeApp.mount(container, deps.createAppContext(activeApp.id, goHome));
+      } catch (err) {
+        console.error(`[sprite-overlay] App「${activeApp.id}」mount 失败`, err);
+        const errBox = document.createElement("div");
+        errBox.className = "so-phone-app-error";
+        errBox.textContent = "App 打开失败，详见控制台";
+        container.append(errBox);
+      }
+      return;
+    }
+    statusTitle.textContent = "st-stage";
+    const grid = document.createElement("div");
+    grid.className = "so-phone-home-grid";
+    for (const app of deps.registry.list()) {
+      grid.append(renderAppIcon(app));
+    }
+    screen.append(grid);
+  }
+  function renderAppIcon(app) {
+    const cell = document.createElement("div");
+    cell.className = "so-phone-app-icon";
+    cell.setAttribute("role", "button");
+    cell.tabIndex = 0;
+    cell.setAttribute("aria-label", `打开 ${app.name}`);
+    const icon = document.createElement("div");
+    icon.className = "so-phone-app-glyph";
+    icon.textContent = app.icon;
+    const label = document.createElement("div");
+    label.className = "so-phone-app-label";
+    label.textContent = app.name;
+    cell.append(icon, label);
+    const openThis = () => {
+      activeApp = app;
+      renderScreen();
+    };
+    cell.addEventListener("click", openThis);
+    cell.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openThis();
+      }
+    });
+    return cell;
+  }
+  function goHome() {
+    leaveApp();
+    renderScreen();
+  }
+  return {
+    setState(next) {
+      const wasOpen = state.open;
+      state = { ...next };
+      if (wasOpen && !state.open) leaveApp();
+      applyLayout();
+      if (state.open) renderScreen();
+    },
+    openApp(appId) {
+      const app = deps.registry.get(appId);
+      if (!app) return;
+      leaveApp();
+      activeApp = app;
+      if (!state.open) commitState({ ...state, open: true });
+      renderScreen();
+    },
+    setVisible(visible) {
+      hidden = !visible;
+      if (hidden) leaveApp();
+      applyLayout();
+      if (!hidden && state.open) renderScreen();
+    },
+    destroy() {
+      clearInterval(clockTimer);
+      window.removeEventListener("resize", applyLayout);
+      window.visualViewport?.removeEventListener("resize", applyLayout);
+      unsubscribe();
+      leaveApp();
+      fab.remove();
+      shell.remove();
+    }
+  };
+}
+
+// core/share-code.ts
+var SHARE_PREFIX = "stpack1:";
+var SHARE_PREFIX_V2 = "stpack2:";
+var CODE_REGEX = /^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$/;
+function isValidImageCode(code) {
+  return CODE_REGEX.test(code) && !code.includes("..");
+}
+function extractImageCode(url) {
+  if (!/^https?:\/\//.test(url)) return null;
+  const withoutQuery = url.split(/[?#]/)[0];
+  const seg = withoutQuery.split("/").pop() ?? "";
+  return isValidImageCode(seg) ? seg : null;
+}
+function decodeShareString(raw) {
+  const text = raw.trim();
+  if (text.indexOf(SHARE_PREFIX_V2) !== -1) return decodeShareStringV2(text);
+  return decodeShareStringV1(text);
+}
+function decodeShareStringV1(raw) {
+  const text = raw.trim();
+  const prefixIndex = text.indexOf(SHARE_PREFIX);
+  if (prefixIndex === -1) {
+    throw new Error(`导入失败：没有找到 ${SHARE_PREFIX} 开头的分享串`);
+  }
+  const body = text.slice(prefixIndex + SHARE_PREFIX.length).trim();
+  const segments = body.split("|");
+  const name = sanitizePackName(segments[0] ?? "") || "分享立绘包";
+  let host = DEFAULT_IMAGE_HOST;
+  let author;
+  const sprites = [];
+  const seenTags = /* @__PURE__ */ new Set();
+  for (const segment of segments.slice(1)) {
+    const part = segment.trim();
+    if (!part) continue;
+    if (part.startsWith("@")) {
+      const eq2 = part.indexOf("=");
+      if (eq2 === -1) continue;
+      const key = part.slice(1, eq2).trim().toLowerCase();
+      const value = part.slice(eq2 + 1).trim();
+      if (key === "host" && /^https?:\/\/.+/.test(value)) {
+        host = value.endsWith("/") ? value : `${value}/`;
+      } else if (key === "author") {
+        author = sanitizePackName(value) || void 0;
+      }
+      continue;
+    }
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    const tag = normalizeTag(part.slice(0, eq));
+    const code = part.slice(eq + 1).trim();
+    if (!tag || !isValidImageCode(code) || seenTags.has(tag)) continue;
+    seenTags.add(tag);
+    sprites.push({ tag, url: host + code, code });
+  }
+  if (sprites.length === 0) {
+    throw new Error("导入失败：分享串中没有可用的「表情=编码」条目");
+  }
+  const finalSprites = sprites.map((s) => ({ ...s, url: host + s.code }));
+  return { id: genId(), name, author, sprites: finalSprites, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+}
+function shareableUrl(sprite) {
+  if (sprite.remoteUrl && /^https?:\/\//.test(sprite.remoteUrl)) return sprite.remoteUrl;
+  if (/^https?:\/\//.test(sprite.url)) return sprite.url;
+  return null;
+}
+function encodeShareStringV2(pack) {
+  const entries = [];
+  const missing = [];
+  for (const sprite of pack.sprites) {
+    const addr = formatAddress(spriteAddress(pack, sprite));
+    const url = shareableUrl(sprite);
+    if (!url) {
+      missing.push(addr);
+      continue;
+    }
+    entries.push(`${addr}=${url}`);
+  }
+  if (entries.length === 0) return null;
+  const segments = [sanitizePackName(pack.name) || "分享立绘包"];
+  if (pack.author) segments.push(`@author=${sanitizePackName(pack.author)}`);
+  segments.push(...entries);
+  return {
+    text: SHARE_PREFIX_V2 + segments.join("|"),
+    included: entries.length,
+    total: pack.sprites.length,
+    missing
+  };
+}
+function decodeShareStringV2(raw) {
+  const text = raw.trim();
+  const prefixIndex = text.indexOf(SHARE_PREFIX_V2);
+  if (prefixIndex === -1) {
+    throw new Error(`导入失败：没有找到 ${SHARE_PREFIX_V2} 开头的分享串`);
+  }
+  const body = text.slice(prefixIndex + SHARE_PREFIX_V2.length).trim();
+  const segments = body.split("|");
+  const name = sanitizePackName(segments[0] ?? "") || "分享立绘包";
+  let author;
+  const sprites = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const segment of segments.slice(1)) {
+    const part = segment.trim();
+    if (!part) continue;
+    if (part.startsWith("@")) {
+      const eq2 = part.indexOf("=");
+      if (eq2 === -1) continue;
+      const key2 = part.slice(1, eq2).trim().toLowerCase();
+      const value = part.slice(eq2 + 1).trim();
+      if (key2 === "author") author = sanitizePackName(value) || void 0;
+      continue;
+    }
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    const addr = part.slice(0, eq).trim();
+    const url = part.slice(eq + 1).trim();
+    if (!/^https?:\/\//.test(url)) continue;
+    const { role, outfit, tag: rawTag } = parseAddress(addr);
+    const tag = normalizeTag(rawTag);
+    const cleanRole = normalizeTag(role);
+    const cleanOutfit = normalizeTag(outfit);
+    if (!tag) continue;
+    const key = `${cleanRole}|${cleanOutfit}|${tag}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const code = extractImageCode(url) ?? void 0;
+    sprites.push({
+      tag,
+      url,
+      remoteUrl: url,
+      ...code ? { code } : {},
+      ...cleanRole ? { group: cleanRole } : {},
+      ...cleanOutfit ? { outfit: cleanOutfit } : {}
+    });
+  }
+  if (sprites.length === 0) {
+    throw new Error("导入失败：分享串中没有可用的「地址=URL」条目");
+  }
+  const commonRole = sprites.every((s) => (s.group ?? "") === (sprites[0].group ?? "")) ? sprites[0].group ?? "" : "";
+  const commonOutfit = sprites.every((s) => (s.outfit ?? "") === (sprites[0].outfit ?? "")) ? sprites[0].outfit ?? "" : "";
+  for (const s of sprites) {
+    if (commonRole) delete s.group;
+    if (commonOutfit) delete s.outfit;
+  }
+  return {
+    id: genId(),
+    name,
+    author,
+    ...commonRole ? { roleName: commonRole } : {},
+    ...commonOutfit ? { outfit: commonOutfit } : {},
+    sprites,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+
+// core/migrate.ts
+function migrateSettings(saved) {
+  const defaults = createDefaultSettings();
+  if (!saved || typeof saved !== "object") return defaults;
+  const raw = saved;
+  return {
+    settingsVersion: SETTINGS_VERSION,
+    enabled: typeof raw.enabled === "boolean" ? raw.enabled : defaults.enabled,
+    hideTagInMessage: typeof raw.hideTagInMessage === "boolean" ? raw.hideTagInMessage : defaults.hideTagInMessage,
+    spriteDisplayMode: raw.spriteDisplayMode === "overlay" || raw.spriteDisplayMode === "inline" || raw.spriteDisplayMode === "both" ? raw.spriteDisplayMode : defaults.spriteDisplayMode,
+    renderInlineImages: typeof raw.renderInlineImages === "boolean" ? raw.renderInlineImages : defaults.renderInlineImages,
+    imageHost: typeof raw.imageHost === "string" && /^https?:\/\//.test(raw.imageHost) ? raw.imageHost : defaults.imageHost,
+    overlay: migrateOverlay(raw.overlay, defaults.overlay),
+    overlayHidden: typeof raw.overlayHidden === "boolean" ? raw.overlayHidden : defaults.overlayHidden,
+    recentFloors: typeof raw.recentFloors === "number" && Number.isFinite(raw.recentFloors) ? Math.min(RECENT_FLOORS_MAX, Math.max(RECENT_FLOORS_MIN, Math.round(raw.recentFloors))) : defaults.recentFloors,
+    phone: migratePhone(raw.phone, defaults.phone),
+    showPhone: typeof raw.showPhone === "boolean" ? raw.showPhone : defaults.showPhone,
+    autoSwitch: typeof raw.autoSwitch === "boolean" ? raw.autoSwitch : defaults.autoSwitch,
+    autoSwitchSeconds: typeof raw.autoSwitchSeconds === "number" && Number.isFinite(raw.autoSwitchSeconds) ? Math.min(60, Math.max(1, Math.round(raw.autoSwitchSeconds))) : defaults.autoSwitchSeconds,
+    multiRole: typeof raw.multiRole === "boolean" ? raw.multiRole : defaults.multiRole,
+    multiRolePromptMode: raw.multiRolePromptMode === "full" || raw.multiRolePromptMode === "repeat" ? raw.multiRolePromptMode : defaults.multiRolePromptMode,
+    spriteCount: typeof raw.spriteCount === "number" && Number.isFinite(raw.spriteCount) ? Math.min(SPRITE_COUNT_MAX, Math.max(SPRITE_COUNT_MIN, Math.round(raw.spriteCount))) : defaults.spriteCount,
+    injectionDepth: typeof raw.injectionDepth === "number" && Number.isFinite(raw.injectionDepth) ? Math.min(INJECTION_DEPTH_MAX, Math.max(INJECTION_DEPTH_MIN, Math.round(raw.injectionDepth))) : defaults.injectionDepth,
+    promptTemplate: typeof raw.promptTemplate === "string" ? raw.promptTemplate : defaults.promptTemplate,
+    imgbbApiKey: typeof raw.imgbbApiKey === "string" ? raw.imgbbApiKey : defaults.imgbbApiKey,
+    autoUpload: typeof raw.autoUpload === "boolean" ? raw.autoUpload : defaults.autoUpload,
+    packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
+    bindings: Array.isArray(raw.bindings) ? raw.bindings.flatMap((b) => migrateBinding(b) ?? []) : [],
+    apps: raw.apps && typeof raw.apps === "object" && !Array.isArray(raw.apps) ? raw.apps : {}
+  };
+}
+function migrateOverlay(raw, fallback) {
+  if (raw && typeof raw.x === "number" && typeof raw.y === "number" && typeof raw.width === "number" && Number.isFinite(raw.x + raw.y + raw.width)) {
+    return { x: raw.x, y: raw.y, width: raw.width };
+  }
+  return fallback;
+}
+function migratePhone(raw, fallback) {
+  if (raw && typeof raw.x === "number" && typeof raw.y === "number" && Number.isFinite(raw.x + raw.y)) {
+    return { x: raw.x, y: raw.y, open: typeof raw.open === "boolean" ? raw.open : fallback.open };
+  }
+  return fallback;
+}
+function migrateBinding(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const b = raw;
+  if (typeof b.characterName !== "string" || !b.characterName) return null;
+  const ids = [];
+  if (Array.isArray(b.packIds)) {
+    for (const id of b.packIds) if (typeof id === "string" && id && !ids.includes(id)) ids.push(id);
+  }
+  if (typeof b.packId === "string" && b.packId && !ids.includes(b.packId)) ids.push(b.packId);
+  if (ids.length === 0) return null;
+  return {
+    characterName: b.characterName,
+    packIds: ids,
+    enabled: typeof b.enabled === "boolean" ? b.enabled : true
+  };
+}
+function migratePack(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const p = raw;
+  if (typeof p.id !== "string" || !p.id || !Array.isArray(p.sprites)) return null;
+  const name = sanitizePackName(typeof p.name === "string" ? p.name : "") || "未命名立绘包";
+  const sprites = p.sprites.flatMap((s) => {
+    if (!s || typeof s.tag !== "string" || typeof s.url !== "string" || !s.url) return [];
+    const tag = normalizeTag(s.tag) || s.tag.trim();
+    if (!tag) return [];
+    const code = typeof s.code === "string" && s.code ? s.code : extractImageCode(s.url) ?? void 0;
+    const group = typeof s.group === "string" ? normalizeTag(s.group) : "";
+    const outfit2 = typeof s.outfit === "string" ? normalizeTag(s.outfit) : "";
+    const remoteUrl = typeof s.remoteUrl === "string" && /^https?:\/\//.test(s.remoteUrl) ? s.remoteUrl : "";
+    return [
+      {
+        tag,
+        url: s.url,
+        ...code ? { code } : {},
+        ...group ? { group } : {},
+        ...outfit2 ? { outfit: outfit2 } : {},
+        ...remoteUrl ? { remoteUrl } : {}
+      }
+    ];
+  });
+  const roleName = typeof p.roleName === "string" ? normalizeTag(p.roleName) : "";
+  const outfit = typeof p.outfit === "string" ? normalizeTag(p.outfit) : "";
+  return {
+    id: p.id,
+    name,
+    ...typeof p.author === "string" && p.author ? { author: p.author } : {},
+    ...typeof p.description === "string" && p.description ? { description: p.description } : {},
+    ...roleName ? { roleName } : {},
+    ...outfit ? { outfit } : {},
+    ...typeof p.coverTag === "string" && p.coverTag ? { coverTag: p.coverTag } : {},
+    ...typeof p.updatedAt === "string" && p.updatedAt ? { updatedAt: p.updatedAt } : {},
+    sprites
+  };
+}
+
+// core/presets.ts
+var PRESET_DEFS = [
+  {
+    id: "preset_silver_loli",
+    name: "银发萝莉",
+    description: "内置预设 · 银发双马尾萝莉，8 个常用表情",
+    dir: "silver-loli",
+    tags: ["微笑", "害羞", "恼怒", "惊讶", "哭泣", "得意", "无奈", "开心"]
+  },
+  {
+    id: "preset_raven_onee",
+    name: "黑长直御姐",
+    description: "内置预设 · 黑长直冷艳御姐，8 个常用表情",
+    dir: "raven-onee",
+    tags: ["微笑", "害羞", "恼怒", "惊讶", "哭泣", "得意", "冷淡", "温柔"]
+  }
+];
+function getPresetPacks(baseUrl = "") {
+  return PRESET_DEFS.map((def) => ({
+    id: def.id,
+    name: def.name,
+    author: "内置预设",
+    description: def.description,
+    sprites: def.tags.map((tag) => ({
+      tag,
+      url: `${baseUrl}/presets/${def.dir}/${encodeURIComponent(tag)}.png`
+    }))
+  }));
+}
+function isPresetPack(packId) {
+  return PRESET_DEFS.some((d) => d.id === packId);
+}
+
+// st-extension/src/st-adapter.ts
+var MODULE_NAME = "sprite_overlay";
+var DEFAULT_EXTENSION_FOLDER = "st-stage";
+function getExtensionBaseUrl() {
+  try {
+    const stack = new Error().stack ?? "";
+    const match = stack.match(/\/scripts\/extensions\/third-party\/([^/]+)\//);
+    if (match) {
+      return `/scripts/extensions/third-party/${match[1]}`;
+    }
+  } catch {
+  }
+  return `/scripts/extensions/third-party/${DEFAULT_EXTENSION_FOLDER}`;
+}
+function getContext() {
+  const st = window.SillyTavern;
+  if (!st) throw new Error("[sprite-overlay] SillyTavern 全局对象不存在，扩展只能在 ST 内运行");
+  return st.getContext();
+}
+var STAdapter = class {
+  async loadSettings() {
+    const ctx = getContext();
+    const saved = ctx.extensionSettings[MODULE_NAME];
+    const presets = getPresetPacks(`${getExtensionBaseUrl()}/public`);
+    if (saved && typeof saved === "object") {
+      const merged = migrateSettings(saved);
+      const customPacks = merged.packs.filter((p) => !isPresetPack(p.id));
+      merged.packs = [...presets, ...customPacks];
+      return merged;
+    }
+    const defaults = createDefaultSettings();
+    defaults.packs = presets;
+    ctx.extensionSettings[MODULE_NAME] = defaults;
+    ctx.saveSettingsDebounced();
+    return defaults;
+  }
+  async saveSettings(settings) {
+    const ctx = getContext();
+    ctx.extensionSettings[MODULE_NAME] = {
+      ...settings,
+      packs: settings.packs.filter((p) => !isPresetPack(p.id))
+    };
+    ctx.saveSettingsDebounced();
+  }
+  async saveImage(fileName, base64Data, characterName) {
+    const ctx = getContext();
+    const match = base64Data.match(/^data:image\/(\w+);base64,(.+)$/s);
+    if (!match) throw new Error("图片数据格式不正确");
+    const [, ext, data] = match;
+    const baseName = sanitizePathSegment(fileName.replace(/\.[^.]+$/, "")) || `sprite_${Date.now()}`;
+    const folder = sanitizePathSegment(characterName) || "shared";
+    if (typeof ctx.saveBase64AsFile === "function") {
+      return await ctx.saveBase64AsFile(data, `sprite-overlay/${folder}`, baseName, ext);
+    }
+    return base64Data;
+  }
+  getCurrentCharacterName() {
+    const ctx = getContext();
+    const id = ctx.characterId;
+    if (id !== void 0 && id !== null && `${id}` !== "") {
+      const byId = ctx.characters[Number(id)]?.name;
+      if (byId) return byId;
+    }
+    return ctx.name2 ?? "";
+  }
+  injectPrompt(prompt, depth = INJECTION_DEPTH_DEFAULT) {
+    const ctx = getContext();
+    ctx.setExtensionPrompt(MODULE_NAME, prompt, 1, depth);
+  }
+  onMessageReceived(handler) {
+    const ctx = getContext();
+    const eventName = ctx.eventTypes?.MESSAGE_RECEIVED ?? ctx.event_types?.MESSAGE_RECEIVED ?? "message_received";
+    const wrapped = (...args) => {
+      try {
+        const messageId = args[0];
+        const chat = getContext().chat;
+        const idNum = typeof messageId === "number" ? messageId : typeof messageId === "string" && messageId.trim() !== "" ? Number(messageId) : NaN;
+        const message = Number.isInteger(idNum) && idNum >= 0 && idNum < chat.length ? chat[idNum] : chat[chat.length - 1];
+        if (message && !message.is_user && typeof message.mes === "string") {
+          handler(message.mes);
+        }
+      } catch (err) {
+        console.error("[sprite-overlay] 处理消息事件失败", err);
+      }
+    };
+    ctx.eventSource.on(eventName, wrapped);
+    return () => ctx.eventSource.removeListener(eventName, wrapped);
+  }
+  /** 订阅角色切换事件 */
+  onCharacterChanged(handler) {
+    const ctx = getContext();
+    const eventName = ctx.eventTypes?.CHAT_CHANGED ?? "chat_id_changed";
+    ctx.eventSource.on(eventName, handler);
+    return () => ctx.eventSource.removeListener(eventName, handler);
+  }
+};
+
+// st-extension/src/overlay-dom.ts
+var DRAG_THRESHOLD2 = 6;
+function createOverlay(initialLayout, onLayoutChange, onManage, onClose) {
+  let layout = { ...initialLayout };
+  let sprites = [];
+  let index = 0;
+  let autoEnabled = false;
+  let autoSeconds = 3;
+  let autoTimer = null;
+  let fadeTimer = null;
+  const root = document.createElement("div");
+  root.id = "sprite-overlay-root";
+  root.style.display = "none";
+  const frame = document.createElement("div");
+  frame.className = "sprite-overlay-frame";
+  const img = document.createElement("img");
+  img.alt = "";
+  img.draggable = false;
+  const tagBadge = document.createElement("div");
+  tagBadge.className = "sprite-overlay-tag";
+  const dots = document.createElement("div");
+  dots.className = "sprite-overlay-dots";
+  dots.style.display = "none";
+  const resizeHandle = document.createElement("div");
+  resizeHandle.className = "sprite-overlay-resize";
+  const placeholder = document.createElement("div");
+  placeholder.className = "sprite-overlay-placeholder";
+  placeholder.style.display = "none";
+  const gearBtn = document.createElement("div");
+  gearBtn.className = "sprite-overlay-gear";
+  gearBtn.title = "立绘包管理";
+  gearBtn.textContent = "⚙";
+  gearBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  gearBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    onManage?.();
+  });
+  const closeBtn = document.createElement("div");
+  closeBtn.className = "sprite-overlay-close";
+  closeBtn.title = "关闭悬浮窗（立绘功能不受影响，可在手机「立绘」App 重新打开）";
+  closeBtn.textContent = "✕";
+  closeBtn.setAttribute("role", "button");
+  closeBtn.setAttribute("aria-label", "关闭悬浮窗");
+  closeBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  closeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    onClose?.();
+  });
+  frame.append(img, placeholder, tagBadge, dots, gearBtn, closeBtn, resizeHandle);
+  root.append(frame);
+  document.body.append(root);
+  function applyLayout() {
+    const w = Math.min(layout.width, Math.max(100, window.innerWidth - 16));
+    root.style.width = `${w}px`;
+    const h = Math.min(root.offsetHeight || 48, window.innerHeight - 8);
+    root.style.left = `${Math.max(0, Math.min(layout.x, window.innerWidth - w))}px`;
+    root.style.top = `${Math.max(0, Math.min(layout.y, window.innerHeight - h))}px`;
+  }
+  applyLayout();
+  window.addEventListener("resize", applyLayout);
+  window.visualViewport?.addEventListener("resize", applyLayout);
+  img.addEventListener("load", applyLayout);
+  function showImage(url, tag) {
+    placeholder.style.display = "none";
+    img.style.display = "block";
+    tagBadge.style.display = "";
+    if (img.src === url) {
+      tagBadge.textContent = tag;
+      return;
+    }
+    img.style.opacity = "0";
+    if (fadeTimer) clearTimeout(fadeTimer);
+    fadeTimer = setTimeout(() => {
+      img.src = url;
+      tagBadge.textContent = tag;
+      img.onload = () => {
+        img.style.opacity = "1";
+      };
+      if (img.complete) img.style.opacity = "1";
+    }, 180);
+  }
+  function renderDots() {
+    dots.replaceChildren();
+    if (sprites.length <= 1) {
+      dots.style.display = "none";
+      return;
+    }
+    sprites.forEach((_, i) => {
+      const dot = document.createElement("span");
+      if (i === index) dot.className = "active";
+      dots.append(dot);
+    });
+    dots.style.display = "flex";
+  }
+  function renderCurrent() {
+    const cur = sprites[index];
+    if (!cur) return;
+    showImage(cur.url, cur.tag);
+    Array.from(dots.children).forEach(
+      (el3, i) => el3.classList.toggle("active", i === index)
+    );
+  }
+  function stopAuto() {
+    if (autoTimer) {
+      clearInterval(autoTimer);
+      autoTimer = null;
+    }
+  }
+  function startAuto() {
+    stopAuto();
+    if (autoEnabled && sprites.length > 1) {
+      autoTimer = setInterval(() => {
+        index = (index + 1) % sprites.length;
+        renderCurrent();
+      }, Math.max(1, autoSeconds) * 1e3);
+    }
+  }
+  function advanceManually() {
+    if (sprites.length <= 1) return;
+    index = (index + 1) % sprites.length;
+    renderCurrent();
+    startAuto();
+  }
+  function applySprites(list) {
+    if (list.length === 0) return;
+    sprites = list;
+    index = 0;
+    renderDots();
+    renderCurrent();
+    startAuto();
+  }
+  function startDrag(mode, startEvent) {
+    startEvent.preventDefault();
+    const startX = startEvent.clientX;
+    const startY = startEvent.clientY;
+    const origin = { ...layout };
+    let moved = false;
+    const onMove = (ev) => {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD2) return;
+      moved = true;
+      if (mode === "move") {
+        layout = { ...origin, x: Math.max(0, origin.x + dx), y: Math.max(0, origin.y + dy) };
+      } else {
+        layout = {
+          ...origin,
+          width: Math.min(600, window.innerWidth - 16, Math.max(100, origin.width + dx))
+        };
+      }
+      applyLayout();
+    };
+    const onUp = () => {
+      cleanup();
+      if (moved) {
+        onLayoutChange(layout);
+      } else if (mode === "move") {
+        advanceManually();
+      }
+    };
+    const onCancel = () => {
+      cleanup();
+      if (moved) onLayoutChange(layout);
+    };
+    function cleanup() {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+  }
+  frame.addEventListener("pointerdown", (e) => {
+    if (e.target === resizeHandle) return;
+    startDrag("move", e);
+  });
+  resizeHandle.addEventListener("pointerdown", (e) => {
+    e.stopPropagation();
+    startDrag("resize", e);
+  });
+  return {
+    setImage(url, tag) {
+      applySprites([{ url, tag }]);
+    },
+    setSprites(list) {
+      applySprites(list);
+    },
+    setAutoSwitch(enabled, seconds) {
+      autoEnabled = enabled;
+      autoSeconds = Math.max(1, seconds);
+      startAuto();
+    },
+    setPlaceholder(text) {
+      stopAuto();
+      sprites = [];
+      index = 0;
+      dots.replaceChildren();
+      dots.style.display = "none";
+      img.style.display = "none";
+      tagBadge.style.display = "none";
+      placeholder.textContent = text;
+      placeholder.style.display = "flex";
+    },
+    setVisible(visible) {
+      root.style.display = visible ? "block" : "none";
+    },
+    setLayout(next) {
+      layout = { ...next };
+      applyLayout();
+    },
+    destroy() {
+      stopAuto();
+      if (fadeTimer) clearTimeout(fadeTimer);
+      window.removeEventListener("resize", applyLayout);
+      window.visualViewport?.removeEventListener("resize", applyLayout);
+      root.remove();
+    }
+  };
+}
+
+// core/pack-merge.ts
+var PackMergeChoiceError = class extends Error {
+  constructor() {
+    super(...arguments);
+    this.name = "PackMergeChoiceError";
+  }
+};
+function mergeAddress(pack, sprite) {
+  return {
+    role: (sprite.group ?? "").trim() || (pack.roleName ?? "").trim(),
+    outfit: spriteOutfit(pack, sprite),
+    tag: sprite.tag
+  };
+}
+function buildGroups(packs) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const pack of packs) {
+    for (const sprite of pack.sprites) {
+      const address = mergeAddress(pack, sprite);
+      const key = addressConflictKey(address);
+      let group = groups.get(key);
+      if (!group) {
+        group = { key, address, candidates: [] };
+        groups.set(key, group);
+      }
+      group.candidates.push({
+        sourcePackId: pack.id,
+        sourcePackName: pack.name,
+        address,
+        sprite
+      });
+    }
+  }
+  return [...groups.values()];
+}
+function isAutomatic(group) {
+  return new Set(group.candidates.map((candidate) => candidate.sprite.url)).size <= 1;
+}
+function previewPackMerge(packs) {
+  const names = packs.map((pack) => pack.name.trim()).filter(Boolean);
+  const sameName = new Set(names).size < names.length;
+  const automatic = [];
+  const conflicts = [];
+  let overlapCount = 0;
+  for (const group of buildGroups(packs)) {
+    if (group.candidates.length > 1) overlapCount++;
+    if (isAutomatic(group)) automatic.push(group.candidates[0]);
+    else conflicts.push({ key: group.key, address: group.address, candidates: group.candidates });
+  }
+  return { sameName, overlapCount, automatic, conflicts };
+}
+function inspectPackImport(existing, incoming) {
+  return {
+    sameName: existing.name.trim() === incoming.name.trim(),
+    conflicts: findAddressConflicts([existing, incoming])
+  };
+}
+function commonNonEmpty(values) {
+  if (values.length === 0 || !values[0]) return "";
+  return values.every((value) => value === values[0]) ? values[0] : "";
+}
+function validateChoicesForGroups(groups, choices) {
+  const conflicts = groups.filter((group) => !isAutomatic(group));
+  const conflictByKey = new Map(conflicts.map((group) => [group.key, group]));
+  const choiceByKey = /* @__PURE__ */ new Map();
+  for (const choice of choices) {
+    const group = conflictByKey.get(choice.key);
+    if (!group) {
+      throw new PackMergeChoiceError(`未知冲突选择 key：${choice.key}`);
+    }
+    if (choiceByKey.has(choice.key)) {
+      throw new PackMergeChoiceError(`地址「${group.address.tag}」存在重复选择`);
+    }
+    if (!Number.isSafeInteger(choice.candidateIndex) || choice.candidateIndex < 0 || choice.candidateIndex >= group.candidates.length) {
+      throw new PackMergeChoiceError(`地址「${group.address.tag}」的候选序号无效`);
+    }
+    choiceByKey.set(choice.key, choice.candidateIndex);
+  }
+  for (const group of conflicts) {
+    if (!choiceByKey.has(group.key)) {
+      throw new PackMergeChoiceError(`地址「${group.address.tag}」的冲突图片尚未选择`);
+    }
+  }
+  return choiceByKey;
+}
+function validatePackMergeChoices(packs, choices) {
+  validateChoicesForGroups(buildGroups(packs), choices);
+}
+function applyPackMerge(packs, choices, result) {
+  const groups = buildGroups(packs);
+  const choiceByKey = validateChoicesForGroups(groups, choices);
+  const selected = [];
+  for (const group of groups) {
+    if (isAutomatic(group)) {
+      selected.push(group.candidates[0]);
+      continue;
+    }
+    selected.push(group.candidates[choiceByKey.get(group.key)]);
+  }
+  const commonRole = commonNonEmpty(selected.map((candidate) => candidate.address.role));
+  const commonOutfit = commonNonEmpty(selected.map((candidate) => candidate.address.outfit));
+  const sprites = selected.map((candidate) => {
+    const sprite = { ...candidate.sprite };
+    delete sprite.group;
+    delete sprite.outfit;
+    if (!commonRole && candidate.address.role) sprite.group = candidate.address.role;
+    if (!commonOutfit && candidate.address.outfit) sprite.outfit = candidate.address.outfit;
+    return sprite;
+  });
+  const first = packs[0];
+  const coverTag = first?.coverTag && sprites.some((sprite) => sprite.tag === first.coverTag) ? first.coverTag : sprites[0]?.tag;
+  return {
+    id: result.id,
+    name: result.name,
+    ...first?.author ? { author: first.author } : {},
+    ...first?.description ? { description: first.description } : {},
+    ...commonRole ? { roleName: commonRole } : {},
+    ...commonOutfit ? { outfit: commonOutfit } : {},
+    ...coverTag ? { coverTag } : {},
+    sprites,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+
+// core/image-compress.ts
+function blobToDataUri(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+function estimateDataUriBytes(dataUri) {
+  const comma = dataUri.indexOf(",");
+  const payload = comma >= 0 ? dataUri.length - comma - 1 : dataUri.length;
+  return Math.round(payload * 0.75);
+}
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+async function compressImage(file, options = {}) {
+  const { maxDimension = 1024, quality = 0.85 } = options;
+  const originalUri = await blobToDataUri(file);
+  const original = {
+    dataUri: originalUri,
+    compressed: false,
+    bytes: estimateDataUriBytes(originalUri)
+  };
+  if (file.type === "image/gif" || file.type === "image/svg+xml") return original;
+  if (typeof document === "undefined") return original;
+  try {
+    const img = await loadImage(originalUri);
+    const longest = Math.max(img.naturalWidth, img.naturalHeight);
+    if (longest === 0) return original;
+    const scale = Math.min(1, maxDimension / longest);
+    const width = Math.max(1, Math.round(img.naturalWidth * scale));
+    const height = Math.max(1, Math.round(img.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return original;
+    ctx.drawImage(img, 0, 0, width, height);
+    const compressedUri = canvas.toDataURL("image/webp", quality);
+    if (!compressedUri.startsWith("data:image/webp") || compressedUri.length >= originalUri.length) {
+      return original;
+    }
+    return {
+      dataUri: compressedUri,
+      compressed: true,
+      bytes: estimateDataUriBytes(compressedUri)
+    };
+  } catch {
+    return original;
+  }
+}
+async function recompressDataUri(dataUri, options = {}) {
+  if (typeof document === "undefined") return dataUri;
+  const mime = /^data:([^;,]+)/.exec(dataUri)?.[1] ?? "";
+  if (!mime.startsWith("image/")) return dataUri;
+  if (mime === "image/webp" || mime === "image/gif" || mime === "image/svg+xml") return dataUri;
+  try {
+    const blob = await (await fetch(dataUri)).blob();
+    return (await compressImage(blob, options)).dataUri;
+  } catch {
+    return dataUri;
+  }
+}
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("图片解码失败"));
+    img.src = src;
+  });
+}
+
+// core/pack-io.ts
+async function exportPack(pack, embedHosted = false) {
+  const sprites = [];
+  for (const sprite of pack.sprites) {
+    const source = getSpriteSource(sprite);
+    const extra = {
+      ...remoteField(sprite),
+      ...sprite.group ? { group: sprite.group } : {},
+      ...sprite.outfit ? { outfit: sprite.outfit } : {}
+    };
+    if (source === "embedded") {
+      sprites.push({ tag: sprite.tag, data: await recompressDataUri(sprite.url), ...extra });
+    } else if (source === "local" || embedHosted) {
+      try {
+        const data = await recompressDataUri(await urlToDataUri(sprite.url));
+        sprites.push({ tag: sprite.tag, data, ...extra });
+      } catch {
+        sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code), ...extra });
+      }
+    } else {
+      sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code), ...extra });
+    }
+  }
+  return {
+    format: "sprite-pack@2",
+    name: pack.name,
+    author: pack.author,
+    description: pack.description,
+    ...pack.roleName ? { roleName: pack.roleName } : {},
+    ...pack.outfit ? { outfit: pack.outfit } : {},
+    coverTag: pack.coverTag,
+    exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    sprites
+  };
+}
+function codeField(url, code) {
+  const resolved = code ?? extractImageCode(url);
+  return resolved ? { code: resolved } : {};
+}
+function remoteField(sprite) {
+  const r = sprite.remoteUrl;
+  return r && /^https:\/\/.+/i.test(r) ? { remoteUrl: r } : {};
+}
+function importPack(jsonText) {
+  let raw;
+  try {
+    raw = JSON.parse(jsonText);
+  } catch {
+    throw new Error("导入失败：不是合法的 JSON 文件");
+  }
+  const file = raw;
+  if (file.format !== "sprite-pack@2" && file.format !== "sprite-pack@1") {
+    throw new Error("导入失败：不是 sprite-pack@1 / @2 格式的立绘包");
+  }
+  if (typeof file.name !== "string" || !file.name || !Array.isArray(file.sprites) || file.sprites.length === 0) {
+    throw new Error("导入失败：立绘包缺少名称或立绘列表为空");
+  }
+  const seen = /* @__PURE__ */ new Set();
+  const sprites = [];
+  for (const item of file.sprites) {
+    if (!item || typeof item.tag !== "string") continue;
+    const url = typeof item.data === "string" && item.data ? item.data : typeof item.url === "string" ? item.url : "";
+    if (!url) continue;
+    const tag = normalizeTag(item.tag);
+    if (!tag) continue;
+    const group = typeof item.group === "string" ? normalizeTag(item.group) : "";
+    const outfit2 = typeof item.outfit === "string" ? normalizeTag(item.outfit) : "";
+    const key = `${group}|${outfit2}|${tag}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const code = typeof item.code === "string" && item.code ? item.code : extractImageCode(url) ?? void 0;
+    const remoteUrl = typeof item.remoteUrl === "string" && /^https?:\/\/.+/i.test(item.remoteUrl) ? item.remoteUrl : "";
+    sprites.push({
+      tag,
+      url,
+      ...code ? { code } : {},
+      ...remoteUrl ? { remoteUrl } : {},
+      ...group ? { group } : {},
+      ...outfit2 ? { outfit: outfit2 } : {}
+    });
+  }
+  if (sprites.length === 0) {
+    throw new Error("导入失败：没有可用的立绘条目（表情名可能全部为空或重复）");
+  }
+  const normalizedCover = typeof file.coverTag === "string" ? normalizeTag(file.coverTag) : "";
+  const coverTag = sprites.some((s) => s.tag === normalizedCover) ? normalizedCover : void 0;
+  const roleName = typeof file.roleName === "string" ? normalizeTag(file.roleName) : "";
+  const outfit = typeof file.outfit === "string" ? normalizeTag(file.outfit) : "";
+  return {
+    id: genId(),
+    name: sanitizePackName(file.name) || "导入立绘包",
+    author: typeof file.author === "string" ? sanitizePackName(file.author) || void 0 : void 0,
+    description: typeof file.description === "string" ? sanitizeDescription(file.description) || void 0 : void 0,
+    ...roleName ? { roleName } : {},
+    ...outfit ? { outfit } : {},
+    coverTag,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    sprites
+  };
+}
+async function urlToDataUri(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`fetch ${url} failed: ${res.status}`);
+  const blob = await res.blob();
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+// core/pack-split.ts
+function previewGroupSplit(pack) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const s of pack.sprites) {
+    const g = (s.group ?? "").trim();
+    if (!g) continue;
+    const arr = groups.get(g) ?? [];
+    arr.push(s);
+    groups.set(g, arr);
+  }
+  if (groups.size < 2) return [];
+  return [...groups.entries()].map(([roleName, sprites]) => ({
+    roleName,
+    packName: sanitizePackName(`${pack.name}·${roleName}`) || roleName,
+    count: sprites.length,
+    tags: sprites.map((s) => s.tag)
+  }));
+}
+function splitPackByGroup(pack) {
+  const preview = previewGroupSplit(pack);
+  if (preview.length === 0) return [];
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  return preview.map((item) => {
+    const sprites = pack.sprites.filter((s) => (s.group ?? "").trim() === item.roleName).map((s) => {
+      const next = { ...s };
+      delete next.group;
+      return next;
+    });
+    return {
+      id: genId(),
+      name: item.packName,
+      author: pack.author,
+      roleName: item.roleName,
+      ...pack.outfit ? { outfit: pack.outfit } : {},
+      sprites,
+      updatedAt: now
+    };
+  });
+}
+function packNameFor(role, outfit, batchPackName) {
+  if (role && outfit) return sanitizePackName(`${role}·${outfit}`) || `${role}·${outfit}`;
+  if (role) return sanitizePackName(role) || role;
+  return batchPackName;
+}
+function findPackFor(packs, role, outfit) {
+  return packs.find(
+    (p) => (p.roleName ?? "") === role && (p.outfit ?? "") === outfit && (role !== "" || outfit !== "")
+  ) ?? null;
+}
+function autoRenameTag(taken, desired) {
+  if (!taken.has(desired)) return desired;
+  for (let i = 2; i < 1e3; i++) {
+    const candidate = `${desired}_${i}`.slice(0, 20);
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${desired}_${Date.now().toString(36)}`;
+}
+function planUploads(entries, packs, strategy, batchPackName, defaultPack) {
+  const takenByPack = /* @__PURE__ */ new Map();
+  const newPackKey = (role, outfit, name) => `new:${role}|${outfit}|${name}`;
+  const keyTaken = (key, pack) => {
+    let set = takenByPack.get(key);
+    if (!set) {
+      set = new Set(pack ? pack.sprites.map((s) => s.tag) : []);
+      takenByPack.set(key, set);
+    }
+    return set;
+  };
+  const plans = [];
+  for (const entry of entries) {
+    const role = normalizeTag(entry.role);
+    const outfit = normalizeTag(entry.outfit);
+    const tag = normalizeTag(entry.tag);
+    const roleless = !role && !outfit;
+    const existing = roleless ? defaultPack ?? null : findPackFor(packs, role, outfit);
+    const packName = existing ? existing.name : packNameFor(role, outfit, batchPackName);
+    const key = existing ? `pack:${existing.id}` : newPackKey(role, outfit, packName);
+    const taken = keyTaken(key, existing);
+    const conflict = taken.has(tag);
+    let finalTag = tag;
+    let action = "add";
+    if (conflict) {
+      if (strategy === "skip") {
+        action = "skip";
+      } else if (strategy === "overwrite") {
+        action = "overwrite";
+      } else {
+        finalTag = autoRenameTag(taken, tag);
+        action = "add";
+      }
+    }
+    if (action !== "skip") taken.add(finalTag);
+    plans.push({
+      entry: { fileName: entry.fileName, role, outfit, tag },
+      targetPackId: existing?.id ?? null,
+      targetPackName: packName,
+      conflict,
+      finalTag,
+      action
+    });
+  }
+  return plans;
+}
+
+// core/imgbb.ts
+function isValidImgbbResult(result) {
+  if (!result.url || !/^https:\/\/.+/i.test(result.url)) return false;
+  if (!result.code) return false;
+  return /^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$/.test(result.code) && !result.code.includes("..");
+}
+async function uploadToImgbb(apiKey, base64DataUri, fetchImpl = fetch) {
+  const key = apiKey.trim();
+  if (!key) throw new Error("未配置 imgbb API Key");
+  const rawBase64 = base64DataUri.replace(/^data:[^;]*;base64,/, "");
+  const form = new FormData();
+  form.append("key", key);
+  form.append("image", rawBase64);
+  const res = await fetchImpl("https://api.imgbb.com/1/upload", { method: "POST", body: form });
+  const json = await res.json().catch(() => null);
+  if (!json?.success || !json.data?.image) {
+    throw new Error(`imgbb 上传失败：${json?.error?.message ?? `HTTP ${res.status}`}`);
+  }
+  const result = { url: json.data.url ?? "", code: json.data.image.filename ?? "" };
+  if (!isValidImgbbResult(result)) {
+    throw new Error("imgbb 返回无效：缺少合法的 HTTPS 直链或文件名");
+  }
+  return result;
+}
+
+// st-extension/src/sprite-manager.ts
+function createSpriteManager(deps) {
+  let backdrop = null;
+  let view = { kind: "list" };
+  let openedFrom = "overlay";
+  function applyBackdropSize() {
+    if (!backdrop) return;
+    backdrop.style.left = "0";
+    backdrop.style.top = "0";
+    backdrop.style.width = `${window.innerWidth}px`;
+    backdrop.style.height = `${window.innerHeight}px`;
+  }
+  function open(source = "overlay") {
+    openedFrom = source;
+    if (backdrop) {
+      render();
+      return;
+    }
+    view = { kind: "list" };
+    backdrop = el("div", "so-manager-backdrop");
+    document.addEventListener("keydown", onEscape);
+    window.addEventListener("resize", applyBackdropSize);
+    applyBackdropSize();
+    const dialog = el("div", "so-manager");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-label", "立绘包管理");
+    const header = el("div", "so-manager-header");
+    const backBtn = el("div", "menu_button so-manager-back");
+    backBtn.title = "返回列表";
+    backBtn.textContent = "‹";
+    backBtn.setAttribute("role", "button");
+    backBtn.tabIndex = 0;
+    const goBack = () => {
+      view = { kind: "list" };
+      render();
+    };
+    backBtn.addEventListener("click", goBack);
+    backBtn.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        goBack();
+      }
+    });
+    const title = el("b", "so-manager-title");
+    const closeBtn = el("div", "menu_button so-manager-close");
+    closeBtn.title = "关闭";
+    closeBtn.textContent = "✕";
+    closeBtn.addEventListener("click", () => close());
+    header.append(backBtn, title, closeBtn);
+    const body = el("div", "so-manager-body");
+    dialog.append(header, body);
+    backdrop.append(dialog);
+    document.body.append(backdrop);
+    render();
+  }
+  function onEscape(e) {
+    if (e.key !== "Escape") return;
+    if (view.kind === "pack") {
+      view = { kind: "list" };
+      render();
+    } else {
+      close();
+    }
+  }
+  function close() {
+    if (!backdrop) return;
+    document.removeEventListener("keydown", onEscape);
+    window.removeEventListener("resize", applyBackdropSize);
+    backdrop.remove();
+    backdrop = null;
+    deps.onClosed?.(openedFrom);
+  }
+  function refreshIfOpen() {
+    if (backdrop) render();
+  }
+  function commit(next) {
+    deps.updateSettings(next);
+    render();
+  }
+  function conflictText(conflicts) {
+    return conflicts.slice(0, 3).map(
+      (conflict) => `${conflict.characterName}：${conflict.formattedAddress}（${conflict.owners.map((owner) => owner.packName).join(" / ")}）`
+    ).join("；");
+  }
+  function showConflicts(conflicts) {
+    const message = `操作未生效，存在地址冲突：${conflictText(conflicts)}`;
+    const body = backdrop?.querySelector(".so-manager-body");
+    if (body) toast(body, message);
+    else window.alert(message);
+  }
+  function rejectConflicts(conflicts) {
+    render();
+    showConflicts(conflicts);
+    return false;
+  }
+  function checkedSettings(result) {
+    if (!result.ok) {
+      showConflicts(result.conflicts);
+      return null;
+    }
+    return result.settings;
+  }
+  function updateChecked(result) {
+    const next = checkedSettings(result);
+    if (!next) return false;
+    deps.updateSettings(next);
+    return true;
+  }
+  function commitChecked(result) {
+    if (!result.ok) return rejectConflicts(result.conflicts);
+    commit(result.settings);
+    return true;
+  }
+  function rejectPackMergeError(error, body) {
+    if (error instanceof PackMergeChoiceError) {
+      toast(body, `合并已取消：选择无效（${error.message}）`);
+      return null;
+    }
+    console.error("合并立绘包失败", error);
+    toast(body, "合并失败，请查看控制台日志");
+    return null;
+  }
+  function mergeWithPrompts(packs, defaultName, body) {
+    const preview = previewPackMerge(packs);
+    const choices = [];
+    for (const conflict of preview.conflicts) {
+      const options = conflict.candidates.map((candidate, index) => `${index + 1}. ${candidate.sourcePackName} — ${candidate.sprite.url}`).join("\n");
+      const raw = window.prompt(
+        `地址「${formatAddress(conflict.address)}」有不同图片，请输入要保留的序号：
+${options}`,
+        "1"
+      );
+      if (raw === null) return null;
+      choices.push({ key: conflict.key, candidateIndex: Number(raw) - 1 });
+    }
+    try {
+      validatePackMergeChoices(packs, choices);
+    } catch (error) {
+      return rejectPackMergeError(error, body);
+    }
+    const rawName = window.prompt("合并结果的包名：", defaultName);
+    if (rawName === null) return null;
+    const name = sanitizePackName(rawName);
+    if (!name) {
+      toast(body, "合并已取消：包名不能为空");
+      return null;
+    }
+    try {
+      return applyPackMerge(packs, choices, { id: genId(), name });
+    } catch (error) {
+      return rejectPackMergeError(error, body);
+    }
+  }
+  function installImportedPack(pack, body) {
+    const settings = deps.getSettings();
+    const related = settings.packs.filter((existing) => {
+      const inspection = inspectPackImport(existing, pack);
+      return inspection.sameName || inspection.conflicts.length > 0;
+    });
+    if (related.length === 0) {
+      if (!updateChecked(upsertPack(settings, pack))) return false;
+      toast(body, `已导入立绘包「${pack.name}」（${pack.sprites.length} 张）`);
+      return true;
+    }
+    const answer = window.prompt(
+      `检测到同名或地址重叠：${related.map((item) => item.name).join("、")}
+输入 1 合并进现有包，2 重命名后安装，3 仅安装（之后可按需启用）；其他输入取消。`,
+      "1"
+    );
+    if (answer === "1") {
+      const target = related[0];
+      const mode = window.prompt(
+        `合并到哪里？
+1 并入旧包「${target.name}」（推荐：角色绑定不变，重叠源包移除）
+2 合并为新包（所有源包保留）
+其他输入取消。`,
+        "1"
+      );
+      if (mode === "1") {
+        const merged = mergeWithPrompts([...related, pack], target.name, body);
+        if (!merged) return false;
+        let next = settings;
+        for (const other of related.slice(1)) next = removePack(next, other.id);
+        if (!updateChecked(upsertPack(next, { ...merged, id: target.id }))) return false;
+        toast(body, `已合并进「${merged.name}」（${merged.sprites.length} 张）`);
+        return true;
+      }
+      if (mode === "2") {
+        const merged = mergeWithPrompts([...related, pack], `${target.name} 合并`, body);
+        if (!merged || !updateChecked(upsertPack(settings, merged))) return false;
+        toast(body, `已生成合并包「${merged.name}」（${merged.sprites.length} 张），源包仍保留`);
+        return true;
+      }
+      return false;
+    }
+    if (answer === "2") {
+      const rawName = window.prompt("请输入新的包名：", `${pack.name} 新`);
+      if (rawName === null) return false;
+      const name = sanitizePackName(rawName);
+      if (!name || settings.packs.some((existing) => existing.name === name)) {
+        toast(body, "未安装：新包名为空或仍与现有包同名");
+        return false;
+      }
+      if (!updateChecked(upsertPack(settings, { ...pack, name }))) return false;
+      toast(body, `已重命名并安装「${name}」（未启用）`);
+      return true;
+    }
+    if (answer === "3") {
+      if (!updateChecked(upsertPack(settings, pack))) return false;
+      toast(body, `已安装「${pack.name}」，未加入当前角色`);
+      return true;
+    }
+    return false;
+  }
+  function bindPackWithChoices(characterName, packId, body) {
+    const settings = deps.getSettings();
+    const result = bindPack(settings, characterName, packId);
+    if (result.ok) {
+      const changes = previewBindingAddressChanges(settings, result.settings, characterName);
+      if (changes.removed.length > 0 && !window.confirm(
+        `启用后以下旧地址将变化：${changes.removed.slice(0, 6).join("、")}
+新地址示例：${changes.added.slice(0, 6).join("、")}
+仍要继续吗？`
+      )) return;
+      commit(result.settings);
+      return;
+    }
+    const answer = window.prompt(
+      `启用会产生地址冲突：${conflictText(result.conflicts)}
+输入 1 替换当前冲突包，2 合并为新包后启用；其他输入取消。`,
+      "1"
+    );
+    const sourceIds = new Set(result.conflicts.flatMap((conflict) => conflict.owners.map((owner) => owner.packId)));
+    sourceIds.add(packId);
+    const binding = settings.bindings.find((item) => item.characterName === characterName);
+    const boundIds = binding?.packIds ?? [];
+    if (answer === "1") {
+      sourceIds.delete(packId);
+      const nextIds = boundIds.filter((id) => !sourceIds.has(id));
+      if (!nextIds.includes(packId)) nextIds.push(packId);
+      commitChecked(setBinding(settings, characterName, nextIds));
+      return;
+    }
+    if (answer === "2") {
+      const sources = settings.packs.filter((candidate) => sourceIds.has(candidate.id));
+      const incoming = settings.packs.find((candidate) => candidate.id === packId);
+      const merged = mergeWithPrompts(sources, incoming ? `${incoming.name} 合并` : "合并立绘包", body);
+      if (!merged) return;
+      const installed = upsertPack(settings, merged);
+      if (!installed.ok) {
+        rejectConflicts(installed.conflicts);
+        return;
+      }
+      const nextIds = boundIds.filter((id) => !sourceIds.has(id));
+      nextIds.push(merged.id);
+      const rebound = setBinding(installed.settings, characterName, nextIds);
+      if (!rebound.ok) {
+        rejectConflicts(rebound.conflicts);
+        return;
+      }
+      commit(rebound.settings);
+      toast(body, `已生成并启用合并包「${merged.name}」；源包仍保留`);
+    }
+  }
+  function commitPack(pack) {
+    commitChecked(upsertPack(deps.getSettings(), pack));
+  }
+  function render() {
+    if (!backdrop) return;
+    const backBtn = backdrop.querySelector(".so-manager-back");
+    const title = backdrop.querySelector(".so-manager-title");
+    const body = backdrop.querySelector(".so-manager-body");
+    body.innerHTML = "";
+    try {
+      if (view.kind === "pack") {
+        const packId = view.packId;
+        const pack = deps.getSettings().packs.find((p) => p.id === packId);
+        if (pack) {
+          backBtn.style.display = "inline-flex";
+          title.textContent = pack.name;
+          renderPackDetail(body, pack);
+          return;
+        }
+        view = { kind: "list" };
+      }
+      backBtn.style.display = "none";
+      title.textContent = "立绘包管理";
+      renderList(body);
+    } catch (err) {
+      console.error("[sprite-overlay] 管理弹窗渲染失败", err);
+      const msg = el("div", "so-status");
+      msg.textContent = `界面渲染出错：${err instanceof Error ? err.message : String(err)}`;
+      body.append(msg);
+    }
+  }
+  function renderList(body) {
+    const settings = deps.getSettings();
+    const characterName = deps.adapter.getCurrentCharacterName();
+    const binding = settings.bindings.find((b) => b.characterName === characterName);
+    const boundIds = binding?.packIds ?? [];
+    const bindSection = el("div", "so-section");
+    const bindTitle = el("div", "so-section-title");
+    bindTitle.textContent = characterName ? `当前角色：${characterName}` : "当前角色绑定";
+    bindSection.append(bindTitle);
+    if (characterName) {
+      if (boundIds.length > 0) {
+        const boundLabel = el("div", "so-status");
+        boundLabel.textContent = `已启用 ${boundIds.length} 个包（顺序影响多包寻址优先级）：`;
+        bindSection.append(boundLabel);
+        boundIds.forEach((id, index) => {
+          const pack = settings.packs.find((p) => p.id === id);
+          const row = el("div", "so-row so-bind-item");
+          const name = el("span", "so-bind-name");
+          name.textContent = pack ? `${index + 1}. ${pack.name}（${pack.sprites.length} 张）` : `（已删除的包 ${id}）`;
+          row.append(
+            name,
+            iconButton("▲", "上移", () => {
+              if (index > 0) commit(reorderBinding(deps.getSettings(), characterName, index, index - 1));
+            }),
+            iconButton("▼", "下移", () => {
+              commit(reorderBinding(deps.getSettings(), characterName, index, index + 1));
+            }),
+            iconButton("✕", "停用此包", () => {
+              commit(unbindPack(deps.getSettings(), characterName, id));
+            })
+          );
+          bindSection.append(row);
+        });
+      }
+      const bindRow = el("div", "so-row so-bind-row");
+      const select = document.createElement("select");
+      select.className = "text_pole";
+      select.setAttribute("aria-label", `为「${characterName}」添加启用立绘包`);
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = boundIds.length > 0 ? "再启用一个包…" : "选择要启用的包…";
+      select.append(placeholder);
+      for (const p of settings.packs) {
+        if (boundIds.includes(p.id)) continue;
+        const opt = document.createElement("option");
+        opt.value = p.id;
+        opt.textContent = `${p.name}（${p.sprites.length} 张）`;
+        select.append(opt);
+      }
+      select.addEventListener("change", () => {
+        const packId = select.value;
+        if (!packId) return;
+        select.value = "";
+        bindPackWithChoices(characterName, packId, body);
+      });
+      bindRow.append(select);
+      if (binding) {
+        bindRow.append(
+          checkboxRow(
+            "全部启用",
+            binding.enabled,
+            (v) => commitChecked(toggleBinding(deps.getSettings(), characterName, v))
+          )
+        );
+      }
+      bindSection.append(bindRow);
+    } else {
+      const tip = el("div", "so-status");
+      tip.textContent = "请先打开一个角色聊天，再回来绑定立绘包。";
+      bindSection.append(tip);
+    }
+    body.append(bindSection);
+    const grid = el("div", "so-pack-grid");
+    for (const pack of settings.packs) {
+      const bound = boundIds.includes(pack.id) ? binding?.enabled ? "active" : "off" : null;
+      grid.append(renderPackCard(pack, bound));
+    }
+    body.append(grid);
+    const addSection = el("div", "so-section");
+    const addTitle = el("div", "so-section-title");
+    addTitle.textContent = "新建 / 导入";
+    const createRow = el("div", "so-row");
+    const nameInput = textInput("新立绘包名称…");
+    nameInput.classList.add("so-grow");
+    const createBtn = button("新建立绘包", () => {
+      const name = sanitizePackName(nameInput.value);
+      if (!name) {
+        toast(body, "包名不能为空（| = @ < > 等符号会被剔除）");
+        return;
+      }
+      const pack = { id: genId(), name, author: "我", sprites: [] };
+      if (!updateChecked(upsertPack(deps.getSettings(), pack))) return;
+      view = { kind: "pack", packId: pack.id };
+      render();
+    });
+    nameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.isComposing) createBtn.click();
+    });
+    createRow.append(nameInput, createBtn);
+    const importRow = el("div", "so-row");
+    const shareInput = textInput("粘贴 stpack2:/stpack1: 分享串…");
+    shareInput.classList.add("so-grow");
+    const shareBtn = button("导入分享串", () => {
+      if (!shareInput.value.trim()) return;
+      try {
+        const pack = decodeShareString(shareInput.value);
+        if (!installImportedPack(pack, body)) return;
+        shareInput.value = "";
+        const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
+        if (installed) view = { kind: "pack", packId: installed.id };
+        render();
+      } catch (err) {
+        toast(body, err instanceof Error ? err.message : "分享串解析失败");
+      }
+    });
+    importRow.append(
+      shareInput,
+      shareBtn,
+      button("导入 JSON 文件", () => {
+        pickFile(".json,application/json", false, async (files) => {
+          try {
+            const text = await files[0].text();
+            if (text.length > 2 * 1024 * 1024 && !window.confirm(
+              `这个 JSON 有 ${(text.length / 1024 / 1024).toFixed(1)}MB（内嵌 base64 图）。云端部署的酒馆导入大包容易内存爆满，建议让对方先传图床再发分享串。仍要导入吗？`
+            ))
+              return;
+            const pack = importPack(text);
+            if (!installImportedPack(pack, body)) return;
+            const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
+            if (installed) view = { kind: "pack", packId: installed.id };
+            render();
+          } catch (err) {
+            toast(body, err instanceof Error ? err.message : "导入失败");
+          }
+        });
+      })
+    );
+    addSection.append(addTitle, createRow, importRow);
+    body.append(addSection);
+    body.append(statusBar());
+  }
+  function renderPackCard(pack, bound) {
+    const card = el("div", "so-pack-card");
+    card.tabIndex = 0;
+    card.setAttribute("role", "button");
+    card.setAttribute("aria-label", `打开立绘包「${pack.name}」`);
+    card.title = "点击进入管理";
+    const coverBox = el("div", "so-card-cover");
+    const cover = getPackCover(pack);
+    if (cover) {
+      const img = document.createElement("img");
+      img.src = cover.url;
+      img.alt = cover.tag;
+      img.loading = "lazy";
+      coverBox.append(img);
+    } else {
+      coverBox.textContent = "暂无立绘";
+    }
+    if (bound) {
+      const badge = el("span", bound === "active" ? "so-card-badge" : "so-card-badge so-card-badge-off");
+      badge.textContent = bound === "active" ? "使用中" : "已停用";
+      coverBox.append(badge);
+    }
+    if (isPresetPack(pack.id)) {
+      const chip = el("span", "so-card-chip");
+      chip.textContent = "预设";
+      coverBox.append(chip);
+    }
+    const info = el("div", "so-card-info");
+    const nameEl = el("b");
+    nameEl.textContent = pack.name;
+    const metaEl = el("small");
+    metaEl.textContent = `${pack.sprites.length} 张 · ${pack.author ?? "未知作者"}`;
+    info.append(nameEl, metaEl);
+    card.append(coverBox, info);
+    const enter = () => {
+      view = { kind: "pack", packId: pack.id };
+      render();
+    };
+    card.addEventListener("click", enter);
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        enter();
+      }
+    });
+    return card;
+  }
+  function renderPackDetail(body, pack) {
+    const readonly = isPresetPack(pack.id);
+    const topRow = el("div", "so-row so-detail-top");
+    topRow.append(
+      button("导出 JSON", async () => {
+        const file = await exportPack(pack);
+        downloadJson(file, `${pack.name}.sprite-pack.json`);
+        toast(body, `已导出「${pack.name}」`);
+      }),
+      button("复制分享串", async () => {
+        const result = encodeShareStringV2(pack);
+        if (!result) {
+          toast(body, "该包没有可分享的远程图片（本地/内嵌图请用「导出 JSON」，或先上传 imgbb）");
+          return;
+        }
+        if (result.missing.length > 0) {
+          const preview = result.missing.slice(0, 8).join("、");
+          const more = result.missing.length > 8 ? ` 等 ${result.missing.length} 项` : "";
+          const go = window.confirm(
+            `分享串不完整：${result.included}/${result.total} 张有远程地址。
+缺少远程地址（不会包含在分享串里）：${preview}${more}
+
+这些图片对方将看不到。仍要复制残缺分享串吗？`
+          );
+          if (!go) return;
+        }
+        const ok = await copyText(result.text);
+        const note = result.missing.length > 0 ? `（${result.included}/${result.total} 张，缺 ${result.missing.length} 张）` : `（${result.included} 张，完整）`;
+        toast(body, ok ? `已复制分享串${note}` : "复制失败，请手动复制弹出的文本");
+        if (!ok) window.prompt("手动复制分享串：", result.text);
+      })
+    );
+    const spacer = el("div", "so-spacer");
+    topRow.append(spacer);
+    if (!readonly) {
+      topRow.append(
+        button("删除立绘包", () => {
+          if (!window.confirm(`确定删除立绘包「${pack.name}」？绑定关系会一并清除。`)) return;
+          view = { kind: "list" };
+          commit(removePack(deps.getSettings(), pack.id));
+        }, "so-btn-danger")
+      );
+    }
+    body.append(topRow);
+    if (readonly) {
+      const note = el("div", "so-status");
+      note.textContent = "预设包随扩展分发、只读；想改动可先「导出 JSON」再导入为自定义包。";
+      body.append(note);
+    } else {
+      const metaSection = el("div", "so-section");
+      const metaTitle = el("div", "so-section-title");
+      metaTitle.textContent = "包信息";
+      const metaRow = el("div", "so-row so-meta-row");
+      const nameInput = textInput("包名");
+      nameInput.value = pack.name;
+      const authorInput = textInput("作者");
+      authorInput.value = pack.author ?? "";
+      const descInput = textInput("描述（可选）");
+      descInput.value = pack.description ?? "";
+      const roleInput = textInput("人名（可空）");
+      roleInput.value = pack.roleName ?? "";
+      const outfitInput = textInput("服装（可空）");
+      outfitInput.value = pack.outfit ?? "";
+      metaRow.append(
+        labeled("包名", nameInput),
+        labeled("作者", authorInput),
+        labeled("描述", descInput),
+        labeled("人名", roleInput),
+        labeled("服装", outfitInput),
+        button("保存信息", () => {
+          const name = sanitizePackName(nameInput.value);
+          if (!name) {
+            toast(body, "包名不能为空");
+            return;
+          }
+          const roleName = normalizeTag(roleInput.value);
+          const outfit = normalizeTag(outfitInput.value);
+          commitPack({
+            ...pack,
+            name,
+            author: sanitizePackName(authorInput.value) || void 0,
+            description: sanitizeDescription(descInput.value) || void 0,
+            roleName: roleName || void 0,
+            outfit: outfit || void 0
+          });
+        })
+      );
+      const metaHint = el("div", "so-status");
+      metaHint.textContent = "人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。";
+      metaSection.append(metaTitle, metaRow, metaHint);
+      body.append(metaSection);
+    }
+    if (pack.sprites.length === 0) {
+      const empty = el("div", "so-status");
+      empty.textContent = "还没有立绘，用下方按钮上传图片（文件名即表情名）。";
+      body.append(empty);
+    } else {
+      const groups = getGroups(pack);
+      const sections = groups.length === 0 ? [""] : [...groups];
+      if (groups.length > 0 && pack.sprites.some((s) => spriteGroup(s) === "")) sections.push("");
+      for (const g of sections) {
+        if (groups.length > 0) {
+          const head = el("div", "so-group-head");
+          head.textContent = g === "" ? "未分组" : g;
+          body.append(head);
+        }
+        const grid = el("div", "so-sprite-grid");
+        pack.sprites.forEach((sprite, index) => {
+          if (spriteGroup(sprite) === g) {
+            grid.append(renderSpriteCell(body, pack, sprite, index, readonly));
+          }
+        });
+        body.append(grid);
+      }
+    }
+    if (!readonly) {
+      const pending = pack.sprites.filter(
+        (s) => getSpriteSource(s) !== "hosted" && !(s.remoteUrl && /^https?:\/\//.test(s.remoteUrl))
+      );
+      const { imgbbApiKey } = deps.getSettings();
+      if (pending.length > 0 && imgbbApiKey.trim()) {
+        const upSection = el("div", "so-section");
+        const upTitle = el("div", "so-section-title");
+        upTitle.textContent = "图床补传";
+        const upDesc = el("div", "so-status");
+        upDesc.textContent = `${pending.length} 张立绘还没有远程地址（分享时对方看不到）。补传到 imgbb 后本地图仍保留。`;
+        upSection.append(
+          upTitle,
+          upDesc,
+          button(`补传 ${pending.length} 张到 imgbb（失败可重试）`, () => {
+            void retryPendingUploads(body, pack.id);
+          })
+        );
+        body.append(upSection);
+      }
+      const splitPreview = previewGroupSplit(pack);
+      if (splitPreview.length >= 2) {
+        const splitSection = el("div", "so-section");
+        const splitTitle = el("div", "so-section-title");
+        splitTitle.textContent = "按分组拆成立绘包";
+        const splitDesc = el("div", "so-status");
+        splitDesc.textContent = `检测到 ${splitPreview.length} 个分组：${splitPreview.map((s) => `${s.roleName}(${s.count})`).join("、")}。拆分会新建这些包（原包与绑定保留，可稍后自行删除）。`;
+        splitSection.append(
+          splitTitle,
+          splitDesc,
+          button("拆分（保留原包）", () => {
+            const preview = splitPreview.map((s) => `${s.roleName}：${s.count} 张`).join("\n");
+            if (!window.confirm(`将新建以下立绘包（原包保留）：
+${preview}
+
+确认拆分？`)) return;
+            const newPacks = splitPackByGroup(pack);
+            let next = deps.getSettings();
+            for (const np of newPacks) {
+              const updated = checkedSettings(upsertPack(next, np));
+              if (!updated) return;
+              next = updated;
+            }
+            commit(next);
+            toast(body, `已拆出 ${newPacks.length} 个新包（原包「${pack.name}」保留）`);
+          })
+        );
+        body.append(splitSection);
+      }
+      const addSection = el("div", "so-section");
+      const addTitle = el("div", "so-section-title");
+      addTitle.textContent = "添加立绘";
+      addSection.append(addTitle);
+      const addRow = el("div", "so-row");
+      addRow.append(
+        button("批量上传（自动压缩+解析预览）", () => {
+          pickFile("image/*", true, (files) => openUploadPreview(pack.id, files));
+        })
+      );
+      const upHint = el("div", "so-status");
+      upHint.textContent = "文件名按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png），上传前可预览修正、选择不拆分。";
+      addSection.append(addRow, upHint);
+      const codeRow = el("div", "so-row so-code-row");
+      const tagInput = textInput("图名，留空=取编码名");
+      const codeInput = textInput("编码，可粘贴多个（空格/逗号分隔）");
+      const codeGroupInput = textInput("分组，可空");
+      codeRow.append(
+        labeled("表情", tagInput),
+        labeled("编码", codeInput),
+        labeled("分组", codeGroupInput),
+        button("按编码添加", () => {
+          const codes = codeInput.value.split(/[\s,，、;；|]+/).filter(Boolean);
+          if (codes.length === 0) {
+            toast(body, "请填写图床编码，如 ab12cd.png（可一次粘贴多个）");
+            return;
+          }
+          const bad = codes.filter((c) => !isValidImageCode(c));
+          if (bad.length > 0) {
+            toast(body, `编码格式不对：${bad.slice(0, 3).join("、")}${bad.length > 3 ? " 等" : ""}`);
+            return;
+          }
+          const manualTag = normalizeTag(tagInput.value);
+          if (codes.length > 1 && manualTag) {
+            toast(body, "多个编码时图名自动取各自编码名，请把图名留空");
+            return;
+          }
+          const current = deps.getSettings();
+          const target = current.packs.find((p) => p.id === pack.id);
+          if (!target) return;
+          const host = current.imageHost.endsWith("/") ? current.imageHost : `${current.imageHost}/`;
+          const group = normalizeTag(codeGroupInput.value);
+          let next = target;
+          let added = 0;
+          for (const code of codes) {
+            const tag = manualTag || normalizeTag(code.replace(/\.[^.]+$/, ""));
+            if (!tag) continue;
+            next = upsertSprite(next, { tag, url: host + code, code, ...group ? { group } : {} });
+            added++;
+          }
+          commitPack(next);
+          toast(body, `已按编码添加 ${added} 张`);
+          tagInput.value = "";
+          codeInput.value = "";
+          codeGroupInput.value = "";
+        })
+      );
+      const codeHint = el("div", "so-status");
+      codeHint.textContent = `手动通道：编码拼接图床前缀 ${deps.getSettings().imageHost}（与 imgbb 自动直传互不影响）`;
+      addSection.append(codeRow, codeHint);
+      body.append(addSection);
+    }
+    body.append(statusBar());
+  }
+  function renderSpriteCell(body, pack, sprite, index, readonly) {
+    const cell = el("div", "so-sprite-cell");
+    if (pack.coverTag === sprite.tag) cell.classList.add("so-cover");
+    const img = document.createElement("img");
+    img.src = sprite.url;
+    img.alt = sprite.tag;
+    img.title = sprite.tag;
+    img.loading = "lazy";
+    const tagEl = el("div", "so-sprite-tag");
+    tagEl.textContent = sprite.tag;
+    tagEl.title = sprite.tag;
+    cell.append(img, tagEl);
+    if (readonly) return cell;
+    const latestPack = () => deps.getSettings().packs.find((p) => p.id === pack.id);
+    const bar = el("div", "so-sprite-actions");
+    bar.append(
+      iconButton("✎", "重命名", () => {
+        const next = window.prompt(`「${sprite.tag}」改名为：`, sprite.tag);
+        if (next === null) return;
+        const target = latestPack();
+        if (!target) return;
+        try {
+          commitPack(renameSprite(target, sprite.tag, next, spriteGroup(sprite), sprite.outfit ?? ""));
+        } catch (err) {
+          toast(body, err instanceof Error ? err.message : "改名失败");
+        }
+      }),
+      iconButton("🏷", "设分组", () => {
+        const cur = spriteGroup(sprite);
+        const next = window.prompt(`「${sprite.tag}」的分组（留空=移出分组）：`, cur);
+        if (next === null) return;
+        const target = latestPack();
+        if (!target) return;
+        try {
+          commitPack(setSpriteGroup(target, sprite.tag, cur, next, sprite.outfit ?? ""));
+        } catch (err) {
+          toast(body, err instanceof Error ? err.message : "改分组失败");
+        }
+      }),
+      iconButton("🖼", "替换图片", () => {
+        pickFile("image/*", false, async (files) => {
+          try {
+            const result = await compressImage(files[0]);
+            const url = await deps.adapter.saveImage(
+              `${sprite.tag}.webp`,
+              result.dataUri,
+              deps.adapter.getCurrentCharacterName() || pack.name
+            );
+            const target = latestPack();
+            if (!target) return;
+            const g = spriteGroup(sprite);
+            const o = sprite.outfit;
+            const base = {
+              tag: sprite.tag,
+              url,
+              ...g ? { group: g } : {},
+              ...o ? { outfit: o } : {}
+            };
+            commitPack(upsertSprite(target, base));
+            const { autoUpload, imgbbApiKey } = deps.getSettings();
+            if (autoUpload && imgbbApiKey.trim()) {
+              try {
+                const up = await uploadToImgbb(imgbbApiKey, result.dataUri);
+                if (isValidImgbbResult(up)) {
+                  const latest = latestPack();
+                  if (latest) {
+                    commitPack(
+                      upsertSprite(latest, { ...base, code: up.code, remoteUrl: up.url })
+                    );
+                    toast(body, `已替换「${sprite.tag}」并重传图床（${formatBytes(result.bytes)}）`);
+                    return;
+                  }
+                }
+                toast(body, `已替换「${sprite.tag}」，但图床响应无效，标记为待上传`);
+              } catch {
+                toast(body, `已替换「${sprite.tag}」，图床上传失败，标记为待上传`);
+              }
+            } else {
+              toast(body, `已替换「${sprite.tag}」（${formatBytes(result.bytes)}），远程地址待上传`);
+            }
+          } catch (err) {
+            toast(body, err instanceof Error ? err.message : "替换失败");
+          }
+        });
+      }),
+      iconButton("🔗", "远程地址", () => {
+        const remote = sprite.remoteUrl || (getSpriteSource(sprite) === "hosted" ? sprite.url : "");
+        if (!remote) {
+          toast(body, `「${sprite.tag}」还没有远程地址（未上传图床，分享时对方看不到）`);
+          return;
+        }
+        window.prompt(`「${sprite.tag}」编号：${sprite.code || "无"}
+远程地址（Ctrl+C 复制）：`, remote);
+      }),
+      iconButton("★", "设为封面", () => {
+        const target = latestPack();
+        if (!target) return;
+        commitPack({ ...target, coverTag: sprite.tag });
+      }),
+      iconButton("◀", "前移", () => {
+        const target = latestPack();
+        if (!target) return;
+        commitPack(moveSprite(target, index, index - 1));
+      }),
+      iconButton("▶", "后移", () => {
+        const target = latestPack();
+        if (!target) return;
+        commitPack(moveSprite(target, index, index + 1));
+      }),
+      iconButton("✕", "删除", () => {
+        if (!window.confirm(`删除立绘「${sprite.tag}」？`)) return;
+        const target = latestPack();
+        if (!target) return;
+        commitPack(removeSprite(target, sprite.tag, spriteGroup(sprite), sprite.outfit ?? ""));
+      })
+    );
+    cell.append(bar);
+    return cell;
+  }
+  function openUploadPreview(currentPackId, files) {
+    const fileArr = Array.from(files);
+    const parsed = fileArr.map((f) => parseSpriteFileName(f.name));
+    let autoSplit = true;
+    let strategy = "skip";
+    const modal = el("div", "so-upload-modal");
+    const panel = el("div", "so-upload-panel");
+    const head = el("div", "so-upload-head");
+    const title = el("b");
+    title.textContent = `批量上传预览（${fileArr.length} 张）`;
+    head.append(title);
+    const rows = el("div", "so-upload-rows");
+    const inputs = [];
+    function buildRows() {
+      rows.innerHTML = "";
+      inputs.length = 0;
+      fileArr.forEach((file, i) => {
+        const row = el("div", "so-upload-row");
+        const name = el("div", "so-upload-fname");
+        name.textContent = file.name;
+        name.title = file.name;
+        const roleIn = textInput("人名");
+        const outfitIn = textInput("服装");
+        const tagIn = textInput("图名");
+        if (autoSplit) {
+          roleIn.value = parsed[i].role;
+          outfitIn.value = parsed[i].outfit;
+          tagIn.value = parsed[i].tag;
+        } else {
+          roleIn.value = "";
+          outfitIn.value = "";
+          tagIn.value = normalizeTag(file.name.replace(/\.[^.]+$/, ""));
+        }
+        roleIn.disabled = !autoSplit;
+        outfitIn.disabled = !autoSplit;
+        inputs.push({ role: roleIn, outfit: outfitIn, tag: tagIn });
+        row.append(
+          name,
+          labeled("人名", roleIn),
+          labeled("服装", outfitIn),
+          labeled("图名", tagIn)
+        );
+        rows.append(row);
+      });
+    }
+    buildRows();
+    const opts = el("div", "so-upload-opts");
+    opts.append(
+      checkboxRow("自动拆分人名/服装（关闭则整名作图名落当前包）", autoSplit, (v) => {
+        autoSplit = v;
+        buildRows();
+      })
+    );
+    const stratWrap = el("div", "so-row");
+    const stratLabel = el("span");
+    stratLabel.textContent = "重名时：";
+    const stratSel = document.createElement("select");
+    stratSel.className = "text_pole";
+    for (const [val, lab] of [
+      ["skip", "跳过（默认）"],
+      ["rename", "自动改名"],
+      ["overwrite", "覆盖"]
+    ]) {
+      const o = document.createElement("option");
+      o.value = val;
+      o.textContent = lab;
+      stratSel.append(o);
+    }
+    stratSel.addEventListener("change", () => strategy = stratSel.value);
+    stratWrap.append(stratLabel, stratSel);
+    opts.append(stratWrap);
+    const status = el("div", "so-upload-status");
+    const actions = el("div", "so-row so-upload-actions");
+    const confirmBtn = button("开始上传", () => {
+      const entries = fileArr.map((file, i) => ({
+        fileName: file.name,
+        role: autoSplit ? inputs[i].role.value : "",
+        outfit: autoSplit ? inputs[i].outfit.value : "",
+        tag: inputs[i].tag.value
+      }));
+      void applyUploadPlan(currentPackId, fileArr, entries, strategy, status, () => modal.remove());
+    });
+    actions.append(
+      confirmBtn,
+      button("取消", () => modal.remove(), "so-btn-danger")
+    );
+    panel.append(head, rows, opts, status, actions);
+    modal.append(panel);
+    (backdrop ?? document.body).append(modal);
+  }
+  async function applyUploadPlan(currentPackId, files, entries, strategy, status, done) {
+    const current = deps.getSettings().packs.find((p) => p.id === currentPackId) ?? null;
+    const plans = planUploads(entries, deps.getSettings().packs, strategy, current?.name ?? "新包", current);
+    const { autoUpload, imgbbApiKey } = deps.getSettings();
+    const useImgbb = autoUpload && imgbbApiKey.trim() !== "";
+    let added = 0;
+    let skipped = 0;
+    let failed = 0;
+    let hosted = 0;
+    let hostFailed = 0;
+    const newPackIds = /* @__PURE__ */ new Map();
+    for (let i = 0; i < plans.length; i++) {
+      const plan = plans[i];
+      const file = files[i];
+      status.textContent = `处理中 ${i + 1}/${plans.length}：${file.name}`;
+      if (plan.action === "skip" || !plan.finalTag) {
+        skipped++;
+        continue;
+      }
+      try {
+        const result = await compressImage(file);
+        const url = await deps.adapter.saveImage(
+          file.name,
+          result.dataUri,
+          deps.adapter.getCurrentCharacterName() || plan.targetPackName
+        );
+        let targetId = plan.targetPackId;
+        if (!targetId) {
+          const role = plan.entry.role;
+          const outfit = plan.entry.outfit;
+          const key = `${role}|${outfit}|${plan.targetPackName}`;
+          targetId = newPackIds.get(key) ?? null;
+          if (!targetId) {
+            const np = {
+              id: genId(),
+              name: plan.targetPackName,
+              author: "我",
+              ...role ? { roleName: role } : {},
+              ...outfit ? { outfit } : {},
+              sprites: []
+            };
+            if (!updateChecked(upsertPack(deps.getSettings(), np))) return;
+            targetId = np.id;
+            newPackIds.set(key, targetId);
+          }
+        }
+        const target = deps.getSettings().packs.find((p) => p.id === targetId);
+        if (!target) {
+          failed++;
+          continue;
+        }
+        const sprite = { tag: plan.finalTag, url };
+        if (!updateChecked(upsertPack(deps.getSettings(), upsertSprite(target, sprite)))) return;
+        added++;
+        if (useImgbb) {
+          try {
+            const up = await uploadToImgbb(imgbbApiKey, result.dataUri);
+            if (isValidImgbbResult(up)) {
+              const latest = deps.getSettings().packs.find((p) => p.id === targetId);
+              if (latest) {
+                const hostedSprite = { tag: plan.finalTag, url, code: up.code, remoteUrl: up.url };
+                if (!updateChecked(upsertPack(deps.getSettings(), upsertSprite(latest, hostedSprite)))) return;
+                hosted++;
+              }
+            } else {
+              hostFailed++;
+            }
+          } catch (err) {
+            console.warn("[sprite-overlay] imgbb 上传失败（图片保留本地）", err);
+            hostFailed++;
+          }
+        }
+      } catch (err) {
+        console.error("[sprite-overlay] 上传失败", err);
+        failed++;
+      }
+    }
+    done();
+    render();
+    const parts = [`已添加 ${added} 张`];
+    if (skipped > 0) parts.push(`跳过 ${skipped} 张（重名/无效）`);
+    if (failed > 0) parts.push(`失败 ${failed} 张`);
+    if (useImgbb) parts.push(`imgbb 成功 ${hosted}${hostFailed > 0 ? `、失败 ${hostFailed}` : ""}`);
+    toast(backdrop?.querySelector(".so-manager-body"), parts.join("，"));
+  }
+  async function retryPendingUploads(body, packId) {
+    const { imgbbApiKey } = deps.getSettings();
+    if (!imgbbApiKey.trim()) {
+      toast(body, "请先在「图库」App 配置 imgbb API Key");
+      return;
+    }
+    const pack = deps.getSettings().packs.find((p) => p.id === packId);
+    if (!pack) return;
+    const pending = pack.sprites.filter(
+      (s) => getSpriteSource(s) !== "hosted" && !(s.remoteUrl && /^https?:\/\//.test(s.remoteUrl))
+    );
+    let ok = 0;
+    let fail = 0;
+    for (let i = 0; i < pending.length; i++) {
+      const sprite = pending[i];
+      toast(body, `补传中 ${i + 1}/${pending.length}：${sprite.tag}`);
+      try {
+        const dataUri = sprite.url.startsWith("data:") ? sprite.url : await urlToDataUri(sprite.url);
+        const up = await uploadToImgbb(imgbbApiKey, dataUri);
+        if (!isValidImgbbResult(up)) {
+          fail++;
+          continue;
+        }
+        const latest = deps.getSettings().packs.find((p) => p.id === packId);
+        const target = latest?.sprites.find(
+          (s) => s.tag === sprite.tag && (s.group ?? "") === (sprite.group ?? "") && (s.outfit ?? "") === (sprite.outfit ?? "")
+        );
+        if (!latest || !target) {
+          fail++;
+          continue;
+        }
+        if (!updateChecked(
+          upsertPack(
+            deps.getSettings(),
+            upsertSprite(latest, { ...target, code: up.code, remoteUrl: up.url })
+          )
+        )) return;
+        ok++;
+      } catch (err) {
+        console.warn("[sprite-overlay] 补传失败", err);
+        fail++;
+      }
+    }
+    render();
+    toast(
+      backdrop?.querySelector(".so-manager-body"),
+      `补传完成：成功 ${ok} 张${fail > 0 ? `，失败 ${fail} 张（可再次点击重试）` : ""}`
+    );
+  }
+  return { open, close, refreshIfOpen };
+}
+function el(tag, className) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  return node;
+}
+function textInput(placeholder) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "text_pole";
+  input.placeholder = placeholder;
+  return input;
+}
+function labeled(label, input) {
+  const wrap = el("label", "so-labeled");
+  const span = el("span", "so-labeled-text");
+  span.textContent = label;
+  wrap.append(span, input);
+  return wrap;
+}
+function checkboxRow(label, checked, onChange) {
+  const row = el("label", "so-row checkbox_label");
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = checked;
+  input.addEventListener("change", () => onChange(input.checked));
+  const span = document.createElement("span");
+  span.textContent = label;
+  row.append(input, span);
+  return row;
+}
+function button(label, onClick, extraClass = "") {
+  const btn = el("div", `menu_button so-btn ${extraClass}`.trim());
+  btn.setAttribute("role", "button");
+  btn.tabIndex = 0;
+  btn.textContent = label;
+  btn.addEventListener("click", onClick);
+  btn.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onClick();
+    }
+  });
+  return btn;
+}
+function iconButton(icon, title, onClick) {
+  const btn = el("div", "so-icon-btn");
+  btn.textContent = icon;
+  btn.title = title;
+  btn.setAttribute("role", "button");
+  btn.setAttribute("aria-label", title);
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    onClick();
+  });
+  return btn;
+}
+function statusBar() {
+  return el("div", "so-status so-toast");
+}
+function toast(scope, msg) {
+  const bar = scope?.querySelector(".so-toast");
+  if (!bar) return;
+  bar.textContent = msg;
+  setTimeout(() => {
+    if (bar.textContent === msg) bar.textContent = "";
+  }, 4e3);
+}
+function pickFile(accept, multiple, onPick) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = accept;
+  input.multiple = multiple;
+  input.addEventListener("change", () => {
+    if (input.files && input.files.length > 0) onPick(input.files);
+  });
+  input.click();
+}
+function downloadJson(data, fileName) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.append(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
+// st-extension/src/settings-panel.ts
+function mountSettingsPanel(deps) {
+  const container = document.getElementById("extensions_settings");
+  if (!container) {
+    console.warn("[sprite-overlay] 未找到 #extensions_settings，设置面板未挂载");
+    return;
+  }
+  const wrapper = document.createElement("div");
+  wrapper.className = "sprite-overlay-settings";
+  wrapper.innerHTML = `
+    <div class="inline-drawer">
+      <div class="inline-drawer-toggle inline-drawer-header">
+        <b>角色立绘悬浮窗</b>
+        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+      </div>
+      <div class="inline-drawer-content" id="so-panel-content"></div>
+    </div>
+  `;
+  container.append(wrapper);
+  const content = wrapper.querySelector("#so-panel-content");
+  const settings = deps.getSettings();
+  content.append(
+    checkboxRow2(
+      "启用立绘功能",
+      settings.enabled,
+      (v) => deps.updateSettings({ ...deps.getSettings(), enabled: v }),
+      "总开关：注入立绘清单给 AI 并展示回复中的立绘。关闭后清空注入、停止解析、隐藏悬浮窗并把楼层恢复原文；手机与其他工具不受影响。"
+    ),
+    checkboxRow2(
+      "显示手机",
+      settings.showPhone,
+      (v) => deps.updateSettings({ ...deps.getSettings(), showPhone: v }),
+      "屏幕上显示可拖动的 📱 图标，点击展开小手机（st-stage 各功能的统一入口）。"
+    ),
+    checkboxRow2(
+      "智能精简 Prompt（省 token）",
+      settings.multiRolePromptMode === "repeat",
+      (v) => deps.updateSettings({
+        ...deps.getSettings(),
+        multiRolePromptMode: v ? "repeat" : "full"
+      }),
+      "把多场景共有的表情合并列出。按实际长度自动取更短的一版：场景/表情较少时仍会显示全量格式，属正常现象。"
+    )
+  );
+  const hint = document.createElement("div");
+  hint.className = "so-status";
+  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 15:17"}）`;
+  hint.textContent = `立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
+  content.append(hint);
+}
+function helpIcon(tip) {
+  const icon = document.createElement("span");
+  icon.className = "so-help";
+  icon.textContent = "?";
+  icon.tabIndex = 0;
+  icon.setAttribute("aria-label", tip);
+  icon.dataset.tip = tip;
+  icon.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  return icon;
+}
+function checkboxRow2(label, checked, onChange, help) {
+  const row = document.createElement("label");
+  row.className = "so-row checkbox_label";
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = checked;
+  input.addEventListener("change", () => onChange(input.checked));
+  const span = document.createElement("span");
+  span.textContent = label;
+  if (help) span.append(helpIcon(help));
+  row.append(input, span);
+  return row;
+}
+
+// core/inline-image.ts
+var HTML_STYLE_SOURCE = "<\\s*(img|illustration)\\s*>\\s*([^<]+?)\\s*<\\/\\s*\\1\\s*>";
+var BRACKET_STYLE_SOURCE = "[\\[【]\\s*(插图|图)\\s*[:：]\\s*([^\\]】]+?)\\s*[\\]】]";
+var COMBINED_SOURCE = `${HTML_STYLE_SOURCE}|${BRACKET_STYLE_SOURCE}`;
+function hasInlineImageMarkup(text) {
+  return new RegExp(COMBINED_SOURCE, "i").test(text);
+}
+function replaceInlineImages(text, replacer) {
+  const regex = new RegExp(COMBINED_SOURCE, "gi");
+  return text.replace(regex, (raw, ...groups) => {
+    const code = (groups[1] ?? groups[3] ?? "").trim();
+    if (!isValidImageCode(code)) return raw;
+    const out = replacer({ raw, code });
+    return out === null ? raw : out;
+  });
+}
+
+// st-extension/src/message-postprocess.ts
+var FP_ATTR = "data-so-fp";
+var MARKER_CLASS = "so-processed-marker";
+var snapshots = /* @__PURE__ */ new WeakMap();
+function mountMessagePostprocess(deps) {
+  const st = window.SillyTavern;
+  if (!st) return () => {
+  };
+  const ctx = st.getContext();
+  const renderedEvents = [
+    ctx.eventTypes?.CHARACTER_MESSAGE_RENDERED,
+    ctx.eventTypes?.USER_MESSAGE_RENDERED
+  ].filter((e) => typeof e === "string" && e.length > 0);
+  const handler = (...args) => {
+    const messageId = typeof args[0] === "number" || typeof args[0] === "string" ? args[0] : null;
+    queueMicrotask(() => processMessages(deps.getSettings(), messageId));
+  };
+  if (renderedEvents.length > 0) {
+    for (const event of renderedEvents) ctx.eventSource.on(event, handler);
+    return () => {
+      for (const event of renderedEvents) ctx.eventSource.removeListener(event, handler);
+    };
+  }
+  const fallbackEvent = ctx.eventTypes?.MESSAGE_RECEIVED ?? "message_received";
+  const fallbackHandler = (...args) => {
+    const messageId = typeof args[0] === "number" || typeof args[0] === "string" ? args[0] : null;
+    setTimeout(() => processMessages(deps.getSettings(), messageId), 150);
+  };
+  ctx.eventSource.on(fallbackEvent, fallbackHandler);
+  return () => ctx.eventSource.removeListener(fallbackEvent, fallbackHandler);
+}
+function anyFeatureOn(settings) {
+  return settings.enabled && (settings.hideTagInMessage || settings.renderInlineImages || settings.spriteDisplayMode !== "overlay");
+}
+function clampFloors(settings) {
+  const n = Math.round(settings.recentFloors);
+  if (!Number.isFinite(n)) return RECENT_FLOORS_MIN;
+  return Math.min(RECENT_FLOORS_MAX, Math.max(RECENT_FLOORS_MIN, n));
+}
+function originalTextOf(el3) {
+  return snapshots.get(el3)?.originalText ?? el3.textContent ?? "";
+}
+function collectCandidates() {
+  const out = [];
+  for (const mes of Array.from(document.querySelectorAll("#chat .mes"))) {
+    if (mes.getAttribute("is_user") === "true" || mes.getAttribute("is_system") === "true") continue;
+    const textEl = mes.querySelector(".mes_text");
+    if (!textEl) continue;
+    const text = originalTextOf(textEl);
+    if (hasTag(text) || hasInlineImageMarkup(text)) out.push(textEl);
+  }
+  return out;
+}
+function processMessages(settings, messageId = null) {
+  if (!anyFeatureOn(settings)) return;
+  if (messageId !== null && messageId !== void 0 && `${messageId}` !== "") {
+    const idStr = `${messageId}`;
+    const allMes = Array.from(document.querySelectorAll("#chat .mes"));
+    const scope = allMes.filter((m) => m.getAttribute("mesid") === idStr).map((m) => m.querySelector(".mes_text")).filter((el3) => el3 !== null);
+    const lastMes = allMes.length > 0 ? allMes[allMes.length - 1] : null;
+    let windowSet = null;
+    for (const el3 of scope) {
+      if (lastMes !== null && el3.closest(".mes") === lastMes) {
+        processMessageElement(el3, settings);
+        continue;
+      }
+      windowSet ?? (windowSet = new Set(collectCandidates().slice(-clampFloors(settings))));
+      if (windowSet.has(el3)) processMessageElement(el3, settings);
+    }
+    return;
+  }
+  for (const el3 of collectCandidates().slice(-clampFloors(settings))) {
+    processMessageElement(el3, settings);
+  }
+}
+function reprocessAllMessages(settings) {
+  restoreAllMessages();
+  if (anyFeatureOn(settings)) processMessages(settings);
+}
+function restoreAllMessages() {
+  for (const node of Array.from(document.querySelectorAll(`#chat .mes_text[${FP_ATTR}]`))) {
+    restoreElement(node);
+  }
+}
+function restoreElement(root) {
+  const snap = snapshots.get(root);
+  const isOurs = root.querySelector(`.${MARKER_CLASS}`) !== null;
+  if (snap && isOurs) {
+    root.replaceChildren(...snap.nodes);
+  }
+  snapshots.delete(root);
+  root.removeAttribute(FP_ATTR);
+}
+function hashText(text) {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) {
+    h = (h << 5) + h + text.charCodeAt(i) | 0;
+  }
+  return (h >>> 0).toString(36);
+}
+function processMessageElement(root, settings) {
+  const inlineSprites = settings.spriteDisplayMode !== "overlay";
+  const host = settings.imageHost.endsWith("/") ? settings.imageHost : `${settings.imageHost}/`;
+  const snap = snapshots.get(root);
+  const contentIsOurs = snap !== void 0 && root.querySelector(`.${MARKER_CLASS}`) !== null;
+  const originalText = contentIsOurs ? snap.originalText : root.textContent ?? "";
+  const fingerprint = `${settings.hideTagInMessage ? "T" : ""}${settings.renderInlineImages ? "I" : ""}${inlineSprites ? "S" : ""}|${hashText(host)}|${hashText(originalText)}`;
+  if (contentIsOurs && root.getAttribute(FP_ATTR) === fingerprint) return;
+  if (contentIsOurs) {
+    root.replaceChildren(...snap.nodes);
+  }
+  snapshots.delete(root);
+  root.removeAttribute(FP_ATTR);
+  const chName = inlineSprites ? root.closest(".mes")?.getAttribute("ch_name") ?? "" : "";
+  const packs = chName ? getActivePacks(settings, chName) : [];
+  const hasPacks = packs.length > 0;
+  const freshText = root.textContent ?? "";
+  const tagged = hasTag(freshText);
+  const needsWork = settings.hideTagInMessage && tagged || inlineSprites && hasPacks && tagged || settings.renderInlineImages && hasInlineImageMarkup(freshText);
+  if (!needsWork) return;
+  snapshots.set(root, {
+    nodes: Array.from(root.childNodes).map((n) => n.cloneNode(true)),
+    originalText: freshText
+  });
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  let current;
+  while (current = walker.nextNode()) {
+    textNodes.push(current);
+  }
+  for (const textNode of textNodes) {
+    const text = textNode.nodeValue ?? "";
+    if (!text) continue;
+    const nodeTagged = hasTag(text);
+    const needsSprites = inlineSprites && hasPacks && nodeTagged;
+    const needsStrip = settings.hideTagInMessage && nodeTagged && !needsSprites;
+    const needsImages = settings.renderInlineImages && hasInlineImageMarkup(text);
+    if (!needsSprites && !needsStrip && !needsImages) continue;
+    let processed = needsStrip ? stripTags(text) : text;
+    const elements = [];
+    const marker = (el3) => `\0${elements.push(el3) - 1}\0`;
+    if (needsSprites && hasPacks) {
+      processed = replaceTags(processed, (address) => {
+        const sprite = resolveSprite(packs, address);
+        if (!sprite) return settings.hideTagInMessage ? "" : null;
+        return marker(createImage(sprite.url, sprite.tag, "so-inline-sprite"));
+      });
+    }
+    if (needsImages) {
+      processed = replaceInlineImages(processed, (m) => marker(createImage(host + m.code, m.code)));
+    }
+    if (elements.length === 0) {
+      if (processed !== text) textNode.nodeValue = processed;
+      continue;
+    }
+    const fragment = document.createDocumentFragment();
+    processed.split("\0").forEach((part, i) => {
+      if (i % 2 === 1) fragment.append(elements[Number(part)]);
+      else if (part) fragment.append(document.createTextNode(part));
+    });
+    textNode.replaceWith(fragment);
+  }
+  const processedMark = document.createElement("span");
+  processedMark.className = MARKER_CLASS;
+  processedMark.hidden = true;
+  root.prepend(processedMark);
+  root.setAttribute(FP_ATTR, fingerprint);
+}
+function createImage(src, alt, extraClass = "") {
+  const wrap = document.createElement("span");
+  wrap.className = extraClass ? `so-inline-image ${extraClass}` : "so-inline-image";
+  const img = document.createElement("img");
+  img.src = src;
+  img.alt = alt;
+  img.loading = "lazy";
+  img.addEventListener("error", () => {
+    wrap.classList.add("so-inline-image-error");
+    wrap.title = "图片加载失败，点击重试";
+  });
+  img.addEventListener("load", () => {
+    wrap.classList.remove("so-inline-image-error");
+    wrap.removeAttribute("title");
+  });
+  wrap.addEventListener("click", () => {
+    if (!wrap.classList.contains("so-inline-image-error")) return;
+    img.src = src.startsWith("data:") ? src : `${src}${src.includes("?") ? "&" : "?"}so_retry=${Date.now()}`;
+  });
+  wrap.append(img);
+  return wrap;
+}
+
+// st-extension/src/apps/widgets.ts
+function el2(tag, className) {
+  const node = document.createElement(tag);
+  node.className = className;
+  return node;
+}
+function appButton(label, onClick) {
+  const btn = el2("div", "menu_button so-app-btn");
+  btn.setAttribute("role", "button");
+  btn.tabIndex = 0;
+  btn.textContent = label;
+  btn.addEventListener("click", onClick);
+  btn.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onClick();
+    }
+  });
+  return btn;
+}
+function toggleRow(label, checked, onChange) {
+  const row = el2("label", "so-app-toggle checkbox_label");
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = checked;
+  input.addEventListener("change", () => onChange(input.checked));
+  const span = document.createElement("span");
+  span.textContent = label;
+  row.append(input, span);
+  return row;
+}
+function selectRow(label, value, options, onChange) {
+  const row = el2("label", "so-app-toggle");
+  const span = document.createElement("span");
+  span.textContent = label;
+  const select = document.createElement("select");
+  select.className = "text_pole so-app-input";
+  for (const opt of options) {
+    const o = document.createElement("option");
+    o.value = opt.value;
+    o.textContent = opt.label;
+    if (opt.value === value) o.selected = true;
+    select.append(o);
+  }
+  select.addEventListener("change", () => onChange(select.value));
+  row.append(span, select);
+  return row;
+}
+function numberRow(label, value, min, max, onChange) {
+  const row = el2("label", "so-app-toggle");
+  const span = document.createElement("span");
+  span.textContent = label;
+  const input = document.createElement("input");
+  input.type = "number";
+  input.className = "text_pole so-app-num";
+  input.min = String(min);
+  input.max = String(max);
+  input.step = "1";
+  input.value = String(value);
+  input.addEventListener("change", () => {
+    const n = Math.round(Number(input.value));
+    const clamped = Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min;
+    input.value = String(clamped);
+    onChange(clamped);
+  });
+  row.append(span, input);
+  return row;
+}
+function textareaRow(label, value, placeholder, onCommit) {
+  const wrap = el2("div", "so-app-field");
+  const title = el2("div", "so-app-title");
+  title.textContent = label;
+  const input = document.createElement("textarea");
+  input.className = "text_pole so-app-input";
+  input.rows = 5;
+  input.value = value;
+  input.placeholder = placeholder;
+  input.addEventListener("change", () => onCommit(input.value));
+  wrap.append(title, input);
+  return wrap;
+}
+function textRow(label, value, placeholder, onCommit, type = "text") {
+  const wrap = el2("div", "so-app-field");
+  const title = el2("div", "so-app-title");
+  title.textContent = label;
+  const input = document.createElement("input");
+  input.type = type;
+  input.className = "text_pole so-app-input";
+  input.value = value;
+  input.placeholder = placeholder;
+  input.autocomplete = "off";
+  input.addEventListener("change", () => onCommit(input.value));
+  wrap.append(title, input);
+  return wrap;
+}
+
+// st-extension/src/apps/sprite-app.ts
+function spriteApp() {
+  return {
+    id: "sprites",
+    name: "立绘",
+    icon: "🎭",
+    order: 1,
+    mount(container, ctx) {
+      const settings = ctx.getSettings();
+      const characterName = ctx.getCharacterName();
+      const packs = getActivePacks(settings, characterName);
+      const pack = packs[0] ?? null;
+      const stateSection = el2("div", "so-app-section");
+      const title = el2("div", "so-app-title");
+      title.textContent = characterName ? `当前角色：${characterName}` : "尚未打开角色聊天";
+      const detail = el2("div", "so-app-desc");
+      detail.textContent = settings.enabled ? pack ? packs.length > 1 ? `立绘功能运行中 — 已启用 ${packs.length} 个包（${packs.reduce((n, p) => n + p.sprites.length, 0)} 张）` : `立绘功能运行中 — 已绑定「${pack.name}」（${pack.sprites.length} 张）` : "立绘功能已开启，但当前角色未绑定立绘包（到「图库」绑定）" : "立绘功能已关闭：不注入 Prompt、不解析标签，旧楼层已恢复原文";
+      stateSection.append(
+        title,
+        toggleRow(
+          "启用立绘功能",
+          settings.enabled,
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), enabled: v })
+        ),
+        detail
+      );
+      const displaySection = el2("div", "so-app-section");
+      const displayTitle = el2("div", "so-app-title");
+      displayTitle.textContent = "显示";
+      displaySection.append(
+        displayTitle,
+        selectRow(
+          "显示位置",
+          settings.spriteDisplayMode,
+          [
+            { value: "overlay", label: "悬浮窗" },
+            { value: "inline", label: "仅楼层" },
+            { value: "both", label: "两者" }
+          ],
+          (v) => ctx.updateSettings({
+            ...ctx.getSettings(),
+            spriteDisplayMode: v === "inline" || v === "both" ? v : "overlay"
+          })
+        ),
+        toggleRow(
+          "显示悬浮窗",
+          !settings.overlayHidden,
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), overlayHidden: !v })
+        ),
+        appButton("把悬浮窗拉回视口", () => {
+          const cur = ctx.getSettings();
+          if (cur.spriteDisplayMode === "inline") return;
+          ctx.updateSettings({
+            ...cur,
+            overlayHidden: false,
+            overlay: { ...cur.overlay, x: 24, y: 80 }
+          });
+        }),
+        numberRow(
+          "最近渲染楼层数",
+          settings.recentFloors,
+          RECENT_FLOORS_MIN,
+          RECENT_FLOORS_MAX,
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), recentFloors: v })
+        ),
+        toggleRow(
+          "隐藏 [立绘:xxx] 标签",
+          settings.hideTagInMessage,
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), hideTagInMessage: v })
+        ),
+        toggleRow(
+          "渲染消息内插图",
+          settings.renderInlineImages,
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), renderInlineImages: v })
+        )
+      );
+      const displayHint = el2("div", "so-app-desc");
+      displayHint.textContent = "「仅楼层」把 [立绘:xxx] 原位替换为图片且不弹悬浮窗；楼层数限制加载聊天时补渲染的范围（新回复不受限）。";
+      displaySection.append(displayHint);
+      const autoSection = el2("div", "so-app-section");
+      const autoTitle = el2("div", "so-app-title");
+      autoTitle.textContent = "多立绘轮播";
+      autoSection.append(
+        autoTitle,
+        toggleRow(
+          "自动轮播（一条回复多张立绘时）",
+          settings.autoSwitch,
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), autoSwitch: v })
+        ),
+        numberRow(
+          "轮播间隔（秒）",
+          settings.autoSwitchSeconds,
+          1,
+          60,
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), autoSwitchSeconds: v })
+        )
+      );
+      const promptSection = el2("div", "so-app-section");
+      const promptTitle = el2("div", "so-app-title");
+      promptTitle.textContent = "Prompt";
+      promptSection.append(
+        promptTitle,
+        numberRow(
+          "每次回复立绘数量",
+          settings.spriteCount,
+          SPRITE_COUNT_MIN,
+          SPRITE_COUNT_MAX,
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), spriteCount: v })
+        ),
+        numberRow(
+          "注入深度（距末尾楼层数）",
+          settings.injectionDepth,
+          INJECTION_DEPTH_MIN,
+          INJECTION_DEPTH_MAX,
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), injectionDepth: v })
+        ),
+        selectRow(
+          "Prompt 模式",
+          settings.multiRolePromptMode,
+          [
+            { value: "full", label: "全量（枚举全部地址）" },
+            { value: "repeat", label: "智能精简（共有表情 + 场景其余）" }
+          ],
+          (v) => ctx.updateSettings({
+            ...ctx.getSettings(),
+            multiRolePromptMode: v === "repeat" ? "repeat" : "full"
+          })
+        )
+      );
+      const promptHint = el2("div", "so-app-desc");
+      promptHint.textContent = "多个包/含人名服装时，Prompt 用完整地址 [立绘:人名/服装/图名]；单包纯图名时用简写 [立绘:图名]。智能精简按实际长度自动取更短的一版：场景/表情较少时仍会显示全量格式，属正常现象。";
+      promptSection.append(promptHint);
+      promptSection.append(
+        textareaRow(
+          "自定义提示词（留空=用内置）",
+          settings.promptTemplate,
+          "整体替换内置提示词。占位符：{清单}=按场景分组的立绘清单，{数量}=每次回复立绘数",
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), promptTemplate: v })
+        )
+      );
+      container.append(stateSection, displaySection, autoSection, promptSection);
+    }
+  };
+}
+
+// st-extension/src/apps/gallery-app.ts
+function galleryApp(deps) {
+  return {
+    id: "gallery",
+    name: "图库",
+    icon: "🗂",
+    order: 2,
+    mount(container, ctx) {
+      const settings = ctx.getSettings();
+      const section = el2("div", "so-app-section");
+      const desc = el2("div", "so-app-desc");
+      desc.textContent = "立绘包管理：新建/上传/导入导出/分享串/角色绑定。";
+      section.append(desc, appButton("打开立绘包管理", () => deps.openManager()));
+      container.append(section);
+      const list = el2("div", "so-app-section");
+      const title = el2("div", "so-app-title");
+      title.textContent = `共 ${settings.packs.length} 个立绘包`;
+      list.append(title);
+      for (const pack of settings.packs) {
+        const row = el2("div", "so-app-desc");
+        row.textContent = `· ${pack.name}（${pack.sprites.length} 张）`;
+        list.append(row);
+      }
+      container.append(list);
+      const hostSection = el2("div", "so-app-section");
+      const hostTitle = el2("div", "so-app-title");
+      hostTitle.textContent = "图床（两条通道，互不影响）";
+      hostSection.append(hostTitle);
+      const autoDesc = el2("div", "so-app-desc");
+      autoDesc.textContent = "① 自动直传（imgbb）：上传/替换图片时自动传 imgbb 并绑定编号，本地图保留作显示保底，直链用于分享串。";
+      const hint = el2("div", "so-app-desc");
+      hint.textContent = "Key 仅保存在本地浏览器；上传失败时图片仍保留本地，可稍后补传。";
+      hostSection.append(
+        autoDesc,
+        textRow(
+          "imgbb API Key（仅存本地）",
+          settings.imgbbApiKey,
+          "免费申请：api.imgbb.com",
+          (raw) => ctx.updateSettings({ ...ctx.getSettings(), imgbbApiKey: raw.trim() }),
+          "password"
+        ),
+        toggleRow("上传时自动直传 imgbb 并绑定编号", settings.autoUpload, (v) => {
+          const cur = ctx.getSettings();
+          if (v && !cur.imgbbApiKey.trim()) {
+            hint.textContent = "请先填写 imgbb API Key（免费申请：https://api.imgbb.com/）";
+            ctx.updateSettings({ ...cur, autoUpload: false });
+            return;
+          }
+          ctx.updateSettings({ ...cur, autoUpload: v });
+        }),
+        hint
+      );
+      const manualDesc = el2("div", "so-app-desc");
+      manualDesc.textContent = "② 手动编码通道：「按编码添加」和分享串/插图编码解析时，用下面前缀拼接完整地址（默认 catbox）。";
+      hostSection.append(
+        manualDesc,
+        textRow("图床前缀", settings.imageHost, DEFAULT_IMAGE_HOST, (raw) => {
+          const v = raw.trim() || DEFAULT_IMAGE_HOST;
+          const value = /^https?:\/\/.+/.test(v) ? v.endsWith("/") ? v : `${v}/` : DEFAULT_IMAGE_HOST;
+          ctx.updateSettings({ ...ctx.getSettings(), imageHost: value });
+        })
+      );
+      container.append(hostSection);
+    }
+  };
+}
+
+// st-extension/src/apps/index.ts
+function createBuiltinApps(deps) {
+  return [spriteApp(), galleryApp({ openManager: deps.openGalleryManager })];
+}
+
+// st-extension/src/index.ts
+async function init() {
+  const adapter = new STAdapter();
+  let settings;
+  try {
+    settings = await adapter.loadSettings();
+  } catch (err) {
+    console.error("[sprite-overlay] 初始化失败", err);
+    return;
+  }
+  function updateSettings(next) {
+    const displayChanged = next.hideTagInMessage !== settings.hideTagInMessage || next.renderInlineImages !== settings.renderInlineImages || next.spriteDisplayMode !== settings.spriteDisplayMode || next.imageHost !== settings.imageHost || next.enabled !== settings.enabled || next.recentFloors !== settings.recentFloors;
+    const autoChanged = next.autoSwitch !== settings.autoSwitch || next.autoSwitchSeconds !== settings.autoSwitchSeconds;
+    settings = next;
+    adapter.saveSettings(settings);
+    overlay.setLayout(settings.overlay);
+    phone.setVisible(settings.showPhone);
+    if (autoChanged) overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds);
+    refresh();
+    if (displayChanged) reprocessAllMessages(settings);
+  }
+  function saveSettingsOnly(next) {
+    settings = next;
+    adapter.saveSettings(settings);
+  }
+  const manager = createSpriteManager({
+    adapter,
+    getSettings: () => settings,
+    updateSettings,
+    // 从手机打开的弹窗关闭后：重新展开手机并回到「图库」页；悬浮窗齿轮来源则正常关闭
+    onClosed: (source) => {
+      if (source === "phone") phone.openApp("gallery");
+    }
+  });
+  const overlay = createOverlay(
+    settings.overlay,
+    (layout) => {
+      settings = { ...settings, overlay: layout };
+      adapter.saveSettings(settings);
+    },
+    () => manager.open(),
+    // 悬浮窗 ✕：只隐藏窗体并记住状态，立绘功能（含楼层立绘）不受影响
+    () => updateSettings({ ...settings, overlayHidden: true })
+  );
+  overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds);
+  const registry = new PhoneAppRegistry();
+  function createAppContext(appId, goHome) {
+    return createPhoneAppContext({
+      appId,
+      getSettings: () => settings,
+      updateSettings,
+      saveSettingsOnly,
+      getCharacterName: () => adapter.getCurrentCharacterName(),
+      goHome
+    });
+  }
+  const phone = createPhoneShell(settings.phone, {
+    registry,
+    createAppContext,
+    onStateChange: (state) => {
+      saveSettingsOnly({ ...settings, phone: state });
+    }
+  });
+  function collapsePhone() {
+    settings = { ...settings, phone: { ...settings.phone, open: false } };
+    adapter.saveSettings(settings);
+    phone.setState(settings.phone);
+  }
+  for (const app of createBuiltinApps({
+    // 从手机开图库弹窗：先收起手机（避免挡在弹窗上），来源标记=手机（关闭后回图库页）
+    openGalleryManager: () => {
+      collapsePhone();
+      manager.open("phone");
+    }
+  })) {
+    registry.register(app);
+  }
+  window.stStage = {
+    registerApp: (app) => registry.register(app)
+  };
+  function overlayAllowed() {
+    return settings.enabled && settings.spriteDisplayMode !== "inline" && !settings.overlayHidden;
+  }
+  let lastOverlayContentKey = "";
+  function refresh() {
+    if (!settings.enabled) {
+      adapter.injectPrompt("");
+      overlay.setVisible(false);
+      lastOverlayContentKey = "";
+      return;
+    }
+    const characterName = adapter.getCurrentCharacterName();
+    const packs = getActivePacks(settings, characterName);
+    const pack = packs[0] ?? null;
+    const prompt = buildPrompt(
+      getActiveAddresses(settings, characterName),
+      settings.multiRolePromptMode,
+      settings.spriteCount,
+      settings.promptTemplate
+    );
+    adapter.injectPrompt(prompt, settings.injectionDepth);
+    const contentKey = `${characterName}|${packs.map((p) => p.id).join(",")}|${pack ? pack.sprites.length > 0 : false}`;
+    if (contentKey !== lastOverlayContentKey) {
+      lastOverlayContentKey = contentKey;
+      if (pack && pack.sprites.length > 0) {
+        preloadOnActivate(packs);
+        overlay.setImage(pack.sprites[0].url, pack.sprites[0].tag);
+      } else if (characterName) {
+        overlay.setPlaceholder("未绑定立绘包\n点击 ⚙ 进行绑定");
+      } else {
+        overlay.setPlaceholder("打开角色聊天后\n点击 ⚙ 绑定立绘包");
+      }
+    }
+    overlay.setVisible(overlayAllowed());
+  }
+  adapter.onMessageReceived((text) => {
+    if (!settings.enabled) return;
+    const characterName = adapter.getCurrentCharacterName();
+    const packs = getActivePacks(settings, characterName);
+    if (packs.length === 0) return;
+    const seq = resolveSprites(packs, extractTags(text));
+    preloadMatchedSprites(seq);
+    if (seq.length > 0 && overlayAllowed()) {
+      overlay.setSprites(seq);
+      overlay.setVisible(true);
+    }
+  });
+  mountMessagePostprocess({ getSettings: () => settings });
+  adapter.onCharacterChanged(() => {
+    refresh();
+    manager.refreshIfOpen();
+    setTimeout(() => reprocessAllMessages(settings), 200);
+  });
+  mountSettingsPanel({
+    getSettings: () => settings,
+    updateSettings
+  });
+  refresh();
+  phone.setState(settings.phone);
+  phone.setVisible(settings.showPhone);
+  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 15:17"}`;
+  console.log(`[sprite-overlay] 角色立绘悬浮窗扩展已加载（含手机框架）${version}`);
+}
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => void init());
+} else {
+  void init();
+}

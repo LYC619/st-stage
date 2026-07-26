@@ -92,6 +92,26 @@ export function numberRow(
   return row
 }
 
+/** 多行文本行（change 提交）：用于自定义 prompt 模板等长文本 */
+export function textareaRow(
+  label: string,
+  value: string,
+  placeholder: string,
+  onCommit: (v: string) => void,
+): HTMLElement {
+  const wrap = el('div', 'so-app-field')
+  const title = el('div', 'so-app-title')
+  title.textContent = label
+  const input = document.createElement('textarea')
+  input.className = 'text_pole so-app-input'
+  input.rows = 5
+  input.value = value
+  input.placeholder = placeholder
+  input.addEventListener('change', () => onCommit(input.value))
+  wrap.append(title, input)
+  return wrap
+}
+
 /** 文本输入行（blur 提交），transform 可在保存前清洗/校验值 */
 export function textRow(
   label: string,

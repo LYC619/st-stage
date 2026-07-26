@@ -164,8 +164,9 @@ async function init(): Promise<void> {
       getActiveAddresses(settings, characterName),
       settings.multiRolePromptMode,
       settings.spriteCount,
+      settings.promptTemplate,
     )
-    adapter.injectPrompt(prompt)
+    adapter.injectPrompt(prompt, settings.injectionDepth)
 
     const contentKey = `${characterName}|${packs.map((p) => p.id).join(',')}|${pack ? pack.sprites.length > 0 : false}`
     if (contentKey !== lastOverlayContentKey) {
@@ -219,7 +220,9 @@ async function init(): Promise<void> {
   refresh()
   phone.setState(settings.phone)
   phone.setVisible(settings.showPhone)
-  console.log('[sprite-overlay] 角色立绘悬浮窗扩展已加载（含手机框架）')
+  const version =
+    typeof __EXT_VERSION__ === 'undefined' ? 'dev' : `v${__EXT_VERSION__} · ${__BUILD_TIME__}`
+  console.log(`[sprite-overlay] 角色立绘悬浮窗扩展已加载（含手机框架）${version}`)
 }
 
 // ST 扩展脚本在 app ready 后加载，直接初始化即可；保险起见等 DOM ready

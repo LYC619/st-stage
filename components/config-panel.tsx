@@ -34,6 +34,7 @@ import { exportPack, importPack } from '@/core/pack-io'
 import { decodeShareString, encodeShareStringV2 } from '@/core/share-code'
 import { normalizeTag, parseSpriteFileName, sanitizePackName } from '@/core/naming'
 import { compressImage } from '@/core/image-compress'
+import { webAdapter } from '@/lib/web-adapter'
 import { uploadToImgbb } from '@/core/imgbb'
 
 interface ConfigPanelProps {
@@ -134,14 +135,32 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
 
     const answer = window.prompt(
       `检测到同名或地址重叠：${related.map((item) => item.name).join('、')}\n` +
-        '输入 1 合并为新包，2 重命名后安装，3 仅安装不启用；其他输入取消。',
+        '输入 1 合并进现有包，2 重命名后安装，3 仅安装（之后可按需启用）；其他输入取消。',
       '1',
     )
     if (answer === '1') {
-      const merged = mergeWithPrompts([...related, pack], related[0]?.name || pack.name)
-      if (!merged || !commitChecked(upsertPack(settings, merged))) return false
-      flash(`已生成合并包「${merged.name}」（${merged.sprites.length} 张），源包仍保留`)
-      return true
+      const target = related[0]
+      // 二级选择：一级菜单保持 3 项防用户懵，合并去向在这里细分
+      const mode = window.prompt(
+        `合并到哪里？\n1 并入旧包「${target.name}」（推荐：角色绑定不变，重叠源包移除）\n2 合并为新包（所有源包保留）\n其他输入取消。`,
+        '1',
+      )
+      if (mode === '1') {
+        const merged = mergeWithPrompts([...related, pack], target.name)
+        if (!merged) return false
+        let next = settings
+        for (const other of related.slice(1)) next = removePack(next, other.id)
+        if (!commitChecked(upsertPack(next, { ...merged, id: target.id }))) return false
+        flash(`已合并进「${merged.name}」（${merged.sprites.length} 张）`)
+        return true
+      }
+      if (mode === '2') {
+        const merged = mergeWithPrompts([...related, pack], `${target.name} 合并`)
+        if (!merged || !commitChecked(upsertPack(settings, merged))) return false
+        flash(`已生成合并包「${merged.name}」（${merged.sprites.length} 张），源包仍保留`)
+        return true
+      }
+      return false
     }
     if (answer === '2') {
       const rawName = window.prompt('请输入新的包名：', `${pack.name} 新`)
@@ -439,6 +458,22 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
             <option value="repeat">智能精简（共有表情 + 场景其余）</option>
           </select>
         </label>
+        <p className="text-xs text-muted-foreground">
+          智能精简按实际长度自动取更短的一版：场景/表情较少时仍会显示全量格式，属正常现象。
+        </p>
+        <label className="flex flex-col gap-1 text-sm text-foreground">
+          <span className="text-xs text-muted-foreground">
+            自定义提示词（留空=用内置；占位符 {'{清单}'}=立绘清单、{'{数量}'}=每次立绘数）
+          </span>
+          <textarea
+            rows={5}
+            defaultValue={settings.promptTemplate}
+            placeholder="整体替换内置提示词，例：你可以使用以下立绘：&#10;{清单}&#10;每次回复插入 {数量} 个 [立绘:...] 标签。"
+            onBlur={(e) => onSettingsChange({ ...settings, promptTemplate: e.target.value })}
+            className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+            aria-label="自定义提示词模板"
+          />
+        </label>
         <label className="flex flex-col gap-1 text-sm text-foreground">
           <span className="text-xs text-muted-foreground">imgbb API Key（仅存本地，申请：api.imgbb.com）</span>
           <span className="flex gap-1.5">
@@ -479,7 +514,9 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
           />
         </label>
         <label className="flex flex-col gap-1 text-sm text-foreground">
-          <span className="text-xs text-muted-foreground">图床前缀（分享串与插图编码拼接用）</span>
+          <span className="text-xs text-muted-foreground">
+            图床前缀（手动编码通道：分享串/插图编码拼接用，默认 catbox；与上面的 imgbb 自动直传互不影响）
+          </span>
           <input
             type="text"
             defaultValue={settings.imageHost}
@@ -494,6 +531,17 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
             aria-label="图床前缀"
           />
         </label>
+        <button
+          type="button"
+          onClick={() => {
+            if (!window.confirm('清空本地保存的所有设置与自定义立绘包并刷新页面？（预设包不受影响）')) return
+            webAdapter.clearStorage()
+            window.location.reload()
+          }}
+          className="self-start rounded-md border border-destructive/40 px-2 py-1 text-xs text-destructive transition-colors hover:bg-destructive/10"
+        >
+          清空本地数据并刷新（更新后界面不对时用这个，硬刷新清不掉 localStorage）
+        </button>
       </section>
 
       {/* 当前角色与绑定（多包） */}
@@ -649,6 +697,11 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
                       <img
                         src={s.url || '/placeholder.svg'}
                         alt={`${pack.name} - ${s.tag}`}
+                        title={
+                          s.remoteUrl
+                            ? `编号：${s.code || '无'}\n远程地址：${s.remoteUrl}`
+                            : '无远程地址（未上传图床，分享串带不上这张）'
+                        }
                         className="h-14 w-14 rounded-md border border-border object-cover"
                         loading="lazy"
                       />

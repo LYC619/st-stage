@@ -10,6 +10,7 @@ import { getSpriteSource } from './types'
 import { genId } from './sprite-store'
 import { normalizeTag, sanitizeDescription, sanitizePackName } from './naming'
 import { extractImageCode } from './share-code'
+import { recompressDataUri } from './image-compress'
 
 /**
  * 将 SpritePack 序列化为导出文件对象。
@@ -27,10 +28,11 @@ export async function exportPack(pack: SpritePack, embedHosted = false): Promise
       ...(sprite.outfit ? { outfit: sprite.outfit } : {}),
     }
     if (source === 'embedded') {
-      sprites.push({ tag: sprite.tag, data: sprite.url, ...extra })
+      // 补压缩兜底：早期未压缩的存量图/导入的胖 JSON，导出时在此收口（已压缩的 webp 直接跳过）
+      sprites.push({ tag: sprite.tag, data: await recompressDataUri(sprite.url), ...extra })
     } else if (source === 'local' || embedHosted) {
       try {
-        const data = await urlToDataUri(sprite.url)
+        const data = await recompressDataUri(await urlToDataUri(sprite.url))
         sprites.push({ tag: sprite.tag, data, ...extra })
       } catch {
         // 转换失败则回退为 URL

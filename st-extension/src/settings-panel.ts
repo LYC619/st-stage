@@ -47,12 +47,25 @@ export function mountSettingsPanel(deps: PanelDeps): void {
       (v) => deps.updateSettings({ ...deps.getSettings(), showPhone: v }),
       '屏幕上显示可拖动的 📱 图标，点击展开小手机（st-stage 各功能的统一入口）。',
     ),
+    checkboxRow(
+      '智能精简 Prompt（省 token）',
+      settings.multiRolePromptMode === 'repeat',
+      (v) =>
+        deps.updateSettings({
+          ...deps.getSettings(),
+          multiRolePromptMode: v ? 'repeat' : 'full',
+        }),
+      '把多场景共有的表情合并列出。按实际长度自动取更短的一版：场景/表情较少时仍会显示全量格式，属正常现象。',
+    ),
   )
 
   const hint = document.createElement('div')
   hint.className = 'so-status'
+  // 版本/构建时间可见：排查"更新后没生效"时区分 没构建/没提交/浏览器缓存
+  const version =
+    typeof __EXT_VERSION__ === 'undefined' ? '' : ` v${__EXT_VERSION__}（构建 ${__BUILD_TIME__}）`
   hint.textContent =
-    '立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。'
+    `立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`
   content.append(hint)
 }
 

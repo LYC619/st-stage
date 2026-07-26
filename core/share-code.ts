@@ -251,5 +251,24 @@ export function decodeShareStringV2(raw: string): SpritePack {
     throw new Error('导入失败：分享串中没有可用的「地址=URL」条目')
   }
 
-  return { id: genId(), name, author, sprites, updatedAt: new Date().toISOString() }
+  // 全部条目共享同一非空人名/服装时压回包级：包信息 UI 可见，且有效地址不变
+  // （effectiveRole/effectiveOutfit 按包级继承，与 upsertSprite 的 normalizeIdentityFields 同一约定）
+  const commonRole =
+    sprites.every((s) => (s.group ?? '') === (sprites[0].group ?? '')) ? (sprites[0].group ?? '') : ''
+  const commonOutfit =
+    sprites.every((s) => (s.outfit ?? '') === (sprites[0].outfit ?? '')) ? (sprites[0].outfit ?? '') : ''
+  for (const s of sprites) {
+    if (commonRole) delete s.group
+    if (commonOutfit) delete s.outfit
+  }
+
+  return {
+    id: genId(),
+    name,
+    author,
+    ...(commonRole ? { roleName: commonRole } : {}),
+    ...(commonOutfit ? { outfit: commonOutfit } : {}),
+    sprites,
+    updatedAt: new Date().toISOString(),
+  }
 }

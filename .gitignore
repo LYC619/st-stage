@@ -14,3 +14,10 @@ node_modules
 .next/
 .DS_Store
 tsconfig.tsbuildinfo
+# 本地工作区/会话产物（不随仓库分发；reference 含私人聊天记录，严禁入库）
+.agents/
+.planning/
+.pnpm-store/
+.superpowers/
+_analysis/
+reference/

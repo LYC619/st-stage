@@ -222,6 +222,26 @@ describe('decodeShareStringV2 roundtrip', () => {
     expect(decoded.sprites[0].url).toBe('https://h.com/b.png')
   })
 
+  it('全部条目共享同一人名/服装时压回包级（包信息不丢）', () => {
+    const decoded = decodeShareStringV2(
+      `${SHARE_PREFIX_V2}玛拉妮|@author=我|玛拉妮/常服/思考=https://i.ibb.co/a/1.webp|玛拉妮/常服/比耶=https://i.ibb.co/b/2.webp`,
+    )
+    expect(decoded.roleName).toBe('玛拉妮')
+    expect(decoded.outfit).toBe('常服')
+    for (const s of decoded.sprites) {
+      expect(s.group).toBeUndefined()
+      expect(s.outfit).toBeUndefined()
+    }
+  })
+
+  it('人名不一致时不压回，保留逐图 group', () => {
+    const decoded = decodeShareStringV2(
+      `${SHARE_PREFIX_V2}混合|鸣人/微笑=https://h.com/a.png|佐助/微笑=https://h.com/b.png`,
+    )
+    expect(decoded.roleName).toBeUndefined()
+    expect(decoded.sprites.map((s) => s.group)).toEqual(['鸣人', '佐助'])
+  })
+
   it('decodeShareString 自动识别 stpack2', () => {
     const encoded = encodeShareStringV2(v2Pack())!
     const decoded = decodeShareString(`抄作业 ${encoded.text}`)

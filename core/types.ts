@@ -20,6 +20,11 @@ export const SPRITE_COUNT_DEFAULT = 1
 export const SPRITE_COUNT_MIN = 1
 export const SPRITE_COUNT_MAX = 10
 
+/** prompt 注入深度（IN_CHAT 距末尾楼层数）：默认与上下限 */
+export const INJECTION_DEPTH_DEFAULT = 4
+export const INJECTION_DEPTH_MIN = 0
+export const INJECTION_DEPTH_MAX = 100
+
 /** 默认图床前缀（紧凑分享串中省略 host 时使用） */
 export const DEFAULT_IMAGE_HOST = 'https://files.catbox.moe/'
 
@@ -222,6 +227,13 @@ export interface PluginSettings {
   multiRolePromptMode: 'full' | 'repeat'
   /** 每次回复的立绘数量（七期，默认 1，范围 1–10）：注入 prompt 要求 AI 输出 N 个标签 */
   spriteCount: number
+  /** prompt 注入深度：IN_CHAT 模式下距对话末尾的楼层数（默认 4；0=紧贴最新消息） */
+  injectionDepth: number
+  /**
+   * 自定义提示词模板（空串=用内置 prompt）。非空时整体替换内置文本，
+   * 支持占位符 {清单}（按场景分组的立绘清单）与 {数量}（每次回复立绘数 N）。
+   */
+  promptTemplate: string
   /** imgbb 图床 API Key（功能①，仅存本地浏览器；空串=未配置） */
   imgbbApiKey: string
   /** 导入立绘时是否自动直传 imgbb 图床并绑定编号（功能①，需先配置 API Key） */
@@ -293,6 +305,8 @@ export function createDefaultSettings(): PluginSettings {
     multiRole: false,
     multiRolePromptMode: 'full',
     spriteCount: SPRITE_COUNT_DEFAULT,
+    injectionDepth: INJECTION_DEPTH_DEFAULT,
+    promptTemplate: '',
     imgbbApiKey: '',
     autoUpload: false,
     packs: [],

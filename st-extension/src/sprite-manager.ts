@@ -102,9 +102,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     }
     view = { kind: 'list' }
     backdrop = el('div', 'so-manager-backdrop')
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop) close()
-    })
+    // 点空白不再关闭（用户实测：误触退出后要重新逐层进入，受挫感强）；关闭走 ✕ 按钮或 Esc
     document.addEventListener('keydown', onEscape)
     window.addEventListener('resize', applyBackdropSize)
     applyBackdropSize()
@@ -278,14 +276,32 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
     const answer = window.prompt(
       `检测到同名或地址重叠：${related.map((item) => item.name).join('、')}\n` +
-        '输入 1 合并为新包，2 重命名后安装，3 仅安装不启用；其他输入取消。',
+        '输入 1 合并进现有包，2 重命名后安装，3 仅安装（之后可按需启用）；其他输入取消。',
       '1',
     )
     if (answer === '1') {
-      const merged = mergeWithPrompts([...related, pack], related[0]?.name || pack.name, body)
-      if (!merged || !updateChecked(upsertPack(settings, merged))) return false
-      toast(body, `已生成合并包「${merged.name}」（${merged.sprites.length} 张），源包仍保留`)
-      return true
+      const target = related[0]
+      // 二级选择：一级菜单保持 3 项防用户懵，合并去向在这里细分
+      const mode = window.prompt(
+        `合并到哪里？\n1 并入旧包「${target.name}」（推荐：角色绑定不变，重叠源包移除）\n2 合并为新包（所有源包保留）\n其他输入取消。`,
+        '1',
+      )
+      if (mode === '1') {
+        const merged = mergeWithPrompts([...related, pack], target.name, body)
+        if (!merged) return false
+        let next = settings
+        for (const other of related.slice(1)) next = removePack(next, other.id)
+        if (!updateChecked(upsertPack(next, { ...merged, id: target.id }))) return false
+        toast(body, `已合并进「${merged.name}」（${merged.sprites.length} 张）`)
+        return true
+      }
+      if (mode === '2') {
+        const merged = mergeWithPrompts([...related, pack], `${target.name} 合并`, body)
+        if (!merged || !updateChecked(upsertPack(settings, merged))) return false
+        toast(body, `已生成合并包「${merged.name}」（${merged.sprites.length} 张），源包仍保留`)
+        return true
+      }
+      return false
     }
     if (answer === '2') {
       const rawName = window.prompt('请输入新的包名：', `${pack.name} 新`)
@@ -527,7 +543,16 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       button('导入 JSON 文件', () => {
         pickFile('.json,application/json', false, async (files) => {
           try {
-            const pack = importPack(await files[0].text())
+            const text = await files[0].text()
+            // ponytail: 2MB 阈值是拍脑袋值——只为在大 base64 包上提醒云端内存风险，不做环境检测
+            if (
+              text.length > 2 * 1024 * 1024 &&
+              !window.confirm(
+                `这个 JSON 有 ${(text.length / 1024 / 1024).toFixed(1)}MB（内嵌 base64 图）。云端部署的酒馆导入大包容易内存爆满，建议让对方先传图床再发分享串。仍要导入吗？`,
+              )
+            )
+              return
+            const pack = importPack(text)
             if (!installImportedPack(pack, body)) return
             const installed = deps.getSettings().packs.find((item) => item.id === pack.id)
             if (installed) view = { kind: 'pack', packId: installed.id }
@@ -794,22 +819,27 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       addSection.append(addRow, upHint)
 
       const codeRow = el('div', 'so-row so-code-row')
-      const tagInput = textInput('表情名，如 微笑')
-      const codeInput = textInput('图床编码，如 ab12cd.png')
+      const tagInput = textInput('图名，留空=取编码名')
+      const codeInput = textInput('编码，可粘贴多个（空格/逗号分隔）')
       const codeGroupInput = textInput('分组，可空')
       codeRow.append(
         labeled('表情', tagInput),
         labeled('编码', codeInput),
         labeled('分组', codeGroupInput),
         button('按编码添加', () => {
-          const tag = normalizeTag(tagInput.value)
-          const code = codeInput.value.trim()
-          if (!tag) {
-            toast(body, '表情名不能为空（[ ] / : | = @ 等符号会被剔除）')
+          const codes = codeInput.value.split(/[\s,，、;；|]+/).filter(Boolean)
+          if (codes.length === 0) {
+            toast(body, '请填写图床编码，如 ab12cd.png（可一次粘贴多个）')
             return
           }
-          if (!isValidImageCode(code)) {
-            toast(body, '编码格式不对：应为图床文件名，如 ab12cd.png')
+          const bad = codes.filter((c) => !isValidImageCode(c))
+          if (bad.length > 0) {
+            toast(body, `编码格式不对：${bad.slice(0, 3).join('、')}${bad.length > 3 ? ' 等' : ''}`)
+            return
+          }
+          const manualTag = normalizeTag(tagInput.value)
+          if (codes.length > 1 && manualTag) {
+            toast(body, '多个编码时图名自动取各自编码名，请把图名留空')
             return
           }
           const current = deps.getSettings()
@@ -817,14 +847,23 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           if (!target) return
           const host = current.imageHost.endsWith('/') ? current.imageHost : `${current.imageHost}/`
           const group = normalizeTag(codeGroupInput.value)
-          commitPack(upsertSprite(target, { tag, url: host + code, code, ...(group ? { group } : {}) }))
+          let next = target
+          let added = 0
+          for (const code of codes) {
+            const tag = manualTag || normalizeTag(code.replace(/\.[^.]+$/, ''))
+            if (!tag) continue
+            next = upsertSprite(next, { tag, url: host + code, code, ...(group ? { group } : {}) })
+            added++
+          }
+          commitPack(next)
+          toast(body, `已按编码添加 ${added} 张`)
           tagInput.value = ''
           codeInput.value = ''
           codeGroupInput.value = ''
         }),
       )
       const codeHint = el('div', 'so-status')
-      codeHint.textContent = `编码将拼接当前图床前缀：${deps.getSettings().imageHost}`
+      codeHint.textContent = `手动通道：编码拼接图床前缀 ${deps.getSettings().imageHost}（与 imgbb 自动直传互不影响）`
       addSection.append(codeRow, codeHint)
       body.append(addSection)
     }
@@ -930,6 +969,15 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
             toast(body, err instanceof Error ? err.message : '替换失败')
           }
         })
+      }),
+      iconButton('🔗', '远程地址', () => {
+        // 图床图的 url 本身就是远程地址（按编码添加）；本地保底图的远程副本在 remoteUrl
+        const remote = sprite.remoteUrl || (getSpriteSource(sprite) === 'hosted' ? sprite.url : '')
+        if (!remote) {
+          toast(body, `「${sprite.tag}」还没有远程地址（未上传图床，分享时对方看不到）`)
+          return
+        }
+        window.prompt(`「${sprite.tag}」编号：${sprite.code || '无'}\n远程地址（Ctrl+C 复制）：`, remote)
       }),
       iconButton('★', '设为封面', () => {
         const target = latestPack()

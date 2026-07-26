@@ -91,6 +91,27 @@ export async function compressImage(
   }
 }
 
+/**
+ * data URI → 补压缩后的 data URI（导出内嵌时兜底：早期未压缩的存量图/导入的胖 JSON 在此收口）。
+ * 已是 webp 视为压缩过直接跳过（避免反复导出导入的代际画质损失）；
+ * GIF/SVG/非图片/非浏览器环境原样返回；任何失败安全回退原图。
+ */
+export async function recompressDataUri(
+  dataUri: string,
+  options: CompressOptions = {},
+): Promise<string> {
+  if (typeof document === 'undefined') return dataUri
+  const mime = /^data:([^;,]+)/.exec(dataUri)?.[1] ?? ''
+  if (!mime.startsWith('image/')) return dataUri
+  if (mime === 'image/webp' || mime === 'image/gif' || mime === 'image/svg+xml') return dataUri
+  try {
+    const blob = await (await fetch(dataUri)).blob()
+    return (await compressImage(blob, options)).dataUri
+  } catch {
+    return dataUri
+  }
+}
+
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image()

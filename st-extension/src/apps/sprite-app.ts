@@ -6,13 +6,15 @@
 
 import type { PhoneApp } from '../../../core/phone-registry'
 import {
+  INJECTION_DEPTH_MAX,
+  INJECTION_DEPTH_MIN,
   RECENT_FLOORS_MAX,
   RECENT_FLOORS_MIN,
   SPRITE_COUNT_MAX,
   SPRITE_COUNT_MIN,
 } from '../../../core/types'
 import { getActivePacks } from '../../../core/sprite-store'
-import { el, appButton, numberRow, selectRow, toggleRow } from './widgets'
+import { el, appButton, numberRow, selectRow, textareaRow, toggleRow } from './widgets'
 
 export function spriteApp(): PhoneApp {
   return {
@@ -117,6 +119,13 @@ export function spriteApp(): PhoneApp {
         numberRow('每次回复立绘数量', settings.spriteCount, SPRITE_COUNT_MIN, SPRITE_COUNT_MAX, (v) =>
           ctx.updateSettings({ ...ctx.getSettings(), spriteCount: v }),
         ),
+        numberRow(
+          '注入深度（距末尾楼层数）',
+          settings.injectionDepth,
+          INJECTION_DEPTH_MIN,
+          INJECTION_DEPTH_MAX,
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), injectionDepth: v }),
+        ),
         selectRow(
           'Prompt 模式',
           settings.multiRolePromptMode,
@@ -133,8 +142,17 @@ export function spriteApp(): PhoneApp {
       )
       const promptHint = el('div', 'so-app-desc')
       promptHint.textContent =
-        '多个包/含人名服装时，Prompt 用完整地址 [立绘:人名/服装/图名]；单包纯图名时用简写 [立绘:图名]。'
+        '多个包/含人名服装时，Prompt 用完整地址 [立绘:人名/服装/图名]；单包纯图名时用简写 [立绘:图名]。' +
+        '智能精简按实际长度自动取更短的一版：场景/表情较少时仍会显示全量格式，属正常现象。'
       promptSection.append(promptHint)
+      promptSection.append(
+        textareaRow(
+          '自定义提示词（留空=用内置）',
+          settings.promptTemplate,
+          '整体替换内置提示词。占位符：{清单}=按场景分组的立绘清单，{数量}=每次回复立绘数',
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), promptTemplate: v }),
+        ),
+      )
 
       container.append(stateSection, displaySection, autoSection, promptSection)
     },

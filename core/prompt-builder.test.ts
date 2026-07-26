@@ -91,15 +91,45 @@ describe('buildPrompt — N 张立绘', () => {
     expect(p).not.toMatch(/依次输出/)
   })
 
-  it('N>1 要求按情节顺序输出 N 个标签', () => {
+  it('N>1 要求按情节顺序、分散插入正文', () => {
     const p = buildPrompt([addr('', '', '微笑'), addr('', '', '害羞')], 'full', 3)
     expect(p).toContain('3 张立绘')
-    expect(p).toContain('依次输出 3 个')
+    expect(p).toContain('不要集中堆在回复结尾')
+  })
+
+  it('N>1 带插入位置 few-shot，示例图名取实际存在的 tag', () => {
+    const p = buildPrompt([addr('鸣人', '', '微笑'), addr('鸣人', '', '害羞')], 'full', 2)
+    expect(p).toContain('插入位置示例')
+    expect(p).toContain('[立绘:鸣人/微笑]')
+    expect(p).toContain('[立绘:鸣人/害羞]')
+  })
+
+  it('N=1 不带 few-shot', () => {
+    const p = buildPrompt([addr('', '', '微笑')], 'full', 1)
+    expect(p).not.toContain('插入位置示例')
   })
 
   it('N 非法回退 1', () => {
     const p = buildPrompt([addr('', '', '微笑')], 'full', 0)
     expect(p).toContain('选择一个')
+  })
+})
+
+describe('buildPrompt — 自定义模板', () => {
+  it('非空模板整体替换内置 prompt，{清单}/{数量} 被替换', () => {
+    const p = buildPrompt(
+      [addr('鸣人', '', '微笑'), addr('', '', '哭泣')],
+      'full',
+      3,
+      '可用：\n{清单}\n请输出 {数量} 个标签。',
+    )
+    expect(p).toBe('可用：\n- 鸣人：微笑\n- 默认：哭泣\n请输出 3 个标签。')
+    expect(p).not.toContain('[角色立绘系统]')
+  })
+
+  it('空白模板回退内置 prompt；空地址仍不注入', () => {
+    expect(buildPrompt([addr('', '', '微笑')], 'full', 1, '  ')).toContain('[角色立绘系统]')
+    expect(buildPrompt([], 'full', 1, '自定义 {清单}')).toBe('')
   })
 })
 
