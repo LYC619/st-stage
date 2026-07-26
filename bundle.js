@@ -135,6 +135,14 @@ function buildShared(addresses, count) {
 function chooseShorterPrompt(grouped, shared) {
   return shared.length < grouped.length ? shared : grouped;
 }
+var BUILTIN_TEMPLATE = [
+  "[角色立绘系统]",
+  "可用立绘（按场景）：",
+  "{清单}",
+  "输出格式：默认场景直接写 [立绘:表情]；其他场景写 [立绘:场景/表情]。两段地址表示无服装，三级地址表示指定服装。",
+  "请根据回复内容，按情节顺序选择 {数量} 张立绘。每个 [立绘:...] 标签单独占一行，插在触发它的剧情段落之后——随剧情分散在正文中，不要集中堆在回复结尾。",
+  "只能使用上述场景中实际列出的表情，不要自行拼造不存在的角色/服装/表情组合。"
+].join("\n");
 function buildPrompt(addresses, mode, count, template = "") {
   if (addresses.length === 0) return "";
   const n = Math.max(1, Math.round(count) || 1);
@@ -2336,6 +2344,17 @@ ${options}`,
       body.append(msg);
     }
   }
+  function collapsible(titleText, open2 = false) {
+    const box = document.createElement("details");
+    box.className = "so-section so-collapse";
+    box.open = open2;
+    const summary = document.createElement("summary");
+    summary.className = "so-section-title";
+    summary.textContent = titleText;
+    const inner = el("div", "so-collapse-body");
+    box.append(summary, inner);
+    return { box, body: inner };
+  }
   function renderList(body) {
     const settings = deps.getSettings();
     const characterName = deps.adapter.getCurrentCharacterName();
@@ -2414,9 +2433,7 @@ ${options}`,
       grid.append(renderPackCard(pack, bound));
     }
     body.append(grid);
-    const addSection = el("div", "so-section");
-    const addTitle = el("div", "so-section-title");
-    addTitle.textContent = "新建 / 导入";
+    const addPanel = collapsible("新建 / 导入");
     const createRow = el("div", "so-row");
     const nameInput = textInput("新立绘包名称…");
     nameInput.classList.add("so-grow");
@@ -2473,8 +2490,8 @@ ${options}`,
         });
       })
     );
-    addSection.append(addTitle, createRow, importRow);
-    body.append(addSection);
+    addPanel.body.append(createRow, importRow);
+    body.append(addPanel.box);
     body.append(statusBar());
   }
   function renderPackCard(pack, bound) {
@@ -2568,14 +2585,13 @@ ${options}`,
       );
     }
     body.append(topRow);
+    let metaBox = null;
     if (readonly) {
       const note = el("div", "so-status");
       note.textContent = "预设包随扩展分发、只读；想改动可先「导出 JSON」再导入为自定义包。";
       body.append(note);
     } else {
-      const metaSection = el("div", "so-section");
-      const metaTitle = el("div", "so-section-title");
-      metaTitle.textContent = "包信息";
+      const metaPanel = collapsible("包信息");
       const metaRow = el("div", "so-row so-meta-row");
       const nameInput = textInput("包名");
       nameInput.value = pack.name;
@@ -2613,8 +2629,8 @@ ${options}`,
       );
       const metaHint = el("div", "so-status");
       metaHint.textContent = "人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。";
-      metaSection.append(metaTitle, metaRow, metaHint);
-      body.append(metaSection);
+      metaPanel.body.append(metaRow, metaHint);
+      metaBox = metaPanel.box;
     }
     if (pack.sprites.length === 0) {
       const empty = el("div", "so-status");
@@ -2639,6 +2655,7 @@ ${options}`,
         body.append(grid);
       }
     }
+    if (metaBox) body.append(metaBox);
     if (!readonly) {
       const pending = pack.sprites.filter(
         (s) => getSpriteSource(s) !== "hosted" && !(s.remoteUrl && /^https?:\/\//.test(s.remoteUrl))
@@ -2661,13 +2678,10 @@ ${options}`,
       }
       const splitPreview = previewGroupSplit(pack);
       if (splitPreview.length >= 2) {
-        const splitSection = el("div", "so-section");
-        const splitTitle = el("div", "so-section-title");
-        splitTitle.textContent = "按分组拆成立绘包";
+        const splitPanel = collapsible("按分组拆成立绘包");
         const splitDesc = el("div", "so-status");
         splitDesc.textContent = `检测到 ${splitPreview.length} 个分组：${splitPreview.map((s) => `${s.roleName}(${s.count})`).join("、")}。拆分会新建这些包（原包与绑定保留，可稍后自行删除）。`;
-        splitSection.append(
-          splitTitle,
+        splitPanel.body.append(
           splitDesc,
           button("拆分（保留原包）", () => {
             const preview = splitPreview.map((s) => `${s.roleName}：${s.count} 张`).join("\n");
@@ -2686,12 +2700,9 @@ ${preview}
             toast(body, `已拆出 ${newPacks.length} 个新包（原包「${pack.name}」保留）`);
           })
         );
-        body.append(splitSection);
+        body.append(splitPanel.box);
       }
-      const addSection = el("div", "so-section");
-      const addTitle = el("div", "so-section-title");
-      addTitle.textContent = "添加立绘";
-      addSection.append(addTitle);
+      const addPanel = collapsible("添加立绘", pack.sprites.length === 0);
       const addRow = el("div", "so-row");
       addRow.append(
         button("批量上传（自动压缩+解析预览）", () => {
@@ -2700,7 +2711,7 @@ ${preview}
       );
       const upHint = el("div", "so-status");
       upHint.textContent = "文件名按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png），上传前可预览修正、选择不拆分。";
-      addSection.append(addRow, upHint);
+      addPanel.body.append(addRow, upHint);
       const codeRow = el("div", "so-row so-code-row");
       const tagInput = textInput("图名，留空=取编码名");
       const codeInput = textInput("编码，可粘贴多个（空格/逗号分隔）");
@@ -2747,8 +2758,8 @@ ${preview}
       );
       const codeHint = el("div", "so-status");
       codeHint.textContent = `手动通道：编码拼接图床前缀 ${deps.getSettings().imageHost}（与 imgbb 自动直传互不影响）`;
-      addSection.append(codeRow, codeHint);
-      body.append(addSection);
+      addPanel.body.append(codeRow, codeHint);
+      body.append(addPanel.box);
     }
     body.append(statusBar());
   }
@@ -3250,7 +3261,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 15:17"}）`;
+  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 16:08"}）`;
   hint.textContent = `立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -3557,6 +3568,17 @@ function numberRow(label, value, min, max, onChange) {
   row.append(span, input);
   return row;
 }
+function foldSection(title, open = false) {
+  const box = document.createElement("details");
+  box.className = "so-app-section so-app-fold";
+  box.open = open;
+  const summary = document.createElement("summary");
+  summary.className = "so-app-title";
+  summary.textContent = title;
+  const body = el2("div", "so-app-fold-body");
+  box.append(summary, body);
+  return { box, body };
+}
 function textareaRow(label, value, placeholder, onCommit) {
   const wrap = el2("div", "so-app-field");
   const title = el2("div", "so-app-title");
@@ -3611,11 +3633,8 @@ function spriteApp() {
         ),
         detail
       );
-      const displaySection = el2("div", "so-app-section");
-      const displayTitle = el2("div", "so-app-title");
-      displayTitle.textContent = "显示";
-      displaySection.append(
-        displayTitle,
+      const displaySection = foldSection("显示");
+      displaySection.body.append(
         selectRow(
           "显示位置",
           settings.spriteDisplayMode,
@@ -3663,12 +3682,9 @@ function spriteApp() {
       );
       const displayHint = el2("div", "so-app-desc");
       displayHint.textContent = "「仅楼层」把 [立绘:xxx] 原位替换为图片且不弹悬浮窗；楼层数限制加载聊天时补渲染的范围（新回复不受限）。";
-      displaySection.append(displayHint);
-      const autoSection = el2("div", "so-app-section");
-      const autoTitle = el2("div", "so-app-title");
-      autoTitle.textContent = "多立绘轮播";
-      autoSection.append(
-        autoTitle,
+      displaySection.body.append(displayHint);
+      const autoSection = foldSection("多立绘轮播");
+      autoSection.body.append(
         toggleRow(
           "自动轮播（一条回复多张立绘时）",
           settings.autoSwitch,
@@ -3682,11 +3698,8 @@ function spriteApp() {
           (v) => ctx.updateSettings({ ...ctx.getSettings(), autoSwitchSeconds: v })
         )
       );
-      const promptSection = el2("div", "so-app-section");
-      const promptTitle = el2("div", "so-app-title");
-      promptTitle.textContent = "Prompt";
-      promptSection.append(
-        promptTitle,
+      const promptSection = foldSection("Prompt");
+      promptSection.body.append(
         numberRow(
           "每次回复立绘数量",
           settings.spriteCount,
@@ -3716,16 +3729,23 @@ function spriteApp() {
       );
       const promptHint = el2("div", "so-app-desc");
       promptHint.textContent = "多个包/含人名服装时，Prompt 用完整地址 [立绘:人名/服装/图名]；单包纯图名时用简写 [立绘:图名]。智能精简按实际长度自动取更短的一版：场景/表情较少时仍会显示全量格式，属正常现象。";
-      promptSection.append(promptHint);
-      promptSection.append(
-        textareaRow(
-          "自定义提示词（留空=用内置）",
-          settings.promptTemplate,
-          "整体替换内置提示词。占位符：{清单}=按场景分组的立绘清单，{数量}=每次回复立绘数",
-          (v) => ctx.updateSettings({ ...ctx.getSettings(), promptTemplate: v })
-        )
+      promptSection.body.append(promptHint);
+      const tplRow = textareaRow(
+        "自定义提示词（留空=用内置）",
+        settings.promptTemplate,
+        "整体替换内置提示词。占位符：{清单}=按场景分组的立绘清单，{数量}=每次回复立绘数",
+        (v) => ctx.updateSettings({ ...ctx.getSettings(), promptTemplate: v })
       );
-      container.append(stateSection, displaySection, autoSection, promptSection);
+      const tplInput = tplRow.querySelector("textarea");
+      promptSection.body.append(
+        tplRow,
+        appButton("填入内置提示词底稿（在此基础上改）", () => {
+          if (tplInput.value.trim() && !window.confirm("用内置底稿覆盖当前已填写的自定义提示词？")) return;
+          tplInput.value = BUILTIN_TEMPLATE;
+          ctx.updateSettings({ ...ctx.getSettings(), promptTemplate: BUILTIN_TEMPLATE });
+        })
+      );
+      container.append(stateSection, displaySection.box, autoSection.box, promptSection.box);
     }
   };
 }
@@ -3942,7 +3962,7 @@ async function init() {
   refresh();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 15:17"}`;
+  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 16:08"}`;
   console.log(`[sprite-overlay] 角色立绘悬浮窗扩展已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {

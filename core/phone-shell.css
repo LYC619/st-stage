@@ -237,6 +237,35 @@
   background: rgba(255, 255, 255, 0.04);
 }
 
+/* 折叠分区：details 不吃 flex 布局，标题（summary）常显、内容默认收起 */
+.so-app-fold {
+  display: block;
+}
+.so-app-fold > summary {
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  padding: 2px 0;
+}
+.so-app-fold > summary::-webkit-details-marker {
+  display: none;
+}
+.so-app-fold > summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+}
+.so-app-fold[open] > summary::before {
+  transform: rotate(90deg);
+}
+.so-app-fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .so-app-title {
   font-size: 13px;
   font-weight: 600;

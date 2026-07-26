@@ -383,6 +383,35 @@
   letter-spacing: 0.02em;
 }
 
+/* 折叠面板：次要功能区默认收起只露标题，图墙占主位（details/summary 原生可达性） */
+.so-manager .so-collapse > summary {
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  padding: 2px 0;
+}
+.so-manager .so-collapse > summary::-webkit-details-marker {
+  display: none;
+}
+.so-manager .so-collapse > summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+}
+.so-manager .so-collapse[open] > summary::before {
+  transform: rotate(90deg);
+}
+.so-manager .so-collapse > summary:hover {
+  opacity: 1;
+}
+.so-manager .so-collapse-body {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 /* 绑定行 / 新建导入行：输入控件占满剩余宽度，与按钮同行 */
 .so-manager .so-bind-row .text_pole,
 .so-manager .text_pole.so-grow {
@@ -1093,6 +1122,35 @@
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.04);
+}
+
+/* 折叠分区：details 不吃 flex 布局，标题（summary）常显、内容默认收起 */
+.so-app-fold {
+  display: block;
+}
+.so-app-fold > summary {
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  padding: 2px 0;
+}
+.so-app-fold > summary::-webkit-details-marker {
+  display: none;
+}
+.so-app-fold > summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+}
+.so-app-fold[open] > summary::before {
+  transform: rotate(90deg);
+}
+.so-app-fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .so-app-title {

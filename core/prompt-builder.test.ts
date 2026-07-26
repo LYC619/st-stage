@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  BUILTIN_TEMPLATE,
   buildInjectionPrompt,
   buildMultiRolePrompt,
   buildPrompt,
@@ -130,6 +131,13 @@ describe('buildPrompt — 自定义模板', () => {
   it('空白模板回退内置 prompt；空地址仍不注入', () => {
     expect(buildPrompt([addr('', '', '微笑')], 'full', 1, '  ')).toContain('[角色立绘系统]')
     expect(buildPrompt([], 'full', 1, '自定义 {清单}')).toBe('')
+  })
+
+  it('BUILTIN_TEMPLATE 与内置措辞同步（模板渲染的每一行都出现在内置输出中）', () => {
+    const addrs = [addr('鸣人', '', '微笑'), addr('鸣人', '', '害羞')]
+    const builtin = buildPrompt(addrs, 'full', 3)
+    const rendered = buildPrompt(addrs, 'full', 3, BUILTIN_TEMPLATE)
+    for (const line of rendered.split('\n')) expect(builtin).toContain(line)
   })
 })
 

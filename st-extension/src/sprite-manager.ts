@@ -412,6 +412,19 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     }
   }
 
+  /** 折叠面板：图墙占主位，次要功能区默认收起只露标题（用户实测反馈） */
+  function collapsible(titleText: string, open = false): { box: HTMLElement; body: HTMLElement } {
+    const box = document.createElement('details')
+    box.className = 'so-section so-collapse'
+    box.open = open
+    const summary = document.createElement('summary')
+    summary.className = 'so-section-title'
+    summary.textContent = titleText
+    const inner = el('div', 'so-collapse-body')
+    box.append(summary, inner)
+    return { box, body: inner }
+  }
+
   /* ---------------- 列表页 ---------------- */
 
   function renderList(body: HTMLElement): void {
@@ -498,10 +511,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     }
     body.append(grid)
 
-    // 新建 / 导入
-    const addSection = el('div', 'so-section')
-    const addTitle = el('div', 'so-section-title')
-    addTitle.textContent = '新建 / 导入'
+    // 新建 / 导入（折叠：图墙占主位）
+    const addPanel = collapsible('新建 / 导入')
     const createRow = el('div', 'so-row')
     const nameInput = textInput('新立绘包名称…')
     nameInput.classList.add('so-grow')
@@ -563,8 +574,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         })
       }),
     )
-    addSection.append(addTitle, createRow, importRow)
-    body.append(addSection)
+    addPanel.body.append(createRow, importRow)
+    body.append(addPanel.box)
 
     body.append(statusBar())
   }
@@ -674,15 +685,14 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     }
     body.append(topRow)
 
-    // 元数据编辑
+    // 元数据编辑（折叠，且排在图墙之后——图片占主位）
+    let metaBox: HTMLElement | null = null
     if (readonly) {
       const note = el('div', 'so-status')
       note.textContent = '预设包随扩展分发、只读；想改动可先「导出 JSON」再导入为自定义包。'
       body.append(note)
     } else {
-      const metaSection = el('div', 'so-section')
-      const metaTitle = el('div', 'so-section-title')
-      metaTitle.textContent = '包信息'
+      const metaPanel = collapsible('包信息')
       const metaRow = el('div', 'so-row so-meta-row')
       const nameInput = textInput('包名')
       nameInput.value = pack.name
@@ -721,8 +731,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       const metaHint = el('div', 'so-status')
       metaHint.textContent =
         '人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。'
-      metaSection.append(metaTitle, metaRow, metaHint)
-      body.append(metaSection)
+      metaPanel.body.append(metaRow, metaHint)
+      metaBox = metaPanel.box
     }
 
     // 立绘网格：有分组则按分组分区展示（功能②），否则单一网格
@@ -749,6 +759,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         body.append(grid)
       }
     }
+    if (metaBox) body.append(metaBox)
 
     // 添加立绘
     if (!readonly) {
@@ -775,15 +786,12 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       // 旧分组拆包：包内有 ≥2 个分组时提供「按分组拆成立绘包」
       const splitPreview = previewGroupSplit(pack)
       if (splitPreview.length >= 2) {
-        const splitSection = el('div', 'so-section')
-        const splitTitle = el('div', 'so-section-title')
-        splitTitle.textContent = '按分组拆成立绘包'
+        const splitPanel = collapsible('按分组拆成立绘包')
         const splitDesc = el('div', 'so-status')
         splitDesc.textContent = `检测到 ${splitPreview.length} 个分组：${splitPreview
           .map((s) => `${s.roleName}(${s.count})`)
           .join('、')}。拆分会新建这些包（原包与绑定保留，可稍后自行删除）。`
-        splitSection.append(
-          splitTitle,
+        splitPanel.body.append(
           splitDesc,
           button('拆分（保留原包）', () => {
             const preview = splitPreview.map((s) => `${s.roleName}：${s.count} 张`).join('\n')
@@ -799,13 +807,11 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
             toast(body, `已拆出 ${newPacks.length} 个新包（原包「${pack.name}」保留）`)
           }),
         )
-        body.append(splitSection)
+        body.append(splitPanel.box)
       }
 
-      const addSection = el('div', 'so-section')
-      const addTitle = el('div', 'so-section-title')
-      addTitle.textContent = '添加立绘'
-      addSection.append(addTitle)
+      // 添加立绘（折叠；空包时默认展开，否则用户不知道从哪加图）
+      const addPanel = collapsible('添加立绘', pack.sprites.length === 0)
 
       const addRow = el('div', 'so-row')
       addRow.append(
@@ -816,7 +822,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       const upHint = el('div', 'so-status')
       upHint.textContent =
         '文件名按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png），上传前可预览修正、选择不拆分。'
-      addSection.append(addRow, upHint)
+      addPanel.body.append(addRow, upHint)
 
       const codeRow = el('div', 'so-row so-code-row')
       const tagInput = textInput('图名，留空=取编码名')
@@ -864,8 +870,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       )
       const codeHint = el('div', 'so-status')
       codeHint.textContent = `手动通道：编码拼接图床前缀 ${deps.getSettings().imageHost}（与 imgbb 自动直传互不影响）`
-      addSection.append(codeRow, codeHint)
-      body.append(addSection)
+      addPanel.body.append(codeRow, codeHint)
+      body.append(addPanel.box)
     }
 
     body.append(statusBar())

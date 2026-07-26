@@ -92,6 +92,19 @@ export function numberRow(
   return row
 }
 
+/** 折叠分区（details/summary）：标题常显、内容默认收起，防止长页漏看分区 */
+export function foldSection(title: string, open = false): { box: HTMLElement; body: HTMLElement } {
+  const box = document.createElement('details')
+  box.className = 'so-app-section so-app-fold'
+  box.open = open
+  const summary = document.createElement('summary')
+  summary.className = 'so-app-title'
+  summary.textContent = title
+  const body = el('div', 'so-app-fold-body')
+  box.append(summary, body)
+  return { box, body }
+}
+
 /** 多行文本行（change 提交）：用于自定义 prompt 模板等长文本 */
 export function textareaRow(
   label: string,

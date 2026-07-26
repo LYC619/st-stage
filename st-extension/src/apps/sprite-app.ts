@@ -14,7 +14,8 @@ import {
   SPRITE_COUNT_MIN,
 } from '../../../core/types'
 import { getActivePacks } from '../../../core/sprite-store'
-import { el, appButton, numberRow, selectRow, textareaRow, toggleRow } from './widgets'
+import { el, appButton, foldSection, numberRow, selectRow, textareaRow, toggleRow } from './widgets'
+import { BUILTIN_TEMPLATE } from '../../../core/prompt-builder'
 
 export function spriteApp(): PhoneApp {
   return {
@@ -48,12 +49,9 @@ export function spriteApp(): PhoneApp {
         detail,
       )
 
-      // 显示方式
-      const displaySection = el('div', 'so-app-section')
-      const displayTitle = el('div', 'so-app-title')
-      displayTitle.textContent = '显示'
-      displaySection.append(
-        displayTitle,
+      // 显示方式（默认折叠：标题常显，防止长页漏看分区）
+      const displaySection = foldSection('显示')
+      displaySection.body.append(
         selectRow(
           '显示位置',
           settings.spriteDisplayMode,
@@ -94,14 +92,11 @@ export function spriteApp(): PhoneApp {
       const displayHint = el('div', 'so-app-desc')
       displayHint.textContent =
         '「仅楼层」把 [立绘:xxx] 原位替换为图片且不弹悬浮窗；楼层数限制加载聊天时补渲染的范围（新回复不受限）。'
-      displaySection.append(displayHint)
+      displaySection.body.append(displayHint)
 
-      // 多立绘轮播
-      const autoSection = el('div', 'so-app-section')
-      const autoTitle = el('div', 'so-app-title')
-      autoTitle.textContent = '多立绘轮播'
-      autoSection.append(
-        autoTitle,
+      // 多立绘轮播（默认折叠）
+      const autoSection = foldSection('多立绘轮播')
+      autoSection.body.append(
         toggleRow('自动轮播（一条回复多张立绘时）', settings.autoSwitch, (v) =>
           ctx.updateSettings({ ...ctx.getSettings(), autoSwitch: v }),
         ),
@@ -110,12 +105,9 @@ export function spriteApp(): PhoneApp {
         ),
       )
 
-      // Prompt 设置
-      const promptSection = el('div', 'so-app-section')
-      const promptTitle = el('div', 'so-app-title')
-      promptTitle.textContent = 'Prompt'
-      promptSection.append(
-        promptTitle,
+      // Prompt 设置（默认折叠）
+      const promptSection = foldSection('Prompt')
+      promptSection.body.append(
         numberRow('每次回复立绘数量', settings.spriteCount, SPRITE_COUNT_MIN, SPRITE_COUNT_MAX, (v) =>
           ctx.updateSettings({ ...ctx.getSettings(), spriteCount: v }),
         ),
@@ -144,17 +136,24 @@ export function spriteApp(): PhoneApp {
       promptHint.textContent =
         '多个包/含人名服装时，Prompt 用完整地址 [立绘:人名/服装/图名]；单包纯图名时用简写 [立绘:图名]。' +
         '智能精简按实际长度自动取更短的一版：场景/表情较少时仍会显示全量格式，属正常现象。'
-      promptSection.append(promptHint)
-      promptSection.append(
-        textareaRow(
-          '自定义提示词（留空=用内置）',
-          settings.promptTemplate,
-          '整体替换内置提示词。占位符：{清单}=按场景分组的立绘清单，{数量}=每次回复立绘数',
-          (v) => ctx.updateSettings({ ...ctx.getSettings(), promptTemplate: v }),
-        ),
+      promptSection.body.append(promptHint)
+      const tplRow = textareaRow(
+        '自定义提示词（留空=用内置）',
+        settings.promptTemplate,
+        '整体替换内置提示词。占位符：{清单}=按场景分组的立绘清单，{数量}=每次回复立绘数',
+        (v) => ctx.updateSettings({ ...ctx.getSettings(), promptTemplate: v }),
+      )
+      const tplInput = tplRow.querySelector('textarea') as HTMLTextAreaElement
+      promptSection.body.append(
+        tplRow,
+        appButton('填入内置提示词底稿（在此基础上改）', () => {
+          if (tplInput.value.trim() && !window.confirm('用内置底稿覆盖当前已填写的自定义提示词？')) return
+          tplInput.value = BUILTIN_TEMPLATE
+          ctx.updateSettings({ ...ctx.getSettings(), promptTemplate: BUILTIN_TEMPLATE })
+        }),
       )
 
-      container.append(stateSection, displaySection, autoSection, promptSection)
+      container.append(stateSection, displaySection.box, autoSection.box, promptSection.box)
     },
   }
 }

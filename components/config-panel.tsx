@@ -34,6 +34,7 @@ import { exportPack, importPack } from '@/core/pack-io'
 import { decodeShareString, encodeShareStringV2 } from '@/core/share-code'
 import { normalizeTag, parseSpriteFileName, sanitizePackName } from '@/core/naming'
 import { compressImage } from '@/core/image-compress'
+import { BUILTIN_TEMPLATE } from '@/core/prompt-builder'
 import { webAdapter } from '@/lib/web-adapter'
 import { uploadToImgbb } from '@/core/imgbb'
 
@@ -466,6 +467,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
             自定义提示词（留空=用内置；占位符 {'{清单}'}=立绘清单、{'{数量}'}=每次立绘数）
           </span>
           <textarea
+            key={settings.promptTemplate}
             rows={5}
             defaultValue={settings.promptTemplate}
             placeholder="整体替换内置提示词，例：你可以使用以下立绘：&#10;{清单}&#10;每次回复插入 {数量} 个 [立绘:...] 标签。"
@@ -473,6 +475,20 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
             className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
             aria-label="自定义提示词模板"
           />
+          <button
+            type="button"
+            onClick={() => {
+              if (
+                settings.promptTemplate.trim() &&
+                !window.confirm('用内置底稿覆盖当前已填写的自定义提示词？')
+              )
+                return
+              onSettingsChange({ ...settings, promptTemplate: BUILTIN_TEMPLATE })
+            }}
+            className="self-start rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            填入内置提示词底稿（在此基础上改）
+          </button>
         </label>
         <label className="flex flex-col gap-1 text-sm text-foreground">
           <span className="text-xs text-muted-foreground">imgbb API Key（仅存本地，申请：api.imgbb.com）</span>
