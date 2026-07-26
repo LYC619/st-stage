@@ -91,13 +91,15 @@ https://github.com/LYC619/st-stage
 
 ## 🛠 给开发者：写你自己的 App
 
-以后给 st-stage 加任何新功能都不用写独立 ST 扩展，三步：
+给 st-stage 加新功能不用写独立 ST 扩展——加一个内部 App 模块就行。完整开发流程（必读文件、接入三步、硬规则、验证与排错）收录在仓库自带的 skill 里：**[.claude/skills/st-app/SKILL.md](.claude/skills/st-app/SKILL.md)**。
 
-1. 新建 `st-extension/src/apps/<功能>-app.ts`（一个返回 `PhoneApp` 对象的工厂函数，UI 复用现成 widgets）
-2. 在 `st-extension/src/apps/index.ts` 装配清单里加一行
-3. `pnpm build:ext` 提交——热更新会把新版自动推给所有已装用户
+**推荐用法**：用 AI 编程工具（Claude Code / Codex 等）在仓库根目录开一个会话，直接说——
 
-App 拿到的运行时能力（读写设置、当前角色名、命名空间隔离的私有存储、错误隔离）、样式套件与安全红线，见 **[docs/APP-SPEC.md](docs/APP-SPEC.md)**。旧的 `window.stStage.registerApp(...)` 外部注册入口保留兼容。
+> 按 `.claude/skills/st-app` 里的流程，给 st-stage 写一个「骰子」App：掷 d20 并在页内记录最近 10 次结果
+
+Claude Code 会自动发现这个 skill；其他工具就在提示词开头加一句「先读 `.claude/skills/st-app/SKILL.md`」。把引号里的功能换成你要的即可，从写代码、装配到构建提交它都会照流程走完。
+
+手写也一样：照 skill 的三步 + **[docs/APP-SPEC.md](docs/APP-SPEC.md)**（App 契约、ctx 能力、样式套件与安全红线）。旧的 `window.stStage.registerApp(...)` 外部注册入口保留兼容。
 
 ---
 
