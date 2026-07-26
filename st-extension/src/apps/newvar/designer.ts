@@ -1,20 +1,21 @@
 /**
  * 「变量设计」全屏弹窗（复用图库管理的 so-manager 样式体系）：
- * - 模板库：内置恋爱单/多角色、RPG、日常四套「变量+更新规则」模板，一键替换/追加导入
- * - 变量定义编辑：路径/类型/默认值/描述/范围/枚举/更新规则(check)/对 AI 隐藏
- * - 生成设置：输出格式（JSON Patch / _.set 兼容）、注入深度
- * - 注入预览与解析日志
+ * - 模板库：内置四套 + 用户自定义模板，卡片网格布局（PC 一行多张，窄屏自动单列）；
+ *   「替换/追加」导入；可把当前定义保存为自定义模板（换卡复用）、删除自定义模板
+ * - 变量定义：PC 双栏（左列表 / 右编辑表单，点谁编辑谁），窄屏自动上下堆叠 + 滚动到表单；
+ *   字段：路径/类型/默认值/描述/范围/枚举/更新规则(check)/对 AI 隐藏
+ * - 生成设置（输出格式/注入深度）、注入预览、解析日志
  *
  * 设计弹窗而非手机屏内编辑（用户实测反馈）：设计变量时不需要读正文，全屏表单对新手友好。
- * 手机端「新变量」App 只留 开关 + 变量树展示，设计入口跳本弹窗。
+ * 布局全部走响应式 CSS（.nv-* @media），同一份 DOM 兼容 PC 与移动端。
  */
 
 import { el, appButton, toggleRow, selectRow, numberRow, textRow, textareaRow, foldSection } from '../widgets'
 import { formatValue } from '../variable-tree'
-import type { NewvarData } from './config'
+import type { NewvarData, CustomTemplate } from './config'
 import type { ParseReport } from './runtime'
 import type { VariableDefinition, VarType } from './types'
-import { NEWVAR_TEMPLATES } from './templates'
+import { NEWVAR_TEMPLATES, type NewvarTemplate } from './templates'
 
 export interface NewvarDesignerDeps {
   getData(): NewvarData
@@ -126,6 +127,8 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
   let body: HTMLElement | null = null
   let formDraft: DefDraft | null = null
   let editingIndex: number | null = null
+  /** 本次渲染后把编辑表单滚进视野（窄屏堆叠布局下点列表要能看到表单） */
+  let scrollToEditor = false
 
   function applyBackdropSize(): void {
     if (!backdrop) return
@@ -202,18 +205,28 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
     if (!body) return
     try {
       body.textContent = ''
-      body.append(buildTemplateSection(), buildDefsSection(), buildSettingsSection(), buildPreviewSection(), buildLogSection())
+      body.append(
+        buildTemplateSection(),
+        buildDefsSection(),
+        buildSettingsSection(),
+        buildPreviewSection(),
+        buildLogSection(),
+      )
+      if (scrollToEditor) {
+        scrollToEditor = false
+        body.querySelector('.nv-defs-editor')?.scrollIntoView({ block: 'nearest' })
+      }
     } catch (err) {
       console.error('[st-stage] 变量设计弹窗渲染失败', err)
     }
   }
 
-  function section(titleText: string): { box: HTMLElement; body: HTMLElement } {
+  function section(titleText: string): { box: HTMLElement } {
     const box = el('div', 'so-section')
     const title = el('div', 'so-section-title')
     title.textContent = titleText
     box.append(title)
-    return { box, body: box }
+    return { box }
   }
 
   function descLine(parent: HTMLElement, text: string): void {
@@ -222,84 +235,141 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
     parent.append(d)
   }
 
-  // ① 模板库
+  // ① 模板库（卡片网格：内置 + 自定义；保存当前定义为模板）
   function buildTemplateSection(): HTMLElement {
+    const data = deps.getData()
     const { box } = section('模板库（一键起步）')
-    descLine(box, '内置模板已写好变量与更新规则（取材社区实测表现好的写法）。「替换」清空现有定义后导入；「追加」跳过重名路径合并进来。')
-    for (const tpl of NEWVAR_TEMPLATES) {
-      const card = el('div', 'vm-leaf nv-tpl')
-      const main = el('div', 'vm-leaf-main')
-      const name = el('span', 'vm-key')
-      name.textContent = `${tpl.name}（${tpl.variables.length} 项）`
-      const desc = el('div', 'vm-desc')
-      desc.textContent = tpl.description
-      main.append(name, desc)
+    descLine(box, '「替换」清空现有定义后导入；「追加」跳过重名路径合并。导入的规则都已写好，可再逐条微调。')
 
-      const actions = el('div', 'nv-tpl-actions')
-      const replaceBtn = el('button', 'menu_button vm-act')
-      replaceBtn.textContent = '替换'
-      replaceBtn.addEventListener('click', () => {
-        const cur = deps.getData()
-        if (
-          cur.schema.variables.length > 0 &&
-          !window.confirm(`用「${tpl.name}」替换现有 ${cur.schema.variables.length} 条定义？（楼层快照不受影响）`)
-        ) {
-          return
-        }
-        formDraft = null
-        editingIndex = null
-        save({ ...cur, schema: { ...cur.schema, name: tpl.name, variables: cloneDefs(tpl.variables) } })
-      })
-      const appendBtn = el('button', 'menu_button vm-act vm-act-ghost')
-      appendBtn.textContent = '追加'
-      appendBtn.addEventListener('click', () => {
-        const cur = deps.getData()
-        const existing = new Set(cur.schema.variables.map((v) => v.key))
-        const added = tpl.variables.filter((v) => !existing.has(v.key))
-        if (added.length === 0) {
-          window.alert('该模板的变量路径都已存在，没有可追加的项。')
-          return
-        }
-        save({
-          ...cur,
-          schema: { ...cur.schema, variables: [...cur.schema.variables, ...cloneDefs(added)] },
-        })
-      })
-      actions.append(replaceBtn, appendBtn)
-      card.append(main, actions)
-      box.append(card)
-    }
+    const grid = el('div', 'nv-tpl-grid')
+    for (const tpl of NEWVAR_TEMPLATES) grid.append(buildTemplateCard(tpl, null))
+    for (const tpl of data.customTemplates) grid.append(buildTemplateCard(tpl, tpl.id))
+    box.append(grid)
+
+    // 保存当前定义为自定义模板
+    const saveRow = el('div', 'nv-tpl-save')
+    const nameInput = document.createElement('input')
+    nameInput.type = 'text'
+    nameInput.className = 'text_pole so-app-input'
+    nameInput.placeholder = '模板名（如 我的恋爱系统）'
+    nameInput.autocomplete = 'off'
+    const saveBtn = el('button', 'menu_button vm-act')
+    saveBtn.textContent = '把当前定义存为模板'
+    saveBtn.addEventListener('click', () => {
+      const cur = deps.getData()
+      const name = nameInput.value.trim()
+      if (!name) {
+        window.alert('请先填写模板名。')
+        return
+      }
+      if (cur.schema.variables.length === 0) {
+        window.alert('当前没有任何变量定义，无法保存为模板。')
+        return
+      }
+      const tpl: CustomTemplate = {
+        id: `custom-${Date.now().toString(36)}`,
+        name,
+        description: `自定义 · ${cur.schema.variables.length} 项`,
+        variables: cloneDefs(cur.schema.variables),
+      }
+      save({ ...cur, customTemplates: [...cur.customTemplates, tpl] })
+    })
+    saveRow.append(nameInput, saveBtn)
+    box.append(saveRow)
     return box
   }
 
-  // ② 变量定义
+  function buildTemplateCard(tpl: NewvarTemplate | CustomTemplate, customId: string | null): HTMLElement {
+    const card = el('div', 'nv-tpl-card')
+    const name = el('div', 'vm-key')
+    name.textContent = `${tpl.name}（${tpl.variables.length} 项）`
+    const desc = el('div', 'vm-desc nv-tpl-desc')
+    desc.textContent = tpl.description
+    card.append(name, desc)
+
+    const actions = el('div', 'nv-tpl-actions')
+    const replaceBtn = el('button', 'menu_button vm-act')
+    replaceBtn.textContent = '替换'
+    replaceBtn.addEventListener('click', () => {
+      const cur = deps.getData()
+      if (
+        cur.schema.variables.length > 0 &&
+        !window.confirm(`用「${tpl.name}」替换现有 ${cur.schema.variables.length} 条定义？（楼层快照不受影响）`)
+      ) {
+        return
+      }
+      formDraft = null
+      editingIndex = null
+      save({ ...cur, schema: { ...cur.schema, name: tpl.name, variables: cloneDefs(tpl.variables) } })
+    })
+    const appendBtn = el('button', 'menu_button vm-act vm-act-ghost')
+    appendBtn.textContent = '追加'
+    appendBtn.addEventListener('click', () => {
+      const cur = deps.getData()
+      const existing = new Set(cur.schema.variables.map((v) => v.key))
+      const added = tpl.variables.filter((v) => !existing.has(v.key))
+      if (added.length === 0) {
+        window.alert('该模板的变量路径都已存在，没有可追加的项。')
+        return
+      }
+      save({ ...cur, schema: { ...cur.schema, variables: [...cur.schema.variables, ...cloneDefs(added)] } })
+    })
+    actions.append(replaceBtn, appendBtn)
+
+    if (customId) {
+      const delBtn = el('button', 'menu_button vm-act vm-act-ghost nv-tpl-del')
+      delBtn.textContent = '删除'
+      delBtn.addEventListener('click', () => {
+        if (!window.confirm(`删除自定义模板「${tpl.name}」？`)) return
+        const cur = deps.getData()
+        save({ ...cur, customTemplates: cur.customTemplates.filter((t) => t.id !== customId) })
+      })
+      actions.append(delBtn)
+    }
+    card.append(actions)
+    return card
+  }
+
+  // ② 变量定义：PC 双栏（左列表右编辑），窄屏自动堆叠
   function buildDefsSection(): HTMLElement {
     const data = deps.getData()
     const { box } = section(`变量定义（${data.schema.variables.length}）`)
-    if (data.schema.variables.length === 0 && !formDraft) {
-      descLine(box, '还没有变量。从上方模板一键导入，或点下方「添加变量」逐条定义。')
-    }
 
+    const layout = el('div', 'nv-defs-layout')
+    const list = el('div', 'nv-defs-list')
+    const editor = el('div', 'nv-defs-editor')
+
+    if (data.schema.variables.length === 0) {
+      descLine(list, '还没有变量。从上方模板一键导入，或点右侧「添加变量」逐条定义。')
+    }
     for (let i = 0; i < data.schema.variables.length; i++) {
-      box.append(buildDefRow(data.schema.variables[i], i))
+      list.append(buildDefRow(data.schema.variables[i], i))
     }
 
     if (formDraft) {
-      box.append(buildDefForm())
+      editor.append(buildDefForm())
     } else {
-      box.append(
+      const hint = el('div', 'so-app-desc')
+      hint.textContent = '点击左侧变量进行编辑，或新建：'
+      editor.append(
+        hint,
         appButton('＋ 添加变量', () => {
           formDraft = emptyDraft()
           editingIndex = null
+          scrollToEditor = true
           render()
         }),
       )
     }
+
+    layout.append(list, editor)
+    box.append(layout)
     return box
   }
 
   function buildDefRow(def: VariableDefinition, index: number): HTMLElement {
-    const card = el('div', 'vm-leaf')
+    const selected = editingIndex === index
+    const card = el('div', `vm-leaf${selected ? ' nv-def-selected' : ''}`)
     const main = el('div', 'vm-leaf-main')
     const keyEl = el('span', 'vm-key')
     keyEl.textContent = def.key
@@ -325,6 +395,7 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
     const edit = () => {
       formDraft = draftFromDef(def)
       editingIndex = index
+      scrollToEditor = true
       render()
     }
     main.addEventListener('click', edit)

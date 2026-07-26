@@ -52,6 +52,24 @@ describe('normalizeNewvarData', () => {
     expect(d.schema.variables[2].default).toBe('甲') // 枚举外默认值回第一项
   })
 
+  it('自定义模板归一化：合法保留、空变量/缺名丢弃', () => {
+    const d = normalizeNewvarData({
+      customTemplates: [
+        {
+          id: 'c1',
+          name: '我的模板',
+          description: 'x',
+          variables: [{ key: 'a', type: 'number', default: 1, description: '' }],
+        },
+        { id: 'c2', name: '空的', description: '', variables: [] },
+        { id: '', name: '缺id', variables: [{ key: 'a', type: 'number', default: 1, description: '' }] },
+        'garbage',
+      ],
+    })
+    expect(d.customTemplates).toHaveLength(1)
+    expect(d.customTemplates[0].name).toBe('我的模板')
+  })
+
   it('倒序范围（min>max）不采纳', () => {
     const d = normalizeNewvarData({
       schema: {

@@ -5,6 +5,14 @@
 
 import type { OutputFormat, VariableSchema, VariableDefinition, VarType } from './types'
 
+/** 用户自定义模板（把当前变量系统存成模板，换卡复用/分享） */
+export interface CustomTemplate {
+  id: string
+  name: string
+  description: string
+  variables: VariableDefinition[]
+}
+
 export const NEWVAR_APP_ID = 'newvar'
 /** 命名注入通道 id（adapter.injectChannel 的 channel 参数） */
 export const NEWVAR_CHANNEL = 'newvar'
@@ -19,6 +27,8 @@ export interface NewvarData {
   /** 注入深度（IN_CHAT 距末尾楼层数） */
   injectionDepth: number
   schema: VariableSchema
+  /** 用户自定义模板库 */
+  customTemplates: CustomTemplate[]
 }
 
 export function defaultNewvarData(): NewvarData {
@@ -27,6 +37,7 @@ export function defaultNewvarData(): NewvarData {
     format: 'json_patch',
     injectionDepth: 4,
     schema: { id: 'default', name: '默认方案', version: 1, variables: [] },
+    customTemplates: [],
   }
 }
 
@@ -53,7 +64,28 @@ export function normalizeNewvarData(raw: unknown): NewvarData {
         .filter((v): v is VariableDefinition => v !== null)
     }
   }
+  if (Array.isArray(r.customTemplates)) {
+    d.customTemplates = r.customTemplates
+      .map(normalizeCustomTemplate)
+      .filter((t): t is CustomTemplate => t !== null)
+  }
   return d
+}
+
+function normalizeCustomTemplate(raw: unknown): CustomTemplate | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  if (typeof r.id !== 'string' || r.id === '' || typeof r.name !== 'string' || r.name === '') return null
+  const variables = Array.isArray(r.variables)
+    ? r.variables.map(normalizeDefinition).filter((v): v is VariableDefinition => v !== null)
+    : []
+  if (variables.length === 0) return null // 空模板无意义
+  return {
+    id: r.id,
+    name: r.name,
+    description: typeof r.description === 'string' ? r.description : '',
+    variables,
+  }
 }
 
 function normalizeDefinition(raw: unknown): VariableDefinition | null {

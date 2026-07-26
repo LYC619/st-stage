@@ -577,15 +577,91 @@
   font-family: var(--monoFontFamily, ui-monospace, monospace);
   opacity: 0.85;
 }
-/* 变量设计弹窗：模板卡右侧的 替换/追加 双按钮 */
+/* —— 变量设计弹窗布局（响应式：PC 网格/双栏，窄屏自动单列堆叠） —— */
+
+/* 模板库：卡片网格，PC 一行多张 */
+.nv-tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+}
+.nv-tpl-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+.nv-tpl-desc {
+  flex: 1;
+}
 .nv-tpl-actions {
-  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+}
+.nv-tpl-actions .vm-act {
+  flex: 1;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.nv-tpl-actions .nv-tpl-del {
+  flex: 0 0 auto;
+}
+/* 存为自定义模板：输入框 + 按钮一行 */
+.nv-tpl-save {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+.nv-tpl-save .so-app-input {
+  flex: 1;
+  width: auto;
+}
+.nv-tpl-save .vm-act {
+  flex: 0 0 auto;
+  padding: 4px 14px;
+  font-size: 12px;
+}
+
+/* 变量定义：PC 双栏（左列表右编辑）；编辑表单跟随点击项 */
+.nv-defs-layout {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.nv-defs-list {
+  flex: 1 1 55%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
-.nv-tpl-actions .vm-act {
-  flex: none;
-  padding: 3px 12px;
-  font-size: 12px;
+.nv-defs-editor {
+  flex: 1 1 45%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+}
+.nv-def-selected {
+  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* 窄屏（移动端）：双栏退化为上下堆叠（点击列表后 JS 会滚动到表单） */
+@media (max-width: 720px) {
+  .nv-defs-layout {
+    flex-direction: column;
+  }
+  .nv-defs-list,
+  .nv-defs-editor {
+    flex: none;
+    width: 100%;
+    position: static;
+  }
 }

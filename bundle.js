@@ -3292,7 +3292,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 20:08"}）`;
+  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 20:21"}）`;
   hint.textContent = `立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -5136,7 +5136,8 @@ function defaultNewvarData() {
     enabled: false,
     format: "json_patch",
     injectionDepth: 4,
-    schema: { id: "default", name: "默认方案", version: 1, variables: [] }
+    schema: { id: "default", name: "默认方案", version: 1, variables: [] },
+    customTemplates: []
   };
 }
 var VAR_TYPES = ["number", "string", "boolean", "enum"];
@@ -5159,7 +5160,23 @@ function normalizeNewvarData(raw) {
       d.schema.variables = s.variables.map(normalizeDefinition).filter((v) => v !== null);
     }
   }
+  if (Array.isArray(r.customTemplates)) {
+    d.customTemplates = r.customTemplates.map(normalizeCustomTemplate).filter((t) => t !== null);
+  }
   return d;
+}
+function normalizeCustomTemplate(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw;
+  if (typeof r.id !== "string" || r.id === "" || typeof r.name !== "string" || r.name === "") return null;
+  const variables = Array.isArray(r.variables) ? r.variables.map(normalizeDefinition).filter((v) => v !== null) : [];
+  if (variables.length === 0) return null;
+  return {
+    id: r.id,
+    name: r.name,
+    description: typeof r.description === "string" ? r.description : "",
+    variables
+  };
 }
 function normalizeDefinition(raw) {
   if (!raw || typeof raw !== "object") return null;
@@ -5616,6 +5633,7 @@ function createNewvarDesigner(deps) {
   let body = null;
   let formDraft = null;
   let editingIndex = null;
+  let scrollToEditor = false;
   function applyBackdropSize() {
     if (!backdrop) return;
     backdrop.style.left = "0";
@@ -5681,7 +5699,17 @@ function createNewvarDesigner(deps) {
     if (!body) return;
     try {
       body.textContent = "";
-      body.append(buildTemplateSection(), buildDefsSection(), buildSettingsSection(), buildPreviewSection(), buildLogSection());
+      body.append(
+        buildTemplateSection(),
+        buildDefsSection(),
+        buildSettingsSection(),
+        buildPreviewSection(),
+        buildLogSection()
+      );
+      if (scrollToEditor) {
+        scrollToEditor = false;
+        body.querySelector(".nv-defs-editor")?.scrollIntoView({ block: "nearest" });
+      }
     } catch (err) {
       console.error("[st-stage] 变量设计弹窗渲染失败", err);
     }
@@ -5691,7 +5719,7 @@ function createNewvarDesigner(deps) {
     const title = el2("div", "so-section-title");
     title.textContent = titleText;
     box.append(title);
-    return { box, body: box };
+    return { box };
   }
   function descLine2(parent, text) {
     const d = el2("div", "so-app-desc");
@@ -5699,73 +5727,123 @@ function createNewvarDesigner(deps) {
     parent.append(d);
   }
   function buildTemplateSection() {
+    const data = deps.getData();
     const { box } = section("模板库（一键起步）");
-    descLine2(box, "内置模板已写好变量与更新规则（取材社区实测表现好的写法）。「替换」清空现有定义后导入；「追加」跳过重名路径合并进来。");
-    for (const tpl of NEWVAR_TEMPLATES) {
-      const card = el2("div", "vm-leaf nv-tpl");
-      const main = el2("div", "vm-leaf-main");
-      const name = el2("span", "vm-key");
-      name.textContent = `${tpl.name}（${tpl.variables.length} 项）`;
-      const desc = el2("div", "vm-desc");
-      desc.textContent = tpl.description;
-      main.append(name, desc);
-      const actions = el2("div", "nv-tpl-actions");
-      const replaceBtn = el2("button", "menu_button vm-act");
-      replaceBtn.textContent = "替换";
-      replaceBtn.addEventListener("click", () => {
-        const cur = deps.getData();
-        if (cur.schema.variables.length > 0 && !window.confirm(`用「${tpl.name}」替换现有 ${cur.schema.variables.length} 条定义？（楼层快照不受影响）`)) {
-          return;
-        }
-        formDraft = null;
-        editingIndex = null;
-        save({ ...cur, schema: { ...cur.schema, name: tpl.name, variables: cloneDefs(tpl.variables) } });
-      });
-      const appendBtn = el2("button", "menu_button vm-act vm-act-ghost");
-      appendBtn.textContent = "追加";
-      appendBtn.addEventListener("click", () => {
-        const cur = deps.getData();
-        const existing = new Set(cur.schema.variables.map((v) => v.key));
-        const added = tpl.variables.filter((v) => !existing.has(v.key));
-        if (added.length === 0) {
-          window.alert("该模板的变量路径都已存在，没有可追加的项。");
-          return;
-        }
-        save({
-          ...cur,
-          schema: { ...cur.schema, variables: [...cur.schema.variables, ...cloneDefs(added)] }
-        });
-      });
-      actions.append(replaceBtn, appendBtn);
-      card.append(main, actions);
-      box.append(card);
-    }
+    descLine2(box, "「替换」清空现有定义后导入；「追加」跳过重名路径合并。导入的规则都已写好，可再逐条微调。");
+    const grid = el2("div", "nv-tpl-grid");
+    for (const tpl of NEWVAR_TEMPLATES) grid.append(buildTemplateCard(tpl, null));
+    for (const tpl of data.customTemplates) grid.append(buildTemplateCard(tpl, tpl.id));
+    box.append(grid);
+    const saveRow = el2("div", "nv-tpl-save");
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.className = "text_pole so-app-input";
+    nameInput.placeholder = "模板名（如 我的恋爱系统）";
+    nameInput.autocomplete = "off";
+    const saveBtn = el2("button", "menu_button vm-act");
+    saveBtn.textContent = "把当前定义存为模板";
+    saveBtn.addEventListener("click", () => {
+      const cur = deps.getData();
+      const name = nameInput.value.trim();
+      if (!name) {
+        window.alert("请先填写模板名。");
+        return;
+      }
+      if (cur.schema.variables.length === 0) {
+        window.alert("当前没有任何变量定义，无法保存为模板。");
+        return;
+      }
+      const tpl = {
+        id: `custom-${Date.now().toString(36)}`,
+        name,
+        description: `自定义 · ${cur.schema.variables.length} 项`,
+        variables: cloneDefs(cur.schema.variables)
+      };
+      save({ ...cur, customTemplates: [...cur.customTemplates, tpl] });
+    });
+    saveRow.append(nameInput, saveBtn);
+    box.append(saveRow);
     return box;
+  }
+  function buildTemplateCard(tpl, customId) {
+    const card = el2("div", "nv-tpl-card");
+    const name = el2("div", "vm-key");
+    name.textContent = `${tpl.name}（${tpl.variables.length} 项）`;
+    const desc = el2("div", "vm-desc nv-tpl-desc");
+    desc.textContent = tpl.description;
+    card.append(name, desc);
+    const actions = el2("div", "nv-tpl-actions");
+    const replaceBtn = el2("button", "menu_button vm-act");
+    replaceBtn.textContent = "替换";
+    replaceBtn.addEventListener("click", () => {
+      const cur = deps.getData();
+      if (cur.schema.variables.length > 0 && !window.confirm(`用「${tpl.name}」替换现有 ${cur.schema.variables.length} 条定义？（楼层快照不受影响）`)) {
+        return;
+      }
+      formDraft = null;
+      editingIndex = null;
+      save({ ...cur, schema: { ...cur.schema, name: tpl.name, variables: cloneDefs(tpl.variables) } });
+    });
+    const appendBtn = el2("button", "menu_button vm-act vm-act-ghost");
+    appendBtn.textContent = "追加";
+    appendBtn.addEventListener("click", () => {
+      const cur = deps.getData();
+      const existing = new Set(cur.schema.variables.map((v) => v.key));
+      const added = tpl.variables.filter((v) => !existing.has(v.key));
+      if (added.length === 0) {
+        window.alert("该模板的变量路径都已存在，没有可追加的项。");
+        return;
+      }
+      save({ ...cur, schema: { ...cur.schema, variables: [...cur.schema.variables, ...cloneDefs(added)] } });
+    });
+    actions.append(replaceBtn, appendBtn);
+    if (customId) {
+      const delBtn = el2("button", "menu_button vm-act vm-act-ghost nv-tpl-del");
+      delBtn.textContent = "删除";
+      delBtn.addEventListener("click", () => {
+        if (!window.confirm(`删除自定义模板「${tpl.name}」？`)) return;
+        const cur = deps.getData();
+        save({ ...cur, customTemplates: cur.customTemplates.filter((t) => t.id !== customId) });
+      });
+      actions.append(delBtn);
+    }
+    card.append(actions);
+    return card;
   }
   function buildDefsSection() {
     const data = deps.getData();
     const { box } = section(`变量定义（${data.schema.variables.length}）`);
-    if (data.schema.variables.length === 0 && !formDraft) {
-      descLine2(box, "还没有变量。从上方模板一键导入，或点下方「添加变量」逐条定义。");
+    const layout = el2("div", "nv-defs-layout");
+    const list = el2("div", "nv-defs-list");
+    const editor = el2("div", "nv-defs-editor");
+    if (data.schema.variables.length === 0) {
+      descLine2(list, "还没有变量。从上方模板一键导入，或点右侧「添加变量」逐条定义。");
     }
     for (let i = 0; i < data.schema.variables.length; i++) {
-      box.append(buildDefRow(data.schema.variables[i], i));
+      list.append(buildDefRow(data.schema.variables[i], i));
     }
     if (formDraft) {
-      box.append(buildDefForm());
+      editor.append(buildDefForm());
     } else {
-      box.append(
+      const hint = el2("div", "so-app-desc");
+      hint.textContent = "点击左侧变量进行编辑，或新建：";
+      editor.append(
+        hint,
         appButton("＋ 添加变量", () => {
           formDraft = emptyDraft();
           editingIndex = null;
+          scrollToEditor = true;
           render2();
         })
       );
     }
+    layout.append(list, editor);
+    box.append(layout);
     return box;
   }
   function buildDefRow(def, index) {
-    const card = el2("div", "vm-leaf");
+    const selected = editingIndex === index;
+    const card = el2("div", `vm-leaf${selected ? " nv-def-selected" : ""}`);
     const main = el2("div", "vm-leaf-main");
     const keyEl = el2("span", "vm-key");
     keyEl.textContent = def.key;
@@ -5791,6 +5869,7 @@ function createNewvarDesigner(deps) {
     const edit = () => {
       formDraft = draftFromDef(def);
       editingIndex = index;
+      scrollToEditor = true;
       render2();
     };
     main.addEventListener("click", edit);
@@ -6108,7 +6187,7 @@ async function init() {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 20:08"}`;
+  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 20:21"}`;
   console.log(`[sprite-overlay] 角色立绘悬浮窗扩展已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {
