@@ -100,6 +100,7 @@ window.stStage?.registerApp({
 | --- | --- | --- | --- |
 | `sprites` | 立绘 | 当前绑定概览、显示/轮播/Prompt 设置 | `st-extension/src/apps/sprite-app.ts` |
 | `gallery` | 图库 | 打开立绘包管理弹窗、图包概览、图床设置（前缀/imgbb Key/自动上传） | `st-extension/src/apps/gallery-app.ts` |
+| `butler` | 管家 | ST 性能管家：一键性能模式 + 改动前快照还原、power_user 手动微调、体检与优化指南（仅 ST 内生效，Web 模拟器降级为只读指南） | `st-extension/src/apps/butler-app.ts` |
 
 装配清单：`st-extension/src/apps/index.ts`。
 框架源码：注册表 `core/phone-registry.ts`（含 `createPhoneAppContext`）、手机壳 `core/phone-shell.ts`、样式 `core/phone-shell.css`。

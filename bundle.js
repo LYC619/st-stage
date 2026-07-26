@@ -2064,7 +2064,7 @@ function createSpriteManager(deps) {
   function open(source = "overlay") {
     openedFrom = source;
     if (backdrop) {
-      render();
+      render2();
       return;
     }
     view = { kind: "list" };
@@ -2083,7 +2083,7 @@ function createSpriteManager(deps) {
     backBtn.tabIndex = 0;
     const goBack = () => {
       view = { kind: "list" };
-      render();
+      render2();
     };
     backBtn.addEventListener("click", goBack);
     backBtn.addEventListener("keydown", (e) => {
@@ -2102,13 +2102,13 @@ function createSpriteManager(deps) {
     dialog.append(header, body);
     backdrop.append(dialog);
     document.body.append(backdrop);
-    render();
+    render2();
   }
   function onEscape(e) {
     if (e.key !== "Escape") return;
     if (view.kind === "pack") {
       view = { kind: "list" };
-      render();
+      render2();
     } else {
       close();
     }
@@ -2122,11 +2122,11 @@ function createSpriteManager(deps) {
     deps.onClosed?.(openedFrom);
   }
   function refreshIfOpen() {
-    if (backdrop) render();
+    if (backdrop) render2();
   }
   function commit(next) {
     deps.updateSettings(next);
-    render();
+    render2();
   }
   function conflictText(conflicts) {
     return conflicts.slice(0, 3).map(
@@ -2140,7 +2140,7 @@ function createSpriteManager(deps) {
     else window.alert(message);
   }
   function rejectConflicts(conflicts) {
-    render();
+    render2();
     showConflicts(conflicts);
     return false;
   }
@@ -2316,7 +2316,7 @@ ${options}`,
   function commitPack(pack) {
     commitChecked(upsertPack(deps.getSettings(), pack));
   }
-  function render() {
+  function render2() {
     if (!backdrop) return;
     const backBtn = backdrop.querySelector(".so-manager-back");
     const title = backdrop.querySelector(".so-manager-title");
@@ -2446,7 +2446,7 @@ ${options}`,
       const pack = { id: genId(), name, author: "我", sprites: [] };
       if (!updateChecked(upsertPack(deps.getSettings(), pack))) return;
       view = { kind: "pack", packId: pack.id };
-      render();
+      render2();
     });
     nameInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.isComposing) createBtn.click();
@@ -2463,7 +2463,7 @@ ${options}`,
         shareInput.value = "";
         const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
         if (installed) view = { kind: "pack", packId: installed.id };
-        render();
+        render2();
       } catch (err) {
         toast(body, err instanceof Error ? err.message : "分享串解析失败");
       }
@@ -2483,7 +2483,7 @@ ${options}`,
             if (!installImportedPack(pack, body)) return;
             const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
             if (installed) view = { kind: "pack", packId: installed.id };
-            render();
+            render2();
           } catch (err) {
             toast(body, err instanceof Error ? err.message : "导入失败");
           }
@@ -2530,7 +2530,7 @@ ${options}`,
     card.append(coverBox, info);
     const enter = () => {
       view = { kind: "pack", packId: pack.id };
-      render();
+      render2();
     };
     card.addEventListener("click", enter);
     card.addEventListener("keydown", (e) => {
@@ -3050,7 +3050,7 @@ ${preview}
       }
     }
     done();
-    render();
+    render2();
     const parts = [`已添加 ${added} 张`];
     if (skipped > 0) parts.push(`跳过 ${skipped} 张（重名/无效）`);
     if (failed > 0) parts.push(`失败 ${failed} 张`);
@@ -3100,7 +3100,7 @@ ${preview}
         fail++;
       }
     }
-    render();
+    render2();
     toast(
       backdrop?.querySelector(".so-manager-body"),
       `补传完成：成功 ${ok} 张${fail > 0 ? `，失败 ${fail} 张（可再次点击重试）` : ""}`
@@ -3261,7 +3261,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 16:08"}）`;
+  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-26 16:21"}）`;
   hint.textContent = `立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -3817,9 +3817,211 @@ function galleryApp(deps) {
   };
 }
 
+// st-extension/src/apps/butler-app.ts
+function getST() {
+  try {
+    return window.SillyTavern?.getContext();
+  } catch {
+    return void 0;
+  }
+}
+function readBool(pu, key, dflt) {
+  const v = pu[key];
+  return typeof v === "boolean" ? v : dflt;
+}
+function readNum(pu, key, dflt) {
+  const v = pu[key];
+  return typeof v === "number" && Number.isFinite(v) ? v : dflt;
+}
+function takeSnapshot(pu) {
+  return {
+    fast_ui_mode: readBool(pu, "fast_ui_mode", true),
+    reduced_motion: readBool(pu, "reduced_motion", false),
+    noShadows: readBool(pu, "noShadows", false),
+    smooth_streaming: readBool(pu, "smooth_streaming", false),
+    stream_fade_in: readBool(pu, "stream_fade_in", false),
+    streaming_fps: readNum(pu, "streaming_fps", 30),
+    chat_truncation: readNum(pu, "chat_truncation", 100)
+  };
+}
+async function applyVisuals() {
+  try {
+    const modUrl = "/scripts/power-user.js";
+    const mod = await import(modUrl);
+    mod.applyPowerUserSettings?.();
+  } catch (err) {
+    console.warn("[st-stage] 管家：applyPowerUserSettings 不可用，视觉项将在刷新页面后生效", err);
+  }
+}
+function applyReducedMotion(on) {
+  const jq = window.jQuery;
+  if (jq?.fx) jq.fx.off = on;
+}
+async function reloadChatSafe(st) {
+  try {
+    await Promise.resolve(st.reloadCurrentChat?.());
+  } catch (err) {
+    console.warn("[st-stage] 管家：重载当前对话失败，消息加载数将在切换对话后生效", err);
+  }
+}
+function ensureSnapshot(ctx, pu) {
+  const data = ctx.getAppData() ?? {};
+  if (data.snapshot) return data;
+  const next = { ...data, snapshot: takeSnapshot(pu) };
+  ctx.setAppData(next);
+  return next;
+}
+async function enablePerfMode(ctx, st) {
+  const pu = st.powerUserSettings;
+  if (!pu) return;
+  const data = ensureSnapshot(ctx, pu);
+  ctx.setAppData({ ...data, perfOn: true });
+  const mobile = typeof st.isMobile === "function" && st.isMobile();
+  const curTrunc = readNum(pu, "chat_truncation", 100);
+  const target = mobile ? 20 : 50;
+  const nextTrunc = curTrunc > 0 && curTrunc < target ? curTrunc : target;
+  pu.fast_ui_mode = true;
+  pu.reduced_motion = true;
+  pu.noShadows = true;
+  pu.smooth_streaming = false;
+  pu.stream_fade_in = false;
+  pu.streaming_fps = 15;
+  pu.chat_truncation = nextTrunc;
+  applyReducedMotion(true);
+  await applyVisuals();
+  st.saveSettingsDebounced?.();
+  if (nextTrunc !== curTrunc) await reloadChatSafe(st);
+}
+async function restoreSnapshot(ctx, st) {
+  const pu = st.powerUserSettings;
+  const snap = (ctx.getAppData() ?? {}).snapshot;
+  if (!pu || !snap) return;
+  const curTrunc = readNum(pu, "chat_truncation", 100);
+  Object.assign(pu, snap);
+  applyReducedMotion(snap.reduced_motion);
+  await applyVisuals();
+  st.saveSettingsDebounced?.();
+  if (snap.chat_truncation !== curTrunc) await reloadChatSafe(st);
+  ctx.setAppData({ perfOn: false });
+}
+async function writeField(ctx, st, key, value) {
+  const pu = st.powerUserSettings;
+  if (!pu) return;
+  ensureSnapshot(ctx, pu);
+  const prev = pu[key];
+  pu[key] = value;
+  if (key === "fast_ui_mode" || key === "noShadows") await applyVisuals();
+  if (key === "reduced_motion") applyReducedMotion(Boolean(value));
+  st.saveSettingsDebounced?.();
+  if (key === "chat_truncation" && prev !== value) await reloadChatSafe(st);
+}
+function descLine(parent, text) {
+  const d = el2("div", "so-app-desc");
+  d.textContent = text;
+  parent.append(d);
+}
+function buildGuide() {
+  const { box, body } = foldSection("优化指南（需手动操作）");
+  descLine(body, "【浏览器】硬件加速是两面刃：本机同时跑本地模型（SD/本地 LLM）建议关，不跑建议开。");
+  descLine(body, "【浏览器】Android 浏览器不要手动开 GPU rasterization 类实验项（反而有害）。");
+  descLine(
+    body,
+    "【浏览器】桌面 Chrome 可试 chrome://flags 的 GPU rasterization / ANGLE D3D11（实验项名称随版本变化，搜不到说明已移除或改名）。"
+  );
+  descLine(body, "【浏览器】已知拖慢 ST 的浏览器扩展：iCloud 密码、DeepL、AI 语法纠正类、部分广告拦截器。");
+  descLine(body, "【服务端 config.yaml，前端改不了】requestCompression 开启后长聊天弱网明显省流量。");
+  descLine(body, "【服务端】lazyLoadCharacters：1.18 默认已开；老用户沿用的旧 config 可能还是 false，卡多必开。");
+  descLine(body, "【服务端】memoryCacheCapacity：约每 3000 张角色卡 +100MB。");
+  descLine(body, "【服务端】useDiskCache：仅磁盘极慢（如老 SD 卡）场景才考虑关。");
+  return box;
+}
+function butlerApp() {
+  return {
+    id: "butler",
+    name: "管家",
+    icon: "🧹",
+    order: 3,
+    mount(container, ctx) {
+      render(container, ctx);
+    }
+  };
+}
+function render(container, ctx) {
+  container.textContent = "";
+  const st = getST();
+  const pu = st?.powerUserSettings;
+  if (!st || !pu) {
+    const section = el2("div", "so-app-section");
+    descLine(section, "未检测到 SillyTavern 运行时（Web 模拟器中仅可查看优化指南）。");
+    container.append(section, buildGuide());
+    return;
+  }
+  const data = ctx.getAppData() ?? {};
+  const rerender = () => render(container, ctx);
+  const mobile = typeof st.isMobile === "function" && st.isMobile();
+  const main = el2("div", "so-app-section");
+  const title = el2("div", "so-app-title");
+  title.textContent = data.perfOn ? "一键性能模式（已开启）" : "一键性能模式";
+  main.append(title);
+  descLine(
+    main,
+    `关闭背景模糊/阴影/动画/平滑流式，流式帧率降到 15，消息加载数降到 ${mobile ? "20（移动端）" : "50"}。改动前自动保存原设置快照。`
+  );
+  main.append(
+    appButton("开启性能模式", () => {
+      void enablePerfMode(ctx, st).then(rerender);
+    })
+  );
+  if (data.snapshot) {
+    main.append(
+      appButton("还原到改动前快照", () => {
+        void restoreSnapshot(ctx, st).then(rerender);
+      })
+    );
+    descLine(main, "已保存改动前快照，可随时一键还原。");
+  }
+  container.append(main);
+  const tweak = foldSection("手动微调");
+  tweak.body.append(
+    toggleRow("No Blur（关闭背景模糊）", readBool(pu, "fast_ui_mode", true), (v) => {
+      void writeField(ctx, st, "fast_ui_mode", v);
+    }),
+    toggleRow("减少动画（完全生效需刷新页面）", readBool(pu, "reduced_motion", false), (v) => {
+      void writeField(ctx, st, "reduced_motion", v);
+    }),
+    toggleRow("关闭阴影", readBool(pu, "noShadows", false), (v) => {
+      void writeField(ctx, st, "noShadows", v);
+    }),
+    toggleRow("平滑流式（卡顿建议关）", readBool(pu, "smooth_streaming", false), (v) => {
+      void writeField(ctx, st, "smooth_streaming", v);
+    }),
+    toggleRow("流式淡入", readBool(pu, "stream_fade_in", false), (v) => {
+      void writeField(ctx, st, "stream_fade_in", v);
+    }),
+    numberRow("流式帧率 FPS（低端机建议 10–15）", readNum(pu, "streaming_fps", 30), 5, 100, (v) => {
+      void writeField(ctx, st, "streaming_fps", v);
+    }),
+    numberRow("消息加载数（0=全部，改后自动重载对话）", readNum(pu, "chat_truncation", 100), 0, 1e5, (v) => {
+      void writeField(ctx, st, "chat_truncation", v);
+    })
+  );
+  container.append(tweak.box);
+  const check = foldSection("体检");
+  const extSettings = st.extensionSettings ?? {};
+  const disabled = extSettings["disabledExtensions"];
+  descLine(check.body, `已禁用扩展：${Array.isArray(disabled) ? disabled.length : 0} 个。`);
+  const qr = extSettings["quickReply"];
+  if (Array.isArray(qr?.config?.setList)) {
+    descLine(check.body, `Quick Reply 集合：${qr.config.setList.length} 个（社区反馈集合过多可能造成输入拖拽卡顿，卡则精简）。`);
+  }
+  descLine(check.body, "输入卡顿最常见元凶是第三方扩展：逐个禁用排查（扩展启停改动需刷新页面才真正生效）。");
+  container.append(check.box);
+  container.append(buildGuide());
+}
+
 // st-extension/src/apps/index.ts
 function createBuiltinApps(deps) {
-  return [spriteApp(), galleryApp({ openManager: deps.openGalleryManager })];
+  return [spriteApp(), galleryApp({ openManager: deps.openGalleryManager }), butlerApp()];
 }
 
 // st-extension/src/index.ts
@@ -3962,7 +4164,7 @@ async function init() {
   refresh();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 16:08"}`;
+  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-26 16:21"}`;
   console.log(`[sprite-overlay] 角色立绘悬浮窗扩展已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {
