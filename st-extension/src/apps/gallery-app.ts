@@ -62,11 +62,12 @@ export function galleryApp(deps: GalleryAppDeps): PhoneApp {
       autoDesc.textContent =
         '① 自动直传（imgbb）：上传/替换图片时自动传 imgbb 并绑定编号，本地图保留作显示保底，直链用于分享串。'
       const hint = el('div', 'so-app-desc')
-      hint.textContent = 'Key 仅保存在本地浏览器；上传失败时图片仍保留本地，可稍后补传。'
+      hint.textContent =
+        'Key 明文保存在 ST 扩展设置里（随 ST 服务端 settings.json 落盘），不会写入分享串或导出文件；上传失败时图片仍保留本地，可稍后补传。'
       hostSection.append(
         autoDesc,
         textRow(
-          'imgbb API Key（仅存本地）',
+          'imgbb API Key（存 ST 设置，明文）',
           settings.imgbbApiKey,
           '免费申请：api.imgbb.com',
           (raw) => ctx.updateSettings({ ...ctx.getSettings(), imgbbApiKey: raw.trim() }),

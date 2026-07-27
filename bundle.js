@@ -3352,7 +3352,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.0"}（构建 ${"2026-07-27 02:22"}）`;
+  const version = false ? "" : ` v${"0.6.1"}（构建 ${"2026-07-27 22:27"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -3906,11 +3906,11 @@ function galleryApp(deps) {
       const autoDesc = el2("div", "so-app-desc");
       autoDesc.textContent = "① 自动直传（imgbb）：上传/替换图片时自动传 imgbb 并绑定编号，本地图保留作显示保底，直链用于分享串。";
       const hint = el2("div", "so-app-desc");
-      hint.textContent = "Key 仅保存在本地浏览器；上传失败时图片仍保留本地，可稍后补传。";
+      hint.textContent = "Key 明文保存在 ST 扩展设置里（随 ST 服务端 settings.json 落盘），不会写入分享串或导出文件；上传失败时图片仍保留本地，可稍后补传。";
       hostSection.append(
         autoDesc,
         textRow(
-          "imgbb API Key（仅存本地）",
+          "imgbb API Key（存 ST 设置，明文）",
           settings.imgbbApiKey,
           "免费申请：api.imgbb.com",
           (raw) => ctx.updateSettings({ ...ctx.getSettings(), imgbbApiKey: raw.trim() }),
@@ -6988,7 +6988,7 @@ async function init() {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.0"} · ${"2026-07-27 02:22"}`;
+  const version = false ? "dev" : `v${"0.6.1"} · ${"2026-07-27 22:27"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {

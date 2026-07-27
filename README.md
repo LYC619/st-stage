@@ -20,6 +20,9 @@
 | 🧹 **管家** | ST 性能管家：一键性能模式 + 改动前快照还原、逐项微调、体检与优化指南（[说明](docs/BUTLER.md)） |
 | 🔢 **MVU** | MVU 版角色卡的变量面板：树状查看/编辑/删除 + 变化高亮（[说明](docs/VARIABLES.md)） |
 | 🧮 **新变量** | 内置轻量变量追踪：任何普通卡 GUI 定义变量，AI 自动维护，模板一键起步（[说明](docs/VARIABLES.md)） |
+| 🔌 **API** | OpenAI 兼容接口站点一键切换：手机页快切 + 全屏管理弹窗（站点/Key/模型/附加参数随站点走） |
+
+> 🔐 **密钥存储说明**：「图库」的 imgbb Key 和「API」的站点密钥都**明文**保存在 ST 扩展设置里（随 ST 服务端 `settings.json` 落盘）。扩展自己的导出文件和分享串不含任何密钥，但请不要把 ST 的 `settings.json` 或完整备份直接发给别人。
 
 ---
 
@@ -111,9 +114,12 @@ Claude Code 会自动发现这个 skill；其他工具就在提示词开头加�
 pnpm install
 pnpm dev        # 启动网页测试环境 http://localhost:3000
 pnpm test       # core 层单元测试（vitest）
+pnpm test:watch # 单测监听模式
 pnpm test:mobile # 移动端 E2E（Playwright 移动视口跑 Web 模拟器；首次先 npx playwright install chromium）
 pnpm lint       # ESLint
 pnpm typecheck  # tsc --noEmit
+pnpm build      # Next.js 生产构建（网页模拟器，CI 用作类型/构建门禁）
+pnpm start      # 跑上一步的生产构建
 pnpm build:ext  # 重新打包 ST 扩展（产物：根目录 index.js / bundle.js / version.json / style.css，全部需提交）
 ```
 
@@ -162,8 +168,11 @@ st-extension/             ST 端（esbuild 打包为根目录产物）
    │  ├─ butler-app.ts    「管家」App（ST 性能调优）
    │  ├─ mvu-app.ts       「MVU」App（MVU 楼层变量数据层）
    │  ├─ newvar-app.ts    「新变量」App（手机页：开关+状态树）
-   │  └─ newvar/          「新变量」引擎：engine(解析/门禁/注入,带单测)、runtime(常驻编排)、
-   │                      config、templates(内置模板)、designer(变量设计弹窗)
+   │  ├─ newvar/          「新变量」引擎：engine(解析/门禁/注入,带单测)、runtime(常驻编排)、
+   │  │                   config、templates(内置模板)、designer(变量设计弹窗)
+   │  ├─ api-app.ts       「API」App（手机页：站点快切+在线状态）
+   │  └─ api/             「API」支撑层：core(纯逻辑,带单测)、bridge(ST 耦合层，
+   │                      直写 oai_settings/密钥槽位，在线状态走 ST 真事件)、manager(全屏管理弹窗)
    ├─ sprite-manager.ts   图库管理弹窗（上传/导入导出/分享/绑定，图库 App 打开）
    ├─ overlay-dom.ts      立绘悬浮窗
    └─ message-postprocess.ts   楼层内标签→图片渲染
