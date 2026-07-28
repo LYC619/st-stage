@@ -10,17 +10,11 @@
 import type { PhoneApp, PhoneAppContext } from '../../../core/phone-registry'
 import { el, appButton } from './widgets'
 import { API_APP_ID, sanitizeAppData, findActiveProfile, type ApiProfile } from './api/core'
-import { readConnection, applyProfile, onOnlineStatusChanged } from './api/bridge'
+import { readConnection, applyProfile, onOnlineStatusChanged, toast } from './api/bridge'
 
 export interface ApiAppDeps {
   /** 打开站点管理弹窗（index.ts 负责收起手机并在关闭后回本页） */
   openManager: () => void
-}
-
-/** toastr 是 ST 全局的通知库；模拟器等场景可能不存在，仅作锦上添花 */
-function toast(kind: 'success' | 'error', message: string): void {
-  const t = (window as { toastr?: Record<string, (msg: string, title?: string) => void> }).toastr
-  t?.[kind]?.(message, 'API 切换')
 }
 
 export function apiApp(deps: ApiAppDeps): PhoneApp {

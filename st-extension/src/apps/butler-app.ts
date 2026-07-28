@@ -5,28 +5,13 @@
  * - 体检：已禁用扩展数 / Quick Reply 集合计数 / 输入卡顿排查思路
  * - 优化指南：浏览器与服务端 config.yaml 里只能提示、前端改不了的项
  *
- * 生效方式（基于 ST 1.18.0 源码核实）：
- * - 流式/声音类字段改完 saveSettingsDebounced 即生效
- * - 视觉类（fast_ui_mode/noShadows）需 applyPowerUserSettings()——不在 context 上，
- *   运行时动态 import('/scripts/power-user.js') 获取（同 URL 同模块实例）
- * - reduced_motion 不在 apply 范围：复刻 jQuery.fx.off，完全生效需刷新页面
- * - chat_truncation 改后调 reloadCurrentChat() 即生效，无需刷新页面
- * 新版本字段缺失时一律 ?? 默认值兜底，只依赖有 export 的官方 API。
+ * ST 耦合（power_user 读写与各字段的生效路径）收敛在 ./butler/bridge；
+ * 本文件只管 UI 与快照编排，不碰 ST 细节。
  */
 
 import type { PhoneApp, PhoneAppContext } from '../../../core/phone-registry'
 import { el, appButton, toggleRow, numberRow, foldSection, hintField } from './widgets'
-
-/** 改动前原值快照：只含管家会写的字段（还原 = 整组写回 + 重跑 apply + save） */
-interface PerfSnapshot {
-  fast_ui_mode: boolean
-  reduced_motion: boolean
-  noShadows: boolean
-  smooth_streaming: boolean
-  stream_fade_in: boolean
-  streaming_fps: number
-  chat_truncation: number
-}
+import { readPerf, writePerf, readHealth, isMobile, type PerfSnapshot } from './butler/bridge'
 
 interface ButlerData {
   /** 首次改动前的原值快照；还原成功后清除，下次改动重新快照 */
@@ -35,136 +20,50 @@ interface ButlerData {
   perfOn?: boolean
 }
 
-/** 管家所需的 ST context 最小切面（字段可能随版本缺失，全部可选） */
-interface ButlerSTContext {
-  powerUserSettings?: Record<string, unknown>
-  saveSettingsDebounced?: () => void
-  reloadCurrentChat?: () => unknown
-  isMobile?: () => boolean
-  extensionSettings?: Record<string, unknown>
-}
-
-function getST(): ButlerSTContext | undefined {
-  try {
-    return window.SillyTavern?.getContext() as unknown as ButlerSTContext | undefined
-  } catch {
-    return undefined
-  }
-}
-
-function readBool(pu: Record<string, unknown>, key: string, dflt: boolean): boolean {
-  const v = pu[key]
-  return typeof v === 'boolean' ? v : dflt
-}
-
-function readNum(pu: Record<string, unknown>, key: string, dflt: number): number {
-  const v = pu[key]
-  return typeof v === 'number' && Number.isFinite(v) ? v : dflt
-}
-
-function takeSnapshot(pu: Record<string, unknown>): PerfSnapshot {
-  return {
-    fast_ui_mode: readBool(pu, 'fast_ui_mode', true),
-    reduced_motion: readBool(pu, 'reduced_motion', false),
-    noShadows: readBool(pu, 'noShadows', false),
-    smooth_streaming: readBool(pu, 'smooth_streaming', false),
-    stream_fade_in: readBool(pu, 'stream_fade_in', false),
-    streaming_fps: readNum(pu, 'streaming_fps', 30),
-    chat_truncation: readNum(pu, 'chat_truncation', 100),
-  }
-}
-
-/** 视觉类字段生效：applyPowerUserSettings 只能从 power-user.js 模块拿（同 URL 同实例） */
-async function applyVisuals(): Promise<void> {
-  try {
-    // 用变量作说明符：esbuild 不解析、保留为浏览器原生动态 import
-    const modUrl = '/scripts/power-user.js'
-    const mod = (await import(modUrl)) as { applyPowerUserSettings?: () => void }
-    mod.applyPowerUserSettings?.()
-  } catch (err) {
-    console.warn('[st-stage] 管家：applyPowerUserSettings 不可用，视觉项将在刷新页面后生效', err)
-  }
-}
-
-/** reduced_motion 不在 applyPowerUserSettings 覆盖范围内，复刻其核心动作 */
-function applyReducedMotion(on: boolean): void {
-  const jq = (window as unknown as { jQuery?: { fx?: { off?: boolean } } }).jQuery
-  if (jq?.fx) jq.fx.off = on
-}
-
-async function reloadChatSafe(st: ButlerSTContext): Promise<void> {
-  try {
-    await Promise.resolve(st.reloadCurrentChat?.())
-  } catch (err) {
-    console.warn('[st-stage] 管家：重载当前对话失败，消息加载数将在切换对话后生效', err)
-  }
-}
-
 /** 有快照就复用（重复点开启不能用性能值覆盖原值快照），没有才新拍 */
-function ensureSnapshot(ctx: PhoneAppContext, pu: Record<string, unknown>): ButlerData {
+function ensureSnapshot(ctx: PhoneAppContext, perf: PerfSnapshot): ButlerData {
   const data = ctx.getAppData<ButlerData>() ?? {}
   if (data.snapshot) return data
-  const next = { ...data, snapshot: takeSnapshot(pu) }
+  const next = { ...data, snapshot: perf }
   ctx.setAppData<ButlerData>(next)
   return next
 }
 
-async function enablePerfMode(ctx: PhoneAppContext, st: ButlerSTContext): Promise<void> {
-  const pu = st.powerUserSettings
-  if (!pu) return
-  const data = ensureSnapshot(ctx, pu)
+async function enablePerfMode(ctx: PhoneAppContext): Promise<void> {
+  const perf = readPerf()
+  if (!perf) return
+  const data = ensureSnapshot(ctx, perf)
   ctx.setAppData<ButlerData>({ ...data, perfOn: true })
 
-  const mobile = typeof st.isMobile === 'function' && st.isMobile()
-  const curTrunc = readNum(pu, 'chat_truncation', 100)
-  const target = mobile ? 20 : 50
+  const target = isMobile() ? 20 : 50
+  const curTrunc = perf.chat_truncation
   // 用户已设得比预设更省（且非 0=全部）就不往回抬
   const nextTrunc = curTrunc > 0 && curTrunc < target ? curTrunc : target
 
-  pu.fast_ui_mode = true
-  pu.reduced_motion = true
-  pu.noShadows = true
-  pu.smooth_streaming = false
-  pu.stream_fade_in = false
-  pu.streaming_fps = 15
-  pu.chat_truncation = nextTrunc
-
-  applyReducedMotion(true)
-  await applyVisuals()
-  st.saveSettingsDebounced?.()
-  if (nextTrunc !== curTrunc) await reloadChatSafe(st)
+  await writePerf({
+    fast_ui_mode: true,
+    reduced_motion: true,
+    noShadows: true,
+    smooth_streaming: false,
+    stream_fade_in: false,
+    streaming_fps: 15,
+    chat_truncation: nextTrunc,
+  })
 }
 
-async function restoreSnapshot(ctx: PhoneAppContext, st: ButlerSTContext): Promise<void> {
-  const pu = st.powerUserSettings
+async function restoreSnapshot(ctx: PhoneAppContext): Promise<void> {
   const snap = (ctx.getAppData<ButlerData>() ?? {}).snapshot
-  if (!pu || !snap) return
-
-  const curTrunc = readNum(pu, 'chat_truncation', 100)
-  Object.assign(pu, snap)
-  applyReducedMotion(snap.reduced_motion)
-  await applyVisuals()
-  st.saveSettingsDebounced?.()
-  if (snap.chat_truncation !== curTrunc) await reloadChatSafe(st)
+  if (!readPerf() || !snap) return
+  await writePerf(snap)
   ctx.setAppData<ButlerData>({ perfOn: false })
 }
 
-/** 手动微调单字段：先补快照，再按字段类别走各自的生效路径 */
-async function writeField(
-  ctx: PhoneAppContext,
-  st: ButlerSTContext,
-  key: keyof PerfSnapshot,
-  value: boolean | number,
-): Promise<void> {
-  const pu = st.powerUserSettings
-  if (!pu) return
-  ensureSnapshot(ctx, pu)
-  const prev = pu[key]
-  pu[key] = value
-  if (key === 'fast_ui_mode' || key === 'noShadows') await applyVisuals()
-  if (key === 'reduced_motion') applyReducedMotion(Boolean(value))
-  st.saveSettingsDebounced?.()
-  if (key === 'chat_truncation' && prev !== value) await reloadChatSafe(st)
+/** 手动微调单字段：先补快照，生效路径由 bridge 按字段类别分发 */
+async function writeField(ctx: PhoneAppContext, key: keyof PerfSnapshot, value: boolean | number): Promise<void> {
+  const perf = readPerf()
+  if (!perf) return
+  ensureSnapshot(ctx, perf)
+  await writePerf({ [key]: value })
 }
 
 function descLine(parent: HTMLElement, text: string): void {
@@ -204,10 +103,9 @@ export function butlerApp(): PhoneApp {
 
 function render(container: HTMLElement, ctx: PhoneAppContext): void {
   container.textContent = ''
-  const st = getST()
-  const pu = st?.powerUserSettings
+  const perf = readPerf()
 
-  if (!st || !pu) {
+  if (!perf) {
     const section = el('div', 'so-app-section')
     descLine(section, '未检测到 SillyTavern 运行时（Web 模拟器中仅可查看优化指南）。')
     container.append(section, buildGuide())
@@ -217,7 +115,7 @@ function render(container: HTMLElement, ctx: PhoneAppContext): void {
   const data = ctx.getAppData<ButlerData>() ?? {}
   // container 在本次 mount 生命周期内有效，操作完成后整页重建刷新状态
   const rerender = () => render(container, ctx)
-  const mobile = typeof st.isMobile === 'function' && st.isMobile()
+  const mobile = isMobile()
 
   // —— 一键性能模式 ——
   const main = el('div', 'so-app-section')
@@ -235,13 +133,13 @@ function render(container: HTMLElement, ctx: PhoneAppContext): void {
   )
   main.append(
     appButton('开启性能模式', () => {
-      void enablePerfMode(ctx, st).then(rerender)
+      void enablePerfMode(ctx).then(rerender)
     }),
   )
   if (data.snapshot) {
     main.append(
       appButton('还原到改动前快照', () => {
-        void restoreSnapshot(ctx, st).then(rerender)
+        void restoreSnapshot(ctx).then(rerender)
       }),
     )
     descLine(main, '已保存改动前快照，可随时一键还原。')
@@ -252,44 +150,44 @@ function render(container: HTMLElement, ctx: PhoneAppContext): void {
   const tweak = foldSection('手动微调')
   tweak.body.append(
     hintField(
-      toggleRow('No Blur（关背景模糊）', readBool(pu, 'fast_ui_mode', true), (v) => {
-        void writeField(ctx, st, 'fast_ui_mode', v)
+      toggleRow('No Blur（关背景模糊）', perf.fast_ui_mode, (v) => {
+        void writeField(ctx, 'fast_ui_mode', v)
       }),
       '关闭聊天框、弹窗背后的毛玻璃模糊。模糊很吃 GPU，几乎所有卡顿场景都建议开启（=关模糊）。官方公认最有效的提速项之一。',
     ),
     hintField(
-      toggleRow('减少动画', readBool(pu, 'reduced_motion', false), (v) => {
-        void writeField(ctx, st, 'reduced_motion', v)
+      toggleRow('减少动画', perf.reduced_motion, (v) => {
+        void writeField(ctx, 'reduced_motion', v)
       }),
       '关闭界面过渡动画（展开/淡入等）。低端机、长聊天滚动卡顿时开。改此项需刷新页面才完全生效。',
     ),
     hintField(
-      toggleRow('关闭阴影', readBool(pu, 'noShadows', false), (v) => {
-        void writeField(ctx, st, 'noShadows', v)
+      toggleRow('关闭阴影', perf.noShadows, (v) => {
+        void writeField(ctx, 'noShadows', v)
       }),
       '去掉界面元素投影，减少重绘。视觉略扁平，但换来更顺滑的滚动。追求性能可开。',
     ),
     hintField(
-      toggleRow('平滑流式', readBool(pu, 'smooth_streaming', false), (v) => {
-        void writeField(ctx, st, 'smooth_streaming', v)
+      toggleRow('平滑流式', perf.smooth_streaming, (v) => {
+        void writeField(ctx, 'smooth_streaming', v)
       }),
       'AI 回复逐字平滑吐字的动画。好看但持续占用渲染；出字卡顿、掉帧时建议关闭。',
     ),
     hintField(
-      toggleRow('流式淡入', readBool(pu, 'stream_fade_in', false), (v) => {
-        void writeField(ctx, st, 'stream_fade_in', v)
+      toggleRow('流式淡入', perf.stream_fade_in, (v) => {
+        void writeField(ctx, 'stream_fade_in', v)
       }),
       '新出的文字带淡入效果。同样是额外渲染开销，卡顿时关。',
     ),
     hintField(
-      numberRow('流式帧率 FPS', readNum(pu, 'streaming_fps', 30), 5, 100, (v) => {
-        void writeField(ctx, st, 'streaming_fps', v)
+      numberRow('流式帧率 FPS', perf.streaming_fps, 5, 100, (v) => {
+        void writeField(ctx, 'streaming_fps', v)
       }),
       'AI 回复刷新的帧率。越高越顺滑但越吃性能。默认约 30；低端机/手机官方建议降到 10–15，肉眼几乎无差却明显省电省算力。',
     ),
     hintField(
-      numberRow('消息加载数', readNum(pu, 'chat_truncation', 100), 0, 100000, (v) => {
-        void writeField(ctx, st, 'chat_truncation', v)
+      numberRow('消息加载数', perf.chat_truncation, 0, 100000, (v) => {
+        void writeField(ctx, 'chat_truncation', v)
       }),
       '打开对话时载入 DOM 的最近消息条数（0=全部）。长聊天最主要的卡顿来源。手机建议 15–20、桌面 50 左右；往上翻能继续加载更早的消息，不会丢。改后自动重载当前对话。',
     ),
@@ -298,12 +196,10 @@ function render(container: HTMLElement, ctx: PhoneAppContext): void {
 
   // —— 体检 ——
   const check = foldSection('体检')
-  const extSettings = st.extensionSettings ?? {}
-  const disabled = extSettings['disabledExtensions']
-  descLine(check.body, `已禁用扩展：${Array.isArray(disabled) ? disabled.length : 0} 个。`)
-  const qr = extSettings['quickReply'] as { config?: { setList?: unknown[] } } | undefined
-  if (Array.isArray(qr?.config?.setList)) {
-    descLine(check.body, `Quick Reply 集合：${qr.config.setList.length} 个（社区反馈集合过多可能造成输入拖拽卡顿，卡则精简）。`)
+  const health = readHealth()
+  descLine(check.body, `已禁用扩展：${health.disabledExtensions} 个。`)
+  if (health.quickReplySets !== null) {
+    descLine(check.body, `Quick Reply 集合：${health.quickReplySets} 个（社区反馈集合过多可能造成输入拖拽卡顿，卡则精简）。`)
   }
   descLine(check.body, '输入卡顿最常见元凶是第三方扩展：逐个禁用排查（扩展启停改动需刷新页面才真正生效）。')
   container.append(check.box)

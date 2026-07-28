@@ -3352,7 +3352,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.1"}（构建 ${"2026-07-27 22:27"}）`;
+  const version = false ? "" : ` v${"0.6.1"}（构建 ${"2026-07-28 13:14"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -3942,7 +3942,7 @@ function galleryApp(deps) {
   };
 }
 
-// st-extension/src/apps/butler-app.ts
+// st-extension/src/apps/butler/bridge.ts
 function getST() {
   try {
     return window.SillyTavern?.getContext();
@@ -3958,7 +3958,9 @@ function readNum(pu, key, dflt) {
   const v = pu[key];
   return typeof v === "number" && Number.isFinite(v) ? v : dflt;
 }
-function takeSnapshot(pu) {
+function readPerf() {
+  const pu = getST()?.powerUserSettings;
+  if (!pu) return null;
   return {
     fast_ui_mode: readBool(pu, "fast_ui_mode", true),
     reduced_motion: readBool(pu, "reduced_motion", false),
@@ -3968,6 +3970,10 @@ function takeSnapshot(pu) {
     streaming_fps: readNum(pu, "streaming_fps", 30),
     chat_truncation: readNum(pu, "chat_truncation", 100)
   };
+}
+function isMobile() {
+  const st = getST();
+  return typeof st?.isMobile === "function" && st.isMobile();
 }
 async function applyVisuals() {
   try {
@@ -3989,56 +3995,66 @@ async function reloadChatSafe(st) {
     console.warn("[st-stage] 管家：重载当前对话失败，消息加载数将在切换对话后生效", err);
   }
 }
-function ensureSnapshot(ctx, pu) {
+async function writePerf(fields) {
+  const st = getST();
+  const pu = st?.powerUserSettings;
+  if (!st || !pu) return;
+  const prevTrunc = readNum(pu, "chat_truncation", 100);
+  Object.assign(pu, fields);
+  if (fields.reduced_motion !== void 0) applyReducedMotion(fields.reduced_motion);
+  if (fields.fast_ui_mode !== void 0 || fields.noShadows !== void 0) await applyVisuals();
+  st.saveSettingsDebounced?.();
+  if (fields.chat_truncation !== void 0 && fields.chat_truncation !== prevTrunc) {
+    await reloadChatSafe(st);
+  }
+}
+function readHealth() {
+  const ext = getST()?.extensionSettings ?? {};
+  const disabled = ext["disabledExtensions"];
+  const qr = ext["quickReply"];
+  return {
+    disabledExtensions: Array.isArray(disabled) ? disabled.length : 0,
+    quickReplySets: Array.isArray(qr?.config?.setList) ? qr.config.setList.length : null
+  };
+}
+
+// st-extension/src/apps/butler-app.ts
+function ensureSnapshot(ctx, perf) {
   const data = ctx.getAppData() ?? {};
   if (data.snapshot) return data;
-  const next = { ...data, snapshot: takeSnapshot(pu) };
+  const next = { ...data, snapshot: perf };
   ctx.setAppData(next);
   return next;
 }
-async function enablePerfMode(ctx, st) {
-  const pu = st.powerUserSettings;
-  if (!pu) return;
-  const data = ensureSnapshot(ctx, pu);
+async function enablePerfMode(ctx) {
+  const perf = readPerf();
+  if (!perf) return;
+  const data = ensureSnapshot(ctx, perf);
   ctx.setAppData({ ...data, perfOn: true });
-  const mobile = typeof st.isMobile === "function" && st.isMobile();
-  const curTrunc = readNum(pu, "chat_truncation", 100);
-  const target = mobile ? 20 : 50;
+  const target = isMobile() ? 20 : 50;
+  const curTrunc = perf.chat_truncation;
   const nextTrunc = curTrunc > 0 && curTrunc < target ? curTrunc : target;
-  pu.fast_ui_mode = true;
-  pu.reduced_motion = true;
-  pu.noShadows = true;
-  pu.smooth_streaming = false;
-  pu.stream_fade_in = false;
-  pu.streaming_fps = 15;
-  pu.chat_truncation = nextTrunc;
-  applyReducedMotion(true);
-  await applyVisuals();
-  st.saveSettingsDebounced?.();
-  if (nextTrunc !== curTrunc) await reloadChatSafe(st);
+  await writePerf({
+    fast_ui_mode: true,
+    reduced_motion: true,
+    noShadows: true,
+    smooth_streaming: false,
+    stream_fade_in: false,
+    streaming_fps: 15,
+    chat_truncation: nextTrunc
+  });
 }
-async function restoreSnapshot(ctx, st) {
-  const pu = st.powerUserSettings;
+async function restoreSnapshot(ctx) {
   const snap = (ctx.getAppData() ?? {}).snapshot;
-  if (!pu || !snap) return;
-  const curTrunc = readNum(pu, "chat_truncation", 100);
-  Object.assign(pu, snap);
-  applyReducedMotion(snap.reduced_motion);
-  await applyVisuals();
-  st.saveSettingsDebounced?.();
-  if (snap.chat_truncation !== curTrunc) await reloadChatSafe(st);
+  if (!readPerf() || !snap) return;
+  await writePerf(snap);
   ctx.setAppData({ perfOn: false });
 }
-async function writeField(ctx, st, key, value) {
-  const pu = st.powerUserSettings;
-  if (!pu) return;
-  ensureSnapshot(ctx, pu);
-  const prev = pu[key];
-  pu[key] = value;
-  if (key === "fast_ui_mode" || key === "noShadows") await applyVisuals();
-  if (key === "reduced_motion") applyReducedMotion(Boolean(value));
-  st.saveSettingsDebounced?.();
-  if (key === "chat_truncation" && prev !== value) await reloadChatSafe(st);
+async function writeField(ctx, key, value) {
+  const perf = readPerf();
+  if (!perf) return;
+  ensureSnapshot(ctx, perf);
+  await writePerf({ [key]: value });
 }
 function descLine(parent, text) {
   const d = el2("div", "so-app-desc");
@@ -4073,9 +4089,8 @@ function butlerApp() {
 }
 function render(container, ctx) {
   container.textContent = "";
-  const st = getST();
-  const pu = st?.powerUserSettings;
-  if (!st || !pu) {
+  const perf = readPerf();
+  if (!perf) {
     const section = el2("div", "so-app-section");
     descLine(section, "未检测到 SillyTavern 运行时（Web 模拟器中仅可查看优化指南）。");
     container.append(section, buildGuide());
@@ -4083,7 +4098,7 @@ function render(container, ctx) {
   }
   const data = ctx.getAppData() ?? {};
   const rerender = () => render(container, ctx);
-  const mobile = typeof st.isMobile === "function" && st.isMobile();
+  const mobile = isMobile();
   const main = el2("div", "so-app-section");
   const title = el2("div", "so-app-title");
   title.textContent = data.perfOn ? "一键性能模式（已开启）" : "一键性能模式";
@@ -4099,13 +4114,13 @@ function render(container, ctx) {
   );
   main.append(
     appButton("开启性能模式", () => {
-      void enablePerfMode(ctx, st).then(rerender);
+      void enablePerfMode(ctx).then(rerender);
     })
   );
   if (data.snapshot) {
     main.append(
       appButton("还原到改动前快照", () => {
-        void restoreSnapshot(ctx, st).then(rerender);
+        void restoreSnapshot(ctx).then(rerender);
       })
     );
     descLine(main, "已保存改动前快照，可随时一键还原。");
@@ -4114,56 +4129,54 @@ function render(container, ctx) {
   const tweak = foldSection("手动微调");
   tweak.body.append(
     hintField(
-      toggleRow("No Blur（关背景模糊）", readBool(pu, "fast_ui_mode", true), (v) => {
-        void writeField(ctx, st, "fast_ui_mode", v);
+      toggleRow("No Blur（关背景模糊）", perf.fast_ui_mode, (v) => {
+        void writeField(ctx, "fast_ui_mode", v);
       }),
       "关闭聊天框、弹窗背后的毛玻璃模糊。模糊很吃 GPU，几乎所有卡顿场景都建议开启（=关模糊）。官方公认最有效的提速项之一。"
     ),
     hintField(
-      toggleRow("减少动画", readBool(pu, "reduced_motion", false), (v) => {
-        void writeField(ctx, st, "reduced_motion", v);
+      toggleRow("减少动画", perf.reduced_motion, (v) => {
+        void writeField(ctx, "reduced_motion", v);
       }),
       "关闭界面过渡动画（展开/淡入等）。低端机、长聊天滚动卡顿时开。改此项需刷新页面才完全生效。"
     ),
     hintField(
-      toggleRow("关闭阴影", readBool(pu, "noShadows", false), (v) => {
-        void writeField(ctx, st, "noShadows", v);
+      toggleRow("关闭阴影", perf.noShadows, (v) => {
+        void writeField(ctx, "noShadows", v);
       }),
       "去掉界面元素投影，减少重绘。视觉略扁平，但换来更顺滑的滚动。追求性能可开。"
     ),
     hintField(
-      toggleRow("平滑流式", readBool(pu, "smooth_streaming", false), (v) => {
-        void writeField(ctx, st, "smooth_streaming", v);
+      toggleRow("平滑流式", perf.smooth_streaming, (v) => {
+        void writeField(ctx, "smooth_streaming", v);
       }),
       "AI 回复逐字平滑吐字的动画。好看但持续占用渲染；出字卡顿、掉帧时建议关闭。"
     ),
     hintField(
-      toggleRow("流式淡入", readBool(pu, "stream_fade_in", false), (v) => {
-        void writeField(ctx, st, "stream_fade_in", v);
+      toggleRow("流式淡入", perf.stream_fade_in, (v) => {
+        void writeField(ctx, "stream_fade_in", v);
       }),
       "新出的文字带淡入效果。同样是额外渲染开销，卡顿时关。"
     ),
     hintField(
-      numberRow("流式帧率 FPS", readNum(pu, "streaming_fps", 30), 5, 100, (v) => {
-        void writeField(ctx, st, "streaming_fps", v);
+      numberRow("流式帧率 FPS", perf.streaming_fps, 5, 100, (v) => {
+        void writeField(ctx, "streaming_fps", v);
       }),
       "AI 回复刷新的帧率。越高越顺滑但越吃性能。默认约 30；低端机/手机官方建议降到 10–15，肉眼几乎无差却明显省电省算力。"
     ),
     hintField(
-      numberRow("消息加载数", readNum(pu, "chat_truncation", 100), 0, 1e5, (v) => {
-        void writeField(ctx, st, "chat_truncation", v);
+      numberRow("消息加载数", perf.chat_truncation, 0, 1e5, (v) => {
+        void writeField(ctx, "chat_truncation", v);
       }),
       "打开对话时载入 DOM 的最近消息条数（0=全部）。长聊天最主要的卡顿来源。手机建议 15–20、桌面 50 左右；往上翻能继续加载更早的消息，不会丢。改后自动重载当前对话。"
     )
   );
   container.append(tweak.box);
   const check = foldSection("体检");
-  const extSettings = st.extensionSettings ?? {};
-  const disabled = extSettings["disabledExtensions"];
-  descLine(check.body, `已禁用扩展：${Array.isArray(disabled) ? disabled.length : 0} 个。`);
-  const qr = extSettings["quickReply"];
-  if (Array.isArray(qr?.config?.setList)) {
-    descLine(check.body, `Quick Reply 集合：${qr.config.setList.length} 个（社区反馈集合过多可能造成输入拖拽卡顿，卡则精简）。`);
+  const health = readHealth();
+  descLine(check.body, `已禁用扩展：${health.disabledExtensions} 个。`);
+  if (health.quickReplySets !== null) {
+    descLine(check.body, `Quick Reply 集合：${health.quickReplySets} 个（社区反馈集合过多可能造成输入拖拽卡顿，卡则精简）。`);
   }
   descLine(check.body, "输入卡顿最常见元凶是第三方扩展：逐个禁用排查（扩展启停改动需刷新页面才真正生效）。");
   container.append(check.box);
@@ -4548,7 +4561,7 @@ function createVariableTreeView(container, handlers) {
   };
 }
 
-// st-extension/src/apps/mvu-app.ts
+// st-extension/src/apps/mvu/bridge.ts
 function getMvu() {
   const w = window;
   return w.parent?.Mvu ?? w.Mvu;
@@ -4571,7 +4584,7 @@ function isMvuAvailable() {
 function delay(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
-function getLastMessageId(st) {
+function getLastMessageId() {
   const helper = getHelper();
   if (typeof helper?.getLastMessageId === "function") {
     try {
@@ -4580,7 +4593,7 @@ function getLastMessageId(st) {
     } catch {
     }
   }
-  const chat = st?.chat;
+  const chat = getST2()?.chat;
   if (Array.isArray(chat) && chat.length > 0) return chat.length - 1;
   return -1;
 }
@@ -4737,13 +4750,44 @@ async function writeHelper(scope, mutate) {
   }
   throw new Error("无可用的变量写入通道（MVU / 酒馆助手均不可用）");
 }
+function subscribeVarEvents(handler) {
+  const st = getST2();
+  const es = st?.eventSource;
+  if (!es) return () => {
+  };
+  const mvu = getMvu();
+  const names = /* @__PURE__ */ new Set([
+    mvu?.events?.VARIABLE_UPDATE_ENDED ?? "mag_variable_update_ended",
+    mvu?.events?.VARIABLE_INITIALIZED ?? "mag_variable_initialized",
+    st?.eventTypes?.CHAT_CHANGED ?? "chat_id_changed",
+    st?.eventTypes?.MESSAGE_SWIPED ?? "message_swiped",
+    st?.eventTypes?.MESSAGE_DELETED ?? "message_deleted"
+  ]);
+  const offs = [];
+  for (const name of names) {
+    if (!name) continue;
+    const h = () => handler();
+    es.on(name, h);
+    offs.push(() => {
+      try {
+        es.removeListener(name, h);
+      } catch {
+      }
+    });
+  }
+  return () => {
+    for (const off of offs) off();
+  };
+}
+
+// st-extension/src/apps/mvu-app.ts
 function createInstance(container, _ctx) {
   let disposed = false;
   let seq = 0;
   let lastResult = null;
   let delta = /* @__PURE__ */ new Map();
   let refreshTimer = null;
-  const unsubs = [];
+  let offEvents = null;
   const view = createVariableTreeView(container, {
     getModel: () => buildModel(),
     commitSet: (path, value) => void runWrite(() => setFloorVariable(currentScope(), currentWrapped(), path, value)),
@@ -4751,7 +4795,7 @@ function createInstance(container, _ctx) {
     requestRefresh: () => void load()
   });
   function currentScope() {
-    return { type: "message", message_id: lastResult?.messageId ?? getLastMessageId(getST2()) };
+    return { type: "message", message_id: lastResult?.messageId ?? getLastMessageId() };
   }
   function currentWrapped() {
     return lastResult?.wrapped ?? true;
@@ -4801,8 +4845,7 @@ function createInstance(container, _ctx) {
     const token = ++seq;
     view.resetEditing();
     if (!lastResult) view.render();
-    const st = getST2();
-    const messageId = getLastMessageId(st);
+    const messageId = getLastMessageId();
     const result = await readVariables({ type: "message", message_id: messageId }, messageId);
     if (isStale(token)) return;
     let nextDelta = /* @__PURE__ */ new Map();
@@ -4823,30 +4866,6 @@ function createInstance(container, _ctx) {
       if (!disposed && !view.isEditing()) void load();
     }, 300);
   }
-  function subscribeEvents() {
-    const st = getST2();
-    const es = st?.eventSource;
-    if (!es) return;
-    const mvu = getMvu();
-    const names = /* @__PURE__ */ new Set([
-      mvu?.events?.VARIABLE_UPDATE_ENDED ?? "mag_variable_update_ended",
-      mvu?.events?.VARIABLE_INITIALIZED ?? "mag_variable_initialized",
-      st?.eventTypes?.CHAT_CHANGED ?? "chat_id_changed",
-      st?.eventTypes?.MESSAGE_SWIPED ?? "message_swiped",
-      st?.eventTypes?.MESSAGE_DELETED ?? "message_deleted"
-    ]);
-    for (const name of names) {
-      if (!name) continue;
-      const handler = () => scheduleRefresh();
-      es.on(name, handler);
-      unsubs.push(() => {
-        try {
-          es.removeListener(name, handler);
-        } catch {
-        }
-      });
-    }
-  }
   async function runWrite(op) {
     try {
       await op();
@@ -4858,15 +4877,15 @@ function createInstance(container, _ctx) {
   }
   return {
     start() {
-      subscribeEvents();
+      offEvents = subscribeVarEvents(() => scheduleRefresh());
       void load();
     },
     dispose() {
       disposed = true;
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = null;
-      for (const off of unsubs) off();
-      unsubs.length = 0;
+      offEvents?.();
+      offEvents = null;
     }
   };
 }
@@ -5072,6 +5091,10 @@ function getST3() {
     return void 0;
   }
 }
+function toast2(kind, message) {
+  const t = window.toastr;
+  t?.[kind]?.(message, "API 切换");
+}
 function readStr(obj, key) {
   const v = obj[key];
   return typeof v === "string" ? v : "";
@@ -5176,10 +5199,6 @@ async function fetchModels(url, key, restoreKey) {
 }
 
 // st-extension/src/apps/api-app.ts
-function toast2(kind, message) {
-  const t = window.toastr;
-  t?.[kind]?.(message, "API 切换");
-}
 function apiApp(deps) {
   let unsubscribe = null;
   return {
@@ -6819,6 +6838,7 @@ function createApiManager(deps) {
 
 // st-extension/src/index.ts
 async function init() {
+  window.__stStageDispose?.();
   const adapter = new STAdapter();
   let settings;
   try {
@@ -6889,6 +6909,7 @@ async function init() {
     getSettings: () => settings,
     inject: (prompt, depth) => adapter.injectChannel(NEWVAR_CHANNEL, prompt, depth)
   });
+  window.__stStageDispose = () => newvarRuntime.dispose();
   const newvarDesigner = createNewvarDesigner({
     getData: () => newvarRuntime.getData(),
     setData: (next) => {
@@ -6988,7 +7009,7 @@ async function init() {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.1"} · ${"2026-07-27 22:27"}`;
+  const version = false ? "dev" : `v${"0.6.1"} · ${"2026-07-28 13:14"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {

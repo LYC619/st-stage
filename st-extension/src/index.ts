@@ -32,10 +32,15 @@ declare global {
   interface Window {
     /** 第三方扩展注册手机 App 的公开入口（docs/APP-SPEC.md） */
     stStage?: { registerApp: PhoneAppRegistry['register'] }
+    /** 内部：上一次 bundle 执行留下的常驻订阅清理（防同页重复执行时事件双重处理） */
+    __stStageDispose?: () => void
   }
 }
 
 async function init(): Promise<void> {
+  // bundle 若在同页被执行两次（stub 版本参数失败回退重 import 等），先清上一实例的常驻订阅。
+  // 目前唯一带 dispose 的常驻订阅者是「新变量」运行时；DOM/其余监听的全量卸载留给独立 App 阶段按需再建
+  window.__stStageDispose?.()
   const adapter = new STAdapter()
   let settings: PluginSettings
   try {
@@ -133,6 +138,9 @@ async function init(): Promise<void> {
     getSettings: () => settings,
     inject: (prompt, depth) => adapter.injectChannel(NEWVAR_CHANNEL, prompt, depth),
   })
+  // dispose 接线：正常页面生命周期里 ST 不卸载扩展（启停需刷新），
+  // 这里只在 bundle 同页重复执行时由下一次 init 调用，防事件订阅翻倍
+  window.__stStageDispose = () => newvarRuntime.dispose()
 
   // 「变量设计」弹窗：配置写 App 私有存储（saveSettingsOnly，不触发立绘刷新）后通知运行时重注入
   const newvarDesigner = createNewvarDesigner({

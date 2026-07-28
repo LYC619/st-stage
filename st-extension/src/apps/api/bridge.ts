@@ -35,6 +35,12 @@ function getST(): BridgeContext | undefined {
   }
 }
 
+/** toastr 是 ST 全局的通知库；模拟器等场景可能不存在，仅作锦上添花 */
+export function toast(kind: 'success' | 'error', message: string): void {
+  const t = (window as { toastr?: Record<string, (msg: string, title?: string) => void> }).toastr
+  t?.[kind]?.(message, 'API 切换')
+}
+
 function readStr(obj: Record<string, unknown>, key: string): string {
   const v = obj[key]
   return typeof v === 'string' ? v : ''

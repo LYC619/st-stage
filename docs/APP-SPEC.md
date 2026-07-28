@@ -51,8 +51,8 @@ window.stStage?.registerApp({
 
 | 时机 | 调用 |
 | --- | --- |
-| 用户在 Home 屏点你的图标 | `mount(container, ctx)` |
-| 用户按 Home 键 / `ctx.goHome()` / 收起手机 | `unmount()`（如果提供） |
+| 用户在 Home 屏点你的图标 / 框架 `openApp(id)` | `mount(container, ctx)` |
+| 任何离开路径（见下方契约） | `unmount()`（如果提供） |
 | 再次打开 | 重新 `mount`（container 是新的空 div，**不做状态保持**） |
 
 约定：
@@ -60,6 +60,28 @@ window.stStage?.registerApp({
 - `mount` 必须同步返回；异步数据自己 fetch 后再填充 DOM
 - `mount` 抛错时框架会显示错误占位页并打印控制台，不影响其他 App
 - 不要在 `mount` 外持有 container 引用（离开后即失效）
+
+### 卸载（dispose）契约
+
+第三方 App 可以依赖框架的如下保证（实现见 `core/phone-shell.ts` 的 `leaveApp`）：
+
+- **所有离开路径都会调用 `unmount`**：返回键/Home 键/`ctx.goHome()`、切换到其他 App（含 `openApp`）、右上角收起手机、程序收起（如打开全屏弹窗前）、设置里隐藏手机、手机壳销毁——不存在「绕过 unmount 直接消失」的路径
+- 下一次 `mount`（无论哪个 App）之前，上一个活跃 App 的 `unmount` 一定已经调用过
+- `unmount` 抛错会被框架捕获并打印控制台，不影响手机壳与其他 App
+- `unmount` 后你的 container 会被框架整体丢弃，纯 DOM 不需要你手动摘除
+
+对应地，你在 `unmount` 里必须做的事：
+
+- 清掉自己起的 `setTimeout` / `setInterval`
+- 退订一切 App 外部的订阅：`eventSource.on(...)`、`window`/`document` 级监听、各类 runtime `subscribe(...)` 返回的退订函数
+- 让在途异步回调失效（`disposed` 标记 / render token），`unmount` 之后不得再触碰 container 与 ctx
+- 只往 container 挂 DOM、没有定时器和外部订阅的 App，可以不提供 `unmount`
+
+参考实现：`mvu-app.ts`（实例 token + 事件退订）、`newvar-app.ts`（runtime 订阅退订）。
+
+### ST 耦合纪律（bridge 模式）
+
+要跟页面全局打交道（`window.SillyTavern`、`window.parent` 上的 Mvu/酒馆助手、jQuery、toastr…）时，把这些耦合收敛到 `apps/<你的功能>/bridge.ts`（照 `apps/api/bridge.ts` 的样子：最小切面类型 + 全部字段可选 + 无 ST 时降级返回）。App UI 文件 0 直连——ESLint 对 `apps/**` 里 bridge 之外的文件直接拦截 `window.SillyTavern` / `window.parent` / `window` 类型断言。
 
 ## PhoneAppContext（ctx）
 
@@ -100,8 +122,8 @@ window.stStage?.registerApp({
 | --- | --- | --- | --- |
 | `sprites` | 立绘 | 当前绑定概览、显示/轮播/Prompt 设置 | `st-extension/src/apps/sprite-app.ts` |
 | `gallery` | 图库 | 打开立绘包管理弹窗、图包概览、图床设置（前缀/imgbb Key/自动上传） | `st-extension/src/apps/gallery-app.ts` |
-| `butler` | 管家 | ST 性能管家：一键性能模式 + 改动前快照还原、power_user 手动微调、体检与优化指南（仅 ST 内生效，Web 模拟器降级为只读指南） | `st-extension/src/apps/butler-app.ts` |
-| `mvu` | MVU | MVU 楼层变量可视化/编辑：树状卡片 + 类型感知编辑 + delta 高亮 + 精准事件刷新（MVU/酒馆助手双通道，模拟器只读） | `st-extension/src/apps/mvu-app.ts` |
+| `butler` | 管家 | ST 性能管家：一键性能模式 + 改动前快照还原、power_user 手动微调、体检与优化指南（仅 ST 内生效，Web 模拟器降级为只读指南）。ST 耦合收敛在 `butler/bridge.ts` | `st-extension/src/apps/butler-app.ts` + `butler/` |
+| `mvu` | MVU | MVU 楼层变量可视化/编辑：树状卡片 + 类型感知编辑 + delta 高亮 + 精准事件刷新（MVU/酒馆助手双通道，模拟器只读）。数据耦合收敛在 `mvu/bridge.ts` | `st-extension/src/apps/mvu-app.ts` + `mvu/` |
 | `newvar` | 新变量 | 内置轻量变量追踪：GUI 定义 schema → 注入状态+规则 → 解析 `<UpdateVariable>` → 逐楼快照。手机页仅开关+状态树，设计走全屏弹窗 | `st-extension/src/apps/newvar-app.ts` + `newvar/` |
 | `api` | API | OpenAI 兼容接口一键切换：手机页点站点行即「写 Key → 切自定义源 → 填 URL/模型/附加参数 → 自动连接」；站点增删改/拉模型列表/附加参数走全屏管理弹窗。ST 交互收敛在 `api/bridge.ts`（模拟器降级只读） | `st-extension/src/apps/api-app.ts` + `api/` |
 
