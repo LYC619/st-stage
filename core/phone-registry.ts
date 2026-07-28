@@ -80,15 +80,43 @@ export function createPhoneAppContext(deps: AppContextDeps): PhoneAppContext {
 
 const APP_ID_REGEX = /^[a-z][a-z0-9-]{1,31}$/
 
+/**
+ * 运行时形状校验：独立 App 从纯 JS 注册（docs/APP-SPEC.md），没有 TS 类型保护，
+ * 坏对象要在注册入口用人话报错，而不是等 mount 时炸在手机壳里。
+ */
+function assertAppShape(app: PhoneApp): void {
+  const a: unknown = app
+  if (typeof a !== 'object' || a === null) {
+    throw new Error('registerApp 参数必须是 App 对象（{ id, name, icon, mount, ... }）')
+  }
+  const o = a as Record<string, unknown>
+  if (typeof o.id !== 'string' || !APP_ID_REGEX.test(o.id)) {
+    throw new Error(`App id「${String(o.id)}」非法：需匹配 ${APP_ID_REGEX}`)
+  }
+  if (typeof o.name !== 'string' || o.name.trim() === '') {
+    throw new Error(`App「${o.id}」的 name 需为非空字符串`)
+  }
+  if (typeof o.icon !== 'string' || o.icon.trim() === '') {
+    throw new Error(`App「${o.id}」的 icon 需为非空字符串`)
+  }
+  if (typeof o.mount !== 'function') {
+    throw new Error(`App「${o.id}」缺少 mount(container, ctx) 函数`)
+  }
+  if (o.unmount !== undefined && typeof o.unmount !== 'function') {
+    throw new Error(`App「${o.id}」的 unmount 需为函数`)
+  }
+  if (o.order !== undefined && typeof o.order !== 'number') {
+    throw new Error(`App「${o.id}」的 order 需为数字`)
+  }
+}
+
 export class PhoneAppRegistry {
   private apps = new Map<string, PhoneApp>()
   private listeners = new Set<() => void>()
 
-  /** 注册 App；id 非法或重复时抛错（第三方 App 装载失败不应拖垮框架，调用方自行 catch） */
+  /** 注册 App；形状非法或 id 重复时抛错（独立 App 走注册队列 shim，由 shim 统一 catch） */
   register(app: PhoneApp): void {
-    if (!APP_ID_REGEX.test(app.id)) {
-      throw new Error(`App id「${app.id}」非法：需匹配 ${APP_ID_REGEX}`)
-    }
+    assertAppShape(app)
     if (this.apps.has(app.id)) {
       throw new Error(`App id「${app.id}」已被注册`)
     }
@@ -118,4 +146,46 @@ export class PhoneAppRegistry {
   private notify(): void {
     for (const l of this.listeners) l()
   }
+}
+
+/* ---- 独立 App 注册队列（docs/APP-SPEC.md） ---- */
+
+/**
+ * 时序竞争背景：st-stage 的真实代码经 stub 异步加载（fetch version.json →
+ * import(bundle) → await 设置），独立 App（普通 ST 扩展）的同步脚本几乎必然先执行。
+ * 约定第三方只写一行：`;(window.stStageQueue ||= []).push(app)` ——
+ * st-stage 就绪后用 installRegisterQueue 把这个数组换成 shim：先吃掉积压，
+ * 之后的 push 即时注册。注册失败（形状非法/id 重复）只打控制台——
+ * 坏 App 不拖垮第三方扩展自身，也不拖垮框架和其他排队的 App。
+ */
+export interface RegisterQueueShim {
+  push(app: PhoneApp): void
+  /** 收到过的全部 push；bundle 同页重复执行时，新实例据此重放（旧注册表已随旧手机壳销毁） */
+  seen: PhoneApp[]
+}
+
+export function installRegisterQueue(
+  prev: unknown,
+  register: (app: PhoneApp) => void,
+): RegisterQueueShim {
+  const seen: PhoneApp[] = []
+  const shim: RegisterQueueShim = {
+    seen,
+    push(app) {
+      seen.push(app)
+      try {
+        register(app)
+      } catch (err) {
+        console.error('[sprite-overlay] 独立 App 注册失败', err)
+      }
+    },
+  }
+  // prev 的两种来路：真数组（本实例就绪前第三方的积压）或旧实例 shim（bundle 同页重复执行）
+  const backlog: unknown[] = Array.isArray(prev)
+    ? prev
+    : typeof prev === 'object' && prev !== null && Array.isArray((prev as RegisterQueueShim).seen)
+      ? (prev as RegisterQueueShim).seen
+      : []
+  for (const app of backlog) shim.push(app as PhoneApp)
+  return shim
 }

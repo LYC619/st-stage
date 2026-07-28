@@ -120,4 +120,25 @@ describe('App 生命周期', () => {
     shell.destroy()
     expect(un2).toHaveBeenCalledTimes(1)
   })
+
+  it('mount 抛错：强清半渲染 DOM，只显示错误占位页', () => {
+    const bad: PhoneApp = {
+      id: 'bad-app',
+      name: 'bad',
+      icon: '💥',
+      mount(container) {
+        const half = document.createElement('div')
+        half.className = 'half-rendered'
+        container.append(half)
+        throw new Error('boom')
+      },
+    }
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { shell } = setup([bad], { open: true })
+    shell.openApp('bad-app')
+    expect(document.querySelector('.half-rendered')).toBeNull()
+    expect(document.querySelector('.so-phone-app-error')).not.toBeNull()
+    errSpy.mockRestore()
+    shell.destroy()
+  })
 })

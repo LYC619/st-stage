@@ -703,16 +703,39 @@ function createPhoneAppContext(deps) {
   };
 }
 var APP_ID_REGEX = /^[a-z][a-z0-9-]{1,31}$/;
+function assertAppShape(app) {
+  const a = app;
+  if (typeof a !== "object" || a === null) {
+    throw new Error("registerApp 参数必须是 App 对象（{ id, name, icon, mount, ... }）");
+  }
+  const o = a;
+  if (typeof o.id !== "string" || !APP_ID_REGEX.test(o.id)) {
+    throw new Error(`App id「${String(o.id)}」非法：需匹配 ${APP_ID_REGEX}`);
+  }
+  if (typeof o.name !== "string" || o.name.trim() === "") {
+    throw new Error(`App「${o.id}」的 name 需为非空字符串`);
+  }
+  if (typeof o.icon !== "string" || o.icon.trim() === "") {
+    throw new Error(`App「${o.id}」的 icon 需为非空字符串`);
+  }
+  if (typeof o.mount !== "function") {
+    throw new Error(`App「${o.id}」缺少 mount(container, ctx) 函数`);
+  }
+  if (o.unmount !== void 0 && typeof o.unmount !== "function") {
+    throw new Error(`App「${o.id}」的 unmount 需为函数`);
+  }
+  if (o.order !== void 0 && typeof o.order !== "number") {
+    throw new Error(`App「${o.id}」的 order 需为数字`);
+  }
+}
 var PhoneAppRegistry = class {
   constructor() {
     this.apps = /* @__PURE__ */ new Map();
     this.listeners = /* @__PURE__ */ new Set();
   }
-  /** 注册 App；id 非法或重复时抛错（第三方 App 装载失败不应拖垮框架，调用方自行 catch） */
+  /** 注册 App；形状非法或 id 重复时抛错（独立 App 走注册队列 shim，由 shim 统一 catch） */
   register(app) {
-    if (!APP_ID_REGEX.test(app.id)) {
-      throw new Error(`App id「${app.id}」非法：需匹配 ${APP_ID_REGEX}`);
-    }
+    assertAppShape(app);
     if (this.apps.has(app.id)) {
       throw new Error(`App id「${app.id}」已被注册`);
     }
@@ -738,6 +761,23 @@ var PhoneAppRegistry = class {
     for (const l of this.listeners) l();
   }
 };
+function installRegisterQueue(prev, register) {
+  const seen = [];
+  const shim = {
+    seen,
+    push(app) {
+      seen.push(app);
+      try {
+        register(app);
+      } catch (err) {
+        console.error("[sprite-overlay] 独立 App 注册失败", err);
+      }
+    }
+  };
+  const backlog = Array.isArray(prev) ? prev : typeof prev === "object" && prev !== null && Array.isArray(prev.seen) ? prev.seen : [];
+  for (const app of backlog) shim.push(app);
+  return shim;
+}
 
 // core/phone-shell.ts
 var DRAG_THRESHOLD = 6;
@@ -935,6 +975,7 @@ function createPhoneShell(initialState, deps) {
         activeApp.mount(container, deps.createAppContext(activeApp.id, goHome));
       } catch (err) {
         console.error(`[sprite-overlay] App「${activeApp.id}」mount 失败`, err);
+        container.replaceChildren();
         const errBox = document.createElement("div");
         errBox.className = "so-phone-app-error";
         errBox.textContent = "App 打开失败，详见控制台";
@@ -3352,7 +3393,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.6.1"}（构建 ${"2026-07-28 13:14"}）`;
+  const version = false ? "" : ` v${"0.7.0"}（构建 ${"2026-07-28 18:53"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -6909,7 +6950,10 @@ async function init() {
     getSettings: () => settings,
     inject: (prompt, depth) => adapter.injectChannel(NEWVAR_CHANNEL, prompt, depth)
   });
-  window.__stStageDispose = () => newvarRuntime.dispose();
+  window.__stStageDispose = () => {
+    newvarRuntime.dispose();
+    phone.destroy();
+  };
   const newvarDesigner = createNewvarDesigner({
     getData: () => newvarRuntime.getData(),
     setData: (next) => {
@@ -6945,8 +6989,10 @@ async function init() {
   })) {
     registry.register(app);
   }
+  const registerQueue = installRegisterQueue(window.stStageQueue, (app) => registry.register(app));
+  window.stStageQueue = registerQueue;
   window.stStage = {
-    registerApp: (app) => registry.register(app)
+    registerApp: (app) => registerQueue.push(app)
   };
   function overlayAllowed() {
     return settings.enabled && settings.spriteDisplayMode !== "inline" && !settings.overlayHidden;
@@ -7009,7 +7055,7 @@ async function init() {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.6.1"} · ${"2026-07-28 13:14"}`;
+  const version = false ? "dev" : `v${"0.7.0"} · ${"2026-07-28 18:53"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {

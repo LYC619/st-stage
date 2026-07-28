@@ -102,7 +102,9 @@ https://github.com/LYC619/st-stage
 
 Claude Code 会自动发现这个 skill；其他工具就在提示词开头加一句「先读 `.claude/skills/st-app/SKILL.md`」。把引号里的功能换成你要的即可，从写代码、装配到构建提交它都会照流程走完。
 
-手写也一样：照 skill 的三步 + **[docs/APP-SPEC.md](docs/APP-SPEC.md)**（App 契约、ctx 能力、样式套件与安全红线）。旧的 `window.stStage.registerApp(...)` 外部注册入口保留兼容。
+手写也一样：照 skill 的三步 + **[docs/APP-SPEC.md](docs/APP-SPEC.md)**（App 契约、ctx 能力、样式套件与安全红线）。
+
+想做**独立发布**的 App（自己的仓库与版本、ST 扩展管理器启停、URL 安装分发）？写一个普通 ST 扩展，index.js 里一行 `;(window.stStageQueue ||= []).push(app)` 即接入，加载顺序无关、注册失败不拖垮你的扩展——可复制模板见 **[docs/templates/standalone-app/](docs/templates/standalone-app/)**。
 
 ---
 
@@ -183,6 +185,7 @@ docs/SPRITE.md            ★ 立绘 App 完整使用指南（含数据格式）
 docs/VARIABLES.md         ★ 变量 App 指南（MVU + 新变量：选择、设计、更新规则、FAQ）
 docs/BUTLER.md            ★ 管家 App 指南（每个性能选项的含义与推荐值）
 docs/APP-SPEC.md          ★ App 开发规范：契约、ctx、样式、安全红线、三步接入
+docs/templates/standalone-app/  ★ 独立 App 可复制模板（manifest + index.js，一行队列注册）
 docs/superpowers/         历史设计文档（plans/specs，归档参考）
 ```
 

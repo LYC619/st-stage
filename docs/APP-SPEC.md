@@ -2,11 +2,11 @@
 
 st-stage 在 SillyTavern 聊天界面提供一个「手机」悬浮框架：一个可拖拽的 📱 图标，展开后是带状态栏、返回键、关闭键和圆形 Home 键的手机屏幕，屏幕上是 App 栅格。立绘（设置中心）、图库都是内置 App。
 
-> **方向说明（v0.5 起）**：st-stage 的定位是「一个插件、内部装配多个功能」。**新功能建议直接作为内部 App 模块开发**，放进 `st-extension/src/apps/`，加入 `apps/index.ts` 的统一列表，与 st-stage 一起构建发布——不需要拆成独立插件，也不走外部注册。下面的 `window.stStage.registerApp(...)` 外部注册入口**暂时保留兼容**旧用法，但不是当前推荐路径。内部 App 与外部 App 的对象结构完全一致，本规范同样适用。
+> **方向说明（v0.7 起）**：st-stage 支持两条并列的接入路径。**内部 App**——进 `st-extension/src/apps/`，随 st-stage 一起构建发布，适合与框架/立绘深度耦合的功能；**独立 App**——你自己的 ST 扩展，一行队列注册接入（见下），免费获得 ST 扩展管理器的启停与 URL 安装分发，适合独立演进、独立发版的功能。后续新功能默认优先独立 App。两条路径的 App 对象结构与生命周期契约完全一致，本规范同样适用。
 
-## 内部 App 三步接入（推荐路径）
+## 内部 App 三步接入
 
-以后给 st-stage 加任何新功能，都不用再写独立 ST 扩展，三步：
+与框架深度耦合的功能走内部路径，三步：
 
 1. **新建模块**：`st-extension/src/apps/<你的功能>-app.ts`，导出一个返回 `PhoneApp` 对象的工厂函数（结构见下方外部注册示例，`mount`/`ctx` 完全相同；UI 小部件直接复用 `./widgets` 里的 `appButton/toggleRow/selectRow/numberRow/textRow/textareaRow`）。
 2. **加入装配清单**：在 `st-extension/src/apps/index.ts` 的 `createBuiltinApps` 返回数组里加一行。需要访问框架能力（如打开弹窗）就照 `galleryApp` 的样子通过 `BuiltinAppDeps` 传入。
@@ -14,17 +14,16 @@ st-stage 在 SillyTavern 聊天界面提供一个「手机」悬浮框架：一�
 
 App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发立绘刷新）；只有确实要改核心设置才用 `ctx.updateSettings`。
 
-## 一分钟接入（外部注册，兼容保留）
+## 独立 App 接入（一行注册）
 
-在你自己的 ST 扩展脚本里（st-stage 加载之后）：
+独立 App = 一个普通的 SillyTavern 扩展（manifest.json + index.js）。index.js 里只做一件事——把 App 对象 push 进注册队列：
 
 ```js
-// window.stStage 由 st-stage 扩展暴露
-window.stStage?.registerApp({
+;(window.stStageQueue ||= []).push({
   id: 'dice-roller',        // 唯一 ID：小写字母开头，字母/数字/连字符，2–32 字符
   name: '骰子',              // Home 屏名称，建议 ≤ 4 个汉字
   icon: '🎲',               // 单个 emoji
-  order: 50,                // 排序权重，小的在前（内置：立绘 1、图库 2）
+  order: 50,                // 排序权重，小的在前（内置 App 占 1–20）
   mount(container, ctx) {
     // container：手机屏幕内的空 div，往里渲染原生 DOM
     const btn = document.createElement('div')
@@ -43,7 +42,10 @@ window.stStage?.registerApp({
 })
 ```
 
-`registerApp` 对非法/重复 id 会**抛错**，建议用 `try/catch` 包住，注册失败不应影响你扩展的其余功能。
+- **加载顺序无关**：st-stage 的真实代码是异步加载的。你的脚本先跑时，push 进的是普通数组（积压）；st-stage 就绪后统一注册积压，并把队列换成「push 即注册」的 shim。因此**不需要** `loading_order` 配合、轮询或 `window.stStage` 存在性判断。st-stage 未安装时队列无人消费，静默无害。
+- **注册失败不抛错**：id 非法/重复、缺 `mount` 等问题只打印在控制台（`[sprite-overlay] 独立 App 注册失败`），不影响你扩展的其余逻辑，也不拖垮框架和其他排队的 App。`window.stStage?.registerApp(app)`（st-stage 就绪后可用）走同一通道，行为相同。
+- **启停与分发走 ST 本身**：用户在 ST 扩展管理器里装/卸/停用你的扩展（启停后需刷新页面生效），用 GitHub 仓库地址分发安装——st-stage 不另建商店。
+- **可复制模板**：[docs/templates/standalone-app/](templates/standalone-app/)——manifest.json + index.js，改 id 就能用。
 
 > ⚠️ **App 私有数据更新不触发立绘刷新**：`ctx.setAppData(...)` 只持久化你的私有存储，**不会**触发立绘 refresh / Prompt 重注入 / 楼层重渲染（内部走 `saveSettingsOnly`）。只有当你调用 `ctx.updateSettings(...)` 修改**核心设置**时才会触发框架刷新——所以除非确有必要，App 状态一律用 `setAppData`。
 

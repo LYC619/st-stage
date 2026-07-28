@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import { PhoneAppRegistry, createPhoneAppContext, type PhoneApp } from './phone-registry'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  PhoneAppRegistry,
+  createPhoneAppContext,
+  installRegisterQueue,
+  type PhoneApp,
+} from './phone-registry'
 import { createDefaultSettings } from './types'
 
 function app(id: string, order?: number): PhoneApp {
@@ -42,6 +47,63 @@ describe('PhoneAppRegistry', () => {
     off()
     reg.register(app('two'))
     expect(calls).toBe(2)
+  })
+
+  it('形状校验：独立 App 从 JS 注册时坏对象在入口报错', () => {
+    const reg = new PhoneAppRegistry()
+    const bad = (v: unknown) => () => reg.register(v as PhoneApp)
+    expect(bad(null)).toThrow('必须是 App 对象')
+    expect(bad('dice')).toThrow('必须是 App 对象')
+    expect(bad({ id: 'dice' })).toThrow('name')
+    expect(bad({ id: 'dice', name: '骰子' })).toThrow('icon')
+    expect(bad({ id: 'dice', name: '骰子', icon: '🎲' })).toThrow('mount')
+    expect(bad({ id: 'dice', name: '骰子', icon: '🎲', mount: () => {}, unmount: 1 })).toThrow(
+      'unmount',
+    )
+    expect(bad({ id: 'dice', name: '骰子', icon: '🎲', mount: () => {}, order: 'a' })).toThrow(
+      'order',
+    )
+    // 报错后注册表干净，同 id 仍可正常注册
+    reg.register(app('dice'))
+    expect(reg.get('dice')).toBeDefined()
+  })
+})
+
+describe('installRegisterQueue（独立 App 注册队列）', () => {
+  it('吃掉就绪前的积压数组并按序注册；接管后 push 即时注册', () => {
+    const reg = new PhoneAppRegistry()
+    const backlog = [app('early-a'), app('early-b')]
+    const shim = installRegisterQueue(backlog, (a) => reg.register(a))
+    expect(reg.list().map((a) => a.id)).toEqual(['early-a', 'early-b'])
+    shim.push(app('late'))
+    expect(reg.get('late')).toBeDefined()
+  })
+
+  it('坏 App 只打控制台，不断链：积压里后面的照常注册', () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const reg = new PhoneAppRegistry()
+    installRegisterQueue([{ id: 'BAD' } as unknown as PhoneApp, app('good')], (a) =>
+      reg.register(a),
+    )
+    expect(reg.get('good')).toBeDefined()
+    expect(errSpy).toHaveBeenCalledTimes(1)
+    errSpy.mockRestore()
+  })
+
+  it('bundle 同页重复执行：新实例从旧 shim 的 seen 重放到新注册表', () => {
+    const reg1 = new PhoneAppRegistry()
+    const shim1 = installRegisterQueue([app('queued')], (a) => reg1.register(a))
+    shim1.push(app('pushed'))
+    const reg2 = new PhoneAppRegistry()
+    installRegisterQueue(shim1, (a) => reg2.register(a))
+    expect(reg2.list().map((a) => a.id)).toEqual(['queued', 'pushed'])
+  })
+
+  it('prev 为 undefined / 垃圾值时安全为空积压', () => {
+    const reg = new PhoneAppRegistry()
+    installRegisterQueue(undefined, (a) => reg.register(a))
+    installRegisterQueue('garbage', (a) => reg.register(a))
+    expect(reg.list()).toEqual([])
   })
 })
 

@@ -1,0 +1,11 @@
+{
+  "display_name": "我的 st-stage App",
+  "loading_order": 100,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "author": "你的名字",
+  "version": "0.1.0",
+  "homePage": "",
+  "auto_update": true
+}

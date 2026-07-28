@@ -14,7 +14,7 @@ import {
   resolveSprites,
 } from '../../core/sprite-store'
 import { preloadMatchedSprites, preloadOnActivate } from '../../core/sprite-preload'
-import { PhoneAppRegistry, createPhoneAppContext, type PhoneAppContext } from '../../core/phone-registry'
+import { PhoneAppRegistry, createPhoneAppContext, installRegisterQueue, type PhoneApp, type PhoneAppContext } from '../../core/phone-registry'
 import { createPhoneShell } from '../../core/phone-shell'
 import { STAdapter } from './st-adapter'
 import { createOverlay, type OverlayController } from './overlay-dom'
@@ -30,16 +30,19 @@ import { API_APP_ID, sanitizeAppData } from './apps/api/core'
 
 declare global {
   interface Window {
-    /** 第三方扩展注册手机 App 的公开入口（docs/APP-SPEC.md） */
-    stStage?: { registerApp: PhoneAppRegistry['register'] }
-    /** 内部：上一次 bundle 执行留下的常驻订阅清理（防同页重复执行时事件双重处理） */
+    /** 独立 App 注册入口（docs/APP-SPEC.md）：不抛错，注册失败打控制台 */
+    stStage?: { registerApp: (app: PhoneApp) => void }
+    /** 独立 App 注册队列：st-stage 就绪前是普通数组（第三方 `||= []` 后 push），就绪后换成即时注册的 shim */
+    stStageQueue?: { push(app: PhoneApp): void }
+    /** 内部：上一次 bundle 执行留下的常驻清理（防同页重复执行时事件双重处理/双手机壳） */
     __stStageDispose?: () => void
   }
 }
 
 async function init(): Promise<void> {
-  // bundle 若在同页被执行两次（stub 版本参数失败回退重 import 等），先清上一实例的常驻订阅。
-  // 目前唯一带 dispose 的常驻订阅者是「新变量」运行时；DOM/其余监听的全量卸载留给独立 App 阶段按需再建
+  // bundle 若在同页被执行两次（stub 版本参数失败回退重 import 等），先清上一实例的常驻部分：
+  // 新变量运行时的事件订阅 + 手机壳（独立 App 会经注册队列 shim 在新实例重放，不会丢）。
+  // overlay/楼层后处理等其余监听的全量卸载仍留待有实际症状时按需补
   window.__stStageDispose?.()
   const adapter = new STAdapter()
   let settings: PluginSettings
@@ -139,8 +142,11 @@ async function init(): Promise<void> {
     inject: (prompt, depth) => adapter.injectChannel(NEWVAR_CHANNEL, prompt, depth),
   })
   // dispose 接线：正常页面生命周期里 ST 不卸载扩展（启停需刷新），
-  // 这里只在 bundle 同页重复执行时由下一次 init 调用，防事件订阅翻倍
-  window.__stStageDispose = () => newvarRuntime.dispose()
+  // 只在 bundle 同页重复执行时由下一次 init 调用：防事件订阅翻倍、防双手机壳
+  window.__stStageDispose = () => {
+    newvarRuntime.dispose()
+    phone.destroy()
+  }
 
   // 「变量设计」弹窗：配置写 App 私有存储（saveSettingsOnly，不触发立绘刷新）后通知运行时重注入
   const newvarDesigner = createNewvarDesigner({
@@ -182,9 +188,12 @@ async function init(): Promise<void> {
     registry.register(app)
   }
 
-  // 第三方注册入口：try/catch 由第三方自负，register 抛错不拖垮框架
+  // 独立 App 注册（docs/APP-SPEC.md）：先吃掉 st-stage 就绪前排队的积压，再接管后续 push 即时注册。
+  // registerApp 走同一 shim——注册失败（形状非法/id 重复）只打控制台，不拖垮第三方扩展也不拖垮框架
+  const registerQueue = installRegisterQueue(window.stStageQueue, (app) => registry.register(app))
+  window.stStageQueue = registerQueue
   window.stStage = {
-    registerApp: (app) => registry.register(app),
+    registerApp: (app) => registerQueue.push(app),
   }
 
   /** 悬浮窗是否允许显示：总开关开 + 非仅楼层模式 + 未被用户手动关闭 */

@@ -259,6 +259,8 @@ export function createPhoneShell(
         activeApp.mount(container, deps.createAppContext(activeApp.id, goHome))
       } catch (err) {
         console.error(`[sprite-overlay] App「${activeApp.id}」mount 失败`, err)
+        // 强清容器：mount 半途抛错可能留下半渲染 DOM，错误占位页不与残骸混排
+        container.replaceChildren()
         const errBox = document.createElement('div')
         errBox.className = 'so-phone-app-error'
         errBox.textContent = 'App 打开失败，详见控制台'
