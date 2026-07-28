@@ -223,6 +223,7 @@ async function init(): Promise<void> {
       settings.multiRolePromptMode,
       settings.spriteCount,
       settings.promptTemplate,
+      settings.promptBudget,
     )
     adapter.injectPrompt(prompt, settings.injectionDepth)
 

@@ -115,6 +115,14 @@ describe('migrateSettings', () => {
     expect(migrateSettings({ ...V1_SAVED, promptTemplate: 42 }).promptTemplate).toBe('')
   })
 
+  it('promptBudget 缺省 0（不限），取整夹到 [0,20000]（阶段四）', () => {
+    expect(migrateSettings(V1_SAVED).promptBudget).toBe(0)
+    expect(migrateSettings({ ...V1_SAVED, promptBudget: 1500 }).promptBudget).toBe(1500)
+    expect(migrateSettings({ ...V1_SAVED, promptBudget: -5 }).promptBudget).toBe(0)
+    expect(migrateSettings({ ...V1_SAVED, promptBudget: 999999 }).promptBudget).toBe(20000)
+    expect(migrateSettings({ ...V1_SAVED, promptBudget: 'x' }).promptBudget).toBe(0)
+  })
+
   it('injectionDepth 缺失/非法回退 4，合法值钳位保留', () => {
     expect(migrateSettings(V1_SAVED).injectionDepth).toBe(4)
     expect(migrateSettings({ ...V1_SAVED, injectionDepth: 7 }).injectionDepth).toBe(7)

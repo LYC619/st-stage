@@ -17,6 +17,8 @@ import {
   createDefaultSettings,
   INJECTION_DEPTH_MAX,
   INJECTION_DEPTH_MIN,
+  PROMPT_BUDGET_MAX,
+  PROMPT_BUDGET_MIN,
   RECENT_FLOORS_MAX,
   RECENT_FLOORS_MIN,
   SETTINGS_VERSION,
@@ -89,6 +91,10 @@ export function migrateSettings(saved: unknown): PluginSettings {
         : defaults.injectionDepth,
     promptTemplate:
       typeof raw.promptTemplate === 'string' ? raw.promptTemplate : defaults.promptTemplate,
+    promptBudget:
+      typeof raw.promptBudget === 'number' && Number.isFinite(raw.promptBudget)
+        ? Math.min(PROMPT_BUDGET_MAX, Math.max(PROMPT_BUDGET_MIN, Math.round(raw.promptBudget)))
+        : defaults.promptBudget,
     imgbbApiKey: typeof raw.imgbbApiKey === 'string' ? raw.imgbbApiKey : defaults.imgbbApiKey,
     autoUpload: typeof raw.autoUpload === 'boolean' ? raw.autoUpload : defaults.autoUpload,
     packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],

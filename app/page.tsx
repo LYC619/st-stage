@@ -58,6 +58,7 @@ export default function Page() {
             settings.multiRolePromptMode,
             settings.spriteCount,
             settings.promptTemplate,
+            settings.promptBudget,
           )
         : '',
     [settings, addresses],

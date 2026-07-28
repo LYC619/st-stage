@@ -6,6 +6,8 @@
  * - 智能精简（repeat）：多个「场景（人名/服装）」共有的表情只列一次，
  *   各场景其余表情按行增量列出（不生成不存在的组合）
  * - 每次回复立绘数量 N：要求 AI 按情节顺序输出 N 个 [立绘:...] 标签
+ * 阶段四（大图包稳定化）：
+ * - 字符预算 budget：超出时二分「每场景 tag 上限 K」均衡截取，保留排前的表情
  */
 
 import type { SpriteAddress } from './types'
@@ -154,6 +156,55 @@ export function chooseShorterPrompt(grouped: string, shared: string): string {
   return shared.length < grouped.length ? shared : grouped
 }
 
+/** 每场景最多保留前 cap 个（去重后的）tag，保持地址原序——排前的表情=作者/包序优先 */
+function capAddresses(addresses: SpriteAddress[], cap: number): SpriteAddress[] {
+  const perScene = new Map<string, Set<string>>()
+  const kept: SpriteAddress[] = []
+  for (const address of addresses) {
+    const key = sceneKey(address)
+    let tags = perScene.get(key)
+    if (!tags) {
+      tags = new Set()
+      perScene.set(key, tags)
+    }
+    if (tags.has(address.tag)) continue // 同场景重复 tag 对清单无贡献
+    if (tags.size >= cap) continue
+    tags.add(address.tag)
+    kept.push(address)
+  }
+  return kept
+}
+
+/**
+ * 预算适配：budget>0 且超出时，二分「每场景 tag 上限 K」找能塞进预算的最大 K。
+ * 每个场景始终保留（至少 1 个表情），截掉的是各场景排后的 tag——均衡且确定性。
+ * ponytail: K=1 仍超预算时按 K=1 尽力而为（不硬切字符串防止截出半行）；
+ * 场景数本身爆预算属病态数据，升级路径是再按场景数截。
+ */
+function fitToBudget(
+  addresses: SpriteAddress[],
+  budget: number,
+  build: (addrs: SpriteAddress[]) => string,
+): string {
+  const full = build(addresses)
+  if (budget <= 0 || full.length <= budget) return full
+  const maxTags = Math.max(...buildScenes(addresses).map((scene) => scene.tags.length))
+  let best = build(capAddresses(addresses, 1))
+  let lo = 2
+  let hi = maxTags
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1
+    const candidate = build(capAddresses(addresses, mid))
+    if (candidate.length <= budget) {
+      best = candidate
+      lo = mid + 1
+    } else {
+      hi = mid - 1
+    }
+  }
+  return best
+}
+
 /**
  * 内置提示词的模板形态，供设置 UI「填入内置底稿」——用户在此基础上修改。
  * 措辞须与 buildGroupedFull/countInstruction 保持同步（有单测把关）；
@@ -174,25 +225,33 @@ export const BUILTIN_TEMPLATE = [
  * template 非空时整体替换内置 prompt（用户自定义提示词），支持占位符：
  *   {清单} → 按场景分组的立绘清单（- 场景：tag、tag…）
  *   {数量} → 每次回复的立绘数量 N
+ * budget > 0 时限制输出字符数：超出按每场景均衡截取（自定义模板作用于 {清单}；
+ * 模板不含 {清单} 时无从截取，原样输出）。
  */
 export function buildPrompt(
   addresses: SpriteAddress[],
   mode: 'full' | 'repeat',
   count: number,
   template = '',
+  budget = 0,
 ): string {
   if (addresses.length === 0) return ''
   const n = Math.max(1, Math.round(count) || 1)
+  const b = Math.max(0, Math.round(budget) || 0)
   const custom = template.trim()
   if (custom) {
-    const list = buildScenes(addresses)
-      .map((scene) => `- ${scene.label}：${scene.tags.join('、')}`)
-      .join('\n')
-    return custom.replace(/\{清单\}/g, list).replace(/\{数量\}/g, String(n))
+    return fitToBudget(addresses, b, (addrs) => {
+      const list = buildScenes(addrs)
+        .map((scene) => `- ${scene.label}：${scene.tags.join('、')}`)
+        .join('\n')
+      return custom.replace(/\{清单\}/g, list).replace(/\{数量\}/g, String(n))
+    })
   }
-  const grouped = buildGroupedFull(addresses, n)
-  if (mode === 'full') return grouped
-  return chooseShorterPrompt(grouped, buildShared(addresses, n))
+  return fitToBudget(addresses, b, (addrs) => {
+    const grouped = buildGroupedFull(addrs, n)
+    if (mode === 'full') return grouped
+    return chooseShorterPrompt(grouped, buildShared(addrs, n))
+  })
 }
 
 /* ---------- 向后兼容旧签名（Web 模拟器仍在用；阶段6统一迁移） ---------- */

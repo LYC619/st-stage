@@ -6,7 +6,7 @@
 
 import { useRef, useState } from 'react'
 import type { PluginSettings, SpritePack } from '@/core/types'
-import { DEFAULT_IMAGE_HOST, formatAddress } from '@/core/types'
+import { DEFAULT_IMAGE_HOST, PROMPT_BUDGET_MAX, formatAddress } from '@/core/types'
 import {
   type BindingConflict,
   type ConflictCheckedSettingsResult,
@@ -461,6 +461,27 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
         </label>
         <p className="text-xs text-muted-foreground">
           智能精简按实际长度自动取更短的一版：场景/表情较少时仍会显示全量格式，属正常现象。
+        </p>
+        <label className="flex items-center justify-between text-sm text-foreground">
+          Prompt 预算（字符，0=不限）
+          <input
+            type="number"
+            min={0}
+            max={PROMPT_BUDGET_MAX}
+            step={100}
+            defaultValue={settings.promptBudget}
+            onBlur={(e) => {
+              const n = Math.round(Number(e.target.value))
+              const v = Number.isFinite(n) ? Math.min(PROMPT_BUDGET_MAX, Math.max(0, n)) : 0
+              e.target.value = String(v)
+              onSettingsChange({ ...settings, promptBudget: v })
+            }}
+            className="w-24 rounded-lg border border-input bg-background px-2 py-1 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+            aria-label="Prompt 字符预算"
+          />
+        </label>
+        <p className="text-xs text-muted-foreground">
+          超预算时每场景均衡截取（保留排前的表情）；大图包建议设置，防止立绘清单吃掉过多上下文。
         </p>
         <label className="flex flex-col gap-1 text-sm text-foreground">
           <span className="text-xs text-muted-foreground">

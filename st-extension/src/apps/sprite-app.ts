@@ -8,14 +8,16 @@ import type { PhoneApp } from '../../../core/phone-registry'
 import {
   INJECTION_DEPTH_MAX,
   INJECTION_DEPTH_MIN,
+  PROMPT_BUDGET_MAX,
+  PROMPT_BUDGET_MIN,
   RECENT_FLOORS_MAX,
   RECENT_FLOORS_MIN,
   SPRITE_COUNT_MAX,
   SPRITE_COUNT_MIN,
 } from '../../../core/types'
-import { getActivePacks } from '../../../core/sprite-store'
+import { getActiveAddresses, getActivePacks } from '../../../core/sprite-store'
 import { el, appButton, foldSection, numberRow, selectRow, textareaRow, toggleRow } from './widgets'
-import { BUILTIN_TEMPLATE } from '../../../core/prompt-builder'
+import { BUILTIN_TEMPLATE, buildPrompt } from '../../../core/prompt-builder'
 
 export function spriteApp(): PhoneApp {
   return {
@@ -131,7 +133,40 @@ export function spriteApp(): PhoneApp {
               multiRolePromptMode: v === 'repeat' ? 'repeat' : 'full',
             }),
         ),
+        numberRow(
+          'Prompt 预算（字符，0=不限）',
+          settings.promptBudget,
+          PROMPT_BUDGET_MIN,
+          PROMPT_BUDGET_MAX,
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), promptBudget: v }),
+        ),
       )
+      // 预算反馈：算一遍实际会注入的 prompt，超预算时同时给出截取前的长度
+      const addresses = getActiveAddresses(settings, characterName)
+      const budgeted = buildPrompt(
+        addresses,
+        settings.multiRolePromptMode,
+        settings.spriteCount,
+        settings.promptTemplate,
+        settings.promptBudget,
+      )
+      const unlimited =
+        settings.promptBudget > 0
+          ? buildPrompt(
+              addresses,
+              settings.multiRolePromptMode,
+              settings.spriteCount,
+              settings.promptTemplate,
+            )
+          : budgeted
+      const budgetHint = el('div', 'so-app-desc')
+      budgetHint.textContent = budgeted
+        ? `预计注入 ${budgeted.length} 字符` +
+          (budgeted.length < unlimited.length
+            ? `（超预算，已从 ${unlimited.length} 字符每场景均衡截取，保留排前的表情）`
+            : '')
+        : '预计注入：无（当前角色没有可用立绘地址）'
+      promptSection.body.append(budgetHint)
       const promptHint = el('div', 'so-app-desc')
       promptHint.textContent =
         '多个包/含人名服装时，Prompt 用完整地址 [立绘:人名/服装/图名]；单包纯图名时用简写 [立绘:图名]。' +

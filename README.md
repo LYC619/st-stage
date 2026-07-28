@@ -185,6 +185,7 @@ docs/SPRITE.md            ★ 立绘 App 完整使用指南（含数据格式）
 docs/VARIABLES.md         ★ 变量 App 指南（MVU + 新变量：选择、设计、更新规则、FAQ）
 docs/BUTLER.md            ★ 管家 App 指南（每个性能选项的含义与推荐值）
 docs/APP-SPEC.md          ★ App 开发规范：契约、ctx、样式、安全红线、三步接入
+docs/DESIGN-WALKTHROUGH.md  设计走查 checklist（发版前人工过一遍，移动+PC）
 docs/templates/standalone-app/  ★ 独立 App 可复制模板（manifest + index.js，一行队列注册）
 docs/superpowers/         历史设计文档（plans/specs，归档参考）
 ```

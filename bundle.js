@@ -135,6 +135,42 @@ function buildShared(addresses, count) {
 function chooseShorterPrompt(grouped, shared) {
   return shared.length < grouped.length ? shared : grouped;
 }
+function capAddresses(addresses, cap) {
+  const perScene = /* @__PURE__ */ new Map();
+  const kept = [];
+  for (const address of addresses) {
+    const key = sceneKey(address);
+    let tags = perScene.get(key);
+    if (!tags) {
+      tags = /* @__PURE__ */ new Set();
+      perScene.set(key, tags);
+    }
+    if (tags.has(address.tag)) continue;
+    if (tags.size >= cap) continue;
+    tags.add(address.tag);
+    kept.push(address);
+  }
+  return kept;
+}
+function fitToBudget(addresses, budget, build) {
+  const full = build(addresses);
+  if (budget <= 0 || full.length <= budget) return full;
+  const maxTags = Math.max(...buildScenes(addresses).map((scene) => scene.tags.length));
+  let best = build(capAddresses(addresses, 1));
+  let lo = 2;
+  let hi = maxTags;
+  while (lo <= hi) {
+    const mid = lo + hi >> 1;
+    const candidate = build(capAddresses(addresses, mid));
+    if (candidate.length <= budget) {
+      best = candidate;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return best;
+}
 var BUILTIN_TEMPLATE = [
   "[角色立绘系统]",
   "可用立绘（按场景）：",
@@ -143,17 +179,22 @@ var BUILTIN_TEMPLATE = [
   "请根据回复内容，按情节顺序选择 {数量} 张立绘。每个 [立绘:...] 标签单独占一行，插在触发它的剧情段落之后——随剧情分散在正文中，不要集中堆在回复结尾。",
   "只能使用上述场景中实际列出的表情，不要自行拼造不存在的角色/服装/表情组合。"
 ].join("\n");
-function buildPrompt(addresses, mode, count, template = "") {
+function buildPrompt(addresses, mode, count, template = "", budget = 0) {
   if (addresses.length === 0) return "";
   const n = Math.max(1, Math.round(count) || 1);
+  const b = Math.max(0, Math.round(budget) || 0);
   const custom = template.trim();
   if (custom) {
-    const list = buildScenes(addresses).map((scene) => `- ${scene.label}：${scene.tags.join("、")}`).join("\n");
-    return custom.replace(/\{清单\}/g, list).replace(/\{数量\}/g, String(n));
+    return fitToBudget(addresses, b, (addrs) => {
+      const list = buildScenes(addrs).map((scene) => `- ${scene.label}：${scene.tags.join("、")}`).join("\n");
+      return custom.replace(/\{清单\}/g, list).replace(/\{数量\}/g, String(n));
+    });
   }
-  const grouped = buildGroupedFull(addresses, n);
-  if (mode === "full") return grouped;
-  return chooseShorterPrompt(grouped, buildShared(addresses, n));
+  return fitToBudget(addresses, b, (addrs) => {
+    const grouped = buildGroupedFull(addrs, n);
+    if (mode === "full") return grouped;
+    return chooseShorterPrompt(grouped, buildShared(addrs, n));
+  });
 }
 
 // core/types.ts
@@ -167,6 +208,9 @@ var SPRITE_COUNT_MAX = 10;
 var INJECTION_DEPTH_DEFAULT = 4;
 var INJECTION_DEPTH_MIN = 0;
 var INJECTION_DEPTH_MAX = 100;
+var PROMPT_BUDGET_DEFAULT = 0;
+var PROMPT_BUDGET_MIN = 0;
+var PROMPT_BUDGET_MAX = 2e4;
 var DEFAULT_IMAGE_HOST = "https://files.catbox.moe/";
 function getSpriteSource(sprite) {
   if (sprite.url.startsWith("data:")) return "embedded";
@@ -222,6 +266,7 @@ function createDefaultSettings() {
     spriteCount: SPRITE_COUNT_DEFAULT,
     injectionDepth: INJECTION_DEPTH_DEFAULT,
     promptTemplate: "",
+    promptBudget: PROMPT_BUDGET_DEFAULT,
     imgbbApiKey: "",
     autoUpload: false,
     packs: [],
@@ -1233,6 +1278,7 @@ function migrateSettings(saved) {
     spriteCount: typeof raw.spriteCount === "number" && Number.isFinite(raw.spriteCount) ? Math.min(SPRITE_COUNT_MAX, Math.max(SPRITE_COUNT_MIN, Math.round(raw.spriteCount))) : defaults.spriteCount,
     injectionDepth: typeof raw.injectionDepth === "number" && Number.isFinite(raw.injectionDepth) ? Math.min(INJECTION_DEPTH_MAX, Math.max(INJECTION_DEPTH_MIN, Math.round(raw.injectionDepth))) : defaults.injectionDepth,
     promptTemplate: typeof raw.promptTemplate === "string" ? raw.promptTemplate : defaults.promptTemplate,
+    promptBudget: typeof raw.promptBudget === "number" && Number.isFinite(raw.promptBudget) ? Math.min(PROMPT_BUDGET_MAX, Math.max(PROMPT_BUDGET_MIN, Math.round(raw.promptBudget))) : defaults.promptBudget,
     imgbbApiKey: typeof raw.imgbbApiKey === "string" ? raw.imgbbApiKey : defaults.imgbbApiKey,
     autoUpload: typeof raw.autoUpload === "boolean" ? raw.autoUpload : defaults.autoUpload,
     packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
@@ -3393,7 +3439,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.7.0"}（构建 ${"2026-07-28 18:53"}）`;
+  const version = false ? "" : ` v${"0.8.0"}（构建 ${"2026-07-28 19:51"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -3881,8 +3927,32 @@ function spriteApp() {
             ...ctx.getSettings(),
             multiRolePromptMode: v === "repeat" ? "repeat" : "full"
           })
+        ),
+        numberRow(
+          "Prompt 预算（字符，0=不限）",
+          settings.promptBudget,
+          PROMPT_BUDGET_MIN,
+          PROMPT_BUDGET_MAX,
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), promptBudget: v })
         )
       );
+      const addresses = getActiveAddresses(settings, characterName);
+      const budgeted = buildPrompt(
+        addresses,
+        settings.multiRolePromptMode,
+        settings.spriteCount,
+        settings.promptTemplate,
+        settings.promptBudget
+      );
+      const unlimited = settings.promptBudget > 0 ? buildPrompt(
+        addresses,
+        settings.multiRolePromptMode,
+        settings.spriteCount,
+        settings.promptTemplate
+      ) : budgeted;
+      const budgetHint = el2("div", "so-app-desc");
+      budgetHint.textContent = budgeted ? `预计注入 ${budgeted.length} 字符` + (budgeted.length < unlimited.length ? `（超预算，已从 ${unlimited.length} 字符每场景均衡截取，保留排前的表情）` : "") : "预计注入：无（当前角色没有可用立绘地址）";
+      promptSection.body.append(budgetHint);
       const promptHint = el2("div", "so-app-desc");
       promptHint.textContent = "多个包/含人名服装时，Prompt 用完整地址 [立绘:人名/服装/图名]；单包纯图名时用简写 [立绘:图名]。智能精简按实际长度自动取更短的一版：场景/表情较少时仍会显示全量格式，属正常现象。";
       promptSection.body.append(promptHint);
@@ -7012,7 +7082,8 @@ async function init() {
       getActiveAddresses(settings, characterName),
       settings.multiRolePromptMode,
       settings.spriteCount,
-      settings.promptTemplate
+      settings.promptTemplate,
+      settings.promptBudget
     );
     adapter.injectPrompt(prompt, settings.injectionDepth);
     const contentKey = `${characterName}|${packs.map((p) => p.id).join(",")}|${pack ? pack.sprites.length > 0 : false}`;
@@ -7055,7 +7126,7 @@ async function init() {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.7.0"} · ${"2026-07-28 18:53"}`;
+  const version = false ? "dev" : `v${"0.8.0"} · ${"2026-07-28 19:51"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {

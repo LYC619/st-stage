@@ -10,6 +10,66 @@ import type { SpriteAddress } from './types'
 
 const addr = (role: string, outfit: string, tag: string): SpriteAddress => ({ role, outfit, tag })
 
+describe('buildPrompt — 字符预算（阶段四·大图包稳定化）', () => {
+  /** roles 个角色 × tags 个表情的全组合地址表 */
+  const mkAddrs = (roles: number, tags: number): SpriteAddress[] => {
+    const out: SpriteAddress[] = []
+    for (let r = 0; r < roles; r++) {
+      for (let t = 0; t < tags; t++) out.push(addr(`角色${r}`, '', `表情${t}`))
+    }
+    return out
+  }
+
+  it('budget=0 或未超出时输出与不设预算完全一致', () => {
+    const addrs = mkAddrs(3, 5)
+    const base = buildPrompt(addrs, 'full', 1)
+    expect(buildPrompt(addrs, 'full', 1, '', 0)).toBe(base)
+    expect(buildPrompt(addrs, 'full', 1, '', base.length)).toBe(base)
+    expect(buildPrompt(addrs, 'full', 1, '', 20000)).toBe(base)
+  })
+
+  it('超预算时输出 ≤ 预算；每个场景仍在场，保留排前的表情、截掉排后的', () => {
+    const addrs = mkAddrs(4, 30)
+    expect(buildPrompt(addrs, 'full', 1).length).toBeGreaterThan(600)
+    const p = buildPrompt(addrs, 'full', 1, '', 600)
+    expect(p.length).toBeLessThanOrEqual(600)
+    for (let r = 0; r < 4; r++) expect(p).toContain(`角色${r}`)
+    expect(p).toContain('表情0')
+    expect(p).not.toContain('表情29')
+  })
+
+  it('repeat 模式同样受预算约束且确定性', () => {
+    const addrs = mkAddrs(5, 40)
+    const a = buildPrompt(addrs, 'repeat', 1, '', 800)
+    const b = buildPrompt(addrs, 'repeat', 1, '', 800)
+    expect(a.length).toBeLessThanOrEqual(800)
+    expect(a).toBe(b)
+  })
+
+  it('自定义模板：预算作用于 {清单}，模板自身文字保留', () => {
+    const addrs = mkAddrs(3, 50)
+    const p = buildPrompt(addrs, 'full', 1, '开头说明\n{清单}\n结尾说明', 500)
+    expect(p.length).toBeLessThanOrEqual(500)
+    expect(p).toContain('开头说明')
+    expect(p).toContain('结尾说明')
+    expect(p).toContain('角色0')
+  })
+
+  it('模板不含 {清单} 时无从截取，超预算也原样输出（尽力而为）', () => {
+    const long = '这段自定义提示词没有清单占位符'.repeat(20)
+    const p = buildPrompt(mkAddrs(2, 3), 'full', 1, long, 50)
+    expect(p).toBe(long)
+  })
+
+  it('每场景截到 1 个表情仍超预算：按 K=1 尽力而为，不硬切半行', () => {
+    const addrs = mkAddrs(6, 10)
+    const p = buildPrompt(addrs, 'full', 1, '', 10)
+    expect(p.length).toBeGreaterThan(10)
+    for (let r = 0; r < 6; r++) expect(p).toContain(`- 角色${r}：表情0`)
+    expect(p).not.toContain('表情1')
+  })
+})
+
 describe('buildPrompt — 全量', () => {
   it('空地址不注入', () => {
     expect(buildPrompt([], 'full', 1)).toBe('')
