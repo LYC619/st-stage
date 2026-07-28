@@ -733,19 +733,119 @@ function preloadMatchedSprites(sprites) {
   preloadSprites(sprites, PRELOAD_MATCH_MAX);
 }
 
-// core/phone-registry.ts
-function createPhoneAppContext(deps) {
+// core/capabilities.ts
+function createCapabilityTracker() {
+  const cleanups = /* @__PURE__ */ new Set();
+  let disposed = false;
+  const run = (fn) => {
+    try {
+      fn();
+    } catch (err) {
+      console.error("[sprite-overlay] 能力清理失败", err);
+    }
+  };
   return {
+    get disposed() {
+      return disposed;
+    },
+    track(cleanup) {
+      if (disposed) {
+        run(cleanup);
+        return () => {
+        };
+      }
+      cleanups.add(cleanup);
+      return () => {
+        if (cleanups.delete(cleanup)) run(cleanup);
+      };
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      for (const fn of [...cleanups].reverse()) run(fn);
+      cleanups.clear();
+    }
+  };
+}
+function createEventHub() {
+  const handlers = /* @__PURE__ */ new Set();
+  return {
+    emit(value) {
+      for (const handler of [...handlers]) {
+        try {
+          handler(value);
+        } catch (err) {
+          console.error("[sprite-overlay] App 事件处理器抛错", err);
+        }
+      }
+    },
+    subscribe(handler) {
+      handlers.add(handler);
+      return () => {
+        handlers.delete(handler);
+      };
+    }
+  };
+}
+
+// core/phone-registry.ts
+var CTX_API_VERSION = 2;
+function capInjectionText(appId, text) {
+  if (text.length <= PROMPT_BUDGET_MAX) return text;
+  console.warn(
+    `[sprite-overlay] App「${appId}」注入 ${text.length} 字符超上限，已截断到 ${PROMPT_BUDGET_MAX}`
+  );
+  return text.slice(0, PROMPT_BUDGET_MAX);
+}
+function createAppHost(deps, tracker) {
+  return {
+    apiVersion: CTX_API_VERSION,
     getSettings: () => deps.getSettings(),
-    updateSettings: (next) => deps.updateSettings(next),
     getCharacterName: () => deps.getCharacterName(),
     getAppData: () => deps.getSettings().apps[deps.appId],
     setAppData: (data) => deps.saveSettingsOnly({
       ...deps.getSettings(),
       apps: { ...deps.getSettings().apps, [deps.appId]: data }
     }),
-    goHome: deps.goHome
+    onMessageReceived: (handler) => tracker.track(deps.onMessageReceived(handler)),
+    onCharacterChanged: (handler) => tracker.track(deps.onCharacterChanged(handler)),
+    injectPrompt: (text, depth) => deps.injectPrompt(deps.appId, capInjectionText(deps.appId, text), depth),
+    toast: (kind, message) => deps.toast(kind, message)
   };
+}
+function createPhoneAppContext(deps) {
+  const tracker = createCapabilityTracker();
+  const ctx = {
+    ...createAppHost(deps, tracker),
+    updateSettings: (next) => deps.updateSettings(next),
+    goHome: deps.goHome,
+    openModal: (build) => deps.openModal(deps.appId, build),
+    setTimeout: (fn, ms) => {
+      let untrack = () => {
+      };
+      const id = globalThis.setTimeout(() => {
+        untrack();
+        fn();
+      }, ms);
+      untrack = tracker.track(() => globalThis.clearTimeout(id));
+      return id;
+    },
+    setInterval: (fn, ms) => {
+      const id = globalThis.setInterval(fn, ms);
+      tracker.track(() => globalThis.clearInterval(id));
+      return id;
+    }
+  };
+  return { ctx, dispose: () => tracker.dispose() };
+}
+function runAppSetup(app, deps, tracker) {
+  if (typeof app.setup !== "function") return;
+  try {
+    const cleanup = app.setup(createAppHost(deps, tracker));
+    if (typeof cleanup === "function") tracker.track(cleanup);
+  } catch (err) {
+    console.error(`[sprite-overlay] App「${app.id}」setup 失败`, err);
+  }
 }
 var APP_ID_REGEX = /^[a-z][a-z0-9-]{1,31}$/;
 function assertAppShape(app) {
@@ -765,6 +865,9 @@ function assertAppShape(app) {
   }
   if (typeof o.mount !== "function") {
     throw new Error(`App「${o.id}」缺少 mount(container, ctx) 函数`);
+  }
+  if (o.setup !== void 0 && typeof o.setup !== "function") {
+    throw new Error(`App「${o.id}」的 setup 需为函数`);
   }
   if (o.unmount !== void 0 && typeof o.unmount !== "function") {
     throw new Error(`App「${o.id}」的 unmount 需为函数`);
@@ -824,11 +927,71 @@ function installRegisterQueue(prev, register) {
   return shim;
 }
 
+// core/app-modal.ts
+function openAppModal(build, hooks) {
+  hooks.onOpen();
+  const backdrop = document.createElement("div");
+  backdrop.className = "so-app-modal-backdrop";
+  const box = document.createElement("div");
+  box.className = "so-app-modal";
+  const head = document.createElement("div");
+  head.className = "so-app-modal-head";
+  const closeBtn = document.createElement("div");
+  closeBtn.className = "so-app-modal-close";
+  closeBtn.textContent = "✕";
+  closeBtn.title = "关闭";
+  closeBtn.setAttribute("role", "button");
+  closeBtn.setAttribute("aria-label", "关闭弹窗");
+  closeBtn.tabIndex = 0;
+  const body = document.createElement("div");
+  body.className = "so-app-modal-body";
+  head.append(closeBtn);
+  box.append(head, body);
+  backdrop.append(box);
+  document.body.append(backdrop);
+  let cleanup;
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    document.removeEventListener("keydown", onKey, true);
+    try {
+      cleanup?.();
+    } catch (err) {
+      console.error("[sprite-overlay] App 弹窗清理失败", err);
+    }
+    backdrop.remove();
+    hooks.onClose();
+  };
+  const onKey = (e) => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      close();
+    }
+  };
+  document.addEventListener("keydown", onKey, true);
+  closeBtn.addEventListener("click", close);
+  closeBtn.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      close();
+    }
+  });
+  try {
+    cleanup = build(body, close);
+  } catch (err) {
+    console.error("[sprite-overlay] App 弹窗渲染失败", err);
+    body.textContent = "弹窗渲染失败，详见控制台";
+  }
+  return close;
+}
+
 // core/phone-shell.ts
 var DRAG_THRESHOLD = 6;
 function createPhoneShell(initialState, deps) {
   let state = { ...initialState };
   let activeApp = null;
+  let activeCtxDispose = null;
   let hidden = false;
   const fab = document.createElement("div");
   fab.className = "so-phone-fab";
@@ -1005,6 +1168,8 @@ function createPhoneShell(initialState, deps) {
       } catch (err) {
         console.error(`[sprite-overlay] App「${activeApp.id}」unmount 失败`, err);
       }
+      activeCtxDispose?.();
+      activeCtxDispose = null;
       activeApp = null;
     }
   }
@@ -1017,7 +1182,9 @@ function createPhoneShell(initialState, deps) {
       container.className = "so-phone-app-container";
       screen.append(container);
       try {
-        activeApp.mount(container, deps.createAppContext(activeApp.id, goHome));
+        const mounted = deps.createAppContext(activeApp.id, goHome);
+        activeCtxDispose = mounted.dispose;
+        activeApp.mount(container, mounted.ctx);
       } catch (err) {
         console.error(`[sprite-overlay] App「${activeApp.id}」mount 失败`, err);
         container.replaceChildren();
@@ -3439,7 +3606,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.8.0"}（构建 ${"2026-07-28 19:51"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-07-28 21:41"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -6973,6 +7140,36 @@ async function init() {
     settings = next;
     adapter.saveSettings(settings);
   }
+  const appMessageHub = createEventHub();
+  const appCharacterHub = createEventHub();
+  const hostTracker = createCapabilityTracker();
+  const usedAppChannels = /* @__PURE__ */ new Set();
+  const platformCaps = {
+    onMessageReceived: (handler) => appMessageHub.subscribe(handler),
+    onCharacterChanged: (handler) => appCharacterHub.subscribe(() => handler()),
+    injectPrompt: (appId, text, depth) => {
+      const channel = `app:${appId}`;
+      if (!usedAppChannels.has(channel)) {
+        usedAppChannels.add(channel);
+        hostTracker.track(() => adapter.injectChannel(channel, ""));
+      }
+      adapter.injectChannel(channel, text, depth);
+    },
+    toast: (kind, message) => {
+      const t = window.toastr;
+      if (t?.[kind]) t[kind](message);
+      else console.info(`[sprite-overlay][${kind}] ${message}`);
+    }
+  };
+  function createHostDeps(appId) {
+    return {
+      appId,
+      getSettings: () => settings,
+      saveSettingsOnly,
+      getCharacterName: () => adapter.getCurrentCharacterName(),
+      ...platformCaps
+    };
+  }
   const manager = createSpriteManager({
     adapter,
     getSettings: () => settings,
@@ -6996,12 +7193,16 @@ async function init() {
   const registry = new PhoneAppRegistry();
   function createAppContext(appId, goHome) {
     return createPhoneAppContext({
-      appId,
-      getSettings: () => settings,
+      ...createHostDeps(appId),
       updateSettings,
-      saveSettingsOnly,
-      getCharacterName: () => adapter.getCurrentCharacterName(),
-      goHome
+      goHome,
+      openModal: (id, build) => {
+        const close = openAppModal(build, {
+          onOpen: collapsePhone,
+          onClose: () => phone.openApp(id)
+        });
+        hostTracker.track(close);
+      }
     });
   }
   const phone = createPhoneShell(settings.phone, {
@@ -7023,6 +7224,7 @@ async function init() {
   window.__stStageDispose = () => {
     newvarRuntime.dispose();
     phone.destroy();
+    hostTracker.dispose();
   };
   const newvarDesigner = createNewvarDesigner({
     getData: () => newvarRuntime.getData(),
@@ -7058,8 +7260,12 @@ async function init() {
     }
   })) {
     registry.register(app);
+    runAppSetup(app, createHostDeps(app.id), hostTracker);
   }
-  const registerQueue = installRegisterQueue(window.stStageQueue, (app) => registry.register(app));
+  const registerQueue = installRegisterQueue(window.stStageQueue, (app) => {
+    registry.register(app);
+    runAppSetup(app, createHostDeps(app.id), hostTracker);
+  });
   window.stStageQueue = registerQueue;
   window.stStage = {
     registerApp: (app) => registerQueue.push(app)
@@ -7101,6 +7307,7 @@ async function init() {
     overlay.setVisible(overlayAllowed());
   }
   adapter.onMessageReceived((text) => {
+    appMessageHub.emit(text);
     if (!settings.enabled) return;
     const characterName = adapter.getCurrentCharacterName();
     const packs = getActivePacks(settings, characterName);
@@ -7114,6 +7321,7 @@ async function init() {
   });
   mountMessagePostprocess({ getSettings: () => settings });
   adapter.onCharacterChanged(() => {
+    appCharacterHub.emit(null);
     refresh();
     manager.refreshIfOpen();
     setTimeout(() => reprocessAllMessages(settings), 200);
@@ -7126,7 +7334,7 @@ async function init() {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.8.0"} · ${"2026-07-28 19:51"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-07-28 21:41"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {

@@ -1,11 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  CTX_API_VERSION,
   PhoneAppRegistry,
   createPhoneAppContext,
   installRegisterQueue,
+  runAppSetup,
+  type AppHostDeps,
   type PhoneApp,
+  type ToastKind,
 } from './phone-registry'
-import { createDefaultSettings } from './types'
+import { createCapabilityTracker } from './capabilities'
+import { createDefaultSettings, PROMPT_BUDGET_MAX } from './types'
 
 function app(id: string, order?: number): PhoneApp {
   return { id, name: id, icon: '📦', order, mount: () => {} }
@@ -57,6 +62,9 @@ describe('PhoneAppRegistry', () => {
     expect(bad({ id: 'dice' })).toThrow('name')
     expect(bad({ id: 'dice', name: '骰子' })).toThrow('icon')
     expect(bad({ id: 'dice', name: '骰子', icon: '🎲' })).toThrow('mount')
+    expect(bad({ id: 'dice', name: '骰子', icon: '🎲', mount: () => {}, setup: 1 })).toThrow(
+      'setup',
+    )
     expect(bad({ id: 'dice', name: '骰子', icon: '🎲', mount: () => {}, unmount: 1 })).toThrow(
       'unmount',
     )
@@ -108,10 +116,38 @@ describe('installRegisterQueue（独立 App 注册队列）', () => {
 })
 
 describe('createPhoneAppContext（阶段7·App 私有数据与立绘刷新解耦）', () => {
+  /** 假平台能力：记录订阅/注入/通知，供能力层断言 */
+  function fakeCaps() {
+    const messageHandlers = new Set<(t: string) => void>()
+    const injected: Array<{ appId: string; text: string; depth?: number }> = []
+    const toasts: string[] = []
+    return {
+      deps: {
+        onMessageReceived: (h: (t: string) => void) => {
+          messageHandlers.add(h)
+          return () => messageHandlers.delete(h)
+        },
+        onCharacterChanged: (_h: () => void) => () => {},
+        injectPrompt: (appId: string, text: string, depth?: number) =>
+          injected.push({ appId, text, depth }),
+        toast: (kind: ToastKind, message: string) => toasts.push(`${kind}:${message}`),
+      },
+      emit: (t: string) => {
+        for (const h of [...messageHandlers]) h(t)
+      },
+      injected,
+      toasts,
+      get handlerCount() {
+        return messageHandlers.size
+      },
+    }
+  }
+
   function harness() {
     let settings = createDefaultSettings()
     const calls = { update: 0, saveOnly: 0 }
-    const ctx = createPhoneAppContext({
+    const caps = fakeCaps()
+    const mounted = createPhoneAppContext({
       appId: 'dice',
       getSettings: () => settings,
       updateSettings: (next) => {
@@ -124,8 +160,10 @@ describe('createPhoneAppContext（阶段7·App 私有数据与立绘刷新解耦
       },
       getCharacterName: () => '小雪',
       goHome: () => {},
+      openModal: () => {},
+      ...caps.deps,
     })
-    return { ctx, calls, getSettings: () => settings }
+    return { ctx: mounted.ctx, dispose: mounted.dispose, calls, caps, getSettings: () => settings }
   }
 
   it('setAppData 走 saveSettingsOnly（不触发 updateSettings/立绘刷新）', () => {
@@ -152,5 +190,130 @@ describe('createPhoneAppContext（阶段7·App 私有数据与立绘刷新解耦
     expect(h.ctx.getAppData()).toEqual({ n: 7 })
     h.ctx.updateSettings({ ...h.getSettings(), enabled: false })
     expect(h.calls.update).toBe(1) // 核心设置仍触发 updateSettings
+  })
+
+  it('v2：apiVersion 与 toast 透传', () => {
+    const h = harness()
+    expect(h.ctx.apiVersion).toBe(CTX_API_VERSION)
+    h.ctx.toast('success', '好了')
+    expect(h.caps.toasts).toEqual(['success:好了'])
+  })
+
+  it('v2：ctx 订阅收到平台事件；dispose 自动退订，手动退订句柄幂等', () => {
+    const h = harness()
+    const got: string[] = []
+    const off = h.ctx.onMessageReceived((t) => got.push(t))
+    h.caps.emit('一')
+    expect(got).toEqual(['一'])
+    expect(h.caps.handlerCount).toBe(1)
+    h.dispose()
+    expect(h.caps.handlerCount).toBe(0) // 框架代管退订：unmount 后平台侧无残留
+    h.caps.emit('二')
+    expect(got).toEqual(['一'])
+    off() // dispose 后再手动退订安全
+  })
+
+  it('v2：ctx 定时器随 dispose 停止', () => {
+    vi.useFakeTimers()
+    try {
+      const h = harness()
+      const ticks = vi.fn()
+      const fired = vi.fn()
+      h.ctx.setInterval(ticks, 100)
+      h.ctx.setTimeout(fired, 100)
+      vi.advanceTimersByTime(150)
+      expect(ticks).toHaveBeenCalledTimes(1)
+      expect(fired).toHaveBeenCalledTimes(1) // 已触发的 timeout 正常执行
+      h.dispose()
+      vi.advanceTimersByTime(500)
+      expect(ticks).toHaveBeenCalledTimes(1) // dispose 后 interval 不再走
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('v2：injectPrompt 带 appId 透传，超长截断并告警', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const h = harness()
+    h.ctx.injectPrompt('提示', 2)
+    expect(h.caps.injected).toEqual([{ appId: 'dice', text: '提示', depth: 2 }])
+    h.ctx.injectPrompt('长'.repeat(PROMPT_BUDGET_MAX + 5))
+    expect(h.caps.injected[1].text.length).toBe(PROMPT_BUDGET_MAX)
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    warnSpy.mockRestore()
+  })
+})
+
+describe('runAppSetup（常驻层）', () => {
+  function hostDeps(caps: ReturnType<typeof capsForHost>): AppHostDeps {
+    let settings = createDefaultSettings()
+    return {
+      appId: 'dice',
+      getSettings: () => settings,
+      saveSettingsOnly: (next) => {
+        settings = next
+      },
+      getCharacterName: () => '',
+      ...caps.deps,
+    }
+  }
+
+  function capsForHost() {
+    const messageHandlers = new Set<(t: string) => void>()
+    return {
+      deps: {
+        onMessageReceived: (h: (t: string) => void) => {
+          messageHandlers.add(h)
+          return () => messageHandlers.delete(h)
+        },
+        onCharacterChanged: (_h: () => void) => () => {},
+        injectPrompt: () => {},
+        toast: () => {},
+      },
+      get handlerCount() {
+        return messageHandlers.size
+      },
+    }
+  }
+
+  it('setup 收到 host 并可订阅；平台销毁时订阅与 cleanup 一并回收', () => {
+    const caps = capsForHost()
+    const tracker = createCapabilityTracker()
+    const cleanup = vi.fn()
+    const app: PhoneApp = {
+      id: 'dice',
+      name: '骰',
+      icon: '🎲',
+      mount: () => {},
+      setup(host) {
+        expect(host.apiVersion).toBe(CTX_API_VERSION)
+        host.onMessageReceived(() => {})
+        return cleanup
+      },
+    }
+    runAppSetup(app, hostDeps(caps), tracker)
+    expect(caps.handlerCount).toBe(1)
+    tracker.dispose()
+    expect(caps.handlerCount).toBe(0)
+    expect(cleanup).toHaveBeenCalledTimes(1)
+  })
+
+  it('setup 抛错只打日志，不影响注册流程；无 setup 直接跳过', () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const tracker = createCapabilityTracker()
+    const bad: PhoneApp = {
+      id: 'dice',
+      name: '骰',
+      icon: '🎲',
+      mount: () => {},
+      setup() {
+        throw new Error('boom')
+      },
+    }
+    expect(() => runAppSetup(bad, hostDeps(capsForHost()), tracker)).not.toThrow()
+    expect(errSpy).toHaveBeenCalledTimes(1)
+    const plain: PhoneApp = { id: 'flat', name: '平', icon: '⬜', mount: () => {} }
+    expect(() => runAppSetup(plain, hostDeps(capsForHost()), tracker)).not.toThrow()
+    errSpy.mockRestore()
   })
 })

@@ -8,12 +8,12 @@
  */
 
 import type { PhoneState } from './types'
-import type { PhoneApp, PhoneAppContext, PhoneAppRegistry } from './phone-registry'
+import type { MountedAppContext, PhoneApp, PhoneAppRegistry } from './phone-registry'
 
 export interface PhoneShellDeps {
   registry: PhoneAppRegistry
-  /** 构造传给 App 的上下文（goHome 由壳注入） */
-  createAppContext(appId: string, goHome: () => void): PhoneAppContext
+  /** 构造传给 App 的上下文（goHome 由壳注入）；壳在 leaveApp 时调用其 dispose 回收 ctx 资源 */
+  createAppContext(appId: string, goHome: () => void): MountedAppContext
   /** 状态变化（拖拽/开合）回调，调用方负责持久化 */
   onStateChange(state: PhoneState): void
 }
@@ -35,6 +35,8 @@ export function createPhoneShell(
 ): PhoneShellController {
   let state: PhoneState = { ...initialState }
   let activeApp: PhoneApp | null = null
+  /** 当次 mount 的 ctx 回收句柄（离开 App 时调用，自动退订经 ctx 建立的订阅/定时器） */
+  let activeCtxDispose: (() => void) | null = null
   // 手机总显隐（功能④）：隐藏时图标与壳都不显示，回退纯悬浮窗模式
   let hidden = false
 
@@ -243,6 +245,9 @@ export function createPhoneShell(
       } catch (err) {
         console.error(`[sprite-overlay] App「${activeApp.id}」unmount 失败`, err)
       }
+      // ctx 资源回收在 unmount 之后：unmount 里仍可正常使用 ctx（如保存状态）
+      activeCtxDispose?.()
+      activeCtxDispose = null
       activeApp = null
     }
   }
@@ -256,7 +261,9 @@ export function createPhoneShell(
       container.className = 'so-phone-app-container'
       screen.append(container)
       try {
-        activeApp.mount(container, deps.createAppContext(activeApp.id, goHome))
+        const mounted = deps.createAppContext(activeApp.id, goHome)
+        activeCtxDispose = mounted.dispose
+        activeApp.mount(container, mounted.ctx)
       } catch (err) {
         console.error(`[sprite-overlay] App「${activeApp.id}」mount 失败`, err)
         // 强清容器：mount 半途抛错可能留下半渲染 DOM，错误占位页不与残骸混排

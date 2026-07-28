@@ -1,8 +1,10 @@
-# st-stage 手机 App 开发规范（v1）
+# st-stage 手机 App 开发规范（v2）
 
 st-stage 在 SillyTavern 聊天界面提供一个「手机」悬浮框架：一个可拖拽的 📱 图标，展开后是带状态栏、返回键、关闭键和圆形 Home 键的手机屏幕，屏幕上是 App 栅格。立绘（设置中心）、图库都是内置 App。
 
 > **方向说明（v0.7 起）**：st-stage 支持两条并列的接入路径。**内部 App**——进 `st-extension/src/apps/`，随 st-stage 一起构建发布，适合与框架/立绘深度耦合的功能；**独立 App**——你自己的 ST 扩展，一行队列注册接入（见下），免费获得 ST 扩展管理器的启停与 URL 安装分发，适合独立演进、独立发版的功能。后续新功能默认优先独立 App。两条路径的 App 对象结构与生命周期契约完全一致，本规范同样适用。
+>
+> **v0.9 起提供 ctx 能力层**：监听 AI 消息、注入提示词、toast、全屏弹窗从 `host`/`ctx` 直接拿，订阅与定时器由框架自动回收——写功能不再需要裸摸 ST 协议（见「ctx 能力层」一节；深耦合场景仍有逃生门）。
 
 ## 内部 App 三步接入
 
@@ -24,8 +26,19 @@ App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发
   name: '骰子',              // Home 屏名称，建议 ≤ 4 个汉字
   icon: '🎲',               // 单个 emoji
   order: 50,                // 排序权重，小的在前（内置 App 占 1–20）
+
+  // 常驻层（可选，st-stage ≥ 0.9）：注册后调用一次，手机没打开也在工作；
+  // host 上的订阅由平台在销毁时自动回收，不用手工退订
+  setup(host) {
+    if (typeof host.onMessageReceived !== 'function') return // 老版 st-stage：静默降级
+    host.injectPrompt('（骰子扩展在场：剧情需要检定时，你可以让角色提议掷一次 d20。）')
+    host.onMessageReceived((text) => {
+      if (text.includes('骰')) host.toast('info', 'AI 提到了骰子——打开「骰子」App 掷一把')
+    })
+  },
+
+  // UI 层：打开 App 时调用；经 ctx 建立的订阅/定时器在离开时自动回收
   mount(container, ctx) {
-    // container：手机屏幕内的空 div，往里渲染原生 DOM
     const btn = document.createElement('div')
     btn.className = 'menu_button so-app-btn'
     btn.textContent = '掷 d20'
@@ -36,9 +49,7 @@ App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发
     })
     container.append(btn)
   },
-  unmount() {
-    // 离开 App 时清理定时器/全局事件（返回主屏/关手机/隐藏手机/切换 App 都会调用）
-  },
+  // 只挂 DOM、订阅全走 ctx 的 App 不需要 unmount（见 dispose 契约）
 })
 ```
 
@@ -53,31 +64,36 @@ App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发
 
 | 时机 | 调用 |
 | --- | --- |
+| 注册成功后（一次） | `setup(host)`（如果提供）——常驻层，手机没打开也在工作 |
 | 用户在 Home 屏点你的图标 / 框架 `openApp(id)` | `mount(container, ctx)` |
-| 任何离开路径（见下方契约） | `unmount()`（如果提供） |
+| 任何离开路径（见下方契约） | `unmount()`（如果提供）→ 框架回收经 ctx 建立的资源 |
 | 再次打开 | 重新 `mount`（container 是新的空 div，**不做状态保持**） |
+| 平台销毁（bundle 同页重复执行等） | `setup` 返回的清理函数 + host 订阅/注入通道统一回收 |
 
 约定：
 
 - `mount` 必须同步返回；异步数据自己 fetch 后再填充 DOM
-- `mount` 抛错时框架会显示错误占位页并打印控制台，不影响其他 App
+- `mount` / `setup` 抛错时框架打印控制台并兜住：mount 显示错误占位页，setup 失败不影响 App 上屏
 - 不要在 `mount` 外持有 container 引用（离开后即失效）
+- `setup` 只该做常驻初始化（订阅/注入/后台状态），不要碰 DOM——UI 一律在 `mount` 里做
 
 ### 卸载（dispose）契约
 
-第三方 App 可以依赖框架的如下保证（实现见 `core/phone-shell.ts` 的 `leaveApp`）：
+第三方 App 可以依赖框架的如下保证（实现见 `core/phone-shell.ts` 的 `leaveApp` 与 `core/phone-registry.ts` 的能力追踪器）：
 
 - **所有离开路径都会调用 `unmount`**：返回键/Home 键/`ctx.goHome()`、切换到其他 App（含 `openApp`）、右上角收起手机、程序收起（如打开全屏弹窗前）、设置里隐藏手机、手机壳销毁——不存在「绕过 unmount 直接消失」的路径
-- 下一次 `mount`（无论哪个 App）之前，上一个活跃 App 的 `unmount` 一定已经调用过
+- **经 ctx 建立的资源框架自动回收**（unmount 之后执行，unmount 里仍可正常用 ctx）：`ctx.onMessageReceived/onCharacterChanged` 的订阅、`ctx.setTimeout/setInterval` 的定时器
+- **经 host 建立的订阅活到平台销毁**，由平台统一回收；`setup` 返回的清理函数同时执行
+- `injectPrompt` 是 App 级状态：不随 unmount 清（想停就写 `injectPrompt('')`），平台销毁时统一清空
+- 下一次 `mount`（无论哪个 App）之前，上一个活跃 App 的 `unmount` 与 ctx 回收一定已完成
 - `unmount` 抛错会被框架捕获并打印控制台，不影响手机壳与其他 App
 - `unmount` 后你的 container 会被框架整体丢弃，纯 DOM 不需要你手动摘除
 
-对应地，你在 `unmount` 里必须做的事：
+对应地，你在 `unmount` 里只需要清理**绕过 ctx 自建**的资源：
 
-- 清掉自己起的 `setTimeout` / `setInterval`
-- 退订一切 App 外部的订阅：`eventSource.on(...)`、`window`/`document` 级监听、各类 runtime `subscribe(...)` 返回的退订函数
+- 直接调 `window.setTimeout` / `eventSource.on(...)` / DOM 级监听等逃生门产物（能走 ctx 的尽量走 ctx，就不用写这些）
 - 让在途异步回调失效（`disposed` 标记 / render token），`unmount` 之后不得再触碰 container 与 ctx
-- 只往 container 挂 DOM、没有定时器和外部订阅的 App，可以不提供 `unmount`
+- 只挂 DOM、订阅全走 ctx 的 App，可以不提供 `unmount`
 
 参考实现：`mvu-app.ts`（实例 token + 事件退订）、`newvar-app.ts`（runtime 订阅退订）。
 
@@ -85,16 +101,34 @@ App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发
 
 要跟页面全局打交道（`window.SillyTavern`、`window.parent` 上的 Mvu/酒馆助手、jQuery、toastr…）时，把这些耦合收敛到 `apps/<你的功能>/bridge.ts`（照 `apps/api/bridge.ts` 的样子：最小切面类型 + 全部字段可选 + 无 ST 时降级返回）。App UI 文件 0 直连——ESLint 对 `apps/**` 里 bridge 之外的文件直接拦截 `window.SillyTavern` / `window.parent` / `window` 类型断言。
 
-## PhoneAppContext（ctx）
+## ctx 能力层（v0.9+）
 
-| 方法 | 说明 |
+`setup(host)` 收到 **AppHost**，`mount(container, ctx)` 收到 **PhoneAppContext = AppHost + UI 专属**。同名方法语义一致，只有回收时机不同：host 订阅活到平台销毁，ctx 订阅活到 unmount。
+
+**AppHost（host 与 ctx 都有）：**
+
+| 成员 | 说明 |
 | --- | --- |
+| `apiVersion` | 能力层版本（当前 2）。**推荐逐能力探测**：`typeof ctx.injectPrompt === 'function'`，老版 st-stage 上自行降级 |
 | `getSettings()` | 读 st-stage 当前完整设置（只读视角，每次调用取最新） |
-| `updateSettings(next)` | 提交**核心设置**（持久化 + 触发框架刷新：立绘 refresh / Prompt 重注入 / 楼层重渲染）。**除非你明确要改核心设置，否则用 setAppData** |
 | `getCharacterName()` | 当前对话角色名，无对话为空串 |
 | `getAppData<T>()` | 读你的私有存储（`settings.apps[你的id]`），无则 `undefined` |
 | `setAppData<T>(data)` | 写私有存储（整体替换，**仅持久化、不触发立绘刷新**）。必须可 JSON 序列化；**不要存 base64 图片**（settings 体积敏感），图片走图床 URL |
+| `onMessageReceived(fn)` | AI 消息到达（完整文本）。返回退订函数；框架自动回收，fn 抛错被兜住不拖垮别人 |
+| `onCharacterChanged(fn)` | 切换聊天/角色。返回退订函数；框架自动回收 |
+| `injectPrompt(text, depth?)` | 注入提示词：你的专属通道（`st-stage::app:<你的id>`），与立绘/其他 App 互不覆盖。last-write-wins，`''`=清除，超 20000 字符截断告警。**不随 unmount 清**，平台销毁时统一清空 |
+| `toast(kind, message)` | 通知（`info/success/warning/error`）：真 ST 走 toastr，模拟器降级 console |
+
+**PhoneAppContext 额外提供（仅 mount）：**
+
+| 成员 | 说明 |
+| --- | --- |
+| `updateSettings(next)` | 提交**核心设置**（持久化 + 触发框架刷新）。**除非明确要改核心设置，否则用 setAppData** |
 | `goHome()` | 编程式返回 Home 屏（会触发你的 unmount） |
+| `openModal(build)` | 全屏弹窗（复杂编辑走弹窗的标准动作）：框架收起手机 → `build(body, close)` 渲染 → close/✕/Esc 关闭时执行 build 返回的清理并回到本 App。弹窗寿命独立于 mount |
+| `setTimeout/setInterval(fn, ms)` | 定时器包装：unmount 自动清，杜绝最常见的泄漏类 |
+
+**逃生门**：App 运行在 ST 页面主上下文，`window.SillyTavern` 等全局照常可用——能力层包常用的 80%，深耦合场景（如管家改 `power_user`）自己直连，但相应资源的清理回到你自己负责（见 dispose 契约）。Web 模拟器里逃生门多半拿不到东西，注意判空降级。
 
 ## 样式
 
@@ -131,5 +165,5 @@ App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发
 
 装配清单：`st-extension/src/apps/index.ts`。
 
-两个变量 App 复用共享视图 `apps/variable-tree.ts`（折叠分组/类型感知编辑/delta 徽标，「模型+回调」契约）。「新变量」的注入走**命名注入通道** `adapter.injectChannel(channel, prompt, depth)`（ST 端每通道一个独立 `setExtensionPrompt` 槽位，key=`st-stage::<channel>`）——以后任何 App 需要注入提示词都用自己的 channel，互不覆盖，也不会碰立绘的注入。
-框架源码：注册表 `core/phone-registry.ts`（含 `createPhoneAppContext`）、手机壳 `core/phone-shell.ts`、样式 `core/phone-shell.css`。
+两个变量 App 复用共享视图 `apps/variable-tree.ts`（折叠分组/类型感知编辑/delta 徽标，「模型+回调」契约）。「新变量」的注入走**命名注入通道** `adapter.injectChannel(channel, prompt, depth)`（ST 端每通道一个独立 `setExtensionPrompt` 槽位，key=`st-stage::<channel>`）——v0.9 起 App 不用自己碰通道：`ctx.injectPrompt` 已按 appId 自动分配（`app:<你的id>`），互不覆盖，也不会碰立绘的注入。
+框架源码：注册表与能力层 `core/phone-registry.ts` + `core/capabilities.ts`、全屏弹窗 `core/app-modal.ts`、手机壳 `core/phone-shell.ts`、样式 `core/phone-shell.css`。

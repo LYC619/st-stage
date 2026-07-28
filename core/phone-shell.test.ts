@@ -8,7 +8,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPhoneShell } from './phone-shell'
-import { PhoneAppRegistry, type PhoneApp } from './phone-registry'
+import { PhoneAppRegistry, createPhoneAppContext, type PhoneApp } from './phone-registry'
 import { createDefaultSettings, type PhoneState } from './types'
 
 function makeApp(id: string, hooks: { mount?: () => void; unmount?: () => void } = {}): PhoneApp {
@@ -28,20 +28,31 @@ function setup(apps: PhoneApp[], initial: Partial<PhoneState> = {}) {
   const registry = new PhoneAppRegistry()
   for (const app of apps) registry.register(app)
   const settings = createDefaultSettings()
+  // 假平台事件源：登记 ctx 订阅，供「离开 App 自动退订」断言
+  const subs = new Set<(t: string) => void>()
   const state: PhoneState = { x: 20, y: 20, open: false, ...initial }
   const shell = createPhoneShell(state, {
     registry,
-    createAppContext: (_appId, goHome) => ({
-      getSettings: () => settings,
-      updateSettings: () => {},
-      getCharacterName: () => '',
-      getAppData: () => undefined,
-      setAppData: () => {},
-      goHome,
-    }),
+    createAppContext: (appId, goHome) =>
+      createPhoneAppContext({
+        appId,
+        getSettings: () => settings,
+        updateSettings: () => {},
+        saveSettingsOnly: () => {},
+        getCharacterName: () => '',
+        goHome,
+        openModal: () => {},
+        onMessageReceived: (h) => {
+          subs.add(h)
+          return () => subs.delete(h)
+        },
+        onCharacterChanged: () => () => {},
+        injectPrompt: () => {},
+        toast: () => {},
+      }),
     onStateChange: () => {},
   })
-  return { shell, registry }
+  return { shell, registry, subCount: () => subs.size }
 }
 
 beforeEach(() => {
@@ -139,6 +150,24 @@ describe('App 生命周期', () => {
     expect(document.querySelector('.half-rendered')).toBeNull()
     expect(document.querySelector('.so-phone-app-error')).not.toBeNull()
     errSpy.mockRestore()
+    shell.destroy()
+  })
+
+  it('离开 App 时，经 ctx 建立的订阅被框架自动退订（能力层）', () => {
+    const app: PhoneApp = {
+      id: 'sub-app',
+      name: '订阅',
+      icon: '🔔',
+      mount(_container, ctx) {
+        ctx.onMessageReceived(() => {})
+      },
+    }
+    const { shell, subCount } = setup([app], { open: true })
+    shell.openApp('sub-app')
+    expect(subCount()).toBe(1)
+    const homeBtn = document.querySelector('.so-phone-homebtn') as HTMLElement
+    homeBtn.click()
+    expect(subCount()).toBe(0) // dispose 契约的框架侧保证：无手写 unmount 也不泄漏
     shell.destroy()
   })
 })

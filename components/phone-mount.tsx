@@ -14,9 +14,14 @@ import { DEFAULT_IMAGE_HOST } from '@/core/types'
 import {
   PhoneAppRegistry,
   createPhoneAppContext,
+  runAppSetup,
+  type AppHostDeps,
   type PhoneApp,
-  type PhoneAppContext,
+  type ToastKind,
 } from '@/core/phone-registry'
+import { createCapabilityTracker } from '@/core/capabilities'
+import { openAppModal } from '@/core/app-modal'
+import { webAppEvents } from '@/lib/web-app-events'
 import { createPhoneShell, type PhoneShellController } from '@/core/phone-shell'
 import { getActivePacks } from '@/core/sprite-store'
 
@@ -35,15 +40,39 @@ export function PhoneMount({ settings, characterName, onSettingsChange }: PhoneM
   useEffect(() => {
     const registry = new PhoneAppRegistry()
 
-    const createAppContext = (appId: string, goHome: () => void): PhoneAppContext =>
+    // ctx 能力层（Web 降级）：事件走模拟器 hub，注入无通道安全 no-op，toast 落 console
+    const capabilityDeps = {
+      onMessageReceived: (h: (text: string) => void) => webAppEvents.message.subscribe(h),
+      onCharacterChanged: (h: () => void) => webAppEvents.character.subscribe(() => h()),
+      injectPrompt: () => {},
+      toast: (kind: ToastKind, message: string) => console.info(`[toast:${kind}] ${message}`),
+    }
+
+    const hostDeps = (appId: string): AppHostDeps => ({
+      appId,
+      getSettings: () => latest.current.settings,
+      // Web 端无独立立绘刷新副作用（注入预览由 page 的 useMemo 派生），仅保存路径复用同一提交
+      saveSettingsOnly: (next) => latest.current.onSettingsChange(next),
+      getCharacterName: () => latest.current.characterName,
+      ...capabilityDeps,
+    })
+
+    const createAppContext = (appId: string, goHome: () => void) =>
       createPhoneAppContext({
-        appId,
-        getSettings: () => latest.current.settings,
+        ...hostDeps(appId),
         updateSettings: (next) => latest.current.onSettingsChange(next),
-        // Web 端无独立立绘刷新副作用（注入预览由 page 的 useMemo 派生），仅保存路径复用同一提交
-        saveSettingsOnly: (next) => latest.current.onSettingsChange(next),
-        getCharacterName: () => latest.current.characterName,
         goHome,
+        openModal: (id, build) => {
+          // 与 ST 端同一 core 实现：收手机 → 全屏弹窗 → 关闭回本 App
+          openAppModal(build, {
+            onOpen: () =>
+              latest.current.onSettingsChange({
+                ...latest.current.settings,
+                phone: { ...latest.current.settings.phone, open: false },
+              }),
+            onClose: () => shellRef.current?.openApp(id),
+          })
+        },
       })
 
     const shell = createPhoneShell(latest.current.settings.phone, {
@@ -55,9 +84,15 @@ export function PhoneMount({ settings, characterName, onSettingsChange }: PhoneM
     shellRef.current = shell
     shell.setVisible(latest.current.settings.showPhone)
 
-    for (const app of createWebApps(() => latest.current)) registry.register(app)
+    // 常驻层：注册后调用 setup（Web App 目前不用，保留与 ST 端一致的契约）
+    const hostTracker = createCapabilityTracker()
+    for (const app of createWebApps(() => latest.current)) {
+      registry.register(app)
+      runAppSetup(app, hostDeps(app.id), hostTracker)
+    }
 
     return () => {
+      hostTracker.dispose()
       shell.destroy()
       shellRef.current = null
     }

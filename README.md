@@ -104,7 +104,7 @@ Claude Code 会自动发现这个 skill；其他工具就在提示词开头加�
 
 手写也一样：照 skill 的三步 + **[docs/APP-SPEC.md](docs/APP-SPEC.md)**（App 契约、ctx 能力、样式套件与安全红线）。
 
-想做**独立发布**的 App（自己的仓库与版本、ST 扩展管理器启停、URL 安装分发）？写一个普通 ST 扩展，index.js 里一行 `;(window.stStageQueue ||= []).push(app)` 即接入，加载顺序无关、注册失败不拖垮你的扩展——可复制模板见 **[docs/templates/standalone-app/](docs/templates/standalone-app/)**。
+想做**独立发布**的 App（自己的仓库与版本、ST 扩展管理器启停、URL 安装分发）？写一个普通 ST 扩展，index.js 里一行 `;(window.stStageQueue ||= []).push(app)` 即接入，加载顺序无关、注册失败不拖垮你的扩展——可复制模板见 **[docs/templates/standalone-app/](docs/templates/standalone-app/)**。v0.9 起有 **ctx 能力层**：监听 AI 消息、注入提示词、toast、全屏弹窗直接从 `host`/`ctx` 拿，订阅与定时器由框架自动回收，不用裸摸 ST 协议。
 
 ---
 

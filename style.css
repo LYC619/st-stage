@@ -1892,3 +1892,72 @@
   outline: 1px solid rgba(255, 255, 255, 0.4);
   outline-offset: -1px;
 }
+
+/* ==================== App 全屏弹窗（ctx.openModal，阶段五能力层） ==================== */
+
+.so-app-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000; /* 压过手机壳（9999）与悬浮图标（9998） */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.so-app-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(680px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  background: rgba(22, 22, 28, 0.97);
+  color: #ddd;
+}
+
+.so-app-modal-head {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px;
+}
+
+.so-app-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 15px;
+  color: #bbb;
+}
+
+.so-app-modal-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.so-app-modal-close:focus-visible {
+  outline: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.so-app-modal-body {
+  padding: 0 14px 14px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 手机端全屏（三原则：复杂编辑占满屏） */
+@media (max-width: 600px) {
+  .so-app-modal {
+    width: 100vw;
+    height: 100vh;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+  }
+}

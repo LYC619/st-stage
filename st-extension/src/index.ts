@@ -14,7 +14,9 @@ import {
   resolveSprites,
 } from '../../core/sprite-store'
 import { preloadMatchedSprites, preloadOnActivate } from '../../core/sprite-preload'
-import { PhoneAppRegistry, createPhoneAppContext, installRegisterQueue, type PhoneApp, type PhoneAppContext } from '../../core/phone-registry'
+import { PhoneAppRegistry, createPhoneAppContext, installRegisterQueue, runAppSetup, type AppHostDeps, type PhoneApp, type ToastKind } from '../../core/phone-registry'
+import { createCapabilityTracker, createEventHub } from '../../core/capabilities'
+import { openAppModal } from '../../core/app-modal'
 import { createPhoneShell } from '../../core/phone-shell'
 import { STAdapter } from './st-adapter'
 import { createOverlay, type OverlayController } from './overlay-dom'
@@ -84,6 +86,45 @@ async function init(): Promise<void> {
     adapter.saveSettings(settings)
   }
 
+  /* ---- ctx 能力层（阶段五·5a，docs/superpowers/specs/2026-07-28-ctx-capability-layer-design.md） ---- */
+  // 事件扇出：平台对 ST 只保持一份订阅（下方 adapter.onMessageReceived/onCharacterChanged
+  // 处 emit），经 hub 分发给各 App；单个 handler 抛错由 hub 兜住，不拖垮别人
+  const appMessageHub = createEventHub<string>()
+  const appCharacterHub = createEventHub<null>()
+  // 平台级追踪器：host 订阅、setup 清理、App 注入通道清空、残留弹窗——同页重复执行时统一回收
+  const hostTracker = createCapabilityTracker()
+  const usedAppChannels = new Set<string>()
+
+  const platformCaps = {
+    onMessageReceived: (handler: (text: string) => void) => appMessageHub.subscribe(handler),
+    onCharacterChanged: (handler: () => void) => appCharacterHub.subscribe(() => handler()),
+    injectPrompt: (appId: string, text: string, depth?: number) => {
+      const channel = `app:${appId}`
+      if (!usedAppChannels.has(channel)) {
+        usedAppChannels.add(channel)
+        // 首次使用即登记清空动作：平台销毁时不留残余注入
+        hostTracker.track(() => adapter.injectChannel(channel, ''))
+      }
+      adapter.injectChannel(channel, text, depth)
+    },
+    toast: (kind: ToastKind, message: string) => {
+      // toastr 是 ST 全局通知库；异常环境缺失时降级 console
+      const t = (window as { toastr?: Record<string, (msg: string) => void> }).toastr
+      if (t?.[kind]) t[kind](message)
+      else console.info(`[sprite-overlay][${kind}] ${message}`)
+    },
+  }
+
+  function createHostDeps(appId: string): AppHostDeps {
+    return {
+      appId,
+      getSettings: () => settings,
+      saveSettingsOnly,
+      getCharacterName: () => adapter.getCurrentCharacterName(),
+      ...platformCaps,
+    }
+  }
+
   const manager = createSpriteManager({
     adapter,
     getSettings: () => settings,
@@ -109,14 +150,19 @@ async function init(): Promise<void> {
   /* ---- 手机框架 ---- */
   const registry = new PhoneAppRegistry()
 
-  function createAppContext(appId: string, goHome: () => void): PhoneAppContext {
+  function createAppContext(appId: string, goHome: () => void) {
     return createPhoneAppContext({
-      appId,
-      getSettings: () => settings,
+      ...createHostDeps(appId),
       updateSettings,
-      saveSettingsOnly,
-      getCharacterName: () => adapter.getCurrentCharacterName(),
       goHome,
+      openModal: (id, build) => {
+        // 三原则标准动作：收手机 → 全屏弹窗 → 关闭回本 App；平台销毁时兜底关闭
+        const close = openAppModal(build, {
+          onOpen: collapsePhone,
+          onClose: () => phone.openApp(id),
+        })
+        hostTracker.track(close)
+      },
     })
   }
 
@@ -142,10 +188,12 @@ async function init(): Promise<void> {
     inject: (prompt, depth) => adapter.injectChannel(NEWVAR_CHANNEL, prompt, depth),
   })
   // dispose 接线：正常页面生命周期里 ST 不卸载扩展（启停需刷新），
-  // 只在 bundle 同页重复执行时由下一次 init 调用：防事件订阅翻倍、防双手机壳
+  // 只在 bundle 同页重复执行时由下一次 init 调用：防事件订阅翻倍、防双手机壳；
+  // hostTracker 一并回收能力层（host 订阅/setup 清理/App 注入通道/残留弹窗）
   window.__stStageDispose = () => {
     newvarRuntime.dispose()
     phone.destroy()
+    hostTracker.dispose()
   }
 
   // 「变量设计」弹窗：配置写 App 私有存储（saveSettingsOnly，不触发立绘刷新）后通知运行时重注入
@@ -186,11 +234,16 @@ async function init(): Promise<void> {
     },
   })) {
     registry.register(app)
+    runAppSetup(app, createHostDeps(app.id), hostTracker)
   }
 
   // 独立 App 注册（docs/APP-SPEC.md）：先吃掉 st-stage 就绪前排队的积压，再接管后续 push 即时注册。
-  // registerApp 走同一 shim——注册失败（形状非法/id 重复）只打控制台，不拖垮第三方扩展也不拖垮框架
-  const registerQueue = installRegisterQueue(window.stStageQueue, (app) => registry.register(app))
+  // registerApp 走同一 shim——注册失败（形状非法/id 重复）只打控制台，不拖垮第三方扩展也不拖垮框架；
+  // 注册成功后调用 setup（常驻层，host 订阅经 hostTracker 在平台销毁时统一回收）
+  const registerQueue = installRegisterQueue(window.stStageQueue, (app) => {
+    registry.register(app)
+    runAppSetup(app, createHostDeps(app.id), hostTracker)
+  })
   window.stStageQueue = registerQueue
   window.stStage = {
     registerApp: (app) => registerQueue.push(app),
@@ -244,8 +297,9 @@ async function init(): Promise<void> {
     overlay.setVisible(overlayAllowed())
   }
 
-  // 收到 AI 消息：提取全部标签 → 多包严格匹配序列 → 悬浮窗排队展示（功能③）
+  // 收到 AI 消息：先扇出给 App（能力层，不受立绘总开关影响），再走立绘链路
   adapter.onMessageReceived((text) => {
+    appMessageHub.emit(text)
     if (!settings.enabled) return
     const characterName = adapter.getCurrentCharacterName()
     const packs = getActivePacks(settings, characterName)
@@ -265,6 +319,7 @@ async function init(): Promise<void> {
   // 切换聊天/角色时：重新注入 + 刷新悬浮窗和管理弹窗；延迟补渲染窗口内历史楼层
   // （渲染事件逐条触发时窗口守卫已限流，这里兜底渲染事件缺失的旧版 ST / 迟到的 DOM）
   adapter.onCharacterChanged(() => {
+    appCharacterHub.emit(null)
     refresh()
     manager.refreshIfOpen()
     setTimeout(() => reprocessAllMessages(settings), 200)

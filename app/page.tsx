@@ -17,6 +17,7 @@ import {
 } from '@/core/sprite-store'
 import { preloadMatchedSprites, preloadOnActivate } from '@/core/sprite-preload'
 import { webAdapter } from '@/lib/web-adapter'
+import { webAppEvents } from '@/lib/web-app-events'
 import { ChatSimulator } from '@/components/chat-simulator'
 import { ConfigPanel } from '@/components/config-panel'
 import { SpriteOverlay } from '@/components/sprite-overlay'
@@ -80,6 +81,8 @@ export default function Page() {
   // 核心链路：收到 AI 消息 → 提取全部标签 → 多包严格匹配序列 → 悬浮窗排队展示（功能③）
   const handleAiMessage = useCallback(
     (text: string) => {
+      // 能力层：先扇出给手机 App（不受立绘总开关影响），再走立绘链路
+      webAppEvents.message.emit(text)
       if (!settings?.enabled || activePacks.length === 0) return
       const seq = resolveSprites(activePacks, extractTags(text))
       if (seq.length > 0) {
@@ -89,6 +92,11 @@ export default function Page() {
     },
     [settings?.enabled, activePacks],
   )
+
+  // 能力层：角色切换事件喂给手机 App
+  useEffect(() => {
+    webAppEvents.character.emit(null)
+  }, [characterName])
 
   if (!settings) {
     return (

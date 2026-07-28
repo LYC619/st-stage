@@ -8,4 +8,6 @@
 
 前提：用户已安装 st-stage（掌柜的）。未装时 push 进的队列无人消费，静默无害，不会报错。
 
-App 能力与约束（ctx 读写、生命周期契约、样式类、安全红线）：st-stage 仓库 [docs/APP-SPEC.md](../../APP-SPEC.md)。
+模板演示了两层结构：`setup(host)` 常驻层（监听 AI 消息、注入提示词、toast——手机没打开也在工作，订阅由平台自动回收）+ `mount(container, ctx)` UI 层。老版 st-stage（< 0.9）没有能力层，模板里的 `typeof` 探测会静默降级，只保留 UI。
+
+App 能力与约束（ctx 能力层、生命周期契约、样式类、安全红线）：st-stage 仓库 [docs/APP-SPEC.md](../../APP-SPEC.md)。
