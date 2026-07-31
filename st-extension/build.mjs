@@ -23,37 +23,47 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { buildVersion, resolveBuildTime } from './build-time.mjs'
 
-const dir = path.dirname(fileURLToPath(import.meta.url))
-const root = path.join(dir, '..')
+const moduleFile = fileURLToPath(import.meta.url)
+const defaultExtensionDir = path.dirname(moduleFile)
+const defaultSourceRoot = path.join(defaultExtensionDir, '..')
 
-// 版本与构建时间注入：让「加载的是哪一版」在设置面板/控制台一眼可见，
-// 排查"改了没生效"时可 5 秒区分 没构建/没提交/真缓存
-const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'))
-const buildTime = resolveBuildTime() // 本地时区 YYYY-MM-DD HH:mm，或 ST_STAGE_BUILD_TIME 固定值
-const version = buildVersion(manifest.version ?? '0.0.0', buildTime)
+export async function buildExtension({
+  sourceRoot = defaultSourceRoot,
+  outputRoot = sourceRoot,
+  env = process.env,
+  now = new Date(),
+  logLevel = 'info',
+  log = console.log,
+} = {}) {
+  const buildTime = resolveBuildTime(env, now)
+  const extensionDir = path.join(sourceRoot, 'st-extension')
+  // 版本与构建时间注入：让「加载的是哪一版」在设置面板/控制台一眼可见，
+  // 排查"改了没生效"时可 5 秒区分 没构建/没提交/真缓存
+  const manifest = JSON.parse(readFileSync(path.join(sourceRoot, 'manifest.json'), 'utf8'))
+  const version = buildVersion(manifest.version ?? '0.0.0', buildTime)
 
-await build({
-  entryPoints: [path.join(dir, 'src/index.ts')],
-  outfile: path.join(root, 'bundle.js'),
-  bundle: true,
-  format: 'esm',
-  target: 'es2020',
-  platform: 'browser',
-  minify: false,
-  charset: 'utf8',
-  logLevel: 'info',
-  define: {
-    __EXT_VERSION__: JSON.stringify(manifest.version ?? '0.0.0'),
-    __BUILD_TIME__: JSON.stringify(buildTime),
-  },
-})
+  await build({
+    entryPoints: [path.join(extensionDir, 'src/index.ts')],
+    outfile: path.join(outputRoot, 'bundle.js'),
+    bundle: true,
+    format: 'esm',
+    target: 'es2020',
+    platform: 'browser',
+    minify: false,
+    charset: 'utf8',
+    logLevel,
+    define: {
+      __EXT_VERSION__: JSON.stringify(manifest.version ?? '0.0.0'),
+      __BUILD_TIME__: JSON.stringify(buildTime),
+    },
+  })
 
-// 版本探针：stub 以 cache:no-store 读取，作为 bundle/css 的缓存破坏参数
-writeFileSync(path.join(root, 'version.json'), `${JSON.stringify({ v: version })}\n`)
+  // 版本探针：stub 以 cache:no-store 读取，作为 bundle/css 的缓存破坏参数
+  writeFileSync(path.join(outputRoot, 'version.json'), `${JSON.stringify({ v: version })}\n`)
 
-// 加载器 stub：内容与版本无关，字节稳定 —— 千万不要往这里写版本号/时间戳，
-// 否则 stub 自身又会遇到"被缓存的旧 stub"问题，热更新失效
-const stub = `/* st-stage 加载器（构建产物，勿手改；源头 st-extension/build.mjs）
+  // 加载器 stub：内容与版本无关，字节稳定 —— 千万不要往这里写版本号/时间戳，
+  // 否则 stub 自身又会遇到"被缓存的旧 stub"问题，热更新失效
+  const stub = `/* st-stage 加载器（构建产物，勿手改；源头 st-extension/build.mjs）
  * 字节跨版本稳定：被浏览器缓存无害。真实代码在 bundle.js，
  * 通过 version.json（no-store）拿版本号拼 ?v= 破缓存。 */
 ;(function () {
@@ -89,11 +99,17 @@ const stub = `/* st-stage 加载器（构建产物，勿手改；源头 st-exten
     })
 })()
 `
-writeFileSync(path.join(root, 'index.js'), stub)
+  writeFileSync(path.join(outputRoot, 'index.js'), stub)
 
-// style.css = 扩展基础样式 + 双端共用的手机框架样式
-const baseCss = readFileSync(path.join(dir, 'style.css'), 'utf8')
-const phoneCss = readFileSync(path.join(root, 'core/phone-shell.css'), 'utf8')
-writeFileSync(path.join(root, 'style.css'), `${baseCss}\n${phoneCss}`)
+  // style.css = 扩展基础样式 + 双端共用的手机框架样式
+  const baseCss = readFileSync(path.join(extensionDir, 'style.css'), 'utf8')
+  const phoneCss = readFileSync(path.join(sourceRoot, 'core/phone-shell.css'), 'utf8')
+  writeFileSync(path.join(outputRoot, 'style.css'), `${baseCss}\n${phoneCss}`)
 
-console.log(`[build] ${version} → index.js(stub) / bundle.js / version.json / style.css（全部需提交 git）`)
+  log(`[build] ${version} → index.js(stub) / bundle.js / version.json / style.css（全部需提交 git）`)
+  return { buildTime, version }
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(moduleFile)) {
+  await buildExtension()
+}

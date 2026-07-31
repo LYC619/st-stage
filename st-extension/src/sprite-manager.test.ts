@@ -259,10 +259,12 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
 
     expect(document.querySelectorAll('.so-sprite-cell')).toHaveLength(60)
     expect(document.body.textContent).toContain('60/1000')
+    const firstCell = document.querySelector('.so-sprite-cell')
 
     findButton(document, '加载更多').click()
     expect(document.querySelectorAll('.so-sprite-cell')).toHaveLength(120)
     expect(document.body.textContent).toContain('120/1000')
+    expect(document.querySelector('.so-sprite-cell')).toBe(firstCell)
 
     manager.close()
   })

@@ -39,6 +39,7 @@ export function createPhoneShell(
   let activeCtxDispose: (() => void) | null = null
   // 手机总显隐（功能④）：隐藏时图标与壳都不显示，回退纯悬浮窗模式
   let hidden = false
+  let destroyed = false
 
   /* ---- 悬浮图标 ---- */
   const fab = document.createElement('div')
@@ -322,6 +323,7 @@ export function createPhoneShell(
 
   return {
     setState(next: PhoneState) {
+      if (destroyed) return
       const wasOpen = state.open
       state = { ...next }
       // 收起（外部调用如 collapsePhone）也走完整生命周期：先卸载 App 清理定时器/监听
@@ -330,6 +332,7 @@ export function createPhoneShell(
       if (state.open) renderScreen()
     },
     openApp(appId: string) {
+      if (destroyed) return
       const app = deps.registry.get(appId)
       if (!app) return
       leaveApp()
@@ -338,6 +341,7 @@ export function createPhoneShell(
       renderScreen()
     },
     setVisible(visible: boolean) {
+      if (destroyed) return
       hidden = !visible
       // 整机隐藏时同样卸载 App（不可见的 App 不允许残留定时器）
       if (hidden) leaveApp()
@@ -345,6 +349,8 @@ export function createPhoneShell(
       if (!hidden && state.open) renderScreen()
     },
     destroy() {
+      if (destroyed) return
+      destroyed = true
       clearInterval(clockTimer)
       window.removeEventListener('resize', applyLayout)
       window.visualViewport?.removeEventListener('resize', applyLayout)

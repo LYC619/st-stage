@@ -1,7 +1,7 @@
 # Review Fixes Design
 
-**日期：** 2026-07-31  
-**分支：** `codex/review-fixes`  
+**日期：** 2026-07-31
+**分支：** `codex/review-fixes`
 **基线：** `9451fc0`
 
 ## 目标与约束
@@ -121,4 +121,3 @@
 5. `fix: dispose extension resources on reload`
 6. `perf: bound sprite gallery rendering`
 7. `ci: verify committed extension artifacts`
-

@@ -1,12 +1,50 @@
 // @vitest-environment node
 
-import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   buildTimeFromVersion,
   buildVersion,
   resolveBuildTime,
 } from './build-time.mjs'
+import { buildExtension } from './build.mjs'
+
+const artifactNames = ['index.js', 'bundle.js', 'style.css', 'version.json'] as const
+const tempDirs: string[] = []
+
+function createBuildFixture(): string {
+  const root = mkdtempSync(join(tmpdir(), 'st-stage-build-'))
+  tempDirs.push(root)
+  mkdirSync(join(root, 'st-extension', 'src'), { recursive: true })
+  mkdirSync(join(root, 'core'), { recursive: true })
+  writeFileSync(join(root, 'manifest.json'), JSON.stringify({ version: '1.2.3' }))
+  writeFileSync(
+    join(root, 'st-extension', 'src', 'index.ts'),
+    "globalThis.__buildFixture = 'first:' + __BUILD_TIME__\n",
+  )
+  writeFileSync(join(root, 'st-extension', 'style.css'), '.fixture { color: red; }\n')
+  writeFileSync(join(root, 'core', 'phone-shell.css'), '.phone { color: blue; }\n')
+  return root
+}
+
+function artifactHashes(root: string): Record<string, string> {
+  return Object.fromEntries(artifactNames.map((name) => [
+    name,
+    createHash('sha256').update(readFileSync(join(root, name))).digest('hex'),
+  ]))
+}
+
+function runGit(root: string, args: string[]): ReturnType<typeof spawnSync> {
+  return spawnSync('git', args, { cwd: root, encoding: 'utf8' })
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
 
 describe('extension loader stylesheet lifecycle', () => {
   it('removes the previous marked stylesheet before appending the next marked link', () => {
@@ -60,5 +98,57 @@ describe('extension build timestamp', () => {
     expect(parseAt).toBeGreaterThanOrEqual(0)
     expect(buildAt).toBeGreaterThan(parseAt)
     expect(writeAt).toBeGreaterThan(parseAt)
+  })
+})
+
+describe('extension build integration', () => {
+  const fixedEnv = { ...process.env, ST_STAGE_BUILD_TIME: '2026-07-31 09:05' }
+
+  it('rejects an invalid explicit time before changing any artifact', async () => {
+    const root = createBuildFixture()
+    for (const name of artifactNames) writeFileSync(join(root, name), `${name}:sentinel`)
+
+    await expect(buildExtension({
+      sourceRoot: root,
+      outputRoot: root,
+      env: { ...process.env, ST_STAGE_BUILD_TIME: '2026-02-30 12:00' },
+      logLevel: 'silent',
+      log: () => {},
+    })).rejects.toThrow(/ST_STAGE_BUILD_TIME/)
+
+    for (const name of artifactNames) {
+      expect(readFileSync(join(root, name), 'utf8')).toBe(`${name}:sentinel`)
+    }
+  })
+
+  it('produces byte-identical artifacts for the same explicit time', async () => {
+    const root = createBuildFixture()
+    await buildExtension({ sourceRoot: root, outputRoot: root, env: fixedEnv, logLevel: 'silent', log: () => {} })
+    const firstHashes = artifactHashes(root)
+
+    await buildExtension({ sourceRoot: root, outputRoot: root, env: fixedEnv, logLevel: 'silent', log: () => {} })
+
+    expect(artifactHashes(root)).toEqual(firstHashes)
+    expect(readFileSync(join(root, 'version.json'), 'utf8')).toContain('1.2.3+202607310905')
+    expect(readFileSync(join(root, 'bundle.js'), 'utf8')).toContain('2026-07-31 09:05')
+  })
+
+  it('makes the artifact diff fail after a source change and rebuild', async () => {
+    const root = createBuildFixture()
+    await buildExtension({ sourceRoot: root, outputRoot: root, env: fixedEnv, logLevel: 'silent', log: () => {} })
+    expect(runGit(root, ['init', '--quiet']).status).toBe(0)
+    expect(runGit(root, ['config', 'core.autocrlf', 'false']).status).toBe(0)
+    expect(runGit(root, ['config', 'user.email', 'build-test@example.invalid']).status).toBe(0)
+    expect(runGit(root, ['config', 'user.name', 'Build Test']).status).toBe(0)
+    expect(runGit(root, ['add', ...artifactNames]).status).toBe(0)
+    expect(runGit(root, ['commit', '--quiet', '-m', 'fixture artifacts']).status).toBe(0)
+
+    writeFileSync(
+      join(root, 'st-extension', 'src', 'index.ts'),
+      "globalThis.__buildFixture = 'second:' + __BUILD_TIME__\n",
+    )
+    await buildExtension({ sourceRoot: root, outputRoot: root, env: fixedEnv, logLevel: 'silent', log: () => {} })
+
+    expect(runGit(root, ['diff', '--exit-code', '--', ...artifactNames]).status).toBe(1)
   })
 })

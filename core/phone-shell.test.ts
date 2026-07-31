@@ -90,6 +90,19 @@ describe('手机壳交互', () => {
 })
 
 describe('App 生命周期', () => {
+  it('destroy 后忽略迟到的 openApp，不重新挂载 App', () => {
+    const mount = vi.fn()
+    const app = makeApp('gallery')
+    app.mount = mount
+    const { shell } = setup([app], { open: true })
+
+    shell.destroy()
+    shell.openApp('gallery')
+
+    expect(mount).not.toHaveBeenCalled()
+    expect(document.querySelector('.so-phone-app-container')).toBeNull()
+  })
+
   it('返回主屏时调用 unmount', () => {
     const unmount = vi.fn()
     const { shell } = setup([makeApp('gallery', { unmount })], { open: true })

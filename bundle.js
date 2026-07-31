@@ -1017,6 +1017,7 @@ function createPhoneShell(initialState, deps) {
   let activeApp = null;
   let activeCtxDispose = null;
   let hidden = false;
+  let destroyed = false;
   const fab = document.createElement("div");
   fab.className = "so-phone-fab";
   fab.title = "打开手机";
@@ -1259,6 +1260,7 @@ function createPhoneShell(initialState, deps) {
   }
   return {
     setState(next) {
+      if (destroyed) return;
       const wasOpen = state.open;
       state = { ...next };
       if (wasOpen && !state.open) leaveApp();
@@ -1266,6 +1268,7 @@ function createPhoneShell(initialState, deps) {
       if (state.open) renderScreen();
     },
     openApp(appId) {
+      if (destroyed) return;
       const app = deps.registry.get(appId);
       if (!app) return;
       leaveApp();
@@ -1274,12 +1277,15 @@ function createPhoneShell(initialState, deps) {
       renderScreen();
     },
     setVisible(visible) {
+      if (destroyed) return;
       hidden = !visible;
       if (hidden) leaveApp();
       applyLayout();
       if (!hidden && state.open) renderScreen();
     },
     destroy() {
+      if (destroyed) return;
+      destroyed = true;
       clearInterval(clockTimer);
       window.removeEventListener("resize", applyLayout);
       window.visualViewport?.removeEventListener("resize", applyLayout);
@@ -3028,38 +3034,57 @@ ${options}`,
         pack.sprites.length
       );
       spriteVisibleCount = visibleCount;
-      const visibleEntries = pack.sprites.slice(0, visibleCount).map((sprite, index) => ({
-        sprite,
-        index
-      }));
       const groups = getGroups(pack);
-      const visibleGroups = groups.filter(
-        (group) => visibleEntries.some(({ sprite }) => spriteGroup(sprite) === group)
-      );
-      const sections = visibleGroups.length === 0 ? [""] : [...visibleGroups];
-      if (visibleGroups.length > 0 && visibleEntries.some(({ sprite }) => spriteGroup(sprite) === "")) sections.push("");
-      for (const g of sections) {
-        if (visibleGroups.length > 0) {
+      const sections = [...groups];
+      if (pack.sprites.some((sprite) => spriteGroup(sprite) === "")) sections.push("");
+      if (sections.length === 0) sections.push("");
+      const gallery = el("div", "so-sprite-gallery");
+      const grids = /* @__PURE__ */ new Map();
+      const ensureGrid = (group) => {
+        const existing = grids.get(group);
+        if (existing) return existing;
+        const section = el("div", "so-sprite-section");
+        if (groups.length > 0) {
           const head = el("div", "so-group-head");
-          head.textContent = g === "" ? "未分组" : g;
-          body.append(head);
+          head.textContent = group === "" ? "未分组" : group;
+          section.append(head);
         }
         const grid = el("div", "so-sprite-grid");
-        visibleEntries.forEach(({ sprite, index }) => {
-          if (spriteGroup(sprite) === g) {
+        section.append(grid);
+        const sectionIndex = sections.indexOf(group);
+        const nextGrid = sections.slice(sectionIndex + 1).map((nextGroup) => grids.get(nextGroup)).find(Boolean);
+        gallery.insertBefore(section, nextGrid?.parentElement ?? null);
+        grids.set(group, grid);
+        return grid;
+      };
+      const appendSprites = (start, end) => {
+        const entries = pack.sprites.slice(start, end).map((sprite, offset) => ({
+          sprite,
+          index: start + offset
+        }));
+        for (const group of sections) {
+          const matching = entries.filter(({ sprite }) => spriteGroup(sprite) === group);
+          if (matching.length === 0) continue;
+          const grid = ensureGrid(group);
+          for (const { sprite, index } of matching) {
             grid.append(renderSpriteCell(body, pack, sprite, index, readonly));
           }
-        });
-        body.append(grid);
-      }
+        }
+      };
+      body.append(gallery);
+      appendSprites(0, visibleCount);
       const count = el("div", "so-status so-sprite-count");
       count.textContent = `已显示 ${visibleCount}/${pack.sprites.length}`;
       body.append(count);
       if (visibleCount < pack.sprites.length) {
-        body.append(button("加载更多", () => {
-          spriteVisibleCount = Math.min(pack.sprites.length, visibleCount + SPRITE_PAGE_SIZE);
-          render3();
-        }));
+        const loadMore = button("加载更多", () => {
+          const previousCount = spriteVisibleCount;
+          spriteVisibleCount = Math.min(pack.sprites.length, previousCount + SPRITE_PAGE_SIZE);
+          appendSprites(previousCount, spriteVisibleCount);
+          count.textContent = `已显示 ${spriteVisibleCount}/${pack.sprites.length}`;
+          if (spriteVisibleCount >= pack.sprites.length) loadMore.remove();
+        });
+        body.append(loadMore);
       }
     }
     if (!readonly) {
