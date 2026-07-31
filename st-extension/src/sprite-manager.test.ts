@@ -202,6 +202,21 @@ describe('createSpriteManager binding conflict UI', () => {
     document.dispatchEvent(arrow)
     expect(arrow.defaultPrevented).toBe(false)
   })
+
+  it('destroy is idempotent and prevents stale callers from reopening the manager', () => {
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: createDefaultSettings,
+      updateSettings: () => {},
+    })
+    manager.open()
+
+    manager.destroy()
+    manager.destroy()
+    manager.open()
+
+    expect(document.querySelector('.so-manager-backdrop')).toBeNull()
+  })
 })
 
 describe('createSpriteManager upload finalization', () => {

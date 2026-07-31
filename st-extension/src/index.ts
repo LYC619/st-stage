@@ -15,8 +15,8 @@ import {
 } from '../../core/sprite-store'
 import { preloadMatchedSprites, preloadOnActivate } from '../../core/sprite-preload'
 import { PhoneAppRegistry, createPhoneAppContext, installRegisterQueue, runAppSetup, type AppHostDeps, type PhoneApp, type ToastKind } from '../../core/phone-registry'
-import { createCapabilityTracker, createEventHub } from '../../core/capabilities'
-import { openAppModal } from '../../core/app-modal'
+import { createCapabilityTracker, createEventHub, type CapabilityTracker } from '../../core/capabilities'
+import { openTrackedAppModal } from '../../core/app-modal'
 import { createPhoneShell } from '../../core/phone-shell'
 import { STAdapter } from './st-adapter'
 import { createOverlay, type OverlayController } from './overlay-dom'
@@ -29,6 +29,7 @@ import { createNewvarDesigner } from './apps/newvar/designer'
 import { NEWVAR_CHANNEL, NEWVAR_APP_ID } from './apps/newvar/config'
 import { createApiManager } from './apps/api/manager'
 import { API_APP_ID, sanitizeAppData } from './apps/api/core'
+import { beginExtensionLifecycle, runWhenDomReady } from './lifecycle'
 
 declare global {
   interface Window {
@@ -41,11 +42,7 @@ declare global {
   }
 }
 
-async function init(): Promise<void> {
-  // bundle 若在同页被执行两次（stub 版本参数失败回退重 import 等），先清上一实例的常驻部分：
-  // 新变量运行时的事件订阅 + 手机壳（独立 App 会经注册队列 shim 在新实例重放，不会丢）。
-  // overlay/楼层后处理等其余监听的全量卸载仍留待有实际症状时按需补
-  window.__stStageDispose?.()
+async function init(lifecycle: CapabilityTracker): Promise<void> {
   const adapter = new STAdapter()
   let settings: PluginSettings
   try {
@@ -54,6 +51,7 @@ async function init(): Promise<void> {
     console.error('[sprite-overlay] 初始化失败', err)
     return
   }
+  if (lifecycle.disposed) return
 
   function updateSettings(next: PluginSettings): void {
     const displayChanged =
@@ -93,6 +91,8 @@ async function init(): Promise<void> {
   const appCharacterHub = createEventHub<null>()
   // 平台级追踪器：host 订阅、setup 清理、App 注入通道清空、残留弹窗——同页重复执行时统一回收
   const hostTracker = createCapabilityTracker()
+  lifecycle.track(() => hostTracker.dispose())
+  lifecycle.track(() => adapter.injectPrompt(''))
   const usedAppChannels = new Set<string>()
 
   const platformCaps = {
@@ -134,6 +134,7 @@ async function init(): Promise<void> {
       if (source === 'phone') phone.openApp('gallery')
     },
   })
+  lifecycle.track(() => manager.destroy())
 
   const overlay: OverlayController = createOverlay(
     settings.overlay,
@@ -145,6 +146,7 @@ async function init(): Promise<void> {
     // 悬浮窗 ✕：只隐藏窗体并记住状态，立绘功能（含楼层立绘）不受影响
     () => updateSettings({ ...settings, overlayHidden: true }),
   )
+  lifecycle.track(() => overlay.destroy())
   overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds)
 
   /* ---- 手机框架 ---- */
@@ -157,11 +159,10 @@ async function init(): Promise<void> {
       goHome,
       openModal: (id, build) => {
         // 三原则标准动作：收手机 → 全屏弹窗 → 关闭回本 App；平台销毁时兜底关闭
-        const close = openAppModal(build, {
+        openTrackedAppModal(build, {
           onOpen: collapsePhone,
           onClose: () => phone.openApp(id),
-        })
-        hostTracker.track(close)
+        }, (cleanup) => hostTracker.track(cleanup))
       },
     })
   }
@@ -174,6 +175,7 @@ async function init(): Promise<void> {
       saveSettingsOnly({ ...settings, phone: state })
     },
   })
+  lifecycle.track(() => phone.destroy())
 
   /** 收起手机壳并持久化（打开全屏弹窗前用，避免手机挡在弹窗上） */
   function collapsePhone(): void {
@@ -187,14 +189,8 @@ async function init(): Promise<void> {
     getSettings: () => settings,
     inject: (prompt, depth) => adapter.injectChannel(NEWVAR_CHANNEL, prompt, depth),
   })
-  // dispose 接线：正常页面生命周期里 ST 不卸载扩展（启停需刷新），
-  // 只在 bundle 同页重复执行时由下一次 init 调用：防事件订阅翻倍、防双手机壳；
-  // hostTracker 一并回收能力层（host 订阅/setup 清理/App 注入通道/残留弹窗）
-  window.__stStageDispose = () => {
-    newvarRuntime.dispose()
-    phone.destroy()
-    hostTracker.dispose()
-  }
+  lifecycle.track(() => newvarRuntime.dispose())
+  lifecycle.track(() => adapter.injectChannel(NEWVAR_CHANNEL, ''))
 
   // 「变量设计」弹窗：配置写 App 私有存储（saveSettingsOnly，不触发立绘刷新）后通知运行时重注入
   const newvarDesigner = createNewvarDesigner({
@@ -207,6 +203,7 @@ async function init(): Promise<void> {
     getLastParse: () => newvarRuntime.getLastParse(),
     onClosed: () => phone.openApp('newvar'),
   })
+  lifecycle.track(() => newvarDesigner.close())
 
   // 「API 站点管理」弹窗：站点档案存 App 私有存储（saveSettingsOnly，不触发立绘刷新）
   const apiManager = createApiManager({
@@ -216,6 +213,7 @@ async function init(): Promise<void> {
     },
     onClosed: () => phone.openApp('api'),
   })
+  lifecycle.track(() => apiManager.close())
 
   for (const app of createBuiltinApps({
     // 从手机开图库弹窗：先收起手机（避免挡在弹窗上），来源标记=手机（关闭后回图库页）
@@ -248,6 +246,10 @@ async function init(): Promise<void> {
   window.stStage = {
     registerApp: (app) => registerQueue.push(app),
   }
+  lifecycle.track(() => {
+    delete window.stStage
+    delete window.stStageQueue
+  })
 
   /** 悬浮窗是否允许显示：总开关开 + 非仅楼层模式 + 未被用户手动关闭 */
   function overlayAllowed(): boolean {
@@ -298,7 +300,7 @@ async function init(): Promise<void> {
   }
 
   // 收到 AI 消息：先扇出给 App（能力层，不受立绘总开关影响），再走立绘链路
-  adapter.onMessageReceived((text) => {
+  const unsubscribeMessage = adapter.onMessageReceived((text) => {
     appMessageHub.emit(text)
     if (!settings.enabled) return
     const characterName = adapter.getCurrentCharacterName()
@@ -312,24 +314,35 @@ async function init(): Promise<void> {
       overlay.setVisible(true)
     }
   })
+  lifecycle.track(unsubscribeMessage)
 
   // 消息渲染后处理：隐藏标签 / 渲染插图
-  mountMessagePostprocess({ getSettings: () => settings })
+  lifecycle.track(mountMessagePostprocess({ getSettings: () => settings }))
 
   // 切换聊天/角色时：重新注入 + 刷新悬浮窗和管理弹窗；延迟补渲染窗口内历史楼层
   // （渲染事件逐条触发时窗口守卫已限流，这里兜底渲染事件缺失的旧版 ST / 迟到的 DOM）
-  adapter.onCharacterChanged(() => {
+  let cancelPendingReprocess = () => {}
+  const unsubscribeCharacter = adapter.onCharacterChanged(() => {
     appCharacterHub.emit(null)
     refresh()
     manager.refreshIfOpen()
-    setTimeout(() => reprocessAllMessages(settings), 200)
+    cancelPendingReprocess()
+    const timer = setTimeout(() => {
+      cancelPendingReprocess()
+      reprocessAllMessages(settings)
+    }, 200)
+    cancelPendingReprocess = lifecycle.track(() => clearTimeout(timer))
+  })
+  lifecycle.track(() => {
+    cancelPendingReprocess()
+    unsubscribeCharacter()
   })
 
   // 设置面板：基础设定（开关/图床前缀）
-  mountSettingsPanel({
+  lifecycle.track(mountSettingsPanel({
     getSettings: () => settings,
     updateSettings,
-  })
+  }))
 
   refresh()
   newvarRuntime.start()
@@ -341,8 +354,5 @@ async function init(): Promise<void> {
 }
 
 // ST 扩展脚本在 app ready 后加载，直接初始化即可；保险起见等 DOM ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => void init())
-} else {
-  void init()
-}
+const extensionLifecycle = beginExtensionLifecycle(window, document)
+runWhenDomReady(document, extensionLifecycle, () => init(extensionLifecycle))

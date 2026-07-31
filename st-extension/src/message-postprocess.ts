@@ -59,15 +59,21 @@ export function mountMessagePostprocess(deps: PostprocessDeps): () => void {
     ctx.eventTypes?.USER_MESSAGE_RENDERED,
   ].filter((e): e is string => typeof e === 'string' && e.length > 0)
 
+  let active = true
+  const pendingTimers = new Set<ReturnType<typeof setTimeout>>()
   const handler = (...args: unknown[]) => {
     const messageId = typeof args[0] === 'number' || typeof args[0] === 'string' ? args[0] : null
     // 事件回调时 DOM 已生成；保险起见排队到微任务尾
-    queueMicrotask(() => processMessages(deps.getSettings(), messageId))
+    queueMicrotask(() => {
+      if (active) processMessages(deps.getSettings(), messageId)
+    })
   }
 
   if (renderedEvents.length > 0) {
     for (const event of renderedEvents) ctx.eventSource.on(event, handler)
     return () => {
+      if (!active) return
+      active = false
       for (const event of renderedEvents) ctx.eventSource.removeListener(event, handler)
     }
   }
@@ -76,10 +82,20 @@ export function mountMessagePostprocess(deps: PostprocessDeps): () => void {
   const fallbackEvent = ctx.eventTypes?.MESSAGE_RECEIVED ?? 'message_received'
   const fallbackHandler = (...args: unknown[]) => {
     const messageId = typeof args[0] === 'number' || typeof args[0] === 'string' ? args[0] : null
-    setTimeout(() => processMessages(deps.getSettings(), messageId), 150)
+    const timer = setTimeout(() => {
+      pendingTimers.delete(timer)
+      if (active) processMessages(deps.getSettings(), messageId)
+    }, 150)
+    pendingTimers.add(timer)
   }
   ctx.eventSource.on(fallbackEvent, fallbackHandler)
-  return () => ctx.eventSource.removeListener(fallbackEvent, fallbackHandler)
+  return () => {
+    if (!active) return
+    active = false
+    ctx.eventSource.removeListener(fallbackEvent, fallbackHandler)
+    for (const timer of pendingTimers) clearTimeout(timer)
+    pendingTimers.clear()
+  }
 }
 
 /** 有任一显示加工功能开启（关了就只做恢复） */

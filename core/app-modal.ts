@@ -41,15 +41,20 @@ export function openAppModal(build: ModalBuild, hooks: AppModalHooks): () => voi
 
   let cleanup: (() => void) | void
   let closed = false
+  const runCleanup = () => {
+    const current = cleanup
+    cleanup = undefined
+    try {
+      current?.()
+    } catch (err) {
+      console.error('[sprite-overlay] App 弹窗清理失败', err)
+    }
+  }
   const close = () => {
     if (closed) return
     closed = true
     document.removeEventListener('keydown', onKey, true)
-    try {
-      cleanup?.()
-    } catch (err) {
-      console.error('[sprite-overlay] App 弹窗清理失败', err)
-    }
+    runCleanup()
     backdrop.remove()
     hooks.onClose()
   }
@@ -70,9 +75,34 @@ export function openAppModal(build: ModalBuild, hooks: AppModalHooks): () => voi
 
   try {
     cleanup = build(body, close)
+    if (closed) runCleanup()
   } catch (err) {
     console.error('[sprite-overlay] App 弹窗渲染失败', err)
     body.textContent = '弹窗渲染失败，详见控制台'
   }
+  return close
+}
+
+/** 打开由平台 tracker 托管的弹窗；正常关闭后立即注销兜底 close。 */
+export function openTrackedAppModal(
+  build: ModalBuild,
+  hooks: AppModalHooks,
+  track: (cleanup: () => void) => () => void,
+): () => void {
+  const untrackRef: { current?: () => void } = {}
+  let closed = false
+  const close = openAppModal(build, {
+    onOpen: hooks.onOpen,
+    onClose: () => {
+      closed = true
+      try {
+        hooks.onClose()
+      } finally {
+        untrackRef.current?.()
+      }
+    },
+  })
+  untrackRef.current = track(close)
+  if (closed) untrackRef.current()
   return close
 }

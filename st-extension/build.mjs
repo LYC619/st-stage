@@ -70,8 +70,10 @@ const stub = `/* st-stage 加载器（构建产物，勿手改；源头 st-exten
     .catch(function () { return '' })
     .then(function (v) {
       try {
+        document.querySelectorAll('link[data-st-stage-style]').forEach(function (node) { node.remove() })
         var link = document.createElement('link')
         link.rel = 'stylesheet'
+        link.setAttribute('data-st-stage-style', '')
         link.href = base + '/style.css?v=' + encodeURIComponent(v || Date.now())
         document.head.appendChild(link)
       } catch (e) { /* css 破缓存失败不阻塞脚本加载 */ }

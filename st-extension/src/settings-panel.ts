@@ -11,11 +11,11 @@ interface PanelDeps {
   updateSettings: (next: PluginSettings) => void
 }
 
-export function mountSettingsPanel(deps: PanelDeps): void {
+export function mountSettingsPanel(deps: PanelDeps): () => void {
   const container = document.getElementById('extensions_settings')
   if (!container) {
     console.warn('[sprite-overlay] 未找到 #extensions_settings，设置面板未挂载')
-    return
+    return () => {}
   }
 
   const wrapper = document.createElement('div')
@@ -57,6 +57,7 @@ export function mountSettingsPanel(deps: PanelDeps): void {
   hint.textContent =
     `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`
   content.append(hint)
+  return () => wrapper.remove()
 }
 
 /**

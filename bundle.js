@@ -951,15 +951,20 @@ function openAppModal(build, hooks) {
   document.body.append(backdrop);
   let cleanup;
   let closed = false;
+  const runCleanup = () => {
+    const current = cleanup;
+    cleanup = void 0;
+    try {
+      current?.();
+    } catch (err) {
+      console.error("[sprite-overlay] App 弹窗清理失败", err);
+    }
+  };
   const close = () => {
     if (closed) return;
     closed = true;
     document.removeEventListener("keydown", onKey, true);
-    try {
-      cleanup?.();
-    } catch (err) {
-      console.error("[sprite-overlay] App 弹窗清理失败", err);
-    }
+    runCleanup();
     backdrop.remove();
     hooks.onClose();
   };
@@ -979,10 +984,29 @@ function openAppModal(build, hooks) {
   });
   try {
     cleanup = build(body, close);
+    if (closed) runCleanup();
   } catch (err) {
     console.error("[sprite-overlay] App 弹窗渲染失败", err);
     body.textContent = "弹窗渲染失败，详见控制台";
   }
+  return close;
+}
+function openTrackedAppModal(build, hooks, track) {
+  const untrackRef = {};
+  let closed = false;
+  const close = openAppModal(build, {
+    onOpen: hooks.onOpen,
+    onClose: () => {
+      closed = true;
+      try {
+        hooks.onClose();
+      } finally {
+        untrackRef.current?.();
+      }
+    }
+  });
+  untrackRef.current = track(close);
+  if (closed) untrackRef.current();
   return close;
 }
 
@@ -2319,6 +2343,7 @@ async function uploadToImgbb(apiKey, base64DataUri, fetchImpl = fetch) {
 // st-extension/src/sprite-manager.ts
 function createSpriteManager(deps) {
   let backdrop = null;
+  let destroyed = false;
   let view = { kind: "list" };
   let openedFrom = "overlay";
   let closeLightbox = null;
@@ -2330,6 +2355,7 @@ function createSpriteManager(deps) {
     backdrop.style.height = `${window.innerHeight}px`;
   }
   function open(source = "overlay") {
+    if (destroyed) return;
     openedFrom = source;
     if (backdrop) {
       render3();
@@ -3544,7 +3570,12 @@ ${preview}
       `补传完成：成功 ${ok} 张${fail > 0 ? `，失败 ${fail} 张（可再次点击重试）` : ""}`
     );
   }
-  return { open, close, refreshIfOpen };
+  function destroy() {
+    if (destroyed) return;
+    destroyed = true;
+    close();
+  }
+  return { open, close, destroy, refreshIfOpen };
 }
 function el(tag, className) {
   const node = document.createElement(tag);
@@ -3658,7 +3689,8 @@ function mountSettingsPanel(deps) {
   const container = document.getElementById("extensions_settings");
   if (!container) {
     console.warn("[sprite-overlay] 未找到 #extensions_settings，设置面板未挂载");
-    return;
+    return () => {
+    };
   }
   const wrapper = document.createElement("div");
   wrapper.className = "sprite-overlay-settings";
@@ -3690,9 +3722,10 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-07-31 17:55"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-07-31 23:50"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
+  return () => wrapper.remove();
 }
 function helpIcon(tip) {
   const icon = document.createElement("span");
@@ -3751,23 +3784,39 @@ function mountMessagePostprocess(deps) {
     ctx.eventTypes?.CHARACTER_MESSAGE_RENDERED,
     ctx.eventTypes?.USER_MESSAGE_RENDERED
   ].filter((e) => typeof e === "string" && e.length > 0);
+  let active = true;
+  const pendingTimers = /* @__PURE__ */ new Set();
   const handler = (...args) => {
     const messageId = typeof args[0] === "number" || typeof args[0] === "string" ? args[0] : null;
-    queueMicrotask(() => processMessages(deps.getSettings(), messageId));
+    queueMicrotask(() => {
+      if (active) processMessages(deps.getSettings(), messageId);
+    });
   };
   if (renderedEvents.length > 0) {
     for (const event of renderedEvents) ctx.eventSource.on(event, handler);
     return () => {
+      if (!active) return;
+      active = false;
       for (const event of renderedEvents) ctx.eventSource.removeListener(event, handler);
     };
   }
   const fallbackEvent = ctx.eventTypes?.MESSAGE_RECEIVED ?? "message_received";
   const fallbackHandler = (...args) => {
     const messageId = typeof args[0] === "number" || typeof args[0] === "string" ? args[0] : null;
-    setTimeout(() => processMessages(deps.getSettings(), messageId), 150);
+    const timer = setTimeout(() => {
+      pendingTimers.delete(timer);
+      if (active) processMessages(deps.getSettings(), messageId);
+    }, 150);
+    pendingTimers.add(timer);
   };
   ctx.eventSource.on(fallbackEvent, fallbackHandler);
-  return () => ctx.eventSource.removeListener(fallbackEvent, fallbackHandler);
+  return () => {
+    if (!active) return;
+    active = false;
+    ctx.eventSource.removeListener(fallbackEvent, fallbackHandler);
+    for (const timer of pendingTimers) clearTimeout(timer);
+    pendingTimers.clear();
+  };
 }
 function anyFeatureOn(settings) {
   return settings.enabled && (settings.hideTagInMessage || settings.renderInlineImages || settings.spriteDisplayMode !== "overlay");
@@ -7234,9 +7283,41 @@ function createApiManager(deps) {
   return { open, close, isOpen: () => backdrop !== null };
 }
 
+// st-extension/src/lifecycle.ts
+function beginExtensionLifecycle(target, doc) {
+  target.__stStageDispose?.();
+  const lifecycle = createCapabilityTracker();
+  const dispose = () => lifecycle.dispose();
+  target.__stStageDispose = dispose;
+  lifecycle.track(() => {
+    if (target.__stStageDispose === dispose) delete target.__stStageDispose;
+  });
+  const stylesheet = doc?.querySelector("link[data-st-stage-style]");
+  if (stylesheet) lifecycle.track(() => stylesheet.remove());
+  return lifecycle;
+}
+function runWhenDomReady(doc, lifecycle, start) {
+  let started = false;
+  let untrack = () => {
+  };
+  const run = () => {
+    if (started || lifecycle.disposed) return;
+    started = true;
+    untrack();
+    void Promise.resolve(start()).catch((err) => {
+      console.error("[sprite-overlay] 初始化失败", err);
+    });
+  };
+  if (doc.readyState === "loading") {
+    doc.addEventListener("DOMContentLoaded", run);
+    untrack = lifecycle.track(() => doc.removeEventListener("DOMContentLoaded", run));
+  } else {
+    run();
+  }
+}
+
 // st-extension/src/index.ts
-async function init() {
-  window.__stStageDispose?.();
+async function init(lifecycle) {
   const adapter = new STAdapter();
   let settings;
   try {
@@ -7245,6 +7326,7 @@ async function init() {
     console.error("[sprite-overlay] 初始化失败", err);
     return;
   }
+  if (lifecycle.disposed) return;
   function updateSettings(next) {
     const displayChanged = next.hideTagInMessage !== settings.hideTagInMessage || next.renderInlineImages !== settings.renderInlineImages || next.spriteDisplayMode !== settings.spriteDisplayMode || next.imageHost !== settings.imageHost || next.enabled !== settings.enabled || next.recentFloors !== settings.recentFloors;
     const autoChanged = next.autoSwitch !== settings.autoSwitch || next.autoSwitchSeconds !== settings.autoSwitchSeconds;
@@ -7263,6 +7345,8 @@ async function init() {
   const appMessageHub = createEventHub();
   const appCharacterHub = createEventHub();
   const hostTracker = createCapabilityTracker();
+  lifecycle.track(() => hostTracker.dispose());
+  lifecycle.track(() => adapter.injectPrompt(""));
   const usedAppChannels = /* @__PURE__ */ new Set();
   const platformCaps = {
     onMessageReceived: (handler) => appMessageHub.subscribe(handler),
@@ -7299,6 +7383,7 @@ async function init() {
       if (source === "phone") phone.openApp("gallery");
     }
   });
+  lifecycle.track(() => manager.destroy());
   const overlay = createOverlay(
     settings.overlay,
     (layout) => {
@@ -7309,6 +7394,7 @@ async function init() {
     // 悬浮窗 ✕：只隐藏窗体并记住状态，立绘功能（含楼层立绘）不受影响
     () => updateSettings({ ...settings, overlayHidden: true })
   );
+  lifecycle.track(() => overlay.destroy());
   overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds);
   const registry = new PhoneAppRegistry();
   function createAppContext(appId, goHome) {
@@ -7317,11 +7403,10 @@ async function init() {
       updateSettings,
       goHome,
       openModal: (id, build) => {
-        const close = openAppModal(build, {
+        openTrackedAppModal(build, {
           onOpen: collapsePhone,
           onClose: () => phone.openApp(id)
-        });
-        hostTracker.track(close);
+        }, (cleanup) => hostTracker.track(cleanup));
       }
     });
   }
@@ -7332,6 +7417,7 @@ async function init() {
       saveSettingsOnly({ ...settings, phone: state });
     }
   });
+  lifecycle.track(() => phone.destroy());
   function collapsePhone() {
     settings = { ...settings, phone: { ...settings.phone, open: false } };
     adapter.saveSettings(settings);
@@ -7341,11 +7427,8 @@ async function init() {
     getSettings: () => settings,
     inject: (prompt, depth) => adapter.injectChannel(NEWVAR_CHANNEL, prompt, depth)
   });
-  window.__stStageDispose = () => {
-    newvarRuntime.dispose();
-    phone.destroy();
-    hostTracker.dispose();
-  };
+  lifecycle.track(() => newvarRuntime.dispose());
+  lifecycle.track(() => adapter.injectChannel(NEWVAR_CHANNEL, ""));
   const newvarDesigner = createNewvarDesigner({
     getData: () => newvarRuntime.getData(),
     setData: (next) => {
@@ -7356,6 +7439,7 @@ async function init() {
     getLastParse: () => newvarRuntime.getLastParse(),
     onClosed: () => phone.openApp("newvar")
   });
+  lifecycle.track(() => newvarDesigner.close());
   const apiManager = createApiManager({
     getData: () => sanitizeAppData(settings.apps[API_APP_ID]),
     setData: (next) => {
@@ -7363,6 +7447,7 @@ async function init() {
     },
     onClosed: () => phone.openApp("api")
   });
+  lifecycle.track(() => apiManager.close());
   for (const app of createBuiltinApps({
     // 从手机开图库弹窗：先收起手机（避免挡在弹窗上），来源标记=手机（关闭后回图库页）
     openGalleryManager: () => {
@@ -7390,6 +7475,10 @@ async function init() {
   window.stStage = {
     registerApp: (app) => registerQueue.push(app)
   };
+  lifecycle.track(() => {
+    delete window.stStage;
+    delete window.stStageQueue;
+  });
   function overlayAllowed() {
     return settings.enabled && settings.spriteDisplayMode !== "inline" && !settings.overlayHidden;
   }
@@ -7426,7 +7515,7 @@ async function init() {
     }
     overlay.setVisible(overlayAllowed());
   }
-  adapter.onMessageReceived((text) => {
+  const unsubscribeMessage = adapter.onMessageReceived((text) => {
     appMessageHub.emit(text);
     if (!settings.enabled) return;
     const characterName = adapter.getCurrentCharacterName();
@@ -7439,26 +7528,35 @@ async function init() {
       overlay.setVisible(true);
     }
   });
-  mountMessagePostprocess({ getSettings: () => settings });
-  adapter.onCharacterChanged(() => {
+  lifecycle.track(unsubscribeMessage);
+  lifecycle.track(mountMessagePostprocess({ getSettings: () => settings }));
+  let cancelPendingReprocess = () => {
+  };
+  const unsubscribeCharacter = adapter.onCharacterChanged(() => {
     appCharacterHub.emit(null);
     refresh();
     manager.refreshIfOpen();
-    setTimeout(() => reprocessAllMessages(settings), 200);
+    cancelPendingReprocess();
+    const timer = setTimeout(() => {
+      cancelPendingReprocess();
+      reprocessAllMessages(settings);
+    }, 200);
+    cancelPendingReprocess = lifecycle.track(() => clearTimeout(timer));
   });
-  mountSettingsPanel({
+  lifecycle.track(() => {
+    cancelPendingReprocess();
+    unsubscribeCharacter();
+  });
+  lifecycle.track(mountSettingsPanel({
     getSettings: () => settings,
     updateSettings
-  });
+  }));
   refresh();
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-07-31 17:55"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-07-31 23:50"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => void init());
-} else {
-  void init();
-}
+var extensionLifecycle = beginExtensionLifecycle(window, document);
+runWhenDomReady(document, extensionLifecycle, () => init(extensionLifecycle));

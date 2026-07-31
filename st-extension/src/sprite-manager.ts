@@ -75,6 +75,7 @@ export type ManagerSource = 'overlay' | 'phone'
 export interface ManagerController {
   open(source?: ManagerSource): void
   close(): void
+  destroy(): void
   /** 弹窗打开时刷新内容（角色切换后调用） */
   refreshIfOpen(): void
 }
@@ -83,6 +84,7 @@ type View = { kind: 'list' } | { kind: 'pack'; packId: string }
 
 export function createSpriteManager(deps: ManagerDeps): ManagerController {
   let backdrop: HTMLElement | null = null
+  let destroyed = false
   let view: View = { kind: 'list' }
   let openedFrom: ManagerSource = 'overlay'
   /** 当前打开的放大查看器的清理函数；弹窗整体关闭时必须先走它退订全局 keydown */
@@ -99,6 +101,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   }
 
   function open(source: ManagerSource = 'overlay'): void {
+    if (destroyed) return
     openedFrom = source
     if (backdrop) {
       render()
@@ -1468,7 +1471,13 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     )
   }
 
-  return { open, close, refreshIfOpen }
+  function destroy(): void {
+    if (destroyed) return
+    destroyed = true
+    close()
+  }
+
+  return { open, close, destroy, refreshIfOpen }
 }
 
 /* ---------------- DOM 工具 ---------------- */

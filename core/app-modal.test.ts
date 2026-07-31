@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { openAppModal } from './app-modal'
+import { openAppModal, openTrackedAppModal } from './app-modal'
 
 beforeEach(() => {
   document.body.innerHTML = ''
@@ -71,5 +71,34 @@ describe('openAppModal', () => {
     )
     expect(onClose).toHaveBeenCalledTimes(1)
     expect(document.querySelector('.so-app-modal-backdrop')).toBeNull()
+  })
+
+  it('正常关闭后立即从平台 tracker 注销', () => {
+    const cleanup = vi.fn()
+    const untrack = vi.fn()
+    const trackedClose = vi.fn<(cleanup: () => void) => () => void>(() => untrack)
+    const close = openTrackedAppModal(() => cleanup, { onOpen: () => {}, onClose: () => {} }, trackedClose)
+
+    close()
+    expect(cleanup).toHaveBeenCalledTimes(1)
+    expect(trackedClose).toHaveBeenCalledTimes(1)
+    expect(untrack).toHaveBeenCalledTimes(1)
+  })
+
+  it('build 同步自闭也不会在 tracker 留下 stale close', () => {
+    const cleanup = vi.fn()
+    const untrack = vi.fn()
+    const close = openTrackedAppModal(
+      (_body, closeNow) => {
+        closeNow()
+        return cleanup
+      },
+      { onOpen: () => {}, onClose: () => {} },
+      () => untrack,
+    )
+
+    close()
+    expect(cleanup).toHaveBeenCalledTimes(1)
+    expect(untrack).toHaveBeenCalledTimes(1)
   })
 })

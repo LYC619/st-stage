@@ -7,8 +7,9 @@
  * - 批量补渲染只处理最近 recentFloors 个候选 AI 楼层；最新楼层不受窗口限制
  */
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  mountMessagePostprocess,
   processMessages,
   reprocessAllMessages,
   restoreAllMessages,
@@ -65,6 +66,56 @@ function baseSettings(over: Partial<PluginSettings> = {}): PluginSettings {
 
 beforeEach(() => {
   document.body.innerHTML = ''
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+  delete window.SillyTavern
+})
+
+describe('mountMessagePostprocess lifecycle', () => {
+  it('ignores a rendered-event microtask queued before cleanup', async () => {
+    let handler: ((...args: unknown[]) => void) | undefined
+    window.SillyTavern = {
+      getContext: () => ({
+        eventTypes: { CHARACTER_MESSAGE_RENDERED: 'rendered' },
+        eventSource: {
+          on: (_event: string, next: (...args: unknown[]) => void) => { handler = next },
+          removeListener: vi.fn(),
+        },
+      }),
+    } as never
+    buildChat([{ text: '[立绘:微笑]' }])
+    const cleanup = mountMessagePostprocess({ getSettings: () => baseSettings({ hideTagInMessage: true }) })
+
+    handler?.(0)
+    cleanup()
+    await Promise.resolve()
+
+    expect(mesText(0).textContent).toContain('[立绘:微笑]')
+  })
+
+  it('clears fallback timers queued before cleanup', () => {
+    vi.useFakeTimers()
+    let handler: ((...args: unknown[]) => void) | undefined
+    window.SillyTavern = {
+      getContext: () => ({
+        eventTypes: {},
+        eventSource: {
+          on: (_event: string, next: (...args: unknown[]) => void) => { handler = next },
+          removeListener: vi.fn(),
+        },
+      }),
+    } as never
+    buildChat([{ text: '[立绘:微笑]' }])
+    const cleanup = mountMessagePostprocess({ getSettings: () => baseSettings({ hideTagInMessage: true }) })
+
+    handler?.(0)
+    cleanup()
+    vi.runAllTimers()
+
+    expect(mesText(0).textContent).toContain('[立绘:微笑]')
+  })
 })
 
 describe('可逆楼层渲染', () => {
