@@ -3241,6 +3241,7 @@ ${preview}
     const parsed = fileArr.map((f) => parseSpriteFileName(f.name));
     let autoSplit = true;
     let strategy = "skip";
+    let uploading = false;
     const modal = el("div", "so-upload-modal");
     const panel = el("div", "so-upload-panel");
     const head = el("div", "so-upload-head");
@@ -3310,106 +3311,189 @@ ${preview}
     const status = el("div", "so-upload-status");
     const actions = el("div", "so-row so-upload-actions");
     const confirmBtn = button("开始上传", () => {
+      if (uploading) return;
+      uploading = true;
+      confirmBtn.setAttribute("aria-disabled", "true");
+      confirmBtn.classList.add("disabled");
       const entries = fileArr.map((file, i) => ({
         fileName: file.name,
         role: autoSplit ? inputs[i].role.value : "",
         outfit: autoSplit ? inputs[i].outfit.value : "",
         tag: inputs[i].tag.value
       }));
-      void applyUploadPlan(currentPackId, fileArr, entries, strategy, status, () => modal.remove());
+      void applyUploadPlan(currentPackId, fileArr, entries, strategy, status, () => modal.remove()).finally(
+        () => {
+          uploading = false;
+          confirmBtn.removeAttribute("aria-disabled");
+          confirmBtn.classList.remove("disabled");
+        }
+      );
     });
+    const cancelBtn = button(
+      "取消",
+      () => {
+        if (!uploading) modal.remove();
+      },
+      "so-btn-danger"
+    );
     actions.append(
       confirmBtn,
-      button("取消", () => modal.remove(), "so-btn-danger")
+      cancelBtn
     );
     panel.append(head, rows, opts, status, actions);
     modal.append(panel);
     (backdrop ?? document.body).append(modal);
   }
   async function applyUploadPlan(currentPackId, files, entries, strategy, status, done) {
-    const current = deps.getSettings().packs.find((p) => p.id === currentPackId) ?? null;
-    const plans = planUploads(entries, deps.getSettings().packs, strategy, current?.name ?? "新包", current);
     const { autoUpload, imgbbApiKey } = deps.getSettings();
     const useImgbb = autoUpload && imgbbApiKey.trim() !== "";
     let added = 0;
+    let conflicts = 0;
     let skipped = 0;
     let failed = 0;
+    let unprocessed = 0;
     let hosted = 0;
     let hostFailed = 0;
     const newPackIds = /* @__PURE__ */ new Map();
-    for (let i = 0; i < plans.length; i++) {
-      const plan = plans[i];
-      const file = files[i];
-      status.textContent = `处理中 ${i + 1}/${plans.length}：${file.name}`;
-      if (plan.action === "skip" || !plan.finalTag) {
-        skipped++;
-        continue;
+    function persisted(targetId, sprite) {
+      return Boolean(
+        deps.getSettings().packs.find((pack) => pack.id === targetId)?.sprites.some(
+          (item) => item.tag === sprite.tag && item.url === sprite.url && item.code === sprite.code && item.remoteUrl === sprite.remoteUrl
+        )
+      );
+    }
+    function applyUploadSettings(result, wasPersisted) {
+      if (!result.ok) {
+        try {
+          showConflicts(result.conflicts);
+        } catch (error) {
+          console.error("[sprite-overlay] 展示上传冲突失败", error);
+        }
+        return false;
       }
       try {
-        const result = await compressImage(file);
-        const url = await deps.adapter.saveImage(
-          file.name,
-          result.dataUri,
-          deps.adapter.getCurrentCharacterName() || plan.targetPackName
-        );
-        let targetId = plan.targetPackId;
-        if (!targetId) {
-          const role = plan.entry.role;
-          const outfit = plan.entry.outfit;
-          const key = `${role}|${outfit}|${plan.targetPackName}`;
-          targetId = newPackIds.get(key) ?? null;
-          if (!targetId) {
-            const np = {
-              id: genId(),
-              name: plan.targetPackName,
-              author: "我",
-              ...role ? { roleName: role } : {},
-              ...outfit ? { outfit } : {},
-              sprites: []
-            };
-            if (!updateChecked(upsertPack(deps.getSettings(), np))) return;
-            targetId = np.id;
-            newPackIds.set(key, targetId);
-          }
-        }
-        const target = deps.getSettings().packs.find((p) => p.id === targetId);
-        if (!target) {
-          failed++;
+        deps.updateSettings(result.settings);
+      } catch (error) {
+        if (!wasPersisted()) throw error;
+        console.warn("[sprite-overlay] 图片已保存，但后续界面刷新失败", error);
+      }
+      return true;
+    }
+    try {
+      const current = deps.getSettings().packs.find((p) => p.id === currentPackId) ?? null;
+      const plans = planUploads(entries, deps.getSettings().packs, strategy, current?.name ?? "新包", current);
+      for (let i = 0; i < plans.length; i++) {
+        const plan = plans[i];
+        const file = files[i];
+        status.textContent = `处理中 ${i + 1}/${plans.length}：${file.name}`;
+        if (plan.action === "skip" || !plan.finalTag) {
+          skipped++;
           continue;
         }
-        const sprite = { tag: plan.finalTag, url };
-        if (!updateChecked(upsertPack(deps.getSettings(), upsertSprite(target, sprite)))) return;
-        added++;
-        if (useImgbb) {
-          try {
-            const up = await uploadToImgbb(imgbbApiKey, result.dataUri);
-            if (isValidImgbbResult(up)) {
-              const latest = deps.getSettings().packs.find((p) => p.id === targetId);
-              if (latest) {
-                const hostedSprite = { tag: plan.finalTag, url, code: up.code, remoteUrl: up.url };
-                if (!updateChecked(upsertPack(deps.getSettings(), upsertSprite(latest, hostedSprite)))) return;
-                hosted++;
+        try {
+          const result = await compressImage(file);
+          const url = await deps.adapter.saveImage(
+            file.name,
+            result.dataUri,
+            deps.adapter.getCurrentCharacterName() || plan.targetPackName
+          );
+          let targetId = plan.targetPackId;
+          if (!targetId) {
+            const role = plan.entry.role;
+            const outfit = plan.entry.outfit;
+            const key = `${role}|${outfit}|${plan.targetPackName}`;
+            targetId = newPackIds.get(key) ?? null;
+            if (!targetId) {
+              const np = {
+                id: genId(),
+                name: plan.targetPackName,
+                author: "我",
+                ...role ? { roleName: role } : {},
+                ...outfit ? { outfit } : {},
+                sprites: []
+              };
+              if (!applyUploadSettings(
+                upsertPack(deps.getSettings(), np),
+                () => deps.getSettings().packs.some((pack) => pack.id === np.id)
+              )) {
+                conflicts++;
+                unprocessed = plans.length - i - 1;
+                break;
               }
-            } else {
+              targetId = np.id;
+              newPackIds.set(key, targetId);
+            }
+          }
+          const target = deps.getSettings().packs.find((p) => p.id === targetId);
+          if (!target) {
+            failed++;
+            continue;
+          }
+          const sprite = { tag: plan.finalTag, url };
+          if (!applyUploadSettings(
+            upsertPack(deps.getSettings(), upsertSprite(target, sprite)),
+            () => persisted(targetId, sprite)
+          )) {
+            conflicts++;
+            unprocessed = plans.length - i - 1;
+            break;
+          }
+          added++;
+          if (useImgbb) {
+            try {
+              const up = await uploadToImgbb(imgbbApiKey, result.dataUri);
+              if (isValidImgbbResult(up)) {
+                const latest = deps.getSettings().packs.find((p) => p.id === targetId);
+                if (latest) {
+                  const hostedSprite = { tag: plan.finalTag, url, code: up.code, remoteUrl: up.url };
+                  if (applyUploadSettings(
+                    upsertPack(deps.getSettings(), upsertSprite(latest, hostedSprite)),
+                    () => persisted(targetId, hostedSprite)
+                  )) hosted++;
+                  else hostFailed++;
+                }
+              } else {
+                hostFailed++;
+              }
+            } catch (err) {
+              console.warn("[sprite-overlay] imgbb 上传失败（图片保留本地）", err);
               hostFailed++;
             }
-          } catch (err) {
-            console.warn("[sprite-overlay] imgbb 上传失败（图片保留本地）", err);
-            hostFailed++;
           }
+        } catch (err) {
+          console.error("[sprite-overlay] 上传失败", err);
+          failed++;
         }
-      } catch (err) {
-        console.error("[sprite-overlay] 上传失败", err);
-        failed++;
+      }
+    } catch (error) {
+      console.error("[sprite-overlay] 上传批次失败", error);
+      failed++;
+      unprocessed = Math.max(0, files.length - added - conflicts - skipped - failed);
+    } finally {
+      try {
+        done();
+      } catch (error) {
+        console.error("[sprite-overlay] 关闭上传窗口失败", error);
+      }
+      try {
+        render3();
+      } catch (error) {
+        console.error("[sprite-overlay] 上传后刷新失败", error);
+      }
+      const parts = [
+        `成功 ${added} 张`,
+        `冲突 ${conflicts} 张`,
+        `失败 ${failed} 张`,
+        `未处理 ${unprocessed} 张`
+      ];
+      if (skipped > 0) parts.push(`跳过 ${skipped} 张（重名/无效）`);
+      if (useImgbb) parts.push(`imgbb 成功 ${hosted}${hostFailed > 0 ? `、失败 ${hostFailed}` : ""}`);
+      try {
+        toast(backdrop?.querySelector(".so-manager-body"), parts.join("，"));
+      } catch (error) {
+        console.error("[sprite-overlay] 展示上传结果失败", error);
       }
     }
-    done();
-    render3();
-    const parts = [`已添加 ${added} 张`];
-    if (skipped > 0) parts.push(`跳过 ${skipped} 张（重名/无效）`);
-    if (failed > 0) parts.push(`失败 ${failed} 张`);
-    if (useImgbb) parts.push(`imgbb 成功 ${hosted}${hostFailed > 0 ? `、失败 ${hostFailed}` : ""}`);
-    toast(backdrop?.querySelector(".so-manager-body"), parts.join("，"));
   }
   async function retryPendingUploads(body, packId) {
     const { imgbbApiKey } = deps.getSettings();
@@ -3606,7 +3690,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-07-31 17:38"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-07-31 17:55"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -7370,7 +7454,7 @@ async function init() {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-07-31 17:38"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-07-31 17:55"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {

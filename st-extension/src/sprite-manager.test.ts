@@ -2,13 +2,69 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDefaultSettings, type PluginSettings } from '../../core/types'
+
+const imageMocks = vi.hoisted(() => ({ compressImage: vi.fn() }))
+
+vi.mock('../../core/image-compress', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../core/image-compress')>()
+  return { ...actual, compressImage: imageMocks.compressImage }
+})
+
 import { createSpriteManager } from './sprite-manager'
 import type { STAdapter } from './st-adapter'
+
+function findButton(scope: ParentNode, text: string): HTMLElement {
+  const button = [...scope.querySelectorAll<HTMLElement>('[role="button"]')].find(
+    (item) => item.textContent === text,
+  )
+  if (!button) throw new Error(`找不到按钮：${text}`)
+  return button
+}
+
+function installFilePicker(files: File[]): void {
+  vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
+    if (this.type !== 'file') return
+    Object.defineProperty(this, 'files', { configurable: true, value: files as unknown as FileList })
+    this.dispatchEvent(new Event('change'))
+  })
+}
+
+function openUploadPreview(manager: ReturnType<typeof createSpriteManager>, packName: string, files: File[]): HTMLElement {
+  installFilePicker(files)
+  manager.open()
+  const pack = [...document.querySelectorAll<HTMLElement>('.so-pack-card')].find((item) =>
+    item.textContent?.includes(packName),
+  )
+  if (!pack) throw new Error(`找不到图包：${packName}`)
+  pack.click()
+  findButton(document, '添加立绘 ▾').click()
+  findButton(document, '选择图片（自动压缩+解析预览）').click()
+  const modal = document.querySelector<HTMLElement>('.so-upload-modal')
+  if (!modal) throw new Error('上传预览未打开')
+  return modal
+}
+
+function uploadSettings(): PluginSettings {
+  return {
+    ...createDefaultSettings(),
+    packs: [
+      { id: 'current', name: '当前包', roleName: '鸣人', sprites: [] },
+      {
+        id: 'other',
+        name: '冲突包',
+        roleName: '鸣人',
+        sprites: [{ tag: '冲突', url: 'other-url' }],
+      },
+    ],
+    bindings: [{ characterName: '阿珍', packIds: ['current', 'other'], enabled: true }],
+  }
+}
 
 describe('createSpriteManager binding conflict UI', () => {
   afterEach(() => {
     document.body.innerHTML = ''
     vi.restoreAllMocks()
+    imageMocks.compressImage.mockReset()
   })
 
   it('resets the pack selector when a conflicting bind is cancelled', () => {
@@ -145,5 +201,118 @@ describe('createSpriteManager binding conflict UI', () => {
     const arrow = new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true })
     document.dispatchEvent(arrow)
     expect(arrow.defaultPrevented).toBe(false)
+  })
+})
+
+describe('createSpriteManager upload finalization', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+    imageMocks.compressImage.mockReset()
+  })
+
+  it('ignores repeated start clicks while an upload is running', async () => {
+    let settings = uploadSettings()
+    let release!: () => void
+    const pending = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    imageMocks.compressImage.mockImplementation(async () => {
+      await pending
+      return { dataUri: 'data:image/png;base64,AA==', compressed: false, bytes: 1 }
+    })
+    const manager = createSpriteManager({
+      adapter: {
+        getCurrentCharacterName: () => '阿珍',
+        saveImage: async () => 'saved-url',
+      } as unknown as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => {
+        settings = next
+      },
+    })
+    const modal = openUploadPreview(manager, '当前包', [new File(['a'], '鸣人-安全.png')])
+    const start = findButton(modal, '开始上传')
+
+    start.click()
+    start.click()
+    try {
+      expect(imageMocks.compressImage).toHaveBeenCalledTimes(1)
+    } finally {
+      release()
+      await vi.waitFor(() => expect(document.querySelector('.so-upload-modal')).toBeNull())
+      manager.close()
+    }
+  })
+
+  it('finalizes a conflict with counts and preserves earlier successes', async () => {
+    let settings = uploadSettings()
+    imageMocks.compressImage.mockResolvedValue({
+      dataUri: 'data:image/png;base64,AA==',
+      compressed: false,
+      bytes: 1,
+    })
+    const manager = createSpriteManager({
+      adapter: {
+        getCurrentCharacterName: () => '阿珍',
+        saveImage: async (name: string) => `saved:${name}`,
+      } as unknown as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => {
+        settings = next
+      },
+    })
+    const modal = openUploadPreview(manager, '当前包', [
+      new File(['a'], '鸣人-安全.png'),
+      new File(['b'], '鸣人-冲突.png'),
+    ])
+
+    findButton(modal, '开始上传').click()
+
+    await vi.waitFor(() => expect(document.querySelector('.so-upload-modal')).toBeNull())
+    expect(settings.packs.find((pack) => pack.id === 'current')?.sprites).toEqual([
+      { tag: '安全', url: 'saved:鸣人-安全.png' },
+    ])
+    expect(document.querySelector('.so-toast')?.textContent).toContain(
+      '成功 1 张，冲突 1 张，失败 0 张，未处理 0 张',
+    )
+    manager.close()
+  })
+
+  it('does not report a persisted sprite as failed when refresh throws', async () => {
+    let settings = uploadSettings()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    imageMocks.compressImage.mockResolvedValue({
+      dataUri: 'data:image/png;base64,AA==',
+      compressed: false,
+      bytes: 1,
+    })
+    const manager = createSpriteManager({
+      adapter: {
+        getCurrentCharacterName: () => '阿珍',
+        saveImage: async () => 'saved-url',
+      } as unknown as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => {
+        settings = next
+        throw new Error('refresh failed after persistence')
+      },
+    })
+    const modal = openUploadPreview(manager, '当前包', [new File(['a'], '鸣人-安全.png')])
+
+    findButton(modal, '开始上传').click()
+
+    await vi.waitFor(() => expect(document.querySelector('.so-upload-modal')).toBeNull())
+    expect(settings.packs.find((pack) => pack.id === 'current')?.sprites).toEqual([
+      { tag: '安全', url: 'saved-url' },
+    ])
+    expect(document.querySelector('.so-toast')?.textContent).toContain(
+      '成功 1 张，冲突 0 张，失败 0 张，未处理 0 张',
+    )
+    expect(warn).toHaveBeenCalledWith(
+      '[sprite-overlay] 图片已保存，但后续界面刷新失败',
+      expect.objectContaining({ message: 'refresh failed after persistence' }),
+    )
+    manager.close()
   })
 })

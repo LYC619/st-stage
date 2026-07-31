@@ -1121,6 +1121,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     const parsed = fileArr.map((f) => parseSpriteFileName(f.name))
     let autoSplit = true
     let strategy: ConflictStrategy = 'skip'
+    let uploading = false
 
     const modal = el('div', 'so-upload-modal')
     const panel = el('div', 'so-upload-panel')
@@ -1196,17 +1197,34 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     const status = el('div', 'so-upload-status')
     const actions = el('div', 'so-row so-upload-actions')
     const confirmBtn = button('开始上传', () => {
+      if (uploading) return
+      uploading = true
+      confirmBtn.setAttribute('aria-disabled', 'true')
+      confirmBtn.classList.add('disabled')
       const entries: UploadEntry[] = fileArr.map((file, i) => ({
         fileName: file.name,
         role: autoSplit ? inputs[i].role.value : '',
         outfit: autoSplit ? inputs[i].outfit.value : '',
         tag: inputs[i].tag.value,
       }))
-      void applyUploadPlan(currentPackId, fileArr, entries, strategy, status, () => modal.remove())
+      void applyUploadPlan(currentPackId, fileArr, entries, strategy, status, () => modal.remove()).finally(
+        () => {
+          uploading = false
+          confirmBtn.removeAttribute('aria-disabled')
+          confirmBtn.classList.remove('disabled')
+        },
+      )
     })
+    const cancelBtn = button(
+      '取消',
+      () => {
+        if (!uploading) modal.remove()
+      },
+      'so-btn-danger',
+    )
     actions.append(
       confirmBtn,
-      button('取消', () => modal.remove(), 'so-btn-danger'),
+      cancelBtn,
     )
 
     panel.append(head, rows, opts, status, actions)
@@ -1223,99 +1241,174 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     status: HTMLElement,
     done: () => void,
   ): Promise<void> {
-    const current = deps.getSettings().packs.find((p) => p.id === currentPackId) ?? null
-    const plans = planUploads(entries, deps.getSettings().packs, strategy, current?.name ?? '新包', current)
     const { autoUpload, imgbbApiKey } = deps.getSettings()
     const useImgbb = autoUpload && imgbbApiKey.trim() !== ''
 
     let added = 0
+    let conflicts = 0
     let skipped = 0
     let failed = 0
+    let unprocessed = 0
     let hosted = 0
     let hostFailed = 0
     // 本批新建的包：同 (role|outfit|packName) 复用同一个新 id
     const newPackIds = new Map<string, string>()
 
-    for (let i = 0; i < plans.length; i++) {
-      const plan = plans[i]
-      const file = files[i]
-      status.textContent = `处理中 ${i + 1}/${plans.length}：${file.name}`
-      if (plan.action === 'skip' || !plan.finalTag) {
-        skipped++
-        continue
-      }
-      try {
-        const result = await compressImage(file)
-        const url = await deps.adapter.saveImage(
-          file.name,
-          result.dataUri,
-          deps.adapter.getCurrentCharacterName() || plan.targetPackName,
-        )
-
-        // 解析/新建目标包
-        let targetId = plan.targetPackId
-        if (!targetId) {
-          const role = plan.entry.role
-          const outfit = plan.entry.outfit
-          const key = `${role}|${outfit}|${plan.targetPackName}`
-          targetId = newPackIds.get(key) ?? null
-          if (!targetId) {
-            const np: SpritePack = {
-              id: genId(),
-              name: plan.targetPackName,
-              author: '我',
-              ...(role ? { roleName: role } : {}),
-              ...(outfit ? { outfit } : {}),
-              sprites: [],
-            }
-            if (!updateChecked(upsertPack(deps.getSettings(), np))) return
-            targetId = np.id
-            newPackIds.set(key, targetId)
-          }
-        }
-
-        const target = deps.getSettings().packs.find((p) => p.id === targetId)
-        if (!target) {
-          failed++
-          continue
-        }
-        // 自动拆分的包用 roleName/outfit，立绘只存图名；不拆分则可能带 group（此处 role 落到包级）
-        const sprite: Sprite = { tag: plan.finalTag, url }
-        if (!updateChecked(upsertPack(deps.getSettings(), upsertSprite(target, sprite)))) return
-        added++
-
-        if (useImgbb) {
-          try {
-            const up = await uploadToImgbb(imgbbApiKey, result.dataUri)
-            if (isValidImgbbResult(up)) {
-              const latest = deps.getSettings().packs.find((p) => p.id === targetId)
-              if (latest) {
-                // 本地 url 作保底 remoteUrl 记远程；显示仍优先本地
-                const hostedSprite: Sprite = { tag: plan.finalTag, url, code: up.code, remoteUrl: up.url }
-                if (!updateChecked(upsertPack(deps.getSettings(), upsertSprite(latest, hostedSprite)))) return
-                hosted++
-              }
-            } else {
-              hostFailed++
-            }
-          } catch (err) {
-            console.warn('[sprite-overlay] imgbb 上传失败（图片保留本地）', err)
-            hostFailed++
-          }
-        }
-      } catch (err) {
-        console.error('[sprite-overlay] 上传失败', err)
-        failed++
-      }
+    function persisted(targetId: string, sprite: Sprite): boolean {
+      return Boolean(
+        deps
+          .getSettings()
+          .packs.find((pack) => pack.id === targetId)
+          ?.sprites.some(
+            (item) =>
+              item.tag === sprite.tag &&
+              item.url === sprite.url &&
+              item.code === sprite.code &&
+              item.remoteUrl === sprite.remoteUrl,
+          ),
+      )
     }
 
-    done()
-    render()
-    const parts = [`已添加 ${added} 张`]
-    if (skipped > 0) parts.push(`跳过 ${skipped} 张（重名/无效）`)
-    if (failed > 0) parts.push(`失败 ${failed} 张`)
-    if (useImgbb) parts.push(`imgbb 成功 ${hosted}${hostFailed > 0 ? `、失败 ${hostFailed}` : ''}`)
-    toast(backdrop?.querySelector('.so-manager-body') as HTMLElement, parts.join('，'))
+    function applyUploadSettings(
+      result: ConflictCheckedSettingsResult,
+      wasPersisted: () => boolean,
+    ): boolean {
+      if (!result.ok) {
+        try {
+          showConflicts(result.conflicts)
+        } catch (error) {
+          console.error('[sprite-overlay] 展示上传冲突失败', error)
+        }
+        return false
+      }
+      try {
+        deps.updateSettings(result.settings)
+      } catch (error) {
+        if (!wasPersisted()) throw error
+        console.warn('[sprite-overlay] 图片已保存，但后续界面刷新失败', error)
+      }
+      return true
+    }
+
+    try {
+      const current = deps.getSettings().packs.find((p) => p.id === currentPackId) ?? null
+      const plans = planUploads(entries, deps.getSettings().packs, strategy, current?.name ?? '新包', current)
+
+      for (let i = 0; i < plans.length; i++) {
+        const plan = plans[i]
+        const file = files[i]
+        status.textContent = `处理中 ${i + 1}/${plans.length}：${file.name}`
+        if (plan.action === 'skip' || !plan.finalTag) {
+          skipped++
+          continue
+        }
+        try {
+          const result = await compressImage(file)
+          const url = await deps.adapter.saveImage(
+            file.name,
+            result.dataUri,
+            deps.adapter.getCurrentCharacterName() || plan.targetPackName,
+          )
+
+          // 解析/新建目标包
+          let targetId = plan.targetPackId
+          if (!targetId) {
+            const role = plan.entry.role
+            const outfit = plan.entry.outfit
+            const key = `${role}|${outfit}|${plan.targetPackName}`
+            targetId = newPackIds.get(key) ?? null
+            if (!targetId) {
+              const np: SpritePack = {
+                id: genId(),
+                name: plan.targetPackName,
+                author: '我',
+                ...(role ? { roleName: role } : {}),
+                ...(outfit ? { outfit } : {}),
+                sprites: [],
+              }
+              if (!applyUploadSettings(upsertPack(deps.getSettings(), np), () =>
+                deps.getSettings().packs.some((pack) => pack.id === np.id),
+              )) {
+                conflicts++
+                unprocessed = plans.length - i - 1
+                break
+              }
+              targetId = np.id
+              newPackIds.set(key, targetId)
+            }
+          }
+
+          const target = deps.getSettings().packs.find((p) => p.id === targetId)
+          if (!target) {
+            failed++
+            continue
+          }
+          // 自动拆分的包用 roleName/outfit，立绘只存图名；不拆分则可能带 group（此处 role 落到包级）
+          const sprite: Sprite = { tag: plan.finalTag, url }
+          if (!applyUploadSettings(upsertPack(deps.getSettings(), upsertSprite(target, sprite)), () =>
+            persisted(targetId, sprite),
+          )) {
+            conflicts++
+            unprocessed = plans.length - i - 1
+            break
+          }
+          added++
+
+          if (useImgbb) {
+            try {
+              const up = await uploadToImgbb(imgbbApiKey, result.dataUri)
+              if (isValidImgbbResult(up)) {
+                const latest = deps.getSettings().packs.find((p) => p.id === targetId)
+                if (latest) {
+                  // 本地 url 作保底 remoteUrl 记远程；显示仍优先本地
+                  const hostedSprite: Sprite = { tag: plan.finalTag, url, code: up.code, remoteUrl: up.url }
+                  if (applyUploadSettings(upsertPack(deps.getSettings(), upsertSprite(latest, hostedSprite)), () =>
+                    persisted(targetId, hostedSprite),
+                  )) hosted++
+                  else hostFailed++
+                }
+              } else {
+                hostFailed++
+              }
+            } catch (err) {
+              console.warn('[sprite-overlay] imgbb 上传失败（图片保留本地）', err)
+              hostFailed++
+            }
+          }
+        } catch (err) {
+          console.error('[sprite-overlay] 上传失败', err)
+          failed++
+        }
+      }
+    } catch (error) {
+      console.error('[sprite-overlay] 上传批次失败', error)
+      failed++
+      unprocessed = Math.max(0, files.length - added - conflicts - skipped - failed)
+    } finally {
+      try {
+        done()
+      } catch (error) {
+        console.error('[sprite-overlay] 关闭上传窗口失败', error)
+      }
+      try {
+        render()
+      } catch (error) {
+        console.error('[sprite-overlay] 上传后刷新失败', error)
+      }
+      const parts = [
+        `成功 ${added} 张`,
+        `冲突 ${conflicts} 张`,
+        `失败 ${failed} 张`,
+        `未处理 ${unprocessed} 张`,
+      ]
+      if (skipped > 0) parts.push(`跳过 ${skipped} 张（重名/无效）`)
+      if (useImgbb) parts.push(`imgbb 成功 ${hosted}${hostFailed > 0 ? `、失败 ${hostFailed}` : ''}`)
+      try {
+        toast(backdrop?.querySelector('.so-manager-body') as HTMLElement, parts.join('，'))
+      } catch (error) {
+        console.error('[sprite-overlay] 展示上传结果失败', error)
+      }
+    }
   }
 
   /** 补传待上传立绘到 imgbb（失败重试）：fetch 本地图 → 上传 → 绑 remoteUrl+code，本地 url 保留 */
