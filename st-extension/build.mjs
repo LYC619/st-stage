@@ -21,6 +21,7 @@ import { build } from 'esbuild'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { buildVersion, resolveBuildTime } from './build-time.mjs'
 
 const dir = path.dirname(fileURLToPath(import.meta.url))
 const root = path.join(dir, '..')
@@ -28,8 +29,8 @@ const root = path.join(dir, '..')
 // 版本与构建时间注入：让「加载的是哪一版」在设置面板/控制台一眼可见，
 // 排查"改了没生效"时可 5 秒区分 没构建/没提交/真缓存
 const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'))
-const buildTime = new Date().toLocaleString('sv-SE').slice(0, 16) // 本地时区 YYYY-MM-DD HH:mm
-const version = `${manifest.version ?? '0.0.0'}+${buildTime.replace(/[-: ]/g, '')}`
+const buildTime = resolveBuildTime() // 本地时区 YYYY-MM-DD HH:mm，或 ST_STAGE_BUILD_TIME 固定值
+const version = buildVersion(manifest.version ?? '0.0.0', buildTime)
 
 await build({
   entryPoints: [path.join(dir, 'src/index.ts')],

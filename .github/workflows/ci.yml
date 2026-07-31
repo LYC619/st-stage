@@ -34,5 +34,21 @@ jobs:
       - name: Next.js build
         run: pnpm build
 
+      - name: Restore committed extension build time
+        run: |
+          node - <<'NODE' >> "$GITHUB_ENV"
+          const { readFileSync } = require('node:fs')
+          const version = JSON.parse(readFileSync('version.json', 'utf8')).v
+          const match = /\+(\d{12})$/.exec(String(version || ''))
+          if (!match) {
+            throw new Error('version.json must contain a +YYYYMMDDHHmm suffix')
+          }
+          const compact = match[1]
+          console.log(`ST_STAGE_BUILD_TIME=${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)} ${compact.slice(8, 10)}:${compact.slice(10, 12)}`)
+          NODE
+
       - name: Extension build
         run: pnpm build:ext
+
+      - name: Verify committed extension artifacts
+        run: git diff --exit-code -- index.js bundle.js style.css version.json
