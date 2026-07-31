@@ -60,6 +60,35 @@ function uploadSettings(): PluginSettings {
   }
 }
 
+function largeGallerySettings(count: number): PluginSettings {
+  return {
+    ...createDefaultSettings(),
+    packs: [
+      {
+        id: 'large',
+        name: '千图包',
+        sprites: Array.from({ length: count }, (_, index) => ({
+          tag: `图${index + 1}`,
+          url: `https://img.test/${index + 1}.png`,
+        })),
+      },
+    ],
+  }
+}
+
+function openLargeGallery(count = 1000): ReturnType<typeof createSpriteManager> {
+  let settings = largeGallerySettings(count)
+  const manager = createSpriteManager({
+    adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+    getSettings: () => settings,
+    updateSettings: (next) => { settings = next },
+  })
+  manager.open()
+  ;([...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+    .find((c) => c.textContent?.includes('千图包')))!.click()
+  return manager
+}
+
 describe('createSpriteManager binding conflict UI', () => {
   afterEach(() => {
     document.body.innerHTML = ''
@@ -216,6 +245,70 @@ describe('createSpriteManager binding conflict UI', () => {
     manager.open()
 
     expect(document.querySelector('.so-manager-backdrop')).toBeNull()
+  })
+})
+
+describe('createSpriteManager bounded sprite gallery rendering', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+  })
+
+  it('renders only the first 60 sprites from a 1000-sprite pack and loads one page at a time', () => {
+    const manager = openLargeGallery()
+
+    expect(document.querySelectorAll('.so-sprite-cell')).toHaveLength(60)
+    expect(document.body.textContent).toContain('60/1000')
+
+    findButton(document, '加载更多').click()
+    expect(document.querySelectorAll('.so-sprite-cell')).toHaveLength(120)
+    expect(document.body.textContent).toContain('120/1000')
+
+    manager.close()
+  })
+
+  it('never adds more than 60 sprites per load and removes the control at the end', () => {
+    const manager = openLargeGallery()
+
+    while (document.body.textContent?.includes('加载更多')) {
+      const before = document.querySelectorAll('.so-sprite-cell').length
+      findButton(document, '加载更多').click()
+      const after = document.querySelectorAll('.so-sprite-cell').length
+      expect(after - before).toBeLessThanOrEqual(60)
+    }
+
+    expect(document.querySelectorAll('.so-sprite-cell')).toHaveLength(1000)
+    expect(document.body.textContent).toContain('1000/1000')
+    expect([...document.querySelectorAll<HTMLElement>('[role="button"]')]
+      .some((item) => item.textContent === '加载更多')).toBe(false)
+
+    manager.close()
+  })
+
+  it('does not show a load-more control for packs of 60 sprites or fewer', () => {
+    const manager = openLargeGallery(60)
+
+    expect(document.querySelectorAll('.so-sprite-cell')).toHaveLength(60)
+    expect(document.body.textContent).toContain('60/60')
+    expect([...document.querySelectorAll<HTMLElement>('[role="button"]')]
+      .some((item) => item.textContent === '加载更多')).toBe(false)
+
+    manager.close()
+  })
+
+  it('keeps lightbox navigation on the full sprite list beyond the rendered boundary', () => {
+    const manager = openLargeGallery()
+    const cells = document.querySelectorAll<HTMLElement>('.so-sprite-cell')
+
+    cells[59].click()
+    const img = document.querySelector<HTMLImageElement>('.so-lightbox img')
+    expect(img?.src).toBe('https://img.test/60.png')
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(img?.src).toBe('https://img.test/61.png')
+    expect(document.querySelector('.so-lightbox-caption')?.textContent).toContain('61/1000')
+
+    manager.close()
   })
 })
 

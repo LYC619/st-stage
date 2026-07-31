@@ -2341,10 +2341,12 @@ async function uploadToImgbb(apiKey, base64DataUri, fetchImpl = fetch) {
 }
 
 // st-extension/src/sprite-manager.ts
+var SPRITE_PAGE_SIZE = 60;
 function createSpriteManager(deps) {
   let backdrop = null;
   let destroyed = false;
   let view = { kind: "list" };
+  let spriteVisibleCount = SPRITE_PAGE_SIZE;
   let openedFrom = "overlay";
   let closeLightbox = null;
   function applyBackdropSize() {
@@ -2362,6 +2364,7 @@ function createSpriteManager(deps) {
       return;
     }
     view = { kind: "list" };
+    spriteVisibleCount = SPRITE_PAGE_SIZE;
     backdrop = el("div", "so-manager-backdrop");
     document.addEventListener("keydown", onEscape);
     window.addEventListener("resize", applyBackdropSize);
@@ -2864,6 +2867,7 @@ ${options}`,
     card.append(coverBox, info);
     const enter = () => {
       view = { kind: "pack", packId: pack.id };
+      spriteVisibleCount = SPRITE_PAGE_SIZE;
       render3();
     };
     card.addEventListener("click", enter);
@@ -3019,22 +3023,43 @@ ${options}`,
       empty.textContent = "还没有立绘：点右上角「添加立绘」上传图片或粘贴编码。";
       body.append(empty);
     } else {
+      const visibleCount = Math.min(
+        Math.max(SPRITE_PAGE_SIZE, spriteVisibleCount),
+        pack.sprites.length
+      );
+      spriteVisibleCount = visibleCount;
+      const visibleEntries = pack.sprites.slice(0, visibleCount).map((sprite, index) => ({
+        sprite,
+        index
+      }));
       const groups = getGroups(pack);
-      const sections = groups.length === 0 ? [""] : [...groups];
-      if (groups.length > 0 && pack.sprites.some((s) => spriteGroup(s) === "")) sections.push("");
+      const visibleGroups = groups.filter(
+        (group) => visibleEntries.some(({ sprite }) => spriteGroup(sprite) === group)
+      );
+      const sections = visibleGroups.length === 0 ? [""] : [...visibleGroups];
+      if (visibleGroups.length > 0 && visibleEntries.some(({ sprite }) => spriteGroup(sprite) === "")) sections.push("");
       for (const g of sections) {
-        if (groups.length > 0) {
+        if (visibleGroups.length > 0) {
           const head = el("div", "so-group-head");
           head.textContent = g === "" ? "未分组" : g;
           body.append(head);
         }
         const grid = el("div", "so-sprite-grid");
-        pack.sprites.forEach((sprite, index) => {
+        visibleEntries.forEach(({ sprite, index }) => {
           if (spriteGroup(sprite) === g) {
             grid.append(renderSpriteCell(body, pack, sprite, index, readonly));
           }
         });
         body.append(grid);
+      }
+      const count = el("div", "so-status so-sprite-count");
+      count.textContent = `已显示 ${visibleCount}/${pack.sprites.length}`;
+      body.append(count);
+      if (visibleCount < pack.sprites.length) {
+        body.append(button("加载更多", () => {
+          spriteVisibleCount = Math.min(pack.sprites.length, visibleCount + SPRITE_PAGE_SIZE);
+          render3();
+        }));
       }
     }
     if (!readonly) {
@@ -3722,7 +3747,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-07-31 23:50"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-07-31 23:54"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
   return () => wrapper.remove();
@@ -7555,7 +7580,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-07-31 23:50"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-07-31 23:54"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

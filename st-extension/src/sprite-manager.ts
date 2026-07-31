@@ -81,11 +81,13 @@ export interface ManagerController {
 }
 
 type View = { kind: 'list' } | { kind: 'pack'; packId: string }
+const SPRITE_PAGE_SIZE = 60
 
 export function createSpriteManager(deps: ManagerDeps): ManagerController {
   let backdrop: HTMLElement | null = null
   let destroyed = false
   let view: View = { kind: 'list' }
+  let spriteVisibleCount = SPRITE_PAGE_SIZE
   let openedFrom: ManagerSource = 'overlay'
   /** 当前打开的放大查看器的清理函数；弹窗整体关闭时必须先走它退订全局 keydown */
   let closeLightbox: (() => void) | null = null
@@ -108,6 +110,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       return
     }
     view = { kind: 'list' }
+    spriteVisibleCount = SPRITE_PAGE_SIZE
     backdrop = el('div', 'so-manager-backdrop')
     // 点空白不再关闭（用户实测：误触退出后要重新逐层进入，受挫感强）；关闭走 ✕ 按钮或 Esc
     document.addEventListener('keydown', onEscape)
@@ -676,6 +679,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     card.append(coverBox, info)
     const enter = () => {
       view = { kind: 'pack', packId: pack.id }
+      spriteVisibleCount = SPRITE_PAGE_SIZE
       render()
     }
     card.addEventListener('click', enter)
@@ -849,22 +853,43 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       empty.textContent = '还没有立绘：点右上角「添加立绘」上传图片或粘贴编码。'
       body.append(empty)
     } else {
+      const visibleCount = Math.min(
+        Math.max(SPRITE_PAGE_SIZE, spriteVisibleCount),
+        pack.sprites.length,
+      )
+      spriteVisibleCount = visibleCount
+      const visibleEntries = pack.sprites.slice(0, visibleCount).map((sprite, index) => ({
+        sprite,
+        index,
+      }))
       const groups = getGroups(pack)
-      const sections: string[] = groups.length === 0 ? [''] : [...groups]
-      if (groups.length > 0 && pack.sprites.some((s) => spriteGroup(s) === '')) sections.push('')
+      const visibleGroups = groups.filter((group) =>
+        visibleEntries.some(({ sprite }) => spriteGroup(sprite) === group),
+      )
+      const sections: string[] = visibleGroups.length === 0 ? [''] : [...visibleGroups]
+      if (visibleGroups.length > 0 && visibleEntries.some(({ sprite }) => spriteGroup(sprite) === '')) sections.push('')
       for (const g of sections) {
-        if (groups.length > 0) {
+        if (visibleGroups.length > 0) {
           const head = el('div', 'so-group-head')
           head.textContent = g === '' ? '未分组' : g
           body.append(head)
         }
         const grid = el('div', 'so-sprite-grid')
-        pack.sprites.forEach((sprite, index) => {
+        visibleEntries.forEach(({ sprite, index }) => {
           if (spriteGroup(sprite) === g) {
             grid.append(renderSpriteCell(body, pack, sprite, index, readonly))
           }
         })
         body.append(grid)
+      }
+      const count = el('div', 'so-status so-sprite-count')
+      count.textContent = `已显示 ${visibleCount}/${pack.sprites.length}`
+      body.append(count)
+      if (visibleCount < pack.sprites.length) {
+        body.append(button('加载更多', () => {
+          spriteVisibleCount = Math.min(pack.sprites.length, visibleCount + SPRITE_PAGE_SIZE)
+          render()
+        }))
       }
     }
     // 维护类功能（补传/拆分）低频，排在图墙之后
