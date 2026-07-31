@@ -4,6 +4,7 @@
  */
 
 import type { OutputFormat, VariableSchema, VariableDefinition, VarType } from './types'
+import { isSafePath } from '../path-utils'
 
 /** 用户自定义模板（把当前变量系统存成模板，换卡复用/分享） */
 export interface CustomTemplate {
@@ -91,7 +92,7 @@ function normalizeCustomTemplate(raw: unknown): CustomTemplate | null {
 function normalizeDefinition(raw: unknown): VariableDefinition | null {
   if (!raw || typeof raw !== 'object') return null
   const r = raw as Record<string, unknown>
-  if (typeof r.key !== 'string' || r.key.trim() === '') return null
+  if (typeof r.key !== 'string' || r.key.trim() === '' || !isSafePath(r.key.trim())) return null
   const type: VarType = VAR_TYPES.includes(r.type as VarType) ? (r.type as VarType) : 'string'
   const def: VariableDefinition = {
     key: r.key.trim(),

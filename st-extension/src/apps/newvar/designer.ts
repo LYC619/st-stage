@@ -12,6 +12,7 @@
 
 import { el, appButton, toggleRow, selectRow, numberRow, textRow, textareaRow, foldSection } from '../widgets'
 import { formatValue } from '../variable-tree'
+import { isSafePath } from '../path-utils'
 import type { NewvarData, CustomTemplate } from './config'
 import type { ParseReport } from './runtime'
 import type { VariableDefinition, VarType } from './types'
@@ -77,6 +78,7 @@ function emptyDraft(): DefDraft {
 function draftToDef(draft: DefDraft): { def?: VariableDefinition; error?: string } {
   const key = draft.key.trim()
   if (!key) return { error: '请填写变量路径。' }
+  if (!isSafePath(key)) return { error: '变量路径不能包含 __proto__、prototype 或 constructor。' }
   const def: VariableDefinition = { key, type: draft.type, default: undefined, description: draft.description.trim() }
   if (draft.hidden) def.hidden = true
   if (draft.updateRule.trim()) def.updateRule = draft.updateRule.trim()

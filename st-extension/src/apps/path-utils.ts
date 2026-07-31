@@ -3,13 +3,26 @@
  * 变量树视图、MVU 数据层、新变量引擎共用；抽出以便核心逻辑不依赖视图模块。
  */
 
+const FORBIDDEN_PATH_SEGMENTS = new Set(['__proto__', 'prototype', 'constructor'])
+
+function parsePath(path: string): string[] | null {
+  const segments = path.split('.').filter((seg) => seg.length > 0)
+  return segments.some((segment) => FORBIDDEN_PATH_SEGMENTS.has(segment)) ? null : segments
+}
+
+export function isSafePath(path: string): boolean {
+  return parsePath(path) !== null
+}
+
 export function splitPath(path: string): string[] {
-  return path.split('.').filter((seg) => seg.length > 0)
+  return parsePath(path) ?? []
 }
 
 export function getNested(obj: Record<string, unknown>, path: string): unknown {
+  const segments = parsePath(path)
+  if (!segments) return undefined
   let cur: unknown = obj
-  for (const seg of splitPath(path)) {
+  for (const seg of segments) {
     if (cur == null || typeof cur !== 'object') return undefined
     cur = (cur as Record<string, unknown>)[seg]
   }
@@ -17,8 +30,8 @@ export function getNested(obj: Record<string, unknown>, path: string): unknown {
 }
 
 export function setNested(obj: Record<string, unknown>, path: string, value: unknown): void {
-  const segs = splitPath(path)
-  if (segs.length === 0) return
+  const segs = parsePath(path)
+  if (!segs || segs.length === 0) return
   let cur: Record<string, unknown> = obj
   for (let i = 0; i < segs.length - 1; i++) {
     const seg = segs[i]
@@ -30,8 +43,8 @@ export function setNested(obj: Record<string, unknown>, path: string, value: unk
 }
 
 export function deleteNested(obj: Record<string, unknown>, path: string): void {
-  const segs = splitPath(path)
-  if (segs.length === 0) return
+  const segs = parsePath(path)
+  if (!segs || segs.length === 0) return
   let cur: unknown = obj
   for (let i = 0; i < segs.length - 1; i++) {
     if (cur == null || typeof cur !== 'object') return

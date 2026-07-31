@@ -81,4 +81,35 @@ describe('normalizeNewvarData', () => {
     })
     expect(d.schema.variables[0].range).toBeUndefined()
   })
+
+  it('配置导入会丢弃包含危险路径段的变量和模板定义', () => {
+    const d = normalizeNewvarData({
+      schema: {
+        variables: [
+          { key: '状态.体力', type: 'number', default: 100 },
+          { key: '__proto__.污染', type: 'string', default: 'x' },
+          { key: '状态.constructor.污染', type: 'string', default: 'x' },
+        ],
+      },
+      customTemplates: [
+        {
+          id: 'safe-template',
+          name: '安全模板',
+          variables: [
+            { key: '状态.心情', type: 'string', default: '平静' },
+            { key: 'prototype.污染', type: 'string', default: 'x' },
+          ],
+        },
+        {
+          id: 'unsafe-only',
+          name: '仅危险路径',
+          variables: [{ key: 'constructor.prototype.污染', type: 'string', default: 'x' }],
+        },
+      ],
+    })
+
+    expect(d.schema.variables.map((item) => item.key)).toEqual(['状态.体力'])
+    expect(d.customTemplates).toHaveLength(1)
+    expect(d.customTemplates[0].variables.map((item) => item.key)).toEqual(['状态.心情'])
+  })
 })

@@ -3606,7 +3606,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-07-28 21:41"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-07-31 17:16"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -4462,20 +4462,27 @@ function render(container, ctx) {
 }
 
 // st-extension/src/apps/path-utils.ts
-function splitPath(path) {
-  return path.split(".").filter((seg) => seg.length > 0);
+var FORBIDDEN_PATH_SEGMENTS = /* @__PURE__ */ new Set(["__proto__", "prototype", "constructor"]);
+function parsePath(path) {
+  const segments = path.split(".").filter((seg) => seg.length > 0);
+  return segments.some((segment) => FORBIDDEN_PATH_SEGMENTS.has(segment)) ? null : segments;
+}
+function isSafePath(path) {
+  return parsePath(path) !== null;
 }
 function getNested(obj, path) {
+  const segments = parsePath(path);
+  if (!segments) return void 0;
   let cur = obj;
-  for (const seg of splitPath(path)) {
+  for (const seg of segments) {
     if (cur == null || typeof cur !== "object") return void 0;
     cur = cur[seg];
   }
   return cur;
 }
 function setNested(obj, path, value) {
-  const segs = splitPath(path);
-  if (segs.length === 0) return;
+  const segs = parsePath(path);
+  if (!segs || segs.length === 0) return;
   let cur = obj;
   for (let i = 0; i < segs.length - 1; i++) {
     const seg = segs[i];
@@ -4486,8 +4493,8 @@ function setNested(obj, path, value) {
   cur[segs[segs.length - 1]] = value;
 }
 function deleteNested(obj, path) {
-  const segs = splitPath(path);
-  if (segs.length === 0) return;
+  const segs = parsePath(path);
+  if (!segs || segs.length === 0) return;
   let cur = obj;
   for (let i = 0; i < segs.length - 1; i++) {
     if (cur == null || typeof cur !== "object") return;
@@ -5903,7 +5910,7 @@ function normalizeCustomTemplate(raw) {
 function normalizeDefinition(raw) {
   if (!raw || typeof raw !== "object") return null;
   const r = raw;
-  if (typeof r.key !== "string" || r.key.trim() === "") return null;
+  if (typeof r.key !== "string" || r.key.trim() === "" || !isSafePath(r.key.trim())) return null;
   const type = VAR_TYPES.includes(r.type) ? r.type : "string";
   const def = {
     key: r.key.trim(),
@@ -6314,6 +6321,7 @@ function emptyDraft2() {
 function draftToDef(draft) {
   const key = draft.key.trim();
   if (!key) return { error: "请填写变量路径。" };
+  if (!isSafePath(key)) return { error: "变量路径不能包含 __proto__、prototype 或 constructor。" };
   const def = { key, type: draft.type, default: void 0, description: draft.description.trim() };
   if (draft.hidden) def.hidden = true;
   if (draft.updateRule.trim()) def.updateRule = draft.updateRule.trim();
@@ -7334,7 +7342,7 @@ async function init() {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-07-28 21:41"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-07-31 17:16"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {
