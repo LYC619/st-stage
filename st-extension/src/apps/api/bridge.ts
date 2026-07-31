@@ -154,13 +154,29 @@ export async function applyProfile(p: ApiProfile): Promise<void> {
  * 从站点接口拉模型列表。
  * @param restoreKey 结束后要还原的 Key（调用方传当前生效站点的 Key；可见输入框有值时优先用它）
  */
-export async function fetchModels(url: string, key: string, restoreKey: string): Promise<string[]> {
+let fetchModelsQueue: Promise<void> = Promise.resolve()
+
+export function fetchModels(url: string, key: string, restoreKey: string): Promise<string[]> {
+  const result = fetchModelsQueue.then(() => fetchModelsTransaction(url, key, restoreKey))
+  fetchModelsQueue = result.then(
+    () => undefined,
+    () => undefined,
+  )
+  return result
+}
+
+async function fetchModelsTransaction(url: string, key: string, restoreKey: string): Promise<string[]> {
   const st = getST()
   if (!st) throw new Error('未检测到 SillyTavern 运行时')
   const visibleKey = document.querySelector<HTMLInputElement>('#api_key_custom')?.value ?? ''
   const prevKey = visibleKey || restoreKey
   const wrote = !!key && key !== prevKey
   if (wrote) await writeSecret(st, key)
+  let requestFailed = false
+  let requestError: unknown
+  let restoreFailed = false
+  let restoreError: unknown
+  let models: string[] = []
   try {
     const ac = new AbortController()
     const timer = setTimeout(() => ac.abort(), 20000)
@@ -176,10 +192,24 @@ export async function fetchModels(url: string, key: string, restoreKey: string):
       clearTimeout(timer)
     }
     if (!res.ok) throw new Error(`模型列表请求失败（HTTP ${res.status}）`)
-    return parseModelList(await res.json())
+    models = parseModelList(await res.json())
+  } catch (error) {
+    requestFailed = true
+    requestError = error
   } finally {
-    if (wrote && prevKey) {
-      writeSecret(st, prevKey).catch((err) => console.warn('[st-stage] API：还原密钥失败', err))
+    if (wrote) {
+      try {
+        await writeSecret(st, prevKey)
+      } catch (error) {
+        restoreFailed = true
+        restoreError = error
+      }
     }
   }
+  if (requestFailed) {
+    if (restoreFailed) console.warn('[st-stage] API：请求失败后还原密钥也失败', restoreError)
+    throw requestError
+  }
+  if (restoreFailed) throw restoreError
+  return models
 }

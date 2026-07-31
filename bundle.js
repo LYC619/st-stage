@@ -3606,7 +3606,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-07-31 17:16"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-07-31 17:38"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
 }
@@ -5453,13 +5453,27 @@ async function applyProfile(p) {
   await sleep(150);
   connectBtn.click();
 }
-async function fetchModels(url, key, restoreKey) {
+var fetchModelsQueue = Promise.resolve();
+function fetchModels(url, key, restoreKey) {
+  const result = fetchModelsQueue.then(() => fetchModelsTransaction(url, key, restoreKey));
+  fetchModelsQueue = result.then(
+    () => void 0,
+    () => void 0
+  );
+  return result;
+}
+async function fetchModelsTransaction(url, key, restoreKey) {
   const st = getST3();
   if (!st) throw new Error("未检测到 SillyTavern 运行时");
   const visibleKey = document.querySelector("#api_key_custom")?.value ?? "";
   const prevKey = visibleKey || restoreKey;
   const wrote = !!key && key !== prevKey;
   if (wrote) await writeSecret(st, key);
+  let requestFailed = false;
+  let requestError;
+  let restoreFailed = false;
+  let restoreError;
+  let models = [];
   try {
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 2e4);
@@ -5475,12 +5489,26 @@ async function fetchModels(url, key, restoreKey) {
       clearTimeout(timer);
     }
     if (!res.ok) throw new Error(`模型列表请求失败（HTTP ${res.status}）`);
-    return parseModelList(await res.json());
+    models = parseModelList(await res.json());
+  } catch (error) {
+    requestFailed = true;
+    requestError = error;
   } finally {
-    if (wrote && prevKey) {
-      writeSecret(st, prevKey).catch((err) => console.warn("[st-stage] API：还原密钥失败", err));
+    if (wrote) {
+      try {
+        await writeSecret(st, prevKey);
+      } catch (error) {
+        restoreFailed = true;
+        restoreError = error;
+      }
     }
   }
+  if (requestFailed) {
+    if (restoreFailed) console.warn("[st-stage] API：请求失败后还原密钥也失败", restoreError);
+    throw requestError;
+  }
+  if (restoreFailed) throw restoreError;
+  return models;
 }
 
 // st-extension/src/apps/api-app.ts
@@ -7342,7 +7370,7 @@ async function init() {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-07-31 17:16"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-07-31 17:38"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 if (document.readyState === "loading") {
