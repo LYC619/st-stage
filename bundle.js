@@ -2555,6 +2555,178 @@ async function uploadToImgbb(apiKey, base64DataUri, fetchImpl = fetch) {
   return result;
 }
 
+// st-extension/src/sprite-lightbox.ts
+function openSpriteLightbox(options) {
+  let currentPack = options.pack;
+  let currentIndex = clampIndex(options.index, currentPack.sprites.length);
+  let closed = false;
+  const layer = element("div", "so-lightbox");
+  layer.setAttribute("role", "dialog");
+  layer.setAttribute("aria-modal", "true");
+  layer.setAttribute("aria-label", "立绘预览");
+  layer.dataset.readonly = String(options.readonly);
+  const stage = element("div", "so-lightbox-stage");
+  const image = document.createElement("img");
+  image.className = "so-lightbox-image";
+  const caption = element("div", "so-lightbox-caption");
+  const previous = control("◀", "上一张（← 方向键）", "so-lightbox-nav so-lightbox-prev");
+  const next = control("▶", "下一张（→ 方向键）", "so-lightbox-nav so-lightbox-next");
+  const closeButton = control("✕", "关闭（Esc）", "so-lightbox-close");
+  const actionRail = element("div", "so-lightbox-actions");
+  actionRail.setAttribute("role", "toolbar");
+  actionRail.setAttribute("aria-label", "立绘操作");
+  stage.append(image);
+  layer.append(stage, caption, previous, next, closeButton, actionRail);
+  const visualViewport = window.visualViewport;
+  const applyViewport = () => {
+    const left = visualViewport?.offsetLeft ?? 0;
+    const top = visualViewport?.offsetTop ?? 0;
+    const width = visualViewport?.width ?? window.innerWidth;
+    const height = visualViewport?.height ?? window.innerHeight;
+    layer.style.left = `${left}px`;
+    layer.style.top = `${top}px`;
+    layer.style.width = `${width}px`;
+    layer.style.height = `${height}px`;
+  };
+  const renderActions = () => {
+    actionRail.replaceChildren();
+    const hidden = options.readonly || options.actions.length === 0;
+    actionRail.hidden = hidden;
+    layer.classList.toggle("so-lightbox-no-actions", hidden);
+    if (options.readonly) return;
+    for (const action of options.actions) {
+      const button2 = document.createElement("button");
+      button2.type = "button";
+      button2.className = "so-lightbox-action";
+      button2.dataset.actionId = action.id;
+      button2.disabled = Boolean(action.disabled);
+      if (action.destructive) button2.classList.add("so-lightbox-action-danger");
+      if (action.icon) {
+        const icon = element("span", "so-lightbox-action-icon");
+        icon.setAttribute("aria-hidden", "true");
+        icon.textContent = action.icon;
+        button2.append(icon);
+      }
+      const label = element("span", "so-lightbox-action-label");
+      label.textContent = action.label;
+      button2.append(label);
+      button2.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (!button2.disabled) void action.run(currentPack, currentIndex);
+      });
+      actionRail.append(button2);
+    }
+  };
+  const render3 = () => {
+    const sprite = currentPack.sprites[currentIndex];
+    if (sprite) {
+      image.src = sprite.url;
+      image.alt = sprite.tag;
+      caption.textContent = `${sprite.tag}（${currentIndex + 1}/${currentPack.sprites.length}）`;
+    } else {
+      image.removeAttribute("src");
+      image.alt = "";
+      caption.textContent = "";
+    }
+    const hasMultiple = currentPack.sprites.length > 1;
+    previous.disabled = !hasMultiple;
+    next.disabled = !hasMultiple;
+    renderActions();
+  };
+  const navigate = (delta) => {
+    const count = currentPack.sprites.length;
+    if (closed || count === 0) return;
+    currentIndex = (currentIndex + delta + count) % count;
+    render3();
+    options.onNavigate(currentIndex);
+  };
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    document.removeEventListener("keydown", onKeyDown, true);
+    if (visualViewport) {
+      visualViewport.removeEventListener("resize", applyViewport);
+      visualViewport.removeEventListener("scroll", applyViewport);
+    } else {
+      window.removeEventListener("resize", applyViewport);
+    }
+    layer.remove();
+    options.onClose();
+  };
+  const onKeyDown = (event) => {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      navigate(-1);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      navigate(1);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+    }
+  };
+  previous.addEventListener("click", (event) => {
+    event.stopPropagation();
+    navigate(-1);
+  });
+  next.addEventListener("click", (event) => {
+    event.stopPropagation();
+    navigate(1);
+  });
+  closeButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    close();
+  });
+  image.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (currentPack.sprites.length < 2) return;
+    const rect = image.getBoundingClientRect();
+    navigate(event.clientX < rect.left + rect.width / 2 ? -1 : 1);
+  });
+  layer.addEventListener("click", (event) => {
+    if (event.target === layer || event.target === stage) close();
+  });
+  document.addEventListener("keydown", onKeyDown, true);
+  if (visualViewport) {
+    visualViewport.addEventListener("resize", applyViewport);
+    visualViewport.addEventListener("scroll", applyViewport);
+  } else {
+    window.addEventListener("resize", applyViewport);
+  }
+  const controller = {
+    update(pack, index) {
+      if (closed) return;
+      currentPack = pack;
+      currentIndex = clampIndex(index, pack.sprites.length);
+      render3();
+    },
+    close
+  };
+  applyViewport();
+  render3();
+  document.body.append(layer);
+  return controller;
+}
+function clampIndex(index, count) {
+  if (count === 0) return 0;
+  return Math.max(0, Math.min(index, count - 1));
+}
+function element(tag, className) {
+  const node = document.createElement(tag);
+  node.className = className;
+  return node;
+}
+function control(text, label, className) {
+  const button2 = document.createElement("button");
+  button2.type = "button";
+  button2.className = className;
+  button2.textContent = text;
+  button2.title = label;
+  button2.setAttribute("aria-label", label);
+  return button2;
+}
+
 // st-extension/src/sprite-manager.ts
 var SPRITE_PAGE_SIZE = 60;
 function createSpriteManager(deps) {
@@ -2619,6 +2791,7 @@ function createSpriteManager(deps) {
   }
   function onEscape(e) {
     if (e.key !== "Escape") return;
+    if (e.defaultPrevented) return;
     if (backdrop?.querySelector(".so-lightbox")) return;
     if (backdrop?.querySelector(".so-popover")) {
       closePopovers();
@@ -3347,59 +3520,21 @@ ${preview}
   }
   function openLightbox(packId, startIndex) {
     if (!backdrop) return;
-    const sprites = deps.getSettings().packs.find((p) => p.id === packId)?.sprites ?? [];
-    if (sprites.length === 0) return;
-    let idx = Math.min(startIndex, sprites.length - 1);
-    const box = el("div", "so-lightbox");
-    const img = document.createElement("img");
-    const caption = el("div", "so-lightbox-caption");
-    const show = () => {
-      const sprite = sprites[idx];
-      img.src = sprite.url;
-      img.alt = sprite.tag;
-      caption.textContent = `${sprite.tag}（${idx + 1}/${sprites.length}）`;
-    };
-    const step = (d) => {
-      idx = (idx + d + sprites.length) % sprites.length;
-      show();
-    };
-    const closeBox = () => {
-      document.removeEventListener("keydown", onKey, true);
-      box.remove();
-      closeLightbox = null;
-    };
-    closeLightbox = closeBox;
-    const onKey = (e) => {
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        step(-1);
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        step(1);
-      } else if (e.key === "Escape") {
-        e.stopPropagation();
-        closeBox();
+    const pack = deps.getSettings().packs.find((candidate) => candidate.id === packId);
+    if (!pack || pack.sprites.length === 0) return;
+    closeLightbox?.();
+    const controller = openSpriteLightbox({
+      pack,
+      index: startIndex,
+      readonly: isPresetPack(pack.id),
+      actions: [],
+      onNavigate: () => {
+      },
+      onClose: () => {
+        closeLightbox = null;
       }
-    };
-    document.addEventListener("keydown", onKey, true);
-    box.addEventListener("click", (e) => {
-      if (e.target === box) closeBox();
     });
-    box.append(img, caption);
-    if (sprites.length > 1) {
-      img.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const rect = img.getBoundingClientRect();
-        step(e.clientX < rect.left + rect.width / 2 ? -1 : 1);
-      });
-      box.append(
-        iconButton("◀", "上一张（← 方向键）", () => step(-1), "so-lightbox-nav so-lightbox-prev"),
-        iconButton("▶", "下一张（→ 方向键）", () => step(1), "so-lightbox-nav so-lightbox-next")
-      );
-    }
-    box.append(iconButton("✕", "关闭（Esc）", () => closeBox(), "so-lightbox-close"));
-    show();
-    backdrop.append(box);
+    closeLightbox = () => controller.close();
   }
   function renderSpriteCell(body, pack, sprite, index, readonly) {
     const cell = el("div", "so-sprite-cell");

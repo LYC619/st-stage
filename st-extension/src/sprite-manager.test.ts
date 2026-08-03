@@ -187,14 +187,21 @@ describe('createSpriteManager binding conflict UI', () => {
       .find((c) => c.textContent?.includes('测试包')))!.click()
 
     document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
-    const img = document.querySelector<HTMLImageElement>('.so-lightbox img')
+    const lightbox = document.querySelector<HTMLElement>('.so-lightbox')
+    expect(lightbox?.parentElement).toBe(document.body)
+    expect(document.querySelector('.so-manager-body')?.contains(lightbox)).toBe(false)
+    expect(lightbox?.querySelector('.so-lightbox-actions')).not.toBeNull()
+    expect(lightbox?.querySelectorAll('[data-action-id]')).toHaveLength(0)
+    const img = lightbox?.querySelector<HTMLImageElement>('img')
     expect(img?.src).toBe('https://img.test/a.png')
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
     expect(img?.src).toBe('https://img.test/b.png')
 
     // Esc 只关查看器，不退出详情页
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    document.querySelector<HTMLElement>('.so-lightbox-close')!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+    )
     expect(document.querySelector('.so-lightbox')).toBeNull()
     expect(document.querySelector('.so-manager-title')?.textContent).toBe('测试包')
     manager.close()

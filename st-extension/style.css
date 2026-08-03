@@ -896,36 +896,54 @@
 
 .so-lightbox {
   position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
   z-index: 10005;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 196px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: calc(12px + env(safe-area-inset-top))
+    calc(12px + env(safe-area-inset-right))
+    calc(12px + env(safe-area-inset-bottom))
+    calc(12px + env(safe-area-inset-left));
+  overflow: hidden;
   background: rgba(0, 0, 0, 0.88);
 }
 
-.so-lightbox img {
-  max-width: calc(100% - 32px);
-  max-height: calc(100% - 72px);
+.so-lightbox.so-lightbox-no-actions {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.so-lightbox-stage {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.so-lightbox-image {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
   border-radius: 8px;
   cursor: pointer; /* 左半区上一张 / 右半区下一张 */
 }
 
 .so-lightbox-caption {
-  position: absolute;
-  left: 50%;
-  bottom: 16px;
-  transform: translateX(-50%);
-  max-width: calc(100% - 32px);
-  padding: 4px 12px;
-  border-radius: 999px;
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 6px;
   background: rgba(0, 0, 0, 0.6);
   color: rgba(255, 255, 255, 0.92);
   font-size: 12px;
+  text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -938,6 +956,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   background: rgba(30, 30, 36, 0.6);
   color: #fff;
@@ -949,30 +972,142 @@
 .so-lightbox-nav {
   top: 50%;
   transform: translateY(-50%);
-  width: 40px;
+  width: 44px;
   height: 56px;
   font-size: 18px;
 }
 
 .so-lightbox-prev {
-  left: 10px;
+  left: calc(12px + env(safe-area-inset-left));
 }
 
 .so-lightbox-next {
-  right: 10px;
+  right: calc(220px + env(safe-area-inset-right));
+}
+
+.so-lightbox-no-actions .so-lightbox-next {
+  right: calc(12px + env(safe-area-inset-right));
 }
 
 .so-lightbox-close {
-  top: 12px;
-  right: 12px;
-  width: 36px;
-  height: 36px;
+  top: calc(12px + env(safe-area-inset-top));
+  right: calc(12px + env(safe-area-inset-right));
+  width: 44px;
+  height: 44px;
   font-size: 16px;
 }
 
 .so-lightbox-nav:hover,
-.so-lightbox-close:hover {
+.so-lightbox-close:hover,
+.so-lightbox-action:hover:not(:disabled) {
   background: rgba(70, 70, 80, 0.9);
+}
+
+.so-lightbox-nav:disabled,
+.so-lightbox-action:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.so-lightbox-actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-width: 0;
+  padding: 56px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: auto;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(30, 30, 36, 0.72);
+}
+
+.so-lightbox-actions[hidden] {
+  display: none;
+}
+
+.so-lightbox-action {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(30, 30, 36, 0.66);
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  text-align: left;
+}
+
+.so-lightbox-action-icon {
+  flex: 0 0 20px;
+  text-align: center;
+}
+
+.so-lightbox-action-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.so-lightbox-action-danger {
+  margin-top: auto;
+  border-color: rgba(255, 105, 105, 0.45);
+  color: #ffb3b3;
+}
+
+@media (max-width: 700px) {
+  .so-lightbox {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto auto;
+    gap: 8px;
+    padding: calc(8px + env(safe-area-inset-top))
+      calc(8px + env(safe-area-inset-right))
+      calc(8px + env(safe-area-inset-bottom))
+      calc(8px + env(safe-area-inset-left));
+  }
+
+  .so-lightbox-caption {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .so-lightbox-actions {
+    grid-column: 1;
+    grid-row: 3;
+    max-height: 144px;
+    padding: 6px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    overflow: auto;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    border-left: 0;
+  }
+
+  .so-lightbox-action {
+    flex: 1 0 120px;
+    width: auto;
+  }
+
+  .so-lightbox-action-danger {
+    margin-top: 0;
+  }
+
+  .so-lightbox-prev {
+    left: calc(8px + env(safe-area-inset-left));
+  }
+
+  .so-lightbox-next {
+    right: calc(8px + env(safe-area-inset-right));
+  }
+
+  .so-lightbox-close {
+    top: calc(8px + env(safe-area-inset-top));
+    right: calc(8px + env(safe-area-inset-right));
+  }
 }
 
 /* ---- 消息内插图（message-postprocess） ---- */

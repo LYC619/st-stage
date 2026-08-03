@@ -60,6 +60,7 @@ import { compressImage, formatBytes } from '../../core/image-compress'
 import { isValidImgbbResult, uploadToImgbb } from '../../core/imgbb'
 import { isPresetPack } from '../../core/presets'
 import type { STAdapter } from './st-adapter'
+import { openSpriteLightbox } from './sprite-lightbox'
 
 export interface ManagerDeps {
   adapter: STAdapter
@@ -157,6 +158,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
   function onEscape(e: KeyboardEvent): void {
     if (e.key !== 'Escape') return
+    if (e.defaultPrevented) return
     // 放大查看器自己处理 Esc（capture + stopPropagation），这里兜底不动视图
     if (backdrop?.querySelector('.so-lightbox')) return
     // 先关下拉浮层，再谈返回/关闭
@@ -966,62 +968,23 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     body.append(statusBar())
   }
 
-  /** 图片放大查看：◀▶/点图左右半区/方向键切换，Esc/点空白/✕ 关闭 */
+  /** 图片放大查看由视口级控制器承载，避免受管理器滚动容器定位影响。 */
   function openLightbox(packId: string, startIndex: number): void {
     if (!backdrop) return
-    const sprites = deps.getSettings().packs.find((p) => p.id === packId)?.sprites ?? []
-    if (sprites.length === 0) return
-    let idx = Math.min(startIndex, sprites.length - 1)
-    const box = el('div', 'so-lightbox')
-    const img = document.createElement('img')
-    const caption = el('div', 'so-lightbox-caption')
-    const show = () => {
-      const sprite = sprites[idx]
-      img.src = sprite.url
-      img.alt = sprite.tag
-      caption.textContent = `${sprite.tag}（${idx + 1}/${sprites.length}）`
-    }
-    const step = (d: number) => {
-      idx = (idx + d + sprites.length) % sprites.length
-      show()
-    }
-    const closeBox = () => {
-      document.removeEventListener('keydown', onKey, true)
-      box.remove()
-      closeLightbox = null
-    }
-    closeLightbox = closeBox
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault()
-        step(-1)
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault()
-        step(1)
-      } else if (e.key === 'Escape') {
-        e.stopPropagation()
-        closeBox()
-      }
-    }
-    document.addEventListener('keydown', onKey, true)
-    box.addEventListener('click', (e) => {
-      if (e.target === box) closeBox()
+    const pack = deps.getSettings().packs.find((candidate) => candidate.id === packId)
+    if (!pack || pack.sprites.length === 0) return
+    closeLightbox?.()
+    const controller = openSpriteLightbox({
+      pack,
+      index: startIndex,
+      readonly: isPresetPack(pack.id),
+      actions: [],
+      onNavigate: () => {},
+      onClose: () => {
+        closeLightbox = null
+      },
     })
-    box.append(img, caption)
-    if (sprites.length > 1) {
-      img.addEventListener('click', (e) => {
-        e.stopPropagation()
-        const rect = img.getBoundingClientRect()
-        step(e.clientX < rect.left + rect.width / 2 ? -1 : 1)
-      })
-      box.append(
-        iconButton('◀', '上一张（← 方向键）', () => step(-1), 'so-lightbox-nav so-lightbox-prev'),
-        iconButton('▶', '下一张（→ 方向键）', () => step(1), 'so-lightbox-nav so-lightbox-next'),
-      )
-    }
-    box.append(iconButton('✕', '关闭（Esc）', () => closeBox(), 'so-lightbox-close'))
-    show()
-    backdrop.append(box)
+    closeLightbox = () => controller.close()
   }
 
   function renderSpriteCell(
