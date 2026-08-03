@@ -1,16 +1,10 @@
 import type { SpritePack } from '../../core/types'
+import type { SpriteAction } from './sprite-actions'
 
-export interface SpriteLightboxAction {
-  id: string
-  label: string
-  icon?: string
-  disabled?: boolean
-  destructive?: boolean
-  run(pack: SpritePack, index: number): void | Promise<void>
-}
+export type SpriteLightboxAction = SpriteAction
 
 export interface SpriteLightboxController {
-  update(pack: SpritePack, index: number): void
+  update(pack: SpritePack, index: number, actions?: SpriteAction[]): void
   close(): void
 }
 
@@ -18,12 +12,13 @@ export function openSpriteLightbox(options: {
   pack: SpritePack
   index: number
   readonly: boolean
-  actions: SpriteLightboxAction[]
+  actions: SpriteAction[]
   onNavigate(index: number): void
   onClose(): void
 }): SpriteLightboxController {
   let currentPack = options.pack
   let currentIndex = clampIndex(options.index, currentPack.sprites.length)
+  let currentActions = options.actions
   let closed = false
 
   const layer = element('div', 'so-lightbox')
@@ -59,11 +54,11 @@ export function openSpriteLightbox(options: {
 
   const renderActions = (): void => {
     actionRail.replaceChildren()
-    const hidden = options.readonly || options.actions.length === 0
+    const hidden = options.readonly || currentActions.length === 0
     actionRail.hidden = hidden
     layer.classList.toggle('so-lightbox-no-actions', hidden)
     if (options.readonly) return
-    for (const action of options.actions) {
+    for (const action of currentActions) {
       const button = document.createElement('button')
       button.type = 'button'
       button.className = 'so-lightbox-action'
@@ -81,7 +76,14 @@ export function openSpriteLightbox(options: {
       button.append(label)
       button.addEventListener('click', (event) => {
         event.stopPropagation()
-        if (!button.disabled) void action.run(currentPack, currentIndex)
+        if (button.disabled) return
+        try {
+          void Promise.resolve(action.run()).catch((error) => {
+            console.error('[sprite-overlay] 立绘操作失败', error)
+          })
+        } catch (error) {
+          console.error('[sprite-overlay] 立绘操作失败', error)
+        }
       })
       actionRail.append(button)
     }
@@ -170,10 +172,11 @@ export function openSpriteLightbox(options: {
   }
 
   const controller: SpriteLightboxController = {
-    update(pack, index) {
+    update(pack, index, actions) {
       if (closed) return
       currentPack = pack
       currentIndex = clampIndex(index, pack.sprites.length)
+      if (actions) currentActions = actions
       render()
     },
     close,

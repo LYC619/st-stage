@@ -806,15 +806,15 @@ function upsertSprite(pack, sprite) {
   const o = spriteOutfitTag(stored);
   const sprites = [];
   let replaced = false;
-  for (const current of pack.sprites) {
-    if (sameIdentity(pack, current, stored.tag, g, o)) {
+  for (const current2 of pack.sprites) {
+    if (sameIdentity(pack, current2, stored.tag, g, o)) {
       if (!replaced) {
         sprites.push(stored);
         replaced = true;
       }
       continue;
     }
-    sprites.push(current);
+    sprites.push(current2);
   }
   if (!replaced) sprites.push(stored);
   return touchPack(pack, dedupeSprites(pack, sprites));
@@ -1133,10 +1133,10 @@ function openAppModal(build, hooks) {
   let cleanup;
   let closed = false;
   const runCleanup = () => {
-    const current = cleanup;
+    const current2 = cleanup;
     cleanup = void 0;
     try {
-      current?.();
+      current2?.();
     } catch (err) {
       console.error("[sprite-overlay] App 弹窗清理失败", err);
     }
@@ -2555,10 +2555,157 @@ async function uploadToImgbb(apiKey, base64DataUri, fetchImpl = fetch) {
   return result;
 }
 
+// st-extension/src/sprite-actions.ts
+function current(context) {
+  const pack = context.getPack();
+  const sprite = context.getSprite();
+  return pack && sprite ? { pack, sprite } : null;
+}
+function commitAndRefresh(context, pack) {
+  try {
+    context.commit(pack);
+  } finally {
+    context.refresh();
+  }
+}
+function createSpriteActions(context) {
+  const source = context.getSprite();
+  return [
+    {
+      id: "rename",
+      label: "重命名",
+      icon: "✎",
+      run() {
+        const state = current(context);
+        if (!state) return;
+        const next = window.prompt(`「${state.sprite.tag}」改名为：`, state.sprite.tag);
+        if (next === null) return;
+        commitAndRefresh(
+          context,
+          renameSprite(
+            state.pack,
+            state.sprite.tag,
+            next,
+            spriteGroup(state.sprite),
+            state.sprite.outfit ?? ""
+          )
+        );
+      }
+    },
+    {
+      id: "labels",
+      label: "标签",
+      icon: "#",
+      run() {
+        const state = current(context);
+        if (!state) return;
+        const raw = window.prompt(
+          `「${state.sprite.tag}」的标签（逗号分隔，留空=清除）：`,
+          state.sprite.labels?.join(", ") ?? ""
+        );
+        if (raw === null) return;
+        const labels = normalizeLabels(raw.split(/[,，]/));
+        const nextSprite = { ...state.sprite };
+        if (labels.length > 0) nextSprite.labels = labels;
+        else delete nextSprite.labels;
+        commitAndRefresh(context, upsertSprite(state.pack, nextSprite));
+      }
+    },
+    {
+      id: "group",
+      label: "设分组",
+      icon: "🏷",
+      run() {
+        const state = current(context);
+        if (!state) return;
+        const group = spriteGroup(state.sprite);
+        const next = window.prompt(`「${state.sprite.tag}」的分组（留空=移出分组）：`, group);
+        if (next === null) return;
+        commitAndRefresh(
+          context,
+          setSpriteGroup(state.pack, state.sprite.tag, group, next, state.sprite.outfit ?? "")
+        );
+      }
+    },
+    {
+      id: "replace",
+      label: "替换图片",
+      icon: "🖼",
+      run() {
+        if (!current(context)) return;
+        context.pickReplacement();
+      }
+    },
+    {
+      id: "localize",
+      label: "保存到本地",
+      icon: "↓",
+      disabled: !source || getSpriteSource(source) !== "hosted",
+      async run() {
+        const state = current(context);
+        if (!state || getSpriteSource(state.sprite) !== "hosted") return;
+        try {
+          await context.localize();
+        } finally {
+          context.refresh();
+        }
+      }
+    },
+    {
+      id: "remote",
+      label: "远程地址",
+      icon: "🔗",
+      run() {
+        const state = current(context);
+        if (!state) return;
+        const remote = state.sprite.remoteUrl || (getSpriteSource(state.sprite) === "hosted" ? state.sprite.url : "");
+        if (!remote) {
+          throw new Error(`「${state.sprite.tag}」还没有远程地址（未上传图床，分享时对方看不到）`);
+        }
+        window.prompt(
+          `「${state.sprite.tag}」编号：${state.sprite.code || "无"}
+远程地址（Ctrl+C 复制）：`,
+          remote
+        );
+      }
+    },
+    {
+      id: "cover",
+      label: "设为封面",
+      icon: "★",
+      run() {
+        const state = current(context);
+        if (!state) return;
+        commitAndRefresh(context, { ...state.pack, coverTag: state.sprite.tag });
+      }
+    },
+    {
+      id: "delete",
+      label: "删除",
+      icon: "✕",
+      destructive: true,
+      run() {
+        const state = current(context);
+        if (!state || !window.confirm(`删除立绘「${state.sprite.tag}」？`)) return;
+        const next = removeSprite(
+          state.pack,
+          state.sprite.tag,
+          spriteGroup(state.sprite),
+          state.sprite.outfit ?? ""
+        );
+        context.commit(next);
+        if (next.sprites.length === 0) context.close();
+        else context.refresh();
+      }
+    }
+  ];
+}
+
 // st-extension/src/sprite-lightbox.ts
 function openSpriteLightbox(options) {
   let currentPack = options.pack;
   let currentIndex = clampIndex(options.index, currentPack.sprites.length);
+  let currentActions = options.actions;
   let closed = false;
   const layer = element("div", "so-lightbox");
   layer.setAttribute("role", "dialog");
@@ -2590,11 +2737,11 @@ function openSpriteLightbox(options) {
   };
   const renderActions = () => {
     actionRail.replaceChildren();
-    const hidden = options.readonly || options.actions.length === 0;
+    const hidden = options.readonly || currentActions.length === 0;
     actionRail.hidden = hidden;
     layer.classList.toggle("so-lightbox-no-actions", hidden);
     if (options.readonly) return;
-    for (const action of options.actions) {
+    for (const action of currentActions) {
       const button2 = document.createElement("button");
       button2.type = "button";
       button2.className = "so-lightbox-action";
@@ -2612,7 +2759,14 @@ function openSpriteLightbox(options) {
       button2.append(label);
       button2.addEventListener("click", (event) => {
         event.stopPropagation();
-        if (!button2.disabled) void action.run(currentPack, currentIndex);
+        if (button2.disabled) return;
+        try {
+          void Promise.resolve(action.run()).catch((error) => {
+            console.error("[sprite-overlay] 立绘操作失败", error);
+          });
+        } catch (error) {
+          console.error("[sprite-overlay] 立绘操作失败", error);
+        }
       });
       actionRail.append(button2);
     }
@@ -2695,10 +2849,11 @@ function openSpriteLightbox(options) {
     window.addEventListener("resize", applyViewport);
   }
   const controller = {
-    update(pack, index) {
+    update(pack, index, actions) {
       if (closed) return;
       currentPack = pack;
       currentIndex = clampIndex(index, pack.sprites.length);
+      if (actions) currentActions = actions;
       render3();
     },
     close
@@ -2735,7 +2890,7 @@ function createSpriteManager(deps) {
   let view = { kind: "list" };
   let spriteVisibleCount = SPRITE_PAGE_SIZE;
   let openedFrom = "overlay";
-  let closeLightbox = null;
+  let activeLightbox = null;
   function applyBackdropSize() {
     if (!backdrop) return;
     backdrop.style.left = "0";
@@ -2806,7 +2961,7 @@ function createSpriteManager(deps) {
   }
   function close() {
     if (!backdrop) return;
-    closeLightbox?.();
+    activeLightbox?.controller?.close();
     document.removeEventListener("keydown", onEscape);
     window.removeEventListener("resize", applyBackdropSize);
     backdrop.remove();
@@ -2814,11 +2969,15 @@ function createSpriteManager(deps) {
     deps.onClosed?.(openedFrom);
   }
   function refreshIfOpen() {
-    if (backdrop) render3();
+    if (backdrop) {
+      render3();
+      refreshLightbox();
+    }
   }
   function commit(next) {
     deps.updateSettings(next);
     render3();
+    refreshLightbox();
   }
   function conflictText(conflicts) {
     return conflicts.slice(0, 3).map(
@@ -3297,10 +3456,10 @@ ${options}`,
               toast(body, `编码格式不对：${bad.slice(0, 3).join("、")}${bad.length > 3 ? " 等" : ""}`);
               return;
             }
-            const current = deps.getSettings();
-            const target = current.packs.find((p) => p.id === pack.id);
+            const current2 = deps.getSettings();
+            const target = current2.packs.find((p) => p.id === pack.id);
             if (!target) return;
-            const host = current.imageHost.endsWith("/") ? current.imageHost : `${current.imageHost}/`;
+            const host = current2.imageHost.endsWith("/") ? current2.imageHost : `${current2.imageHost}/`;
             let next = target;
             let added = 0;
             for (const code of codes) {
@@ -3522,19 +3681,155 @@ ${preview}
     if (!backdrop) return;
     const pack = deps.getSettings().packs.find((candidate) => candidate.id === packId);
     if (!pack || pack.sprites.length === 0) return;
-    closeLightbox?.();
+    activeLightbox?.controller?.close();
+    const state = { controller: null, packId, index: startIndex };
     const controller = openSpriteLightbox({
       pack,
       index: startIndex,
       readonly: isPresetPack(pack.id),
-      actions: [],
-      onNavigate: () => {
+      actions: isPresetPack(pack.id) ? [] : lightboxActions(state),
+      onNavigate: (index) => {
+        state.index = index;
+        refreshLightbox();
       },
       onClose: () => {
-        closeLightbox = null;
+        if (activeLightbox === state) activeLightbox = null;
       }
     });
-    closeLightbox = () => controller.close();
+    state.controller = controller;
+    activeLightbox = state;
+  }
+  function refreshLightbox() {
+    const state = activeLightbox;
+    if (!state?.controller) return;
+    const pack = deps.getSettings().packs.find((candidate) => candidate.id === state.packId);
+    if (!pack || pack.sprites.length === 0) {
+      state.controller.close();
+      return;
+    }
+    state.index = Math.max(0, Math.min(state.index, pack.sprites.length - 1));
+    const actions = isPresetPack(pack.id) ? [] : lightboxActions(state);
+    state.controller.update(pack, state.index, actions);
+  }
+  function commitActionPack(pack) {
+    const result = upsertPack(deps.getSettings(), pack);
+    if (!result.ok) throw new Error(`操作未生效，存在地址冲突：${conflictText(result.conflicts)}`);
+    deps.updateSettings(result.settings);
+  }
+  function currentManagerBody() {
+    return backdrop?.querySelector(".so-manager-body");
+  }
+  function runSpriteAction(action) {
+    const report = (error) => {
+      toast(currentManagerBody(), error instanceof Error ? error.message : "立绘操作失败");
+      refreshLightbox();
+    };
+    try {
+      const result = action.run();
+      if (result instanceof Promise) void result.catch(report);
+    } catch (error) {
+      report(error);
+    }
+  }
+  function pickReplacement(packId, getCurrentSprite) {
+    const selected = getCurrentSprite();
+    if (!selected) return;
+    const identity = {
+      tag: selected.tag,
+      group: spriteGroup(selected),
+      outfit: selected.outfit ?? ""
+    };
+    const latestTarget = () => {
+      const pack = deps.getSettings().packs.find((candidate) => candidate.id === packId);
+      const sprite = pack?.sprites.find(
+        (candidate) => candidate.tag === identity.tag && spriteGroup(candidate) === identity.group && (candidate.outfit ?? "") === identity.outfit
+      );
+      return pack && sprite ? { pack, sprite } : null;
+    };
+    pickFile("image/*", false, async (files) => {
+      try {
+        const result = await compressImage(files[0]);
+        const beforeSave = latestTarget();
+        if (!beforeSave) return;
+        const url = await deps.adapter.saveImage(
+          `${beforeSave.sprite.tag}.webp`,
+          result.dataUri,
+          deps.adapter.getCurrentCharacterName() || beforeSave.pack.name
+        );
+        const target = latestTarget();
+        if (!target) return;
+        const base = {
+          tag: target.sprite.tag,
+          url,
+          ...identity.group ? { group: identity.group } : {},
+          ...identity.outfit ? { outfit: identity.outfit } : {},
+          ...target.sprite.labels?.length ? { labels: target.sprite.labels } : {}
+        };
+        commitPack(upsertSprite(target.pack, base));
+        const { autoUpload, imgbbApiKey } = deps.getSettings();
+        if (autoUpload && imgbbApiKey.trim()) {
+          try {
+            const uploaded = await uploadToImgbb(imgbbApiKey, result.dataUri);
+            if (isValidImgbbResult(uploaded)) {
+              const latest = latestTarget();
+              if (latest) {
+                commitPack(upsertSprite(latest.pack, {
+                  ...base,
+                  code: uploaded.code,
+                  remoteUrl: uploaded.url
+                }));
+                toast(currentManagerBody(), `已替换「${identity.tag}」并重传图床（${formatBytes(result.bytes)}）`);
+                return;
+              }
+            }
+            toast(currentManagerBody(), `已替换「${identity.tag}」，但图床响应无效，标记为待上传`);
+          } catch {
+            toast(currentManagerBody(), `已替换「${identity.tag}」，图床上传失败，标记为待上传`);
+          }
+        } else {
+          toast(currentManagerBody(), `已替换「${identity.tag}」（${formatBytes(result.bytes)}），远程地址待上传`);
+        }
+      } catch (error) {
+        toast(currentManagerBody(), error instanceof Error ? error.message : "替换失败");
+      } finally {
+        refreshLightbox();
+      }
+    });
+  }
+  function actionContext(packId, getSprite, closeAction) {
+    const getPack = () => deps.getSettings().packs.find((candidate) => candidate.id === packId) ?? null;
+    const context = {
+      getPack,
+      getSprite: () => {
+        const pack = getPack();
+        return pack ? getSprite(pack) : null;
+      },
+      commit: commitActionPack,
+      pickReplacement: () => pickReplacement(packId, () => context.getSprite()),
+      localize: async () => {
+        toast(currentManagerBody(), "保存到本地将在后续版本启用；当前不会自动下载远程图片");
+      },
+      refresh: () => {
+        render3();
+        refreshLightbox();
+      },
+      close: closeAction
+    };
+    return context;
+  }
+  function lightboxActions(state) {
+    const context = actionContext(
+      state.packId,
+      (pack) => pack.sprites[state.index] ?? null,
+      () => {
+        render3();
+        state.controller?.close();
+      }
+    );
+    return createSpriteActions(context).map((action) => ({
+      ...action,
+      run: () => runSpriteAction(action)
+    }));
   }
   function renderSpriteCell(body, pack, sprite, index, readonly) {
     const cell = el("div", "so-sprite-cell");
@@ -3550,107 +3845,42 @@ ${preview}
     cell.append(img, tagEl);
     cell.addEventListener("click", () => openLightbox(pack.id, index));
     if (readonly) return cell;
-    const latestPack = () => deps.getSettings().packs.find((p) => p.id === pack.id);
     const bar = el("div", "so-sprite-actions");
+    const identity = {
+      tag: sprite.tag,
+      group: spriteGroup(sprite),
+      outfit: sprite.outfit ?? ""
+    };
+    const context = actionContext(
+      pack.id,
+      (latest) => latest.sprites.find(
+        (candidate) => candidate.tag === identity.tag && spriteGroup(candidate) === identity.group && (candidate.outfit ?? "") === identity.outfit
+      ) ?? null,
+      () => {
+        render3();
+        refreshLightbox();
+      }
+    );
+    const sharedActions = createSpriteActions(context);
+    for (const action of sharedActions) {
+      bar.append(iconButton(
+        action.icon ?? action.label,
+        action.label,
+        () => runSpriteAction(action),
+        "so-icon-btn",
+        Boolean(action.disabled)
+      ));
+    }
     bar.append(
-      iconButton("✎", "重命名", () => {
-        const next = window.prompt(`「${sprite.tag}」改名为：`, sprite.tag);
-        if (next === null) return;
-        const target = latestPack();
-        if (!target) return;
-        try {
-          commitPack(renameSprite(target, sprite.tag, next, spriteGroup(sprite), sprite.outfit ?? ""));
-        } catch (err) {
-          toast(body, err instanceof Error ? err.message : "改名失败");
-        }
-      }),
-      iconButton("🏷", "设分组", () => {
-        const cur = spriteGroup(sprite);
-        const next = window.prompt(`「${sprite.tag}」的分组（留空=移出分组）：`, cur);
-        if (next === null) return;
-        const target = latestPack();
-        if (!target) return;
-        try {
-          commitPack(setSpriteGroup(target, sprite.tag, cur, next, sprite.outfit ?? ""));
-        } catch (err) {
-          toast(body, err instanceof Error ? err.message : "改分组失败");
-        }
-      }),
-      iconButton("🖼", "替换图片", () => {
-        pickFile("image/*", false, async (files) => {
-          try {
-            const result = await compressImage(files[0]);
-            const url = await deps.adapter.saveImage(
-              `${sprite.tag}.webp`,
-              result.dataUri,
-              deps.adapter.getCurrentCharacterName() || pack.name
-            );
-            const target = latestPack();
-            if (!target) return;
-            const g = spriteGroup(sprite);
-            const o = sprite.outfit;
-            const base = {
-              tag: sprite.tag,
-              url,
-              ...g ? { group: g } : {},
-              ...o ? { outfit: o } : {}
-            };
-            commitPack(upsertSprite(target, base));
-            const { autoUpload, imgbbApiKey } = deps.getSettings();
-            if (autoUpload && imgbbApiKey.trim()) {
-              try {
-                const up = await uploadToImgbb(imgbbApiKey, result.dataUri);
-                if (isValidImgbbResult(up)) {
-                  const latest = latestPack();
-                  if (latest) {
-                    commitPack(
-                      upsertSprite(latest, { ...base, code: up.code, remoteUrl: up.url })
-                    );
-                    toast(body, `已替换「${sprite.tag}」并重传图床（${formatBytes(result.bytes)}）`);
-                    return;
-                  }
-                }
-                toast(body, `已替换「${sprite.tag}」，但图床响应无效，标记为待上传`);
-              } catch {
-                toast(body, `已替换「${sprite.tag}」，图床上传失败，标记为待上传`);
-              }
-            } else {
-              toast(body, `已替换「${sprite.tag}」（${formatBytes(result.bytes)}），远程地址待上传`);
-            }
-          } catch (err) {
-            toast(body, err instanceof Error ? err.message : "替换失败");
-          }
-        });
-      }),
-      iconButton("🔗", "远程地址", () => {
-        const remote = sprite.remoteUrl || (getSpriteSource(sprite) === "hosted" ? sprite.url : "");
-        if (!remote) {
-          toast(body, `「${sprite.tag}」还没有远程地址（未上传图床，分享时对方看不到）`);
-          return;
-        }
-        window.prompt(`「${sprite.tag}」编号：${sprite.code || "无"}
-远程地址（Ctrl+C 复制）：`, remote);
-      }),
-      iconButton("★", "设为封面", () => {
-        const target = latestPack();
-        if (!target) return;
-        commitPack({ ...target, coverTag: sprite.tag });
-      }),
       iconButton("◀", "前移", () => {
-        const target = latestPack();
+        const target = context.getPack();
         if (!target) return;
         commitPack(moveSprite(target, index, index - 1));
       }),
       iconButton("▶", "后移", () => {
-        const target = latestPack();
+        const target = context.getPack();
         if (!target) return;
         commitPack(moveSprite(target, index, index + 1));
-      }),
-      iconButton("✕", "删除", () => {
-        if (!window.confirm(`删除立绘「${sprite.tag}」？`)) return;
-        const target = latestPack();
-        if (!target) return;
-        commitPack(removeSprite(target, sprite.tag, spriteGroup(sprite), sprite.outfit ?? ""));
       })
     );
     cell.append(bar);
@@ -3800,8 +4030,8 @@ ${preview}
       return true;
     }
     try {
-      const current = deps.getSettings().packs.find((p) => p.id === currentPackId) ?? null;
-      const plans = planUploads(entries, deps.getSettings().packs, strategy, current?.name ?? "新包", current);
+      const current2 = deps.getSettings().packs.find((p) => p.id === currentPackId) ?? null;
+      const plans = planUploads(entries, deps.getSettings().packs, strategy, current2?.name ?? "新包", current2);
       for (let i = 0; i < plans.length; i++) {
         const plan = plans[i];
         const file = files[i];
@@ -4015,15 +4245,16 @@ function button(label, onClick, extraClass = "") {
   });
   return btn;
 }
-function iconButton(icon, title, onClick, className = "so-icon-btn") {
+function iconButton(icon, title, onClick, className = "so-icon-btn", disabled = false) {
   const btn = el("div", className);
   btn.textContent = icon;
   btn.title = title;
   btn.setAttribute("role", "button");
   btn.setAttribute("aria-label", title);
+  btn.setAttribute("aria-disabled", String(disabled));
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
-    onClick();
+    if (!disabled) onClick();
   });
   return btn;
 }
@@ -4307,9 +4538,9 @@ function processMessageElement(root, settings) {
   });
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const textNodes = [];
-  let current;
-  while (current = walker.nextNode()) {
-    textNodes.push(current);
+  let current2;
+  while (current2 = walker.nextNode()) {
+    textNodes.push(current2);
   }
   for (const textNode of textNodes) {
     const text = textNode.nodeValue ?? "";
@@ -5088,7 +5319,7 @@ function jsonEqual(a, b) {
     return false;
   }
 }
-function computeDelta(current, prev, isMvu) {
+function computeDelta(current2, prev, isMvu) {
   const delta = /* @__PURE__ */ new Map();
   if (!prev) return delta;
   const walk = (obj, prefix) => {
@@ -5114,7 +5345,7 @@ function computeDelta(current, prev, isMvu) {
       }
     }
   };
-  walk(current, "");
+  walk(current2, "");
   return delta;
 }
 function createVariableTreeView(container, handlers) {

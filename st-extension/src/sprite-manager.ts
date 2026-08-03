@@ -22,11 +22,8 @@ import {
   moveSprite,
   previewBindingAddressChanges,
   removePack,
-  removeSprite,
-  renameSprite,
   reorderBinding,
   setBinding,
-  setSpriteGroup,
   spriteGroup,
   toggleBinding,
   unbindPack,
@@ -60,7 +57,8 @@ import { compressImage, formatBytes } from '../../core/image-compress'
 import { isValidImgbbResult, uploadToImgbb } from '../../core/imgbb'
 import { isPresetPack } from '../../core/presets'
 import type { STAdapter } from './st-adapter'
-import { openSpriteLightbox } from './sprite-lightbox'
+import { createSpriteActions, type SpriteAction, type SpriteActionContext } from './sprite-actions'
+import { openSpriteLightbox, type SpriteLightboxController } from './sprite-lightbox'
 
 export interface ManagerDeps {
   adapter: STAdapter
@@ -84,14 +82,20 @@ export interface ManagerController {
 type View = { kind: 'list' } | { kind: 'pack'; packId: string }
 const SPRITE_PAGE_SIZE = 60
 
+interface ActiveLightbox {
+  controller: SpriteLightboxController | null
+  packId: string
+  index: number
+}
+
 export function createSpriteManager(deps: ManagerDeps): ManagerController {
   let backdrop: HTMLElement | null = null
   let destroyed = false
   let view: View = { kind: 'list' }
   let spriteVisibleCount = SPRITE_PAGE_SIZE
   let openedFrom: ManagerSource = 'overlay'
-  /** 当前打开的放大查看器的清理函数；弹窗整体关闭时必须先走它退订全局 keydown */
-  let closeLightbox: (() => void) | null = null
+  /** 当前放大查看器及其完整列表索引；管理器重渲染不丢失导航位置。 */
+  let activeLightbox: ActiveLightbox | null = null
 
   /** 遮罩尺寸用 JS 按 innerWidth/Height 写死 px（与手机壳同一套定位路径）：
       移动端浏览器对 fixed+四边锚点/视口单位的解释五花八门，内联 px 最稳 */
@@ -176,7 +180,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
   function close(): void {
     if (!backdrop) return
-    closeLightbox?.()
+    activeLightbox?.controller?.close()
     document.removeEventListener('keydown', onEscape)
     window.removeEventListener('resize', applyBackdropSize)
     backdrop.remove()
@@ -185,12 +189,16 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   }
 
   function refreshIfOpen(): void {
-    if (backdrop) render()
+    if (backdrop) {
+      render()
+      refreshLightbox()
+    }
   }
 
   function commit(next: PluginSettings): void {
     deps.updateSettings(next)
     render()
+    refreshLightbox()
   }
 
   function conflictText(conflicts: BindingConflict[]): string {
@@ -973,18 +981,173 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     if (!backdrop) return
     const pack = deps.getSettings().packs.find((candidate) => candidate.id === packId)
     if (!pack || pack.sprites.length === 0) return
-    closeLightbox?.()
+    activeLightbox?.controller?.close()
+    const state: ActiveLightbox = { controller: null, packId, index: startIndex }
     const controller = openSpriteLightbox({
       pack,
       index: startIndex,
       readonly: isPresetPack(pack.id),
-      actions: [],
-      onNavigate: () => {},
+      actions: isPresetPack(pack.id) ? [] : lightboxActions(state),
+      onNavigate: (index) => {
+        state.index = index
+        refreshLightbox()
+      },
       onClose: () => {
-        closeLightbox = null
+        if (activeLightbox === state) activeLightbox = null
       },
     })
-    closeLightbox = () => controller.close()
+    state.controller = controller
+    activeLightbox = state
+  }
+
+  function refreshLightbox(): void {
+    const state = activeLightbox
+    if (!state?.controller) return
+    const pack = deps.getSettings().packs.find((candidate) => candidate.id === state.packId)
+    if (!pack || pack.sprites.length === 0) {
+      state.controller.close()
+      return
+    }
+    state.index = Math.max(0, Math.min(state.index, pack.sprites.length - 1))
+    const actions = isPresetPack(pack.id) ? [] : lightboxActions(state)
+    state.controller.update(pack, state.index, actions)
+  }
+
+  function commitActionPack(pack: SpritePack): void {
+    const result = upsertPack(deps.getSettings(), pack)
+    if (!result.ok) throw new Error(`操作未生效，存在地址冲突：${conflictText(result.conflicts)}`)
+    deps.updateSettings(result.settings)
+  }
+
+  function currentManagerBody(): HTMLElement | null {
+    return backdrop?.querySelector('.so-manager-body') as HTMLElement | null
+  }
+
+  function runSpriteAction(action: SpriteAction): void {
+    const report = (error: unknown) => {
+      toast(currentManagerBody(), error instanceof Error ? error.message : '立绘操作失败')
+      refreshLightbox()
+    }
+    try {
+      const result = action.run()
+      if (result instanceof Promise) void result.catch(report)
+    } catch (error) {
+      report(error)
+    }
+  }
+
+  function pickReplacement(
+    packId: string,
+    getCurrentSprite: () => Sprite | null,
+  ): void {
+    const selected = getCurrentSprite()
+    if (!selected) return
+    const identity = {
+      tag: selected.tag,
+      group: spriteGroup(selected),
+      outfit: selected.outfit ?? '',
+    }
+    const latestTarget = (): { pack: SpritePack; sprite: Sprite } | null => {
+      const pack = deps.getSettings().packs.find((candidate) => candidate.id === packId)
+      const sprite = pack?.sprites.find((candidate) =>
+        candidate.tag === identity.tag &&
+        spriteGroup(candidate) === identity.group &&
+        (candidate.outfit ?? '') === identity.outfit,
+      )
+      return pack && sprite ? { pack, sprite } : null
+    }
+
+    pickFile('image/*', false, async (files) => {
+      try {
+        const result = await compressImage(files[0])
+        const beforeSave = latestTarget()
+        if (!beforeSave) return
+        const url = await deps.adapter.saveImage(
+          `${beforeSave.sprite.tag}.webp`,
+          result.dataUri,
+          deps.adapter.getCurrentCharacterName() || beforeSave.pack.name,
+        )
+        const target = latestTarget()
+        if (!target) return
+        const base: Sprite = {
+          tag: target.sprite.tag,
+          url,
+          ...(identity.group ? { group: identity.group } : {}),
+          ...(identity.outfit ? { outfit: identity.outfit } : {}),
+          ...(target.sprite.labels?.length ? { labels: target.sprite.labels } : {}),
+        }
+        commitPack(upsertSprite(target.pack, base))
+
+        const { autoUpload, imgbbApiKey } = deps.getSettings()
+        if (autoUpload && imgbbApiKey.trim()) {
+          try {
+            const uploaded = await uploadToImgbb(imgbbApiKey, result.dataUri)
+            if (isValidImgbbResult(uploaded)) {
+              const latest = latestTarget()
+              if (latest) {
+                commitPack(upsertSprite(latest.pack, {
+                  ...base,
+                  code: uploaded.code,
+                  remoteUrl: uploaded.url,
+                }))
+                toast(currentManagerBody(), `已替换「${identity.tag}」并重传图床（${formatBytes(result.bytes)}）`)
+                return
+              }
+            }
+            toast(currentManagerBody(), `已替换「${identity.tag}」，但图床响应无效，标记为待上传`)
+          } catch {
+            toast(currentManagerBody(), `已替换「${identity.tag}」，图床上传失败，标记为待上传`)
+          }
+        } else {
+          toast(currentManagerBody(), `已替换「${identity.tag}」（${formatBytes(result.bytes)}），远程地址待上传`)
+        }
+      } catch (error) {
+        toast(currentManagerBody(), error instanceof Error ? error.message : '替换失败')
+      } finally {
+        refreshLightbox()
+      }
+    })
+  }
+
+  function actionContext(
+    packId: string,
+    getSprite: (pack: SpritePack) => Sprite | null,
+    closeAction: () => void,
+  ): SpriteActionContext {
+    const getPack = () => deps.getSettings().packs.find((candidate) => candidate.id === packId) ?? null
+    const context: SpriteActionContext = {
+      getPack,
+      getSprite: () => {
+        const pack = getPack()
+        return pack ? getSprite(pack) : null
+      },
+      commit: commitActionPack,
+      pickReplacement: () => pickReplacement(packId, () => context.getSprite()),
+      localize: async () => {
+        toast(currentManagerBody(), '保存到本地将在后续版本启用；当前不会自动下载远程图片')
+      },
+      refresh: () => {
+        render()
+        refreshLightbox()
+      },
+      close: closeAction,
+    }
+    return context
+  }
+
+  function lightboxActions(state: ActiveLightbox): SpriteAction[] {
+    const context = actionContext(
+      state.packId,
+      (pack) => pack.sprites[state.index] ?? null,
+      () => {
+        render()
+        state.controller?.close()
+      },
+    )
+    return createSpriteActions(context).map((action) => ({
+      ...action,
+      run: () => runSpriteAction(action),
+    }))
   }
 
   function renderSpriteCell(
@@ -1012,111 +1175,44 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     cell.addEventListener('click', () => openLightbox(pack.id, index))
     if (readonly) return cell
 
-    const latestPack = () => deps.getSettings().packs.find((p) => p.id === pack.id)
-
     const bar = el('div', 'so-sprite-actions')
+    const identity = {
+      tag: sprite.tag,
+      group: spriteGroup(sprite),
+      outfit: sprite.outfit ?? '',
+    }
+    const context = actionContext(
+      pack.id,
+      (latest) => latest.sprites.find((candidate) =>
+        candidate.tag === identity.tag &&
+        spriteGroup(candidate) === identity.group &&
+        (candidate.outfit ?? '') === identity.outfit,
+      ) ?? null,
+      () => {
+        render()
+        refreshLightbox()
+      },
+    )
+    const sharedActions = createSpriteActions(context)
+    for (const action of sharedActions) {
+      bar.append(iconButton(
+        action.icon ?? action.label,
+        action.label,
+        () => runSpriteAction(action),
+        'so-icon-btn',
+        Boolean(action.disabled),
+      ))
+    }
     bar.append(
-      iconButton('✎', '重命名', () => {
-        const next = window.prompt(`「${sprite.tag}」改名为：`, sprite.tag)
-        if (next === null) return
-        const target = latestPack()
-        if (!target) return
-        try {
-          commitPack(renameSprite(target, sprite.tag, next, spriteGroup(sprite), sprite.outfit ?? ''))
-        } catch (err) {
-          toast(body, err instanceof Error ? err.message : '改名失败')
-        }
-      }),
-      iconButton('🏷', '设分组', () => {
-        const cur = spriteGroup(sprite)
-        const next = window.prompt(`「${sprite.tag}」的分组（留空=移出分组）：`, cur)
-        if (next === null) return
-        const target = latestPack()
-        if (!target) return
-        try {
-          commitPack(setSpriteGroup(target, sprite.tag, cur, next, sprite.outfit ?? ''))
-        } catch (err) {
-          toast(body, err instanceof Error ? err.message : '改分组失败')
-        }
-      }),
-      iconButton('🖼', '替换图片', () => {
-        pickFile('image/*', false, async (files) => {
-          try {
-            const result = await compressImage(files[0])
-            const url = await deps.adapter.saveImage(
-              `${sprite.tag}.webp`,
-              result.dataUri,
-              deps.adapter.getCurrentCharacterName() || pack.name,
-            )
-            const target = latestPack()
-            if (!target) return
-            const g = spriteGroup(sprite)
-            const o = sprite.outfit
-            // 替换图片：旧远程地址已失效，先只保留新本地 url（去掉旧 code/remoteUrl）
-            const base: Sprite = {
-              tag: sprite.tag,
-              url,
-              ...(g ? { group: g } : {}),
-              ...(o ? { outfit: o } : {}),
-            }
-            commitPack(upsertSprite(target, base))
-
-            // 按自动上传设置决定：开了就重新上传 imgbb 绑新远程，否则留待上传（无 remoteUrl）
-            const { autoUpload, imgbbApiKey } = deps.getSettings()
-            if (autoUpload && imgbbApiKey.trim()) {
-              try {
-                const up = await uploadToImgbb(imgbbApiKey, result.dataUri)
-                if (isValidImgbbResult(up)) {
-                  const latest = latestPack()
-                  if (latest) {
-                    commitPack(
-                      upsertSprite(latest, { ...base, code: up.code, remoteUrl: up.url }),
-                    )
-                    toast(body, `已替换「${sprite.tag}」并重传图床（${formatBytes(result.bytes)}）`)
-                    return
-                  }
-                }
-                toast(body, `已替换「${sprite.tag}」，但图床响应无效，标记为待上传`)
-              } catch {
-                toast(body, `已替换「${sprite.tag}」，图床上传失败，标记为待上传`)
-              }
-            } else {
-              toast(body, `已替换「${sprite.tag}」（${formatBytes(result.bytes)}），远程地址待上传`)
-            }
-          } catch (err) {
-            toast(body, err instanceof Error ? err.message : '替换失败')
-          }
-        })
-      }),
-      iconButton('🔗', '远程地址', () => {
-        // 图床图的 url 本身就是远程地址（按编码添加）；本地保底图的远程副本在 remoteUrl
-        const remote = sprite.remoteUrl || (getSpriteSource(sprite) === 'hosted' ? sprite.url : '')
-        if (!remote) {
-          toast(body, `「${sprite.tag}」还没有远程地址（未上传图床，分享时对方看不到）`)
-          return
-        }
-        window.prompt(`「${sprite.tag}」编号：${sprite.code || '无'}\n远程地址（Ctrl+C 复制）：`, remote)
-      }),
-      iconButton('★', '设为封面', () => {
-        const target = latestPack()
-        if (!target) return
-        commitPack({ ...target, coverTag: sprite.tag })
-      }),
       iconButton('◀', '前移', () => {
-        const target = latestPack()
+        const target = context.getPack()
         if (!target) return
         commitPack(moveSprite(target, index, index - 1))
       }),
       iconButton('▶', '后移', () => {
-        const target = latestPack()
+        const target = context.getPack()
         if (!target) return
         commitPack(moveSprite(target, index, index + 1))
-      }),
-      iconButton('✕', '删除', () => {
-        if (!window.confirm(`删除立绘「${sprite.tag}」？`)) return
-        const target = latestPack()
-        if (!target) return
-        commitPack(removeSprite(target, sprite.tag, spriteGroup(sprite), sprite.outfit ?? ''))
       }),
     )
     cell.append(bar)
@@ -1540,15 +1636,22 @@ function button(label: string, onClick: () => void, extraClass = ''): HTMLElemen
   return btn
 }
 
-function iconButton(icon: string, title: string, onClick: () => void, className = 'so-icon-btn'): HTMLElement {
+function iconButton(
+  icon: string,
+  title: string,
+  onClick: () => void,
+  className = 'so-icon-btn',
+  disabled = false,
+): HTMLElement {
   const btn = el('div', className)
   btn.textContent = icon
   btn.title = title
   btn.setAttribute('role', 'button')
   btn.setAttribute('aria-label', title)
+  btn.setAttribute('aria-disabled', String(disabled))
   btn.addEventListener('click', (e) => {
     e.stopPropagation()
-    onClick()
+    if (!disabled) onClick()
   })
   return btn
 }

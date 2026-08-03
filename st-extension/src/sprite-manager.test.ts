@@ -89,6 +89,26 @@ function openLargeGallery(count = 1000): ReturnType<typeof createSpriteManager> 
   return manager
 }
 
+function openActionGallery(tags: string[], packId = 'actions') {
+  let settings: PluginSettings = {
+    ...createDefaultSettings(),
+    packs: [{
+      id: packId,
+      name: '操作包',
+      sprites: tags.map((tag) => ({ tag, url: `https://img.test/${tag}.png` })),
+    }],
+  }
+  const manager = createSpriteManager({
+    adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+    getSettings: () => settings,
+    updateSettings: (next) => { settings = next },
+  })
+  manager.open()
+  ;([...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+    .find((card) => card.textContent?.includes('操作包')))!.click()
+  return { manager, getSettings: () => settings }
+}
+
 describe('createSpriteManager binding conflict UI', () => {
   afterEach(() => {
     document.body.innerHTML = ''
@@ -191,12 +211,26 @@ describe('createSpriteManager binding conflict UI', () => {
     expect(lightbox?.parentElement).toBe(document.body)
     expect(document.querySelector('.so-manager-body')?.contains(lightbox)).toBe(false)
     expect(lightbox?.querySelector('.so-lightbox-actions')).not.toBeNull()
-    expect(lightbox?.querySelectorAll('[data-action-id]')).toHaveLength(0)
+    expect([...lightbox!.querySelectorAll<HTMLElement>('[data-action-id]')].map((item) => item.textContent)).toEqual([
+      '✎重命名',
+      '#标签',
+      '🏷设分组',
+      '🖼替换图片',
+      '↓保存到本地',
+      '🔗远程地址',
+      '★设为封面',
+      '✕删除',
+    ])
     const img = lightbox?.querySelector<HTMLImageElement>('img')
     expect(img?.src).toBe('https://img.test/a.png')
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
     expect(img?.src).toBe('https://img.test/b.png')
+
+    vi.spyOn(window, 'prompt').mockReturnValue('开心')
+    lightbox!.querySelector<HTMLElement>('[data-action-id="rename"]')!.click()
+    expect(document.querySelector('.so-lightbox')).toBe(lightbox)
+    expect(document.querySelector('.so-lightbox-caption')?.textContent).toBe('开心（2/2）')
 
     // Esc 只关查看器，不退出详情页
     document.querySelector<HTMLElement>('.so-lightbox-close')!.dispatchEvent(
@@ -204,6 +238,111 @@ describe('createSpriteManager binding conflict UI', () => {
     )
     expect(document.querySelector('.so-lightbox')).toBeNull()
     expect(document.querySelector('.so-manager-title')?.textContent).toBe('测试包')
+    manager.close()
+  })
+
+  it('refreshes source-dependent actions when lightbox navigation changes sprites', () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{
+        id: 'sources',
+        name: '来源包',
+        sprites: [
+          { tag: '本地', url: '/user/images/local.png' },
+          { tag: '远程', url: 'https://img.test/remote.png' },
+        ],
+      }],
+    }
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    ;([...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+      .find((card) => card.textContent?.includes('来源包')))!.click()
+    document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
+
+    expect(document.querySelector<HTMLButtonElement>('[data-action-id="localize"]')?.disabled).toBe(true)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(document.querySelector<HTMLButtonElement>('[data-action-id="localize"]')?.disabled).toBe(false)
+
+    manager.close()
+  })
+
+  it('shows replacement completion in the current manager body after rerender', async () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{
+        id: 'replace',
+        name: '替换包',
+        sprites: [{ tag: '旧图', url: 'https://img.test/old.png' }],
+      }],
+    }
+    imageMocks.compressImage.mockResolvedValue({
+      dataUri: 'data:image/webp;base64,AA==',
+      compressed: true,
+      bytes: 1,
+    })
+    installFilePicker([new File(['image'], 'new.png', { type: 'image/png' })])
+    const manager = createSpriteManager({
+      adapter: {
+        getCurrentCharacterName: () => '阿珍',
+        saveImage: async () => '/user/images/replaced.webp',
+      } as unknown as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    ;([...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+      .find((card) => card.textContent?.includes('替换包')))!.click()
+    document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
+
+    document.querySelector<HTMLButtonElement>('[data-action-id="replace"]')!.click()
+
+    await vi.waitFor(() => {
+      expect(settings.packs[0].sprites[0].url).toBe('/user/images/replaced.webp')
+      expect(document.querySelector('.so-toast')?.textContent).toContain('已替换「旧图」')
+    })
+    manager.close()
+  })
+
+  it.each([
+    { name: 'keeps the same index after deleting a middle sprite', start: 1, expectedTag: '第三张', expectedCaption: '第三张（2/2）' },
+    { name: 'clamps to the previous sprite after deleting the end', start: 2, expectedTag: '第二张', expectedCaption: '第二张（2/2）' },
+  ])('$name', ({ start, expectedTag, expectedCaption }) => {
+    const { manager, getSettings } = openActionGallery(['第一张', '第二张', '第三张'])
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    document.querySelectorAll<HTMLElement>('.so-sprite-cell')[start].click()
+
+    document.querySelector<HTMLElement>('[data-action-id="delete"]')!.click()
+
+    expect(getSettings().packs[0].sprites.map((item) => item.tag)).not.toContain(
+      start === 1 ? '第二张' : '第三张',
+    )
+    expect(document.querySelector<HTMLImageElement>('.so-lightbox img')?.alt).toBe(expectedTag)
+    expect(document.querySelector('.so-lightbox-caption')?.textContent).toBe(expectedCaption)
+    manager.close()
+  })
+
+  it('closes the lightbox after deleting the final sprite', () => {
+    const { manager, getSettings } = openActionGallery(['唯一一张'])
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
+
+    document.querySelector<HTMLElement>('[data-action-id="delete"]')!.click()
+
+    expect(getSettings().packs[0].sprites).toEqual([])
+    expect(document.querySelector('.so-lightbox')).toBeNull()
+    manager.close()
+  })
+
+  it('exposes no edit actions for readonly packs', () => {
+    const { manager } = openActionGallery(['只读'], 'preset_silver_loli')
+    document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
+
+    expect(document.querySelectorAll('.so-sprite-actions')).toHaveLength(0)
+    expect(document.querySelectorAll('.so-lightbox [data-action-id]')).toHaveLength(0)
     manager.close()
   })
 

@@ -4,9 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SpritePack } from '../../core/types'
 import {
   openSpriteLightbox,
-  type SpriteLightboxAction,
   type SpriteLightboxController,
 } from './sprite-lightbox'
+import type { SpriteAction } from './sprite-actions'
 
 interface MutableVisualViewport extends EventTarget {
   offsetLeft: number
@@ -177,16 +177,17 @@ describe('openSpriteLightbox', () => {
   it('updates content, navigation, and action state without reopening', () => {
     installVisualViewport({ offsetLeft: 0, offsetTop: 0, width: 800, height: 600 })
     const run = vi.fn()
-    const actions: SpriteLightboxAction[] = [
+    const actions: SpriteAction[] = [
       { id: 'rename', label: 'Rename', icon: '✎', run },
     ]
     const controller = open({ actions })
     const layer = getLayer()
     const nextPack = pack('b', ['updated'])
-    actions[0].disabled = true
-    actions[0].destructive = true
+    const updatedActions: SpriteAction[] = [
+      { id: 'rename', label: 'Updated rename', icon: '✎', disabled: true, destructive: true, run },
+    ]
 
-    controller.update(nextPack, 0)
+    controller.update(nextPack, 0, updatedActions)
 
     expect(getLayer()).toBe(layer)
     expect(layer.querySelector<HTMLImageElement>('img')?.src).toBe('https://img.test/updated.png')
@@ -197,20 +198,20 @@ describe('openSpriteLightbox', () => {
     expect(action.disabled).toBe(true)
     expect(action.classList.contains('so-lightbox-action-danger')).toBe(true)
     expect(action.textContent).toContain('✎')
-    expect(action.textContent).toContain('Rename')
+    expect(action.textContent).toContain('Updated rename')
     action.click()
     expect(run).not.toHaveBeenCalled()
   })
 
   it('collapses the action column when empty and restores it for async actions', () => {
     installVisualViewport({ offsetLeft: 0, offsetTop: 0, width: 800, height: 600 })
-    const actions: SpriteLightboxAction[] = []
+    const actions: SpriteAction[] = []
     const controller = open({ actions })
     const layer = getLayer()
 
     expect(layer.classList.contains('so-lightbox-no-actions')).toBe(true)
     actions.push({ id: 'save', label: 'Save locally', run: async () => {} })
-    controller.update(pack('b', ['updated']), 0)
+    controller.update(pack('b', ['updated']), 0, actions)
 
     expect(layer.classList.contains('so-lightbox-no-actions')).toBe(false)
     expect(layer.querySelector('[data-action-id="save"]')).not.toBeNull()
