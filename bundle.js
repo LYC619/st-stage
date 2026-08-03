@@ -1774,6 +1774,82 @@ function isPresetPack(packId) {
   return PRESET_DEFS.some((d) => d.id === packId);
 }
 
+// core/image-compress.ts
+function blobToDataUri(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+function estimateDataUriBytes(dataUri) {
+  const comma = dataUri.indexOf(",");
+  const payload = comma >= 0 ? dataUri.length - comma - 1 : dataUri.length;
+  return Math.round(payload * 0.75);
+}
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+async function compressImage(file, options = {}) {
+  const { maxDimension = 1024, quality = 0.85 } = options;
+  const originalUri = await blobToDataUri(file);
+  const original = {
+    dataUri: originalUri,
+    compressed: false,
+    bytes: estimateDataUriBytes(originalUri)
+  };
+  if (file.type === "image/gif" || file.type === "image/svg+xml") return original;
+  if (typeof document === "undefined") return original;
+  try {
+    const img = await loadImage(originalUri);
+    const longest = Math.max(img.naturalWidth, img.naturalHeight);
+    if (longest === 0) return original;
+    const scale = Math.min(1, maxDimension / longest);
+    const width = Math.max(1, Math.round(img.naturalWidth * scale));
+    const height = Math.max(1, Math.round(img.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return original;
+    ctx.drawImage(img, 0, 0, width, height);
+    const compressedUri = canvas.toDataURL("image/webp", quality);
+    if (!compressedUri.startsWith("data:image/webp") || compressedUri.length >= originalUri.length) {
+      return original;
+    }
+    return {
+      dataUri: compressedUri,
+      compressed: true,
+      bytes: estimateDataUriBytes(compressedUri)
+    };
+  } catch {
+    return original;
+  }
+}
+async function recompressDataUri(dataUri, options = {}) {
+  if (typeof document === "undefined") return dataUri;
+  const mime = /^data:([^;,]+)/.exec(dataUri)?.[1] ?? "";
+  if (!mime.startsWith("image/")) return dataUri;
+  if (mime === "image/webp" || mime === "image/gif" || mime === "image/svg+xml") return dataUri;
+  try {
+    const blob = await (await fetch(dataUri)).blob();
+    return (await compressImage(blob, options)).dataUri;
+  } catch {
+    return dataUri;
+  }
+}
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("图片解码失败"));
+    img.src = src;
+  });
+}
+
 // st-extension/src/st-adapter.ts
 var MODULE_NAME = "sprite_overlay";
 var DEFAULT_EXTENSION_FOLDER = "st-stage";
@@ -1829,6 +1905,9 @@ var STAdapter = class {
       return await ctx.saveBase64AsFile(data, `sprite-overlay/${folder}`, baseName, ext);
     }
     return base64Data;
+  }
+  async saveImageFile(file, fileName, characterName) {
+    return this.saveImage(fileName, await blobToDataUri(file), characterName);
   }
   getCurrentCharacterName() {
     const ctx = getContext();
@@ -2220,82 +2299,6 @@ function applyPackMerge(packs, choices, result) {
   };
 }
 
-// core/image-compress.ts
-function blobToDataUri(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
-}
-function estimateDataUriBytes(dataUri) {
-  const comma = dataUri.indexOf(",");
-  const payload = comma >= 0 ? dataUri.length - comma - 1 : dataUri.length;
-  return Math.round(payload * 0.75);
-}
-function formatBytes(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-async function compressImage(file, options = {}) {
-  const { maxDimension = 1024, quality = 0.85 } = options;
-  const originalUri = await blobToDataUri(file);
-  const original = {
-    dataUri: originalUri,
-    compressed: false,
-    bytes: estimateDataUriBytes(originalUri)
-  };
-  if (file.type === "image/gif" || file.type === "image/svg+xml") return original;
-  if (typeof document === "undefined") return original;
-  try {
-    const img = await loadImage(originalUri);
-    const longest = Math.max(img.naturalWidth, img.naturalHeight);
-    if (longest === 0) return original;
-    const scale = Math.min(1, maxDimension / longest);
-    const width = Math.max(1, Math.round(img.naturalWidth * scale));
-    const height = Math.max(1, Math.round(img.naturalHeight * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return original;
-    ctx.drawImage(img, 0, 0, width, height);
-    const compressedUri = canvas.toDataURL("image/webp", quality);
-    if (!compressedUri.startsWith("data:image/webp") || compressedUri.length >= originalUri.length) {
-      return original;
-    }
-    return {
-      dataUri: compressedUri,
-      compressed: true,
-      bytes: estimateDataUriBytes(compressedUri)
-    };
-  } catch {
-    return original;
-  }
-}
-async function recompressDataUri(dataUri, options = {}) {
-  if (typeof document === "undefined") return dataUri;
-  const mime = /^data:([^;,]+)/.exec(dataUri)?.[1] ?? "";
-  if (!mime.startsWith("image/")) return dataUri;
-  if (mime === "image/webp" || mime === "image/gif" || mime === "image/svg+xml") return dataUri;
-  try {
-    const blob = await (await fetch(dataUri)).blob();
-    return (await compressImage(blob, options)).dataUri;
-  } catch {
-    return dataUri;
-  }
-}
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("图片解码失败"));
-    img.src = src;
-  });
-}
-
 // core/pack-io.ts
 async function exportPack(pack, embedHosted = false) {
   const sprites = [];
@@ -2644,11 +2647,7 @@ function createSpriteActions(context) {
       async run() {
         const state = current(context);
         if (!state || getSpriteSource(state.sprite) !== "hosted") return;
-        try {
-          await context.localize();
-        } finally {
-          context.refresh();
-        }
+        await context.localize(state.sprite);
       }
     },
     {
@@ -2880,6 +2879,69 @@ function control(text, label, className) {
   button2.title = label;
   button2.setAttribute("aria-label", label);
   return button2;
+}
+
+// st-extension/src/sprite-localize.ts
+var LOCALIZE_MAX_BYTES = 20 * 1024 * 1024;
+async function localizeSprite(sprite, fileName, deps) {
+  if (getSpriteSource(sprite) !== "hosted") {
+    throw new Error("这张立绘已经是本地图片");
+  }
+  let response;
+  try {
+    response = await deps.fetch(sprite.url);
+  } catch (error) {
+    throw new Error(`下载远程图片失败：${errorMessage(error)}`, { cause: error });
+  }
+  if (!response.ok) {
+    throw new Error(`下载远程图片失败：HTTP ${response.status}`);
+  }
+  const declaredBytes = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredBytes) && declaredBytes > LOCALIZE_MAX_BYTES) {
+    throw new Error(`远程图片过大，不能超过 ${formatLimit()}`);
+  }
+  let blob;
+  try {
+    blob = await response.blob();
+  } catch (error) {
+    throw new Error(`下载远程图片失败：${errorMessage(error)}`, { cause: error });
+  }
+  if (blob.size > LOCALIZE_MAX_BYTES) {
+    throw new Error(`远程图片过大，不能超过 ${formatLimit()}`);
+  }
+  if (!blob.type.startsWith("image/")) {
+    throw new Error("远程地址没有返回图片");
+  }
+  let compressed;
+  try {
+    compressed = await (deps.compress ?? compressImage)(blob);
+  } catch (error) {
+    throw new Error(`压缩远程图片失败：${errorMessage(error)}`, { cause: error });
+  }
+  let localUrl;
+  try {
+    localUrl = await deps.saveImage(dataUriToFile(compressed.dataUri, fileName), fileName);
+  } catch (error) {
+    throw new Error(`保存本地图片失败：${errorMessage(error)}`, { cause: error });
+  }
+  if (!localUrl || getSpriteSource({ ...sprite, url: localUrl }) === "hosted") {
+    throw new Error("保存本地图片失败：平台未返回本地地址");
+  }
+  return { ...sprite, url: localUrl, remoteUrl: sprite.url };
+}
+function dataUriToFile(dataUri, fileName) {
+  const match = /^data:(image\/[^;,]+);base64,([A-Za-z0-9+/]*={0,2})$/.exec(dataUri);
+  if (!match) throw new Error("压缩后的图片数据格式不正确");
+  const binary = atob(match[2]);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new File([bytes], fileName, { type: match[1] });
+}
+function errorMessage(error) {
+  return error instanceof Error && error.message ? error.message : "未知错误";
+}
+function formatLimit() {
+  return `${LOCALIZE_MAX_BYTES / 1024 / 1024} MB`;
 }
 
 // st-extension/src/sprite-manager.ts
@@ -3806,8 +3868,35 @@ ${preview}
       },
       commit: commitActionPack,
       pickReplacement: () => pickReplacement(packId, () => context.getSprite()),
-      localize: async () => {
-        toast(currentManagerBody(), "保存到本地将在后续版本启用；当前不会自动下载远程图片");
+      localize: async (source) => {
+        const identity = {
+          tag: source.tag,
+          group: spriteGroup(source),
+          outfit: source.outfit ?? ""
+        };
+        const localized = await localizeSprite(source, `${source.tag}.webp`, {
+          fetch: window.fetch.bind(window),
+          compress: compressImage,
+          saveImage: (file, fileName) => deps.adapter.saveImageFile(
+            file,
+            fileName,
+            deps.adapter.getCurrentCharacterName() || getPack()?.name || "shared"
+          )
+        });
+        const pack = getPack();
+        const latest = pack?.sprites.find(
+          (candidate) => candidate.tag === identity.tag && spriteGroup(candidate) === identity.group && (candidate.outfit ?? "") === identity.outfit
+        );
+        if (!pack || !latest || latest.url !== source.url) {
+          throw new Error("立绘在保存期间已发生变化，请重试");
+        }
+        commitActionPack(upsertSprite(pack, {
+          ...latest,
+          url: localized.url,
+          remoteUrl: localized.remoteUrl
+        }));
+        context.refresh();
+        toast(currentManagerBody(), `已将「${source.tag}」保存到本地`);
       },
       refresh: () => {
         render3();

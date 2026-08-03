@@ -59,6 +59,7 @@ import { isPresetPack } from '../../core/presets'
 import type { STAdapter } from './st-adapter'
 import { createSpriteActions, type SpriteAction, type SpriteActionContext } from './sprite-actions'
 import { openSpriteLightbox, type SpriteLightboxController } from './sprite-lightbox'
+import { localizeSprite } from './sprite-localize'
 
 export interface ManagerDeps {
   adapter: STAdapter
@@ -1123,8 +1124,37 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       },
       commit: commitActionPack,
       pickReplacement: () => pickReplacement(packId, () => context.getSprite()),
-      localize: async () => {
-        toast(currentManagerBody(), '保存到本地将在后续版本启用；当前不会自动下载远程图片')
+      localize: async (source) => {
+        const identity = {
+          tag: source.tag,
+          group: spriteGroup(source),
+          outfit: source.outfit ?? '',
+        }
+        const localized = await localizeSprite(source, `${source.tag}.webp`, {
+          fetch: window.fetch.bind(window),
+          compress: compressImage,
+          saveImage: (file, fileName) => deps.adapter.saveImageFile(
+            file,
+            fileName,
+            deps.adapter.getCurrentCharacterName() || getPack()?.name || 'shared',
+          ),
+        })
+        const pack = getPack()
+        const latest = pack?.sprites.find((candidate) =>
+          candidate.tag === identity.tag &&
+          spriteGroup(candidate) === identity.group &&
+          (candidate.outfit ?? '') === identity.outfit,
+        )
+        if (!pack || !latest || latest.url !== source.url) {
+          throw new Error('立绘在保存期间已发生变化，请重试')
+        }
+        commitActionPack(upsertSprite(pack, {
+          ...latest,
+          url: localized.url,
+          remoteUrl: localized.remoteUrl,
+        }))
+        context.refresh()
+        toast(currentManagerBody(), `已将「${source.tag}」保存到本地`)
       },
       refresh: () => {
         render()

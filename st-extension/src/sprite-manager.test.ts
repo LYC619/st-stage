@@ -113,6 +113,7 @@ describe('createSpriteManager binding conflict UI', () => {
   afterEach(() => {
     document.body.innerHTML = ''
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
     imageMocks.compressImage.mockReset()
   })
 
@@ -267,6 +268,107 @@ describe('createSpriteManager binding conflict UI', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
     expect(document.querySelector<HTMLButtonElement>('[data-action-id="localize"]')?.disabled).toBe(false)
 
+    manager.close()
+  })
+
+  it('does not fetch remote sprites merely by opening the manager or lightbox', () => {
+    const fetchImage = vi.fn()
+    vi.stubGlobal('fetch', fetchImage)
+    const { manager } = openActionGallery(['远程图'])
+
+    document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
+
+    expect(fetchImage).not.toHaveBeenCalled()
+    manager.close()
+  })
+
+  it('localizes a remote sprite only after the explicit action succeeds', async () => {
+    const order: string[] = []
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{
+        id: 'localize',
+        name: '本地化包',
+        sprites: [{ tag: '远程图', url: 'https://img.test/remote.png', labels: ['保留'] }],
+      }],
+    }
+    const fetchImage = vi.fn(async () => {
+      order.push('fetch')
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'image/png' }),
+        blob: async () => new Blob(['remote'], { type: 'image/png' }),
+      } as Response
+    })
+    vi.stubGlobal('fetch', fetchImage)
+    imageMocks.compressImage.mockImplementation(async () => {
+      order.push('compress')
+      return {
+        dataUri: 'data:image/webp;base64,AA==',
+        compressed: true,
+        bytes: 1,
+      }
+    })
+    const saveImageFile = vi.fn(async () => {
+      order.push('save')
+      return '/user/images/remote.webp'
+    })
+    const manager = createSpriteManager({
+      adapter: {
+        getCurrentCharacterName: () => '阿珍',
+        saveImageFile,
+      } as unknown as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => {
+        order.push('commit')
+        settings = next
+      },
+    })
+    manager.open()
+    ;([...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+      .find((card) => card.textContent?.includes('本地化包')))!.click()
+    document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
+
+    document.querySelector<HTMLButtonElement>('[data-action-id="localize"]')!.click()
+
+    await vi.waitFor(() => expect(settings.packs[0].sprites[0]).toEqual({
+      tag: '远程图',
+      url: '/user/images/remote.webp',
+      remoteUrl: 'https://img.test/remote.png',
+      labels: ['保留'],
+    }))
+    expect(fetchImage).toHaveBeenCalledTimes(1)
+    expect(imageMocks.compressImage).toHaveBeenCalledTimes(1)
+    expect(saveImageFile).toHaveBeenCalledTimes(1)
+    expect(order).toEqual(['fetch', 'compress', 'save', 'commit'])
+    expect(document.querySelector<HTMLButtonElement>('[data-action-id="localize"]')?.disabled).toBe(true)
+    manager.close()
+  })
+
+  it('keeps settings unchanged when explicit localization fails', async () => {
+    const original = { tag: '远程图', url: 'https://img.test/remote.png', labels: ['保留'] }
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{ id: 'localize-fail', name: '失败包', sprites: [original] }],
+    }
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new TypeError('CORS blocked')
+    }))
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    ;([...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+      .find((card) => card.textContent?.includes('失败包')))!.click()
+    document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
+
+    document.querySelector<HTMLButtonElement>('[data-action-id="localize"]')!.click()
+
+    await vi.waitFor(() => expect(document.querySelector('.so-toast')?.textContent).toContain('下载远程图片失败'))
+    expect(settings.packs[0].sprites[0]).toBe(original)
     manager.close()
   })
 

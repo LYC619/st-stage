@@ -16,6 +16,7 @@ import { createDefaultSettings, INJECTION_DEPTH_DEFAULT } from '../../core/types
 import { migrateSettings } from '../../core/migrate'
 import { getPresetPacks, isPresetPack } from '../../core/presets'
 import { sanitizePathSegment } from '../../core/naming'
+import { blobToDataUri } from '../../core/image-compress'
 
 export const MODULE_NAME = 'sprite_overlay'
 
@@ -117,6 +118,10 @@ export class STAdapter implements PlatformAdapter {
     }
     // 回退：直接内嵌 data URI（占空间但保证可用）
     return base64Data
+  }
+
+  async saveImageFile(file: File, fileName: string, characterName: string): Promise<string> {
+    return this.saveImage(fileName, await blobToDataUri(file), characterName)
   }
 
   getCurrentCharacterName(): string {

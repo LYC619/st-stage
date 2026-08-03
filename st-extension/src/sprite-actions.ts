@@ -8,7 +8,7 @@ export interface SpriteActionContext {
   getSprite(): Sprite | null
   commit(pack: SpritePack): void
   pickReplacement(): void
-  localize(): Promise<void>
+  localize(sprite: Sprite): Promise<void>
   refresh(): void
   close(): void
 }
@@ -112,11 +112,7 @@ export function createSpriteActions(context: SpriteActionContext): SpriteAction[
       async run() {
         const state = current(context)
         if (!state || getSpriteSource(state.sprite) !== 'hosted') return
-        try {
-          await context.localize()
-        } finally {
-          context.refresh()
-        }
+        await context.localize(state.sprite)
       },
     },
     {
