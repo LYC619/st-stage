@@ -25,6 +25,8 @@ import { RECENT_FLOORS_MAX, RECENT_FLOORS_MIN } from '../../core/types'
 
 export interface PostprocessDeps {
   getSettings: () => PluginSettings
+  decorateImages?: (root: ParentNode) => void
+  cleanupImages?: () => void
 }
 
 interface STContextLike {
@@ -48,6 +50,7 @@ interface Snapshot {
 }
 
 const snapshots = new WeakMap<HTMLElement, Snapshot>()
+const decorationControllers = new Set<PostprocessDeps>()
 
 export function mountMessagePostprocess(deps: PostprocessDeps): () => void {
   const st = window.SillyTavern
@@ -61,21 +64,41 @@ export function mountMessagePostprocess(deps: PostprocessDeps): () => void {
 
   let active = true
   const pendingTimers = new Set<ReturnType<typeof setTimeout>>()
+  if (deps.decorateImages || deps.cleanupImages) decorationControllers.add(deps)
+  const cleanup = (unsubscribe: () => void): void => {
+    if (!active) return
+    active = false
+    unsubscribe()
+    for (const timer of pendingTimers) clearTimeout(timer)
+    pendingTimers.clear()
+    deps.cleanupImages?.()
+    decorationControllers.delete(deps)
+  }
+  const processRendered = (messageId: unknown): void => {
+    processMessages(deps.getSettings(), messageId)
+    if (!deps.decorateImages) return
+    if (messageId === null || messageId === undefined || `${messageId}` === '') {
+      deps.decorateImages(document)
+      return
+    }
+    const id = `${messageId}`
+    for (const message of Array.from(document.querySelectorAll('#chat .mes'))) {
+      if (message.getAttribute('mesid') === id) deps.decorateImages(message)
+    }
+  }
   const handler = (...args: unknown[]) => {
     const messageId = typeof args[0] === 'number' || typeof args[0] === 'string' ? args[0] : null
     // 事件回调时 DOM 已生成；保险起见排队到微任务尾
     queueMicrotask(() => {
-      if (active) processMessages(deps.getSettings(), messageId)
+      if (active) processRendered(messageId)
     })
   }
 
   if (renderedEvents.length > 0) {
     for (const event of renderedEvents) ctx.eventSource.on(event, handler)
-    return () => {
-      if (!active) return
-      active = false
+    return () => cleanup(() => {
       for (const event of renderedEvents) ctx.eventSource.removeListener(event, handler)
-    }
+    })
   }
 
   // 旧版 ST 回退：MESSAGE_RECEIVED 后延迟处理（等渲染完成）
@@ -84,18 +107,12 @@ export function mountMessagePostprocess(deps: PostprocessDeps): () => void {
     const messageId = typeof args[0] === 'number' || typeof args[0] === 'string' ? args[0] : null
     const timer = setTimeout(() => {
       pendingTimers.delete(timer)
-      if (active) processMessages(deps.getSettings(), messageId)
+      if (active) processRendered(messageId)
     }, 150)
     pendingTimers.add(timer)
   }
   ctx.eventSource.on(fallbackEvent, fallbackHandler)
-  return () => {
-    if (!active) return
-    active = false
-    ctx.eventSource.removeListener(fallbackEvent, fallbackHandler)
-    for (const timer of pendingTimers) clearTimeout(timer)
-    pendingTimers.clear()
-  }
+  return () => cleanup(() => ctx.eventSource.removeListener(fallbackEvent, fallbackHandler))
 }
 
 /** 有任一显示加工功能开启（关了就只做恢复） */
@@ -175,10 +192,12 @@ export function processMessages(settings: PluginSettings, messageId: unknown = n
 export function reprocessAllMessages(settings: PluginSettings): void {
   restoreAllMessages()
   if (anyFeatureOn(settings)) processMessages(settings)
+  for (const controller of decorationControllers) controller.decorateImages?.(document)
 }
 
 /** 恢复全部加工过的楼层为原始 DOM */
 export function restoreAllMessages(): void {
+  for (const controller of decorationControllers) controller.cleanupImages?.()
   for (const node of Array.from(document.querySelectorAll(`#chat .mes_text[${FP_ATTR}]`))) {
     restoreElement(node as HTMLElement)
   }

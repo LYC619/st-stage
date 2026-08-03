@@ -74,6 +74,61 @@ afterEach(() => {
 })
 
 describe('mountMessagePostprocess lifecycle', () => {
+  it('decorates the rendered message and cleans image actions on disposal', async () => {
+    let handler: ((...args: unknown[]) => void) | undefined
+    const decorateImages = vi.fn()
+    const cleanupImages = vi.fn()
+    window.SillyTavern = {
+      getContext: () => ({
+        eventTypes: { CHARACTER_MESSAGE_RENDERED: 'rendered' },
+        eventSource: {
+          on: (_event: string, next: (...args: unknown[]) => void) => { handler = next },
+          removeListener: vi.fn(),
+        },
+      }),
+    } as never
+    buildChat([{ html: '<img src="https://img.test/generated.png">' }])
+    const cleanup = mountMessagePostprocess({
+      getSettings: () => baseSettings(),
+      decorateImages,
+      cleanupImages,
+    })
+
+    handler?.(0)
+    await Promise.resolve()
+
+    expect(decorateImages).toHaveBeenCalledWith(document.querySelector('.mes[mesid="0"]'))
+    cleanup()
+    expect(cleanupImages).toHaveBeenCalledTimes(1)
+  })
+
+  it('redecorates message images after a full settings reprocess', async () => {
+    let handler: ((...args: unknown[]) => void) | undefined
+    const decorateImages = vi.fn()
+    const cleanupImages = vi.fn()
+    window.SillyTavern = {
+      getContext: () => ({
+        eventTypes: { CHARACTER_MESSAGE_RENDERED: 'rendered' },
+        eventSource: {
+          on: (_event: string, next: (...args: unknown[]) => void) => { handler = next },
+          removeListener: vi.fn(),
+        },
+      }),
+    } as never
+    buildChat([{ text: '[立绘:微笑]' }])
+    const settings = baseSettings({ hideTagInMessage: true })
+    const dispose = mountMessagePostprocess({ getSettings: () => settings, decorateImages, cleanupImages })
+    handler?.(0)
+    await Promise.resolve()
+    decorateImages.mockClear()
+
+    reprocessAllMessages(settings)
+
+    expect(cleanupImages).toHaveBeenCalledTimes(1)
+    expect(decorateImages).toHaveBeenCalledWith(document)
+    dispose()
+  })
+
   it('ignores a rendered-event microtask queued before cleanup', async () => {
     let handler: ((...args: unknown[]) => void) | undefined
     window.SillyTavern = {

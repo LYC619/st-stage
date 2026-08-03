@@ -1889,6 +1889,71 @@ function loadImage(src) {
   });
 }
 
+// core/story-archive.ts
+function storyArchiveKey(parts) {
+  const groupId = clean(parts.groupId);
+  const characterId = clean(parts.characterId);
+  const characterName = clean(parts.characterName);
+  const owner = groupId ? `group:${groupId}` : characterId || (characterName ? `name:${characterName}` : "unknown");
+  const chatId = clean(parts.chatId);
+  const title = clean(parts.title);
+  const chat = chatId || (title ? `title:${title}` : "current");
+  return `${owner}::${chat}`;
+}
+function upsertStorySprite(settings, story, source) {
+  const existingIndex = settings.packs.findIndex((pack2) => pack2.sourceStoryKey === story.key);
+  const existing = existingIndex >= 0 ? settings.packs[existingIndex] : null;
+  const sourceUrls = new Set([source.url, source.remoteUrl].filter((url) => Boolean(url)));
+  if (existing?.sprites.some(
+    (sprite) => sourceUrls.has(sprite.url) || Boolean(sprite.remoteUrl && sourceUrls.has(sprite.remoteUrl))
+  )) return settings;
+  const pack = existing ?? createStoryPack(story);
+  const tag = uniqueTag(pack, source.tag);
+  const nextPack = {
+    ...pack,
+    roleName: pack.roleName || normalizeTag(story.characterName) || void 0,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    sprites: [...pack.sprites, { ...source, tag }]
+  };
+  const packs = [...settings.packs];
+  if (existingIndex >= 0) packs[existingIndex] = nextPack;
+  else packs.push(nextPack);
+  return { ...settings, packs };
+}
+function createStoryPack(story) {
+  const title = sanitizePackName(story.title) || sanitizePackName(story.characterName) || "Untitled";
+  return {
+    id: `story_${hash(story.key)}`,
+    name: sanitizePackName(`Story - ${title}`) || "Story",
+    roleName: normalizeTag(story.characterName) || void 0,
+    sourceStoryKey: story.key,
+    sprites: []
+  };
+}
+function uniqueTag(pack, raw) {
+  const fallback = `Generated image ${pack.sprites.length + 1}`;
+  const base = normalizeTag(raw) || normalizeTag(fallback);
+  const used = new Set(pack.sprites.map((sprite) => sprite.tag));
+  if (!used.has(base)) return base;
+  for (let suffix = 2; ; suffix += 1) {
+    const suffixText = ` ${suffix}`;
+    const stem = Array.from(base).slice(0, Math.max(1, 20 - suffixText.length)).join("");
+    const candidate = normalizeTag(`${stem}${suffixText}`);
+    if (!used.has(candidate)) return candidate;
+  }
+}
+function clean(value) {
+  return value === null || value === void 0 ? "" : String(value).trim();
+}
+function hash(value) {
+  let result = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    result ^= value.charCodeAt(index);
+    result = Math.imul(result, 16777619);
+  }
+  return (result >>> 0).toString(36);
+}
+
 // st-extension/src/st-adapter.ts
 var MODULE_NAME = "sprite_overlay";
 var DEFAULT_EXTENSION_FOLDER = "st-stage";
@@ -1956,6 +2021,25 @@ var STAdapter = class {
       if (byId) return byId;
     }
     return ctx.name2 ?? "";
+  }
+  getStoryContext() {
+    const ctx = getContext();
+    const groupId = ctx.groupId;
+    const group = groupId === void 0 || groupId === null ? void 0 : ctx.groups?.find((candidate) => `${candidate.id ?? ""}` === `${groupId}`);
+    const characterName = group?.name || this.getCurrentCharacterName() || "Unknown";
+    const chatId = ctx.chatId ?? ctx.chatMetadata?.file_name;
+    const title = ctx.chatMetadata?.name || ctx.chatMetadata?.file_name || `${chatId ?? ""}` || characterName;
+    return {
+      key: storyArchiveKey({
+        chatId,
+        characterId: ctx.characterId,
+        groupId,
+        title,
+        characterName
+      }),
+      title,
+      characterName
+    };
   }
   injectPrompt(prompt, depth = INJECTION_DEPTH_DEFAULT) {
     const ctx = getContext();
@@ -4642,6 +4726,7 @@ function replaceInlineImages(text, replacer) {
 var FP_ATTR = "data-so-fp";
 var MARKER_CLASS = "so-processed-marker";
 var snapshots = /* @__PURE__ */ new WeakMap();
+var decorationControllers = /* @__PURE__ */ new Set();
 function mountMessagePostprocess(deps) {
   const st = window.SillyTavern;
   if (!st) return () => {
@@ -4653,37 +4738,51 @@ function mountMessagePostprocess(deps) {
   ].filter((e) => typeof e === "string" && e.length > 0);
   let active = true;
   const pendingTimers = /* @__PURE__ */ new Set();
+  if (deps.decorateImages || deps.cleanupImages) decorationControllers.add(deps);
+  const cleanup = (unsubscribe) => {
+    if (!active) return;
+    active = false;
+    unsubscribe();
+    for (const timer of pendingTimers) clearTimeout(timer);
+    pendingTimers.clear();
+    deps.cleanupImages?.();
+    decorationControllers.delete(deps);
+  };
+  const processRendered = (messageId) => {
+    processMessages(deps.getSettings(), messageId);
+    if (!deps.decorateImages) return;
+    if (messageId === null || messageId === void 0 || `${messageId}` === "") {
+      deps.decorateImages(document);
+      return;
+    }
+    const id = `${messageId}`;
+    for (const message of Array.from(document.querySelectorAll("#chat .mes"))) {
+      if (message.getAttribute("mesid") === id) deps.decorateImages(message);
+    }
+  };
   const handler = (...args) => {
     const messageId = typeof args[0] === "number" || typeof args[0] === "string" ? args[0] : null;
     queueMicrotask(() => {
-      if (active) processMessages(deps.getSettings(), messageId);
+      if (active) processRendered(messageId);
     });
   };
   if (renderedEvents.length > 0) {
     for (const event of renderedEvents) ctx.eventSource.on(event, handler);
-    return () => {
-      if (!active) return;
-      active = false;
+    return () => cleanup(() => {
       for (const event of renderedEvents) ctx.eventSource.removeListener(event, handler);
-    };
+    });
   }
   const fallbackEvent = ctx.eventTypes?.MESSAGE_RECEIVED ?? "message_received";
   const fallbackHandler = (...args) => {
     const messageId = typeof args[0] === "number" || typeof args[0] === "string" ? args[0] : null;
     const timer = setTimeout(() => {
       pendingTimers.delete(timer);
-      if (active) processMessages(deps.getSettings(), messageId);
+      if (active) processRendered(messageId);
     }, 150);
     pendingTimers.add(timer);
   };
   ctx.eventSource.on(fallbackEvent, fallbackHandler);
-  return () => {
-    if (!active) return;
-    active = false;
-    ctx.eventSource.removeListener(fallbackEvent, fallbackHandler);
-    for (const timer of pendingTimers) clearTimeout(timer);
-    pendingTimers.clear();
-  };
+  return () => cleanup(() => ctx.eventSource.removeListener(fallbackEvent, fallbackHandler));
 }
 function anyFeatureOn(settings) {
   return settings.enabled && (settings.hideTagInMessage || settings.renderInlineImages || settings.spriteDisplayMode !== "overlay");
@@ -4732,8 +4831,10 @@ function processMessages(settings, messageId = null) {
 function reprocessAllMessages(settings) {
   restoreAllMessages();
   if (anyFeatureOn(settings)) processMessages(settings);
+  for (const controller of decorationControllers) controller.decorateImages?.(document);
 }
 function restoreAllMessages() {
+  for (const controller of decorationControllers) controller.cleanupImages?.();
   for (const node of Array.from(document.querySelectorAll(`#chat .mes_text[${FP_ATTR}]`))) {
     restoreElement(node);
   }
@@ -4843,6 +4944,88 @@ function createImage(src, alt, extraClass = "") {
   });
   wrap.append(img);
   return wrap;
+}
+
+// st-extension/src/story-image-capture.ts
+var ACTION_CLASS = "so-story-save-action";
+function createStoryImageCapture(deps) {
+  const decorations = /* @__PURE__ */ new Map();
+  const decorate = (root) => {
+    for (const image of Array.from(root.querySelectorAll("img"))) {
+      if (!isEligible(image) || image.dataset.soStorySave === "true") continue;
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = ACTION_CLASS;
+      action.textContent = "保存到图库";
+      const handler = () => {
+        void archive(image, action, deps);
+      };
+      action.addEventListener("click", handler);
+      image.dataset.soStorySave = "true";
+      image.after(action);
+      decorations.set(action, { image, handler });
+    }
+  };
+  const cleanup = () => {
+    for (const [action, { image, handler }] of decorations) {
+      action.removeEventListener("click", handler);
+      action.remove();
+      delete image.dataset.soStorySave;
+    }
+    decorations.clear();
+  };
+  return { decorate, cleanup };
+}
+async function archive(image, action, deps) {
+  if (action.disabled) return;
+  const url = image.currentSrc || image.src;
+  const tag = normalizeTag(image.alt || image.title);
+  const source = { tag, url };
+  const story = deps.getStoryContext();
+  action.disabled = true;
+  action.textContent = "保存中…";
+  try {
+    let stored = source;
+    let remoteOnly = false;
+    if (getSpriteSource(source) === "hosted") {
+      try {
+        stored = await deps.localize(source, `${tag || "generated-image"}.webp`, story);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "未知错误";
+        const keepRemote = window.confirm(
+          `图片无法保存到本地：${detail}
+
+是否仅保留远程引用？对方网站失效后图片也会失效。`
+        );
+        if (!keepRemote) {
+          action.disabled = false;
+          action.textContent = "保存到图库";
+          return;
+        }
+        stored = { ...source, remoteUrl: source.url };
+        remoteOnly = true;
+      }
+    }
+    const next = upsertStorySprite(deps.getSettings(), story, stored);
+    deps.updateSettings(next);
+    action.textContent = remoteOnly ? "已保存远程引用" : "已保存";
+  } catch (error) {
+    action.disabled = false;
+    action.textContent = error instanceof Error ? "保存失败，重试" : "保存失败";
+  }
+}
+function isEligible(image) {
+  const messageBody = image.closest(".mes_text");
+  const message = messageBody?.closest(".mes");
+  if (!message || message.getAttribute("is_user") === "true" || message.getAttribute("is_system") === "true") {
+    return false;
+  }
+  if (image.closest('.avatar, .mesAvatar, .emoji, .so-inline-sprite, [class*="so-renderer-"]')) {
+    return false;
+  }
+  const width = image.naturalWidth || image.width;
+  const height = image.naturalHeight || image.height;
+  return !(width > 0 && height > 0 && (width < 64 || height < 64));
 }
 
 // st-extension/src/apps/widgets.ts
@@ -6315,7 +6498,7 @@ function upsertProfile(profiles, draft, editingId) {
   const name = draft.name.trim();
   const dup = profiles.find((p) => p.name === name && p.id !== editingId);
   if (dup) return { error: `站点名「${name}」已被占用，换一个吧。` };
-  const clean = {
+  const clean2 = {
     name,
     url: normalizeUrl(draft.url),
     key: draft.key,
@@ -6328,10 +6511,10 @@ function upsertProfile(profiles, draft, editingId) {
     const idx = profiles.findIndex((p) => p.id === editingId);
     if (idx < 0) return { error: "要编辑的站点已不存在。" };
     const next = [...profiles];
-    next[idx] = { ...clean, id: editingId };
+    next[idx] = { ...clean2, id: editingId };
     return { profiles: next };
   }
-  return { profiles: [...profiles, { ...clean, id: newProfileId() }] };
+  return { profiles: [...profiles, { ...clean2, id: newProfileId() }] };
 }
 function findUrlDuplicate(profiles, url, excludeId) {
   const target = normalizeUrl(url);
@@ -8404,7 +8587,21 @@ async function init(lifecycle) {
     }
   });
   lifecycle.track(unsubscribeMessage);
-  lifecycle.track(mountMessagePostprocess({ getSettings: () => settings }));
+  const storyCapture = createStoryImageCapture({
+    getSettings: () => settings,
+    updateSettings,
+    getStoryContext: () => adapter.getStoryContext(),
+    localize: (sprite, fileName, story) => localizeSprite(sprite, fileName, {
+      fetch: window.fetch.bind(window),
+      compress: compressImage,
+      saveImage: (file, name) => adapter.saveImageFile(file, name, story.characterName)
+    })
+  });
+  lifecycle.track(mountMessagePostprocess({
+    getSettings: () => settings,
+    decorateImages: storyCapture.decorate,
+    cleanupImages: storyCapture.cleanup
+  }));
   let cancelPendingReprocess = () => {
   };
   const unsubscribeCharacter = adapter.onCharacterChanged(() => {

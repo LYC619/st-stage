@@ -17,6 +17,7 @@ import { migrateSettings } from '../../core/migrate'
 import { getPresetPacks, isPresetPack } from '../../core/presets'
 import { sanitizePathSegment } from '../../core/naming'
 import { blobToDataUri } from '../../core/image-compress'
+import { storyArchiveKey, type StoryContext } from '../../core/story-archive'
 
 export const MODULE_NAME = 'sprite_overlay'
 
@@ -57,6 +58,10 @@ interface STContext {
   characterId: number | string | undefined
   /** 当前对话的角色显示名（比 characterId 更可靠的回退） */
   name2?: string
+  chatId?: string | number
+  groupId?: string | number
+  chatMetadata?: { name?: string; file_name?: string }
+  groups?: Array<{ id?: string | number; name?: string }>
   chat: Array<{ mes: string; is_user: boolean }>
 }
 
@@ -134,6 +139,28 @@ export class STAdapter implements PlatformAdapter {
     }
     // 回退：name2 是 ST 维护的当前角色显示名
     return ctx.name2 ?? ''
+  }
+
+  getStoryContext(): StoryContext {
+    const ctx = getContext()
+    const groupId = ctx.groupId
+    const group = groupId === undefined || groupId === null
+      ? undefined
+      : ctx.groups?.find((candidate) => `${candidate.id ?? ''}` === `${groupId}`)
+    const characterName = group?.name || this.getCurrentCharacterName() || 'Unknown'
+    const chatId = ctx.chatId ?? ctx.chatMetadata?.file_name
+    const title = ctx.chatMetadata?.name || ctx.chatMetadata?.file_name || `${chatId ?? ''}` || characterName
+    return {
+      key: storyArchiveKey({
+        chatId,
+        characterId: ctx.characterId,
+        groupId,
+        title,
+        characterName,
+      }),
+      title,
+      characterName,
+    }
   }
 
   injectPrompt(prompt: string, depth = INJECTION_DEPTH_DEFAULT): void {

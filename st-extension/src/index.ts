@@ -23,6 +23,9 @@ import { createOverlay, type OverlayController } from './overlay-dom'
 import { createSpriteManager } from './sprite-manager'
 import { mountSettingsPanel } from './settings-panel'
 import { mountMessagePostprocess, reprocessAllMessages } from './message-postprocess'
+import { createStoryImageCapture } from './story-image-capture'
+import { localizeSprite } from './sprite-localize'
+import { compressImage } from '../../core/image-compress'
 import { createBuiltinApps } from './apps'
 import { createNewvarRuntime } from './apps/newvar/runtime'
 import { createNewvarDesigner } from './apps/newvar/designer'
@@ -319,8 +322,22 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   })
   lifecycle.track(unsubscribeMessage)
 
-  // 消息渲染后处理：隐藏标签 / 渲染插图
-  lifecycle.track(mountMessagePostprocess({ getSettings: () => settings }))
+  const storyCapture = createStoryImageCapture({
+    getSettings: () => settings,
+    updateSettings,
+    getStoryContext: () => adapter.getStoryContext(),
+    localize: (sprite, fileName, story) => localizeSprite(sprite, fileName, {
+      fetch: window.fetch.bind(window),
+      compress: compressImage,
+      saveImage: (file, name) => adapter.saveImageFile(file, name, story.characterName),
+    }),
+  })
+  // 消息渲染后处理：隐藏标签 / 渲染插图 / 外部图片归档操作
+  lifecycle.track(mountMessagePostprocess({
+    getSettings: () => settings,
+    decorateImages: storyCapture.decorate,
+    cleanupImages: storyCapture.cleanup,
+  }))
 
   // 切换聊天/角色时：重新注入 + 刷新悬浮窗和管理弹窗；延迟补渲染窗口内历史楼层
   // （渲染事件逐条触发时窗口守卫已限流，这里兜底渲染事件缺失的旧版 ST / 迟到的 DOM）
