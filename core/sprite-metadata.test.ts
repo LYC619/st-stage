@@ -1,5 +1,101 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeLabels, normalizeNote, normalizeOutfitNotes } from './sprite-metadata'
+import {
+  compactNumberedTags,
+  normalizeLabels,
+  normalizeNote,
+  normalizeOutfitNotes,
+} from './sprite-metadata'
+
+describe('compactNumberedTags', () => {
+  it('compacts an adjacent ascending run and preserves ordinary tags in source order', () => {
+    expect(compactNumberedTags(['挥手1', '挥手2', '挥手3', '微笑'])).toEqual([
+      { kind: 'range', label: '挥手1-3', values: ['挥手1', '挥手2', '挥手3'] },
+      { kind: 'tag', label: '微笑', values: ['微笑'] },
+    ])
+  })
+
+  it('keeps gapped and shorter-than-three runs uncompressed', () => {
+    expect(compactNumberedTags(['挥手1', '挥手2', '挥手4', '点头8', '点头9'])).toEqual([
+      { kind: 'tag', label: '挥手1', values: ['挥手1'] },
+      { kind: 'tag', label: '挥手2', values: ['挥手2'] },
+      { kind: 'tag', label: '挥手4', values: ['挥手4'] },
+      { kind: 'tag', label: '点头8', values: ['点头8'] },
+      { kind: 'tag', label: '点头9', values: ['点头9'] },
+    ])
+  })
+
+  it('preserves leading zeros and supports Unicode prefixes and separate prefix runs', () => {
+    expect(compactNumberedTags([
+      '挥手😀001', '挥手😀002', '挥手😀003',
+      '点头7', '点头8', '点头9',
+    ])).toEqual([
+      {
+        kind: 'range',
+        label: '挥手😀001-003',
+        values: ['挥手😀001', '挥手😀002', '挥手😀003'],
+      },
+      { kind: 'range', label: '点头7-9', values: ['点头7', '点头8', '点头9'] },
+    ])
+  })
+
+  it('does not compact when the generated range label is itself a real tag', () => {
+    expect(compactNumberedTags(['act1', 'act2', 'act3', 'act1-3'])).toEqual([
+      { kind: 'tag', label: 'act1', values: ['act1'] },
+      { kind: 'tag', label: 'act2', values: ['act2'] },
+      { kind: 'tag', label: 'act3', values: ['act3'] },
+      { kind: 'tag', label: 'act1-3', values: ['act1-3'] },
+    ])
+  })
+
+  it('honors range labels reserved by another collection', () => {
+    expect(compactNumberedTags(['act1', 'act2', 'act3'], new Set(['act1-3']))).toEqual([
+      { kind: 'tag', label: 'act1', values: ['act1'] },
+      { kind: 'tag', label: 'act2', values: ['act2'] },
+      { kind: 'tag', label: 'act3', values: ['act3'] },
+    ])
+  })
+
+  it('does not compact mixed numeric suffix padding', () => {
+    expect(compactNumberedTags(['act8', 'act09', 'act10'])).toEqual([
+      { kind: 'tag', label: 'act8', values: ['act8'] },
+      { kind: 'tag', label: 'act09', values: ['act09'] },
+      { kind: 'tag', label: 'act10', values: ['act10'] },
+    ])
+  })
+
+  it('compacts canonical decimals across a digit-width boundary', () => {
+    expect(compactNumberedTags(['act8', 'act9', 'act10'])).toEqual([
+      { kind: 'range', label: 'act8-10', values: ['act8', 'act9', 'act10'] },
+    ])
+  })
+
+  it('compacts consecutive integer suffixes beyond Number.MAX_SAFE_INTEGER', () => {
+    expect(compactNumberedTags([
+      'act9007199254740992',
+      'act9007199254740993',
+      'act9007199254740994',
+    ])).toEqual([{
+      kind: 'range',
+      label: 'act9007199254740992-9007199254740994',
+      values: ['act9007199254740992', 'act9007199254740993', 'act9007199254740994'],
+    }])
+  })
+
+  it('deduplicates exact tags before compaction while preserving first-occurrence order', () => {
+    expect(compactNumberedTags([
+      '挥手1', '挥手2', '挥手2', '挥手3',
+      '点头1', '挥手4',
+      '跳跃3', '跳跃2', '跳跃1',
+    ])).toEqual([
+      { kind: 'range', label: '挥手1-3', values: ['挥手1', '挥手2', '挥手3'] },
+      { kind: 'tag', label: '点头1', values: ['点头1'] },
+      { kind: 'tag', label: '挥手4', values: ['挥手4'] },
+      { kind: 'tag', label: '跳跃3', values: ['跳跃3'] },
+      { kind: 'tag', label: '跳跃2', values: ['跳跃2'] },
+      { kind: 'tag', label: '跳跃1', values: ['跳跃1'] },
+    ])
+  })
+})
 
 describe('normalizeLabels', () => {
   it('trims whitespace exposed exactly at the truncation boundary', () => {

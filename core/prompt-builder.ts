@@ -10,7 +10,56 @@
  * - 字符预算 budget：超出时二分「每场景 tag 上限 K」均衡截取，保留排前的表情
  */
 
-import type { SpriteAddress } from './types'
+import { compactNumberedTags } from './sprite-metadata'
+import { addressConflictKey, effectiveSpriteAddress } from './address-policy'
+import type { PromptNotePlacement, SpriteAddress, SpritePack } from './types'
+
+export interface PromptSceneNote {
+  role: string
+  outfit: string
+  note: string
+  placement: PromptNotePlacement
+}
+
+/** 活动包与最终地址 → 各包实际贡献场景的有序备注。 */
+export function buildPromptSceneNotes(
+  packs: SpritePack[],
+  addresses: SpriteAddress[],
+): PromptSceneNote[] {
+  const notes: PromptSceneNote[] = []
+  const multiPack = packs.length > 1
+  const available = new Set(addresses.map(addressConflictKey))
+  for (const pack of packs) {
+    const scenes: SpriteAddress[] = []
+    const seen = new Set<string>()
+    for (const sprite of pack.sprites) {
+      const scene = effectiveSpriteAddress(pack, sprite, multiPack)
+      if (!available.has(addressConflictKey(scene))) continue
+      const key = JSON.stringify([scene.role, scene.outfit])
+      if (seen.has(key)) continue
+      seen.add(key)
+      scenes.push(scene)
+    }
+
+    const placement = pack.promptNotePlacement ?? 'after-list'
+    const packNote = pack.promptNote?.trim() ?? ''
+    for (const [index, scene] of scenes.entries()) {
+      if (packNote && placement === 'before-list' && index === 0) {
+        notes.push({ role: scene.role, outfit: scene.outfit, note: packNote, placement })
+      }
+      const outfitNote = pack.outfitNotes && Object.prototype.hasOwnProperty.call(pack.outfitNotes, scene.outfit)
+        ? pack.outfitNotes?.[scene.outfit]?.trim() ?? ''
+        : ''
+      if (outfitNote) {
+        notes.push({ role: scene.role, outfit: scene.outfit, note: outfitNote, placement })
+      }
+      if (packNote && placement === 'after-list' && index === scenes.length - 1) {
+        notes.push({ role: scene.role, outfit: scene.outfit, note: packNote, placement })
+      }
+    }
+  }
+  return notes
+}
 
 /** 收尾说明：N=1 保持旧的单标签语义；N>1 要求按情节顺序输出多个 */
 function countInstruction(count: number): string {
@@ -40,6 +89,16 @@ interface PromptScene {
   label: string
   prefix: string
   tags: string[]
+}
+
+type PromptSceneNoteIndex = Map<
+  string,
+  Record<PromptNotePlacement, PromptSceneNote[]>
+>
+
+interface RenderedTags {
+  text: string
+  ranges: string[]
 }
 
 function scenePrefix(a: SpriteAddress): string {
@@ -72,6 +131,74 @@ function buildScenes(addresses: SpriteAddress[]): PromptScene[] {
   return [...scenes.values()].map(({ seen: _seen, ...scene }) => scene)
 }
 
+function renderTags(tags: string[], reservedTags: ReadonlySet<string>): RenderedTags {
+  const entries = compactNumberedTags(tags, reservedTags)
+  return {
+    text: entries.map((entry) => entry.kind === 'range'
+      ? `${entry.label}（输出时从${entry.values[0]}至${entry.values[entry.values.length - 1]}中随机选择一个完整图名）`
+      : entry.label).join('、'),
+    ranges: entries.filter((entry) => entry.kind === 'range').map((entry) => entry.label),
+  }
+}
+
+function rangeInstruction(ranges: string[]): string[] {
+  if (ranges.length === 0) return []
+  return [
+    `编号范围仅用于压缩展示；必须输出范围内一个实际存在的完整图名，严禁直接输出范围标签（${ranges.join('、')}）。`,
+  ]
+}
+
+function indexSceneNotes(notes: PromptSceneNote[]): PromptSceneNoteIndex {
+  const index: PromptSceneNoteIndex = new Map()
+  for (const note of notes) {
+    if (!note.note.trim()) continue
+    const key = `${note.role}|${note.outfit}`
+    let placements = index.get(key)
+    if (!placements) {
+      placements = { 'before-list': [], 'after-list': [] }
+      index.set(key, placements)
+    }
+    placements[note.placement].push(note)
+  }
+  return index
+}
+
+function matchingNotes(
+  noteIndex: PromptSceneNoteIndex,
+  scene: PromptScene,
+  placement: PromptNotePlacement,
+): PromptSceneNote[] {
+  return noteIndex.get(scene.key)?.[placement] ?? []
+}
+
+function noteLine(scene: PromptScene, note: PromptSceneNote): string {
+  return `场景备注（${scene.label}）：${note.note}`
+}
+
+function renderGroupedSceneList(
+  scenes: PromptScene[],
+  noteIndex: PromptSceneNoteIndex,
+  reservedTags: ReadonlySet<string>,
+): {
+  lines: string[]
+  ranges: string[]
+} {
+  const lines: string[] = []
+  const ranges: string[] = []
+  for (const scene of scenes) {
+    lines.push(...matchingNotes(noteIndex, scene, 'before-list').map((note) => noteLine(scene, note)))
+    const rendered = renderTags(scene.tags, reservedTags)
+    lines.push(`- ${scene.label}：${rendered.text}`)
+    ranges.push(...rendered.ranges)
+    lines.push(...matchingNotes(noteIndex, scene, 'after-list').map((note) => noteLine(scene, note)))
+  }
+  return { lines, ranges }
+}
+
+function hasMatchingNotes(scenes: PromptScene[], noteIndex: PromptSceneNoteIndex): boolean {
+  return scenes.some((scene) => noteIndex.has(scene.key))
+}
+
 /**
  * N>1 时的插入位置 few-shot：演示标签随剧情分散在正文中。
  * 示例图名取第一个场景实际存在的 tag——绝不虚构，避免教 AI 拼造不存在的组合。
@@ -93,12 +220,19 @@ function fewShotExample(scenes: PromptScene[], count: number): string[] {
 }
 
 /** full：每个 role/outfit 场景只写一次，仍完整覆盖所有实际组合。 */
-function buildGroupedFull(addresses: SpriteAddress[], count: number): string {
+function buildGroupedFull(
+  addresses: SpriteAddress[],
+  count: number,
+  noteIndex: PromptSceneNoteIndex,
+  reservedTags: ReadonlySet<string>,
+): string {
   const scenes = buildScenes(addresses)
+  const rendered = renderGroupedSceneList(scenes, noteIndex, reservedTags)
   return [
     '[角色立绘系统]',
     '可用立绘（按场景）：',
-    ...scenes.map((scene) => `- ${scene.label}：${scene.tags.join('、')}`),
+    ...rendered.lines,
+    ...rangeInstruction(rendered.ranges),
     '输出格式：默认场景直接写 [立绘:表情]；其他场景写 [立绘:场景/表情]。两段地址表示无服装，三级地址表示指定服装。',
     countInstruction(count),
     ...fewShotExample(scenes, count),
@@ -110,9 +244,16 @@ function buildGroupedFull(addresses: SpriteAddress[], count: number): string {
  * repeat：按场景分组，抽出所有场景共有的表情，剩余项仍按所在场景列出。
  * 两部分合起来可以还原完整的场景 × tag 关系，不生成笛卡尔积之外的组合。
  */
-function buildShared(addresses: SpriteAddress[], count: number): string {
+function buildShared(
+  addresses: SpriteAddress[],
+  count: number,
+  noteIndex: PromptSceneNoteIndex,
+  reservedTags: ReadonlySet<string>,
+): string {
   const scenes = buildScenes(addresses)
-  if (scenes.length <= 1) return buildGroupedFull(addresses, count)
+  if (scenes.length <= 1 || hasMatchingNotes(scenes, noteIndex)) {
+    return buildGroupedFull(addresses, count, noteIndex, reservedTags)
+  }
 
   const allTags: string[] = []
   const seenTags = new Set<string>()
@@ -124,7 +265,9 @@ function buildShared(addresses: SpriteAddress[], count: number): string {
     }
   }
   const sharedTags = allTags.filter((tag) => scenes.every((scene) => scene.tags.includes(tag)))
-  if (sharedTags.length === 0) return buildGroupedFull(addresses, count)
+  if (sharedTags.length === 0) {
+    return buildGroupedFull(addresses, count, noteIndex, reservedTags)
+  }
   const sharedSet = new Set(sharedTags)
   const remainders = scenes.map((scene) => ({
     scene,
@@ -134,16 +277,23 @@ function buildShared(addresses: SpriteAddress[], count: number): string {
   const labels = scenes.map((scene) =>
     scene.prefix ? scene.label : `${scene.label}（直接写表情）`,
   )
+  const renderedShared = renderTags(sharedTags, reservedTags)
+  const ranges = [...renderedShared.ranges]
   const lines = [
     '[角色立绘系统]',
     `可用场景：${labels.join('、')}`,
-    `共有表情（适用于全部场景）：${sharedTags.join('、')}`,
+    `共有表情（适用于全部场景）：${renderedShared.text}`,
   ]
   const withRemainder = remainders.filter((item) => item.tags.length > 0)
   if (withRemainder.length > 0) {
     lines.push('各场景其余表情：')
-    lines.push(...withRemainder.map(({ scene, tags }) => `- ${scene.label}：${tags.join('、')}`))
+    for (const { scene, tags } of withRemainder) {
+      const rendered = renderTags(tags, reservedTags)
+      lines.push(`- ${scene.label}：${rendered.text}`)
+      ranges.push(...rendered.ranges)
+    }
   }
+  lines.push(...rangeInstruction(ranges))
   lines.push('共有表情可与任一已列场景组合；各场景其余表情只按所在行使用。默认场景直接写 [立绘:表情]，其他场景写 [立绘:场景/表情]。')
   lines.push(countInstruction(count))
   lines.push(...fewShotExample(scenes, count))
@@ -227,6 +377,7 @@ export const BUILTIN_TEMPLATE = [
  *   {数量} → 每次回复的立绘数量 N
  * budget > 0 时限制输出字符数：超出按每场景均衡截取（自定义模板作用于 {清单}；
  * 模板不含 {清单} 时无从截取，原样输出）。
+ * notes 可选；只插入 role/outfit 与现有场景完全一致的备注。
  */
 export function buildPrompt(
   addresses: SpriteAddress[],
@@ -234,23 +385,25 @@ export function buildPrompt(
   count: number,
   template = '',
   budget = 0,
+  notes: PromptSceneNote[] = [],
 ): string {
   if (addresses.length === 0) return ''
   const n = Math.max(1, Math.round(count) || 1)
   const b = Math.max(0, Math.round(budget) || 0)
+  const noteIndex = indexSceneNotes(notes)
+  const reservedTags = new Set(addresses.map((address) => address.tag))
   const custom = template.trim()
   if (custom) {
     return fitToBudget(addresses, b, (addrs) => {
-      const list = buildScenes(addrs)
-        .map((scene) => `- ${scene.label}：${scene.tags.join('、')}`)
-        .join('\n')
+      const rendered = renderGroupedSceneList(buildScenes(addrs), noteIndex, reservedTags)
+      const list = [...rendered.lines, ...rangeInstruction(rendered.ranges)].join('\n')
       return custom.replace(/\{清单\}/g, list).replace(/\{数量\}/g, String(n))
     })
   }
   return fitToBudget(addresses, b, (addrs) => {
-    const grouped = buildGroupedFull(addrs, n)
+    const grouped = buildGroupedFull(addrs, n, noteIndex, reservedTags)
     if (mode === 'full') return grouped
-    return chooseShorterPrompt(grouped, buildShared(addrs, n))
+    return chooseShorterPrompt(grouped, buildShared(addrs, n, noteIndex, reservedTags))
   })
 }
 

@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   postprocessCleanup: vi.fn(),
   reprocess: vi.fn(),
   overlayCreates: 0,
+  currentCharacterName: '',
 }))
 
 vi.mock('./st-adapter', () => ({
@@ -29,7 +30,7 @@ vi.mock('./st-adapter', () => ({
     saveSettings = vi.fn()
     injectPrompt = mocks.injectPrompt
     injectChannel = mocks.injectChannel
-    getCurrentCharacterName = () => ''
+    getCurrentCharacterName = () => mocks.currentCharacterName
     onMessageReceived = () => mocks.messageOff
     onCharacterChanged = (handler: () => void) => {
       mocks.characterHandler = handler
@@ -93,7 +94,7 @@ beforeEach(() => {
   delete window.__stStageDispose
   delete window.stStage
   delete window.stStageQueue
-  Object.assign(mocks, { characterHandler: undefined, overlayCreates: 0 })
+  Object.assign(mocks, { characterHandler: undefined, overlayCreates: 0, currentCharacterName: '' })
   Object.values(mocks).forEach((value) => {
     if (typeof value === 'function' && 'mockClear' in value) value.mockClear()
   })
@@ -106,6 +107,59 @@ afterEach(() => {
 })
 
 describe('extension entry lifecycle', () => {
+  it('injects effective-scene notes from active packs in binding order only', async () => {
+    const settings = createDefaultSettings()
+    settings.packs = [
+      {
+        id: 'a',
+        name: 'A 包',
+        roleName: '角色A',
+        promptNote: 'A包后置备注',
+        outfitNotes: { 礼服: 'A礼服备注' },
+        sprites: [{ tag: '微笑', url: '/a.png', outfit: '礼服' }],
+      },
+      {
+        id: 'b',
+        name: 'B 包',
+        roleName: '角色B',
+        promptNote: 'B包前置备注',
+        promptNotePlacement: 'before-list',
+        sprites: [{ tag: '冷漠', url: '/b.png', group: '角色B覆盖' }],
+      },
+      {
+        id: 'inactive',
+        name: '未启用包',
+        promptNote: '绝不能出现的未启用备注',
+        sprites: [{ tag: '隐藏', url: '/inactive.png' }],
+      },
+    ]
+    settings.bindings = [{ characterName: '当前角色', packIds: ['b', 'a'], enabled: true }]
+    mocks.currentCharacterName = '当前角色'
+    mocks.loadSettings.mockResolvedValueOnce(settings)
+
+    await importEntry('active-pack-notes')
+    await flushInit()
+
+    const prompt = mocks.injectPrompt.mock.calls.at(-1)?.[0] as string
+    const bScene = prompt.indexOf('- 角色B覆盖：冷漠')
+    const aScene = prompt.indexOf('- 角色A/礼服：微笑')
+    const bPackNote = prompt.indexOf('B包前置备注')
+    const aPackNote = prompt.indexOf('A包后置备注')
+    const aOutfitNote = prompt.indexOf('A礼服备注')
+    expect(bScene).toBeGreaterThan(-1)
+    expect(aScene).toBeGreaterThan(bScene)
+    expect(bPackNote).toBeGreaterThan(-1)
+    expect(bPackNote).toBeLessThan(bScene)
+    expect(prompt.match(/B包前置备注/g)).toHaveLength(1)
+    expect(aPackNote).toBeGreaterThan(-1)
+    expect(aPackNote).toBeGreaterThan(aScene)
+    expect(prompt.match(/A包后置备注/g)).toHaveLength(1)
+    expect(aOutfitNote).toBeGreaterThan(-1)
+    expect(aOutfitNote).toBeLessThan(aPackNote)
+    expect(prompt.match(/A礼服备注/g)).toHaveLength(1)
+    expect(prompt).not.toContain('绝不能出现的未启用备注')
+  })
+
   it('disposes all first-instance resources at second bundle evaluation even before DOM ready', async () => {
     await importEntry('first')
     await flushInit()

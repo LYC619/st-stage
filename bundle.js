@@ -25,176 +25,148 @@ function hasTag(text) {
   return new RegExp(TAG_REGEX.source).test(text);
 }
 
-// core/prompt-builder.ts
-function countInstruction(count) {
-  if (count <= 1) {
-    return "请在每次回复的末尾，选择一个最贴合当前情境与角色情绪的立绘，以 [立绘:名称] 的格式单独标注。";
-  }
-  return `请根据回复内容，按情节顺序选择 ${count} 张立绘。每个 [立绘:...] 标签单独占一行，插在触发它的剧情段落之后——随剧情分散在正文中，不要集中堆在回复结尾。`;
+// core/sprite-metadata.ts
+var MAX_LABELS = 24;
+var MAX_LABEL_CODE_POINTS = 32;
+var MAX_NOTE_CODE_POINTS = 500;
+function parseNumberedTag(tag) {
+  const match = /^(.+?)(\d+)$/u.exec(tag);
+  if (!match) return null;
+  return { prefix: match[1], suffix: match[2], value: BigInt(match[2]) };
 }
-function sceneKey(a) {
-  return `${a.role}|${a.outfit}`;
+function hasCoherentSuffixFormatting(tags) {
+  const canonical = tags.every((tag) => tag.suffix === tag.value.toString());
+  const width = tags[0]?.suffix.length;
+  const fixedWidth = width !== void 0 && tags.every((tag) => tag.suffix.length === width);
+  return canonical || fixedWidth;
 }
-function sceneLabel(a) {
-  if (a.role && a.outfit) return `${a.role}/${a.outfit}`;
-  if (a.role) return a.role;
-  return "默认";
-}
-function scenePrefix(a) {
-  if (a.role && a.outfit) return `${a.role}/${a.outfit}`;
-  if (a.role) return a.role;
-  return "";
-}
-function buildScenes(addresses) {
-  const scenes = /* @__PURE__ */ new Map();
-  for (const address of addresses) {
-    const key = sceneKey(address);
-    let scene = scenes.get(key);
-    if (!scene) {
-      scene = {
-        key,
-        label: sceneLabel(address),
-        prefix: scenePrefix(address),
-        tags: [],
-        seen: /* @__PURE__ */ new Set()
-      };
-      scenes.set(key, scene);
+function compactNumberedTags(tags, reservedTags = tags) {
+  const uniqueTags = [...new Set(tags)];
+  const reserved = new Set(tags);
+  for (const tag of reservedTags) reserved.add(tag);
+  const entries = [];
+  let index = 0;
+  while (index < uniqueTags.length) {
+    const first = parseNumberedTag(uniqueTags[index]);
+    if (!first) {
+      entries.push({ kind: "tag", label: uniqueTags[index], values: [uniqueTags[index]] });
+      index++;
+      continue;
     }
-    if (!scene.seen.has(address.tag)) {
-      scene.seen.add(address.tag);
-      scene.tags.push(address.tag);
+    let end = index + 1;
+    let previous = first.value;
+    while (end < uniqueTags.length) {
+      const next = parseNumberedTag(uniqueTags[end]);
+      if (!next || next.prefix !== first.prefix || next.value !== previous + 1n) break;
+      previous = next.value;
+      end++;
     }
-  }
-  return [...scenes.values()].map(({ seen: _seen, ...scene }) => scene);
-}
-function fewShotExample(scenes, count) {
-  if (count <= 1) return [];
-  const scene = scenes[0];
-  if (!scene || scene.tags.length === 0) return [];
-  const addr = (tag) => scene.prefix ? `${scene.prefix}/${tag}` : tag;
-  const first = scene.tags[0];
-  const second = scene.tags[1] ?? scene.tags[0];
-  return [
-    "插入位置示例（省略号代表你的正文段落）：",
-    "…剧情段落一…",
-    `[立绘:${addr(first)}]`,
-    "…剧情段落二…",
-    `[立绘:${addr(second)}]`
-  ];
-}
-function buildGroupedFull(addresses, count) {
-  const scenes = buildScenes(addresses);
-  return [
-    "[角色立绘系统]",
-    "可用立绘（按场景）：",
-    ...scenes.map((scene) => `- ${scene.label}：${scene.tags.join("、")}`),
-    "输出格式：默认场景直接写 [立绘:表情]；其他场景写 [立绘:场景/表情]。两段地址表示无服装，三级地址表示指定服装。",
-    countInstruction(count),
-    ...fewShotExample(scenes, count),
-    "只能使用上述场景中实际列出的表情，不要自行拼造不存在的角色/服装/表情组合。"
-  ].join("\n");
-}
-function buildShared(addresses, count) {
-  const scenes = buildScenes(addresses);
-  if (scenes.length <= 1) return buildGroupedFull(addresses, count);
-  const allTags = [];
-  const seenTags = /* @__PURE__ */ new Set();
-  for (const scene of scenes) {
-    for (const tag of scene.tags) {
-      if (seenTags.has(tag)) continue;
-      seenTags.add(tag);
-      allTags.push(tag);
-    }
-  }
-  const sharedTags = allTags.filter((tag) => scenes.every((scene) => scene.tags.includes(tag)));
-  if (sharedTags.length === 0) return buildGroupedFull(addresses, count);
-  const sharedSet = new Set(sharedTags);
-  const remainders = scenes.map((scene) => ({
-    scene,
-    tags: scene.tags.filter((tag) => !sharedSet.has(tag))
-  }));
-  const labels = scenes.map(
-    (scene) => scene.prefix ? scene.label : `${scene.label}（直接写表情）`
-  );
-  const lines = [
-    "[角色立绘系统]",
-    `可用场景：${labels.join("、")}`,
-    `共有表情（适用于全部场景）：${sharedTags.join("、")}`
-  ];
-  const withRemainder = remainders.filter((item) => item.tags.length > 0);
-  if (withRemainder.length > 0) {
-    lines.push("各场景其余表情：");
-    lines.push(...withRemainder.map(({ scene, tags }) => `- ${scene.label}：${tags.join("、")}`));
-  }
-  lines.push("共有表情可与任一已列场景组合；各场景其余表情只按所在行使用。默认场景直接写 [立绘:表情]，其他场景写 [立绘:场景/表情]。");
-  lines.push(countInstruction(count));
-  lines.push(...fewShotExample(scenes, count));
-  lines.push("只能使用实际存在的组合，不要自行拼造不存在的角色/服装/表情。");
-  return lines.join("\n");
-}
-function chooseShorterPrompt(grouped, shared) {
-  return shared.length < grouped.length ? shared : grouped;
-}
-function capAddresses(addresses, cap) {
-  const perScene = /* @__PURE__ */ new Map();
-  const kept = [];
-  for (const address of addresses) {
-    const key = sceneKey(address);
-    let tags = perScene.get(key);
-    if (!tags) {
-      tags = /* @__PURE__ */ new Set();
-      perScene.set(key, tags);
-    }
-    if (tags.has(address.tag)) continue;
-    if (tags.size >= cap) continue;
-    tags.add(address.tag);
-    kept.push(address);
-  }
-  return kept;
-}
-function fitToBudget(addresses, budget, build) {
-  const full = build(addresses);
-  if (budget <= 0 || full.length <= budget) return full;
-  const maxTags = Math.max(...buildScenes(addresses).map((scene) => scene.tags.length));
-  let best = build(capAddresses(addresses, 1));
-  let lo = 2;
-  let hi = maxTags;
-  while (lo <= hi) {
-    const mid = lo + hi >> 1;
-    const candidate = build(capAddresses(addresses, mid));
-    if (candidate.length <= budget) {
-      best = candidate;
-      lo = mid + 1;
+    const values = uniqueTags.slice(index, end);
+    const numbered = values.map((tag) => parseNumberedTag(tag));
+    const last = numbered[numbered.length - 1];
+    const label = `${first.prefix}${first.suffix}-${last.suffix}`;
+    if (values.length >= 3 && hasCoherentSuffixFormatting(numbered) && !reserved.has(label)) {
+      entries.push({
+        kind: "range",
+        label,
+        values
+      });
     } else {
-      hi = mid - 1;
+      entries.push(...values.map((tag) => ({ kind: "tag", label: tag, values: [tag] })));
     }
+    index = end;
   }
-  return best;
+  return entries;
 }
-var BUILTIN_TEMPLATE = [
-  "[角色立绘系统]",
-  "可用立绘（按场景）：",
-  "{清单}",
-  "输出格式：默认场景直接写 [立绘:表情]；其他场景写 [立绘:场景/表情]。两段地址表示无服装，三级地址表示指定服装。",
-  "请根据回复内容，按情节顺序选择 {数量} 张立绘。每个 [立绘:...] 标签单独占一行，插在触发它的剧情段落之后——随剧情分散在正文中，不要集中堆在回复结尾。",
-  "只能使用上述场景中实际列出的表情，不要自行拼造不存在的角色/服装/表情组合。"
-].join("\n");
-function buildPrompt(addresses, mode, count, template = "", budget = 0) {
-  if (addresses.length === 0) return "";
-  const n = Math.max(1, Math.round(count) || 1);
-  const b = Math.max(0, Math.round(budget) || 0);
-  const custom = template.trim();
-  if (custom) {
-    return fitToBudget(addresses, b, (addrs) => {
-      const list = buildScenes(addrs).map((scene) => `- ${scene.label}：${scene.tags.join("、")}`).join("\n");
-      return custom.replace(/\{清单\}/g, list).replace(/\{数量\}/g, String(n));
-    });
+function clipCodePoints(value, limit) {
+  return Array.from(value).slice(0, limit).join("").trim();
+}
+function normalizeLabels(raw) {
+  if (!Array.isArray(raw)) return [];
+  const labels = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const value of raw) {
+    if (typeof value !== "string") continue;
+    const label = clipCodePoints(value.trim(), MAX_LABEL_CODE_POINTS);
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    labels.push(label);
+    if (labels.length === MAX_LABELS) break;
   }
-  return fitToBudget(addresses, b, (addrs) => {
-    const grouped = buildGroupedFull(addrs, n);
-    if (mode === "full") return grouped;
-    return chooseShorterPrompt(grouped, buildShared(addrs, n));
-  });
+  return labels;
+}
+function normalizeNote(raw) {
+  return typeof raw === "string" ? clipCodePoints(raw.trim(), MAX_NOTE_CODE_POINTS) : "";
+}
+function normalizeOutfitNotes(raw) {
+  const notes = /* @__PURE__ */ Object.create(null);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return notes;
+  for (const [rawOutfit, rawNote] of Object.entries(raw)) {
+    const outfit = rawOutfit.trim();
+    const note = normalizeNote(rawNote);
+    if (outfit && note) notes[outfit] = note;
+  }
+  return notes;
+}
+
+// core/naming.ts
+var TAG_MAX_LENGTH = 20;
+var PACK_NAME_MAX_LENGTH = 30;
+var DESCRIPTION_MAX_LENGTH = 200;
+var CONTROL_CHARS = new RegExp("[\\u0000-\\u001f\\u007f]", "g");
+var TAG_FORBIDDEN = /[[\]【】|=,，:：@/\\<>"'`]/g;
+var PACK_NAME_FORBIDDEN = /[|=@<>"'`]/g;
+var PATH_SEGMENT_ALLOWED = /[^0-9A-Za-z一-鿿぀-ヿ .\-_]/g;
+function normalizeTag(raw) {
+  return raw.replace(CONTROL_CHARS, "").replace(TAG_FORBIDDEN, "").replace(/\s+/g, " ").trim().slice(0, TAG_MAX_LENGTH).trim();
+}
+function fileNameToTag(fileName) {
+  return normalizeTag(fileName.replace(/\.[^.]+$/, ""));
+}
+var NAME_SEPARATOR = /[_\-–—\s]+/;
+function stripExt(fileName) {
+  return fileName.replace(/\.[^.]+$/, "");
+}
+function parseSpriteFileName(fileName) {
+  const base = stripExt(fileName).trim();
+  const parts = splitAtMost(base, NAME_SEPARATOR, 3);
+  if (parts.length >= 3) {
+    const role = normalizeTag(parts[0]);
+    const outfit = normalizeTag(parts[1]);
+    const tag = normalizeTag(parts[2]);
+    if (role && outfit && tag) return { role, outfit, tag };
+    if (role && tag) return { role, outfit: "", tag };
+    return { role: "", outfit: "", tag: fileNameToTag(base) };
+  }
+  if (parts.length === 2) {
+    const role = normalizeTag(parts[0]);
+    const tag = normalizeTag(parts[1]);
+    if (role && tag) return { role, outfit: "", tag };
+    return { role: "", outfit: "", tag: fileNameToTag(base) };
+  }
+  return { role: "", outfit: "", tag: fileNameToTag(base) };
+}
+function splitAtMost(text, sep, n) {
+  const out = [];
+  let rest = text;
+  const single = new RegExp(sep.source);
+  while (out.length < n - 1) {
+    const m = single.exec(rest);
+    if (!m || m.index < 0) break;
+    out.push(rest.slice(0, m.index));
+    rest = rest.slice(m.index + m[0].length);
+  }
+  out.push(rest);
+  return out;
+}
+function sanitizePackName(raw) {
+  return raw.replace(CONTROL_CHARS, "").replace(PACK_NAME_FORBIDDEN, "").replace(/\s+/g, " ").trim().slice(0, PACK_NAME_MAX_LENGTH).trim();
+}
+function sanitizeDescription(raw) {
+  return raw.replace(CONTROL_CHARS, "").replace(/[<>]/g, "").trim().slice(0, DESCRIPTION_MAX_LENGTH).trim();
+}
+function sanitizePathSegment(raw) {
+  return raw.replace(CONTROL_CHARS, "").replace(PATH_SEGMENT_ALLOWED, "").replace(/\.{2,}/g, ".").replace(/^[. ]+|[. ]+$/g, "").slice(0, 40).trim();
 }
 
 // core/types.ts
@@ -276,66 +248,6 @@ function createDefaultSettings() {
   };
 }
 
-// core/naming.ts
-var TAG_MAX_LENGTH = 20;
-var PACK_NAME_MAX_LENGTH = 30;
-var DESCRIPTION_MAX_LENGTH = 200;
-var CONTROL_CHARS = new RegExp("[\\u0000-\\u001f\\u007f]", "g");
-var TAG_FORBIDDEN = /[[\]【】|=,，:：@/\\<>"'`]/g;
-var PACK_NAME_FORBIDDEN = /[|=@<>"'`]/g;
-var PATH_SEGMENT_ALLOWED = /[^0-9A-Za-z一-鿿぀-ヿ .\-_]/g;
-function normalizeTag(raw) {
-  return raw.replace(CONTROL_CHARS, "").replace(TAG_FORBIDDEN, "").replace(/\s+/g, " ").trim().slice(0, TAG_MAX_LENGTH).trim();
-}
-function fileNameToTag(fileName) {
-  return normalizeTag(fileName.replace(/\.[^.]+$/, ""));
-}
-var NAME_SEPARATOR = /[_\-–—\s]+/;
-function stripExt(fileName) {
-  return fileName.replace(/\.[^.]+$/, "");
-}
-function parseSpriteFileName(fileName) {
-  const base = stripExt(fileName).trim();
-  const parts = splitAtMost(base, NAME_SEPARATOR, 3);
-  if (parts.length >= 3) {
-    const role = normalizeTag(parts[0]);
-    const outfit = normalizeTag(parts[1]);
-    const tag = normalizeTag(parts[2]);
-    if (role && outfit && tag) return { role, outfit, tag };
-    if (role && tag) return { role, outfit: "", tag };
-    return { role: "", outfit: "", tag: fileNameToTag(base) };
-  }
-  if (parts.length === 2) {
-    const role = normalizeTag(parts[0]);
-    const tag = normalizeTag(parts[1]);
-    if (role && tag) return { role, outfit: "", tag };
-    return { role: "", outfit: "", tag: fileNameToTag(base) };
-  }
-  return { role: "", outfit: "", tag: fileNameToTag(base) };
-}
-function splitAtMost(text, sep, n) {
-  const out = [];
-  let rest = text;
-  const single = new RegExp(sep.source);
-  while (out.length < n - 1) {
-    const m = single.exec(rest);
-    if (!m || m.index < 0) break;
-    out.push(rest.slice(0, m.index));
-    rest = rest.slice(m.index + m[0].length);
-  }
-  out.push(rest);
-  return out;
-}
-function sanitizePackName(raw) {
-  return raw.replace(CONTROL_CHARS, "").replace(PACK_NAME_FORBIDDEN, "").replace(/\s+/g, " ").trim().slice(0, PACK_NAME_MAX_LENGTH).trim();
-}
-function sanitizeDescription(raw) {
-  return raw.replace(CONTROL_CHARS, "").replace(/[<>]/g, "").trim().slice(0, DESCRIPTION_MAX_LENGTH).trim();
-}
-function sanitizePathSegment(raw) {
-  return raw.replace(CONTROL_CHARS, "").replace(PATH_SEGMENT_ALLOWED, "").replace(/\.{2,}/g, ".").replace(/^[. ]+|[. ]+$/g, "").slice(0, 40).trim();
-}
-
 // core/address-policy.ts
 function addressConflictKey(address) {
   return JSON.stringify([address.role, address.outfit, address.tag]);
@@ -378,6 +290,274 @@ function findAddressConflicts(packs) {
     });
   }
   return conflicts;
+}
+
+// core/prompt-builder.ts
+function buildPromptSceneNotes(packs, addresses) {
+  const notes = [];
+  const multiPack = packs.length > 1;
+  const available = new Set(addresses.map(addressConflictKey));
+  for (const pack of packs) {
+    const scenes = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const sprite of pack.sprites) {
+      const scene = effectiveSpriteAddress(pack, sprite, multiPack);
+      if (!available.has(addressConflictKey(scene))) continue;
+      const key = JSON.stringify([scene.role, scene.outfit]);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      scenes.push(scene);
+    }
+    const placement = pack.promptNotePlacement ?? "after-list";
+    const packNote = pack.promptNote?.trim() ?? "";
+    for (const [index, scene] of scenes.entries()) {
+      if (packNote && placement === "before-list" && index === 0) {
+        notes.push({ role: scene.role, outfit: scene.outfit, note: packNote, placement });
+      }
+      const outfitNote = pack.outfitNotes && Object.prototype.hasOwnProperty.call(pack.outfitNotes, scene.outfit) ? pack.outfitNotes?.[scene.outfit]?.trim() ?? "" : "";
+      if (outfitNote) {
+        notes.push({ role: scene.role, outfit: scene.outfit, note: outfitNote, placement });
+      }
+      if (packNote && placement === "after-list" && index === scenes.length - 1) {
+        notes.push({ role: scene.role, outfit: scene.outfit, note: packNote, placement });
+      }
+    }
+  }
+  return notes;
+}
+function countInstruction(count) {
+  if (count <= 1) {
+    return "请在每次回复的末尾，选择一个最贴合当前情境与角色情绪的立绘，以 [立绘:名称] 的格式单独标注。";
+  }
+  return `请根据回复内容，按情节顺序选择 ${count} 张立绘。每个 [立绘:...] 标签单独占一行，插在触发它的剧情段落之后——随剧情分散在正文中，不要集中堆在回复结尾。`;
+}
+function sceneKey(a) {
+  return `${a.role}|${a.outfit}`;
+}
+function sceneLabel(a) {
+  if (a.role && a.outfit) return `${a.role}/${a.outfit}`;
+  if (a.role) return a.role;
+  return "默认";
+}
+function scenePrefix(a) {
+  if (a.role && a.outfit) return `${a.role}/${a.outfit}`;
+  if (a.role) return a.role;
+  return "";
+}
+function buildScenes(addresses) {
+  const scenes = /* @__PURE__ */ new Map();
+  for (const address of addresses) {
+    const key = sceneKey(address);
+    let scene = scenes.get(key);
+    if (!scene) {
+      scene = {
+        key,
+        label: sceneLabel(address),
+        prefix: scenePrefix(address),
+        tags: [],
+        seen: /* @__PURE__ */ new Set()
+      };
+      scenes.set(key, scene);
+    }
+    if (!scene.seen.has(address.tag)) {
+      scene.seen.add(address.tag);
+      scene.tags.push(address.tag);
+    }
+  }
+  return [...scenes.values()].map(({ seen: _seen, ...scene }) => scene);
+}
+function renderTags(tags, reservedTags) {
+  const entries = compactNumberedTags(tags, reservedTags);
+  return {
+    text: entries.map((entry) => entry.kind === "range" ? `${entry.label}（输出时从${entry.values[0]}至${entry.values[entry.values.length - 1]}中随机选择一个完整图名）` : entry.label).join("、"),
+    ranges: entries.filter((entry) => entry.kind === "range").map((entry) => entry.label)
+  };
+}
+function rangeInstruction(ranges) {
+  if (ranges.length === 0) return [];
+  return [
+    `编号范围仅用于压缩展示；必须输出范围内一个实际存在的完整图名，严禁直接输出范围标签（${ranges.join("、")}）。`
+  ];
+}
+function indexSceneNotes(notes) {
+  const index = /* @__PURE__ */ new Map();
+  for (const note of notes) {
+    if (!note.note.trim()) continue;
+    const key = `${note.role}|${note.outfit}`;
+    let placements = index.get(key);
+    if (!placements) {
+      placements = { "before-list": [], "after-list": [] };
+      index.set(key, placements);
+    }
+    placements[note.placement].push(note);
+  }
+  return index;
+}
+function matchingNotes(noteIndex, scene, placement) {
+  return noteIndex.get(scene.key)?.[placement] ?? [];
+}
+function noteLine(scene, note) {
+  return `场景备注（${scene.label}）：${note.note}`;
+}
+function renderGroupedSceneList(scenes, noteIndex, reservedTags) {
+  const lines = [];
+  const ranges = [];
+  for (const scene of scenes) {
+    lines.push(...matchingNotes(noteIndex, scene, "before-list").map((note) => noteLine(scene, note)));
+    const rendered = renderTags(scene.tags, reservedTags);
+    lines.push(`- ${scene.label}：${rendered.text}`);
+    ranges.push(...rendered.ranges);
+    lines.push(...matchingNotes(noteIndex, scene, "after-list").map((note) => noteLine(scene, note)));
+  }
+  return { lines, ranges };
+}
+function hasMatchingNotes(scenes, noteIndex) {
+  return scenes.some((scene) => noteIndex.has(scene.key));
+}
+function fewShotExample(scenes, count) {
+  if (count <= 1) return [];
+  const scene = scenes[0];
+  if (!scene || scene.tags.length === 0) return [];
+  const addr = (tag) => scene.prefix ? `${scene.prefix}/${tag}` : tag;
+  const first = scene.tags[0];
+  const second = scene.tags[1] ?? scene.tags[0];
+  return [
+    "插入位置示例（省略号代表你的正文段落）：",
+    "…剧情段落一…",
+    `[立绘:${addr(first)}]`,
+    "…剧情段落二…",
+    `[立绘:${addr(second)}]`
+  ];
+}
+function buildGroupedFull(addresses, count, noteIndex, reservedTags) {
+  const scenes = buildScenes(addresses);
+  const rendered = renderGroupedSceneList(scenes, noteIndex, reservedTags);
+  return [
+    "[角色立绘系统]",
+    "可用立绘（按场景）：",
+    ...rendered.lines,
+    ...rangeInstruction(rendered.ranges),
+    "输出格式：默认场景直接写 [立绘:表情]；其他场景写 [立绘:场景/表情]。两段地址表示无服装，三级地址表示指定服装。",
+    countInstruction(count),
+    ...fewShotExample(scenes, count),
+    "只能使用上述场景中实际列出的表情，不要自行拼造不存在的角色/服装/表情组合。"
+  ].join("\n");
+}
+function buildShared(addresses, count, noteIndex, reservedTags) {
+  const scenes = buildScenes(addresses);
+  if (scenes.length <= 1 || hasMatchingNotes(scenes, noteIndex)) {
+    return buildGroupedFull(addresses, count, noteIndex, reservedTags);
+  }
+  const allTags = [];
+  const seenTags = /* @__PURE__ */ new Set();
+  for (const scene of scenes) {
+    for (const tag of scene.tags) {
+      if (seenTags.has(tag)) continue;
+      seenTags.add(tag);
+      allTags.push(tag);
+    }
+  }
+  const sharedTags = allTags.filter((tag) => scenes.every((scene) => scene.tags.includes(tag)));
+  if (sharedTags.length === 0) {
+    return buildGroupedFull(addresses, count, noteIndex, reservedTags);
+  }
+  const sharedSet = new Set(sharedTags);
+  const remainders = scenes.map((scene) => ({
+    scene,
+    tags: scene.tags.filter((tag) => !sharedSet.has(tag))
+  }));
+  const labels = scenes.map(
+    (scene) => scene.prefix ? scene.label : `${scene.label}（直接写表情）`
+  );
+  const renderedShared = renderTags(sharedTags, reservedTags);
+  const ranges = [...renderedShared.ranges];
+  const lines = [
+    "[角色立绘系统]",
+    `可用场景：${labels.join("、")}`,
+    `共有表情（适用于全部场景）：${renderedShared.text}`
+  ];
+  const withRemainder = remainders.filter((item) => item.tags.length > 0);
+  if (withRemainder.length > 0) {
+    lines.push("各场景其余表情：");
+    for (const { scene, tags } of withRemainder) {
+      const rendered = renderTags(tags, reservedTags);
+      lines.push(`- ${scene.label}：${rendered.text}`);
+      ranges.push(...rendered.ranges);
+    }
+  }
+  lines.push(...rangeInstruction(ranges));
+  lines.push("共有表情可与任一已列场景组合；各场景其余表情只按所在行使用。默认场景直接写 [立绘:表情]，其他场景写 [立绘:场景/表情]。");
+  lines.push(countInstruction(count));
+  lines.push(...fewShotExample(scenes, count));
+  lines.push("只能使用实际存在的组合，不要自行拼造不存在的角色/服装/表情。");
+  return lines.join("\n");
+}
+function chooseShorterPrompt(grouped, shared) {
+  return shared.length < grouped.length ? shared : grouped;
+}
+function capAddresses(addresses, cap) {
+  const perScene = /* @__PURE__ */ new Map();
+  const kept = [];
+  for (const address of addresses) {
+    const key = sceneKey(address);
+    let tags = perScene.get(key);
+    if (!tags) {
+      tags = /* @__PURE__ */ new Set();
+      perScene.set(key, tags);
+    }
+    if (tags.has(address.tag)) continue;
+    if (tags.size >= cap) continue;
+    tags.add(address.tag);
+    kept.push(address);
+  }
+  return kept;
+}
+function fitToBudget(addresses, budget, build) {
+  const full = build(addresses);
+  if (budget <= 0 || full.length <= budget) return full;
+  const maxTags = Math.max(...buildScenes(addresses).map((scene) => scene.tags.length));
+  let best = build(capAddresses(addresses, 1));
+  let lo = 2;
+  let hi = maxTags;
+  while (lo <= hi) {
+    const mid = lo + hi >> 1;
+    const candidate = build(capAddresses(addresses, mid));
+    if (candidate.length <= budget) {
+      best = candidate;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return best;
+}
+var BUILTIN_TEMPLATE = [
+  "[角色立绘系统]",
+  "可用立绘（按场景）：",
+  "{清单}",
+  "输出格式：默认场景直接写 [立绘:表情]；其他场景写 [立绘:场景/表情]。两段地址表示无服装，三级地址表示指定服装。",
+  "请根据回复内容，按情节顺序选择 {数量} 张立绘。每个 [立绘:...] 标签单独占一行，插在触发它的剧情段落之后——随剧情分散在正文中，不要集中堆在回复结尾。",
+  "只能使用上述场景中实际列出的表情，不要自行拼造不存在的角色/服装/表情组合。"
+].join("\n");
+function buildPrompt(addresses, mode, count, template = "", budget = 0, notes = []) {
+  if (addresses.length === 0) return "";
+  const n = Math.max(1, Math.round(count) || 1);
+  const b = Math.max(0, Math.round(budget) || 0);
+  const noteIndex = indexSceneNotes(notes);
+  const reservedTags = new Set(addresses.map((address) => address.tag));
+  const custom = template.trim();
+  if (custom) {
+    return fitToBudget(addresses, b, (addrs) => {
+      const rendered = renderGroupedSceneList(buildScenes(addrs), noteIndex, reservedTags);
+      const list = [...rendered.lines, ...rangeInstruction(rendered.ranges)].join("\n");
+      return custom.replace(/\{清单\}/g, list).replace(/\{数量\}/g, String(n));
+    });
+  }
+  return fitToBudget(addresses, b, (addrs) => {
+    const grouped = buildGroupedFull(addrs, n, noteIndex, reservedTags);
+    if (mode === "full") return grouped;
+    return chooseShorterPrompt(grouped, buildShared(addrs, n, noteIndex, reservedTags));
+  });
 }
 
 // core/sprite-store.ts
@@ -1450,41 +1630,6 @@ function decodeShareStringV2(raw) {
     sprites,
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
-}
-
-// core/sprite-metadata.ts
-var MAX_LABELS = 24;
-var MAX_LABEL_CODE_POINTS = 32;
-var MAX_NOTE_CODE_POINTS = 500;
-function clipCodePoints(value, limit) {
-  return Array.from(value).slice(0, limit).join("").trim();
-}
-function normalizeLabels(raw) {
-  if (!Array.isArray(raw)) return [];
-  const labels = [];
-  const seen = /* @__PURE__ */ new Set();
-  for (const value of raw) {
-    if (typeof value !== "string") continue;
-    const label = clipCodePoints(value.trim(), MAX_LABEL_CODE_POINTS);
-    if (!label || seen.has(label)) continue;
-    seen.add(label);
-    labels.push(label);
-    if (labels.length === MAX_LABELS) break;
-  }
-  return labels;
-}
-function normalizeNote(raw) {
-  return typeof raw === "string" ? clipCodePoints(raw.trim(), MAX_NOTE_CODE_POINTS) : "";
-}
-function normalizeOutfitNotes(raw) {
-  const notes = /* @__PURE__ */ Object.create(null);
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return notes;
-  for (const [rawOutfit, rawNote] of Object.entries(raw)) {
-    const outfit = rawOutfit.trim();
-    const note = normalizeNote(rawNote);
-    if (outfit && note) notes[outfit] = note;
-  }
-  return notes;
 }
 
 // core/migrate.ts
@@ -7607,12 +7752,15 @@ async function init(lifecycle) {
     const characterName = adapter.getCurrentCharacterName();
     const packs = getActivePacks(settings, characterName);
     const pack = packs[0] ?? null;
+    const addresses = getActiveAddresses(settings, characterName);
+    const sceneNotes = buildPromptSceneNotes(packs, addresses);
     const prompt = buildPrompt(
-      getActiveAddresses(settings, characterName),
+      addresses,
       settings.multiRolePromptMode,
       settings.spriteCount,
       settings.promptTemplate,
-      settings.promptBudget
+      settings.promptBudget,
+      sceneNotes
     );
     adapter.injectPrompt(prompt, settings.injectionDepth);
     const contentKey = `${characterName}|${packs.map((p) => p.id).join(",")}|${pack ? pack.sprites.length > 0 : false}`;
