@@ -10,6 +10,9 @@
  * - 补 overlayHidden / recentFloors / spriteCount 字段
  * - 绑定 packId → packIds（形状迁移，幂等：已是 packIds 的原样保留）
  * - 立绘 outfit / 包 roleName·outfit 保留
+ * v3 → v4：
+ * - 补 galleryFoldByRole 字段
+ * - 规范化图库提示、服装备注、来源标识与立绘标签
  */
 
 import type { CharacterBinding, PluginSettings, SpritePack } from './types'
@@ -27,6 +30,7 @@ import {
 } from './types'
 import { normalizeTag, sanitizePackName } from './naming'
 import { extractImageCode } from './share-code'
+import { normalizeLabels, normalizeNote, normalizeOutfitNotes } from './sprite-metadata'
 
 /** 判断持久化对象是否需要迁移 */
 export function needsMigration(saved: unknown): boolean {
@@ -97,6 +101,10 @@ export function migrateSettings(saved: unknown): PluginSettings {
         : defaults.promptBudget,
     imgbbApiKey: typeof raw.imgbbApiKey === 'string' ? raw.imgbbApiKey : defaults.imgbbApiKey,
     autoUpload: typeof raw.autoUpload === 'boolean' ? raw.autoUpload : defaults.autoUpload,
+    galleryFoldByRole:
+      typeof raw.galleryFoldByRole === 'boolean'
+        ? raw.galleryFoldByRole
+        : defaults.galleryFoldByRole,
     packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
     bindings: Array.isArray(raw.bindings)
       ? raw.bindings.flatMap((b) => migrateBinding(b) ?? [])
@@ -177,6 +185,7 @@ function migratePack(raw: unknown): SpritePack | null {
     const outfit = typeof s.outfit === 'string' ? normalizeTag(s.outfit) : ''
     const remoteUrl =
       typeof s.remoteUrl === 'string' && /^https?:\/\//.test(s.remoteUrl) ? s.remoteUrl : ''
+    const labels = normalizeLabels(s.labels)
     return [
       {
         tag,
@@ -185,12 +194,16 @@ function migratePack(raw: unknown): SpritePack | null {
         ...(group ? { group } : {}),
         ...(outfit ? { outfit } : {}),
         ...(remoteUrl ? { remoteUrl } : {}),
+        ...(labels.length > 0 ? { labels } : {}),
       },
     ]
   })
 
   const roleName = typeof p.roleName === 'string' ? normalizeTag(p.roleName) : ''
   const outfit = typeof p.outfit === 'string' ? normalizeTag(p.outfit) : ''
+  const promptNote = normalizeNote(p.promptNote)
+  const outfitNotes = normalizeOutfitNotes(p.outfitNotes)
+  const sourceStoryKey = typeof p.sourceStoryKey === 'string' ? p.sourceStoryKey.trim() : ''
   return {
     id: p.id,
     name,
@@ -198,6 +211,12 @@ function migratePack(raw: unknown): SpritePack | null {
     ...(typeof p.description === 'string' && p.description ? { description: p.description } : {}),
     ...(roleName ? { roleName } : {}),
     ...(outfit ? { outfit } : {}),
+    ...(promptNote ? { promptNote } : {}),
+    ...(p.promptNotePlacement === 'before-list' || p.promptNotePlacement === 'after-list'
+      ? { promptNotePlacement: p.promptNotePlacement }
+      : {}),
+    ...(Object.keys(outfitNotes).length > 0 ? { outfitNotes } : {}),
+    ...(sourceStoryKey ? { sourceStoryKey } : {}),
     ...(typeof p.coverTag === 'string' && p.coverTag ? { coverTag: p.coverTag } : {}),
     ...(typeof p.updatedAt === 'string' && p.updatedAt ? { updatedAt: p.updatedAt } : {}),
     sprites,

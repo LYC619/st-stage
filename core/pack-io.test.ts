@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { SpritePack, SpritePackFile } from './types'
+import type { SpritePack, SpritePackFile, SpritePackFileV3 } from './types'
 import { exportPack, importPack } from './pack-io'
 
 const V1_JSON = JSON.stringify({
@@ -64,7 +64,7 @@ describe('importPack', () => {
 })
 
 describe('exportPack', () => {
-  it('导出 @2：图床 URL 保持轻量并带 code，data 图源内嵌', async () => {
+  it('导出 @3：图床 URL 保持轻量并带 code，data 图源内嵌', async () => {
     const pack: SpritePack = {
       id: 'p1',
       name: '导出包',
@@ -74,8 +74,8 @@ describe('exportPack', () => {
         { tag: '害羞', url: 'data:image/png;base64,CCC' },
       ],
     }
-    const file = await exportPack(pack)
-    expect(file.format).toBe('sprite-pack@2')
+    const file: SpritePackFileV3 = await exportPack(pack)
+    expect(file.format).toBe('sprite-pack@3')
     expect(file.coverTag).toBe('微笑')
     expect(file.exportedAt).toBeTruthy()
     expect(file.sprites).toEqual([
@@ -105,6 +105,74 @@ describe('exportPack', () => {
     expect(reimported.name).toBe('回环包')
     expect(reimported.sprites[0].tag).toBe('微笑')
     expect(reimported.sprites[0].url).toBe('https://x.com/a.png')
+  })
+
+  it('roundtrip：@3 保留图库提示与立绘标签', async () => {
+    const pack: SpritePack = {
+      id: 'p1',
+      name: '图库元数据包',
+      promptNote: '角色提示',
+      promptNotePlacement: 'after-list',
+      outfitNotes: { 居家服: '居家提示' },
+      sourceStoryKey: 'story-gallery-001',
+      sprites: [
+        { tag: '微笑', url: 'https://x.com/a.png', labels: ['动作', '近景'] },
+      ],
+    }
+    const exported: SpritePackFileV3 = await exportPack(pack)
+    const reimported = importPack(JSON.stringify(exported))
+    expect(exported.format).toBe('sprite-pack@3')
+    expect(exported.sourceStoryKey).toBe('story-gallery-001')
+    expect(reimported.promptNote).toBe('角色提示')
+    expect(reimported.promptNotePlacement).toBe('after-list')
+    expect(reimported.outfitNotes).toEqual({ 居家服: '居家提示' })
+    expect(reimported.sourceStoryKey).toBe('story-gallery-001')
+    expect(reimported.sprites[0].labels).toEqual(['动作', '近景'])
+  })
+
+  it('@3 导出与导入共享元数据边界规范化并忽略无效值', async () => {
+    const prefix = 'a'.repeat(32)
+    const rawLabels: unknown[] = [
+      `${prefix}x`,
+      `${prefix}y`,
+      `${'😀'.repeat(32)}x`,
+      null,
+      7,
+      ...Array.from({ length: 30 }, (_, index) => ` label-${index} `),
+    ]
+    const rawOutfitNotes = JSON.parse(
+      '{"__proto__":" prototype note ","toString":" method note ","empty":"   "}',
+    ) as Record<string, string>
+    const pack = {
+      id: 'p1',
+      name: '边界元数据包',
+      promptNote: `${'😀'.repeat(500)}x`,
+      promptNotePlacement: 'sideways',
+      outfitNotes: rawOutfitNotes,
+      sprites: [{ tag: '微笑', url: 'https://x.com/a.png', labels: rawLabels }],
+    } as unknown as SpritePack
+
+    const exported = await exportPack(pack)
+    const imported = importPack(
+      JSON.stringify({
+        ...exported,
+        promptNotePlacement: 'sideways',
+        sprites: [{ ...exported.sprites[0], labels: rawLabels }],
+      }),
+    )
+
+    expect(exported.promptNotePlacement).toBeUndefined()
+    expect(imported.promptNotePlacement).toBeUndefined()
+    expect(exported.promptNote).toBe('😀'.repeat(500))
+    expect(imported.promptNote).toBe(exported.promptNote)
+    expect(exported.sprites[0].labels).toHaveLength(24)
+    expect(imported.sprites[0].labels).toEqual(exported.sprites[0].labels)
+    expect(exported.sprites[0].labels?.slice(0, 2)).toEqual([prefix, '😀'.repeat(32)])
+    expect(exported.sprites[0].labels?.every((label) => Array.from(label).length <= 32)).toBe(true)
+    expect(Object.prototype.hasOwnProperty.call(exported.outfitNotes, '__proto__')).toBe(true)
+    expect(Object.prototype.hasOwnProperty.call(imported.outfitNotes, '__proto__')).toBe(true)
+    expect(exported.outfitNotes?.['__proto__']).toBe('prototype note')
+    expect(imported.outfitNotes?.toString).toBe('method note')
   })
 })
 

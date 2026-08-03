@@ -3,12 +3,12 @@
  * 纯 TS，零框架依赖，Web 测试环境与 SillyTavern 扩展共用。
  *
  * 数据格式版本：
- * - 存储 settingsVersion = 3（v1/v2 由 core/migrate.ts 自动升级）
- * - 立绘包文件 sprite-pack@2（导入兼容 @1）
+ * - 存储 settingsVersion = 4（旧版本由 core/migrate.ts 自动升级）
+ * - 立绘包文件 sprite-pack@3（导入兼容 @1 / @2）
  */
 
 /** 当前设置存储版本 */
-export const SETTINGS_VERSION = 3
+export const SETTINGS_VERSION = 4
 
 /** 楼层模式补渲染的最近 AI 楼层数：默认与上下限 */
 export const RECENT_FLOORS_DEFAULT = 6
@@ -59,6 +59,8 @@ export interface Sprite {
    * 本机显示优先用 url（本地保底），分享导出用 remoteUrl。缺省表示无远程副本。
    */
   remoteUrl?: string
+  /** 图库筛选标签（最多 24 个，每个最多 32 字符） */
+  labels?: string[]
 }
 
 /** 立绘的图源类型（由 url/code 推导，不单独存储） */
@@ -70,6 +72,9 @@ export function getSpriteSource(sprite: Sprite): SpriteSource {
   if (/^https?:\/\//.test(sprite.url)) return 'hosted'
   return 'local'
 }
+
+/** 包级提示词在立绘清单中的插入位置 */
+export type PromptNotePlacement = 'before-list' | 'after-list'
 
 /** 立绘包：一套角色表情立绘的集合 */
 export interface SpritePack {
@@ -88,6 +93,14 @@ export interface SpritePack {
   roleName?: string
   /** 包级服装（六期）：整包为同一服装时填此。缺省=无包级服装。 */
   outfit?: string
+  /** 包级提示词备注（最多 500 字符） */
+  promptNote?: string
+  /** 包级提示词备注的插入位置 */
+  promptNotePlacement?: PromptNotePlacement
+  /** 服装名到服装提示词备注的映射（备注最多 500 字符） */
+  outfitNotes?: Record<string, string>
+  /** 导入来源的故事标识 */
+  sourceStoryKey?: string
   /** 封面立绘的 tag（可选，缺省用第一张） */
   coverTag?: string
   /** 最后修改时间（ISO 8601，可选） */
@@ -245,6 +258,8 @@ export interface PluginSettings {
   imgbbApiKey: string
   /** 导入立绘时是否自动直传 imgbb 图床并绑定编号（功能①，需先配置 API Key） */
   autoUpload: boolean
+  /** 图库中是否按角色折叠立绘包 */
+  galleryFoldByRole: boolean
   /** 所有立绘包 */
   packs: SpritePack[]
   /** 角色绑定 */
@@ -284,6 +299,16 @@ export interface SpritePackFile {
   }>
 }
 
+/** 当前导出格式（sprite-pack@3），增加图库提示与标签元数据 */
+export interface SpritePackFileV3 extends Omit<SpritePackFile, 'format' | 'sprites'> {
+  format: 'sprite-pack@3'
+  promptNote?: string
+  promptNotePlacement?: PromptNotePlacement
+  outfitNotes?: Record<string, string>
+  sourceStoryKey?: string
+  sprites: Array<SpritePackFile['sprites'][number] & { labels?: string[] }>
+}
+
 /** 旧版导出格式（sprite-pack@1），仅用于导入兼容 */
 export interface SpritePackFileV1 {
   format: 'sprite-pack@1'
@@ -317,6 +342,7 @@ export function createDefaultSettings(): PluginSettings {
     promptBudget: PROMPT_BUDGET_DEFAULT,
     imgbbApiKey: '',
     autoUpload: false,
+    galleryFoldByRole: false,
     packs: [],
     bindings: [],
     apps: {},

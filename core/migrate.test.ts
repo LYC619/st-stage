@@ -148,6 +148,63 @@ describe('migrateSettings', () => {
     expect(migrateSettings({ ...V1_SAVED, recentFloors: 'many' }).recentFloors).toBe(6)
   })
 
+  it('v3 → v4：图库按角色折叠缺失时默认为 false', () => {
+    const migrated = migrateSettings({ settingsVersion: 3, packs: [] })
+    expect(migrated.settingsVersion).toBe(4)
+    expect(migrated.galleryFoldByRole).toBe(false)
+  })
+
+  it('v4 图库元数据去除空白并去重立绘标签', () => {
+    const migrated = migrateSettings({
+      settingsVersion: 4,
+      packs: [
+        {
+          id: 'p',
+          name: '包',
+          promptNote: ' note ',
+          promptNotePlacement: 'after-list',
+          outfitNotes: { 居家服: ' home ' },
+          sourceStoryKey: ' story ',
+          sprites: [
+            { tag: '微笑', url: 'https://x.com/a.png', labels: [' 动作 ', '动作', ''] },
+          ],
+        },
+      ],
+    })
+    const pack = migrated.packs[0]
+    expect(pack.promptNote).toBe('note')
+    expect(pack.promptNotePlacement).toBe('after-list')
+    expect(pack.outfitNotes).toEqual({ 居家服: 'home' })
+    expect(pack.sourceStoryKey).toBe('story')
+    expect(pack.sprites[0].labels).toEqual(['动作'])
+  })
+
+  it('v4 图库元数据限制标签数量和文本长度', () => {
+    const labels = [
+      ` ${'长'.repeat(40)} `,
+      ...Array.from({ length: 30 }, (_, index) => ` 标签${index} `),
+    ]
+    const migrated = migrateSettings({
+      settingsVersion: 4,
+      packs: [
+        {
+          id: 'p',
+          name: '包',
+          promptNote: ` ${'注'.repeat(510)} `,
+          outfitNotes: { 居家服: ` ${'家'.repeat(510)} ` },
+          sprites: [{ tag: '微笑', url: 'https://x.com/a.png', labels }],
+        },
+      ],
+    })
+    const pack = migrated.packs[0]
+    expect(pack.promptNote).toHaveLength(500)
+    expect(pack.outfitNotes?.居家服).toHaveLength(500)
+    expect(pack.sprites[0].labels).toHaveLength(24)
+    expect(pack.sprites[0].labels?.[0]).toBe('长'.repeat(32))
+    expect(new Set(pack.sprites[0].labels).size).toBe(24)
+    expect(pack.sprites[0].labels?.every((label) => label.length <= 32)).toBe(true)
+  })
+
   it('绑定 packId → packIds 形状迁移（六期），幂等且不丢包', () => {
     // 旧单包绑定
     const old = migrateSettings(V1_SAVED)

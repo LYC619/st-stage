@@ -1,16 +1,17 @@
 /**
- * 立绘包导入导出（sprite-pack@2 JSON 格式，导入兼容 @1）。
+ * 立绘包导入导出（sprite-pack@3 JSON 格式，导入兼容 @1 / @2）。
  * 导出时本地图片（ST 用户目录/扩展目录路径）自动内嵌 base64 —— 本地路径只在导出者
  * 机器上有效，不内嵌的话别人导入后图全裂；图床 URL 默认保持轻量，可选全部内嵌。
  * 一行紧凑分享串见 core/share-code.ts。
  */
 
-import type { SpritePack, SpritePackFile } from './types'
+import type { SpritePack, SpritePackFileV3 } from './types'
 import { getSpriteSource } from './types'
 import { genId } from './sprite-store'
 import { normalizeTag, sanitizeDescription, sanitizePackName } from './naming'
 import { extractImageCode } from './share-code'
 import { recompressDataUri } from './image-compress'
+import { normalizeLabels, normalizeNote, normalizeOutfitNotes } from './sprite-metadata'
 
 /**
  * 将 SpritePack 序列化为导出文件对象。
@@ -18,14 +19,16 @@ import { recompressDataUri } from './image-compress'
  * - 本地路径图源 → 始终尝试转 base64 内嵌（失败回退原路径）
  * - 图床 URL → 默认保留 URL；embedHosted 时也转 base64（离线分享，文件更大）
  */
-export async function exportPack(pack: SpritePack, embedHosted = false): Promise<SpritePackFile> {
-  const sprites: SpritePackFile['sprites'] = []
+export async function exportPack(pack: SpritePack, embedHosted = false): Promise<SpritePackFileV3> {
+  const sprites: SpritePackFileV3['sprites'] = []
   for (const sprite of pack.sprites) {
     const source = getSpriteSource(sprite)
+    const labels = normalizeLabels(sprite.labels)
     const extra = {
       ...remoteField(sprite),
       ...(sprite.group ? { group: sprite.group } : {}),
       ...(sprite.outfit ? { outfit: sprite.outfit } : {}),
+      ...(labels.length > 0 ? { labels } : {}),
     }
     if (source === 'embedded') {
       // 补压缩兜底：早期未压缩的存量图/导入的胖 JSON，导出时在此收口（已压缩的 webp 直接跳过）
@@ -42,13 +45,22 @@ export async function exportPack(pack: SpritePack, embedHosted = false): Promise
       sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code), ...extra })
     }
   }
+  const promptNote = normalizeNote(pack.promptNote)
+  const outfitNotes = normalizeOutfitNotes(pack.outfitNotes)
+  const sourceStoryKey = typeof pack.sourceStoryKey === 'string' ? pack.sourceStoryKey.trim() : ''
   return {
-    format: 'sprite-pack@2',
+    format: 'sprite-pack@3',
     name: pack.name,
     author: pack.author,
     description: pack.description,
     ...(pack.roleName ? { roleName: pack.roleName } : {}),
     ...(pack.outfit ? { outfit: pack.outfit } : {}),
+    ...(promptNote ? { promptNote } : {}),
+    ...(pack.promptNotePlacement === 'before-list' || pack.promptNotePlacement === 'after-list'
+      ? { promptNotePlacement: pack.promptNotePlacement }
+      : {}),
+    ...(Object.keys(outfitNotes).length > 0 ? { outfitNotes } : {}),
+    ...(sourceStoryKey ? { sourceStoryKey } : {}),
     coverTag: pack.coverTag,
     exportedAt: new Date().toISOString(),
     sprites,
@@ -66,7 +78,7 @@ function remoteField(sprite: SpritePack['sprites'][number]): { remoteUrl?: strin
   return r && /^https:\/\/.+/i.test(r) ? { remoteUrl: r } : {}
 }
 
-/** 解析导入的 JSON 文本为 SpritePack（@2 与 @1 均可）。格式非法时抛出带说明的 Error。 */
+/** 解析导入的 JSON 文本为 SpritePack（@3 / @2 / @1 均可）。格式非法时抛出带说明的 Error。 */
 export function importPack(jsonText: string): SpritePack {
   let raw: unknown
   try {
@@ -74,7 +86,7 @@ export function importPack(jsonText: string): SpritePack {
   } catch {
     throw new Error('导入失败：不是合法的 JSON 文件')
   }
-  // @1 与 @2 字段是超集关系，按宽结构收窄后统一处理
+  // 各版本字段是超集关系，按宽结构收窄后统一处理
   const file = raw as {
     format?: string
     name?: unknown
@@ -82,11 +94,19 @@ export function importPack(jsonText: string): SpritePack {
     description?: unknown
     roleName?: unknown
     outfit?: unknown
+    promptNote?: unknown
+    promptNotePlacement?: unknown
+    outfitNotes?: unknown
+    sourceStoryKey?: unknown
     coverTag?: unknown
     sprites?: unknown
   }
-  if (file.format !== 'sprite-pack@2' && file.format !== 'sprite-pack@1') {
-    throw new Error('导入失败：不是 sprite-pack@1 / @2 格式的立绘包')
+  if (
+    file.format !== 'sprite-pack@3' &&
+    file.format !== 'sprite-pack@2' &&
+    file.format !== 'sprite-pack@1'
+  ) {
+    throw new Error('导入失败：不是 sprite-pack@1 / @2 / @3 格式的立绘包')
   }
   if (typeof file.name !== 'string' || !file.name || !Array.isArray(file.sprites) || file.sprites.length === 0) {
     throw new Error('导入失败：立绘包缺少名称或立绘列表为空')
@@ -118,6 +138,7 @@ export function importPack(jsonText: string): SpritePack {
       typeof item.remoteUrl === 'string' && /^https?:\/\/.+/i.test(item.remoteUrl)
         ? item.remoteUrl
         : ''
+    const labels = normalizeLabels(item.labels)
     sprites.push({
       tag,
       url,
@@ -125,6 +146,7 @@ export function importPack(jsonText: string): SpritePack {
       ...(remoteUrl ? { remoteUrl } : {}),
       ...(group ? { group } : {}),
       ...(outfit ? { outfit } : {}),
+      ...(labels.length > 0 ? { labels } : {}),
     })
   }
   if (sprites.length === 0) {
@@ -135,6 +157,9 @@ export function importPack(jsonText: string): SpritePack {
   const coverTag = sprites.some((s) => s.tag === normalizedCover) ? normalizedCover : undefined
   const roleName = typeof file.roleName === 'string' ? normalizeTag(file.roleName) : ''
   const outfit = typeof file.outfit === 'string' ? normalizeTag(file.outfit) : ''
+  const promptNote = normalizeNote(file.promptNote)
+  const outfitNotes = normalizeOutfitNotes(file.outfitNotes)
+  const sourceStoryKey = typeof file.sourceStoryKey === 'string' ? file.sourceStoryKey.trim() : ''
 
   return {
     id: genId(),
@@ -147,6 +172,12 @@ export function importPack(jsonText: string): SpritePack {
         : undefined,
     ...(roleName ? { roleName } : {}),
     ...(outfit ? { outfit } : {}),
+    ...(promptNote ? { promptNote } : {}),
+    ...(file.promptNotePlacement === 'before-list' || file.promptNotePlacement === 'after-list'
+      ? { promptNotePlacement: file.promptNotePlacement }
+      : {}),
+    ...(Object.keys(outfitNotes).length > 0 ? { outfitNotes } : {}),
+    ...(sourceStoryKey ? { sourceStoryKey } : {}),
     coverTag,
     updatedAt: new Date().toISOString(),
     sprites,

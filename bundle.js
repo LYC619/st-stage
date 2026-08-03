@@ -198,7 +198,7 @@ function buildPrompt(addresses, mode, count, template = "", budget = 0) {
 }
 
 // core/types.ts
-var SETTINGS_VERSION = 3;
+var SETTINGS_VERSION = 4;
 var RECENT_FLOORS_DEFAULT = 6;
 var RECENT_FLOORS_MIN = 1;
 var RECENT_FLOORS_MAX = 50;
@@ -269,6 +269,7 @@ function createDefaultSettings() {
     promptBudget: PROMPT_BUDGET_DEFAULT,
     imgbbApiKey: "",
     autoUpload: false,
+    galleryFoldByRole: false,
     packs: [],
     bindings: [],
     apps: {}
@@ -1451,6 +1452,41 @@ function decodeShareStringV2(raw) {
   };
 }
 
+// core/sprite-metadata.ts
+var MAX_LABELS = 24;
+var MAX_LABEL_CODE_POINTS = 32;
+var MAX_NOTE_CODE_POINTS = 500;
+function clipCodePoints(value, limit) {
+  return Array.from(value).slice(0, limit).join("").trim();
+}
+function normalizeLabels(raw) {
+  if (!Array.isArray(raw)) return [];
+  const labels = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const value of raw) {
+    if (typeof value !== "string") continue;
+    const label = clipCodePoints(value.trim(), MAX_LABEL_CODE_POINTS);
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    labels.push(label);
+    if (labels.length === MAX_LABELS) break;
+  }
+  return labels;
+}
+function normalizeNote(raw) {
+  return typeof raw === "string" ? clipCodePoints(raw.trim(), MAX_NOTE_CODE_POINTS) : "";
+}
+function normalizeOutfitNotes(raw) {
+  const notes = /* @__PURE__ */ Object.create(null);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return notes;
+  for (const [rawOutfit, rawNote] of Object.entries(raw)) {
+    const outfit = rawOutfit.trim();
+    const note = normalizeNote(rawNote);
+    if (outfit && note) notes[outfit] = note;
+  }
+  return notes;
+}
+
 // core/migrate.ts
 function migrateSettings(saved) {
   const defaults = createDefaultSettings();
@@ -1478,6 +1514,7 @@ function migrateSettings(saved) {
     promptBudget: typeof raw.promptBudget === "number" && Number.isFinite(raw.promptBudget) ? Math.min(PROMPT_BUDGET_MAX, Math.max(PROMPT_BUDGET_MIN, Math.round(raw.promptBudget))) : defaults.promptBudget,
     imgbbApiKey: typeof raw.imgbbApiKey === "string" ? raw.imgbbApiKey : defaults.imgbbApiKey,
     autoUpload: typeof raw.autoUpload === "boolean" ? raw.autoUpload : defaults.autoUpload,
+    galleryFoldByRole: typeof raw.galleryFoldByRole === "boolean" ? raw.galleryFoldByRole : defaults.galleryFoldByRole,
     packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
     bindings: Array.isArray(raw.bindings) ? raw.bindings.flatMap((b) => migrateBinding(b) ?? []) : [],
     apps: raw.apps && typeof raw.apps === "object" && !Array.isArray(raw.apps) ? raw.apps : {}
@@ -1524,6 +1561,7 @@ function migratePack(raw) {
     const group = typeof s.group === "string" ? normalizeTag(s.group) : "";
     const outfit2 = typeof s.outfit === "string" ? normalizeTag(s.outfit) : "";
     const remoteUrl = typeof s.remoteUrl === "string" && /^https?:\/\//.test(s.remoteUrl) ? s.remoteUrl : "";
+    const labels = normalizeLabels(s.labels);
     return [
       {
         tag,
@@ -1531,12 +1569,16 @@ function migratePack(raw) {
         ...code ? { code } : {},
         ...group ? { group } : {},
         ...outfit2 ? { outfit: outfit2 } : {},
-        ...remoteUrl ? { remoteUrl } : {}
+        ...remoteUrl ? { remoteUrl } : {},
+        ...labels.length > 0 ? { labels } : {}
       }
     ];
   });
   const roleName = typeof p.roleName === "string" ? normalizeTag(p.roleName) : "";
   const outfit = typeof p.outfit === "string" ? normalizeTag(p.outfit) : "";
+  const promptNote = normalizeNote(p.promptNote);
+  const outfitNotes = normalizeOutfitNotes(p.outfitNotes);
+  const sourceStoryKey = typeof p.sourceStoryKey === "string" ? p.sourceStoryKey.trim() : "";
   return {
     id: p.id,
     name,
@@ -1544,6 +1586,10 @@ function migratePack(raw) {
     ...typeof p.description === "string" && p.description ? { description: p.description } : {},
     ...roleName ? { roleName } : {},
     ...outfit ? { outfit } : {},
+    ...promptNote ? { promptNote } : {},
+    ...p.promptNotePlacement === "before-list" || p.promptNotePlacement === "after-list" ? { promptNotePlacement: p.promptNotePlacement } : {},
+    ...Object.keys(outfitNotes).length > 0 ? { outfitNotes } : {},
+    ...sourceStoryKey ? { sourceStoryKey } : {},
     ...typeof p.coverTag === "string" && p.coverTag ? { coverTag: p.coverTag } : {},
     ...typeof p.updatedAt === "string" && p.updatedAt ? { updatedAt: p.updatedAt } : {},
     sprites
@@ -2110,10 +2156,12 @@ async function exportPack(pack, embedHosted = false) {
   const sprites = [];
   for (const sprite of pack.sprites) {
     const source = getSpriteSource(sprite);
+    const labels = normalizeLabels(sprite.labels);
     const extra = {
       ...remoteField(sprite),
       ...sprite.group ? { group: sprite.group } : {},
-      ...sprite.outfit ? { outfit: sprite.outfit } : {}
+      ...sprite.outfit ? { outfit: sprite.outfit } : {},
+      ...labels.length > 0 ? { labels } : {}
     };
     if (source === "embedded") {
       sprites.push({ tag: sprite.tag, data: await recompressDataUri(sprite.url), ...extra });
@@ -2128,13 +2176,20 @@ async function exportPack(pack, embedHosted = false) {
       sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code), ...extra });
     }
   }
+  const promptNote = normalizeNote(pack.promptNote);
+  const outfitNotes = normalizeOutfitNotes(pack.outfitNotes);
+  const sourceStoryKey = typeof pack.sourceStoryKey === "string" ? pack.sourceStoryKey.trim() : "";
   return {
-    format: "sprite-pack@2",
+    format: "sprite-pack@3",
     name: pack.name,
     author: pack.author,
     description: pack.description,
     ...pack.roleName ? { roleName: pack.roleName } : {},
     ...pack.outfit ? { outfit: pack.outfit } : {},
+    ...promptNote ? { promptNote } : {},
+    ...pack.promptNotePlacement === "before-list" || pack.promptNotePlacement === "after-list" ? { promptNotePlacement: pack.promptNotePlacement } : {},
+    ...Object.keys(outfitNotes).length > 0 ? { outfitNotes } : {},
+    ...sourceStoryKey ? { sourceStoryKey } : {},
     coverTag: pack.coverTag,
     exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
     sprites
@@ -2156,8 +2211,8 @@ function importPack(jsonText) {
     throw new Error("导入失败：不是合法的 JSON 文件");
   }
   const file = raw;
-  if (file.format !== "sprite-pack@2" && file.format !== "sprite-pack@1") {
-    throw new Error("导入失败：不是 sprite-pack@1 / @2 格式的立绘包");
+  if (file.format !== "sprite-pack@3" && file.format !== "sprite-pack@2" && file.format !== "sprite-pack@1") {
+    throw new Error("导入失败：不是 sprite-pack@1 / @2 / @3 格式的立绘包");
   }
   if (typeof file.name !== "string" || !file.name || !Array.isArray(file.sprites) || file.sprites.length === 0) {
     throw new Error("导入失败：立绘包缺少名称或立绘列表为空");
@@ -2177,13 +2232,15 @@ function importPack(jsonText) {
     seen.add(key);
     const code = typeof item.code === "string" && item.code ? item.code : extractImageCode(url) ?? void 0;
     const remoteUrl = typeof item.remoteUrl === "string" && /^https?:\/\/.+/i.test(item.remoteUrl) ? item.remoteUrl : "";
+    const labels = normalizeLabels(item.labels);
     sprites.push({
       tag,
       url,
       ...code ? { code } : {},
       ...remoteUrl ? { remoteUrl } : {},
       ...group ? { group } : {},
-      ...outfit2 ? { outfit: outfit2 } : {}
+      ...outfit2 ? { outfit: outfit2 } : {},
+      ...labels.length > 0 ? { labels } : {}
     });
   }
   if (sprites.length === 0) {
@@ -2193,6 +2250,9 @@ function importPack(jsonText) {
   const coverTag = sprites.some((s) => s.tag === normalizedCover) ? normalizedCover : void 0;
   const roleName = typeof file.roleName === "string" ? normalizeTag(file.roleName) : "";
   const outfit = typeof file.outfit === "string" ? normalizeTag(file.outfit) : "";
+  const promptNote = normalizeNote(file.promptNote);
+  const outfitNotes = normalizeOutfitNotes(file.outfitNotes);
+  const sourceStoryKey = typeof file.sourceStoryKey === "string" ? file.sourceStoryKey.trim() : "";
   return {
     id: genId(),
     name: sanitizePackName(file.name) || "导入立绘包",
@@ -2200,6 +2260,10 @@ function importPack(jsonText) {
     description: typeof file.description === "string" ? sanitizeDescription(file.description) || void 0 : void 0,
     ...roleName ? { roleName } : {},
     ...outfit ? { outfit } : {},
+    ...promptNote ? { promptNote } : {},
+    ...file.promptNotePlacement === "before-list" || file.promptNotePlacement === "after-list" ? { promptNotePlacement: file.promptNotePlacement } : {},
+    ...Object.keys(outfitNotes).length > 0 ? { outfitNotes } : {},
+    ...sourceStoryKey ? { sourceStoryKey } : {},
     coverTag,
     updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
     sprites
