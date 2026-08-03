@@ -560,6 +560,77 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
 
     manager.close()
   })
+
+  it('resets the 60-sprite render window when search or label filters change', () => {
+    const manager = openLargeGallery(130)
+    findButton(document, '加载更多').click()
+    expect(document.querySelectorAll('.so-sprite-cell')).toHaveLength(120)
+
+    const search = document.querySelector<HTMLInputElement>('.so-gallery-search')!
+    search.value = '图'
+    search.dispatchEvent(new Event('input'))
+
+    expect(document.querySelectorAll('.so-sprite-cell')).toHaveLength(60)
+    expect(document.querySelector('.so-sprite-count')?.textContent).toContain('60/130')
+    manager.close()
+  })
+
+  it('deduplicates selected label chips and removes them on command', () => {
+    let settings = largeGallerySettings(25)
+    settings.packs[0].sprites.forEach((sprite, index) => { sprite.labels = [`标签${index + 1}`] })
+    settings.packs[0].sprites[0].labels = ['动作']
+    settings.packs[0].sprites[1].labels = ['动作', '室内']
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    ;([...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+      .find((card) => card.textContent?.includes('千图包')))!.click()
+    const labels = document.querySelector<HTMLSelectElement>('.so-gallery-label-select')!
+    expect(labels.options).toHaveLength(26)
+
+    labels.value = '动作'
+    labels.dispatchEvent(new Event('change'))
+    labels.value = '动作'
+    labels.dispatchEvent(new Event('change'))
+
+    expect(document.querySelectorAll('.so-gallery-filter-chip')).toHaveLength(1)
+    expect(document.querySelectorAll('.so-sprite-cell')).toHaveLength(2)
+    document.querySelector<HTMLElement>('.so-gallery-filter-chip')!.click()
+    expect(document.querySelectorAll('.so-gallery-filter-chip')).toHaveLength(0)
+    expect(document.querySelectorAll('.so-sprite-cell')).toHaveLength(25)
+    manager.close()
+  })
+
+  it('folds packs by role into one expandable row while leaving empty-role packs independent', () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      galleryFoldByRole: true,
+      packs: [
+        { id: 'a', name: '小雅居家', roleName: '小雅', sprites: [{ tag: '一', url: 'a' }] },
+        { id: 'b', name: '小雅外出', roleName: '小雅', sprites: [{ tag: '二', url: 'b' }] },
+        { id: 'free', name: '独立包', sprites: [{ tag: '三', url: 'c' }] },
+      ],
+    }
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+
+    const row = document.querySelector<HTMLElement>('.so-role-pack-row')!
+    expect(row.textContent).toContain('小雅')
+    expect(row.textContent).toContain('2 个图包')
+    expect(document.querySelectorAll('.so-pack-card')).toHaveLength(1)
+    expect(document.querySelector('.so-role-pack-standalone')).not.toBeNull()
+    row.click()
+    expect(document.querySelectorAll('.so-pack-card')).toHaveLength(3)
+    expect(row.getAttribute('aria-expanded')).toBe('true')
+    manager.close()
+  })
 })
 
 describe('createSpriteManager upload finalization', () => {

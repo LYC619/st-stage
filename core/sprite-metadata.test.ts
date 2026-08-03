@@ -1,10 +1,63 @@
 import { describe, expect, it } from 'vitest'
 import {
   compactNumberedTags,
+  filterSprites,
+  groupPacksByRole,
   normalizeLabels,
   normalizeNote,
   normalizeOutfitNotes,
 } from './sprite-metadata'
+
+describe('filterSprites', () => {
+  const pack = {
+    id: 'p',
+    name: '日常图库',
+    roleName: '小雅',
+    outfit: '校服',
+    sprites: [
+      { tag: '挥手', url: 'a', labels: ['动作', '室外'] },
+      { tag: '看书', url: 'b', outfit: '居家服', labels: ['动作', '室内'] },
+      { tag: '微笑', url: 'c', group: '小明', labels: ['表情'] },
+    ],
+  }
+
+  it('matches a case-insensitive query across identity, labels, effective role/outfit, and pack name', () => {
+    expect(filterSprites(pack, { query: '居家', labels: [] }).map((sprite) => sprite.tag)).toEqual(['看书'])
+    expect(filterSprites(pack, { query: '小雅', labels: [] }).map((sprite) => sprite.tag)).toEqual(['挥手', '看书'])
+    expect(filterSprites(pack, { query: '日常图库', labels: [] })).toHaveLength(3)
+    expect(filterSprites(pack, { query: '室外', labels: [] }).map((sprite) => sprite.tag)).toEqual(['挥手'])
+  })
+
+  it('uses AND semantics for deduplicated labels', () => {
+    expect(filterSprites(pack, { query: '', labels: ['动作', '室内', '动作'] }).map((sprite) => sprite.tag)).toEqual(['看书'])
+    expect(filterSprites(pack, { query: '书', labels: ['动作', '室内'] }).map((sprite) => sprite.tag)).toEqual(['看书'])
+    expect(filterSprites(pack, { query: '', labels: ['动作', '表情'] })).toEqual([])
+  })
+})
+
+describe('groupPacksByRole', () => {
+  it('preserves order, keeps empty-role packs independent, and reports counts', () => {
+    const packs = [
+      { id: 'a', name: 'A', roleName: '小雅', sprites: [{ tag: '1', url: 'a' }] },
+      { id: 'empty-1', name: '独立一', sprites: [{ tag: '1', url: 'b' }] },
+      { id: 'b', name: 'B', roleName: '小雅', sprites: [{ tag: '1', url: 'c' }, { tag: '2', url: 'd' }] },
+      { id: 'empty-2', name: '独立二', roleName: '  ', sprites: [] },
+      { id: 'c', name: 'C', roleName: '小明', sprites: [{ tag: '1', url: 'e' }] },
+    ]
+
+    const groups = groupPacksByRole(packs)
+
+    expect(groups.map(({ role, packs }) => [role, packs.map((pack) => pack.id)])).toEqual([
+      ['小雅', ['a', 'b']],
+      ['', ['empty-1']],
+      ['', ['empty-2']],
+      ['小明', ['c']],
+    ])
+    expect(groups.map(({ packCount, spriteCount }) => [packCount, spriteCount])).toEqual([
+      [2, 3], [1, 1], [1, 0], [1, 1],
+    ])
+  })
+})
 
 describe('compactNumberedTags', () => {
   it('compacts an adjacent ascending run and preserves ordinary tags in source order', () => {

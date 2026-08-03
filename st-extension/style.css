@@ -621,6 +621,90 @@
   box-shadow: 0 0 0 1px rgba(74, 189, 126, 0.35);
 }
 
+.so-manager .so-pack-list-folded,
+.so-manager .so-role-pack-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.so-manager .so-pack-list-folded {
+  margin: 12px 0;
+}
+
+.so-manager .so-role-pack-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 20px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.so-manager .so-role-pack-row span {
+  font-size: 12px;
+  opacity: 0.72;
+}
+
+.so-manager .so-role-pack-arrow {
+  text-align: center;
+  font-size: 18px;
+}
+
+.so-manager .so-role-pack-grid {
+  margin: 0 0 4px;
+}
+
+.so-manager .so-role-pack-standalone {
+  grid-template-columns: minmax(104px, 220px);
+}
+
+.so-manager .so-gallery-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+.so-manager .so-gallery-search {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.so-manager .so-gallery-label-select {
+  flex: 0 1 180px;
+  min-width: 120px;
+}
+
+.so-manager .so-gallery-filter-chips {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.so-manager .so-gallery-filter-chip {
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  cursor: pointer;
+}
+
+.so-manager .so-gallery-paging {
+  display: flex;
+  justify-content: center;
+}
+
 /* 老内核不支持 aspect-ratio 时给封面兜底高度，避免卡片塌成一行字 */
 @supports not (aspect-ratio: 3 / 4) {
   .so-manager .so-card-cover {

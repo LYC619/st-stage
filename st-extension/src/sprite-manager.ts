@@ -18,7 +18,6 @@ import {
   type ConflictCheckedSettingsResult,
   bindPack,
   genId,
-  getGroups,
   moveSprite,
   previewBindingAddressChanges,
   removePack,
@@ -56,6 +55,7 @@ import {
 import { compressImage, formatBytes } from '../../core/image-compress'
 import { isValidImgbbResult, uploadToImgbb } from '../../core/imgbb'
 import { isPresetPack } from '../../core/presets'
+import { filterSprites, groupPacksByRole } from '../../core/sprite-metadata'
 import type { STAdapter } from './st-adapter'
 import { createSpriteActions, type SpriteAction, type SpriteActionContext } from './sprite-actions'
 import { openSpriteLightbox, type SpriteLightboxController } from './sprite-lightbox'
@@ -94,6 +94,9 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   let destroyed = false
   let view: View = { kind: 'list' }
   let spriteVisibleCount = SPRITE_PAGE_SIZE
+  let spriteFilterQuery = ''
+  let spriteFilterLabels: string[] = []
+  const expandedRoleGroups = new Set<string>()
   let openedFrom: ManagerSource = 'overlay'
   /** 当前放大查看器及其完整列表索引；管理器重渲染不丢失导航位置。 */
   let activeLightbox: ActiveLightbox | null = null
@@ -117,6 +120,9 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     }
     view = { kind: 'list' }
     spriteVisibleCount = SPRITE_PAGE_SIZE
+    spriteFilterQuery = ''
+    spriteFilterLabels = []
+    expandedRoleGroups.clear()
     backdrop = el('div', 'so-manager-backdrop')
     // 点空白不再关闭（用户实测：误触退出后要重新逐层进入，受挫感强）；关闭走 ✕ 按钮或 Esc
     document.addEventListener('keydown', onEscape)
@@ -638,10 +644,45 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     body.append(strip)
 
     // 包封面图墙：立绘包是图片集合，用卡片网格浏览（同 ST 角色列表的卡片墙模式）
-    const grid = el('div', 'so-pack-grid')
-    for (const pack of settings.packs) {
-      const bound = boundIds.includes(pack.id) ? (binding?.enabled ? 'active' : 'off') : null
-      grid.append(renderPackCard(pack, bound))
+    const grid = el('div', settings.galleryFoldByRole ? 'so-pack-list-folded' : 'so-pack-grid')
+    const boundState = (pack: SpritePack): 'active' | 'off' | null =>
+      boundIds.includes(pack.id) ? (binding?.enabled ? 'active' : 'off') : null
+    if (settings.galleryFoldByRole) {
+      for (const group of groupPacksByRole(settings.packs)) {
+        if (!group.role) {
+          const standalone = el('div', 'so-pack-grid so-role-pack-grid so-role-pack-standalone')
+          standalone.append(renderPackCard(group.packs[0], boundState(group.packs[0])))
+          grid.append(standalone)
+          continue
+        }
+        const section = el('div', 'so-role-pack-group')
+        const row = el('button', 'so-role-pack-row') as HTMLButtonElement
+        row.type = 'button'
+        const expanded = expandedRoleGroups.has(group.key)
+        row.setAttribute('aria-expanded', String(expanded))
+        const title = el('b')
+        title.textContent = group.role
+        const counts = el('span')
+        counts.textContent = `${group.packCount} 个图包 · ${group.spriteCount} 张`
+        const arrow = el('span', 'so-role-pack-arrow')
+        arrow.textContent = expanded ? '▾' : '›'
+        row.append(title, counts, arrow)
+        row.addEventListener('click', () => {
+          if (expanded) expandedRoleGroups.delete(group.key)
+          else expandedRoleGroups.add(group.key)
+          row.setAttribute('aria-expanded', String(!expanded))
+          render()
+        })
+        section.append(row)
+        if (expanded) {
+          const packs = el('div', 'so-pack-grid so-role-pack-grid')
+          for (const pack of group.packs) packs.append(renderPackCard(pack, boundState(pack)))
+          section.append(packs)
+        }
+        grid.append(section)
+      }
+    } else {
+      for (const pack of settings.packs) grid.append(renderPackCard(pack, boundState(pack)))
     }
     body.append(grid)
 
@@ -691,6 +732,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     const enter = () => {
       view = { kind: 'pack', packId: pack.id }
       spriteVisibleCount = SPRITE_PAGE_SIZE
+      spriteFilterQuery = ''
+      spriteFilterLabels = []
       render()
     }
     card.addEventListener('click', enter)
@@ -858,23 +901,47 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       body.append(metaPanel.box)
     }
 
-    // 立绘网格：有分组则按分组分区展示（功能②），否则单一网格
+    // 搜索和标签过滤只改变图库视图，不修改包内容；分页仍按每次 60 张追加。
     if (pack.sprites.length === 0) {
       const empty = el('div', 'so-status')
       empty.textContent = '还没有立绘：点右上角「添加立绘」上传图片或粘贴编码。'
       body.append(empty)
     } else {
-      const visibleCount = Math.min(
-        Math.max(SPRITE_PAGE_SIZE, spriteVisibleCount),
-        pack.sprites.length,
-      )
-      spriteVisibleCount = visibleCount
-      const groups = getGroups(pack)
-      const sections = [...groups]
-      if (pack.sprites.some((sprite) => spriteGroup(sprite) === '')) sections.push('')
-      if (sections.length === 0) sections.push('')
+      const filters = el('div', 'so-gallery-filters')
+      const search = document.createElement('input')
+      search.type = 'search'
+      search.className = 'text_pole so-gallery-search'
+      search.placeholder = '搜索图名、角色、服装或标签'
+      search.setAttribute('aria-label', '搜索立绘')
+      search.value = spriteFilterQuery
+      const labelSelect = document.createElement('select')
+      labelSelect.className = 'text_pole so-gallery-label-select'
+      labelSelect.setAttribute('aria-label', '添加标签筛选')
+      const placeholder = document.createElement('option')
+      placeholder.value = ''
+      placeholder.textContent = '按标签筛选…'
+      labelSelect.append(placeholder)
+      const availableLabels = [...new Set(pack.sprites.flatMap((sprite) => sprite.labels ?? []))]
+      for (const label of availableLabels) {
+        const option = document.createElement('option')
+        option.value = label
+        option.textContent = label
+        labelSelect.append(option)
+      }
+      const chips = el('div', 'so-gallery-filter-chips')
+      filters.append(search, labelSelect, chips)
+      body.append(filters)
+
       const gallery = el('div', 'so-sprite-gallery')
+      const count = el('div', 'so-status so-sprite-count')
+      const paging = el('div', 'so-gallery-paging')
+      body.append(gallery, count, paging)
+
+      let filteredEntries: Array<{ sprite: Sprite; index: number }> = []
+      let sections: string[] = []
+      let groups: string[] = []
       const grids = new Map<string, HTMLElement>()
+
       const ensureGrid = (group: string): HTMLElement => {
         const existing = grids.get(group)
         if (existing) return existing
@@ -886,19 +953,13 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         }
         const grid = el('div', 'so-sprite-grid')
         section.append(grid)
-        const sectionIndex = sections.indexOf(group)
-        const nextGrid = sections.slice(sectionIndex + 1)
-          .map((nextGroup) => grids.get(nextGroup))
-          .find(Boolean)
-        gallery.insertBefore(section, nextGrid?.parentElement ?? null)
+        gallery.append(section)
         grids.set(group, grid)
         return grid
       }
+
       const appendSprites = (start: number, end: number): void => {
-        const entries = pack.sprites.slice(start, end).map((sprite, offset) => ({
-          sprite,
-          index: start + offset,
-        }))
+        const entries = filteredEntries.slice(start, end)
         for (const group of sections) {
           const matching = entries.filter(({ sprite }) => spriteGroup(sprite) === group)
           if (matching.length === 0) continue
@@ -908,21 +969,84 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           }
         }
       }
-      body.append(gallery)
-      appendSprites(0, visibleCount)
-      const count = el('div', 'so-status so-sprite-count')
-      count.textContent = `已显示 ${visibleCount}/${pack.sprites.length}`
-      body.append(count)
-      if (visibleCount < pack.sprites.length) {
-        const loadMore = button('加载更多', () => {
-          const previousCount = spriteVisibleCount
-          spriteVisibleCount = Math.min(pack.sprites.length, previousCount + SPRITE_PAGE_SIZE)
-          appendSprites(previousCount, spriteVisibleCount)
-          count.textContent = `已显示 ${spriteVisibleCount}/${pack.sprites.length}`
-          if (spriteVisibleCount >= pack.sprites.length) loadMore.remove()
-        })
-        body.append(loadMore)
+
+      const updatePaging = (): void => {
+        const visibleCount = Math.min(spriteVisibleCount, filteredEntries.length)
+        count.textContent = `已显示 ${visibleCount}/${filteredEntries.length}`
+        paging.replaceChildren()
+        if (visibleCount < filteredEntries.length) {
+          paging.append(button('加载更多', () => {
+            const previousCount = spriteVisibleCount
+            spriteVisibleCount = Math.min(filteredEntries.length, previousCount + SPRITE_PAGE_SIZE)
+            appendSprites(previousCount, spriteVisibleCount)
+            updatePaging()
+          }))
+        }
       }
+
+      const renderFilteredGallery = (): void => {
+        const matches = new Set(filterSprites(pack, {
+          query: spriteFilterQuery,
+          labels: spriteFilterLabels,
+        }))
+        filteredEntries = pack.sprites
+          .map((sprite, index) => ({ sprite, index }))
+          .filter(({ sprite }) => matches.has(sprite))
+        groups = [...new Set(filteredEntries.map(({ sprite }) => spriteGroup(sprite)).filter(Boolean))]
+        sections = [...groups]
+        if (filteredEntries.some(({ sprite }) => spriteGroup(sprite) === '')) sections.push('')
+        if (sections.length === 0) sections.push('')
+        gallery.replaceChildren()
+        grids.clear()
+        if (filteredEntries.length === 0) {
+          const empty = el('div', 'so-status so-gallery-empty')
+          empty.textContent = '没有符合筛选条件的立绘。'
+          gallery.append(empty)
+        } else {
+          appendSprites(0, Math.min(spriteVisibleCount, filteredEntries.length))
+        }
+        updatePaging()
+      }
+
+      const renderChips = (): void => {
+        chips.replaceChildren()
+        for (const label of spriteFilterLabels) {
+          const chip = document.createElement('button')
+          chip.type = 'button'
+          chip.className = 'so-gallery-filter-chip'
+          chip.textContent = `${label} ×`
+          chip.title = `移除标签筛选「${label}」`
+          chip.addEventListener('click', () => {
+            spriteFilterLabels = spriteFilterLabels.filter((current) => current !== label)
+            spriteVisibleCount = SPRITE_PAGE_SIZE
+            renderChips()
+            renderFilteredGallery()
+          })
+          chips.append(chip)
+        }
+      }
+
+      search.addEventListener('input', () => {
+        spriteFilterQuery = search.value
+        spriteVisibleCount = SPRITE_PAGE_SIZE
+        renderFilteredGallery()
+      })
+      labelSelect.addEventListener('change', () => {
+        const label = labelSelect.value
+        labelSelect.value = ''
+        if (!label || spriteFilterLabels.includes(label)) return
+        spriteFilterLabels = [...spriteFilterLabels, label]
+        spriteVisibleCount = SPRITE_PAGE_SIZE
+        renderChips()
+        renderFilteredGallery()
+      })
+
+      spriteVisibleCount = Math.min(
+        Math.max(SPRITE_PAGE_SIZE, spriteVisibleCount),
+        pack.sprites.length,
+      )
+      renderChips()
+      renderFilteredGallery()
     }
     // 维护类功能（补传/拆分）低频，排在图墙之后
     if (!readonly) {

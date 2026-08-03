@@ -25,6 +25,85 @@ function hasTag(text) {
   return new RegExp(TAG_REGEX.source).test(text);
 }
 
+// core/types.ts
+var SETTINGS_VERSION = 4;
+var RECENT_FLOORS_DEFAULT = 6;
+var RECENT_FLOORS_MIN = 1;
+var RECENT_FLOORS_MAX = 50;
+var SPRITE_COUNT_DEFAULT = 1;
+var SPRITE_COUNT_MIN = 1;
+var SPRITE_COUNT_MAX = 10;
+var INJECTION_DEPTH_DEFAULT = 4;
+var INJECTION_DEPTH_MIN = 0;
+var INJECTION_DEPTH_MAX = 100;
+var PROMPT_BUDGET_DEFAULT = 0;
+var PROMPT_BUDGET_MIN = 0;
+var PROMPT_BUDGET_MAX = 2e4;
+var DEFAULT_IMAGE_HOST = "https://files.catbox.moe/";
+function getSpriteSource(sprite) {
+  if (sprite.url.startsWith("data:")) return "embedded";
+  if (/^https?:\/\//.test(sprite.url)) return "hosted";
+  return "local";
+}
+function getPackCover(pack) {
+  if (pack.coverTag) {
+    const cover = pack.sprites.find((s) => s.tag === pack.coverTag);
+    if (cover) return cover;
+  }
+  return pack.sprites[0] ?? null;
+}
+function spriteRole(pack, sprite) {
+  return (sprite.group ?? "").trim() || (pack.roleName ?? "").trim();
+}
+function spriteOutfit(pack, sprite) {
+  return (sprite.outfit ?? "").trim() || (pack.outfit ?? "").trim();
+}
+function spriteAddress(pack, sprite) {
+  return { role: spriteRole(pack, sprite), outfit: spriteOutfit(pack, sprite), tag: sprite.tag };
+}
+function formatAddress(a) {
+  if (a.role && a.outfit) return `${a.role}/${a.outfit}/${a.tag}`;
+  if (a.role) return `${a.role}/${a.tag}`;
+  return a.tag;
+}
+function parseAddress(address) {
+  const parts = address.split("/").map((s) => s.trim());
+  if (parts.length >= 3) {
+    return { role: parts[0], outfit: parts[1], tag: parts.slice(2).join("/") };
+  }
+  if (parts.length === 2) return { role: parts[0], outfit: "", tag: parts[1] };
+  return { role: "", outfit: "", tag: parts[0] ?? "" };
+}
+function createDefaultSettings() {
+  return {
+    settingsVersion: SETTINGS_VERSION,
+    enabled: true,
+    hideTagInMessage: false,
+    spriteDisplayMode: "overlay",
+    renderInlineImages: false,
+    imageHost: DEFAULT_IMAGE_HOST,
+    overlay: { x: 24, y: 80, width: 220 },
+    overlayHidden: false,
+    recentFloors: RECENT_FLOORS_DEFAULT,
+    phone: { x: 24, y: 320, open: false },
+    showPhone: true,
+    autoSwitch: false,
+    autoSwitchSeconds: 3,
+    multiRole: false,
+    multiRolePromptMode: "full",
+    spriteCount: SPRITE_COUNT_DEFAULT,
+    injectionDepth: INJECTION_DEPTH_DEFAULT,
+    promptTemplate: "",
+    promptBudget: PROMPT_BUDGET_DEFAULT,
+    imgbbApiKey: "",
+    autoUpload: false,
+    galleryFoldByRole: false,
+    packs: [],
+    bindings: [],
+    apps: {}
+  };
+}
+
 // core/sprite-metadata.ts
 var MAX_LABELS = 24;
 var MAX_LABEL_CODE_POINTS = 32;
@@ -108,6 +187,53 @@ function normalizeOutfitNotes(raw) {
   }
   return notes;
 }
+function filterSprites(pack, filter) {
+  const query = (filter.query ?? "").trim().toLocaleLowerCase();
+  const requiredLabels = [...new Set((filter.labels ?? []).map((label) => label.trim().toLocaleLowerCase()).filter(Boolean))];
+  return pack.sprites.filter((sprite) => {
+    const labels = (sprite.labels ?? []).map((label) => label.toLocaleLowerCase());
+    if (!requiredLabels.every((label) => labels.includes(label))) return false;
+    if (!query) return true;
+    return [
+      sprite.tag,
+      ...labels,
+      spriteRole(pack, sprite),
+      spriteOutfit(pack, sprite),
+      pack.name
+    ].some((value) => value.toLocaleLowerCase().includes(query));
+  });
+}
+function groupPacksByRole(packs) {
+  const groups = [];
+  const byRole = /* @__PURE__ */ new Map();
+  for (const pack of packs) {
+    const role = (pack.roleName ?? "").trim();
+    if (!role) {
+      groups.push(makePackGroup(`pack:${pack.id}`, "", [pack]));
+      continue;
+    }
+    const existing = byRole.get(role);
+    if (existing) {
+      existing.packs.push(pack);
+      existing.packCount += 1;
+      existing.spriteCount += pack.sprites.length;
+      continue;
+    }
+    const group = makePackGroup(`role:${role}`, role, [pack]);
+    byRole.set(role, group);
+    groups.push(group);
+  }
+  return groups;
+}
+function makePackGroup(key, role, packs) {
+  return {
+    key,
+    role,
+    packs,
+    packCount: packs.length,
+    spriteCount: packs.reduce((count, pack) => count + pack.sprites.length, 0)
+  };
+}
 
 // core/naming.ts
 var TAG_MAX_LENGTH = 20;
@@ -167,85 +293,6 @@ function sanitizeDescription(raw) {
 }
 function sanitizePathSegment(raw) {
   return raw.replace(CONTROL_CHARS, "").replace(PATH_SEGMENT_ALLOWED, "").replace(/\.{2,}/g, ".").replace(/^[. ]+|[. ]+$/g, "").slice(0, 40).trim();
-}
-
-// core/types.ts
-var SETTINGS_VERSION = 4;
-var RECENT_FLOORS_DEFAULT = 6;
-var RECENT_FLOORS_MIN = 1;
-var RECENT_FLOORS_MAX = 50;
-var SPRITE_COUNT_DEFAULT = 1;
-var SPRITE_COUNT_MIN = 1;
-var SPRITE_COUNT_MAX = 10;
-var INJECTION_DEPTH_DEFAULT = 4;
-var INJECTION_DEPTH_MIN = 0;
-var INJECTION_DEPTH_MAX = 100;
-var PROMPT_BUDGET_DEFAULT = 0;
-var PROMPT_BUDGET_MIN = 0;
-var PROMPT_BUDGET_MAX = 2e4;
-var DEFAULT_IMAGE_HOST = "https://files.catbox.moe/";
-function getSpriteSource(sprite) {
-  if (sprite.url.startsWith("data:")) return "embedded";
-  if (/^https?:\/\//.test(sprite.url)) return "hosted";
-  return "local";
-}
-function getPackCover(pack) {
-  if (pack.coverTag) {
-    const cover = pack.sprites.find((s) => s.tag === pack.coverTag);
-    if (cover) return cover;
-  }
-  return pack.sprites[0] ?? null;
-}
-function spriteRole(pack, sprite) {
-  return (sprite.group ?? "").trim() || (pack.roleName ?? "").trim();
-}
-function spriteOutfit(pack, sprite) {
-  return (sprite.outfit ?? "").trim() || (pack.outfit ?? "").trim();
-}
-function spriteAddress(pack, sprite) {
-  return { role: spriteRole(pack, sprite), outfit: spriteOutfit(pack, sprite), tag: sprite.tag };
-}
-function formatAddress(a) {
-  if (a.role && a.outfit) return `${a.role}/${a.outfit}/${a.tag}`;
-  if (a.role) return `${a.role}/${a.tag}`;
-  return a.tag;
-}
-function parseAddress(address) {
-  const parts = address.split("/").map((s) => s.trim());
-  if (parts.length >= 3) {
-    return { role: parts[0], outfit: parts[1], tag: parts.slice(2).join("/") };
-  }
-  if (parts.length === 2) return { role: parts[0], outfit: "", tag: parts[1] };
-  return { role: "", outfit: "", tag: parts[0] ?? "" };
-}
-function createDefaultSettings() {
-  return {
-    settingsVersion: SETTINGS_VERSION,
-    enabled: true,
-    hideTagInMessage: false,
-    spriteDisplayMode: "overlay",
-    renderInlineImages: false,
-    imageHost: DEFAULT_IMAGE_HOST,
-    overlay: { x: 24, y: 80, width: 220 },
-    overlayHidden: false,
-    recentFloors: RECENT_FLOORS_DEFAULT,
-    phone: { x: 24, y: 320, open: false },
-    showPhone: true,
-    autoSwitch: false,
-    autoSwitchSeconds: 3,
-    multiRole: false,
-    multiRolePromptMode: "full",
-    spriteCount: SPRITE_COUNT_DEFAULT,
-    injectionDepth: INJECTION_DEPTH_DEFAULT,
-    promptTemplate: "",
-    promptBudget: PROMPT_BUDGET_DEFAULT,
-    imgbbApiKey: "",
-    autoUpload: false,
-    galleryFoldByRole: false,
-    packs: [],
-    bindings: [],
-    apps: {}
-  };
 }
 
 // core/address-policy.ts
@@ -637,14 +684,6 @@ function previewBindingAddressChanges(before, after, characterName) {
     removed: oldAddresses.filter((address) => !newSet.has(address)),
     added: newAddresses.filter((address) => !oldSet.has(address))
   };
-}
-function getGroups(pack) {
-  const seen = [];
-  for (const s of pack.sprites) {
-    const g = spriteGroup(s);
-    if (g && !seen.includes(g)) seen.push(g);
-  }
-  return seen;
 }
 function flatten(packs) {
   const multiPack = packs.length > 1;
@@ -2951,6 +2990,9 @@ function createSpriteManager(deps) {
   let destroyed = false;
   let view = { kind: "list" };
   let spriteVisibleCount = SPRITE_PAGE_SIZE;
+  let spriteFilterQuery = "";
+  let spriteFilterLabels = [];
+  const expandedRoleGroups = /* @__PURE__ */ new Set();
   let openedFrom = "overlay";
   let activeLightbox = null;
   function applyBackdropSize() {
@@ -2969,6 +3011,9 @@ function createSpriteManager(deps) {
     }
     view = { kind: "list" };
     spriteVisibleCount = SPRITE_PAGE_SIZE;
+    spriteFilterQuery = "";
+    spriteFilterLabels = [];
+    expandedRoleGroups.clear();
     backdrop = el("div", "so-manager-backdrop");
     document.addEventListener("keydown", onEscape);
     window.addEventListener("resize", applyBackdropSize);
@@ -3431,10 +3476,44 @@ ${options}`,
       strip.append(tip);
     }
     body.append(strip);
-    const grid = el("div", "so-pack-grid");
-    for (const pack of settings.packs) {
-      const bound = boundIds.includes(pack.id) ? binding?.enabled ? "active" : "off" : null;
-      grid.append(renderPackCard(pack, bound));
+    const grid = el("div", settings.galleryFoldByRole ? "so-pack-list-folded" : "so-pack-grid");
+    const boundState = (pack) => boundIds.includes(pack.id) ? binding?.enabled ? "active" : "off" : null;
+    if (settings.galleryFoldByRole) {
+      for (const group of groupPacksByRole(settings.packs)) {
+        if (!group.role) {
+          const standalone = el("div", "so-pack-grid so-role-pack-grid so-role-pack-standalone");
+          standalone.append(renderPackCard(group.packs[0], boundState(group.packs[0])));
+          grid.append(standalone);
+          continue;
+        }
+        const section = el("div", "so-role-pack-group");
+        const row = el("button", "so-role-pack-row");
+        row.type = "button";
+        const expanded = expandedRoleGroups.has(group.key);
+        row.setAttribute("aria-expanded", String(expanded));
+        const title = el("b");
+        title.textContent = group.role;
+        const counts = el("span");
+        counts.textContent = `${group.packCount} 个图包 · ${group.spriteCount} 张`;
+        const arrow = el("span", "so-role-pack-arrow");
+        arrow.textContent = expanded ? "▾" : "›";
+        row.append(title, counts, arrow);
+        row.addEventListener("click", () => {
+          if (expanded) expandedRoleGroups.delete(group.key);
+          else expandedRoleGroups.add(group.key);
+          row.setAttribute("aria-expanded", String(!expanded));
+          render3();
+        });
+        section.append(row);
+        if (expanded) {
+          const packs = el("div", "so-pack-grid so-role-pack-grid");
+          for (const pack of group.packs) packs.append(renderPackCard(pack, boundState(pack)));
+          section.append(packs);
+        }
+        grid.append(section);
+      }
+    } else {
+      for (const pack of settings.packs) grid.append(renderPackCard(pack, boundState(pack)));
     }
     body.append(grid);
     body.append(statusBar());
@@ -3477,6 +3556,8 @@ ${options}`,
     const enter = () => {
       view = { kind: "pack", packId: pack.id };
       spriteVisibleCount = SPRITE_PAGE_SIZE;
+      spriteFilterQuery = "";
+      spriteFilterLabels = [];
       render3();
     };
     card.addEventListener("click", enter);
@@ -3632,16 +3713,37 @@ ${options}`,
       empty.textContent = "还没有立绘：点右上角「添加立绘」上传图片或粘贴编码。";
       body.append(empty);
     } else {
-      const visibleCount = Math.min(
-        Math.max(SPRITE_PAGE_SIZE, spriteVisibleCount),
-        pack.sprites.length
-      );
-      spriteVisibleCount = visibleCount;
-      const groups = getGroups(pack);
-      const sections = [...groups];
-      if (pack.sprites.some((sprite) => spriteGroup(sprite) === "")) sections.push("");
-      if (sections.length === 0) sections.push("");
+      const filters = el("div", "so-gallery-filters");
+      const search = document.createElement("input");
+      search.type = "search";
+      search.className = "text_pole so-gallery-search";
+      search.placeholder = "搜索图名、角色、服装或标签";
+      search.setAttribute("aria-label", "搜索立绘");
+      search.value = spriteFilterQuery;
+      const labelSelect = document.createElement("select");
+      labelSelect.className = "text_pole so-gallery-label-select";
+      labelSelect.setAttribute("aria-label", "添加标签筛选");
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "按标签筛选…";
+      labelSelect.append(placeholder);
+      const availableLabels = [...new Set(pack.sprites.flatMap((sprite) => sprite.labels ?? []))];
+      for (const label of availableLabels) {
+        const option = document.createElement("option");
+        option.value = label;
+        option.textContent = label;
+        labelSelect.append(option);
+      }
+      const chips = el("div", "so-gallery-filter-chips");
+      filters.append(search, labelSelect, chips);
+      body.append(filters);
       const gallery = el("div", "so-sprite-gallery");
+      const count = el("div", "so-status so-sprite-count");
+      const paging = el("div", "so-gallery-paging");
+      body.append(gallery, count, paging);
+      let filteredEntries = [];
+      let sections = [];
+      let groups = [];
       const grids = /* @__PURE__ */ new Map();
       const ensureGrid = (group) => {
         const existing = grids.get(group);
@@ -3654,17 +3756,12 @@ ${options}`,
         }
         const grid = el("div", "so-sprite-grid");
         section.append(grid);
-        const sectionIndex = sections.indexOf(group);
-        const nextGrid = sections.slice(sectionIndex + 1).map((nextGroup) => grids.get(nextGroup)).find(Boolean);
-        gallery.insertBefore(section, nextGrid?.parentElement ?? null);
+        gallery.append(section);
         grids.set(group, grid);
         return grid;
       };
       const appendSprites = (start, end) => {
-        const entries = pack.sprites.slice(start, end).map((sprite, offset) => ({
-          sprite,
-          index: start + offset
-        }));
+        const entries = filteredEntries.slice(start, end);
         for (const group of sections) {
           const matching = entries.filter(({ sprite }) => spriteGroup(sprite) === group);
           if (matching.length === 0) continue;
@@ -3674,21 +3771,77 @@ ${options}`,
           }
         }
       };
-      body.append(gallery);
-      appendSprites(0, visibleCount);
-      const count = el("div", "so-status so-sprite-count");
-      count.textContent = `已显示 ${visibleCount}/${pack.sprites.length}`;
-      body.append(count);
-      if (visibleCount < pack.sprites.length) {
-        const loadMore = button("加载更多", () => {
-          const previousCount = spriteVisibleCount;
-          spriteVisibleCount = Math.min(pack.sprites.length, previousCount + SPRITE_PAGE_SIZE);
-          appendSprites(previousCount, spriteVisibleCount);
-          count.textContent = `已显示 ${spriteVisibleCount}/${pack.sprites.length}`;
-          if (spriteVisibleCount >= pack.sprites.length) loadMore.remove();
-        });
-        body.append(loadMore);
-      }
+      const updatePaging = () => {
+        const visibleCount = Math.min(spriteVisibleCount, filteredEntries.length);
+        count.textContent = `已显示 ${visibleCount}/${filteredEntries.length}`;
+        paging.replaceChildren();
+        if (visibleCount < filteredEntries.length) {
+          paging.append(button("加载更多", () => {
+            const previousCount = spriteVisibleCount;
+            spriteVisibleCount = Math.min(filteredEntries.length, previousCount + SPRITE_PAGE_SIZE);
+            appendSprites(previousCount, spriteVisibleCount);
+            updatePaging();
+          }));
+        }
+      };
+      const renderFilteredGallery = () => {
+        const matches = new Set(filterSprites(pack, {
+          query: spriteFilterQuery,
+          labels: spriteFilterLabels
+        }));
+        filteredEntries = pack.sprites.map((sprite, index) => ({ sprite, index })).filter(({ sprite }) => matches.has(sprite));
+        groups = [...new Set(filteredEntries.map(({ sprite }) => spriteGroup(sprite)).filter(Boolean))];
+        sections = [...groups];
+        if (filteredEntries.some(({ sprite }) => spriteGroup(sprite) === "")) sections.push("");
+        if (sections.length === 0) sections.push("");
+        gallery.replaceChildren();
+        grids.clear();
+        if (filteredEntries.length === 0) {
+          const empty = el("div", "so-status so-gallery-empty");
+          empty.textContent = "没有符合筛选条件的立绘。";
+          gallery.append(empty);
+        } else {
+          appendSprites(0, Math.min(spriteVisibleCount, filteredEntries.length));
+        }
+        updatePaging();
+      };
+      const renderChips = () => {
+        chips.replaceChildren();
+        for (const label of spriteFilterLabels) {
+          const chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "so-gallery-filter-chip";
+          chip.textContent = `${label} ×`;
+          chip.title = `移除标签筛选「${label}」`;
+          chip.addEventListener("click", () => {
+            spriteFilterLabels = spriteFilterLabels.filter((current2) => current2 !== label);
+            spriteVisibleCount = SPRITE_PAGE_SIZE;
+            renderChips();
+            renderFilteredGallery();
+          });
+          chips.append(chip);
+        }
+      };
+      search.addEventListener("input", () => {
+        spriteFilterQuery = search.value;
+        spriteVisibleCount = SPRITE_PAGE_SIZE;
+        renderFilteredGallery();
+      });
+      labelSelect.addEventListener("change", () => {
+        const label = labelSelect.value;
+        labelSelect.value = "";
+        if (!label || spriteFilterLabels.includes(label)) return;
+        spriteFilterLabels = [...spriteFilterLabels, label];
+        spriteVisibleCount = SPRITE_PAGE_SIZE;
+        renderChips();
+        renderFilteredGallery();
+      });
+      spriteVisibleCount = Math.min(
+        Math.max(SPRITE_PAGE_SIZE, spriteVisibleCount),
+        pack.sprites.length
+      );
+      renderChips();
+      renderFilteredGallery();
     }
     if (!readonly) {
       const pending = pack.sprites.filter(
@@ -4894,6 +5047,11 @@ function spriteApp() {
           "渲染消息内插图",
           settings.renderInlineImages,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), renderInlineImages: v })
+        ),
+        toggleRow(
+          "同角色图包折叠",
+          settings.galleryFoldByRole,
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), galleryFoldByRole: v })
         )
       );
       const displayHint = el2("div", "so-app-desc");

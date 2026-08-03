@@ -1,3 +1,6 @@
+import type { Sprite, SpritePack } from './types'
+import { spriteOutfit, spriteRole } from './types'
+
 const MAX_LABELS = 24
 const MAX_LABEL_CODE_POINTS = 32
 const MAX_NOTE_CODE_POINTS = 500
@@ -108,4 +111,67 @@ export function normalizeOutfitNotes(raw: unknown): Record<string, string> {
     if (outfit && note) notes[outfit] = note
   }
   return notes
+}
+
+export interface SpriteFilter {
+  query?: string
+  labels?: string[]
+}
+
+export function filterSprites(pack: SpritePack, filter: SpriteFilter): Sprite[] {
+  const query = (filter.query ?? '').trim().toLocaleLowerCase()
+  const requiredLabels = [...new Set((filter.labels ?? []).map((label) => label.trim().toLocaleLowerCase()).filter(Boolean))]
+  return pack.sprites.filter((sprite) => {
+    const labels = (sprite.labels ?? []).map((label) => label.toLocaleLowerCase())
+    if (!requiredLabels.every((label) => labels.includes(label))) return false
+    if (!query) return true
+    return [
+      sprite.tag,
+      ...labels,
+      spriteRole(pack, sprite),
+      spriteOutfit(pack, sprite),
+      pack.name,
+    ].some((value) => value.toLocaleLowerCase().includes(query))
+  })
+}
+
+export interface PackRoleGroup {
+  key: string
+  role: string
+  packs: SpritePack[]
+  packCount: number
+  spriteCount: number
+}
+
+export function groupPacksByRole(packs: SpritePack[]): PackRoleGroup[] {
+  const groups: PackRoleGroup[] = []
+  const byRole = new Map<string, PackRoleGroup>()
+  for (const pack of packs) {
+    const role = (pack.roleName ?? '').trim()
+    if (!role) {
+      groups.push(makePackGroup(`pack:${pack.id}`, '', [pack]))
+      continue
+    }
+    const existing = byRole.get(role)
+    if (existing) {
+      existing.packs.push(pack)
+      existing.packCount += 1
+      existing.spriteCount += pack.sprites.length
+      continue
+    }
+    const group = makePackGroup(`role:${role}`, role, [pack])
+    byRole.set(role, group)
+    groups.push(group)
+  }
+  return groups
+}
+
+function makePackGroup(key: string, role: string, packs: SpritePack[]): PackRoleGroup {
+  return {
+    key,
+    role,
+    packs,
+    packCount: packs.length,
+    spriteCount: packs.reduce((count, pack) => count + pack.sprites.length, 0),
+  }
 }

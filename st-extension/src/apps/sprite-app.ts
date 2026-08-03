@@ -90,6 +90,9 @@ export function spriteApp(): PhoneApp {
         toggleRow('渲染消息内插图', settings.renderInlineImages, (v) =>
           ctx.updateSettings({ ...ctx.getSettings(), renderInlineImages: v }),
         ),
+        toggleRow('同角色图包折叠', settings.galleryFoldByRole, (v) =>
+          ctx.updateSettings({ ...ctx.getSettings(), galleryFoldByRole: v }),
+        ),
       )
       const displayHint = el('div', 'so-app-desc')
       displayHint.textContent =
