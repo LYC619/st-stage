@@ -74,6 +74,35 @@ afterEach(() => {
 })
 
 describe('mountMessagePostprocess lifecycle', () => {
+  it('把渲染后的消息交给通用 hook，并在销毁时清理 hook 资源', async () => {
+    let handler: ((...args: unknown[]) => void) | undefined
+    const processMessage = vi.fn()
+    const cleanupMessages = vi.fn()
+    window.SillyTavern = {
+      getContext: () => ({
+        eventTypes: { CHARACTER_MESSAGE_RENDERED: 'rendered' },
+        eventSource: {
+          on: (_event: string, next: (...args: unknown[]) => void) => { handler = next },
+          removeListener: vi.fn(),
+        },
+      }),
+    } as never
+    buildChat([{ text: 'AI 回复' }])
+    const cleanup = mountMessagePostprocess({
+      getSettings: () => baseSettings(),
+      processMessage,
+      cleanupMessages,
+    })
+
+    handler?.(0)
+    await Promise.resolve()
+
+    expect(processMessage).toHaveBeenCalledWith(mesText(0))
+    cleanup()
+    cleanup()
+    expect(cleanupMessages).toHaveBeenCalledTimes(1)
+  })
+
   it('decorates the rendered message and cleans image actions on disposal', async () => {
     let handler: ((...args: unknown[]) => void) | undefined
     const decorateImages = vi.fn()

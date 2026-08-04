@@ -27,6 +27,12 @@ export interface PostprocessDeps {
   getSettings: () => PluginSettings
   decorateImages?: (root: ParentNode) => void
   cleanupImages?: () => void
+  /** 交给独立功能处理单个已渲染消息，不把功能逻辑耦合进本模块。 */
+  processMessage?: (root: HTMLElement) => void
+  /** 设置或聊天切换时由独立功能自行恢复并扫描当前消息。 */
+  reprocessMessages?: () => void
+  /** 后处理生命周期结束时释放独立功能持有的全部消息资源。 */
+  cleanupMessages?: () => void
 }
 
 interface STContextLike {
@@ -50,7 +56,7 @@ interface Snapshot {
 }
 
 const snapshots = new WeakMap<HTMLElement, Snapshot>()
-const decorationControllers = new Set<PostprocessDeps>()
+const postprocessControllers = new Set<PostprocessDeps>()
 
 export function mountMessagePostprocess(deps: PostprocessDeps): () => void {
   const st = window.SillyTavern
@@ -64,7 +70,9 @@ export function mountMessagePostprocess(deps: PostprocessDeps): () => void {
 
   let active = true
   const pendingTimers = new Set<ReturnType<typeof setTimeout>>()
-  if (deps.decorateImages || deps.cleanupImages) decorationControllers.add(deps)
+  if (deps.decorateImages || deps.cleanupImages || deps.processMessage || deps.reprocessMessages || deps.cleanupMessages) {
+    postprocessControllers.add(deps)
+  }
   const cleanup = (unsubscribe: () => void): void => {
     if (!active) return
     active = false
@@ -72,18 +80,27 @@ export function mountMessagePostprocess(deps: PostprocessDeps): () => void {
     for (const timer of pendingTimers) clearTimeout(timer)
     pendingTimers.clear()
     deps.cleanupImages?.()
-    decorationControllers.delete(deps)
+    deps.cleanupMessages?.()
+    postprocessControllers.delete(deps)
   }
   const processRendered = (messageId: unknown): void => {
     processMessages(deps.getSettings(), messageId)
-    if (!deps.decorateImages) return
+    const bodies: HTMLElement[] = []
     if (messageId === null || messageId === undefined || `${messageId}` === '') {
-      deps.decorateImages(document)
+      bodies.push(...Array.from(document.querySelectorAll<HTMLElement>('#chat .mes .mes_text')))
+      for (const body of bodies) deps.processMessage?.(body)
+      deps.decorateImages?.(document)
       return
     }
     const id = `${messageId}`
     for (const message of Array.from(document.querySelectorAll('#chat .mes'))) {
-      if (message.getAttribute('mesid') === id) deps.decorateImages(message)
+      if (message.getAttribute('mesid') !== id) continue
+      const body = message.querySelector<HTMLElement>('.mes_text')
+      if (body) {
+        bodies.push(body)
+        deps.processMessage?.(body)
+      }
+      deps.decorateImages?.(message)
     }
   }
   const handler = (...args: unknown[]) => {
@@ -192,12 +209,15 @@ export function processMessages(settings: PluginSettings, messageId: unknown = n
 export function reprocessAllMessages(settings: PluginSettings): void {
   restoreAllMessages()
   if (anyFeatureOn(settings)) processMessages(settings)
-  for (const controller of decorationControllers) controller.decorateImages?.(document)
+  for (const controller of postprocessControllers) {
+    controller.reprocessMessages?.()
+    controller.decorateImages?.(document)
+  }
 }
 
 /** 恢复全部加工过的楼层为原始 DOM */
 export function restoreAllMessages(): void {
-  for (const controller of decorationControllers) controller.cleanupImages?.()
+  for (const controller of postprocessControllers) controller.cleanupImages?.()
   for (const node of Array.from(document.querySelectorAll(`#chat .mes_text[${FP_ATTR}]`))) {
     restoreElement(node as HTMLElement)
   }

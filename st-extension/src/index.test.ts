@@ -14,7 +14,10 @@ const mocks = vi.hoisted(() => ({
   overlayDestroy: vi.fn(),
   managerDestroy: vi.fn(),
   phoneDestroy: vi.fn(),
-  runtimeDispose: vi.fn(),
+  newvarRuntimeDispose: vi.fn(),
+  rendererRuntimeDispose: vi.fn(),
+  rendererProcessMessage: vi.fn(),
+  postprocessDeps: undefined as Record<string, unknown> | undefined,
   designerClose: vi.fn(),
   apiClose: vi.fn(),
   panelCleanup: vi.fn(),
@@ -61,8 +64,15 @@ vi.mock('../../core/phone-shell', () => ({
 vi.mock('./apps', () => ({ createBuiltinApps: () => [] }))
 vi.mock('./apps/newvar/runtime', () => ({
   createNewvarRuntime: () => ({
-    start: vi.fn(), dispose: mocks.runtimeDispose, getData: vi.fn(),
+    start: vi.fn(), dispose: mocks.newvarRuntimeDispose, getData: vi.fn(),
     buildPreview: vi.fn(), getLastParse: vi.fn(), onConfigChanged: vi.fn(),
+  }),
+}))
+vi.mock('./apps/renderer/runtime', () => ({
+  createRendererRuntime: () => ({
+    processMessage: mocks.rendererProcessMessage,
+    reprocessAll: vi.fn(),
+    dispose: mocks.rendererRuntimeDispose,
   }),
 }))
 vi.mock('./apps/newvar/designer', () => ({
@@ -73,7 +83,10 @@ vi.mock('./apps/api/manager', () => ({
 }))
 vi.mock('./settings-panel', () => ({ mountSettingsPanel: () => mocks.panelCleanup }))
 vi.mock('./message-postprocess', () => ({
-  mountMessagePostprocess: () => mocks.postprocessCleanup,
+  mountMessagePostprocess: (deps: Record<string, unknown>) => {
+    mocks.postprocessDeps = deps
+    return mocks.postprocessCleanup
+  },
   reprocessAllMessages: mocks.reprocess,
 }))
 
@@ -94,7 +107,7 @@ beforeEach(() => {
   delete window.__stStageDispose
   delete window.stStage
   delete window.stStageQueue
-  Object.assign(mocks, { characterHandler: undefined, overlayCreates: 0, currentCharacterName: '' })
+  Object.assign(mocks, { characterHandler: undefined, overlayCreates: 0, currentCharacterName: '', postprocessDeps: undefined })
   Object.values(mocks).forEach((value) => {
     if (typeof value === 'function' && 'mockClear' in value) value.mockClear()
   })
@@ -107,6 +120,14 @@ afterEach(() => {
 })
 
 describe('extension entry lifecycle', () => {
+  it('把 Renderer runtime 接到消息后处理入口', async () => {
+    await importEntry('renderer-postprocess')
+    await flushInit()
+
+    expect(mocks.postprocessDeps?.processMessage).toBe(mocks.rendererProcessMessage)
+    expect(mocks.postprocessDeps?.cleanupMessages).toBe(mocks.rendererRuntimeDispose)
+  })
+
   it('injects effective-scene notes from active packs in binding order only', async () => {
     const settings = createDefaultSettings()
     settings.packs = [
@@ -174,7 +195,8 @@ describe('extension entry lifecycle', () => {
     expect(mocks.overlayDestroy).toHaveBeenCalledTimes(1)
     expect(mocks.managerDestroy).toHaveBeenCalledTimes(1)
     expect(mocks.phoneDestroy).toHaveBeenCalledTimes(1)
-    expect(mocks.runtimeDispose).toHaveBeenCalledTimes(1)
+    expect(mocks.newvarRuntimeDispose).toHaveBeenCalledTimes(1)
+    expect(mocks.rendererRuntimeDispose).toHaveBeenCalledTimes(1)
     expect(mocks.designerClose).toHaveBeenCalledTimes(1)
     expect(mocks.apiClose).toHaveBeenCalledTimes(1)
     expect(mocks.panelCleanup).toHaveBeenCalledTimes(1)

@@ -30,6 +30,8 @@ import { createBuiltinApps } from './apps'
 import { createNewvarRuntime } from './apps/newvar/runtime'
 import { createNewvarDesigner } from './apps/newvar/designer'
 import { NEWVAR_CHANNEL, NEWVAR_APP_ID } from './apps/newvar/config'
+import { createRendererRuntime } from './apps/renderer/runtime'
+import { normalizeRendererSettings, RENDERER_APP_ID } from './apps/renderer/config'
 import { createApiManager } from './apps/api/manager'
 import { API_APP_ID, sanitizeAppData } from './apps/api/core'
 import { beginExtensionLifecycle, runWhenDomReady } from './lifecycle'
@@ -195,6 +197,13 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   lifecycle.track(() => newvarRuntime.dispose())
   lifecycle.track(() => adapter.injectChannel(NEWVAR_CHANNEL, ''))
 
+  // Renderer runtime 复用统一消息后处理事件；模式工厂在各模式批次中逐项注册。
+  const rendererRuntime = createRendererRuntime({
+    getSettings: () => normalizeRendererSettings(settings.apps[RENDERER_APP_ID]),
+    factories: {},
+  })
+  lifecycle.track(() => rendererRuntime.dispose())
+
   // 「变量设计」弹窗：配置写 App 私有存储（saveSettingsOnly，不触发立绘刷新）后通知运行时重注入
   const newvarDesigner = createNewvarDesigner({
     getData: () => newvarRuntime.getData(),
@@ -337,6 +346,9 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     getSettings: () => settings,
     decorateImages: storyCapture.decorate,
     cleanupImages: storyCapture.cleanup,
+    processMessage: rendererRuntime.processMessage,
+    reprocessMessages: rendererRuntime.reprocessAll,
+    cleanupMessages: rendererRuntime.dispose,
   }))
 
   // 切换聊天/角色时：重新注入 + 刷新悬浮窗和管理弹窗；延迟补渲染窗口内历史楼层

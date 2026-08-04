@@ -4483,7 +4483,7 @@ ${preview}
       (s) => getSpriteSource(s) !== "hosted" && !(s.remoteUrl && /^https?:\/\//.test(s.remoteUrl))
     );
     let ok = 0;
-    let fail = 0;
+    let fail2 = 0;
     for (let i = 0; i < pending.length; i++) {
       const sprite = pending[i];
       toast(body, `补传中 ${i + 1}/${pending.length}：${sprite.tag}`);
@@ -4491,7 +4491,7 @@ ${preview}
         const dataUri = sprite.url.startsWith("data:") ? sprite.url : await urlToDataUri(sprite.url);
         const up = await uploadToImgbb(imgbbApiKey, dataUri);
         if (!isValidImgbbResult(up)) {
-          fail++;
+          fail2++;
           continue;
         }
         const latest = deps.getSettings().packs.find((p) => p.id === packId);
@@ -4499,7 +4499,7 @@ ${preview}
           (s) => s.tag === sprite.tag && (s.group ?? "") === (sprite.group ?? "") && (s.outfit ?? "") === (sprite.outfit ?? "")
         );
         if (!latest || !target) {
-          fail++;
+          fail2++;
           continue;
         }
         if (!updateChecked(
@@ -4511,13 +4511,13 @@ ${preview}
         ok++;
       } catch (err) {
         console.warn("[sprite-overlay] 补传失败", err);
-        fail++;
+        fail2++;
       }
     }
     render3();
     toast(
       backdrop?.querySelector(".so-manager-body"),
-      `补传完成：成功 ${ok} 张${fail > 0 ? `，失败 ${fail} 张（可再次点击重试）` : ""}`
+      `补传完成：成功 ${ok} 张${fail2 > 0 ? `，失败 ${fail2} 张（可再次点击重试）` : ""}`
     );
   }
   function destroy() {
@@ -4726,7 +4726,7 @@ function replaceInlineImages(text, replacer) {
 var FP_ATTR = "data-so-fp";
 var MARKER_CLASS = "so-processed-marker";
 var snapshots = /* @__PURE__ */ new WeakMap();
-var decorationControllers = /* @__PURE__ */ new Set();
+var postprocessControllers = /* @__PURE__ */ new Set();
 function mountMessagePostprocess(deps) {
   const st = window.SillyTavern;
   if (!st) return () => {
@@ -4738,7 +4738,9 @@ function mountMessagePostprocess(deps) {
   ].filter((e) => typeof e === "string" && e.length > 0);
   let active = true;
   const pendingTimers = /* @__PURE__ */ new Set();
-  if (deps.decorateImages || deps.cleanupImages) decorationControllers.add(deps);
+  if (deps.decorateImages || deps.cleanupImages || deps.processMessage || deps.reprocessMessages || deps.cleanupMessages) {
+    postprocessControllers.add(deps);
+  }
   const cleanup = (unsubscribe) => {
     if (!active) return;
     active = false;
@@ -4746,18 +4748,27 @@ function mountMessagePostprocess(deps) {
     for (const timer of pendingTimers) clearTimeout(timer);
     pendingTimers.clear();
     deps.cleanupImages?.();
-    decorationControllers.delete(deps);
+    deps.cleanupMessages?.();
+    postprocessControllers.delete(deps);
   };
   const processRendered = (messageId) => {
     processMessages(deps.getSettings(), messageId);
-    if (!deps.decorateImages) return;
+    const bodies = [];
     if (messageId === null || messageId === void 0 || `${messageId}` === "") {
-      deps.decorateImages(document);
+      bodies.push(...Array.from(document.querySelectorAll("#chat .mes .mes_text")));
+      for (const body of bodies) deps.processMessage?.(body);
+      deps.decorateImages?.(document);
       return;
     }
     const id = `${messageId}`;
     for (const message of Array.from(document.querySelectorAll("#chat .mes"))) {
-      if (message.getAttribute("mesid") === id) deps.decorateImages(message);
+      if (message.getAttribute("mesid") !== id) continue;
+      const body = message.querySelector(".mes_text");
+      if (body) {
+        bodies.push(body);
+        deps.processMessage?.(body);
+      }
+      deps.decorateImages?.(message);
     }
   };
   const handler = (...args) => {
@@ -4831,10 +4842,13 @@ function processMessages(settings, messageId = null) {
 function reprocessAllMessages(settings) {
   restoreAllMessages();
   if (anyFeatureOn(settings)) processMessages(settings);
-  for (const controller of decorationControllers) controller.decorateImages?.(document);
+  for (const controller of postprocessControllers) {
+    controller.reprocessMessages?.();
+    controller.decorateImages?.(document);
+  }
 }
 function restoreAllMessages() {
-  for (const controller of decorationControllers) controller.cleanupImages?.();
+  for (const controller of postprocessControllers) controller.cleanupImages?.();
   for (const node of Array.from(document.querySelectorAll(`#chat .mes_text[${FP_ATTR}]`))) {
     restoreElement(node);
   }
@@ -8553,6 +8567,538 @@ function createNewvarDesigner(deps) {
   return { open, close, isOpen: () => backdrop !== null };
 }
 
+// st-extension/src/apps/renderer/parser.ts
+var OPEN_TAG = "<STStageRender>";
+var CLOSE_TAG = "</STStageRender>";
+var MAX_JSON_BYTES = 64 * 1024;
+var MAX_ARRAY_ITEMS = 12;
+var MAX_BEATS = 50;
+var MAX_CARDS = 8;
+function firstError(...errors) {
+  return errors.find((error) => error !== null) ?? null;
+}
+function fail(error) {
+  return { ok: false, found: true, error };
+}
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function checkKeys(value, allowed, label) {
+  for (const key of Object.keys(value)) {
+    if (!allowed.includes(key)) return `${label}包含未知字段: ${key}`;
+  }
+  return null;
+}
+function getRequiredString(value, key, label, maxLength) {
+  const field = value[key];
+  if (typeof field !== "string" || field.trim().length === 0) return `${label}.${key} 必须是非空字符串`;
+  if (field.length > maxLength) return `${label}.${key} 超过最大长度 ${maxLength}`;
+  if (/<\/?[a-z][^>]*>/i.test(field)) return `${label}.${key} 不接受 HTML`;
+  return null;
+}
+function getOptionalString(value, key, label, maxLength) {
+  if (!(key in value)) return null;
+  const field = value[key];
+  if (typeof field !== "string") return `${label}.${key} 必须是字符串`;
+  if (field.length > maxLength) return `${label}.${key} 超过最大长度 ${maxLength}`;
+  if (/<\/?[a-z][^>]*>/i.test(field)) return `${label}.${key} 不接受 HTML`;
+  return null;
+}
+function getNumber(value, key, label, min, max) {
+  const field = value[key];
+  if (typeof field !== "number" || !Number.isFinite(field) || !Number.isInteger(field)) {
+    return `${label}.${key} 必须是有限整数`;
+  }
+  if (field < min || field > max) return `${label}.${key} 必须在 ${min}-${max} 范围内`;
+  return null;
+}
+function getBoolean(value, key, label) {
+  if (typeof value[key] !== "boolean") return `${label}.${key} 必须是布尔值`;
+  return null;
+}
+function isSafeImageUrl(value) {
+  if (/^data:image\/(?:png|jpe?g|webp|gif|avif);base64,[a-z0-9+/=]+$/i.test(value)) return true;
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const url = new URL(value);
+      return (url.protocol === "http:" || url.protocol === "https:") && url.hostname.length > 0;
+    } catch {
+      return false;
+    }
+  }
+  if (value.startsWith("//") || value.includes("\\") || /[\s<>]/.test(value)) return false;
+  const localPrefix = /^(?:\/user\/|\.\/|assets\/|\/scripts\/extensions\/third-party\/)/i;
+  if (!localPrefix.test(value)) return false;
+  const path = value.split(/[?#]/, 1)[0].replace(/^\.\//, "");
+  try {
+    return !path.split("/").some((segment) => {
+      let decoded = segment;
+      for (let depth = 0; depth < 2; depth += 1) decoded = decodeURIComponent(decoded);
+      return decoded === "." || decoded === "..";
+    });
+  } catch {
+    return false;
+  }
+}
+function getOptionalImageUrl(value, key, label) {
+  const error = getOptionalString(value, key, label, 2048);
+  if (error !== null) return error;
+  if (!(key in value)) return null;
+  if (!isSafeImageUrl(value[key])) return `${label}.${key} 不是安全图片 URL`;
+  return null;
+}
+function findDuplicateId(items) {
+  const ids = /* @__PURE__ */ new Set();
+  for (const item of items) {
+    if (ids.has(item.id)) return item.id;
+    ids.add(item.id);
+  }
+  return null;
+}
+function validateGal(value) {
+  const keys = ["version", "mode", "title", "scene", "background", "beats"];
+  const keyError = checkKeys(value, keys, "gal");
+  if (keyError) return keyError;
+  if (value.version !== 1) return "version 只支持 1";
+  if (value.mode !== "gal") return "mode 只支持 gal、cards 或 battle";
+  for (const [key, max] of [["title", 200], ["scene", 500]]) {
+    const error = key === "title" ? getOptionalString(value, key, "gal", max) : getRequiredString(value, key, "gal", max);
+    if (error) return error;
+  }
+  const backgroundError = getOptionalImageUrl(value, "background", "gal");
+  if (backgroundError) return backgroundError;
+  if (!Array.isArray(value.beats) || value.beats.length < 1) return "gal.beats 至少需要 1 项";
+  if (value.beats.length > MAX_BEATS) return "gal.beats 必须在 1-50 范围内";
+  const beats = [];
+  for (const [index, item] of value.beats.entries()) {
+    if (!isRecord(item)) return `gal.beats[${index}] 必须是对象`;
+    const itemError = checkKeys(item, ["speaker", "text", "portrait", "background"], `gal.beats[${index}]`);
+    if (itemError) return itemError;
+    const contentError = firstError(
+      getRequiredString(item, "speaker", `gal.beats[${index}]`, 100),
+      getRequiredString(item, "text", `gal.beats[${index}]`, 2e3),
+      getOptionalImageUrl(item, "portrait", `gal.beats[${index}]`),
+      getOptionalImageUrl(item, "background", `gal.beats[${index}]`)
+    );
+    if (contentError) return contentError;
+    beats.push({
+      speaker: item.speaker,
+      text: item.text,
+      ...item.portrait === void 0 ? {} : { portrait: item.portrait },
+      ...item.background === void 0 ? {} : { background: item.background }
+    });
+  }
+  return {
+    version: 1,
+    mode: "gal",
+    ...value.title === void 0 ? {} : { title: value.title },
+    scene: value.scene,
+    ...value.background === void 0 ? {} : { background: value.background },
+    beats
+  };
+}
+function validateCard(value, index) {
+  if (!isRecord(value)) return `cards.cards[${index}] 必须是对象`;
+  const label = `cards.cards[${index}]`;
+  const keyError = checkKeys(value, ["id", "title", "description", "consequence", "action"], label);
+  if (keyError) return keyError;
+  const errors = [
+    getRequiredString(value, "id", label, 100),
+    getRequiredString(value, "title", label, 200),
+    getRequiredString(value, "description", label, 1e3),
+    getOptionalString(value, "consequence", label, 1e3),
+    getRequiredString(value, "action", label, 2e3)
+  ];
+  const error = firstError(...errors);
+  if (error) return error;
+  return {
+    id: value.id,
+    title: value.title,
+    description: value.description,
+    ...value.consequence === void 0 ? {} : { consequence: value.consequence },
+    action: value.action
+  };
+}
+function validateCards(value) {
+  const keyError = checkKeys(value, ["version", "mode", "title", "cards"], "cards");
+  if (keyError) return keyError;
+  if (value.version !== 1) return "version 只支持 1";
+  if (value.mode !== "cards") return "mode 只支持 gal、cards 或 battle";
+  const titleError = getRequiredString(value, "title", "cards", 200);
+  if (titleError) return titleError;
+  if (!Array.isArray(value.cards) || value.cards.length < 2) return "cards.cards 至少需要 2 项";
+  if (value.cards.length > MAX_CARDS) return "cards.cards 必须在 2-8 范围内";
+  const cards = [];
+  for (const [index, item] of value.cards.entries()) {
+    const card = validateCard(item, index);
+    if (typeof card === "string") return card;
+    cards.push(card);
+  }
+  const duplicateId = findDuplicateId(cards);
+  if (duplicateId) return `cards.cards 包含重复 ID: ${duplicateId}`;
+  return { version: 1, mode: "cards", title: value.title, cards };
+}
+function validateSkill(value, index) {
+  if (!isRecord(value)) return `battle.skills[${index}] 必须是对象`;
+  const label = `battle.skills[${index}]`;
+  const keyError = checkKeys(value, ["id", "name", "description", "type", "mpCost", "power"], label);
+  if (keyError) return keyError;
+  const stringError = firstError(getRequiredString(value, "id", label, 100), getRequiredString(value, "name", label, 100), getOptionalString(value, "description", label, 500));
+  if (stringError) return stringError;
+  if (value.type !== "damage" && value.type !== "heal") return `${label}.type 只支持 damage 或 heal`;
+  const numericError = firstError(getNumber(value, "mpCost", label, 0, 9999), getNumber(value, "power", label, 0, 9999));
+  if (numericError) return numericError;
+  return {
+    id: value.id,
+    name: value.name,
+    ...value.description === void 0 ? {} : { description: value.description },
+    type: value.type,
+    mpCost: value.mpCost,
+    power: value.power
+  };
+}
+function validateItem(value, index) {
+  if (!isRecord(value)) return `battle.items[${index}] 必须是对象`;
+  const label = `battle.items[${index}]`;
+  const keyError = checkKeys(value, ["id", "name", "description", "effect", "quantity", "power"], label);
+  if (keyError) return keyError;
+  const stringError = firstError(getRequiredString(value, "id", label, 100), getRequiredString(value, "name", label, 100), getOptionalString(value, "description", label, 500));
+  if (stringError) return stringError;
+  if (value.effect !== "heal_hp" && value.effect !== "heal_mp") return `${label}.effect 只支持 heal_hp 或 heal_mp`;
+  const numericError = firstError(getNumber(value, "quantity", label, 0, 9999), getNumber(value, "power", label, 0, 9999));
+  if (numericError) return numericError;
+  return {
+    id: value.id,
+    name: value.name,
+    ...value.description === void 0 ? {} : { description: value.description },
+    effect: value.effect,
+    quantity: value.quantity,
+    power: value.power
+  };
+}
+function validateStatus(value, index) {
+  if (!isRecord(value)) return `battle.statuses[${index}] 必须是对象`;
+  const label = `battle.statuses[${index}]`;
+  const keyError = checkKeys(value, ["id", "name", "duration", "attackDelta", "defenseDelta", "damagePerTurn"], label);
+  if (keyError) return keyError;
+  const stringError = firstError(getRequiredString(value, "id", label, 100), getRequiredString(value, "name", label, 100));
+  if (stringError) return stringError;
+  const durationError = getNumber(value, "duration", label, 1, 9999);
+  if (durationError) return durationError;
+  for (const key of ["attackDelta", "defenseDelta", "damagePerTurn"]) {
+    const min = key === "damagePerTurn" ? 0 : -9999;
+    const error = key in value ? getNumber(value, key, label, min, 9999) : null;
+    if (error) return error;
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    duration: value.duration,
+    ...value.attackDelta === void 0 ? {} : { attackDelta: value.attackDelta },
+    ...value.defenseDelta === void 0 ? {} : { defenseDelta: value.defenseDelta },
+    ...value.damagePerTurn === void 0 ? {} : { damagePerTurn: value.damagePerTurn }
+  };
+}
+function validateFighter(value, label) {
+  if (!isRecord(value)) return `${label} 必须是对象`;
+  const keyError = checkKeys(value, ["id", "name", "hp", "maxHp", "mp", "maxMp", "attack", "defense", "speed", "crit", "dodge", "portrait", "skills", "items", "statuses"], label);
+  if (keyError) return keyError;
+  const identityError = firstError(getRequiredString(value, "id", label, 100), getRequiredString(value, "name", label, 100));
+  if (identityError) return identityError;
+  const numericErrors = [
+    getNumber(value, "hp", label, 0, 9999),
+    getNumber(value, "maxHp", label, 1, 9999),
+    getNumber(value, "mp", label, 0, 9999),
+    getNumber(value, "maxMp", label, 0, 9999),
+    getNumber(value, "attack", label, 0, 9999),
+    getNumber(value, "defense", label, 0, 9999),
+    getNumber(value, "speed", label, 0, 9999),
+    getNumber(value, "crit", label, 0, 100),
+    getNumber(value, "dodge", label, 0, 100)
+  ];
+  const numericError = numericErrors.find((item) => item !== null);
+  if (numericError) return numericError;
+  if (value.hp > value.maxHp) return `${label}.hp 必须小于等于 maxHp`;
+  if (value.mp > value.maxMp) return `${label}.mp 必须小于等于 maxMp`;
+  const portraitError = getOptionalImageUrl(value, "portrait", label);
+  if (portraitError) return portraitError;
+  const parsed = {
+    id: value.id,
+    name: value.name,
+    hp: value.hp,
+    maxHp: value.maxHp,
+    mp: value.mp,
+    maxMp: value.maxMp,
+    attack: value.attack,
+    defense: value.defense,
+    speed: value.speed,
+    crit: value.crit,
+    dodge: value.dodge,
+    ...value.portrait === void 0 ? {} : { portrait: value.portrait }
+  };
+  const validators = [
+    { key: "skills", validate: validateSkill },
+    { key: "items", validate: validateItem },
+    { key: "statuses", validate: validateStatus }
+  ];
+  for (const { key, validate } of validators) {
+    if (!(key in value)) continue;
+    const items = value[key];
+    if (!Array.isArray(items)) return `${label}.${key} 必须是数组`;
+    if (items.length > MAX_ARRAY_ITEMS) return `${label}.${key} 最多 12 项`;
+    const parsedItems = [];
+    for (const [index, item] of items.entries()) {
+      const parsedItem = validate(item, index);
+      if (typeof parsedItem === "string") return parsedItem;
+      parsedItems.push(parsedItem);
+    }
+    const duplicateId = findDuplicateId(parsedItems);
+    if (duplicateId) return `${label}.${key} 包含重复 ID: ${duplicateId}`;
+    if (key === "skills") parsed.skills = parsedItems;
+    if (key === "items") parsed.items = parsedItems;
+    if (key === "statuses") parsed.statuses = parsedItems;
+  }
+  return parsed;
+}
+function validateBattle(value) {
+  const keyError = checkKeys(value, ["version", "mode", "title", "background", "player", "enemy", "enemyIntent", "allowFlee"], "battle");
+  if (keyError) return keyError;
+  if (value.version !== 1) return "version 只支持 1";
+  if (value.mode !== "battle") return "mode 只支持 gal、cards 或 battle";
+  const titleError = getRequiredString(value, "title", "battle", 200);
+  if (titleError) return titleError;
+  const backgroundError = getOptionalImageUrl(value, "background", "battle");
+  if (backgroundError) return backgroundError;
+  const player = validateFighter(value.player, "battle.player");
+  if (typeof player === "string") return player;
+  const enemy = validateFighter(value.enemy, "battle.enemy");
+  if (typeof enemy === "string") return enemy;
+  if (player.id === enemy.id) return `battle.player 与 battle.enemy 包含重复 ID: ${player.id}`;
+  const intentError = getOptionalString(value, "enemyIntent", "battle", 500);
+  if (intentError) return intentError;
+  const fleeError = "allowFlee" in value ? getBoolean(value, "allowFlee", "battle") : null;
+  if (fleeError) return fleeError;
+  return {
+    version: 1,
+    mode: "battle",
+    title: value.title,
+    ...value.background === void 0 ? {} : { background: value.background },
+    player,
+    enemy,
+    ...value.enemyIntent === void 0 ? {} : { enemyIntent: value.enemyIntent },
+    ...value.allowFlee === void 0 ? {} : { allowFlee: value.allowFlee }
+  };
+}
+function validateBlock(value) {
+  if (!isRecord(value)) return "渲染块必须是 JSON 对象";
+  if (value.version !== 1) return "version 只支持 1";
+  if (value.mode === "gal") return validateGal(value);
+  if (value.mode === "cards") return validateCards(value);
+  if (value.mode === "battle") return validateBattle(value);
+  return "mode 只支持 gal、cards 或 battle";
+}
+function parseRendererBlock(source) {
+  if (typeof source !== "string") return { ok: false, found: false };
+  const firstStart = source.indexOf(OPEN_TAG);
+  if (firstStart < 0) return { ok: false, found: false };
+  const secondStart = source.indexOf(OPEN_TAG, firstStart + OPEN_TAG.length);
+  const firstEnd = source.indexOf(CLOSE_TAG, firstStart + OPEN_TAG.length);
+  if (firstEnd < 0) return fail("STStageRender 块未闭合");
+  if (secondStart >= 0 || source.indexOf(CLOSE_TAG, firstEnd + CLOSE_TAG.length) >= 0) return fail("只允许一个 STStageRender 块");
+  const json = source.slice(firstStart + OPEN_TAG.length, firstEnd);
+  if (new TextEncoder().encode(json).byteLength > MAX_JSON_BYTES) return fail("渲染 JSON 不能超过 64 KiB");
+  let value;
+  try {
+    value = JSON.parse(json);
+  } catch {
+    return fail("渲染块 JSON 格式无效");
+  }
+  const block = validateBlock(value);
+  if (typeof block === "string") return fail(block);
+  const raw = source.slice(firstStart, firstEnd + CLOSE_TAG.length);
+  return { ok: true, block, raw };
+}
+
+// st-extension/src/apps/renderer/runtime.ts
+var RENDERER_CLASS = "st-stage-renderer";
+var SOURCE_CLASS = "st-stage-render-source";
+var MARKER_CLASS2 = "st-stage-render-marker";
+function isModeEnabled(settings, mode) {
+  if (mode === "gal") return settings.galEnabled;
+  if (mode === "cards") return settings.cardsEnabled;
+  return settings.battleEnabled;
+}
+function findTextBoundary(root, target) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let consumed = 0;
+  let last = null;
+  let current2;
+  while (current2 = walker.nextNode()) {
+    const node = current2;
+    const length = node.data.length;
+    if (target <= consumed + length) return { node, offset: target - consumed };
+    consumed += length;
+    last = node;
+  }
+  return target === consumed && last ? { node: last, offset: last.data.length } : null;
+}
+function hideSourceBlock(root, raw) {
+  const text = root.textContent ?? "";
+  const startOffset = text.indexOf(raw);
+  if (startOffset < 0) return null;
+  const start = findTextBoundary(root, startOffset);
+  const end = findTextBoundary(root, startOffset + raw.length);
+  if (!start || !end) return null;
+  const range = document.createRange();
+  range.setStart(start.node, start.offset);
+  range.setEnd(end.node, end.offset);
+  const source = document.createElement("span");
+  source.className = SOURCE_CLASS;
+  source.hidden = true;
+  source.append(range.extractContents());
+  range.insertNode(source);
+  return source;
+}
+function outsideSignature(root, marker, container) {
+  const holder = document.createElement("div");
+  for (const node of Array.from(root.childNodes)) {
+    if (node !== marker && node !== container) holder.append(node.cloneNode(true));
+  }
+  return holder.innerHTML;
+}
+function stillOwnsDom(root, state) {
+  return state.marker.parentNode === root && state.container.parentNode === root && outsideSignature(root, state.marker, state.container) === state.outsideSignature;
+}
+function destroyMount(state) {
+  if (state.destroyed) return;
+  state.destroyed = true;
+  try {
+    state.mount.destroy();
+  } catch {
+  }
+}
+function createRendererRuntime(deps) {
+  const states = /* @__PURE__ */ new WeakMap();
+  const mountedRoots = /* @__PURE__ */ new Set();
+  const modeDeps = deps.modeDeps ?? { getSettings: deps.getSettings };
+  let disposed = false;
+  function cleanupRoot(root) {
+    const state = states.get(root);
+    if (!state) return;
+    destroyMount(state);
+    if (stillOwnsDom(root, state)) {
+      root.replaceChildren(...state.snapshot);
+    } else {
+      state.marker.remove();
+      state.container.remove();
+      if (root.contains(state.source)) state.source.replaceWith(...Array.from(state.source.childNodes));
+    }
+    states.delete(root);
+    mountedRoots.delete(root);
+  }
+  function processMessage(root) {
+    if (disposed) return;
+    const settings = deps.getSettings();
+    const current2 = states.get(root);
+    if (current2 && stillOwnsDom(root, current2) && settings.enabled && isModeEnabled(settings, current2.mode)) return;
+    if (current2) cleanupRoot(root);
+    const message = root.closest(".mes");
+    if (message?.getAttribute("is_user") === "true" || message?.getAttribute("is_system") === "true") return;
+    if (!settings.enabled) return;
+    const parsed = parseRendererBlock(root.textContent ?? "");
+    if (!parsed.ok || !isModeEnabled(settings, parsed.block.mode)) return;
+    const factory = deps.factories[parsed.block.mode];
+    if (!factory) return;
+    const container = document.createElement("section");
+    container.className = RENDERER_CLASS;
+    let mount;
+    try {
+      mount = factory(container, parsed.block, modeDeps);
+      if (!mount || typeof mount.destroy !== "function") return;
+    } catch {
+      return;
+    }
+    const snapshot = Array.from(root.childNodes).map((node) => node.cloneNode(true));
+    const source = (() => {
+      try {
+        return hideSourceBlock(root, parsed.raw);
+      } catch {
+        return null;
+      }
+    })();
+    if (!source) {
+      const failedState = {
+        mount,
+        snapshot,
+        marker: container,
+        source: container,
+        container,
+        mode: parsed.block.mode,
+        outsideSignature: "",
+        destroyed: false
+      };
+      destroyMount(failedState);
+      root.replaceChildren(...snapshot);
+      return;
+    }
+    const marker = document.createElement("span");
+    marker.className = MARKER_CLASS2;
+    marker.hidden = true;
+    root.append(marker, container);
+    states.set(root, {
+      mount,
+      snapshot,
+      marker,
+      source,
+      container,
+      mode: parsed.block.mode,
+      outsideSignature: outsideSignature(root, marker, container),
+      destroyed: false
+    });
+    mountedRoots.add(root);
+  }
+  function reprocessAll(scope = document) {
+    if (disposed) return;
+    for (const root of Array.from(mountedRoots)) cleanupRoot(root);
+    const roots = [];
+    if (scope instanceof HTMLElement && scope.matches(".mes_text")) roots.push(scope);
+    for (const root of Array.from(scope.querySelectorAll(".mes_text"))) roots.push(root);
+    for (const root of roots) processMessage(root);
+  }
+  function dispose() {
+    if (disposed) return;
+    for (const root of Array.from(mountedRoots)) cleanupRoot(root);
+    disposed = true;
+  }
+  return { processMessage, reprocessAll, dispose };
+}
+
+// st-extension/src/apps/renderer/config.ts
+var RENDERER_APP_ID = "renderer";
+function defaultRendererSettings() {
+  return {
+    enabled: false,
+    galEnabled: true,
+    cardsEnabled: true,
+    battleEnabled: true,
+    injectionDepth: 4,
+    typewriter: true,
+    reducedMotion: false
+  };
+}
+function normalizeRendererSettings(raw) {
+  const settings = defaultRendererSettings();
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return settings;
+  const value = raw;
+  for (const key of ["enabled", "galEnabled", "cardsEnabled", "battleEnabled", "typewriter", "reducedMotion"]) {
+    if (typeof value[key] === "boolean") settings[key] = value[key];
+  }
+  if (typeof value.injectionDepth === "number" && Number.isInteger(value.injectionDepth)) {
+    settings.injectionDepth = Math.min(20, Math.max(0, value.injectionDepth));
+  }
+  return settings;
+}
+
 // st-extension/src/apps/api/manager.ts
 function createApiManager(deps) {
   let backdrop = null;
@@ -8910,9 +9456,9 @@ function createApiManager(deps) {
     }).catch((err) => {
       if (!picker) return;
       list.textContent = "";
-      const fail = el2("div", "so-app-desc");
-      fail.textContent = `拉取失败：${err instanceof Error ? err.message : String(err)}`;
-      list.append(fail);
+      const fail2 = el2("div", "so-app-desc");
+      fail2.textContent = `拉取失败：${err instanceof Error ? err.message : String(err)}`;
+      list.append(fail2);
     });
   }
   return { open, close, isOpen: () => backdrop !== null };
@@ -9064,6 +9610,11 @@ async function init(lifecycle) {
   });
   lifecycle.track(() => newvarRuntime.dispose());
   lifecycle.track(() => adapter.injectChannel(NEWVAR_CHANNEL, ""));
+  const rendererRuntime = createRendererRuntime({
+    getSettings: () => normalizeRendererSettings(settings.apps[RENDERER_APP_ID]),
+    factories: {}
+  });
+  lifecycle.track(() => rendererRuntime.dispose());
   const newvarDesigner = createNewvarDesigner({
     getData: () => newvarRuntime.getData(),
     setData: (next) => {
@@ -9180,7 +9731,10 @@ async function init(lifecycle) {
   lifecycle.track(mountMessagePostprocess({
     getSettings: () => settings,
     decorateImages: storyCapture.decorate,
-    cleanupImages: storyCapture.cleanup
+    cleanupImages: storyCapture.cleanup,
+    processMessage: rendererRuntime.processMessage,
+    reprocessMessages: rendererRuntime.reprocessAll,
+    cleanupMessages: rendererRuntime.dispose
   }));
   let cancelPendingReprocess = () => {
   };
