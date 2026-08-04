@@ -5729,7 +5729,11 @@ function parseInputValue(raw) {
   }
   return raw;
 }
-function editKind(v) {
+function editKind(v, definition) {
+  if (definition?.type === "number") return "number";
+  if (definition?.type === "enum") return "enum";
+  if (definition?.type === "boolean") return "boolean";
+  if (definition?.type === "string") return "text";
   if (typeof v === "boolean") return "boolean";
   if (v !== null && typeof v === "object") return "json";
   return "text";
@@ -5808,7 +5812,7 @@ function createVariableTreeView(container, handlers) {
       for (const key of keys) renderNode(model, tree, key, model.data[key], key, 0);
       container.append(tree);
     }
-    container.append(buildAddSection(model));
+    if (model.allowAdd !== false) container.append(buildAddSection(model));
   }
   function appendNotice(text) {
     const note = el2("div", "so-app-section");
@@ -5902,7 +5906,8 @@ function createVariableTreeView(container, handlers) {
   }
   function buildEditForm(model, key, value, path, tuple) {
     const inner = tuple ? value[0] : value;
-    const kind = editKind(inner);
+    const definition = model.definitions?.find((item) => item.key === path);
+    const kind = editKind(inner, definition);
     const wrap = el2("div", "vm-leaf vm-editing");
     const title = el2("div", "so-app-title vm-edit-title");
     title.textContent = `${key} · ${valueTypeLabel(value, tuple)}`;
@@ -5916,20 +5921,44 @@ function createVariableTreeView(container, handlers) {
     err.hidden = true;
     let readValue;
     if (kind === "boolean") {
-      const sel = document.createElement("select");
-      sel.className = "text_pole so-app-input vm-edit-input";
-      for (const opt of [
-        { v: "true", t: "真（true）" },
-        { v: "false", t: "假（false）" }
-      ]) {
-        const o = document.createElement("option");
-        o.value = opt.v;
-        o.textContent = opt.t;
-        if (inner === true === (opt.v === "true")) o.selected = true;
-        sel.append(o);
+      const row = el2("label", "so-app-toggle checkbox_label");
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = inner === true;
+      const label = document.createElement("span");
+      label.textContent = "启用（true）";
+      row.append(input, label);
+      wrap.append(row);
+      readValue = () => ({ ok: true, value: input.checked });
+    } else if (kind === "enum") {
+      const select = document.createElement("select");
+      select.className = "text_pole so-app-input vm-edit-input";
+      for (const value2 of definition?.enum ?? []) {
+        const option = document.createElement("option");
+        option.value = value2;
+        option.textContent = value2;
+        option.selected = value2 === inner;
+        select.append(option);
       }
-      wrap.append(sel);
-      readValue = () => ({ ok: true, value: sel.value === "true" });
+      wrap.append(select);
+      readValue = () => ({ ok: true, value: select.value });
+    } else if (kind === "number") {
+      const input = document.createElement("input");
+      input.type = "number";
+      input.step = "any";
+      input.className = "text_pole so-app-input vm-edit-input";
+      input.value = typeof inner === "number" && Number.isFinite(inner) ? String(inner) : "";
+      if (definition?.range) {
+        input.min = String(definition.range[0]);
+        input.max = String(definition.range[1]);
+      }
+      wrap.append(input);
+      readValue = () => {
+        if (input.value.trim() === "") return { ok: false, msg: "请输入有效数字。" };
+        const value2 = Number(input.value);
+        return Number.isFinite(value2) ? { ok: true, value: value2 } : { ok: false, msg: "请输入有效数字。" };
+      };
+      setTimeout(() => input.focus(), 0);
     } else if (kind === "json") {
       const ta = document.createElement("textarea");
       ta.className = "text_pole so-app-input vm-edit-input";
@@ -5951,7 +5980,7 @@ function createVariableTreeView(container, handlers) {
       input.value = formatValue(inner);
       input.autocomplete = "off";
       wrap.append(input);
-      readValue = () => ({ ok: true, value: parseInputValue(input.value) });
+      readValue = () => ({ ok: true, value: definition?.type === "string" ? input.value : parseInputValue(input.value) });
       setTimeout(() => input.focus(), 0);
     }
     wrap.append(err);
@@ -5966,7 +5995,12 @@ function createVariableTreeView(container, handlers) {
         return;
       }
       editingPath = null;
-      handlers.commitSet(path, r.value);
+      const committed = handlers.commitSet(path, r.value);
+      if (committed && !committed.ok) {
+        editingPath = path;
+        err.textContent = committed.error;
+        err.hidden = false;
+      }
     });
     const cancel = el2("button", "menu_button vm-act vm-act-ghost");
     cancel.textContent = "取消";
@@ -6017,7 +6051,11 @@ function createVariableTreeView(container, handlers) {
           err.hidden = false;
           return;
         }
-        handlers.commitSet(path, parseInputValue(valInput.value));
+        const committed = handlers.commitSet(path, parseInputValue(valInput.value));
+        if (committed && !committed.ok) {
+          err.textContent = committed.error;
+          err.hidden = false;
+        }
       })
     );
     box.append(summary, body);
@@ -6419,6 +6457,7 @@ function newvarApp(deps) {
           const state = runtime.getCurrentState();
           return {
             data: state,
+            definitions: d.schema.variables,
             isMvu: false,
             delta: computeDelta(state, runtime.getPrevState(), false),
             status: st ? "ready" : "unavailable",
@@ -6426,10 +6465,11 @@ function newvarApp(deps) {
             emptyText: "暂无变量。点上方「打开变量设计」定义或导入模板，启用后 AI 回复会逐楼更新这里。",
             noticeText: st ? void 0 : "未检测到 SillyTavern：模拟器中可打开变量设计编辑定义与预览注入，状态快照在 ST 内才会产生。",
             canWrite: st,
-            addHint: "手动新增只写入当前楼的状态快照（不会加进变量定义）。路径用点号分层。"
+            allowAdd: false,
+            addHint: "这里只能修改变量设计中已有的路径；新增变量请先在「变量设计」中添加定义。"
           };
         },
-        commitSet: (path, value) => runtime.setVariable(path, value),
+        commitSet: (path, value) => runtime.setManualValue(path, value),
         commitDelete: (path) => runtime.deleteVariable(path),
         requestRefresh: () => tree.render()
       });
@@ -7489,12 +7529,13 @@ function createNewvarRuntime(deps) {
   function mutateCurrent(mutate) {
     const st = getST4();
     const chat = st?.chat;
-    if (!st || !Array.isArray(chat) || chat.length === 0) return;
+    if (!st || !Array.isArray(chat) || chat.length === 0) return false;
     const state = getCurrentState();
     mutate(state);
     writeSnapshot(st, chat.length - 1, state);
     reinject();
     notify();
+    return true;
   }
   function subscribeEvents() {
     const st = getST4();
@@ -7536,8 +7577,15 @@ function createNewvarRuntime(deps) {
     getData,
     getCurrentState,
     getPrevState,
-    setVariable(path, value) {
-      mutateCurrent((state) => setNested(state, path, value));
+    setManualValue(path, value) {
+      const def = getData().schema.variables.find((item) => item.key === path);
+      if (!def) return { ok: false, error: `未定义的变量路径：${path}` };
+      const validated = validateValue(def, value);
+      if (!validated.ok) return { ok: false, error: validated.error ?? "输入值不符合变量定义。" };
+      if (!mutateCurrent((state) => setNested(state, path, validated.value))) {
+        return { ok: false, error: "当前环境没有可写入的聊天楼层。" };
+      }
+      return { ok: true, value: validated.value };
     },
     deleteVariable(path) {
       mutateCurrent((state) => deleteNested(state, path));

@@ -17,7 +17,7 @@
 
 import type { PluginSettings } from '../../../../core/types'
 import { setNested, deleteNested } from '../path-utils'
-import { initStateFromSchema, parseUpdateBlock, applyOps, buildInjection, fillDefaults } from './engine'
+import { initStateFromSchema, parseUpdateBlock, applyOps, buildInjection, fillDefaults, validateValue } from './engine'
 import { NEWVAR_APP_ID, NEWVAR_EXTRA_KEY, normalizeNewvarData, type NewvarData } from './config'
 import type { ApplyLogEntry } from './types'
 
@@ -52,6 +52,8 @@ export interface NewvarRuntimeDeps {
   inject(prompt: string, depth?: number): void
 }
 
+export type ManualValueResult = { ok: true; value: unknown } | { ok: false; error: string }
+
 export interface NewvarRuntime {
   start(): void
   dispose(): void
@@ -62,8 +64,8 @@ export interface NewvarRuntime {
   getCurrentState(): Record<string, unknown>
   /** 供 delta 高亮：当前快照楼层之前最近的一份快照 */
   getPrevState(): Record<string, unknown> | null
-  /** 手动改/增一条变量（写入末楼快照 + 重注入） */
-  setVariable(path: string, value: unknown): void
+  /** 手动修改已定义变量；通过 schema 门禁后写入末楼快照并重注入 */
+  setManualValue(path: string, value: unknown): ManualValueResult
   /** 手动删一条变量 */
   deleteVariable(path: string): void
   /** App 改完配置（setAppData）后调用：重注入 + 通知订阅者 */
@@ -226,15 +228,16 @@ export function createNewvarRuntime(deps: NewvarRuntimeDeps): NewvarRuntime {
 
   // —— 手动编辑（写末楼快照） —— //
 
-  function mutateCurrent(mutate: (state: Record<string, unknown>) => void): void {
+  function mutateCurrent(mutate: (state: Record<string, unknown>) => void): boolean {
     const st = getST()
     const chat = st?.chat
-    if (!st || !Array.isArray(chat) || chat.length === 0) return
+    if (!st || !Array.isArray(chat) || chat.length === 0) return false
     const state = getCurrentState()
     mutate(state)
     writeSnapshot(st, chat.length - 1, state)
     reinject()
     notify()
+    return true
   }
 
   // —— 生命周期 —— //
@@ -282,8 +285,15 @@ export function createNewvarRuntime(deps: NewvarRuntimeDeps): NewvarRuntime {
     getData,
     getCurrentState,
     getPrevState,
-    setVariable(path, value) {
-      mutateCurrent((state) => setNested(state, path, value))
+    setManualValue(path, value) {
+      const def = getData().schema.variables.find((item) => item.key === path)
+      if (!def) return { ok: false, error: `未定义的变量路径：${path}` }
+      const validated = validateValue(def, value)
+      if (!validated.ok) return { ok: false, error: validated.error ?? '输入值不符合变量定义。' }
+      if (!mutateCurrent((state) => setNested(state, path, validated.value))) {
+        return { ok: false, error: '当前环境没有可写入的聊天楼层。' }
+      }
+      return { ok: true, value: validated.value }
     },
     deleteVariable(path) {
       mutateCurrent((state) => deleteNested(state, path))

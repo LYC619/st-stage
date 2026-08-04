@@ -58,6 +58,7 @@ export function newvarApp(deps: NewvarAppDeps): PhoneApp {
           const state = runtime.getCurrentState()
           return {
             data: state,
+            definitions: d.schema.variables,
             isMvu: false,
             delta: computeDelta(state, runtime.getPrevState(), false),
             status: st ? 'ready' : 'unavailable',
@@ -67,10 +68,11 @@ export function newvarApp(deps: NewvarAppDeps): PhoneApp {
               ? undefined
               : '未检测到 SillyTavern：模拟器中可打开变量设计编辑定义与预览注入，状态快照在 ST 内才会产生。',
             canWrite: st,
-            addHint: '手动新增只写入当前楼的状态快照（不会加进变量定义）。路径用点号分层。',
+            allowAdd: false,
+            addHint: '这里只能修改变量设计中已有的路径；新增变量请先在「变量设计」中添加定义。',
           }
         },
-        commitSet: (path, value) => runtime.setVariable(path, value),
+        commitSet: (path, value) => runtime.setManualValue(path, value),
         commitDelete: (path) => runtime.deleteVariable(path),
         requestRefresh: () => tree.render(),
       })

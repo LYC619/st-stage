@@ -74,9 +74,22 @@ export function parseInputValue(raw: string): unknown {
   return raw
 }
 
-type EditKind = 'boolean' | 'json' | 'text'
+export interface VariableEditDefinition {
+  key: string
+  type: 'number' | 'string' | 'boolean' | 'enum'
+  range?: [number, number]
+  enum?: string[]
+}
 
-function editKind(v: unknown): EditKind {
+export type VariableTreeCommitResult = { ok: true; value: unknown } | { ok: false; error: string }
+
+type EditKind = 'boolean' | 'number' | 'enum' | 'json' | 'text'
+
+function editKind(v: unknown, definition?: VariableEditDefinition): EditKind {
+  if (definition?.type === 'number') return 'number'
+  if (definition?.type === 'enum') return 'enum'
+  if (definition?.type === 'boolean') return 'boolean'
+  if (definition?.type === 'string') return 'text'
   if (typeof v === 'boolean') return 'boolean'
   if (v !== null && typeof v === 'object') return 'json'
   return 'text'
@@ -149,6 +162,8 @@ export function computeDelta(
 export interface VariableTreeModel {
   /** 归一化后的变量根对象（要展示/编辑的嵌套结构） */
   data: Record<string, unknown>
+  /** 可选叶子定义；提供后使用定义驱动的编辑控件，新变量 App 使用 */
+  definitions?: VariableEditDefinition[]
   /** 是否把 [值,"描述"] 当描述二元组（MVU 语义）；「新变量」传 false */
   isMvu: boolean
   /** 变化高亮映射（computeDelta 产出） */
@@ -162,6 +177,8 @@ export interface VariableTreeModel {
   noticeText?: string
   /** 是否允许写入（Web 模拟器等环境为 false） */
   canWrite: boolean
+  /** 是否显示手动新增区；默认显示 */
+  allowAdd?: boolean
   /** 新增区提示文案 */
   addHint: string
 }
@@ -169,7 +186,7 @@ export interface VariableTreeModel {
 export interface VariableTreeHandlers {
   getModel(): VariableTreeModel
   /** 提交「改/增」：发射即忘，数据层负责写入 + 重读 + 重渲染 */
-  commitSet(path: string, value: unknown): void
+  commitSet(path: string, value: unknown): void | VariableTreeCommitResult
   commitDelete(path: string): void
   requestRefresh(): void
 }
@@ -219,7 +236,7 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
       container.append(tree)
     }
 
-    container.append(buildAddSection(model))
+    if (model.allowAdd !== false) container.append(buildAddSection(model))
   }
 
   function appendNotice(text: string): void {
@@ -346,7 +363,8 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
     tuple: boolean,
   ): HTMLElement {
     const inner = tuple ? (value as [unknown, string])[0] : value
-    const kind = editKind(inner)
+    const definition = model.definitions?.find((item) => item.key === path)
+    const kind = editKind(inner, definition)
     const wrap = el('div', 'vm-leaf vm-editing')
 
     const title = el('div', 'so-app-title vm-edit-title')
@@ -363,20 +381,44 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
 
     let readValue: () => { ok: boolean; value?: unknown; msg?: string }
     if (kind === 'boolean') {
-      const sel = document.createElement('select')
-      sel.className = 'text_pole so-app-input vm-edit-input'
-      for (const opt of [
-        { v: 'true', t: '真（true）' },
-        { v: 'false', t: '假（false）' },
-      ]) {
-        const o = document.createElement('option')
-        o.value = opt.v
-        o.textContent = opt.t
-        if ((inner === true) === (opt.v === 'true')) o.selected = true
-        sel.append(o)
+      const row = el('label', 'so-app-toggle checkbox_label')
+      const input = document.createElement('input')
+      input.type = 'checkbox'
+      input.checked = inner === true
+      const label = document.createElement('span')
+      label.textContent = '启用（true）'
+      row.append(input, label)
+      wrap.append(row)
+      readValue = () => ({ ok: true, value: input.checked })
+    } else if (kind === 'enum') {
+      const select = document.createElement('select')
+      select.className = 'text_pole so-app-input vm-edit-input'
+      for (const value of definition?.enum ?? []) {
+        const option = document.createElement('option')
+        option.value = value
+        option.textContent = value
+        option.selected = value === inner
+        select.append(option)
       }
-      wrap.append(sel)
-      readValue = () => ({ ok: true, value: sel.value === 'true' })
+      wrap.append(select)
+      readValue = () => ({ ok: true, value: select.value })
+    } else if (kind === 'number') {
+      const input = document.createElement('input')
+      input.type = 'number'
+      input.step = 'any'
+      input.className = 'text_pole so-app-input vm-edit-input'
+      input.value = typeof inner === 'number' && Number.isFinite(inner) ? String(inner) : ''
+      if (definition?.range) {
+        input.min = String(definition.range[0])
+        input.max = String(definition.range[1])
+      }
+      wrap.append(input)
+      readValue = () => {
+        if (input.value.trim() === '') return { ok: false, msg: '请输入有效数字。' }
+        const value = Number(input.value)
+        return Number.isFinite(value) ? { ok: true, value } : { ok: false, msg: '请输入有效数字。' }
+      }
+      setTimeout(() => input.focus(), 0)
     } else if (kind === 'json') {
       const ta = document.createElement('textarea')
       ta.className = 'text_pole so-app-input vm-edit-input'
@@ -398,7 +440,7 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
       input.value = formatValue(inner)
       input.autocomplete = 'off'
       wrap.append(input)
-      readValue = () => ({ ok: true, value: parseInputValue(input.value) })
+      readValue = () => ({ ok: true, value: definition?.type === 'string' ? input.value : parseInputValue(input.value) })
       setTimeout(() => input.focus(), 0)
     }
     wrap.append(err)
@@ -414,7 +456,12 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
         return
       }
       editingPath = null
-      handlers.commitSet(path, r.value)
+      const committed = handlers.commitSet(path, r.value)
+      if (committed && !committed.ok) {
+        editingPath = path
+        err.textContent = committed.error
+        err.hidden = false
+      }
     })
     const cancel = el('button', 'menu_button vm-act vm-act-ghost')
     cancel.textContent = '取消'
@@ -470,7 +517,11 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
           err.hidden = false
           return
         }
-        handlers.commitSet(path, parseInputValue(valInput.value))
+        const committed = handlers.commitSet(path, parseInputValue(valInput.value))
+        if (committed && !committed.ok) {
+          err.textContent = committed.error
+          err.hidden = false
+        }
       }),
     )
 
