@@ -149,6 +149,7 @@ describe('extension entry lifecycle', () => {
     }))
     expect((mocks.rendererCreateDeps?.factories as Record<string, unknown>)?.gal).toEqual(expect.any(Function))
     expect((mocks.rendererCreateDeps?.factories as Record<string, unknown>)?.cards).toEqual(expect.any(Function))
+    expect((mocks.rendererCreateDeps?.factories as Record<string, unknown>)?.battle).toEqual(expect.any(Function))
     expect((mocks.rendererCreateDeps?.modeDeps as Record<string, unknown>)?.resolvePortrait).toEqual(expect.any(Function))
     expect((mocks.rendererCreateDeps?.modeDeps as Record<string, unknown>)?.insertDraft).toEqual(expect.any(Function))
   })

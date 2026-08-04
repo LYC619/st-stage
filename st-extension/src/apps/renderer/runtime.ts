@@ -13,6 +13,8 @@ export interface RendererModeDeps {
   resolvePortrait?: (address: string) => string | null
   /** 把结构化行动填入 ST 草稿；成功也不自动发送。 */
   insertDraft?: (text: string) => ComposerInsertResult
+  /** 战斗模式可注入 RNG，生产环境缺省使用 Math.random。 */
+  random?: () => number
 }
 
 export type RendererModeFactory<TMode extends RendererMode = RendererMode> = (

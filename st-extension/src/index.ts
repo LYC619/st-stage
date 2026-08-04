@@ -35,6 +35,7 @@ import { createRendererRuntime } from './apps/renderer/runtime'
 import { normalizeRendererSettings, RENDERER_APP_ID } from './apps/renderer/config'
 import { mountGalMode } from './apps/renderer/modes/gal'
 import { mountCardsMode } from './apps/renderer/modes/cards'
+import { mountBattleMode } from './apps/renderer/modes/battle'
 import { createComposerBridge } from './apps/renderer/composer'
 import { createApiManager } from './apps/api/manager'
 import { API_APP_ID, sanitizeAppData } from './apps/api/core'
@@ -207,7 +208,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   lifecycle.track(() => composerBridge.dispose())
   const rendererRuntime = createRendererRuntime({
     getSettings: getRendererSettings,
-    factories: { gal: mountGalMode, cards: mountCardsMode },
+    factories: { gal: mountGalMode, cards: mountCardsMode, battle: mountBattleMode },
     modeDeps: {
       getSettings: getRendererSettings,
       resolvePortrait: (address) => {

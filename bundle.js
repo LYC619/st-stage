@@ -9439,6 +9439,422 @@ function mountCardsMode(root, block, deps) {
   };
 }
 
+// st-extension/src/apps/renderer/battle-engine.ts
+var DEFENDING_STATUS_ID = "__defending";
+function bounded(value, min = 0, max = 9999) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+function cloneFighter(fighter) {
+  return {
+    ...fighter,
+    skills: fighter.skills.map((skill) => ({ ...skill })),
+    items: fighter.items.map((item) => ({ ...item })),
+    statuses: fighter.statuses.map((status) => ({ ...status }))
+  };
+}
+function cloneState(state) {
+  return {
+    ...state,
+    player: cloneFighter(state.player),
+    enemy: cloneFighter(state.enemy),
+    log: state.log.map((entry) => ({ ...entry }))
+  };
+}
+function createFighter(config) {
+  return {
+    ...config,
+    hp: bounded(config.hp, 0, config.maxHp),
+    mp: bounded(config.mp, 0, config.maxMp),
+    skills: (config.skills ?? []).map((skill) => ({ ...skill })),
+    items: (config.items ?? []).map((item) => ({ ...item })),
+    statuses: (config.statuses ?? []).map((status) => ({ ...status }))
+  };
+}
+function effectiveStat(fighter, stat) {
+  const field = stat === "attack" ? "attackDelta" : "defenseDelta";
+  const delta = fighter.statuses.reduce((sum, status) => sum + (status[field] ?? 0), 0);
+  return bounded(fighter[stat] + delta);
+}
+function upsertStatus(fighter, status) {
+  const index = fighter.statuses.findIndex((item) => item.id === status.id);
+  if (index >= 0) fighter.statuses[index] = { ...status };
+  else fighter.statuses.push({ ...status });
+}
+function createRandom(source) {
+  return () => {
+    try {
+      const value = source();
+      return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0.5;
+    } catch {
+      return 0.5;
+    }
+  };
+}
+function createBattleEngine(config, deps = {}) {
+  const random = createRandom(deps.random ?? Math.random);
+  const player = createFighter(config.player);
+  const enemy = createFighter(config.enemy);
+  const state = {
+    title: config.title,
+    player,
+    enemy,
+    turn: 1,
+    outcome: enemy.hp <= 0 ? "won" : player.hp <= 0 ? "lost" : "ongoing",
+    log: [],
+    allowFlee: config.allowFlee === true
+  };
+  function record(events, kind, text) {
+    const entry = { kind, text };
+    events.push(entry);
+    state.log.push({ ...entry });
+  }
+  function dealDamage(attacker, target, power, events, allowCritical = true) {
+    if (random() * 100 < target.dodge) {
+      record(events, "dodge", `${target.name} 闪避了 ${attacker.name} 的攻击。`);
+      return;
+    }
+    const critical = allowCritical && random() * 100 < attacker.crit;
+    const raw = critical ? Math.floor(power * 1.5) : power;
+    const damage = Math.max(1, bounded(raw - effectiveStat(target, "defense")));
+    target.hp = bounded(target.hp - damage, 0, target.maxHp);
+    record(events, "damage", `${attacker.name}${critical ? "暴击" : ""}对 ${target.name} 造成 ${damage} 点伤害。`);
+  }
+  function updateOutcome() {
+    if (state.enemy.hp <= 0) state.outcome = "won";
+    else if (state.player.hp <= 0) state.outcome = "lost";
+  }
+  function tickStatuses(fighter, events) {
+    const next = [];
+    for (const status of fighter.statuses) {
+      if ((status.damagePerTurn ?? 0) > 0 && fighter.hp > 0) {
+        const damage = bounded(status.damagePerTurn ?? 0);
+        fighter.hp = bounded(fighter.hp - damage, 0, fighter.maxHp);
+        record(events, "status-damage", `${fighter.name} 受到 ${status.name} 的 ${damage} 点伤害。`);
+      }
+      const duration = status.duration - 1;
+      if (duration > 0) next.push({ ...status, duration });
+    }
+    fighter.statuses = next;
+  }
+  function runEnemyTurn(events) {
+    if (state.outcome !== "ongoing") return;
+    dealDamage(state.enemy, state.player, effectiveStat(state.enemy, "attack"), events);
+    updateOutcome();
+  }
+  function finishRound(events) {
+    tickStatuses(state.player, events);
+    tickStatuses(state.enemy, events);
+    updateOutcome();
+    state.turn += 1;
+  }
+  function reject(error) {
+    return { ok: false, error, state: cloneState(state), events: [] };
+  }
+  function dispatch(action) {
+    if (state.outcome !== "ongoing") return reject("战斗已经结束。");
+    const actionType = action?.type;
+    if (!["attack", "defend", "skill", "item", "flee"].includes(String(actionType))) {
+      return reject("不支持的战斗动作。");
+    }
+    let validationError = null;
+    let skill;
+    let item;
+    if (action.type === "skill") {
+      skill = state.player.skills.find((candidate) => candidate.id === action.skillId);
+      if (!skill) validationError = "找不到该技能。";
+      else if (state.player.mp < skill.mpCost) validationError = "MP 不足。";
+    } else if (action.type === "item") {
+      item = state.player.items.find((candidate) => candidate.id === action.itemId);
+      if (!item) validationError = "找不到该物品。";
+      else if (item.quantity <= 0) validationError = "该物品已经用完。";
+    } else if (action.type === "flee" && !state.allowFlee) {
+      validationError = "本场战斗不能逃跑。";
+    }
+    if (validationError) return reject(validationError);
+    const events = [];
+    if (action.type === "attack") {
+      dealDamage(state.player, state.enemy, effectiveStat(state.player, "attack"), events);
+    } else if (action.type === "defend") {
+      upsertStatus(state.player, {
+        id: DEFENDING_STATUS_ID,
+        name: "防御",
+        duration: 1,
+        defenseDelta: Math.max(10, effectiveStat(state.player, "defense"))
+      });
+      record(events, "defend", `${state.player.name} 进入防御姿态。`);
+    } else if (action.type === "skill" && skill) {
+      state.player.mp = bounded(state.player.mp - skill.mpCost, 0, state.player.maxMp);
+      if (skill.type === "damage") dealDamage(state.player, state.enemy, skill.power, events);
+      else {
+        const before = state.player.hp;
+        state.player.hp = bounded(state.player.hp + skill.power, 0, state.player.maxHp);
+        record(events, "heal", `${state.player.name} 恢复 ${state.player.hp - before} 点生命。`);
+      }
+    } else if (action.type === "item" && item) {
+      item.quantity -= 1;
+      const field = item.effect === "heal_hp" ? "hp" : "mp";
+      const maxField = item.effect === "heal_hp" ? "maxHp" : "maxMp";
+      const before = state.player[field];
+      state.player[field] = bounded(before + item.power, 0, state.player[maxField]);
+      record(events, "heal", `${state.player.name} 使用 ${item.name}，恢复 ${state.player[field] - before} 点资源。`);
+    } else if (action.type === "flee") {
+      if (random() < 0.5) {
+        state.outcome = "fled";
+        record(events, "flee", `${state.player.name} 成功脱离战斗。`);
+        return { ok: true, state: cloneState(state), events: events.map((event) => ({ ...event })) };
+      }
+      record(events, "flee", `${state.player.name} 逃跑失败。`);
+    }
+    updateOutcome();
+    if (state.outcome === "ongoing") runEnemyTurn(events);
+    if (state.outcome === "ongoing") finishRound(events);
+    return { ok: true, state: cloneState(state), events: events.map((event) => ({ ...event })) };
+  }
+  return {
+    getState: () => cloneState(state),
+    dispatch
+  };
+}
+
+// st-extension/src/apps/renderer/modes/battle.ts
+var ACTION_DELAY_MS = 180;
+function textElement3(tag, className, text) {
+  const element2 = document.createElement(tag);
+  element2.className = className;
+  element2.textContent = text;
+  return element2;
+}
+function imageElement(className, src, alt, onError) {
+  const image = document.createElement("img");
+  image.className = className;
+  image.src = src;
+  image.alt = alt;
+  image.draggable = false;
+  image.addEventListener("error", () => {
+    image.hidden = true;
+    onError?.();
+  });
+  return image;
+}
+function resolvePortrait2(value, deps) {
+  if (!value) return null;
+  if (!value.startsWith("sprite:")) return value;
+  try {
+    return deps.resolvePortrait?.(value.slice("sprite:".length)) ?? null;
+  } catch {
+    return null;
+  }
+}
+function resourceRow(label, value, max, className) {
+  const row = document.createElement("div");
+  row.className = `st-render-resource ${className}`;
+  const heading = textElement3("span", "st-render-resource-label", label);
+  const progress = document.createElement("progress");
+  progress.max = Math.max(1, max);
+  progress.value = value;
+  progress.setAttribute("aria-label", `${label} ${value} / ${max}`);
+  const amount = textElement3("span", "st-render-resource-value", `${value} / ${max}`);
+  row.append(heading, progress, amount);
+  return row;
+}
+function combatantView(fighter, side, deps) {
+  const card = document.createElement("section");
+  card.className = `st-render-combatant st-render-combatant-${side}`;
+  const heading = textElement3("h3", "st-render-combatant-name", fighter.name);
+  const portrait = resolvePortrait2(fighter.portrait, deps);
+  if (portrait) {
+    card.append(imageElement("st-render-combatant-portrait", portrait, fighter.name, () => {
+      card.classList.add("st-render-combatant-no-portrait");
+    }));
+  } else {
+    card.classList.add("st-render-combatant-no-portrait");
+  }
+  card.append(
+    heading,
+    resourceRow("HP", fighter.hp, fighter.maxHp, "st-render-resource-hp"),
+    resourceRow("MP", fighter.mp, fighter.maxMp, "st-render-resource-mp")
+  );
+  const statuses = document.createElement("div");
+  statuses.className = "st-render-combatant-statuses";
+  statuses.setAttribute("aria-label", "状态");
+  for (const status of fighter.statuses) {
+    statuses.append(textElement3("span", "st-render-status-chip", `${status.name} · ${status.duration}`));
+  }
+  card.append(statuses);
+  return card;
+}
+function actionButton(action, label, disabled) {
+  const button2 = document.createElement("button");
+  button2.type = "button";
+  button2.className = "st-render-battle-action";
+  button2.dataset.action = action;
+  button2.textContent = label;
+  button2.disabled = disabled;
+  return button2;
+}
+function mountBattleMode(root, block, deps) {
+  const engine = createBattleEngine(block, { random: deps.random });
+  const section2 = document.createElement("section");
+  section2.className = "st-render-battle";
+  if (block.background) section2.append(imageElement("st-render-battle-background", block.background, ""));
+  const content = document.createElement("div");
+  content.className = "st-render-battle-content";
+  const header = document.createElement("header");
+  header.className = "st-render-battle-header";
+  const title = textElement3("h2", "st-render-battle-title", block.title);
+  const turn = textElement3("span", "st-render-battle-turn", "");
+  header.append(title, turn);
+  const intent = textElement3("div", "st-render-battle-intent", block.enemyIntent ? `敌方意图：${block.enemyIntent}` : "");
+  const combatants = document.createElement("div");
+  combatants.className = "st-render-battle-combatants";
+  const outcome = textElement3("div", "st-render-battle-outcome", "");
+  outcome.setAttribute("role", "status");
+  const log = document.createElement("ol");
+  log.className = "st-render-battle-log";
+  log.setAttribute("aria-label", "战斗日志");
+  const actions = document.createElement("div");
+  actions.className = "st-render-battle-actions";
+  const notice = textElement3("div", "st-render-battle-notice", "");
+  notice.setAttribute("role", "status");
+  notice.setAttribute("aria-live", "polite");
+  content.append(header, intent, combatants, outcome, log, actions, notice);
+  section2.append(content);
+  root.replaceChildren(section2);
+  let pending = false;
+  let destroyed = false;
+  let freeOpen = false;
+  let timer = null;
+  function outcomeText(state) {
+    if (state.outcome === "won") return "战斗胜利";
+    if (state.outcome === "lost") return "战斗失败";
+    if (state.outcome === "fled") return "已脱离战斗";
+    return "";
+  }
+  function createSelect(className, options, disabled) {
+    const select = document.createElement("select");
+    select.className = className;
+    select.disabled = disabled;
+    for (const option of options) {
+      const element2 = document.createElement("option");
+      element2.value = option.id;
+      element2.textContent = option.label;
+      element2.disabled = option.disabled;
+      select.append(element2);
+    }
+    const firstAvailable = options.find((option) => !option.disabled);
+    if (firstAvailable) select.value = firstAvailable.id;
+    return select;
+  }
+  function render3() {
+    const state = engine.getState();
+    const ended = state.outcome !== "ongoing";
+    turn.textContent = `回合 ${state.turn}`;
+    combatants.replaceChildren(
+      combatantView(state.player, "player", deps),
+      combatantView(state.enemy, "enemy", deps)
+    );
+    outcome.textContent = outcomeText(state);
+    outcome.hidden = !ended;
+    log.replaceChildren();
+    if (state.log.length === 0) log.append(textElement3("li", "st-render-battle-log-entry", "等待行动"));
+    else {
+      for (const entry of state.log.slice(-12)) log.append(textElement3("li", `st-render-battle-log-entry st-render-battle-log-${entry.kind}`, entry.text));
+    }
+    actions.replaceChildren();
+    const locked = ended || pending;
+    const attack = actionButton("attack", "⚔ 攻击", locked);
+    const defend = actionButton("defend", "◆ 防御", locked);
+    const skillOptions = state.player.skills.map((skill2) => ({
+      id: skill2.id,
+      label: `${skill2.name} · ${skill2.mpCost} MP`,
+      disabled: state.player.mp < skill2.mpCost
+    }));
+    const skillSelect = createSelect("st-render-battle-skill-select", skillOptions, locked || skillOptions.length === 0);
+    const skill = actionButton("skill", "✦ 施放技能", locked || !skillOptions.some((option) => !option.disabled));
+    const itemOptions = state.player.items.map((item2) => ({
+      id: item2.id,
+      label: `${item2.name} · ${item2.quantity}`,
+      disabled: item2.quantity <= 0
+    }));
+    const itemSelect = createSelect("st-render-battle-item-select", itemOptions, locked || itemOptions.length === 0);
+    const item = actionButton("item", "＋ 使用物品", locked || !itemOptions.some((option) => !option.disabled));
+    const flee = actionButton("flee", "↗ 逃跑", locked || !state.allowFlee);
+    const free = actionButton("free", "… 自由行动", locked);
+    actions.append(attack, defend, skillSelect, skill, itemSelect, item, flee, free);
+    if (freeOpen && !locked) {
+      const freePanel = document.createElement("div");
+      freePanel.className = "st-render-battle-free";
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "st-render-battle-free-input";
+      input.maxLength = 500;
+      input.placeholder = "输入行动";
+      const submit = actionButton("free-submit", "填入草稿", false);
+      freePanel.append(input, submit);
+      actions.append(freePanel);
+      input.focus();
+    }
+  }
+  function execute(action) {
+    if (destroyed) return;
+    timer = null;
+    const result = engine.dispatch(action);
+    pending = false;
+    notice.textContent = result.ok ? "" : result.error ?? "行动失败";
+    render3();
+  }
+  function schedule(action) {
+    if (pending || engine.getState().outcome !== "ongoing") return;
+    freeOpen = false;
+    if (deps.getSettings().reducedMotion) {
+      execute(action);
+      return;
+    }
+    pending = true;
+    render3();
+    timer = setTimeout(() => execute(action), ACTION_DELAY_MS);
+  }
+  function onClick(event) {
+    if (destroyed || !(event.target instanceof Element)) return;
+    const button2 = event.target.closest("button[data-action]");
+    if (!button2 || !root.contains(button2) || button2.disabled) return;
+    const action = button2.dataset.action;
+    if (action === "attack" || action === "defend" || action === "flee") {
+      schedule({ type: action });
+    } else if (action === "skill") {
+      const select = root.querySelector(".st-render-battle-skill-select");
+      if (select?.value) schedule({ type: "skill", skillId: select.value });
+    } else if (action === "item") {
+      const select = root.querySelector(".st-render-battle-item-select");
+      if (select?.value) schedule({ type: "item", itemId: select.value });
+    } else if (action === "free") {
+      freeOpen = !freeOpen;
+      render3();
+    } else if (action === "free-submit") {
+      const input = root.querySelector(".st-render-battle-free-input");
+      const value = input?.value.trim() ?? "";
+      if (!value) {
+        notice.textContent = "请输入自由行动。";
+        return;
+      }
+      const result = deps.insertDraft?.(`战斗行动：${value}`) ?? { ok: false, error: "未找到 SillyTavern 输入框。" };
+      notice.textContent = result.ok ? "已填入自由行动" : result.error;
+    }
+  }
+  root.addEventListener("click", onClick);
+  render3();
+  return {
+    destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+      root.removeEventListener("click", onClick);
+    }
+  };
+}
+
 // st-extension/src/apps/renderer/composer.ts
 function createComposerBridge(deps = {}) {
   const findInput = deps.findInput ?? (() => findComposerTextarea());
@@ -9981,7 +10397,7 @@ async function init(lifecycle) {
   lifecycle.track(() => composerBridge.dispose());
   const rendererRuntime = createRendererRuntime({
     getSettings: getRendererSettings,
-    factories: { gal: mountGalMode, cards: mountCardsMode },
+    factories: { gal: mountGalMode, cards: mountCardsMode, battle: mountBattleMode },
     modeDeps: {
       getSettings: getRendererSettings,
       resolvePortrait: (address) => {
