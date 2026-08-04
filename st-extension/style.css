@@ -1541,3 +1541,95 @@
     max-height: 48%;
   }
 }
+
+/* ---- Renderer: SLG 卡片选择 ---- */
+#chat .st-render-cards {
+  width: min(100%, 860px);
+  margin: 10px auto;
+  color: #f4f5f2;
+}
+
+#chat .st-render-cards-title {
+  margin: 0 0 10px;
+  font-size: 17px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+#chat .st-render-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 10px;
+}
+
+#chat .st-render-card {
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  gap: 8px;
+  min-width: 0;
+  min-height: 180px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: #20252a;
+  box-sizing: border-box;
+}
+
+#chat .st-render-card-selected {
+  border-color: #79c9a4;
+  box-shadow: inset 0 0 0 1px #79c9a4;
+}
+
+#chat .st-render-card-title,
+#chat .st-render-card-description,
+#chat .st-render-card-consequence {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+#chat .st-render-card-title {
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+#chat .st-render-card-description {
+  color: #dde0e2;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+#chat .st-render-card-consequence {
+  color: #e8c77c;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+#chat .st-render-card-select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 6px;
+  background: #30373d;
+  color: #fff;
+  cursor: pointer;
+}
+
+#chat .st-render-card-select:focus-visible {
+  outline: 2px solid #79c9a4;
+  outline-offset: 2px;
+}
+
+#chat .st-render-cards-status {
+  min-height: 20px;
+  margin-top: 8px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+#chat .st-render-cards-status-success {
+  color: #8ed1b2;
+}
+
+#chat .st-render-cards-status-error {
+  color: #f0a4a4;
+}

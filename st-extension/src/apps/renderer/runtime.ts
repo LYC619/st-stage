@@ -1,4 +1,5 @@
 import type { RendererSettings } from './config'
+import type { ComposerInsertResult } from './composer'
 import { parseRendererBlock } from './parser'
 import type { RendererBlock, RendererMode } from './types'
 
@@ -10,6 +11,8 @@ export interface RendererModeDeps {
   getSettings: () => RendererSettings
   /** 把 sprite 地址解析为当前图库中可显示的图片 URL。 */
   resolvePortrait?: (address: string) => string | null
+  /** 把结构化行动填入 ST 草稿；成功也不自动发送。 */
+  insertDraft?: (text: string) => ComposerInsertResult
 }
 
 export type RendererModeFactory<TMode extends RendererMode = RendererMode> = (

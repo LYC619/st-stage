@@ -34,6 +34,8 @@ import { NEWVAR_CHANNEL, NEWVAR_APP_ID } from './apps/newvar/config'
 import { createRendererRuntime } from './apps/renderer/runtime'
 import { normalizeRendererSettings, RENDERER_APP_ID } from './apps/renderer/config'
 import { mountGalMode } from './apps/renderer/modes/gal'
+import { mountCardsMode } from './apps/renderer/modes/cards'
+import { createComposerBridge } from './apps/renderer/composer'
 import { createApiManager } from './apps/api/manager'
 import { API_APP_ID, sanitizeAppData } from './apps/api/core'
 import { beginExtensionLifecycle, runWhenDomReady } from './lifecycle'
@@ -201,15 +203,18 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
 
   // Renderer runtime 复用统一消息后处理事件；模式工厂在各模式批次中逐项注册。
   const getRendererSettings = () => normalizeRendererSettings(settings.apps[RENDERER_APP_ID])
+  const composerBridge = createComposerBridge()
+  lifecycle.track(() => composerBridge.dispose())
   const rendererRuntime = createRendererRuntime({
     getSettings: getRendererSettings,
-    factories: { gal: mountGalMode },
+    factories: { gal: mountGalMode, cards: mountCardsMode },
     modeDeps: {
       getSettings: getRendererSettings,
       resolvePortrait: (address) => {
         const packs = getActivePacks(settings, adapter.getCurrentCharacterName())
         return resolveSprite(packs, address)?.url ?? null
       },
+      insertDraft: composerBridge.insertDraft,
     },
   })
   lifecycle.track(() => rendererRuntime.dispose())

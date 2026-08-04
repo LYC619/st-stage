@@ -1973,6 +1973,10 @@ function getContext() {
   if (!st) throw new Error("[sprite-overlay] SillyTavern 全局对象不存在，扩展只能在 ST 内运行");
   return st.getContext();
 }
+function findComposerTextarea(root = document) {
+  const input = root.querySelector("#send_textarea");
+  return input instanceof HTMLTextAreaElement ? input : null;
+}
 var STAdapter = class {
   async loadSettings() {
     const ctx = getContext();
@@ -9362,6 +9366,105 @@ function mountGalMode(root, block, deps) {
   };
 }
 
+// st-extension/src/apps/renderer/modes/cards.ts
+function textElement2(tag, className, text) {
+  const element2 = document.createElement(tag);
+  element2.className = className;
+  element2.textContent = text;
+  return element2;
+}
+function createCard(card) {
+  const article = document.createElement("article");
+  article.className = "st-render-card";
+  article.dataset.cardId = card.id;
+  article.append(
+    textElement2("h3", "st-render-card-title", card.title),
+    textElement2("p", "st-render-card-description", card.description)
+  );
+  if (card.consequence) article.append(textElement2("p", "st-render-card-consequence", card.consequence));
+  const button2 = document.createElement("button");
+  button2.type = "button";
+  button2.className = "st-render-card-select";
+  button2.dataset.cardId = card.id;
+  button2.setAttribute("aria-pressed", "false");
+  button2.textContent = "✓ 选择";
+  article.append(button2);
+  return article;
+}
+function mountCardsMode(root, block, deps) {
+  const section2 = document.createElement("section");
+  section2.className = "st-render-cards";
+  const title = textElement2("h2", "st-render-cards-title", block.title);
+  const grid = document.createElement("div");
+  grid.className = "st-render-cards-grid";
+  for (const card of block.cards) grid.append(createCard(card));
+  const status = textElement2("div", "st-render-cards-status", "");
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  section2.append(title, grid, status);
+  root.replaceChildren(section2);
+  const cards = new Map(block.cards.map((card) => [card.id, card]));
+  let destroyed = false;
+  function setSelected(selectedId) {
+    for (const element2 of Array.from(grid.querySelectorAll(".st-render-card"))) {
+      const selected = selectedId !== null && element2.dataset.cardId === selectedId;
+      element2.classList.toggle("st-render-card-selected", selected);
+      element2.querySelector(".st-render-card-select")?.setAttribute("aria-pressed", String(selected));
+    }
+  }
+  function onClick(event) {
+    if (destroyed || !(event.target instanceof Element)) return;
+    const button2 = event.target.closest(".st-render-card-select");
+    if (!button2 || !root.contains(button2)) return;
+    const card = cards.get(button2.dataset.cardId ?? "");
+    if (!card) return;
+    const result = deps.insertDraft?.(card.action) ?? { ok: false, error: "未找到 SillyTavern 输入框。" };
+    if (!result.ok) {
+      setSelected(null);
+      status.textContent = result.error;
+      status.className = "st-render-cards-status st-render-cards-status-error";
+      return;
+    }
+    setSelected(card.id);
+    status.className = "st-render-cards-status st-render-cards-status-success";
+    status.textContent = `已填入：${card.title}`;
+  }
+  root.addEventListener("click", onClick);
+  return {
+    destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      root.removeEventListener("click", onClick);
+    }
+  };
+}
+
+// st-extension/src/apps/renderer/composer.ts
+function createComposerBridge(deps = {}) {
+  const findInput = deps.findInput ?? (() => findComposerTextarea());
+  let owned = null;
+  function insertDraft(text) {
+    const input = findInput();
+    if (!input) return { ok: false, error: "未找到 SillyTavern 输入框。" };
+    if (owned?.input === input) {
+      if (input.value === "") owned = null;
+      else if (input.value !== owned.value) return { ok: false, error: "输入草稿已修改，未覆盖你的内容。" };
+    } else {
+      owned = null;
+      if (input.value !== "") return { ok: false, error: "输入框已有草稿，未覆盖你的内容。" };
+    }
+    input.value = text;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.focus();
+    owned = { input, value: text };
+    return { ok: true };
+  }
+  function dispose() {
+    owned = null;
+  }
+  return { insertDraft, dispose };
+}
+
 // st-extension/src/apps/api/manager.ts
 function createApiManager(deps) {
   let backdrop = null;
@@ -9874,15 +9977,18 @@ async function init(lifecycle) {
   lifecycle.track(() => newvarRuntime.dispose());
   lifecycle.track(() => adapter.injectChannel(NEWVAR_CHANNEL, ""));
   const getRendererSettings = () => normalizeRendererSettings(settings.apps[RENDERER_APP_ID]);
+  const composerBridge = createComposerBridge();
+  lifecycle.track(() => composerBridge.dispose());
   const rendererRuntime = createRendererRuntime({
     getSettings: getRendererSettings,
-    factories: { gal: mountGalMode },
+    factories: { gal: mountGalMode, cards: mountCardsMode },
     modeDeps: {
       getSettings: getRendererSettings,
       resolvePortrait: (address) => {
         const packs = getActivePacks(settings, adapter.getCurrentCharacterName());
         return resolveSprite(packs, address)?.url ?? null;
-      }
+      },
+      insertDraft: composerBridge.insertDraft
     }
   });
   lifecycle.track(() => rendererRuntime.dispose());

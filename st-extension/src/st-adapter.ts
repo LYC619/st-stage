@@ -77,6 +77,12 @@ function getContext(): STContext {
   return st.getContext()
 }
 
+/** 查找 SillyTavern 主消息输入框；DOM 选择器只在适配层维护。 */
+export function findComposerTextarea(root: ParentNode = document): HTMLTextAreaElement | null {
+  const input = root.querySelector('#send_textarea')
+  return input instanceof HTMLTextAreaElement ? input : null
+}
+
 export class STAdapter implements PlatformAdapter {
   async loadSettings(): Promise<PluginSettings> {
     const ctx = getContext()
