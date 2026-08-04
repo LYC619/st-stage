@@ -289,10 +289,47 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
     desc.textContent = tpl.description
     card.append(name, desc)
 
+    const builtIn = customId === null ? (tpl as NewvarTemplate) : null
+    const parameterInputs = new Map<string, HTMLInputElement>()
+    for (const parameter of builtIn?.parameters ?? []) {
+      const row = el('label', 'so-app-toggle')
+      const label = document.createElement('span')
+      label.textContent = parameter.label
+      const input = document.createElement('input')
+      input.type = 'text'
+      input.className = 'text_pole so-app-input'
+      input.value = parameter.default
+      input.autocomplete = 'off'
+      row.append(label, input)
+      card.append(row)
+      parameterInputs.set(parameter.key, input)
+    }
+
+    const resolveVariables = (): VariableDefinition[] | null => {
+      if (!builtIn?.instantiate) return tpl.variables
+      const parameters = Object.fromEntries([...parameterInputs].map(([key, input]) => [key, input.value.trim()]))
+      const names = Object.values(parameters)
+      if (names.some((value) => value === '')) {
+        window.alert('请填写所有模板角色名。')
+        return null
+      }
+      if (new Set(names).size !== names.length) {
+        window.alert('模板角色名不能重复。')
+        return null
+      }
+      if (names.some((value) => value.includes('.') || !isSafePath(`角色.${value}.变量`))) {
+        window.alert('角色名不能包含点号或危险路径字段。')
+        return null
+      }
+      return builtIn.instantiate(parameters)
+    }
+
     const actions = el('div', 'nv-tpl-actions')
     const replaceBtn = el('button', 'menu_button vm-act')
     replaceBtn.textContent = '替换'
     replaceBtn.addEventListener('click', () => {
+      const variables = resolveVariables()
+      if (!variables) return
       const cur = deps.getData()
       if (
         cur.schema.variables.length > 0 &&
@@ -302,14 +339,16 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
       }
       formDraft = null
       editingIndex = null
-      save({ ...cur, schema: { ...cur.schema, name: tpl.name, variables: cloneDefs(tpl.variables) } })
+      save({ ...cur, schema: { ...cur.schema, name: tpl.name, variables: cloneDefs(variables) } })
     })
     const appendBtn = el('button', 'menu_button vm-act vm-act-ghost')
     appendBtn.textContent = '追加'
     appendBtn.addEventListener('click', () => {
+      const variables = resolveVariables()
+      if (!variables) return
       const cur = deps.getData()
       const existing = new Set(cur.schema.variables.map((v) => v.key))
-      const added = tpl.variables.filter((v) => !existing.has(v.key))
+      const added = variables.filter((v) => !existing.has(v.key))
       if (added.length === 0) {
         window.alert('该模板的变量路径都已存在，没有可追加的项。')
         return
