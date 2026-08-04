@@ -6841,6 +6841,173 @@ function createBuiltinApps(deps) {
   ];
 }
 
+// st-extension/src/apps/newvar/legacy-set-parser.ts
+function parseLegacySetCalls(source) {
+  const calls = [];
+  const errors = [];
+  let index = 0;
+  while (index < source.length) {
+    index = skipTrivia(source, index);
+    if (index >= source.length) break;
+    const start = index;
+    try {
+      const parsed = parseCall(source, start);
+      let next = skipHorizontalSpace(source, parsed.next);
+      const hasSemicolon = source[next] === ";";
+      if (hasSemicolon) next = skipHorizontalSpace(source, next + 1);
+      if (next >= source.length || isLineBreak(source[next])) {
+        calls.push(parsed.call);
+        index = next;
+        continue;
+      }
+      if (source.startsWith("//", next)) {
+        calls.push(parsed.call);
+        index = skipLineComment(source, next);
+        continue;
+      }
+      if (hasSemicolon && source.startsWith("_.set", next)) {
+        calls.push(parsed.call);
+        index = next;
+        continue;
+      }
+      throw syntaxError(source, next, "调用后存在不允许的尾随内容");
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+      index = recoverAtNextLine(source, start);
+    }
+  }
+  return { calls, errors };
+}
+function parseCall(source, start) {
+  if (!source.startsWith("_.set", start)) throw syntaxError(source, start, "只允许 _.set(...) 调用");
+  let index = skipWhitespace(source, start + "_.set".length);
+  if (source[index] !== "(") throw syntaxError(source, index, "_.set 后缺少左括号");
+  index = skipWhitespace(source, index + 1);
+  const pathArg = parseValue(source, index);
+  if (typeof pathArg.value !== "string") throw syntaxError(source, index, "第一个参数必须是字符串路径");
+  const path = pathArg.value.trim();
+  if (!path) throw syntaxError(source, index, "变量路径不能为空");
+  if (!isSafePath(path)) throw syntaxError(source, index, "变量路径包含危险字段");
+  index = expectComma(source, pathArg.next, "路径后缺少旧值参数");
+  const oldArg = parseValue(source, index);
+  index = expectComma(source, oldArg.next, "旧值后缺少新值参数");
+  const newArg = parseValue(source, index);
+  index = skipWhitespace(source, newArg.next);
+  if (source[index] !== ")") throw syntaxError(source, index, "新值后必须立即结束调用");
+  return {
+    call: { path, oldValue: oldArg.value, newValue: newArg.value },
+    next: index + 1
+  };
+}
+function parseValue(source, start) {
+  const index = skipWhitespace(source, start);
+  const quote = source[index];
+  if (quote === "'" || quote === '"') return parseString(source, index, quote);
+  for (const [token, value] of [
+    ["true", true],
+    ["false", false],
+    ["null", null]
+  ]) {
+    if (source.startsWith(token, index) && isValueBoundary(source[index + token.length])) {
+      return { value, next: index + token.length };
+    }
+  }
+  const number = source.slice(index).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/);
+  if (number && isValueBoundary(source[index + number[0].length])) {
+    return { value: Number(number[0]), next: index + number[0].length };
+  }
+  throw syntaxError(source, index, "参数只能是字符串、数字、布尔值或 null");
+}
+function parseString(source, start, quote) {
+  let value = "";
+  let index = start + 1;
+  while (index < source.length) {
+    const char = source[index];
+    if (char === quote) return { value, next: index + 1 };
+    if (isLineBreak(char)) throw syntaxError(source, index, "字符串引号未闭合");
+    if (char !== "\\") {
+      value += char;
+      index += 1;
+      continue;
+    }
+    const escaped = source[index + 1];
+    if (escaped === void 0 || isLineBreak(escaped)) throw syntaxError(source, index, "字符串转义未完成");
+    const simpleEscapes = {
+      "'": "'",
+      '"': '"',
+      "\\": "\\",
+      "/": "/",
+      b: "\b",
+      f: "\f",
+      n: "\n",
+      r: "\r",
+      t: "	"
+    };
+    if (escaped === "u") {
+      const hex = source.slice(index + 2, index + 6);
+      if (!/^[0-9a-fA-F]{4}$/.test(hex)) throw syntaxError(source, index, "Unicode 转义必须包含四位十六进制数");
+      value += String.fromCharCode(Number.parseInt(hex, 16));
+      index += 6;
+      continue;
+    }
+    if (!(escaped in simpleEscapes)) throw syntaxError(source, index, `不支持的字符串转义 \\${escaped}`);
+    value += simpleEscapes[escaped];
+    index += 2;
+  }
+  throw syntaxError(source, start, "字符串引号未闭合");
+}
+function expectComma(source, start, message) {
+  const index = skipWhitespace(source, start);
+  if (source[index] !== ",") throw syntaxError(source, index, message);
+  return skipWhitespace(source, index + 1);
+}
+function skipWhitespace(source, start) {
+  let index = start;
+  while (index < source.length && /\s/.test(source[index])) index += 1;
+  return index;
+}
+function skipHorizontalSpace(source, start) {
+  let index = start;
+  while (source[index] === " " || source[index] === "	") index += 1;
+  return index;
+}
+function skipTrivia(source, start) {
+  let index = start;
+  while (index < source.length) {
+    if (/\s/.test(source[index]) || source[index] === ";") {
+      index += 1;
+      continue;
+    }
+    if (source.startsWith("//", index)) {
+      index = skipLineComment(source, index);
+      continue;
+    }
+    break;
+  }
+  return index;
+}
+function skipLineComment(source, start) {
+  const newline = source.indexOf("\n", start + 2);
+  return newline < 0 ? source.length : newline + 1;
+}
+function recoverAtNextLine(source, start) {
+  const newline = source.indexOf("\n", start);
+  return newline < 0 ? source.length : newline + 1;
+}
+function isLineBreak(char) {
+  return char === "\n" || char === "\r";
+}
+function isValueBoundary(char) {
+  return char === void 0 || char === "," || char === ")" || /\s/.test(char);
+}
+function syntaxError(source, index, message) {
+  const before = source.slice(0, Math.max(0, index));
+  const line = before.split("\n").length;
+  const lastNewline = before.lastIndexOf("\n");
+  const column = index - lastNewline;
+  return new Error(`第 ${line} 行第 ${column} 列：${message}`);
+}
+
 // st-extension/src/apps/newvar/engine.ts
 function initStateFromSchema(schema) {
   const state = {};
@@ -6914,7 +7081,6 @@ function dottedToPointer(path) {
 }
 var BLOCK_RE = /<UpdateVariable>([\s\S]*?)<\/UpdateVariable>/i;
 var ANALYSIS_RE = /<Analysis>[\s\S]*?<\/Analysis>/gi;
-var LODASH_RE = /_\.set\(\s*['"]([^'"]+)['"]\s*,\s*(?:[^,]*?,\s*)?([\s\S]*?)\)\s*;?/gi;
 function parseUpdateBlock(text, format) {
   if (typeof text !== "string") return { found: false, ops: [] };
   const m = BLOCK_RE.exec(text);
@@ -6983,27 +7149,13 @@ function pointerToDotted(pointer) {
   return p.split("/").map((seg) => seg.replace(/~1/g, "/").replace(/~0/g, "~")).join(".");
 }
 function parseLodash(inner) {
-  const ops = [];
-  let m;
-  LODASH_RE.lastIndex = 0;
-  while ((m = LODASH_RE.exec(inner)) !== null) {
-    const path = m[1];
-    const valueText = stripTrailingComment(m[2]).trim();
-    ops.push({ op: "replace", path, value: coerceScalar(valueText) });
-  }
-  return { found: true, ops };
-}
-function stripTrailingComment(s) {
-  const idx = s.indexOf("//");
-  return idx >= 0 ? s.slice(0, idx) : s;
-}
-function coerceScalar(t) {
-  if (t === "") return "";
-  try {
-    return JSON.parse(t);
-  } catch {
-    return t.replace(/^['"]|['"]$/g, "");
-  }
+  const parsed = parseLegacySetCalls(inner);
+  const ops = parsed.calls.map((call) => ({ op: "replace", path: call.path, value: call.newValue }));
+  return {
+    found: true,
+    ops,
+    ...parsed.errors.length > 0 ? { error: parsed.errors.join("；") } : {}
+  };
 }
 function applyOps(state, ops, schema) {
   const next = clone(state);

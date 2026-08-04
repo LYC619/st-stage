@@ -10,6 +10,7 @@
  */
 
 import { getNested, setNested, deleteNested, isSafePath } from '../path-utils'
+import { parseLegacySetCalls } from './legacy-set-parser'
 import type {
   VariableSchema,
   VariableDefinition,
@@ -118,8 +119,6 @@ function dottedToPointer(path: string): string {
 
 const BLOCK_RE = /<UpdateVariable>([\s\S]*?)<\/UpdateVariable>/i
 const ANALYSIS_RE = /<Analysis>[\s\S]*?<\/Analysis>/gi
-// _.set('path', old, new)  或  _.set("path", old, new)（old 可省略）
-const LODASH_RE = /_\.set\(\s*['"]([^'"]+)['"]\s*,\s*(?:[^,]*?,\s*)?([\s\S]*?)\)\s*;?/gi
 
 export function parseUpdateBlock(text: string, format: OutputFormat): ParsedBlock {
   if (typeof text !== 'string') return { found: false, ops: [] }
@@ -200,29 +199,12 @@ export function pointerToDotted(pointer: string): string {
 }
 
 function parseLodash(inner: string): ParsedBlock {
-  const ops: PatchOp[] = []
-  let m: RegExpExecArray | null
-  LODASH_RE.lastIndex = 0
-  while ((m = LODASH_RE.exec(inner)) !== null) {
-    const path = m[1]
-    const valueText = stripTrailingComment(m[2]).trim()
-    ops.push({ op: 'replace', path, value: coerceScalar(valueText) })
-  }
-  return { found: true, ops }
-}
-
-function stripTrailingComment(s: string): string {
-  const idx = s.indexOf('//')
-  return idx >= 0 ? s.slice(0, idx) : s
-}
-
-/** 把 lodash 参数文本解析为值：JSON 优先，失败去引号当字符串 */
-function coerceScalar(t: string): unknown {
-  if (t === '') return ''
-  try {
-    return JSON.parse(t)
-  } catch {
-    return t.replace(/^['"]|['"]$/g, '')
+  const parsed = parseLegacySetCalls(inner)
+  const ops: PatchOp[] = parsed.calls.map((call) => ({ op: 'replace', path: call.path, value: call.newValue }))
+  return {
+    found: true,
+    ops,
+    ...(parsed.errors.length > 0 ? { error: parsed.errors.join('；') } : {}),
   }
 }
 
