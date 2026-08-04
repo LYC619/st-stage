@@ -82,6 +82,42 @@ describe('parseUpdateBlock — JSON Patch', () => {
     expect(r.found).toBe(true)
     expect(r.error).toBeTruthy()
   })
+  it('逐条报告结构非法的补丁，同时保留后续合法操作', () => {
+    const text = `<UpdateVariable>${JSON.stringify([
+      null,
+      ['replace'],
+      { op: 'move', path: '/好感度' },
+      { op: 'replace' },
+      { op: 'replace', path: '' },
+      { op: 'replace', path: 7, value: 1 },
+      { op: 'replace', path: '/好感度' },
+      { op: 'replace', path: '/好感度', value: 12 },
+    ])}</UpdateVariable>`
+
+    const r = parseUpdateBlock(text, 'json_patch')
+
+    expect(r.ops).toEqual([{ op: 'replace', path: '好感度', value: 12 }])
+    expect(r.rejected).toEqual([
+      expect.objectContaining({ index: 0, reason: expect.stringContaining('对象') }),
+      expect.objectContaining({ index: 1, reason: expect.stringContaining('对象') }),
+      expect.objectContaining({ index: 2, reason: expect.stringContaining('op') }),
+      expect.objectContaining({ index: 3, reason: expect.stringContaining('path') }),
+      expect.objectContaining({ index: 4, reason: expect.stringContaining('path') }),
+      expect.objectContaining({ index: 5, reason: expect.stringContaining('path') }),
+      expect.objectContaining({ index: 6, reason: expect.stringContaining('value') }),
+    ])
+  })
+  it('拒绝包含原型污染字段的路径', () => {
+    const r = parseUpdateBlock(
+      '<UpdateVariable>[{"op":"replace","path":"/__proto__/polluted","value":true}]</UpdateVariable>',
+      'json_patch',
+    )
+
+    expect(r.ops).toEqual([])
+    expect(r.rejected).toEqual([
+      expect.objectContaining({ index: 0, reason: expect.stringContaining('危险') }),
+    ])
+  })
 })
 
 describe('parseUpdateBlock — lodash 兼容', () => {
@@ -124,6 +160,36 @@ describe('applyOps — schema 门禁', () => {
     const r = applyOps(base, [{ op: 'remove', path: '场景' }], schema)
     expect('场景' in r.state).toBe(false)
     expect(r.log[0].status).toBe('removed')
+  })
+  it('remove 拒绝父对象和未定义叶子，只删除 schema 中的精确叶子', () => {
+    const r = applyOps(
+      base,
+      [
+        { op: 'remove', path: '状态' },
+        { op: 'remove', path: '状态.魔力' },
+        { op: 'remove', path: '状态.体力' },
+      ],
+      schema,
+    )
+
+    expect(r.log).toEqual([
+      expect.objectContaining({ path: '状态', status: 'rejected', detail: expect.stringContaining('叶子') }),
+      expect.objectContaining({ path: '状态.魔力', status: 'rejected', detail: expect.stringContaining('叶子') }),
+      expect.objectContaining({ path: '状态.体力', status: 'removed' }),
+    ])
+    expect(r.state.状态).toEqual({ 心情: '平静' })
+  })
+  it('remove 后可由快照默认值归一化恢复该叶子', () => {
+    const removed = applyOps(base, [{ op: 'remove', path: '状态.体力' }], schema).state
+    const normalized = fillDefaults(removed, schema)
+
+    expect(normalized.状态).toEqual({ 体力: 100, 心情: '平静' })
+  })
+  it('直接传入危险路径时拒绝操作', () => {
+    const r = applyOps(base, [{ op: 'remove', path: '__proto__.polluted' }], schema)
+
+    expect(r.state).toEqual(base)
+    expect(r.log[0]).toMatchObject({ status: 'rejected', detail: expect.stringContaining('危险') })
   })
   it('不改动原状态（纯函数）', () => {
     applyOps(base, [{ op: 'replace', path: '好感度', value: 99 }], schema)

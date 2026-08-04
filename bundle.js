@@ -6927,15 +6927,39 @@ function parseJsonPatch(inner) {
   }
   if (!Array.isArray(parsed)) return { found: true, ops: [], error: "JSON Patch 应为数组" };
   const ops = [];
-  for (const raw of parsed) {
-    if (!raw || typeof raw !== "object") continue;
+  const rejected = [];
+  for (const [index, raw] of parsed.entries()) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      rejected.push({ index, reason: "补丁条目必须是对象" });
+      continue;
+    }
     const o = raw;
     const op = o.op;
     const pointer = o.path;
-    if (op !== "replace" && op !== "add" && op !== "remove" || typeof pointer !== "string") continue;
-    ops.push({ op, path: pointerToDotted(pointer), value: o.value });
+    if (op !== "replace" && op !== "add" && op !== "remove") {
+      rejected.push({ index, reason: "op 只允许 add、replace 或 remove" });
+      continue;
+    }
+    if (typeof pointer !== "string") {
+      rejected.push({ index, reason: "path 必须是非空字符串" });
+      continue;
+    }
+    const path = pointerToDotted(pointer).trim();
+    if (!path) {
+      rejected.push({ index, reason: "path 不能为空" });
+      continue;
+    }
+    if (!isSafePath(path)) {
+      rejected.push({ index, reason: "path 包含危险字段" });
+      continue;
+    }
+    if (op !== "remove" && !Object.prototype.hasOwnProperty.call(o, "value")) {
+      rejected.push({ index, reason: `${op} 操作缺少 value` });
+      continue;
+    }
+    ops.push({ op, path, value: o.value });
   }
-  return { found: true, ops };
+  return { found: true, ops, ...rejected.length > 0 ? { rejected } : {} };
 }
 function extractJsonArray(inner) {
   const start = inner.indexOf("[");
@@ -6977,12 +7001,20 @@ function applyOps(state, ops, schema) {
   const defByKey = new Map(schema.variables.map((v) => [v.key, v]));
   const hasSchema = schema.variables.length > 0;
   for (const op of ops) {
+    if (!op.path.trim() || !isSafePath(op.path)) {
+      log.push({ path: op.path, status: "rejected", detail: "变量路径为空或包含危险字段" });
+      continue;
+    }
+    const def = defByKey.get(op.path);
     if (op.op === "remove") {
+      if (hasSchema && !def) {
+        log.push({ path: op.path, status: "rejected", detail: "remove 只能删除 schema 中定义的叶子变量" });
+        continue;
+      }
       deleteNested(next, op.path);
       log.push({ path: op.path, status: "removed" });
       continue;
     }
-    const def = defByKey.get(op.path);
     if (!def) {
       if (hasSchema) {
         log.push({ path: op.path, status: "rejected", detail: "未定义的变量路径" });
@@ -7278,8 +7310,13 @@ function createNewvarRuntime(deps) {
     const snapBase = findSnapshotBefore(chat, messageId - 1);
     const base = snapBase ? fillDefaults(snapBase, data.schema) : initStateFromSchema(data.schema);
     const result = applyOps(base, parsed.ops, data.schema);
+    const parseLog = (parsed.rejected ?? []).map(({ index, reason }) => ({
+      path: `JSON Patch[${index}]`,
+      status: "rejected",
+      detail: reason
+    }));
     writeSnapshot(st, messageId, result.state);
-    lastParse = { messageId, found: true, log: result.log };
+    lastParse = { messageId, found: true, log: [...parseLog, ...result.log] };
     reinject();
     notify();
   }

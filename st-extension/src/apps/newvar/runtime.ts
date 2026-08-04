@@ -213,8 +213,13 @@ export function createNewvarRuntime(deps: NewvarRuntimeDeps): NewvarRuntime {
     const snapBase = findSnapshotBefore(chat, messageId - 1)
     const base = snapBase ? fillDefaults(snapBase, data.schema) : initStateFromSchema(data.schema)
     const result = applyOps(base, parsed.ops, data.schema)
+    const parseLog: ApplyLogEntry[] = (parsed.rejected ?? []).map(({ index, reason }) => ({
+      path: `JSON Patch[${index}]`,
+      status: 'rejected',
+      detail: reason,
+    }))
     writeSnapshot(st, messageId, result.state)
-    lastParse = { messageId, found: true, log: result.log }
+    lastParse = { messageId, found: true, log: [...parseLog, ...result.log] }
     reinject()
     notify()
   }

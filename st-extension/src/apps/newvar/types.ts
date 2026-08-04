@@ -47,10 +47,18 @@ export interface PatchOp {
   value?: unknown
 }
 
+export interface RejectedPatch {
+  /** 原始 JSON Patch 数组中的位置 */
+  index: number
+  reason: string
+}
+
 export interface ParsedBlock {
   /** 是否在文本里找到了 <UpdateVariable> 块 */
   found: boolean
   ops: PatchOp[]
+  /** 结构非法且未进入执行阶段的补丁，按原数组顺序排列 */
+  rejected?: RejectedPatch[]
   /** 解析阶段的错误（块存在但内容非法时） */
   error?: string
 }
