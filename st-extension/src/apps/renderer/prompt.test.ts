@@ -53,5 +53,6 @@ describe('buildRendererPrompt', () => {
     expect(prompt).toMatch(/heal_hp.*heal_mp/)
     expect(prompt).toMatch(/attackDelta.*defenseDelta.*damagePerTurn/)
     expect(prompt).toMatch(/base64.*栅格/)
+    expect(prompt).toMatch(/sprite:地址/)
   })
 })

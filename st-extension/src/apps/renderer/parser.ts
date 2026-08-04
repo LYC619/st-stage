@@ -114,6 +114,16 @@ function getOptionalImageUrl(value: RecordValue, key: string, label: string): st
   return null
 }
 
+/** portrait 额外接受显式 sprite 地址，其他图片字段仍只接受 URL。 */
+function getOptionalPortrait(value: RecordValue, key: string, label: string): string | null {
+  const error = getOptionalString(value, key, label, 500)
+  if (error !== null) return error
+  if (!(key in value)) return null
+  const portrait = value[key] as string
+  if (/^sprite:[^\s<>]{1,493}$/u.test(portrait) || isSafeImageUrl(portrait)) return null
+  return `${label}.${key} 不是安全图片 URL 或 sprite 地址`
+}
+
 /** 返回数组中首个重复 ID，没有重复时返回空值。 */
 function findDuplicateId(items: Array<{ id: string }>): string | null {
   const ids = new Set<string>()
@@ -149,7 +159,7 @@ function validateGal(value: RecordValue): GalRenderBlock | string {
     const contentError = firstError(
       getRequiredString(item, 'speaker', `gal.beats[${index}]`, 100),
       getRequiredString(item, 'text', `gal.beats[${index}]`, 2000),
-      getOptionalImageUrl(item, 'portrait', `gal.beats[${index}]`),
+      getOptionalPortrait(item, 'portrait', `gal.beats[${index}]`),
       getOptionalImageUrl(item, 'background', `gal.beats[${index}]`),
     )
     if (contentError) return contentError
@@ -304,7 +314,7 @@ function validateFighter(value: unknown, label: string): FighterConfig | string 
   if (numericError) return numericError
   if ((value.hp as number) > (value.maxHp as number)) return `${label}.hp 必须小于等于 maxHp`
   if ((value.mp as number) > (value.maxMp as number)) return `${label}.mp 必须小于等于 maxMp`
-  const portraitError = getOptionalImageUrl(value, 'portrait', label)
+  const portraitError = getOptionalPortrait(value, 'portrait', label)
   if (portraitError) return portraitError
   const parsed: FighterConfig = {
     id: value.id as string,

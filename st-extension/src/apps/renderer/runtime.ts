@@ -8,6 +8,8 @@ export interface RendererMount {
 
 export interface RendererModeDeps {
   getSettings: () => RendererSettings
+  /** 把 sprite 地址解析为当前图库中可显示的图片 URL。 */
+  resolvePortrait?: (address: string) => string | null
 }
 
 export type RendererModeFactory<TMode extends RendererMode = RendererMode> = (

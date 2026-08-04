@@ -1373,6 +1373,175 @@
   max-width: 72px;
 }
 
+/* ---- Renderer: Galgame ---- */
+#chat .st-render-gal {
+  position: relative;
+  isolation: isolate;
+  width: min(100%, 820px);
+  aspect-ratio: 16 / 9;
+  min-height: 320px;
+  margin: 10px auto;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: #15181c;
+  color: #f7f7f4;
+}
+
+#chat .st-render-gal-background-layer,
+#chat .st-render-gal-background {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+#chat .st-render-gal-background {
+  object-fit: cover;
+}
+
+#chat .st-render-gal-header {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  left: 12px;
+  max-width: calc(100% - 24px);
+  max-height: 24%;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: rgba(12, 14, 16, 0.78);
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+#chat .st-render-gal-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+#chat .st-render-gal-scene {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #d7d9dc;
+}
+
+#chat .st-render-gal-portrait-layer {
+  position: absolute;
+  z-index: 1;
+  inset: 8% 3% 24%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+#chat .st-render-gal-portrait {
+  max-width: 58%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: right bottom;
+}
+
+#chat .st-render-gal-dialogue-box {
+  position: absolute;
+  z-index: 3;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  min-height: 116px;
+  max-height: 44%;
+  padding: 12px 14px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: rgba(12, 14, 16, 0.9);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+#chat .st-render-gal-speaker {
+  min-height: 20px;
+  color: #8ed1b2;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+#chat .st-render-gal-dialogue {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 42px;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-y: auto;
+}
+
+#chat .st-render-gal-controls {
+  display: grid;
+  grid-template-columns: 36px 1fr auto 36px;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  margin-top: 6px;
+}
+
+#chat .st-render-gal-control {
+  min-width: 36px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: #292e33;
+  color: #fff;
+  cursor: pointer;
+}
+
+#chat .st-render-gal-control:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+#chat .st-render-gal-control:focus-visible {
+  outline: 2px solid #8ed1b2;
+  outline-offset: 2px;
+}
+
+#chat .st-render-gal-progress {
+  min-width: 52px;
+  font-size: 12px;
+  color: #d7d9dc;
+  text-align: center;
+}
+
+#chat .st-render-gal-skip {
+  min-width: 54px;
+}
+
+@media (max-width: 600px) {
+  #chat .st-render-gal {
+    aspect-ratio: 4 / 5;
+    min-height: 420px;
+  }
+
+  #chat .st-render-gal-portrait-layer {
+    inset: 7% 2% 30%;
+  }
+
+  #chat .st-render-gal-portrait {
+    max-width: 82%;
+  }
+
+  #chat .st-render-gal-dialogue-box {
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    min-height: 142px;
+    max-height: 48%;
+  }
+}
+
 /* 手机框架样式 — 双端共用（ST 由 build.mjs 拼进 style.css；Web 由 globals.css import） */
 
 /* ==================== 手机框架 ==================== */

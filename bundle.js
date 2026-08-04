@@ -6885,7 +6885,7 @@ function render2(container, ctx, deps, state) {
 
 // st-extension/src/apps/renderer/prompt.ts
 var GAL_PROMPT = `【Galgame 模式】
-适合连续对话或分镜。字段：version=1，mode="gal"，scene 为场景说明，beats 为 1-50 个节拍；每个节拍必须有 speaker 和 text，title、background、节拍的 portrait/background 可省略。
+适合连续对话或分镜。字段：version=1，mode="gal"，scene 为场景说明，beats 为 1-50 个节拍；每个节拍必须有 speaker 和 text，title、background、节拍的 portrait/background 可省略。portrait 还可写成 sprite:地址，由当前角色图库解析。
 示例：
 <STStageRender>{"version":1,"mode":"gal","title":"雨夜重逢","scene":"车站月台","beats":[{"speaker":"小雪","text":"你终于来了。","portrait":"/user/images/xiaoxue.png"},{"speaker":"我","text":"抱歉，让你久等了。"}]}</STStageRender>`;
 var CARDS_PROMPT = `【SLG 卡片选择模式】
@@ -8764,6 +8764,14 @@ function getOptionalImageUrl(value, key, label) {
   if (!isSafeImageUrl(value[key])) return `${label}.${key} 不是安全图片 URL`;
   return null;
 }
+function getOptionalPortrait(value, key, label) {
+  const error = getOptionalString(value, key, label, 500);
+  if (error !== null) return error;
+  if (!(key in value)) return null;
+  const portrait = value[key];
+  if (/^sprite:[^\s<>]{1,493}$/u.test(portrait) || isSafeImageUrl(portrait)) return null;
+  return `${label}.${key} 不是安全图片 URL 或 sprite 地址`;
+}
 function findDuplicateId(items) {
   const ids = /* @__PURE__ */ new Set();
   for (const item of items) {
@@ -8794,7 +8802,7 @@ function validateGal(value) {
     const contentError = firstError(
       getRequiredString(item, "speaker", `gal.beats[${index}]`, 100),
       getRequiredString(item, "text", `gal.beats[${index}]`, 2e3),
-      getOptionalImageUrl(item, "portrait", `gal.beats[${index}]`),
+      getOptionalPortrait(item, "portrait", `gal.beats[${index}]`),
       getOptionalImageUrl(item, "background", `gal.beats[${index}]`)
     );
     if (contentError) return contentError;
@@ -8937,7 +8945,7 @@ function validateFighter(value, label) {
   if (numericError) return numericError;
   if (value.hp > value.maxHp) return `${label}.hp 必须小于等于 maxHp`;
   if (value.mp > value.maxMp) return `${label}.mp 必须小于等于 maxMp`;
-  const portraitError = getOptionalImageUrl(value, "portrait", label);
+  const portraitError = getOptionalPortrait(value, "portrait", label);
   if (portraitError) return portraitError;
   const parsed = {
     id: value.id,
@@ -9188,6 +9196,170 @@ function createRendererRuntime(deps) {
     disposed = true;
   }
   return { processMessage, reprocessAll, dispose };
+}
+
+// st-extension/src/apps/renderer/modes/gal.ts
+var TYPEWRITER_INTERVAL_MS = 24;
+function textElement(tag, className, text) {
+  const element2 = document.createElement(tag);
+  element2.className = className;
+  element2.textContent = text;
+  return element2;
+}
+function stageImage(className, src, alt) {
+  const image = document.createElement("img");
+  image.className = className;
+  image.src = src;
+  image.alt = alt;
+  image.draggable = false;
+  image.addEventListener("error", () => {
+    image.hidden = true;
+  });
+  return image;
+}
+function resolvePortrait(value, deps) {
+  if (!value) return null;
+  if (!value.startsWith("sprite:")) return value;
+  try {
+    return deps.resolvePortrait?.(value.slice("sprite:".length)) ?? null;
+  } catch {
+    return null;
+  }
+}
+function mountGalMode(root, block, deps) {
+  const stage = document.createElement("div");
+  stage.className = "st-render-gal";
+  stage.setAttribute("role", "group");
+  stage.setAttribute("aria-label", block.title ?? block.scene);
+  const backgroundLayer = document.createElement("div");
+  backgroundLayer.className = "st-render-gal-background-layer";
+  const header = document.createElement("header");
+  header.className = "st-render-gal-header";
+  if (block.title) header.append(textElement("div", "st-render-gal-title", block.title));
+  header.append(textElement("div", "st-render-gal-scene", block.scene));
+  const portraitLayer = document.createElement("div");
+  portraitLayer.className = "st-render-gal-portrait-layer";
+  const dialogueBox = document.createElement("div");
+  dialogueBox.className = "st-render-gal-dialogue-box";
+  const speaker = textElement("div", "st-render-gal-speaker", "");
+  const dialogue = textElement("div", "st-render-gal-dialogue", "");
+  dialogue.setAttribute("aria-live", "polite");
+  const controls = document.createElement("div");
+  controls.className = "st-render-gal-controls";
+  const previous = document.createElement("button");
+  previous.type = "button";
+  previous.className = "st-render-gal-control";
+  previous.setAttribute("aria-label", "上一句");
+  previous.title = "上一句";
+  previous.textContent = "←";
+  const progress = textElement("span", "st-render-gal-progress", "");
+  const skip = document.createElement("button");
+  skip.type = "button";
+  skip.className = "st-render-gal-control st-render-gal-skip";
+  skip.setAttribute("aria-label", "跳过");
+  skip.textContent = "跳过";
+  const next = document.createElement("button");
+  next.type = "button";
+  next.className = "st-render-gal-control";
+  next.setAttribute("aria-label", "下一句");
+  next.title = "下一句";
+  next.textContent = "→";
+  controls.append(previous, progress, skip, next);
+  dialogueBox.append(speaker, dialogue, controls);
+  stage.append(backgroundLayer, header, portraitLayer, dialogueBox);
+  root.replaceChildren(stage);
+  root.tabIndex = 0;
+  let index = 0;
+  let timer = null;
+  let fullDialogue = "";
+  let dialogueUnits = [];
+  let cursor = 0;
+  let destroyed = false;
+  function stopTyping(complete) {
+    if (timer === null) return false;
+    clearInterval(timer);
+    timer = null;
+    if (complete) dialogue.textContent = fullDialogue;
+    return true;
+  }
+  function renderDialogue(text, forceInstant = false) {
+    stopTyping(false);
+    fullDialogue = text;
+    dialogueUnits = Array.from(text);
+    cursor = 0;
+    const settings = deps.getSettings();
+    if (forceInstant || settings.reducedMotion || !settings.typewriter) {
+      dialogue.textContent = text;
+      return;
+    }
+    dialogue.textContent = "";
+    timer = setInterval(() => {
+      if (destroyed) return;
+      cursor += 1;
+      dialogue.textContent = dialogueUnits.slice(0, cursor).join("");
+      if (cursor >= dialogueUnits.length) stopTyping(false);
+    }, TYPEWRITER_INTERVAL_MS);
+  }
+  function renderBeat(forceInstant = false) {
+    const beat = block.beats[index];
+    speaker.textContent = beat.speaker;
+    renderDialogue(beat.text, forceInstant);
+    backgroundLayer.replaceChildren();
+    const background = beat.background ?? block.background;
+    if (background) backgroundLayer.append(stageImage("st-render-gal-background", background, ""));
+    portraitLayer.replaceChildren();
+    const portrait = resolvePortrait(beat.portrait, deps);
+    if (portrait) portraitLayer.append(stageImage("st-render-gal-portrait", portrait, beat.speaker));
+    previous.disabled = index === 0;
+    next.disabled = index === block.beats.length - 1;
+    skip.disabled = false;
+    progress.textContent = `${index + 1} / ${block.beats.length}`;
+  }
+  function goPrevious() {
+    if (index === 0) return;
+    stopTyping(false);
+    index -= 1;
+    renderBeat();
+  }
+  function goNext() {
+    if (stopTyping(true)) return;
+    if (index >= block.beats.length - 1) return;
+    index += 1;
+    renderBeat();
+  }
+  function goLast() {
+    stopTyping(false);
+    index = block.beats.length - 1;
+    renderBeat(true);
+  }
+  function onKeyDown(event) {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      goPrevious();
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      goNext();
+    } else if (event.key === "End") {
+      event.preventDefault();
+      goLast();
+    }
+  }
+  previous.addEventListener("click", goPrevious);
+  next.addEventListener("click", goNext);
+  skip.addEventListener("click", goLast);
+  root.addEventListener("keydown", onKeyDown);
+  renderBeat();
+  return {
+    destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      stopTyping(false);
+      root.removeEventListener("keydown", onKeyDown);
+      previous.removeEventListener("click", goPrevious);
+      next.removeEventListener("click", goNext);
+      skip.removeEventListener("click", goLast);
+    }
+  };
 }
 
 // st-extension/src/apps/api/manager.ts
@@ -9701,9 +9873,17 @@ async function init(lifecycle) {
   });
   lifecycle.track(() => newvarRuntime.dispose());
   lifecycle.track(() => adapter.injectChannel(NEWVAR_CHANNEL, ""));
+  const getRendererSettings = () => normalizeRendererSettings(settings.apps[RENDERER_APP_ID]);
   const rendererRuntime = createRendererRuntime({
-    getSettings: () => normalizeRendererSettings(settings.apps[RENDERER_APP_ID]),
-    factories: {}
+    getSettings: getRendererSettings,
+    factories: { gal: mountGalMode },
+    modeDeps: {
+      getSettings: getRendererSettings,
+      resolvePortrait: (address) => {
+        const packs = getActivePacks(settings, adapter.getCurrentCharacterName());
+        return resolveSprite(packs, address)?.url ?? null;
+      }
+    }
   });
   lifecycle.track(() => rendererRuntime.dispose());
   const newvarDesigner = createNewvarDesigner({

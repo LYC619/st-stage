@@ -179,6 +179,20 @@ describe('parseRendererBlock', () => {
     }
   })
 
+  it('portrait 接受显式 sprite 地址，但背景不接受', () => {
+    const result = parseRendererBlock(wrap({
+      version: 1,
+      mode: 'gal',
+      scene: '场景',
+      beats: [{ speaker: 'A', text: 'B', portrait: 'sprite:角色/礼服/微笑' }],
+    }))
+    expect(result).toMatchObject({ ok: true, block: { beats: [{ portrait: 'sprite:角色/礼服/微笑' }] } })
+    expectInvalid(
+      { version: 1, mode: 'gal', scene: '场景', background: 'sprite:场景/夜晚', beats: [{ speaker: 'A', text: 'B' }] },
+      /background/,
+    )
+  })
+
   it('只返回原始渲染标签块，不吞掉块外叙事', () => {
     const block = wrap({
       version: 1,

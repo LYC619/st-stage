@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   newvarRuntimeDispose: vi.fn(),
   rendererRuntimeDispose: vi.fn(),
   rendererProcessMessage: vi.fn(),
+  rendererCreateDeps: undefined as Record<string, unknown> | undefined,
   postprocessDeps: undefined as Record<string, unknown> | undefined,
   builtinDeps: undefined as Record<string, unknown> | undefined,
   designerClose: vi.fn(),
@@ -75,11 +76,14 @@ vi.mock('./apps/newvar/runtime', () => ({
   }),
 }))
 vi.mock('./apps/renderer/runtime', () => ({
-  createRendererRuntime: () => ({
-    processMessage: mocks.rendererProcessMessage,
-    reprocessAll: vi.fn(),
-    dispose: mocks.rendererRuntimeDispose,
-  }),
+  createRendererRuntime: (deps: Record<string, unknown>) => {
+    mocks.rendererCreateDeps = deps
+    return {
+      processMessage: mocks.rendererProcessMessage,
+      reprocessAll: vi.fn(),
+      dispose: mocks.rendererRuntimeDispose,
+    }
+  },
 }))
 vi.mock('./apps/newvar/designer', () => ({
   createNewvarDesigner: () => ({ open: vi.fn(), close: mocks.designerClose, isOpen: () => false }),
@@ -119,6 +123,7 @@ beforeEach(() => {
     currentCharacterName: '',
     postprocessDeps: undefined,
     builtinDeps: undefined,
+    rendererCreateDeps: undefined,
   })
   Object.values(mocks).forEach((value) => {
     if (typeof value === 'function' && 'mockClear' in value) value.mockClear()
@@ -142,6 +147,8 @@ describe('extension entry lifecycle', () => {
       processMessage: mocks.rendererProcessMessage,
       dispose: mocks.rendererRuntimeDispose,
     }))
+    expect((mocks.rendererCreateDeps?.factories as Record<string, unknown>)?.gal).toEqual(expect.any(Function))
+    expect((mocks.rendererCreateDeps?.modeDeps as Record<string, unknown>)?.resolvePortrait).toEqual(expect.any(Function))
   })
 
   it('injects effective-scene notes from active packs in binding order only', async () => {
