@@ -115,6 +115,10 @@ function dottedToPointer(path: string): string {
   return `/${segments.join('/')}`
 }
 
+function serializeExampleValue(value: unknown): string {
+  return JSON.stringify(value) ?? 'null'
+}
+
 // —— 解析 <UpdateVariable> —— //
 
 const BLOCK_RE = /<UpdateVariable>([\s\S]*?)<\/UpdateVariable>/i
@@ -308,6 +312,7 @@ export function buildInjection(
   const exampleDef = visible[0]
   const example = exampleDef?.key ?? '变量路径'
   const examplePatchValue = exampleDef ? exampleValue(exampleDef) : '新值'
+  const currentExampleValue = exampleDef ? getNested(state, example) : '旧值'
   const examplePatch = JSON.stringify([
     { op: 'replace', path: dottedToPointer(example), value: examplePatchValue },
   ])
@@ -318,7 +323,7 @@ export function buildInjection(
           '- 块内每行一条命令：_.set(\'变量路径\', 旧值, 新值);//变化原因',
           '格式示例：',
           '<UpdateVariable>',
-          `_.set('${example}', 旧值, 新值);//原因`,
+          `_.set(${JSON.stringify(example)}, ${serializeExampleValue(currentExampleValue)}, ${serializeExampleValue(examplePatchValue)});//原因`,
           '</UpdateVariable>',
         ]
       : [

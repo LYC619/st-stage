@@ -7119,6 +7119,9 @@ function dottedToPointer(path) {
   const segments = path.split(".").map((segment) => segment.replace(/~/g, "~0").replace(/\//g, "~1"));
   return `/${segments.join("/")}`;
 }
+function serializeExampleValue(value) {
+  return JSON.stringify(value) ?? "null";
+}
 var BLOCK_RE = /<UpdateVariable>([\s\S]*?)<\/UpdateVariable>/i;
 var ANALYSIS_RE = /<Analysis>[\s\S]*?<\/Analysis>/gi;
 function parseUpdateBlock(text, format) {
@@ -7272,6 +7275,7 @@ function buildInjection(state, schema, format) {
   const exampleDef = visible[0];
   const example = exampleDef?.key ?? "变量路径";
   const examplePatchValue = exampleDef ? exampleValue(exampleDef) : "新值";
+  const currentExampleValue = exampleDef ? getNested(state, example) : "旧值";
   const examplePatch = JSON.stringify([
     { op: "replace", path: dottedToPointer(example), value: examplePatchValue }
   ]);
@@ -7280,7 +7284,7 @@ function buildInjection(state, schema, format) {
     "- 块内每行一条命令：_.set('变量路径', 旧值, 新值);//变化原因",
     "格式示例：",
     "<UpdateVariable>",
-    `_.set('${example}', 旧值, 新值);//原因`,
+    `_.set(${JSON.stringify(example)}, ${serializeExampleValue(currentExampleValue)}, ${serializeExampleValue(examplePatchValue)});//原因`,
     "</UpdateVariable>"
   ] : [
     "- 在回复正文全部结束后，若本轮有变量变化，追加一个 <UpdateVariable> 块；没有变化则不要输出该块",
@@ -7868,7 +7872,184 @@ var daily = {
     ...timeVariables()
   ]
 };
-var NEWVAR_TEMPLATES = [romanceSingle, romanceMulti, rpg, daily];
+var survivalExploration = {
+  id: "survival-exploration",
+  name: "生存探索",
+  description: "生命、饥饿、口渴、疲劳、体感温度、危险、地点与时间，适合荒野和末日探索。",
+  variables: [
+    {
+      key: "生存.生命值",
+      type: "number",
+      default: 100,
+      description: "当前生命值（0~100，0 表示失去行动能力）",
+      range: [0, 100],
+      updateRule: "受伤、疾病或恶劣环境时按剧情降低；治疗和安全休息时恢复；输出完整数值"
+    },
+    {
+      key: "生存.饥饿度",
+      type: "number",
+      default: 10,
+      description: "当前饥饿程度（0~100，越高越饥饿）",
+      range: [0, 100],
+      updateRule: "随活动和时间缓慢增加，进食后按食物份量降低；未经过明显时间时不要变化"
+    },
+    {
+      key: "生存.口渴度",
+      type: "number",
+      default: 10,
+      description: "当前口渴程度（0~100，越高越缺水）",
+      range: [0, 100],
+      updateRule: "随时间、炎热和剧烈活动增加，饮水后降低；变化通常快于饥饿度"
+    },
+    {
+      key: "生存.疲劳度",
+      type: "number",
+      default: 5,
+      description: "当前疲劳程度（0~100，越高越疲劳）",
+      range: [0, 100],
+      updateRule: "移动、战斗和缺眠时增加，休息或睡眠后降低；短暂对话不应显著变化"
+    },
+    {
+      key: "环境.体感温度",
+      type: "enum",
+      default: "舒适",
+      description: "角色当前的体感温度状态",
+      enum: ["舒适", "寒冷", "炎热", "失温", "中暑"],
+      updateRule: "由天气、衣物、庇护和持续暴露决定；只有环境或防护条件变化时更新"
+    },
+    {
+      key: "环境.危险等级",
+      type: "enum",
+      default: "安全",
+      description: "当前区域对角色的即时危险等级",
+      enum: ["安全", "警戒", "危险", "致命"],
+      updateRule: "根据已发现的敌人、灾害和退路判断；潜在风险未被发现前不要使用全知信息"
+    },
+    {
+      key: "地点.当前地点",
+      type: "string",
+      default: "临时营地",
+      description: "角色当前所在地点或区域",
+      updateRule: "明确移动并抵达新区域后更新；仍在途中时保留当前区域并在正文描述移动"
+    },
+    ...timeVariables()
+  ]
+};
+var mysteryInvestigation = {
+  id: "mystery-investigation",
+  name: "悬疑调查",
+  description: "调查目标、线索摘要、嫌疑、紧迫度、阶段、地点与时间，适合推理和侦探剧情。",
+  variables: [
+    {
+      key: "调查.当前目标",
+      type: "string",
+      default: "确认事件经过",
+      description: "调查者当前最直接的调查目标（一句话）",
+      updateRule: "目标完成、失效或出现更优先线索时更新；同时只保留一个最直接目标"
+    },
+    {
+      key: "调查.线索摘要",
+      type: "string",
+      default: "尚无可靠线索",
+      description: "已确认关键线索的简短摘要，不记录未经证实的猜测",
+      updateRule: "获得、排除或重新解释关键线索时重写摘要；只写角色已知信息，避免全知泄露"
+    },
+    {
+      key: "调查.嫌疑度",
+      type: "number",
+      default: 10,
+      description: "当前主要怀疑方向的可信程度（0~100）",
+      range: [0, 100],
+      updateRule: "可靠证据支持时 +5~20，反证出现时 -5~30；普通直觉只允许小幅变化"
+    },
+    {
+      key: "调查.紧迫度",
+      type: "number",
+      default: 20,
+      description: "案件时间压力或即时威胁（0~100）",
+      range: [0, 100],
+      updateRule: "截止临近、威胁升级或证据将消失时增加；解除威胁或争取到时间后降低"
+    },
+    {
+      key: "调查.阶段",
+      type: "enum",
+      default: "案发",
+      description: "当前调查流程阶段",
+      enum: ["案发", "勘查", "推理", "对质", "结案"],
+      updateRule: "完成当前阶段的关键行动后推进一级；证据不足时不得从勘查直接跳到结案"
+    },
+    {
+      key: "地点.当前地点",
+      type: "string",
+      default: "案发现场",
+      description: "调查者当前所在地点",
+      updateRule: "明确抵达新的调查地点后更新；提及其他地点或远程联络时保持原值"
+    },
+    ...timeVariables()
+  ]
+};
+var questProgression = {
+  id: "quest-progression",
+  name: "任务推进",
+  description: "目标、进度、阶段、阻碍、截止压力和完成状态，适合长期主线与委托。",
+  variables: [
+    {
+      key: "任务.目标",
+      type: "string",
+      default: "确认任务目标",
+      description: "当前任务的可验证最终目标（一句话）",
+      updateRule: "任务被正式替换或目标条件改变时更新；执行步骤变化不等于最终目标变化"
+    },
+    {
+      key: "任务.进度",
+      type: "number",
+      default: 0,
+      description: "任务总体完成进度（0~100）",
+      range: [0, 100],
+      updateRule: "完成可验证里程碑时增加 5~30；普通对话不增加；任务失败可按实际损失回退"
+    },
+    {
+      key: "任务.阶段",
+      type: "enum",
+      default: "未开始",
+      description: "当前任务执行阶段",
+      enum: ["未开始", "进行中", "受阻", "收尾", "已完成"],
+      updateRule: "按实际执行状态更新；主要阻碍未解除时保持受阻，完成验收后才进入已完成"
+    },
+    {
+      key: "任务.阻碍",
+      type: "string",
+      default: "无",
+      description: "当前阻止任务推进的首要问题",
+      updateRule: "出现新的首要阻碍时更新，解除后改为下一个阻碍或“无”；不要罗列次要困难"
+    },
+    {
+      key: "任务.截止压力",
+      type: "enum",
+      default: "无",
+      description: "任务截止期限造成的当前压力",
+      enum: ["无", "低", "中", "高", "迫近"],
+      updateRule: "根据剩余时间和所需工作量调整；时间推进但余量充足时不必升级"
+    },
+    {
+      key: "任务.已完成",
+      type: "boolean",
+      default: false,
+      description: "任务是否已满足最终目标并完成验收",
+      updateRule: "只有最终目标已满足且剧情确认完成时设为 true；任务重开或验收失败时才恢复 false"
+    },
+    ...timeVariables()
+  ]
+};
+var NEWVAR_TEMPLATES = [
+  romanceSingle,
+  romanceMulti,
+  rpg,
+  daily,
+  survivalExploration,
+  mysteryInvestigation,
+  questProgression
+];
 
 // st-extension/src/apps/newvar/designer.ts
 var TYPE_LABELS = { number: "数字", string: "文本", boolean: "布尔", enum: "枚举" };

@@ -109,3 +109,85 @@ describe('built-in newvar template contracts', () => {
     }
   })
 })
+
+describe('practical newvar templates', () => {
+  const expectedPaths: Record<string, string[]> = {
+    'survival-exploration': [
+      '生存.生命值',
+      '生存.饥饿度',
+      '生存.口渴度',
+      '生存.疲劳度',
+      '环境.体感温度',
+      '环境.危险等级',
+      '地点.当前地点',
+      '时间.日期',
+      '时间.当前时间',
+      '时间.当前时段',
+    ],
+    'mystery-investigation': [
+      '调查.当前目标',
+      '调查.线索摘要',
+      '调查.嫌疑度',
+      '调查.紧迫度',
+      '调查.阶段',
+      '地点.当前地点',
+      '时间.日期',
+      '时间.当前时间',
+      '时间.当前时段',
+    ],
+    'quest-progression': [
+      '任务.目标',
+      '任务.进度',
+      '任务.阶段',
+      '任务.阻碍',
+      '任务.截止压力',
+      '任务.已完成',
+      '时间.日期',
+      '时间.当前时间',
+      '时间.当前时段',
+    ],
+  }
+
+  it('包含三套固定 ID 和精确变量路径', () => {
+    for (const [id, paths] of Object.entries(expectedPaths)) {
+      const template = NEWVAR_TEMPLATES.find((item) => item.id === id)
+      expect(template, id).toBeDefined()
+      expect(template!.variables.map((definition) => definition.key), id).toEqual(paths)
+    }
+  })
+
+  it('仅使用原始叶子，提示词长度受控，并在两种格式各完成一次更新', () => {
+    for (const id of Object.keys(expectedPaths)) {
+      const template = NEWVAR_TEMPLATES.find((item) => item.id === id)!
+      const schema = schemaFor(id, template.variables)
+      const state = initStateFromSchema(schema)
+      expect(template.variables.every((definition) => ['number', 'string', 'boolean', 'enum'].includes(definition.type)), id).toBe(true)
+
+      for (const format of ['json_patch', 'lodash_set'] as const) {
+        const prompt = buildInjection(state, schema, format)
+        expect(prompt.length, `${id}:${format}`).toBeGreaterThan(0)
+        expect(prompt.length, `${id}:${format}`).toBeLessThan(12_000)
+        const exampleBlock = prompt.match(/格式示例：\r?\n(<UpdateVariable>[\s\S]*?<\/UpdateVariable>)/)?.[1]
+        expect(exampleBlock, `${id}:${format}:example`).toBeTruthy()
+        const generated = parseUpdateBlock(exampleBlock!, format)
+        expect(generated.error, `${id}:${format}:generated`).toBeUndefined()
+        expect(generated.ops, `${id}:${format}:generated`).toHaveLength(1)
+        expect(applyOps(state, generated.ops, schema).log[0], `${id}:${format}:generated`).toMatchObject({
+          status: 'accepted',
+        })
+
+        const definition = template.variables[0]
+        const response =
+          format === 'json_patch'
+            ? `<UpdateVariable>${JSON.stringify([
+                { op: 'replace', path: `/${definition.key.split('.').join('/')}`, value: definition.default },
+              ])}</UpdateVariable>`
+            : `<UpdateVariable>_.set(${JSON.stringify(definition.key)}, ${JSON.stringify(definition.default)}, ${JSON.stringify(definition.default)})</UpdateVariable>`
+        const parsed = parseUpdateBlock(response, format)
+        expect(parsed.error, `${id}:${format}`).toBeUndefined()
+        expect(parsed.ops, `${id}:${format}`).toHaveLength(1)
+        expect(applyOps(state, parsed.ops, schema).log[0], `${id}:${format}`).toMatchObject({ status: 'accepted' })
+      }
+    }
+  })
+})
