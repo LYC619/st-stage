@@ -97,8 +97,11 @@ function isSafeImageUrl(value: string): boolean {
   try {
     return !path.split('/').some((segment) => {
       let decoded = segment
-      for (let depth = 0; depth < 2; depth += 1) decoded = decodeURIComponent(decoded)
-      return decoded === '.' || decoded === '..'
+      for (let depth = 0; depth < 2; depth += 1) {
+        decoded = decodeURIComponent(decoded)
+        if (decoded === '.' || decoded === '..' || /[\\/]/.test(decoded)) return true
+      }
+      return false
     })
   } catch {
     return false

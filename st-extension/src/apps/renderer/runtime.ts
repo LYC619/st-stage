@@ -151,9 +151,18 @@ export function createRendererRuntime(deps: RendererRuntimeDeps): RendererRuntim
     mountedRoots.delete(root)
   }
 
+  /** 回收已被 ST 从文档移除的楼层，释放模式控制器和强引用。 */
+  function pruneDetachedRoots(): void {
+    for (const root of Array.from(mountedRoots)) {
+      if (!root.isConnected) cleanupRoot(root)
+    }
+  }
+
   /** 解析并挂载一个 AI 消息楼层。 */
   function processMessage(root: HTMLElement): void {
     if (disposed) return
+    pruneDetachedRoots()
+    if (!root.isConnected) return
     const settings = deps.getSettings()
     const current = states.get(root)
     if (current && stillOwnsDom(root, current) && settings.enabled && isModeEnabled(settings, current.mode)) return

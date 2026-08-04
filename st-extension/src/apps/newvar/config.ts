@@ -108,6 +108,8 @@ function normalizeDefinition(raw: unknown): VariableDefinition | null {
     r.range.length === 2 &&
     typeof r.range[0] === 'number' &&
     typeof r.range[1] === 'number' &&
+    Number.isFinite(r.range[0]) &&
+    Number.isFinite(r.range[1]) &&
     r.range[0] <= r.range[1]
   ) {
     def.range = [r.range[0], r.range[1]]

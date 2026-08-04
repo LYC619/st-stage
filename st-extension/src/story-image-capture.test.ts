@@ -57,7 +57,7 @@ describe('createStoryImageCapture', () => {
     appendImage(root, 'https://img.test/sprite.png', 'so-inline-sprite')
     appendImage(root, 'https://img.test/emoji.png', 'emoji')
     const renderer = document.createElement('span')
-    renderer.className = 'so-renderer-gal'
+    renderer.className = 'st-stage-renderer'
     root.append(renderer)
     appendImage(renderer, 'https://img.test/renderer.png')
     const user = document.createElement('div')
@@ -171,6 +171,21 @@ describe('createStoryImageCapture', () => {
     action.click()
 
     expect(document.querySelector('.so-story-save-action')).toBeNull()
+    expect(localize).not.toHaveBeenCalled()
+  })
+
+  it('下一次装饰会释放已被 ST 重渲染移除的图片和事件', () => {
+    const root = aiMessage()
+    const image = appendImage(root, 'https://img.test/old.png')
+    const { capture, localize } = setup()
+    capture.decorate(root)
+    const staleAction = document.querySelector<HTMLButtonElement>('.so-story-save-action')!
+    root.closest('.mes')?.remove()
+
+    capture.decorate(aiMessage())
+    staleAction.click()
+
+    expect(image.dataset.soStorySave).toBeUndefined()
     expect(localize).not.toHaveBeenCalled()
   })
 })

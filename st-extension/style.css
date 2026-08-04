@@ -1777,10 +1777,21 @@
 }
 
 #chat .st-render-battle-outcome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
   padding: 8px 10px;
   border-left: 3px solid #79c9a4;
   background: rgba(30, 52, 43, 0.9);
   font-weight: 700;
+}
+
+#chat .st-render-battle-outcome .st-render-battle-action {
+  min-height: 32px;
+  padding: 0 12px;
+  flex: 0 0 auto;
 }
 
 #chat .st-render-battle-log {

@@ -133,6 +133,12 @@ export function mountBattleMode(root: HTMLElement, block: BattleRenderBlock, dep
     return ''
   }
 
+  /** 把最近战斗日志压缩为可编辑的剧情续写草稿。 */
+  function continuationText(state: BattleState): string {
+    const summary = state.log.slice(-6).map((entry) => entry.text).join(' ')
+    return `战斗结果：${outcomeText(state)}。战斗摘要：${summary || '战斗已结束。'}`
+  }
+
   /** 创建技能或物品下拉框。 */
   function createSelect(
     className: string,
@@ -163,7 +169,13 @@ export function mountBattleMode(root: HTMLElement, block: BattleRenderBlock, dep
       combatantView(state.player, 'player', deps),
       combatantView(state.enemy, 'enemy', deps),
     )
-    outcome.textContent = outcomeText(state)
+    outcome.replaceChildren()
+    if (ended) {
+      outcome.append(
+        textElement('span', 'st-render-battle-outcome-text', outcomeText(state)),
+        actionButton('continue', '继续剧情', false),
+      )
+    }
     outcome.hidden = !ended
 
     log.replaceChildren()
@@ -258,6 +270,11 @@ export function mountBattleMode(root: HTMLElement, block: BattleRenderBlock, dep
       }
       const result = deps.insertDraft?.(`战斗行动：${value}`) ?? { ok: false as const, error: '未找到 SillyTavern 输入框。' }
       notice.textContent = result.ok ? '已填入自由行动' : result.error
+    } else if (action === 'continue') {
+      const state = engine.getState()
+      if (state.outcome === 'ongoing') return
+      const result = deps.insertDraft?.(continuationText(state)) ?? { ok: false as const, error: '未找到 SillyTavern 输入框。' }
+      notice.textContent = result.ok ? '已填入战斗结果' : result.error
     }
   }
 

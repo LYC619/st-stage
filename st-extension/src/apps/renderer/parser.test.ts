@@ -209,7 +209,15 @@ describe('parseRendererBlock', () => {
   })
 
   it('拒绝本地路径穿越和格式错误的 HTTP URL', () => {
-    for (const url of ['assets/../secret.png', './%2e%2e/secret.png', '/user/images/%2E%2E/secret.png', 'https://?']) {
+    for (const url of [
+      'assets/../secret.png',
+      './%2e%2e/secret.png',
+      '/user/images/%2E%2E/secret.png',
+      'assets/%252e%252e%252fsecret.png',
+      './safe%2f..%2fsecret.png',
+      'assets/safe%255c..%255csecret.png',
+      'https://?',
+    ]) {
       expectInvalid(
         { version: 1, mode: 'gal', scene: '场景', background: url, beats: [{ speaker: 'A', text: 'B' }] },
         /background/,

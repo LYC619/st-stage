@@ -4968,7 +4968,19 @@ function createImage(src, alt, extraClass = "") {
 var ACTION_CLASS = "so-story-save-action";
 function createStoryImageCapture(deps) {
   const decorations = /* @__PURE__ */ new Map();
+  const release = (action, image, handler) => {
+    action.removeEventListener("click", handler);
+    action.remove();
+    delete image.dataset.soStorySave;
+    decorations.delete(action);
+  };
+  const pruneDetached = () => {
+    for (const [action, { image, handler }] of decorations) {
+      if (!action.isConnected || !image.isConnected) release(action, image, handler);
+    }
+  };
   const decorate = (root) => {
+    pruneDetached();
     for (const image of Array.from(root.querySelectorAll("img"))) {
       if (!isEligible(image) || image.dataset.soStorySave === "true") continue;
       const action = document.createElement("button");
@@ -4986,11 +4998,8 @@ function createStoryImageCapture(deps) {
   };
   const cleanup = () => {
     for (const [action, { image, handler }] of decorations) {
-      action.removeEventListener("click", handler);
-      action.remove();
-      delete image.dataset.soStorySave;
+      release(action, image, handler);
     }
-    decorations.clear();
   };
   return { decorate, cleanup };
 }
@@ -5038,7 +5047,7 @@ function isEligible(image) {
   if (!message || message.getAttribute("is_user") === "true" || message.getAttribute("is_system") === "true") {
     return false;
   }
-  if (image.closest('.avatar, .mesAvatar, .emoji, .so-inline-sprite, [class*="so-renderer-"]')) {
+  if (image.closest('.avatar, .mesAvatar, .emoji, .so-inline-sprite, .st-stage-renderer, [class*="so-renderer-"]')) {
     return false;
   }
   const width = image.naturalWidth || image.width;
@@ -5670,8 +5679,8 @@ function render(container, ctx) {
 // st-extension/src/apps/path-utils.ts
 var FORBIDDEN_PATH_SEGMENTS = /* @__PURE__ */ new Set(["__proto__", "prototype", "constructor"]);
 function parsePath(path) {
-  const segments = path.split(".").filter((seg) => seg.length > 0);
-  return segments.some((segment) => FORBIDDEN_PATH_SEGMENTS.has(segment)) ? null : segments;
+  const segments = path.split(".");
+  return segments.some((segment) => segment.length === 0 || FORBIDDEN_PATH_SEGMENTS.has(segment)) ? null : segments;
 }
 function isSafePath(path) {
   return parsePath(path) !== null;
@@ -7513,7 +7522,7 @@ function normalizeDefinition(raw) {
   };
   if (r.hidden === true) def.hidden = true;
   if (typeof r.updateRule === "string" && r.updateRule.trim() !== "") def.updateRule = r.updateRule;
-  if (type === "number" && Array.isArray(r.range) && r.range.length === 2 && typeof r.range[0] === "number" && typeof r.range[1] === "number" && r.range[0] <= r.range[1]) {
+  if (type === "number" && Array.isArray(r.range) && r.range.length === 2 && typeof r.range[0] === "number" && typeof r.range[1] === "number" && Number.isFinite(r.range[0]) && Number.isFinite(r.range[1]) && r.range[0] <= r.range[1]) {
     def.range = [r.range[0], r.range[1]];
   }
   if (type === "enum") {
@@ -8754,8 +8763,11 @@ function isSafeImageUrl(value) {
   try {
     return !path.split("/").some((segment) => {
       let decoded = segment;
-      for (let depth = 0; depth < 2; depth += 1) decoded = decodeURIComponent(decoded);
-      return decoded === "." || decoded === "..";
+      for (let depth = 0; depth < 2; depth += 1) {
+        decoded = decodeURIComponent(decoded);
+        if (decoded === "." || decoded === ".." || /[\\/]/.test(decoded)) return true;
+      }
+      return false;
     });
   } catch {
     return false;
@@ -9125,8 +9137,15 @@ function createRendererRuntime(deps) {
     states.delete(root);
     mountedRoots.delete(root);
   }
+  function pruneDetachedRoots() {
+    for (const root of Array.from(mountedRoots)) {
+      if (!root.isConnected) cleanupRoot(root);
+    }
+  }
   function processMessage(root) {
     if (disposed) return;
+    pruneDetachedRoots();
+    if (!root.isConnected) return;
     const settings = deps.getSettings();
     const current2 = states.get(root);
     if (current2 && stillOwnsDom(root, current2) && settings.enabled && isModeEnabled(settings, current2.mode)) return;
@@ -9731,6 +9750,10 @@ function mountBattleMode(root, block, deps) {
     if (state.outcome === "fled") return "已脱离战斗";
     return "";
   }
+  function continuationText(state) {
+    const summary = state.log.slice(-6).map((entry) => entry.text).join(" ");
+    return `战斗结果：${outcomeText(state)}。战斗摘要：${summary || "战斗已结束。"}`;
+  }
   function createSelect(className, options, disabled) {
     const select = document.createElement("select");
     select.className = className;
@@ -9754,7 +9777,13 @@ function mountBattleMode(root, block, deps) {
       combatantView(state.player, "player", deps),
       combatantView(state.enemy, "enemy", deps)
     );
-    outcome.textContent = outcomeText(state);
+    outcome.replaceChildren();
+    if (ended) {
+      outcome.append(
+        textElement3("span", "st-render-battle-outcome-text", outcomeText(state)),
+        actionButton("continue", "继续剧情", false)
+      );
+    }
     outcome.hidden = !ended;
     log.replaceChildren();
     if (state.log.length === 0) log.append(textElement3("li", "st-render-battle-log-entry", "等待行动"));
@@ -9840,6 +9869,11 @@ function mountBattleMode(root, block, deps) {
       }
       const result = deps.insertDraft?.(`战斗行动：${value}`) ?? { ok: false, error: "未找到 SillyTavern 输入框。" };
       notice.textContent = result.ok ? "已填入自由行动" : result.error;
+    } else if (action === "continue") {
+      const state = engine.getState();
+      if (state.outcome === "ongoing") return;
+      const result = deps.insertDraft?.(continuationText(state)) ?? { ok: false, error: "未找到 SillyTavern 输入框。" };
+      notice.textContent = result.ok ? "已填入战斗结果" : result.error;
     }
   }
   root.addEventListener("click", onClick);

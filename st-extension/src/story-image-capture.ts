@@ -20,7 +20,27 @@ const ACTION_CLASS = 'so-story-save-action'
 export function createStoryImageCapture(deps: StoryImageCaptureDeps): StoryImageCaptureController {
   const decorations = new Map<HTMLButtonElement, { image: HTMLImageElement; handler: () => void }>()
 
+  /** 释放一项装饰及其强引用，避免 ST 重渲染后的离线节点常驻。 */
+  const release = (
+    action: HTMLButtonElement,
+    image: HTMLImageElement,
+    handler: () => void,
+  ): void => {
+    action.removeEventListener('click', handler)
+    action.remove()
+    delete image.dataset.soStorySave
+    decorations.delete(action)
+  }
+
+  /** 每次扫描前回收已被宿主替换的旧消息节点。 */
+  const pruneDetached = (): void => {
+    for (const [action, { image, handler }] of decorations) {
+      if (!action.isConnected || !image.isConnected) release(action, image, handler)
+    }
+  }
+
   const decorate = (root: ParentNode): void => {
+    pruneDetached()
     for (const image of Array.from(root.querySelectorAll<HTMLImageElement>('img'))) {
       if (!isEligible(image) || image.dataset.soStorySave === 'true') continue
       const action = document.createElement('button')
@@ -37,11 +57,8 @@ export function createStoryImageCapture(deps: StoryImageCaptureDeps): StoryImage
 
   const cleanup = (): void => {
     for (const [action, { image, handler }] of decorations) {
-      action.removeEventListener('click', handler)
-      action.remove()
-      delete image.dataset.soStorySave
+      release(action, image, handler)
     }
-    decorations.clear()
   }
 
   return { decorate, cleanup }
@@ -94,7 +111,7 @@ function isEligible(image: HTMLImageElement): boolean {
   if (!message || message.getAttribute('is_user') === 'true' || message.getAttribute('is_system') === 'true') {
     return false
   }
-  if (image.closest('.avatar, .mesAvatar, .emoji, .so-inline-sprite, [class*="so-renderer-"]')) {
+  if (image.closest('.avatar, .mesAvatar, .emoji, .so-inline-sprite, .st-stage-renderer, [class*="so-renderer-"]')) {
     return false
   }
   const width = image.naturalWidth || image.width

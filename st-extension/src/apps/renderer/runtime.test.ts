@@ -156,4 +156,23 @@ describe('createRendererRuntime', () => {
     expect(destroy).toHaveBeenCalledTimes(2)
     expect(body.textContent).toBe(raw)
   })
+
+  it('处理新楼层时释放已从文档移除的旧楼层实例', () => {
+    const destroys: Array<ReturnType<typeof vi.fn>> = []
+    const factory = vi.fn<RendererModeFactory>((root) => {
+      root.textContent = 'renderer'
+      const destroy = vi.fn()
+      destroys.push(destroy)
+      return { destroy }
+    })
+    const runtime = createRendererRuntime({ getSettings: () => enabledSettings(), factories: { gal: factory } })
+    const first = buildMessage(galBlock('旧楼层'))
+    runtime.processMessage(first)
+    first.closest('.mes')?.remove()
+
+    runtime.processMessage(buildMessage(galBlock('新楼层')))
+
+    expect(destroys[0]).toHaveBeenCalledTimes(1)
+    expect(factory).toHaveBeenCalledTimes(2)
+  })
 })

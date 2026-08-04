@@ -6,8 +6,10 @@
 const FORBIDDEN_PATH_SEGMENTS = new Set(['__proto__', 'prototype', 'constructor'])
 
 function parsePath(path: string): string[] | null {
-  const segments = path.split('.').filter((seg) => seg.length > 0)
-  return segments.some((segment) => FORBIDDEN_PATH_SEGMENTS.has(segment)) ? null : segments
+  const segments = path.split('.')
+  return segments.some((segment) => segment.length === 0 || FORBIDDEN_PATH_SEGMENTS.has(segment))
+    ? null
+    : segments
 }
 
 export function isSafePath(path: string): boolean {

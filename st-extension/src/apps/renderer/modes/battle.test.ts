@@ -134,13 +134,21 @@ describe('mountBattleMode', () => {
   it('结束状态会禁用战斗动作并显示结果', () => {
     const root = document.createElement('div')
     document.body.append(root)
-    mountBattleMode(root, block({ hp: 10, maxHp: 10 }), { getSettings: () => settings(), random: () => 0.5 })
+    const insertDraft = vi.fn(() => ({ ok: true as const }))
+    mountBattleMode(root, block({ hp: 10, maxHp: 10 }), {
+      getSettings: () => settings(),
+      random: () => 0.5,
+      insertDraft,
+    })
 
     action(root, 'attack').click()
 
     expect(root.querySelector('.st-render-battle-outcome')?.textContent).toMatch(/胜利/)
     expect(Array.from(root.querySelectorAll<HTMLButtonElement>('.st-render-battle-actions button')).every((button) => button.disabled)).toBe(true)
     expect(Array.from(root.querySelectorAll<HTMLSelectElement>('.st-render-battle-actions select')).every((select) => select.disabled)).toBe(true)
+    action(root, 'continue').click()
+    expect(insertDraft).toHaveBeenCalledWith(expect.stringMatching(/^战斗结果：战斗胜利。战斗摘要：.+造成/))
+    expect(root.textContent).toContain('已填入战斗结果')
   })
 
   it('非减少动态模式在过渡期间锁定并序列化连点动作', () => {

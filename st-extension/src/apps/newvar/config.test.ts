@@ -82,11 +82,26 @@ describe('normalizeNewvarData', () => {
     expect(d.schema.variables[0].range).toBeUndefined()
   })
 
+  it('非有限范围边界不采纳', () => {
+    const d = normalizeNewvarData({
+      schema: {
+        variables: [
+          { key: 'a', type: 'number', default: 0, range: [0, Number.POSITIVE_INFINITY] },
+          { key: 'b', type: 'number', default: 0, range: [Number.NaN, 100] },
+        ],
+      },
+    })
+
+    expect(d.schema.variables.map((item) => item.range)).toEqual([undefined, undefined])
+  })
+
   it('配置导入会丢弃包含危险路径段的变量和模板定义', () => {
     const d = normalizeNewvarData({
       schema: {
         variables: [
           { key: '状态.体力', type: 'number', default: 100 },
+          { key: '.', type: 'string', default: 'x' },
+          { key: '状态..心情', type: 'string', default: 'x' },
           { key: '__proto__.污染', type: 'string', default: 'x' },
           { key: '状态.constructor.污染', type: 'string', default: 'x' },
         ],

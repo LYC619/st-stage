@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { deleteNested, getNested, setNested, splitPath } from './path-utils'
+import { deleteNested, getNested, isSafePath, setNested, splitPath } from './path-utils'
 
 const pollutionKey = '__stStagePathPolluted__'
 
@@ -48,4 +48,12 @@ describe('nested path safety', () => {
     expect(getNested(target, '状态.体力')).toBeUndefined()
     expect(target).toEqual({ 状态: {} })
   })
+
+  it.each(['', '.', '.状态', '状态.', '状态..体力'])(
+    'rejects empty path segments in %j',
+    (path) => {
+      expect(isSafePath(path)).toBe(false)
+      expect(splitPath(path)).toEqual([])
+    },
+  )
 })
