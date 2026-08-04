@@ -3,6 +3,48 @@ import { resolve } from 'node:path'
 
 const ROOT = resolve(__dirname, '..')
 
+const RENDERER_LONG_TEXT = '这是一段用于验证移动端自动换行的超长叙述文本，其中包含连续场景信息、行动理由与结果说明，确保窄屏和横屏都不会把消息容器撑出视口。'
+
+const RENDERER_FIXTURES = [
+  {
+    version: 1,
+    mode: 'gal',
+    title: '雨夜车站的漫长重逢',
+    scene: '被暴雨笼罩的旧车站月台',
+    beats: [
+      { speaker: '小雪', text: RENDERER_LONG_TEXT },
+      { speaker: '旅行者', text: '我会陪你走完这一段路。' },
+    ],
+  },
+  {
+    version: 1,
+    mode: 'cards',
+    title: '选择接下来的调查路线',
+    cards: [
+      { id: 'ridge', title: '沿山脊前进', description: RENDERER_LONG_TEXT, consequence: '可能遭遇巡逻守卫', action: '我选择沿山脊继续调查。' },
+      { id: 'camp', title: '返回营地整备', description: '检查装备并重新分配补给。', action: '我选择返回营地整备。' },
+    ],
+  },
+  {
+    version: 1,
+    mode: 'battle',
+    title: '遗迹守卫战与超长战斗标题',
+    player: {
+      id: 'hero', name: '旅行者与同行伙伴', hp: 80, maxHp: 100, mp: 20, maxMp: 30,
+      attack: 20, defense: 6, speed: 12, crit: 0, dodge: 0,
+      skills: [{ id: 'slash', name: '蓄力斩击', type: 'damage', mpCost: 5, power: 24 }],
+      items: [{ id: 'potion', name: '应急治疗药水', effect: 'heal_hp', quantity: 1, power: 20 }],
+      statuses: [{ id: 'focus', name: '持续专注与战术观察', duration: 2, attackDelta: 2 }],
+    },
+    enemy: {
+      id: 'guard', name: '古代遗迹自动防御守卫', hp: 90, maxHp: 90, mp: 0, maxMp: 0,
+      attack: 14, defense: 8, speed: 8, crit: 0, dodge: 0,
+    },
+    enemyIntent: RENDERER_LONG_TEXT,
+    allowFlee: true,
+  },
+] as const
+
 function spriteData(label: string, color: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="960"><rect width="100%" height="100%" fill="${color}"/><text x="50%" y="50%" fill="white" font-size="64" text-anchor="middle">${label}</text></svg>`
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
@@ -80,6 +122,162 @@ async function loadRealExtensionGallery(page: Page): Promise<void> {
   await page.addStyleTag({ path: resolve(ROOT, 'core/phone-shell.css') })
   await page.addScriptTag({ path: resolve(ROOT, 'bundle.js'), type: 'module' })
   await expect(page.locator('.so-phone-fab')).toBeVisible()
+}
+
+/** 在最小 ST DOM 中加载真实扩展，并触发三种 Renderer 楼层。 */
+async function loadRealExtensionRenderer(page: Page, showPhone = true): Promise<string[]> {
+  await page.goto('about:blank')
+  await page.setContent(
+    '<meta name="viewport" content="width=device-width, initial-scale=1">'
+      + '<main id="chat"></main>'
+      + '<textarea id="send_textarea" aria-label="SillyTavern 输入框"></textarea>',
+  )
+  const originals = await page.evaluate((blocks) => {
+    const chat = document.querySelector('#chat')!
+    return blocks.map((block, index) => {
+      const raw = `<STStageRender>${JSON.stringify(block)}</STStageRender>`
+      const message = document.createElement('article')
+      message.className = 'mes'
+      message.setAttribute('mesid', String(index + 1))
+      message.setAttribute('is_user', 'false')
+      const body = document.createElement('div')
+      body.className = 'mes_text'
+      body.textContent = `叙事前文 ${raw} 叙事后文`
+      message.append(body)
+      chat.append(message)
+      return body.textContent
+    })
+  }, RENDERER_FIXTURES)
+  await page.evaluate((phoneVisible) => {
+    const handlers = new Map<string, Set<(...args: unknown[]) => void>>()
+    const context = {
+      extensionSettings: {
+        sprite_overlay: {
+          settingsVersion: 4,
+          enabled: false,
+          overlayHidden: true,
+          showPhone: phoneVisible,
+          apps: {
+            renderer: {
+              enabled: true,
+              galEnabled: true,
+              cardsEnabled: true,
+              battleEnabled: true,
+              injectionDepth: 4,
+              typewriter: false,
+              reducedMotion: true,
+            },
+          },
+        },
+      },
+      saveSettingsDebounced: () => {},
+      setExtensionPrompt: () => {},
+      eventTypes: {
+        MESSAGE_RECEIVED: 'message_received',
+        CHAT_CHANGED: 'chat_changed',
+        CHARACTER_MESSAGE_RENDERED: 'character_message_rendered',
+        USER_MESSAGE_RENDERED: 'user_message_rendered',
+      },
+      eventSource: {
+        on: (event: string, handler: (...args: unknown[]) => void) => {
+          const listeners = handlers.get(event) ?? new Set()
+          listeners.add(handler)
+          handlers.set(event, listeners)
+        },
+        removeListener: (event: string, handler: (...args: unknown[]) => void) => {
+          handlers.get(event)?.delete(handler)
+        },
+      },
+      characters: [{ name: '小雪' }],
+      characterId: 0,
+      name2: '小雪',
+      chatId: 'renderer-mobile',
+      chatMetadata: { name: 'Renderer 移动验证' },
+      groups: [],
+      chat: [],
+    }
+    const target = window as Window & {
+      SillyTavern: unknown
+      __emitRendererEvent?: (event: string, messageId: number) => void
+    }
+    target.SillyTavern = { getContext: () => context }
+    target.__emitRendererEvent = (event, messageId) => {
+      for (const handler of handlers.get(event) ?? []) handler(messageId)
+    }
+  }, showPhone)
+  await page.addStyleTag({ path: resolve(ROOT, 'st-extension/style.css') })
+  await page.addStyleTag({ path: resolve(ROOT, 'core/phone-shell.css') })
+  await page.addScriptTag({ path: resolve(ROOT, 'bundle.js'), type: 'module' })
+  await expect(page.locator('.so-phone-fab')).toHaveCount(1)
+  await expect(page.locator('.so-phone-fab')).toBeVisible({ visible: showPhone })
+  await page.evaluate(() => {
+    const emit = (window as Window & { __emitRendererEvent?: (event: string, messageId: number) => void }).__emitRendererEvent
+    for (const id of [1, 2, 3]) emit?.('character_message_rendered', id)
+  })
+  await expect(page.locator('.st-stage-renderer')).toHaveCount(3)
+  return originals
+}
+
+/** 检查 Renderer 和所有可操作控件均在自身容器内，且长文本不横向溢出。 */
+async function expectRendererLayout(page: Page): Promise<void> {
+  const result = await page.evaluate(() => {
+    const epsilon = 0.75
+    const roots = Array.from(document.querySelectorAll<HTMLElement>('.st-stage-renderer'))
+    const inside = (inner: DOMRect, outer: DOMRect) => (
+      inner.left >= outer.left - epsilon
+      && inner.top >= outer.top - epsilon
+      && inner.right <= outer.right + epsilon
+      && inner.bottom <= outer.bottom + epsilon
+    )
+    const doNotOverlap = (rects: DOMRect[]) => rects.every((a, index) => rects.slice(index + 1).every((b) => (
+      Math.min(a.right, b.right) - Math.max(a.left, b.left) <= epsilon
+      || Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) <= epsilon
+    )))
+    const controlsInside = roots.every((root) => {
+      const outer = root.getBoundingClientRect()
+      return Array.from(root.querySelectorAll<HTMLElement>('button, select, input')).every((control) => {
+        const rect = control.getBoundingClientRect()
+        return rect.width > 0 && rect.height > 0 && inside(rect, outer)
+      })
+    })
+    const controlsDoNotOverlap = roots.every((root) => {
+      const controls = Array.from(root.querySelectorAll<HTMLElement>('button, select, input'))
+        .map((control) => control.getBoundingClientRect())
+      return doNotOverlap(controls)
+    })
+    const panelsDoNotOverlap = [
+      ['.st-render-gal-header', '.st-render-gal-dialogue-box'],
+      ['.st-render-card'],
+      ['.st-render-battle-header', '.st-render-battle-combatants', '.st-render-battle-log', '.st-render-battle-actions', '.st-render-battle-notice'],
+    ].every((selectors) => {
+      const rects = selectors.flatMap((selector) => Array.from(document.querySelectorAll<HTMLElement>(selector)))
+        .map((element) => element.getBoundingClientRect())
+        .filter((rect) => rect.width > 0 && rect.height > 0)
+      return doNotOverlap(rects)
+    })
+    const textWraps = Array.from(document.querySelectorAll<HTMLElement>(
+      '.st-render-gal-dialogue, .st-render-card-description, .st-render-card-consequence, .st-render-battle-intent, .st-render-combatant-name, .st-render-status-chip',
+    )).every((element) => element.scrollWidth <= element.clientWidth + 1)
+    return {
+      documentFits: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      rootsFit: roots.every((root) => {
+        const rect = root.getBoundingClientRect()
+        return rect.left >= -epsilon && rect.right <= document.documentElement.clientWidth + epsilon
+      }),
+      controlsInside,
+      controlsDoNotOverlap,
+      panelsDoNotOverlap,
+      textWraps,
+    }
+  })
+  expect(result).toEqual({
+    documentFits: true,
+    rootsFit: true,
+    controlsInside: true,
+    controlsDoNotOverlap: true,
+    panelsDoNotOverlap: true,
+    textWraps: true,
+  })
 }
 
 async function openRealGalleryManager(page: Page): Promise<void> {
@@ -293,4 +491,43 @@ test('真实图库在横竖屏中保持可操作，并支持角色折叠与搜�
   await page.locator('.so-sprite-cell img').tap()
   await expect(page.locator('.so-lightbox')).toBeVisible()
   await expectLightboxLayout(page)
+})
+
+test('真实 Renderer 三种模式在横竖屏中无溢出重叠且控件可操作', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await loadRealExtensionRenderer(page, false)
+
+  await expectRendererLayout(page)
+  await page.locator('.st-render-gal-control').last().tap()
+  await expect(page.locator('.st-render-gal-progress')).toHaveText('2 / 2')
+  await page.locator('.st-render-card-select').first().tap()
+  await expect(page.locator('#send_textarea')).toHaveValue('我选择沿山脊继续调查。')
+  await page.locator('.st-render-battle-action[data-action="attack"]').tap()
+  await expect(page.locator('.st-render-battle-turn')).toHaveText('回合 2')
+  const portrait = await page.screenshot({ fullPage: true })
+  expect(portrait.byteLength).toBeGreaterThan(10_000)
+  await testInfo.attach('renderer-portrait', { body: portrait, contentType: 'image/png' })
+
+  await page.setViewportSize({ width: 844, height: 390 })
+  await expectRendererLayout(page)
+  const landscape = await page.screenshot({ fullPage: true })
+  expect(landscape.byteLength).toBeGreaterThan(10_000)
+  await testInfo.attach('renderer-landscape', { body: landscape, contentType: 'image/png' })
+})
+
+test('手机设置关闭 Renderer 后逐楼层恢复原始结构化文本', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const originals = await loadRealExtensionRenderer(page)
+
+  await page.locator('.so-phone-fab').tap()
+  await page.locator('.so-phone-app-icon', { hasText: '渲染' }).tap()
+  const enabled = page.locator('.so-app-toggle', { hasText: '启用渲染' }).locator('input[type="checkbox"]')
+  await expect(enabled).toBeChecked()
+  await enabled.tap()
+
+  await expect(page.locator('.st-stage-renderer')).toHaveCount(0)
+  const messages = page.locator('#chat .mes_text')
+  for (let index = 0; index < originals.length; index += 1) {
+    await expect(messages.nth(index)).toHaveText(originals[index])
+  }
 })

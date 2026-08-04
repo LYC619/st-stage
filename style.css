@@ -1546,7 +1546,6 @@
 #chat .st-render-cards {
   width: min(100%, 860px);
   margin: 10px auto;
-  color: #f4f5f2;
 }
 
 #chat .st-render-cards-title {
@@ -1572,6 +1571,7 @@
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 8px;
   background: #20252a;
+  color: #f4f5f2;
   box-sizing: border-box;
 }
 
