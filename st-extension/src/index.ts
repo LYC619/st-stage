@@ -242,6 +242,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
       collapsePhone()
       apiManager.open()
     },
+    rendererRuntime,
   })) {
     registry.register(app)
     runAppSetup(app, createHostDeps(app.id), hostTracker)

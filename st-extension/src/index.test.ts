@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   rendererRuntimeDispose: vi.fn(),
   rendererProcessMessage: vi.fn(),
   postprocessDeps: undefined as Record<string, unknown> | undefined,
+  builtinDeps: undefined as Record<string, unknown> | undefined,
   designerClose: vi.fn(),
   apiClose: vi.fn(),
   panelCleanup: vi.fn(),
@@ -61,7 +62,12 @@ vi.mock('../../core/phone-shell', () => ({
     setState: vi.fn(), openApp: vi.fn(), setVisible: vi.fn(), destroy: mocks.phoneDestroy,
   }),
 }))
-vi.mock('./apps', () => ({ createBuiltinApps: () => [] }))
+vi.mock('./apps', () => ({
+  createBuiltinApps: (deps: Record<string, unknown>) => {
+    mocks.builtinDeps = deps
+    return []
+  },
+}))
 vi.mock('./apps/newvar/runtime', () => ({
   createNewvarRuntime: () => ({
     start: vi.fn(), dispose: mocks.newvarRuntimeDispose, getData: vi.fn(),
@@ -107,7 +113,13 @@ beforeEach(() => {
   delete window.__stStageDispose
   delete window.stStage
   delete window.stStageQueue
-  Object.assign(mocks, { characterHandler: undefined, overlayCreates: 0, currentCharacterName: '', postprocessDeps: undefined })
+  Object.assign(mocks, {
+    characterHandler: undefined,
+    overlayCreates: 0,
+    currentCharacterName: '',
+    postprocessDeps: undefined,
+    builtinDeps: undefined,
+  })
   Object.values(mocks).forEach((value) => {
     if (typeof value === 'function' && 'mockClear' in value) value.mockClear()
   })
@@ -126,6 +138,10 @@ describe('extension entry lifecycle', () => {
 
     expect(mocks.postprocessDeps?.processMessage).toBe(mocks.rendererProcessMessage)
     expect(mocks.postprocessDeps?.cleanupMessages).toBe(mocks.rendererRuntimeDispose)
+    expect(mocks.builtinDeps?.rendererRuntime).toEqual(expect.objectContaining({
+      processMessage: mocks.rendererProcessMessage,
+      dispose: mocks.rendererRuntimeDispose,
+    }))
   })
 
   it('injects effective-scene notes from active packs in binding order only', async () => {

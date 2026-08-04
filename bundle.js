@@ -3570,7 +3570,7 @@ ${options}`,
           grid.append(standalone);
           continue;
         }
-        const section = el("div", "so-role-pack-group");
+        const section2 = el("div", "so-role-pack-group");
         const row = el("button", "so-role-pack-row");
         row.type = "button";
         const expanded = expandedRoleGroups.has(group.key);
@@ -3588,13 +3588,13 @@ ${options}`,
           row.setAttribute("aria-expanded", String(!expanded));
           render3();
         });
-        section.append(row);
+        section2.append(row);
         if (expanded) {
           const packs = el("div", "so-pack-grid so-role-pack-grid");
           for (const pack of group.packs) packs.append(renderPackCard(pack, boundState(pack)));
-          section.append(packs);
+          section2.append(packs);
         }
-        grid.append(section);
+        grid.append(section2);
       }
     } else {
       for (const pack of settings.packs) grid.append(renderPackCard(pack, boundState(pack)));
@@ -3832,15 +3832,15 @@ ${options}`,
       const ensureGrid = (group) => {
         const existing = grids.get(group);
         if (existing) return existing;
-        const section = el("div", "so-sprite-section");
+        const section2 = el("div", "so-sprite-section");
         if (groups.length > 0) {
           const head = el("div", "so-group-head");
           head.textContent = group === "" ? "未分组" : group;
-          section.append(head);
+          section2.append(head);
         }
         const grid = el("div", "so-sprite-grid");
-        section.append(grid);
-        gallery.append(section);
+        section2.append(grid);
+        gallery.append(section2);
         grids.set(group, grid);
         return grid;
       };
@@ -5354,11 +5354,11 @@ function galleryApp(deps) {
     order: 2,
     mount(container, ctx) {
       const settings = ctx.getSettings();
-      const section = el2("div", "so-app-section");
+      const section2 = el2("div", "so-app-section");
       const desc = el2("div", "so-app-desc");
       desc.textContent = "立绘包管理：新建/上传/导入导出/分享串/角色绑定。";
-      section.append(desc, appButton("打开立绘包管理", () => deps.openManager()));
-      container.append(section);
+      section2.append(desc, appButton("打开立绘包管理", () => deps.openManager()));
+      container.append(section2);
       const list = el2("div", "so-app-section");
       const title = el2("div", "so-app-title");
       title.textContent = `共 ${settings.packs.length} 个立绘包`;
@@ -5571,9 +5571,9 @@ function render(container, ctx) {
   container.textContent = "";
   const perf = readPerf();
   if (!perf) {
-    const section = el2("div", "so-app-section");
-    descLine(section, "未检测到 SillyTavern 运行时（Web 模拟器中仅可查看优化指南）。");
-    container.append(section, buildGuide());
+    const section2 = el2("div", "so-app-section");
+    descLine(section2, "未检测到 SillyTavern 运行时（Web 模拟器中仅可查看优化指南）。");
+    container.append(section2, buildGuide());
     return;
   }
   const data = ctx.getAppData() ?? {};
@@ -6450,8 +6450,8 @@ function newvarApp(deps) {
       function renderCfg() {
         cfgBox.textContent = "";
         const d = runtime.getData();
-        const section = el2("div", "so-app-section");
-        section.append(
+        const section2 = el2("div", "so-app-section");
+        section2.append(
           hintField(
             toggleRow("启用变量追踪", d.enabled, (v) => {
               ctx.setAppData({ ...runtime.getData(), enabled: v });
@@ -6462,7 +6462,7 @@ function newvarApp(deps) {
           ),
           appButton("打开变量设计", openDesigner)
         );
-        cfgBox.append(section);
+        cfgBox.append(section2);
       }
       const tree = createVariableTreeView(stateBox, {
         getModel: () => {
@@ -6883,6 +6883,122 @@ function render2(container, ctx, deps, state) {
   container.append(manage);
 }
 
+// st-extension/src/apps/renderer/prompt.ts
+var GAL_PROMPT = `【Galgame 模式】
+适合连续对话或分镜。字段：version=1，mode="gal"，scene 为场景说明，beats 为 1-50 个节拍；每个节拍必须有 speaker 和 text，title、background、节拍的 portrait/background 可省略。
+示例：
+<STStageRender>{"version":1,"mode":"gal","title":"雨夜重逢","scene":"车站月台","beats":[{"speaker":"小雪","text":"你终于来了。","portrait":"/user/images/xiaoxue.png"},{"speaker":"我","text":"抱歉，让你久等了。"}]}</STStageRender>`;
+var CARDS_PROMPT = `【SLG 卡片选择模式】
+适合给出 2-8 个明确选择。每张卡必须有唯一 id、title、description、action，consequence 可省略；action 是填入输入框但不自动发送的文字。
+示例：
+<STStageRender>{"version":1,"mode":"cards","title":"下一步行动","cards":[{"id":"advance","title":"继续前进","description":"沿山路调查灯光","consequence":"可能遭遇守卫","action":"我选择沿山路继续前进。"},{"id":"rest","title":"原地休整","description":"恢复体力并整理物资","action":"我选择原地休整。"}]}</STStageRender>`;
+var BATTLE_PROMPT = `【战斗模式】
+适合可由本地确定性规则处理的简单战斗。player/enemy 必须有不同的唯一 id，并包含 name、hp/maxHp、mp/maxMp、attack、defense、speed、crit、dodge。所有基础数值为 0-9999，hp 不得大于 maxHp，mp 不得大于 maxMp，crit/dodge 为 0-100。
+skills、items、statuses 各最多 12 项且各自 id 不重复。skill 字段为 id/name/type/mpCost/power，type 只能是 damage 或 heal；item 字段为 id/name/effect/quantity/power，effect 只能是 heal_hp 或 heal_mp；status 字段为 id/name/duration，可选 attackDelta、defenseDelta、damagePerTurn。description 可用于技能和物品；background、enemyIntent、allowFlee 可省略。
+示例：
+<STStageRender>{"version":1,"mode":"battle","title":"遗迹守卫战","player":{"id":"hero","name":"旅行者","hp":80,"maxHp":100,"mp":30,"maxMp":50,"attack":18,"defense":8,"speed":12,"crit":10,"dodge":5,"skills":[{"id":"slash","name":"斩击","type":"damage","mpCost":5,"power":20}]},"enemy":{"id":"guard","name":"遗迹守卫","hp":90,"maxHp":90,"mp":0,"maxMp":0,"attack":16,"defense":10,"speed":8,"crit":5,"dodge":3},"enemyIntent":"蓄力攻击","allowFlee":true}</STStageRender>`;
+function buildRendererPrompt(settings) {
+  if (!settings.enabled) return "";
+  const modes = [];
+  if (settings.galEnabled) modes.push(GAL_PROMPT);
+  if (settings.cardsEnabled) modes.push(CARDS_PROMPT);
+  if (settings.battleEnabled) modes.push(BATTLE_PROMPT);
+  if (modes.length === 0) return "";
+  return `# ST Stage 结构化渲染协议
+
+普通回复不需要输出渲染块；仅在当前场景明显适合以下已启用模式时使用。
+每条回复最多输出一个 STStageRender 标签块，标签内部必须是严格 JSON。
+禁止输出 HTML、脚本或其他可执行代码，也不要增加协议未声明的字段。
+叙事正文放在块外，并保证块外内容脱离渲染器后仍然独立可读。
+所有数值使用整数，图片只使用可信的 http(s)、base64 栅格 data:image、/user/ 或扩展相对路径。
+
+${modes.join("\n\n")}`;
+}
+
+// st-extension/src/apps/renderer/config.ts
+var RENDERER_APP_ID = "renderer";
+function defaultRendererSettings() {
+  return {
+    enabled: false,
+    galEnabled: true,
+    cardsEnabled: true,
+    battleEnabled: true,
+    injectionDepth: 4,
+    typewriter: true,
+    reducedMotion: false
+  };
+}
+function normalizeRendererSettings(raw) {
+  const settings = defaultRendererSettings();
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return settings;
+  const value = raw;
+  for (const key of ["enabled", "galEnabled", "cardsEnabled", "battleEnabled", "typewriter", "reducedMotion"]) {
+    if (typeof value[key] === "boolean") settings[key] = value[key];
+  }
+  if (typeof value.injectionDepth === "number" && Number.isInteger(value.injectionDepth)) {
+    settings.injectionDepth = Math.min(20, Math.max(0, value.injectionDepth));
+  }
+  return settings;
+}
+
+// st-extension/src/apps/renderer-app.ts
+function refreshPrompt(host, settings) {
+  host.injectPrompt(buildRendererPrompt(settings), settings.injectionDepth);
+}
+function section(title, ...rows) {
+  const box = el2("section", "so-app-section renderer-settings-section");
+  const heading = el2("div", "so-app-title");
+  heading.textContent = title;
+  box.append(heading, ...rows);
+  return box;
+}
+function rendererApp(deps) {
+  return {
+    id: RENDERER_APP_ID,
+    name: "渲染",
+    icon: "🎬",
+    order: 7,
+    setup(host) {
+      refreshPrompt(host, normalizeRendererSettings(host.getAppData()));
+      return () => host.injectPrompt("");
+    },
+    mount(container, ctx) {
+      let current2 = normalizeRendererSettings(ctx.getAppData());
+      function save(next) {
+        current2 = normalizeRendererSettings(next);
+        ctx.setAppData(current2);
+        refreshPrompt(ctx, current2);
+        deps.runtime.reprocessAll();
+        render3();
+      }
+      function render3() {
+        container.textContent = "";
+        const page = el2("div", "renderer-settings");
+        page.append(
+          section(
+            "状态",
+            toggleRow("启用渲染", current2.enabled, (enabled) => save({ ...current2, enabled }))
+          ),
+          section(
+            "模式",
+            toggleRow("Galgame", current2.galEnabled, (galEnabled) => save({ ...current2, galEnabled })),
+            toggleRow("卡片选择", current2.cardsEnabled, (cardsEnabled) => save({ ...current2, cardsEnabled })),
+            toggleRow("战斗", current2.battleEnabled, (battleEnabled) => save({ ...current2, battleEnabled }))
+          ),
+          section(
+            "行为",
+            numberRow("注入深度", current2.injectionDepth, 0, 20, (injectionDepth) => save({ ...current2, injectionDepth })),
+            toggleRow("打字机", current2.typewriter, (typewriter) => save({ ...current2, typewriter })),
+            toggleRow("减少动态", current2.reducedMotion, (reducedMotion) => save({ ...current2, reducedMotion }))
+          )
+        );
+        container.append(page);
+      }
+      render3();
+    }
+  };
+}
+
 // st-extension/src/apps/index.ts
 function createBuiltinApps(deps) {
   return [
@@ -6891,7 +7007,8 @@ function createBuiltinApps(deps) {
     butlerApp(),
     mvuApp(),
     newvarApp({ runtime: deps.newvarRuntime, openDesigner: deps.openNewvarDesigner }),
-    apiApp({ openManager: deps.openApiManager })
+    apiApp({ openManager: deps.openApiManager }),
+    rendererApp({ runtime: deps.rendererRuntime })
   ];
 }
 
@@ -8217,7 +8334,7 @@ function createNewvarDesigner(deps) {
       console.error("[st-stage] 变量设计弹窗渲染失败", err);
     }
   }
-  function section(titleText) {
+  function section2(titleText) {
     const box = el2("div", "so-section");
     const title = el2("div", "so-section-title");
     title.textContent = titleText;
@@ -8231,7 +8348,7 @@ function createNewvarDesigner(deps) {
   }
   function buildTemplateSection() {
     const data = deps.getData();
-    const { box } = section("模板库（一键起步）");
+    const { box } = section2("模板库（一键起步）");
     descLine2(box, "「替换」清空现有定义后导入；「追加」跳过重名路径合并。导入的规则都已写好，可再逐条微调。");
     const grid = el2("div", "nv-tpl-grid");
     for (const tpl of NEWVAR_TEMPLATES) grid.append(buildTemplateCard(tpl, null));
@@ -8352,7 +8469,7 @@ function createNewvarDesigner(deps) {
   }
   function buildDefsSection() {
     const data = deps.getData();
-    const { box } = section(`变量定义（${data.schema.variables.length}）`);
+    const { box } = section2(`变量定义（${data.schema.variables.length}）`);
     const layout = el2("div", "nv-defs-layout");
     const list = el2("div", "nv-defs-list");
     const editor = el2("div", "nv-defs-editor");
@@ -8511,7 +8628,7 @@ function createNewvarDesigner(deps) {
   }
   function buildSettingsSection() {
     const data = deps.getData();
-    const { box } = section("生成设置");
+    const { box } = section2("生成设置");
     box.append(
       selectRow(
         "输出格式",
@@ -9073,32 +9190,6 @@ function createRendererRuntime(deps) {
   return { processMessage, reprocessAll, dispose };
 }
 
-// st-extension/src/apps/renderer/config.ts
-var RENDERER_APP_ID = "renderer";
-function defaultRendererSettings() {
-  return {
-    enabled: false,
-    galEnabled: true,
-    cardsEnabled: true,
-    battleEnabled: true,
-    injectionDepth: 4,
-    typewriter: true,
-    reducedMotion: false
-  };
-}
-function normalizeRendererSettings(raw) {
-  const settings = defaultRendererSettings();
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return settings;
-  const value = raw;
-  for (const key of ["enabled", "galEnabled", "cardsEnabled", "battleEnabled", "typewriter", "reducedMotion"]) {
-    if (typeof value[key] === "boolean") settings[key] = value[key];
-  }
-  if (typeof value.injectionDepth === "number" && Number.isInteger(value.injectionDepth)) {
-    settings.injectionDepth = Math.min(20, Math.max(0, value.injectionDepth));
-  }
-  return settings;
-}
-
 // st-extension/src/apps/api/manager.ts
 function createApiManager(deps) {
   let backdrop = null;
@@ -9188,7 +9279,7 @@ function createApiManager(deps) {
       console.error("[st-stage] API 站点管理弹窗渲染失败", err);
     }
   }
-  function section(titleText) {
+  function section2(titleText) {
     const box = el2("div", "so-section");
     const title = el2("div", "so-section-title");
     title.textContent = titleText;
@@ -9202,7 +9293,7 @@ function createApiManager(deps) {
   }
   function buildListSection() {
     const data = deps.getData();
-    const box = section(`站点（${data.profiles.length}）`);
+    const box = section2(`站点（${data.profiles.length}）`);
     const conn = readConnection();
     const activeId = findActiveProfile(data.profiles, conn?.url ?? "", conn?.model ?? "")?.id;
     if (data.profiles.length === 0) {
@@ -9285,7 +9376,7 @@ function createApiManager(deps) {
     return box;
   }
   function buildEditorSection() {
-    const box = section(!draft ? "站点编辑" : editingId === null ? "新增站点" : `编辑：${draft.name || "（未命名）"}`);
+    const box = section2(!draft ? "站点编辑" : editingId === null ? "新增站点" : `编辑：${draft.name || "（未命名）"}`);
     box.classList.add("stapi-editor");
     if (!draft) {
       descLine2(box, "点击上方站点进行编辑，或「＋ 添加站点」新建。");
@@ -9381,7 +9472,7 @@ function createApiManager(deps) {
     return box;
   }
   function buildNoteSection() {
-    const box = section("说明");
+    const box = section2("说明");
     descLine2(box, "Key 随 ST 设置明文保存在你自己的设备上（扩展设置的通用机制），公用设备上请谨慎。");
     descLine2(box, "切换在手机「API」页进行：点站点行 → 写入 Key、切到自定义(OpenAI 兼容)接口、写附加参数 → 自动连接。");
     return box;
@@ -9648,7 +9739,8 @@ async function init(lifecycle) {
     openApiManager: () => {
       collapsePhone();
       apiManager.open();
-    }
+    },
+    rendererRuntime
   })) {
     registry.register(app);
     runAppSetup(app, createHostDeps(app.id), hostTracker);

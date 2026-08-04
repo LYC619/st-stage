@@ -12,7 +12,9 @@ import { butlerApp } from './butler-app'
 import { mvuApp } from './mvu-app'
 import { newvarApp } from './newvar-app'
 import { apiApp } from './api-app'
+import { rendererApp } from './renderer-app'
 import type { NewvarRuntime } from './newvar/runtime'
+import type { RendererRuntime } from './renderer/runtime'
 
 export interface BuiltinAppDeps {
   /** 从手机打开图库管理弹窗（收起手机 + 记录来源，关闭后回手机图库页） */
@@ -23,6 +25,8 @@ export interface BuiltinAppDeps {
   openNewvarDesigner: () => void
   /** 打开「API 站点管理」弹窗（收起手机，关闭后回「API」页） */
   openApiManager: () => void
+  /** 结构化消息渲染 runtime：设置变更时恢复并重处理当前楼层。 */
+  rendererRuntime: RendererRuntime
 }
 
 export function createBuiltinApps(deps: BuiltinAppDeps): PhoneApp[] {
@@ -33,5 +37,6 @@ export function createBuiltinApps(deps: BuiltinAppDeps): PhoneApp[] {
     mvuApp(),
     newvarApp({ runtime: deps.newvarRuntime, openDesigner: deps.openNewvarDesigner }),
     apiApp({ openManager: deps.openApiManager }),
+    rendererApp({ runtime: deps.rendererRuntime }),
   ]
 }

@@ -1347,3 +1347,28 @@
 .so-upload-actions {
   justify-content: flex-end;
 }
+
+/* ---- Renderer 设置 App ---- */
+.renderer-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.renderer-settings-section {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.renderer-settings-section .so-app-toggle {
+  min-width: 0;
+  gap: 8px;
+}
+
+.renderer-settings-section .so-app-num {
+  flex: 0 0 72px;
+  width: 72px;
+  max-width: 72px;
+}
