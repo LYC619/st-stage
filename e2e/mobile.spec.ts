@@ -1,4 +1,130 @@
 import { test, expect, type Page } from '@playwright/test'
+import { resolve } from 'node:path'
+
+const ROOT = resolve(__dirname, '..')
+
+function spriteData(label: string, color: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="960"><rect width="100%" height="100%" fill="${color}"/><text x="50%" y="50%" fill="white" font-size="64" text-anchor="middle">${label}</text></svg>`
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+}
+
+async function loadRealExtensionGallery(page: Page): Promise<void> {
+  await page.goto('about:blank')
+  await page.setContent(
+    '<meta name="viewport" content="width=device-width, initial-scale=1">'
+      + '<main id="chat"></main><section id="extensions_settings"></section>',
+  )
+  const packs = [
+    {
+      id: 'snow-home',
+      name: '小雪居家',
+      roleName: '小雪',
+      sprites: [
+        {
+          tag: '挥手1',
+          url: spriteData('挥手1', '#387a65'),
+          labels: ['超长动作标签用于移动端布局验证'],
+        },
+        {
+          tag: '挥手2',
+          url: spriteData('挥手2', '#a34855'),
+          labels: ['超长动作标签用于移动端布局验证'],
+        },
+      ],
+    },
+    {
+      id: 'snow-outdoor',
+      name: '小雪外出',
+      roleName: '小雪',
+      sprites: [{ tag: '散步', url: spriteData('散步', '#4e6092'), labels: ['户外'] }],
+    },
+  ]
+  await page.evaluate((fixturePacks) => {
+    const handlers = new Map<string, Set<(...args: unknown[]) => void>>()
+    const context = {
+      extensionSettings: {
+        sprite_overlay: {
+          settingsVersion: 4,
+          galleryFoldByRole: true,
+          packs: fixturePacks,
+        },
+      },
+      saveSettingsDebounced: () => {},
+      setExtensionPrompt: () => {},
+      eventTypes: {
+        MESSAGE_RECEIVED: 'message_received',
+        CHAT_CHANGED: 'chat_changed',
+        CHARACTER_MESSAGE_RENDERED: 'character_message_rendered',
+      },
+      eventSource: {
+        on: (event: string, handler: (...args: unknown[]) => void) => {
+          const listeners = handlers.get(event) ?? new Set()
+          listeners.add(handler)
+          handlers.set(event, listeners)
+        },
+        removeListener: (event: string, handler: (...args: unknown[]) => void) => {
+          handlers.get(event)?.delete(handler)
+        },
+      },
+      characters: [{ name: '小雪' }],
+      characterId: 0,
+      name2: '小雪',
+      chatId: 'chapter-1',
+      chatMetadata: { name: '第一章' },
+      groups: [],
+      chat: [],
+    }
+    ;(window as Window & { SillyTavern: unknown }).SillyTavern = { getContext: () => context }
+  }, packs)
+  await page.addStyleTag({ path: resolve(ROOT, 'st-extension/style.css') })
+  await page.addStyleTag({ path: resolve(ROOT, 'core/phone-shell.css') })
+  await page.addScriptTag({ path: resolve(ROOT, 'bundle.js'), type: 'module' })
+  await expect(page.locator('.so-phone-fab')).toBeVisible()
+}
+
+async function openRealGalleryManager(page: Page): Promise<void> {
+  await page.locator('.so-phone-fab').tap()
+  await page.locator('.so-phone-app-icon', { hasText: '图库' }).tap()
+  await page.locator('.so-app-btn', { hasText: '打开立绘包管理' }).tap()
+  await expect(page.locator('.so-manager')).toBeVisible()
+}
+
+async function expectInsideViewport(page: Page, selector: string): Promise<void> {
+  const locator = page.locator(selector)
+  await expect(locator).toBeVisible()
+  await expect.poll(async () => {
+    const box = await locator.boundingBox()
+    const viewport = page.viewportSize()
+    return Boolean(
+      box && viewport
+      && box.x >= -0.5
+      && box.y >= -0.5
+      && box.x + box.width <= viewport.width + 0.5
+      && box.y + box.height <= viewport.height + 0.5,
+    )
+  }, { message: `${selector} should stay inside the viewport` }).toBe(true)
+}
+
+async function expectLightboxLayout(page: Page): Promise<void> {
+  await expectInsideViewport(page, '.so-lightbox')
+  await expectInsideViewport(page, '.so-lightbox-image')
+  await expectInsideViewport(page, '.so-lightbox-actions')
+  const overlap = await page.evaluate(() => {
+    const image = document.querySelector('.so-lightbox-image')!.getBoundingClientRect()
+    const actions = document.querySelector('.so-lightbox-actions')!.getBoundingClientRect()
+    return Math.max(0, Math.min(image.right, actions.right) - Math.max(image.left, actions.left))
+      * Math.max(0, Math.min(image.bottom, actions.bottom) - Math.max(image.top, actions.top))
+  })
+  expect(overlap).toBe(0)
+  for (const selector of ['.so-lightbox-close', '.so-lightbox-action']) {
+    const receivesPointer = await page.locator(selector).first().evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+      return hit === element || element.contains(hit)
+    })
+    expect(receivesPointer, `${selector} should remain clickable`).toBe(true)
+  }
+}
 
 /**
  * 移动端冒烟测试：Web 模拟器与 ST 端共用同一套手机壳（core/phone-shell）与样式，
@@ -125,4 +251,46 @@ test('移动端聊天链路：发送消息收到模拟 AI 回复', async ({ page
   await expect(page.locator('.bg-secondary.text-secondary-foreground').first()).toBeVisible({
     timeout: 5_000,
   })
+})
+
+test('真实图库在横竖屏中保持可操作，并支持角色折叠与搜索', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await loadRealExtensionGallery(page)
+  expect(await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }))).toEqual({
+    width: 390,
+    height: 844,
+  })
+  await openRealGalleryManager(page)
+  await expectInsideViewport(page, '.so-manager')
+
+  const roleRow = page.locator('.so-role-pack-row', { hasText: '小雪' })
+  await expect(roleRow).toContainText('2 个图包')
+  await roleRow.tap()
+  await expect(roleRow).toHaveAttribute('aria-expanded', 'true')
+  await page.locator('.so-pack-card', { hasText: '小雪居家' }).tap()
+
+  const search = page.getByRole('searchbox', { name: '搜索立绘' })
+  await search.fill('挥手2')
+  await expect(page.locator('.so-sprite-cell')).toHaveCount(1)
+  await expect(page.locator('.so-sprite-tag')).toHaveText('挥手2')
+  await page.locator('.so-gallery-label-select').selectOption('超长动作标签用于移动端布局验证')
+  const chip = page.locator('.so-gallery-filter-chip')
+  await expect(chip).toBeVisible()
+  expect(await chip.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+
+  await page.locator('.so-sprite-cell img').tap()
+  await expect(page.locator('.so-lightbox')).toBeVisible()
+  await expectLightboxLayout(page)
+  await page.locator('.so-lightbox-close').tap()
+
+  await page.setViewportSize({ width: 844, height: 390 })
+  expect(await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }))).toEqual({
+    width: 844,
+    height: 390,
+  })
+  await expectInsideViewport(page, '.so-manager')
+  await expect(search).toBeVisible()
+  await page.locator('.so-sprite-cell img').tap()
+  await expect(page.locator('.so-lightbox')).toBeVisible()
+  await expectLightboxLayout(page)
 })

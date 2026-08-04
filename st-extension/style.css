@@ -966,9 +966,21 @@
 /* 触屏设备：hover 才出现的控件全部常显（否则根本无法发现/点到） */
 @media (hover: none) {
   .so-manager .so-sprite-actions {
+    top: auto;
+    bottom: 24px;
+    height: 42px;
+    box-sizing: border-box;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 4px;
     opacity: 1;
     background: rgba(0, 0, 0, 0.35);
-    align-items: flex-end;
+  }
+
+  .so-manager .so-sprite-actions .so-icon-btn {
+    flex: 0 0 32px;
   }
 
   #sprite-overlay-root .sprite-overlay-gear,
@@ -1031,6 +1043,8 @@
 
 .so-lightbox-image {
   display: block;
+  width: 100%;
+  height: 100%;
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
@@ -1117,6 +1131,8 @@
   grid-column: 2;
   grid-row: 1 / span 2;
   min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
   padding: 56px 8px 8px;
   display: flex;
   flex-direction: column;
