@@ -102,6 +102,18 @@ function describe(v: unknown): string {
   return String(v)
 }
 
+function exampleValue(def: VariableDefinition): unknown {
+  if (def.type === 'number') return def.range?.[0] ?? 0
+  if (def.type === 'boolean') return true
+  if (def.type === 'enum') return def.enum?.[0] ?? ''
+  return '新值'
+}
+
+function dottedToPointer(path: string): string {
+  const segments = path.split('.').map((segment) => segment.replace(/~/g, '~0').replace(/\//g, '~1'))
+  return `/${segments.join('/')}`
+}
+
 // —— 解析 <UpdateVariable> —— //
 
 const BLOCK_RE = /<UpdateVariable>([\s\S]*?)<\/UpdateVariable>/i
@@ -311,8 +323,12 @@ export function buildInjection(
   }
 
   // ③ 输出格式（含 <Analysis>：先逐条分析再输出命令，参考卡实测能显著减少乱填）
-  const example = visible[0]?.key ?? '变量路径'
-  const examplePointer = `/${example.split('.').join('/')}`
+  const exampleDef = visible[0]
+  const example = exampleDef?.key ?? '变量路径'
+  const examplePatchValue = exampleDef ? exampleValue(exampleDef) : '新值'
+  const examplePatch = JSON.stringify([
+    { op: 'replace', path: dottedToPointer(example), value: examplePatchValue },
+  ])
   const formatLines =
     format === 'lodash_set'
       ? [
@@ -330,8 +346,8 @@ export function buildInjection(
           '- path 用斜杠分隔层级（如 /状态/体力）；value 是更新后的完整值',
           '格式示例：',
           '<UpdateVariable>',
-          '<Analysis>好感度因赠礼小幅上升 +2。</Analysis>',
-          `[{"op":"replace","path":"${examplePointer}","value":新值}]`,
+          `<Analysis>${example} 按规则更新为 ${JSON.stringify(examplePatchValue)}。</Analysis>`,
+          examplePatch,
           '</UpdateVariable>',
         ]
 

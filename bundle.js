@@ -6902,6 +6902,16 @@ function describe(v) {
   if (typeof v === "object") return Array.isArray(v) ? "数组" : "对象";
   return String(v);
 }
+function exampleValue(def) {
+  if (def.type === "number") return def.range?.[0] ?? 0;
+  if (def.type === "boolean") return true;
+  if (def.type === "enum") return def.enum?.[0] ?? "";
+  return "新值";
+}
+function dottedToPointer(path) {
+  const segments = path.split(".").map((segment) => segment.replace(/~/g, "~0").replace(/\//g, "~1"));
+  return `/${segments.join("/")}`;
+}
 var BLOCK_RE = /<UpdateVariable>([\s\S]*?)<\/UpdateVariable>/i;
 var ANALYSIS_RE = /<Analysis>[\s\S]*?<\/Analysis>/gi;
 var LODASH_RE = /_\.set\(\s*['"]([^'"]+)['"]\s*,\s*(?:[^,]*?,\s*)?([\s\S]*?)\)\s*;?/gi;
@@ -7067,8 +7077,12 @@ function buildInjection(state, schema, format) {
     ruleLines.push(`  ${v.key}:`);
     for (const c of checks) ruleLines.push(`    - ${c}`);
   }
-  const example = visible[0]?.key ?? "变量路径";
-  const examplePointer = `/${example.split(".").join("/")}`;
+  const exampleDef = visible[0];
+  const example = exampleDef?.key ?? "变量路径";
+  const examplePatchValue = exampleDef ? exampleValue(exampleDef) : "新值";
+  const examplePatch = JSON.stringify([
+    { op: "replace", path: dottedToPointer(example), value: examplePatchValue }
+  ]);
   const formatLines = format === "lodash_set" ? [
     "- 在回复正文全部结束后，若本轮有变量变化，追加一个 <UpdateVariable> 块；没有变化则不要输出该块",
     "- 块内每行一条命令：_.set('变量路径', 旧值, 新值);//变化原因",
@@ -7083,8 +7097,8 @@ function buildInjection(state, schema, format) {
     "- path 用斜杠分隔层级（如 /状态/体力）；value 是更新后的完整值",
     "格式示例：",
     "<UpdateVariable>",
-    "<Analysis>好感度因赠礼小幅上升 +2。</Analysis>",
-    `[{"op":"replace","path":"${examplePointer}","value":新值}]`,
+    `<Analysis>${example} 按规则更新为 ${JSON.stringify(examplePatchValue)}。</Analysis>`,
+    examplePatch,
     "</UpdateVariable>"
   ];
   return [

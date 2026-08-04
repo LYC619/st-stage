@@ -8,7 +8,7 @@ import {
   buildInjection,
   fillDefaults,
 } from './engine'
-import type { VariableSchema } from './types'
+import type { VariableDefinition, VariableSchema } from './types'
 
 const schema: VariableSchema = {
   id: 'test',
@@ -247,6 +247,27 @@ describe('buildInjection（三段式，对齐参考世界书）', () => {
   })
   it('lodash 格式给出 _.set 规则', () => {
     expect(buildInjection(state, schema, 'lodash_set')).toContain('_.set(')
+  })
+  it.each<VariableDefinition>([
+    { key: '体力', type: 'number', default: 50, description: '', range: [0, 100] },
+    { key: '在场', type: 'boolean', default: false, description: '' },
+    { key: '心情', type: 'enum', default: '平静', description: '', enum: ['开心', '平静'] },
+    { key: '场景/名称~值', type: 'string', default: '教室', description: '' },
+  ])('为 $type 变量生成可解析且能通过门禁的 JSON Patch 示例', (def) => {
+    const exampleSchema: VariableSchema = { id: def.type, name: def.type, version: 1, variables: [def] }
+    const injection = buildInjection(initStateFromSchema(exampleSchema), exampleSchema, 'json_patch')
+    expect(injection).toContain(`<Analysis>${def.key}`)
+    const json = injection.match(/<Analysis>[\s\S]*?<\/Analysis>\r?\n(\[[^\r\n]+\])\r?\n<\/UpdateVariable>/)?.[1]
+
+    expect(json).toBeTruthy()
+    const patch = JSON.parse(json!) as Array<{ op: string; path: string; value: unknown }>
+    expect(patch).toHaveLength(1)
+    expect(validateValue(def, patch[0].value).ok).toBe(true)
+
+    const parsed = parseUpdateBlock(`<UpdateVariable>${json}</UpdateVariable>`, 'json_patch')
+    expect(parsed.rejected).toBeUndefined()
+    const applied = applyOps(initStateFromSchema(exampleSchema), parsed.ops, exampleSchema)
+    expect(applied.log).toEqual([expect.objectContaining({ path: def.key, status: 'accepted' })])
   })
 })
 
