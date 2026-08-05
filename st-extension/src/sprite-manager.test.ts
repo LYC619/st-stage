@@ -535,6 +535,43 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
     manager.close()
   })
 
+  it('keeps named groups before the ungrouped section when a group first appears on a later page', () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{
+        id: 'paged-groups',
+        name: '分页分组包',
+        sprites: [
+          ...Array.from({ length: 60 }, (_, index) => ({
+            tag: `未分组${index + 1}`,
+            url: `https://img.test/plain-${index + 1}.png`,
+          })),
+          ...Array.from({ length: 10 }, (_, index) => ({
+            tag: `分组${index + 1}`,
+            url: `https://img.test/group-${index + 1}.png`,
+            group: 'Z',
+          })),
+        ],
+      }],
+    }
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    ;([...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+      .find((card) => card.textContent?.includes('分页分组包')))!.click()
+
+    expect([...document.querySelectorAll('.so-group-head')].map((head) => head.textContent))
+      .toEqual(['未分组'])
+    findButton(document, '加载更多').click()
+    expect([...document.querySelectorAll('.so-group-head')].map((head) => head.textContent))
+      .toEqual(['Z', '未分组'])
+
+    manager.close()
+  })
+
   it('does not show a load-more control for packs of 60 sprites or fewer', () => {
     const manager = openLargeGallery(60)
 
@@ -629,6 +666,62 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
     row.click()
     expect(document.querySelectorAll('.so-pack-card')).toHaveLength(3)
     expect(row.getAttribute('aria-expanded')).toBe('true')
+    manager.close()
+  })
+
+  it('edits pack prompt placement and notes for every known outfit', () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{
+        id: 'notes',
+        name: '备注包',
+        outfit: '居家',
+        promptNote: '旧图包备注',
+        promptNotePlacement: 'before-list',
+        outfitNotes: { 居家: '旧居家备注', 礼服: '旧礼服备注' },
+        sprites: [
+          { tag: '日常', url: 'daily', outfit: '外出' },
+          { tag: '休息', url: 'rest' },
+        ],
+      }],
+    }
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    ;([...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+      .find((card) => card.textContent?.includes('备注包')))!.click()
+
+    const panel = [...document.querySelectorAll<HTMLDetailsElement>('details')]
+      .find((details) => details.querySelector('summary')?.textContent === '包信息')
+    expect(panel).not.toBeUndefined()
+    panel!.open = true
+    const promptNote = panel!.querySelector<HTMLTextAreaElement>('.so-pack-prompt-note')
+    const placement = panel!.querySelector<HTMLSelectElement>('.so-pack-prompt-placement')
+    expect(promptNote?.value).toBe('旧图包备注')
+    expect(placement?.value).toBe('before-list')
+
+    const notes = new Map(
+      [...panel!.querySelectorAll<HTMLTextAreaElement>('.so-outfit-note-input')]
+        .map((input) => [input.dataset.outfit!, input]),
+    )
+    expect([...notes.keys()]).toEqual(['居家', '外出', '礼服'])
+    promptNote!.value = '仅在夜晚剧情使用'
+    placement!.value = 'after-list'
+    notes.get('居家')!.value = '适用于居家场景'
+    notes.get('外出')!.value = '适用于外出场景'
+    notes.get('礼服')!.value = ''
+    findButton(panel!, '保存').click()
+
+    const updated = settings.packs[0]
+    expect(updated.promptNote).toBe('仅在夜晚剧情使用')
+    expect(updated.promptNotePlacement).toBe('after-list')
+    expect(updated.outfitNotes).toEqual({
+      居家: '适用于居家场景',
+      外出: '适用于外出场景',
+    })
     manager.close()
   })
 })

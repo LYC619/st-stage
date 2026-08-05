@@ -850,6 +850,41 @@
   flex: 1 1 150px;
 }
 
+.so-manager .so-pack-note-row {
+  align-items: stretch;
+}
+
+.so-manager .so-pack-note-row .so-labeled:first-child {
+  align-items: flex-start;
+  flex: 3 1 320px;
+}
+
+.so-manager .so-pack-note-row .so-labeled:last-child {
+  align-self: flex-start;
+  flex: 1 1 150px;
+}
+
+.so-manager .so-pack-prompt-note,
+.so-manager .so-outfit-note-input {
+  min-height: 58px;
+  resize: vertical;
+}
+
+.so-manager .so-outfit-note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.so-manager .so-outfit-note-row {
+  align-items: flex-start;
+}
+
+.so-manager .so-outfit-note-row .so-labeled-text {
+  flex: 0 1 120px;
+  overflow-wrap: anywhere;
+}
+
 /* 分组分区标题（功能②） */
 .so-manager .so-group-head {
   margin: 12px 0 4px;

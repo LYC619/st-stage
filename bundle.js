@@ -3767,6 +3767,63 @@ ${options}`,
       roleInput.value = pack.roleName ?? "";
       const outfitInput = textInput("服装（可空）");
       outfitInput.value = pack.outfit ?? "";
+      const promptNoteInput = document.createElement("textarea");
+      promptNoteInput.className = "text_pole so-pack-prompt-note";
+      promptNoteInput.placeholder = "图包备注（可选）";
+      promptNoteInput.rows = 3;
+      promptNoteInput.value = pack.promptNote ?? "";
+      const placementSelect = document.createElement("select");
+      placementSelect.className = "text_pole so-pack-prompt-placement";
+      placementSelect.setAttribute("aria-label", "图包备注插入位置");
+      for (const [value, label] of [
+        ["before-list", "立绘清单前"],
+        ["after-list", "立绘清单后"]
+      ]) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        placementSelect.append(option);
+      }
+      placementSelect.value = pack.promptNotePlacement ?? "before-list";
+      const outfitNoteDrafts = new Map(Object.entries(pack.outfitNotes ?? {}));
+      const outfitNotesBox = el("div", "so-outfit-note-list");
+      const syncOutfitNoteDrafts = () => {
+        for (const input of outfitNotesBox.querySelectorAll(".so-outfit-note-input")) {
+          outfitNoteDrafts.set(input.dataset.outfit ?? "", input.value);
+        }
+      };
+      const renderOutfitNotes = () => {
+        syncOutfitNoteDrafts();
+        const outfits = [...new Set([
+          outfitInput.value.trim(),
+          ...pack.sprites.map((sprite) => (sprite.outfit ?? "").trim()),
+          ...outfitNoteDrafts.keys()
+        ].filter(Boolean))];
+        outfitNotesBox.replaceChildren();
+        if (outfits.length === 0) return;
+        const title = el("div", "so-section-title");
+        title.textContent = "服装备注";
+        outfitNotesBox.append(title);
+        for (const outfit of outfits) {
+          const input = document.createElement("textarea");
+          input.className = "text_pole so-outfit-note-input";
+          input.dataset.outfit = outfit;
+          input.placeholder = `${outfit}的使用场景（可选）`;
+          input.rows = 2;
+          input.value = outfitNoteDrafts.get(outfit) ?? "";
+          input.addEventListener("input", () => outfitNoteDrafts.set(outfit, input.value));
+          const row = labeled(outfit, input);
+          row.classList.add("so-outfit-note-row");
+          outfitNotesBox.append(row);
+        }
+      };
+      outfitInput.addEventListener("change", renderOutfitNotes);
+      renderOutfitNotes();
+      const promptRow = el("div", "so-row so-pack-note-row");
+      promptRow.append(
+        labeled("图包备注", promptNoteInput),
+        labeled("插入位置", placementSelect)
+      );
       metaRow.append(
         labeled("包名", nameInput),
         labeled("作者", authorInput),
@@ -3781,19 +3838,32 @@ ${options}`,
           }
           const roleName = normalizeTag(roleInput.value);
           const outfit = normalizeTag(outfitInput.value);
-          commitPack({
+          const promptNote = normalizeNote(promptNoteInput.value);
+          syncOutfitNoteDrafts();
+          const outfitNotes = normalizeOutfitNotes(Object.fromEntries(outfitNoteDrafts));
+          const nextPack = {
             ...pack,
             name,
             author: sanitizePackName(authorInput.value) || void 0,
             description: sanitizeDescription(descInput.value) || void 0,
             roleName: roleName || void 0,
             outfit: outfit || void 0
-          });
+          };
+          if (promptNote) {
+            nextPack.promptNote = promptNote;
+            nextPack.promptNotePlacement = placementSelect.value === "after-list" ? "after-list" : "before-list";
+          } else {
+            delete nextPack.promptNote;
+            delete nextPack.promptNotePlacement;
+          }
+          if (Object.keys(outfitNotes).length > 0) nextPack.outfitNotes = outfitNotes;
+          else delete nextPack.outfitNotes;
+          commitPack(nextPack);
         })
       );
       const metaHint = el("div", "so-status");
       metaHint.textContent = "人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。";
-      metaPanel.body.append(metaRow, metaHint);
+      metaPanel.body.append(metaRow, promptRow, outfitNotesBox, metaHint);
       body.append(metaPanel.box);
     }
     if (pack.sprites.length === 0) {
@@ -3844,7 +3914,8 @@ ${options}`,
         }
         const grid = el("div", "so-sprite-grid");
         section2.append(grid);
-        gallery.append(section2);
+        const nextGrid = sections.slice(sections.indexOf(group) + 1).map((nextGroup) => grids.get(nextGroup)).find((candidate) => candidate != null);
+        gallery.insertBefore(section2, nextGrid?.parentElement ?? null);
         grids.set(group, grid);
         return grid;
       };

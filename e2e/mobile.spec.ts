@@ -61,6 +61,10 @@ async function loadRealExtensionGallery(page: Page): Promise<void> {
       id: 'snow-home',
       name: '小雪居家',
       roleName: '小雪',
+      outfit: '居家',
+      promptNote: '适用于日常剧情',
+      promptNotePlacement: 'before-list',
+      outfitNotes: { 居家: '适用于居家场景' },
       sprites: [
         {
           tag: '挥手1',
@@ -71,6 +75,7 @@ async function loadRealExtensionGallery(page: Page): Promise<void> {
           tag: '挥手2',
           url: spriteData('挥手2', '#a34855'),
           labels: ['超长动作标签用于移动端布局验证'],
+          outfit: '外出',
         },
       ],
     },
@@ -451,7 +456,7 @@ test('移动端聊天链路：发送消息收到模拟 AI 回复', async ({ page
   })
 })
 
-test('真实图库在横竖屏中保持可操作，并支持角色折叠与搜索', async ({ page }) => {
+test('真实图库在横竖屏中保持可操作，并支持角色折叠与搜索', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await loadRealExtensionGallery(page)
   expect(await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }))).toEqual({
@@ -466,6 +471,25 @@ test('真实图库在横竖屏中保持可操作，并支持角色折叠与搜�
   await roleRow.tap()
   await expect(roleRow).toHaveAttribute('aria-expanded', 'true')
   await page.locator('.so-pack-card', { hasText: '小雪居家' }).tap()
+
+  const packInfo = page.locator('details.so-collapse', { hasText: '包信息' })
+  await packInfo.locator('summary').tap()
+  const promptNote = packInfo.locator('.so-pack-prompt-note')
+  await expect(promptNote).toHaveValue('适用于日常剧情')
+  await expect(packInfo.locator('.so-pack-prompt-placement')).toHaveValue('before-list')
+  await expect(packInfo.locator('.so-outfit-note-input')).toHaveCount(2)
+  await expect(packInfo.locator('.so-outfit-note-input[data-outfit="居家"]'))
+    .toHaveValue('适用于居家场景')
+  await packInfo.locator('.so-outfit-note-input[data-outfit="外出"]').fill('适用于外出场景')
+  await promptNote.fill('适用于夜晚剧情')
+  await packInfo.locator('.so-pack-prompt-placement').selectOption('after-list')
+  await page.screenshot({ path: testInfo.outputPath('gallery-notes-mobile.png'), fullPage: true })
+  await packInfo.getByRole('button', { name: '保存', exact: true }).tap()
+  await page.locator('details.so-collapse', { hasText: '包信息' }).locator('summary').tap()
+  await expect(page.locator('.so-pack-prompt-note')).toHaveValue('适用于夜晚剧情')
+  await expect(page.locator('.so-pack-prompt-placement')).toHaveValue('after-list')
+  await expect(page.locator('.so-outfit-note-input[data-outfit="外出"]'))
+    .toHaveValue('适用于外出场景')
 
   const search = page.getByRole('searchbox', { name: '搜索立绘' })
   await search.fill('挥手2')

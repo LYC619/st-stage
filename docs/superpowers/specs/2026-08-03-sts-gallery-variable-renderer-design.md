@@ -148,6 +148,8 @@ Expanding shows the existing pack cards, including each outfit and pack name. Pa
 
 Prompt notes are included only for active packs. They are inserted either before or after that pack's scene list according to `promptNotePlacement`. Outfit notes are attached to the matching `role/outfit` scene. Empty notes are omitted.
 
+Editable custom packs expose these fields in the existing pack-information panel: a pack-note textarea, a before/after placement select, and one note textarea for every known outfit. Known outfits are the current pack-level outfit, sprite-level outfits, and previously stored outfit-note keys. Saving applies the same 500-code-point normalization used by migration and import; clearing a note removes it. Preset packs remain read-only.
+
 Numbered sprite tags are compacted for prompt display when all conditions hold:
 
 - tags share the same non-empty text prefix;

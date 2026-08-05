@@ -106,6 +106,9 @@ git commit -m "feat: version gallery metadata"
 - Modify: `core/prompt-builder.ts`
 - Modify: `core/prompt-builder.test.ts`
 - Modify: `st-extension/src/index.ts`
+- Modify: `st-extension/src/sprite-manager.ts`
+- Modify: `st-extension/src/sprite-manager.test.ts`
+- Modify: `st-extension/style.css`
 
 - [ ] **Step 1: Write range-compaction RED tests**
 
@@ -139,6 +142,8 @@ interface PromptSceneNote {
 ```
 
 Assert `before-list` and `after-list` ordering, active-pack-only notes, outfit-note attachment, and that compact output explicitly says to emit one complete real tag rather than the range label.
+
+Also assert that the pack-information panel loads and saves the pack note, placement, and notes for pack-level, sprite-level, and previously stored outfits. Empty note inputs remove their stored entries.
 
 - [ ] **Step 3: Verify RED and implement**
 
