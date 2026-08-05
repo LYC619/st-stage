@@ -45,6 +45,7 @@ function getSpriteSource(sprite) {
   if (/^https?:\/\//.test(sprite.url)) return "hosted";
   return "local";
 }
+var DEFAULT_PROMPT_NOTE_PLACEMENT = "after-list";
 function getPackCover(pack) {
   if (pack.coverTag) {
     const cover = pack.sprites.find((s) => s.tag === pack.coverTag);
@@ -355,7 +356,7 @@ function buildPromptSceneNotes(packs, addresses) {
       seen.add(key);
       scenes.push(scene);
     }
-    const placement = pack.promptNotePlacement ?? "after-list";
+    const placement = pack.promptNotePlacement ?? DEFAULT_PROMPT_NOTE_PLACEMENT;
     const packNote = pack.promptNote?.trim() ?? "";
     for (const [index, scene] of scenes.entries()) {
       if (packNote && placement === "before-list" && index === 0) {
@@ -3010,15 +3011,16 @@ function control(text, label, className) {
 
 // st-extension/src/sprite-localize.ts
 var LOCALIZE_MAX_BYTES = 20 * 1024 * 1024;
+var LOCALIZE_TIMEOUT_MS = 3e4;
 async function localizeSprite(sprite, fileName, deps) {
   if (getSpriteSource(sprite) !== "hosted") {
     throw new Error("这张立绘已经是本地图片");
   }
   let response;
   try {
-    response = await deps.fetch(sprite.url);
+    response = await deps.fetch(sprite.url, requestInit());
   } catch (error) {
-    throw new Error(`下载远程图片失败：${errorMessage(error)}`, { cause: error });
+    throw new Error(`下载远程图片失败：${downloadFailure(error)}`, { cause: error });
   }
   if (!response.ok) {
     throw new Error(`下载远程图片失败：HTTP ${response.status}`);
@@ -3031,7 +3033,7 @@ async function localizeSprite(sprite, fileName, deps) {
   try {
     blob = await response.blob();
   } catch (error) {
-    throw new Error(`下载远程图片失败：${errorMessage(error)}`, { cause: error });
+    throw new Error(`下载远程图片失败：${downloadFailure(error)}`, { cause: error });
   }
   if (blob.size > LOCALIZE_MAX_BYTES) {
     throw new Error(`远程图片过大，不能超过 ${formatLimit()}`);
@@ -3066,6 +3068,13 @@ function dataUriToFile(dataUri, fileName) {
 }
 function errorMessage(error) {
   return error instanceof Error && error.message ? error.message : "未知错误";
+}
+function downloadFailure(error) {
+  const name = typeof error?.name === "string" ? error.name : "";
+  return name === "TimeoutError" || name === "AbortError" ? `超过 ${LOCALIZE_TIMEOUT_MS / 1e3} 秒没有响应` : errorMessage(error);
+}
+function requestInit() {
+  return typeof AbortSignal?.timeout === "function" ? { signal: AbortSignal.timeout(LOCALIZE_TIMEOUT_MS) } : void 0;
 }
 function formatLimit() {
   return `${LOCALIZE_MAX_BYTES / 1024 / 1024} MB`;
@@ -3771,6 +3780,7 @@ ${options}`,
       promptNoteInput.className = "text_pole so-pack-prompt-note";
       promptNoteInput.placeholder = "图包备注（可选）";
       promptNoteInput.rows = 3;
+      promptNoteInput.maxLength = MAX_NOTE_CODE_POINTS;
       promptNoteInput.value = pack.promptNote ?? "";
       const placementSelect = document.createElement("select");
       placementSelect.className = "text_pole so-pack-prompt-placement";
@@ -3784,7 +3794,7 @@ ${options}`,
         option.textContent = label;
         placementSelect.append(option);
       }
-      placementSelect.value = pack.promptNotePlacement ?? "before-list";
+      placementSelect.value = pack.promptNotePlacement ?? DEFAULT_PROMPT_NOTE_PLACEMENT;
       const outfitNoteDrafts = new Map(Object.entries(pack.outfitNotes ?? {}));
       const outfitNotesBox = el("div", "so-outfit-note-list");
       const syncOutfitNoteDrafts = () => {
@@ -3795,8 +3805,8 @@ ${options}`,
       const renderOutfitNotes = () => {
         syncOutfitNoteDrafts();
         const outfits = [...new Set([
-          outfitInput.value.trim(),
-          ...pack.sprites.map((sprite) => (sprite.outfit ?? "").trim()),
+          normalizeTag(outfitInput.value),
+          ...pack.sprites.map((sprite) => normalizeTag(sprite.outfit ?? "")),
           ...outfitNoteDrafts.keys()
         ].filter(Boolean))];
         outfitNotesBox.replaceChildren();
@@ -3810,6 +3820,7 @@ ${options}`,
           input.dataset.outfit = outfit;
           input.placeholder = `${outfit}的使用场景（可选）`;
           input.rows = 2;
+          input.maxLength = MAX_NOTE_CODE_POINTS;
           input.value = outfitNoteDrafts.get(outfit) ?? "";
           input.addEventListener("input", () => outfitNoteDrafts.set(outfit, input.value));
           const row = labeled(outfit, input);
@@ -4748,7 +4759,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-07-31 23:54"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-06 00:25"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
   return () => wrapper.remove();
@@ -10660,7 +10671,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-07-31 23:54"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-06 00:25"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

@@ -10,8 +10,6 @@ export interface RendererSettings {
 }
 
 export const RENDERER_APP_ID = 'renderer'
-/** 独立命名通道便于设置关闭或生命周期结束时精确清理。 */
-export const RENDERER_CHANNEL = 'renderer'
 
 /** 返回 Renderer 的安全默认配置。 */
 export function defaultRendererSettings(): RendererSettings {

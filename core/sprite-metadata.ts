@@ -3,7 +3,8 @@ import { spriteOutfit, spriteRole } from './types'
 
 const MAX_LABELS = 24
 const MAX_LABEL_CODE_POINTS = 32
-const MAX_NOTE_CODE_POINTS = 500
+/** 备注上限（码点）：编辑框用它设 maxlength，避免保存时才静默截断 */
+export const MAX_NOTE_CODE_POINTS = 500
 
 export type CompactNumberedTagEntry =
   | { kind: 'range'; label: string; values: string[] }

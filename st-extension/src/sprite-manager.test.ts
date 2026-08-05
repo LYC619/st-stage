@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createDefaultSettings, type PluginSettings } from '../../core/types'
+import {
+  createDefaultSettings,
+  DEFAULT_PROMPT_NOTE_PLACEMENT,
+  type PluginSettings,
+} from '../../core/types'
+import { buildPromptSceneNotes } from '../../core/prompt-builder'
+import { MAX_NOTE_CODE_POINTS } from '../../core/sprite-metadata'
 
 const imageMocks = vi.hoisted(() => ({ compressImage: vi.fn() }))
 
@@ -19,6 +25,15 @@ function findButton(scope: ParentNode, text: string): HTMLElement {
   )
   if (!button) throw new Error(`找不到按钮：${text}`)
   return button
+}
+
+/** 展开当前包详情页的「包信息」折叠面板 */
+function openPackInfoPanel(): HTMLDetailsElement {
+  const panel = [...document.querySelectorAll<HTMLDetailsElement>('details')]
+    .find((details) => details.querySelector('summary')?.textContent === '包信息')
+  if (!panel) throw new Error('找不到「包信息」面板')
+  panel.open = true
+  return panel
 }
 
 function installFilePicker(files: File[]): void {
@@ -722,6 +737,103 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
       居家: '适用于居家场景',
       外出: '适用于外出场景',
     })
+    manager.close()
+  })
+
+  it('shows the same placement default the prompt builder injects with', () => {
+    // 导入的 @3 包可能只带 promptNote 不带 placement：面板显示的位置必须与
+    // buildPromptSceneNotes 实际采用的默认位置一致，否则用户改个包名点保存
+    // 就把注入位置静默改掉了。
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{
+        id: 'imported',
+        name: '导入包',
+        roleName: '小雪',
+        promptNote: '导入包备注',
+        sprites: [{ tag: '微笑', url: 'smile' }],
+      }],
+    }
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '小雪' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    ;([...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+      .find((card) => card.textContent?.includes('导入包')))!.click()
+
+    const panel = openPackInfoPanel()
+    const shown = panel.querySelector<HTMLSelectElement>('.so-pack-prompt-placement')!.value
+    expect(shown).toBe(DEFAULT_PROMPT_NOTE_PLACEMENT)
+    expect(buildPromptSceneNotes(settings.packs, [{ role: '小雪', outfit: '', tag: '微笑' }]))
+      .toEqual([{ role: '小雪', outfit: '', note: '导入包备注', placement: shown }])
+
+    // 只改包名保存：placement 不能被写成另一个值
+    panel.querySelector<HTMLInputElement>('input')!.value = '改名后的包'
+    findButton(panel, '保存').click()
+    expect(settings.packs[0].promptNotePlacement).toBe(DEFAULT_PROMPT_NOTE_PLACEMENT)
+    manager.close()
+  })
+
+  it('keys outfit notes by the normalized outfit name so injection can match them', () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{
+        id: 'dirty-outfit',
+        name: '脏服装包',
+        roleName: '小雪',
+        sprites: [{ tag: '微笑', url: 'smile' }],
+      }],
+    }
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '小雪' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    ;([...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+      .find((card) => card.textContent?.includes('脏服装包')))!.click()
+
+    // 「居家:服」的冒号会被 normalizeTag 剔除；备注键必须跟着规范化，
+    // 否则存下来的键与 pack.outfit 不同源，注入时永远匹配不上。
+    const panel = openPackInfoPanel()
+    const outfitInput = [...panel.querySelectorAll<HTMLInputElement>('input')]
+      .find((input) => input.placeholder === '服装（可空）')!
+    outfitInput.value = '居家:服'
+    outfitInput.dispatchEvent(new Event('change'))
+
+    const note = panel.querySelector<HTMLTextAreaElement>('.so-outfit-note-input')!
+    expect(note.dataset.outfit).toBe('居家服')
+    note.value = '适用于居家场景'
+    findButton(panel, '保存').click()
+
+    const saved = settings.packs[0]
+    expect(saved.outfit).toBe('居家服')
+    expect(saved.outfitNotes).toEqual({ 居家服: '适用于居家场景' })
+    expect(buildPromptSceneNotes(saved ? [saved] : [], [{ role: '小雪', outfit: '居家服', tag: '微笑' }]))
+      .toEqual([{ role: '小雪', outfit: '居家服', note: '适用于居家场景', placement: DEFAULT_PROMPT_NOTE_PLACEMENT }])
+    manager.close()
+  })
+
+  it('caps note inputs at the persisted note length so saving never truncates silently', () => {
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '小雪' } as STAdapter,
+      getSettings: () => ({
+        ...createDefaultSettings(),
+        packs: [{ id: 'cap', name: '上限包', outfit: '居家', sprites: [{ tag: '微笑', url: 'smile' }] }],
+      }),
+      updateSettings: () => {},
+    })
+    manager.open()
+    ;([...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+      .find((card) => card.textContent?.includes('上限包')))!.click()
+
+    const panel = openPackInfoPanel()
+    expect(panel.querySelector<HTMLTextAreaElement>('.so-pack-prompt-note')!.maxLength)
+      .toBe(MAX_NOTE_CODE_POINTS)
+    expect(panel.querySelector<HTMLTextAreaElement>('.so-outfit-note-input')!.maxLength)
+      .toBe(MAX_NOTE_CODE_POINTS)
     manager.close()
   })
 })

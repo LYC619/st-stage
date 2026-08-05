@@ -2,7 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import type { Sprite } from '../../core/types'
-import { LOCALIZE_MAX_BYTES, localizeSprite } from './sprite-localize'
+import { LOCALIZE_MAX_BYTES, LOCALIZE_TIMEOUT_MS, localizeSprite } from './sprite-localize'
 
 const remote: Sprite = {
   tag: '微笑',
@@ -73,6 +73,20 @@ describe('localizeSprite', () => {
       saveImage: vi.fn(),
     })).rejects.toThrow('已经是本地图片')
     expect(fetchImage).not.toHaveBeenCalled()
+  })
+
+  it('passes an abort signal so a hung image host cannot wedge the caller forever', async () => {
+    const fetchImage = vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(init?.signal).toBeInstanceOf(AbortSignal)
+      const timeout = new DOMException('The operation timed out.', 'TimeoutError')
+      throw timeout
+    })
+
+    await expect(localizeSprite(remote, 'image.webp', {
+      fetch: fetchImage as unknown as typeof fetch,
+      saveImage: vi.fn(),
+    })).rejects.toThrow(`下载远程图片失败：超过 ${LOCALIZE_TIMEOUT_MS / 1000} 秒没有响应`)
+    expect(fetchImage).toHaveBeenCalledTimes(1)
   })
 
   it('rejects oversized response headers before reading the body', async () => {

@@ -76,6 +76,14 @@ export function getSpriteSource(sprite: Sprite): SpriteSource {
 /** 包级提示词在立绘清单中的插入位置 */
 export type PromptNotePlacement = 'before-list' | 'after-list'
 
+/**
+ * 未显式指定插入位置时的默认值。
+ * 注入端（prompt-builder）与编辑端（包信息面板）必须共用这一个常量：
+ * 两边各写各的默认值会让「面板显示的位置」和「实际注入的位置」对不上，
+ * 用户只是改个包名点保存，注入位置就被静默改掉了。
+ */
+export const DEFAULT_PROMPT_NOTE_PLACEMENT: PromptNotePlacement = 'after-list'
+
 /** 立绘包：一套角色表情立绘的集合 */
 export interface SpritePack {
   /** 唯一 ID（导入/新建时生成） */

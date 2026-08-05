@@ -12,6 +12,7 @@
 
 import { compactNumberedTags } from './sprite-metadata'
 import { addressConflictKey, effectiveSpriteAddress } from './address-policy'
+import { DEFAULT_PROMPT_NOTE_PLACEMENT } from './types'
 import type { PromptNotePlacement, SpriteAddress, SpritePack } from './types'
 
 export interface PromptSceneNote {
@@ -41,7 +42,7 @@ export function buildPromptSceneNotes(
       scenes.push(scene)
     }
 
-    const placement = pack.promptNotePlacement ?? 'after-list'
+    const placement = pack.promptNotePlacement ?? DEFAULT_PROMPT_NOTE_PLACEMENT
     const packNote = pack.promptNote?.trim() ?? ''
     for (const [index, scene] of scenes.entries()) {
       if (packNote && placement === 'before-list' && index === 0) {

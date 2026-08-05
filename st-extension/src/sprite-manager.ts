@@ -12,7 +12,12 @@
  */
 
 import type { PluginSettings, Sprite, SpritePack } from '../../core/types'
-import { formatAddress, getPackCover, getSpriteSource } from '../../core/types'
+import {
+  DEFAULT_PROMPT_NOTE_PLACEMENT,
+  formatAddress,
+  getPackCover,
+  getSpriteSource,
+} from '../../core/types'
 import {
   type BindingConflict,
   type ConflictCheckedSettingsResult,
@@ -58,6 +63,7 @@ import { isPresetPack } from '../../core/presets'
 import {
   filterSprites,
   groupPacksByRole,
+  MAX_NOTE_CODE_POINTS,
   normalizeNote,
   normalizeOutfitNotes,
 } from '../../core/sprite-metadata'
@@ -879,6 +885,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       promptNoteInput.className = 'text_pole so-pack-prompt-note'
       promptNoteInput.placeholder = '图包备注（可选）'
       promptNoteInput.rows = 3
+      promptNoteInput.maxLength = MAX_NOTE_CODE_POINTS
       promptNoteInput.value = pack.promptNote ?? ''
       const placementSelect = document.createElement('select')
       placementSelect.className = 'text_pole so-pack-prompt-placement'
@@ -892,7 +899,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         option.textContent = label
         placementSelect.append(option)
       }
-      placementSelect.value = pack.promptNotePlacement ?? 'before-list'
+      placementSelect.value = pack.promptNotePlacement ?? DEFAULT_PROMPT_NOTE_PLACEMENT
 
       const outfitNoteDrafts = new Map(Object.entries(pack.outfitNotes ?? {}))
       const outfitNotesBox = el('div', 'so-outfit-note-list')
@@ -903,9 +910,12 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       }
       const renderOutfitNotes = (): void => {
         syncOutfitNoteDrafts()
+        // 备注按服装名寻址，键必须与注入端看到的服装名同源——统一过 normalizeTag，
+        // 否则输入框里打的「居家:服」会存成一个永远匹配不上任何场景的死键。
+        // 已有备注的键保持原样：让用户还能看见并清掉历史脏数据。
         const outfits = [...new Set([
-          outfitInput.value.trim(),
-          ...pack.sprites.map((sprite) => (sprite.outfit ?? '').trim()),
+          normalizeTag(outfitInput.value),
+          ...pack.sprites.map((sprite) => normalizeTag(sprite.outfit ?? '')),
           ...outfitNoteDrafts.keys(),
         ].filter(Boolean))]
         outfitNotesBox.replaceChildren()
@@ -920,6 +930,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           input.dataset.outfit = outfit
           input.placeholder = `${outfit}的使用场景（可选）`
           input.rows = 2
+          input.maxLength = MAX_NOTE_CODE_POINTS
           input.value = outfitNoteDrafts.get(outfit) ?? ''
           input.addEventListener('input', () => outfitNoteDrafts.set(outfit, input.value))
           const row = labeled(outfit, input)
