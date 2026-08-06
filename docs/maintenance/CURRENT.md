@@ -2,14 +2,14 @@
 status_version: 1
 project: st-stage
 base_branch: main
-verified_code_head: 42f19f952cfe5323f56b66dbb8fb62fd54638b81
+verified_code_head: af7e545c771dc425301b5ecde9d6e8e7cbd22590
 remote_code_head_at_update: b97e894bbbc9b691e4c0bc8c473cf9fbb00586a2
-build_version: 0.9.0+202608070223
+build_version: 0.9.0+202608070237
 phase: real-sillytavern-acceptance
 updated_at: 2026-08-07
 updated_by: codex
 verification_source: codex-maintenance-log-2026-08-07
-history: docs/maintenance/history/2026-08-07-renderer-onboarding-density.md
+history: docs/maintenance/history/2026-08-07-pure-numeric-sprite-tag.md
 ---
 
 # Current Project Status
@@ -18,8 +18,9 @@ history: docs/maintenance/history/2026-08-07-renderer-onboarding-density.md
 
 - Gallery, new-variable, and Renderer V1 updates are implemented.
 - Renderer first-use onboarding and the generated ST distribution boundary are implemented in `7c7109e`; the density refinement is in `42f19f9`.
-- The working branch is `codex/renderer-onboarding-density`, five local commits ahead of `origin/main` (`b97e894`), including the maintenance handoff; no push was performed.
-- The release build stamp is `0.9.0+202608070223`; `manifest.json` remains at product version `0.9.0`.
+- Pure numeric sprite tags are protected from malformed range labels in `af7e545`.
+- The working branch is `codex/renderer-onboarding-density`, seven local commits ahead of `origin/main` (`b97e894`), including maintenance handoffs; no push was performed.
+- The release build stamp is `0.9.0+202608070237`; `manifest.json` remains at product version `0.9.0`.
 - The current phase is real SillyTavern acceptance, not additional feature implementation.
 
 ## Delivered Scope
@@ -29,6 +30,7 @@ history: docs/maintenance/history/2026-08-07-renderer-onboarding-density.md
 - Renderer V1: validated protocol, prompt injection, reversible runtime, settings App, Galgame mode, card choices, deterministic battles, and post-battle continuation.
 - Renderer onboarding: quick-start steps, configuration status, mode guide, troubleshooting, and a preference-preserving activation action.
 - Renderer onboarding density: full first-use steps only while disabled, accurate activation copy, and compact enabled state.
+- Sprite metadata: pure numeric tags remain individually addressable and are not rendered as malformed ranges.
 - Release engineering: deterministic build timestamps and CI verification of committed extension artifacts.
 - Distribution boundary: `pnpm build:st` generates `st-distribution/` without simulator or reference assets; root artifacts remain the compatibility path.
 
@@ -44,6 +46,7 @@ The delivered code commit was recorded as passing:
 - Root and `st-distribution/` shared artifacts have identical SHA-256 hashes; the distribution contains six files totaling 469,343 bytes.
 - Latest focused Renderer tests: 7/7; latest build integration tests: 15/15.
 - Latest targeted mobile E2E: 2/2 across Pixel 7 and Galaxy S8, with disabled-state screenshots visually inspected.
+- Latest sprite metadata/prompt tests: 56/56.
 - Invalid build-time rejection without modifying sentinel artifacts.
 - CI-equivalent extraction of the timestamp from `version.json`, rebuild, and artifact diff.
 - `git diff --check` and a clean worktree.
@@ -52,7 +55,7 @@ These are automated results recorded for this maintenance batch. Real SillyTaver
 
 ## Real SillyTavern Acceptance
 
-1. Upgrade an installed extension and confirm the settings UI reports `0.9.0+202608070223`, proving the new bundle bypassed browser cache.
+1. Upgrade an installed extension and confirm the settings UI reports `0.9.0+202608070237`, proving the new bundle bypassed browser cache.
 2. Import a `sprite-pack@3` containing `promptNote` without `promptNotePlacement`; confirm the UI shows "after list" and renaming the pack does not change injection placement.
 3. Check a large multi-group pack across pagination and confirm named group sections remain before the ungrouped section.
 4. Exercise mobile preview positioning, manual remote-image localization, and story-based external image archiving in the real ST DOM.
