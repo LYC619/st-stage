@@ -18,7 +18,7 @@
  */
 
 import { build } from 'esbuild'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { buildVersion, resolveBuildTime } from './build-time.mjs'
@@ -36,6 +36,7 @@ export async function buildExtension({
   log = console.log,
 } = {}) {
   const buildTime = resolveBuildTime(env, now)
+  mkdirSync(outputRoot, { recursive: true })
   const extensionDir = path.join(sourceRoot, 'st-extension')
   // 版本与构建时间注入：让「加载的是哪一版」在设置面板/控制台一眼可见，
   // 排查"改了没生效"时可 5 秒区分 没构建/没提交/真缓存
@@ -106,10 +107,25 @@ export async function buildExtension({
   const phoneCss = readFileSync(path.join(sourceRoot, 'core/phone-shell.css'), 'utf8')
   writeFileSync(path.join(outputRoot, 'style.css'), `${baseCss}\n${phoneCss}`)
 
+  if (path.resolve(outputRoot) !== path.resolve(sourceRoot)) {
+    copyFileSync(path.join(sourceRoot, 'manifest.json'), path.join(outputRoot, 'manifest.json'))
+    copyFileSync(
+      path.join(extensionDir, 'distribution-readme.md'),
+      path.join(outputRoot, 'README.md'),
+    )
+  }
+
   log(`[build] ${version} → index.js(stub) / bundle.js / version.json / style.css（全部需提交 git）`)
   return { buildTime, version }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(moduleFile)) {
-  await buildExtension()
+  const outputFlag = process.argv.indexOf('--output-root')
+  if (outputFlag >= 0 && !process.argv[outputFlag + 1]) {
+    throw new Error('用法：node st-extension/build.mjs [--output-root <directory>]')
+  }
+  const outputRoot = outputFlag >= 0
+    ? path.resolve(process.cwd(), process.argv[outputFlag + 1])
+    : defaultSourceRoot
+  await buildExtension({ outputRoot })
 }

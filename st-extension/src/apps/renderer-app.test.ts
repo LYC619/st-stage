@@ -73,6 +73,67 @@ describe('rendererApp', () => {
     expect(findInput(container, '减少动态').checked).toBe(false)
   })
 
+  it('首次打开时显示三步快速开始、真实配置状态和模式说明', () => {
+    const runtime = { reprocessAll: vi.fn() }
+    const app = rendererApp({ runtime })
+    const { ctx } = createHost()
+    const container = document.createElement('div')
+
+    app.mount(container, ctx)
+
+    expect(container.querySelector('.renderer-quick-start')).not.toBeNull()
+    expect(container.querySelector('.renderer-status')?.textContent).toContain('未启用')
+    expect(container.querySelectorAll('.renderer-quick-step')).toHaveLength(3)
+    expect(container.querySelector('.renderer-mode-guide')?.textContent).toContain('Galgame')
+    expect(container.querySelector('.renderer-mode-guide')?.textContent).toContain('卡片选择')
+    expect(container.querySelector('.renderer-mode-guide')?.textContent).toContain('战斗')
+    expect(container.querySelector('.renderer-recommend')).not.toBeNull()
+  })
+
+  it('推荐启用只打开总开关并保留用户的模式选择', () => {
+    const runtime = { reprocessAll: vi.fn() }
+    const app = rendererApp({ runtime })
+    const { ctx, getData, injectPrompt } = createHost({
+      enabled: false,
+      galEnabled: true,
+      cardsEnabled: false,
+      battleEnabled: true,
+    })
+    const container = document.createElement('div')
+
+    app.mount(container, ctx)
+    const recommendation = container.querySelector<HTMLElement>('.renderer-recommend')
+    expect(recommendation).not.toBeNull()
+    recommendation?.click()
+
+    expect(getData()).toMatchObject({
+      enabled: true,
+      galEnabled: true,
+      cardsEnabled: false,
+      battleEnabled: true,
+    })
+    expect(injectPrompt.mock.calls.at(-1)?.[0]).toContain('ST Stage 结构化渲染协议')
+    expect(runtime.reprocessAll).toHaveBeenCalledTimes(1)
+  })
+
+  it('启用但没有模式时显示警告并清空渲染协议提示词', () => {
+    const runtime = { reprocessAll: vi.fn() }
+    const app = rendererApp({ runtime })
+    const { host, ctx, injectPrompt } = createHost({
+      enabled: true,
+      galEnabled: false,
+      cardsEnabled: false,
+      battleEnabled: false,
+    })
+    const container = document.createElement('div')
+
+    app.setup?.(host)
+    app.mount(container, ctx)
+
+    expect(container.querySelector('.renderer-status')?.textContent).toContain('没有启用模式')
+    expect(injectPrompt).toHaveBeenLastCalledWith('', 4)
+  })
+
   it('每次修改都持久化、刷新提示词并重处理消息', () => {
     const runtime = { reprocessAll: vi.fn() }
     const app = rendererApp({ runtime })

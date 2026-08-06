@@ -1,0 +1,12 @@
+{
+  "display_name": "掌柜的",
+  "loading_order": 100,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "LYC619",
+  "version": "0.9.0",
+  "homePage": "https://github.com/LYC619/st-stage",
+  "auto_update": true
+}

@@ -65,6 +65,20 @@ https://github.com/LYC619/st-stage
 
 > 💡 不想要手机？ST 扩展设置 → 取消勾选「**显示手机**」。立绘功能不受影响，图库仍可从悬浮窗 ⚙ 打开。
 
+## 🎬 Renderer 怎么用
+
+Renderer 是手机里的「🎬 渲染」App。第一次使用时：
+
+1. 打开 📱 → Home → **渲染**。
+2. 点「**启用推荐设置**」，或手动打开「启用渲染」和至少一个模式。
+3. 回到聊天发送普通消息。AI 回复只有在返回合法的 `<STStageRender>...</STStageRender>` 块时才会出现渲染面板；普通回复仍按原文显示。
+
+- **Galgame**：连续对话和分镜节拍。
+- **卡片选择**：2-8 个选项；点击后只填入输入框，不会自动发送。
+- **战斗**：在面板内执行攻击、技能、物品和逃跑等本地确定性操作。
+
+如果没有出现面板，先确认总开关和对应模式仍然开启，再发送下一条消息，并检查扩展设置底部的构建版本是否已更新。
+
 ---
 
 ## 🧹 管家：让 ST 更流畅
@@ -122,7 +136,8 @@ pnpm lint       # ESLint
 pnpm typecheck  # tsc --noEmit
 pnpm build      # Next.js 生产构建（网页模拟器，CI 用作类型/构建门禁）
 pnpm start      # 跑上一步的生产构建
-pnpm build:ext  # 重新打包 ST 扩展（产物：根目录 index.js / bundle.js / version.json / style.css，全部需提交）
+pnpm build:ext  # 重新打包根目录 ST 兼容产物（index.js / bundle.js / version.json / style.css）
+pnpm build:st   # 生成 st-distribution/，供未来独立 ST 仓库或发布流程使用
 ```
 
 ### 目录结构（平台 / 功能 App / 产物）
@@ -136,6 +151,12 @@ st-stage 的定位是「手机底座平台 + 可插拔功能 App」。**加新�
 ├─ bundle.js              真实扩展代码（esbuild 单文件 ESM）
 ├─ version.json           热更新版本探针（stub 以 no-store 读取破缓存）
 └─ style.css              st-extension/style.css + core/phone-shell.css 拼接
+
+st-distribution/           可选生成的 ST 安装产物（不存放源码、参考图或模拟器资源）
+├─ manifest.json           从根目录清单复制
+├─ index.js / bundle.js    稳定加载器与扩展代码
+├─ style.css / version.json
+└─ README.md               生成边界说明
 
 core/                     平台无关核心逻辑（双端共用，vitest 单测在旁边）
 │  ── 手机平台框架 ──
@@ -180,7 +201,7 @@ st-extension/             ST 端（esbuild 打包为根目录产物）
    └─ message-postprocess.ts   楼层内标签→图片渲染
 
 app/ components/ lib/     Next.js 网页模拟器（同一套 core + 手机壳，本地开发调试用）
-public/presets/           内置预设立绘图片（随扩展分发）
+public/presets/           网页模拟器的示例预设立绘图片
 docs/SPRITE.md            ★ 立绘 App 完整使用指南（含数据格式）
 docs/VARIABLES.md         ★ 变量 App 指南（MVU + 新变量：选择、设计、更新规则、FAQ）
 docs/BUTLER.md            ★ 管家 App 指南（每个性能选项的含义与推荐值）
@@ -190,7 +211,7 @@ docs/templates/standalone-app/  ★ 独立 App 可复制模板（manifest + inde
 docs/superpowers/         历史设计文档（plans/specs，归档参考）
 ```
 
-> 注意：修改 `core/` 或 `st-extension/src/` 后必须运行 `pnpm build:ext` 并提交根目录产物，GitHub 安装的用户才能拿到更新（热更新会让他们免清缓存）。`.planning/`、`_analysis/`、`reference/` 等本地工作区目录已 gitignore，不随仓库分发。
+> 注意：修改 `core/` 或 `st-extension/src/` 后必须运行 `pnpm build:ext` 并提交根目录产物，GitHub 安装的用户才能拿到更新（热更新会让他们免清缓存）。需要生成独立 ST 发布目录时再运行 `pnpm build:st`。`st-distribution/` 不会复制 `public/` 或 `reference/`；`.planning/`、`_analysis/`、`reference/` 等本地工作区目录已 gitignore，不随仓库分发。
 
 ## Built with v0
 

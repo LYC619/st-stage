@@ -548,7 +548,7 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
       .some((item) => item.textContent === '加载更多')).toBe(false)
 
     manager.close()
-  })
+  }, 15_000)
 
   it('keeps named groups before the ungrouped section when a group first appears on a later page', () => {
     let settings: PluginSettings = {

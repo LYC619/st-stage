@@ -2,7 +2,7 @@
 
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -14,6 +14,7 @@ import {
 import { buildExtension } from './build.mjs'
 
 const artifactNames = ['index.js', 'bundle.js', 'style.css', 'version.json'] as const
+const distributionNames = ['README.md', 'bundle.js', 'index.js', 'manifest.json', 'style.css', 'version.json'] as const
 const tempDirs: string[] = []
 
 function createBuildFixture(): string {
@@ -21,12 +22,18 @@ function createBuildFixture(): string {
   tempDirs.push(root)
   mkdirSync(join(root, 'st-extension', 'src'), { recursive: true })
   mkdirSync(join(root, 'core'), { recursive: true })
+  mkdirSync(join(root, 'public'), { recursive: true })
+  mkdirSync(join(root, 'reference', 'assets'), { recursive: true })
   writeFileSync(join(root, 'manifest.json'), JSON.stringify({ version: '1.2.3' }))
   writeFileSync(
     join(root, 'st-extension', 'src', 'index.ts'),
     "globalThis.__buildFixture = 'first:' + __BUILD_TIME__\n",
   )
   writeFileSync(join(root, 'st-extension', 'style.css'), '.fixture { color: red; }\n')
+  writeFileSync(
+    join(root, 'st-extension', 'distribution-readme.md'),
+    '# Generated ST install output\nReference assets are intentionally excluded.\n',
+  )
   writeFileSync(join(root, 'core', 'phone-shell.css'), '.phone { color: blue; }\n')
   return root
 }
@@ -150,5 +157,28 @@ describe('extension build integration', () => {
     await buildExtension({ sourceRoot: root, outputRoot: root, env: fixedEnv, logLevel: 'silent', log: () => {} })
 
     expect(runGit(root, ['diff', '--exit-code', '--', ...artifactNames]).status).toBe(1)
+  })
+
+  it('exports a self-contained ST distribution without simulator or reference assets', async () => {
+    const root = createBuildFixture()
+    const outputRoot = join(root, 'st-distribution')
+
+    await buildExtension({
+      sourceRoot: root,
+      outputRoot,
+      env: fixedEnv,
+      logLevel: 'silent',
+      log: () => {},
+    })
+
+    expect(readdirSync(outputRoot).sort()).toEqual([...distributionNames].sort())
+    expect(readFileSync(join(outputRoot, 'manifest.json'), 'utf8')).toBe(
+      readFileSync(join(root, 'manifest.json'), 'utf8'),
+    )
+    expect(readFileSync(join(outputRoot, 'README.md'), 'utf8')).toContain(
+      'Reference assets are intentionally excluded',
+    )
+    expect(readdirSync(outputRoot, { withFileTypes: true }).some((entry) => entry.name === 'public')).toBe(false)
+    expect(readdirSync(outputRoot, { withFileTypes: true }).some((entry) => entry.name === 'reference')).toBe(false)
   })
 })

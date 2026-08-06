@@ -12,7 +12,7 @@ st-stage 在 SillyTavern 聊天界面提供一个「手机」悬浮框架：一�
 
 1. **新建模块**：`st-extension/src/apps/<你的功能>-app.ts`，导出一个返回 `PhoneApp` 对象的工厂函数（结构见下方外部注册示例，`mount`/`ctx` 完全相同；UI 小部件直接复用 `./widgets` 里的 `appButton/toggleRow/selectRow/numberRow/textRow/textareaRow`）。
 2. **加入装配清单**：在 `st-extension/src/apps/index.ts` 的 `createBuiltinApps` 返回数组里加一行。需要访问框架能力（如打开弹窗）就照 `galleryApp` 的样子通过 `BuiltinAppDeps` 传入。
-3. **构建发布**：`pnpm build:ext` 并提交根目录产物。热更新（v0.6 加载器）会让已安装用户在 git pull 后自动拿到新代码，无需清缓存。
+3. **构建发布**：`pnpm build:ext` 并提交根目录兼容产物。需要为未来独立 ST 仓库生成干净发布目录时运行 `pnpm build:st`，产物在 `st-distribution/`；不要手动复制源码、`public/` 或 `reference/`。热更新（v0.6 加载器）会让已安装用户在 git pull 后自动拿到新代码，无需清缓存。
 
 App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发立绘刷新）；只有确实要改核心设置才用 `ctx.updateSettings`。
 
@@ -162,6 +162,7 @@ App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发
 | `mvu` | MVU | MVU 楼层变量可视化/编辑：树状卡片 + 类型感知编辑 + delta 高亮 + 精准事件刷新（MVU/酒馆助手双通道，模拟器只读）。数据耦合收敛在 `mvu/bridge.ts` | `st-extension/src/apps/mvu-app.ts` + `mvu/` |
 | `newvar` | 新变量 | 内置轻量变量追踪：GUI 定义 schema → 注入状态+规则 → 解析 `<UpdateVariable>` → 逐楼快照。手机页仅开关+状态树，设计走全屏弹窗 | `st-extension/src/apps/newvar-app.ts` + `newvar/` |
 | `api` | API | OpenAI 兼容接口一键切换：手机页点站点行即「写 Key → 切自定义源 → 填 URL/模型/附加参数 → 自动连接」；站点增删改/拉模型列表/附加参数走全屏管理弹窗。ST 交互收敛在 `api/bridge.ts`（模拟器降级只读） | `st-extension/src/apps/api-app.ts` + `api/` |
+| `renderer` | 渲染 | 结构化回复渲染：Galgame、卡片选择和本地确定性战斗；手机页含首次使用引导与配置状态 | `st-extension/src/apps/renderer-app.ts` |
 
 装配清单：`st-extension/src/apps/index.ts`。
 
