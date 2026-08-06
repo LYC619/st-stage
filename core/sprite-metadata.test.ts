@@ -77,6 +77,14 @@ describe('compactNumberedTags', () => {
     ])
   })
 
+  it('keeps pure numeric tags as complete names', () => {
+    expect(compactNumberedTags(['12', '13', '14'])).toEqual([
+      { kind: 'tag', label: '12', values: ['12'] },
+      { kind: 'tag', label: '13', values: ['13'] },
+      { kind: 'tag', label: '14', values: ['14'] },
+    ])
+  })
+
   it('preserves leading zeros and supports Unicode prefixes and separate prefix runs', () => {
     expect(compactNumberedTags([
       '挥手😀001', '挥手😀002', '挥手😀003',

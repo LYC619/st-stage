@@ -112,6 +112,7 @@ var MAX_NOTE_CODE_POINTS = 500;
 function parseNumberedTag(tag) {
   const match = /^(.+?)(\d+)$/u.exec(tag);
   if (!match) return null;
+  if (/^\d+$/u.test(match[1])) return null;
   return { prefix: match[1], suffix: match[2], value: BigInt(match[2]) };
 }
 function hasCoherentSuffixFormatting(tags) {
@@ -4759,7 +4760,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-07 02:23"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-07 02:37"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
   return () => wrapper.remove();
@@ -10742,7 +10743,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-07 02:23"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-07 02:37"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

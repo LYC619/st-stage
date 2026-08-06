@@ -8,12 +8,6 @@ These items are known and intentionally do not block the merged Gallery, Variabl
 - Impact: correct output but reduced token savings without a user-visible explanation.
 - Location: `core/prompt-builder.ts`.
 
-## Pure-Numeric Numbered Ranges
-
-- Behavior: tags such as `12`, `13`, `14` can produce the display label `12-4`.
-- Impact: awkward presentation; the accompanying instruction still tells the model to choose a real complete tag.
-- Location: `core/sprite-metadata.ts`.
-
 ## Renderer Snapshot Image Listeners
 
 - Behavior: snapshot restoration replaces cloned message nodes, so inline-image retry listeners attached to original nodes can be lost on the detached-root pruning path.

@@ -19,6 +19,7 @@ interface NumberedTag {
 function parseNumberedTag(tag: string): NumberedTag | null {
   const match = /^(.+?)(\d+)$/u.exec(tag)
   if (!match) return null
+  if (/^\d+$/u.test(match[1])) return null
   return { prefix: match[1], suffix: match[2], value: BigInt(match[2]) }
 }
 
