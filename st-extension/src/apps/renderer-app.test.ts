@@ -87,10 +87,28 @@ describe('rendererApp', () => {
     expect(container.querySelector('.renderer-mode-guide')?.textContent).toContain('Galgame')
     expect(container.querySelector('.renderer-mode-guide')?.textContent).toContain('卡片选择')
     expect(container.querySelector('.renderer-mode-guide')?.textContent).toContain('战斗')
-    expect(container.querySelector('.renderer-recommend')).not.toBeNull()
+    expect(container.querySelector('.renderer-recommend')?.textContent).toBe('启用渲染')
   })
 
-  it('推荐启用只打开总开关并保留用户的模式选择', () => {
+  it('启用后保留状态并隐藏首次使用步骤和启用操作', () => {
+    const runtime = { reprocessAll: vi.fn() }
+    const app = rendererApp({ runtime })
+    const { ctx } = createHost({
+      enabled: true,
+      galEnabled: true,
+      cardsEnabled: false,
+      battleEnabled: true,
+    })
+    const container = document.createElement('div')
+
+    app.mount(container, ctx)
+
+    expect(container.querySelector('.renderer-status')?.textContent).toContain('已启用')
+    expect(container.querySelectorAll('.renderer-quick-step')).toHaveLength(0)
+    expect(container.querySelector('.renderer-recommend')).toBeNull()
+  })
+
+  it('启用操作只打开总开关并保留用户的模式选择', () => {
     const runtime = { reprocessAll: vi.fn() }
     const app = rendererApp({ runtime })
     const { ctx, getData, injectPrompt } = createHost({

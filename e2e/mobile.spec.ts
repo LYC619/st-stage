@@ -129,8 +129,12 @@ async function loadRealExtensionGallery(page: Page): Promise<void> {
   await expect(page.locator('.so-phone-fab')).toBeVisible()
 }
 
-/** 在最小 ST DOM 中加载真实扩展，并触发三种 Renderer 楼层。 */
-async function loadRealExtensionRenderer(page: Page, showPhone = true): Promise<string[]> {
+/** 在最小 ST DOM 中加载真实扩展，并按初始开关触发 Renderer 楼层。 */
+async function loadRealExtensionRenderer(
+  page: Page,
+  showPhone = true,
+  rendererEnabled = true,
+): Promise<string[]> {
   await page.goto('about:blank')
   await page.setContent(
     '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -153,7 +157,7 @@ async function loadRealExtensionRenderer(page: Page, showPhone = true): Promise<
       return body.textContent
     })
   }, RENDERER_FIXTURES)
-  await page.evaluate((phoneVisible) => {
+  await page.evaluate(({ phoneVisible, rendererEnabled: initialRendererEnabled }) => {
     const handlers = new Map<string, Set<(...args: unknown[]) => void>>()
     const context = {
       extensionSettings: {
@@ -164,7 +168,7 @@ async function loadRealExtensionRenderer(page: Page, showPhone = true): Promise<
           showPhone: phoneVisible,
           apps: {
             renderer: {
-              enabled: true,
+              enabled: initialRendererEnabled,
               galEnabled: true,
               cardsEnabled: true,
               battleEnabled: true,
@@ -209,7 +213,7 @@ async function loadRealExtensionRenderer(page: Page, showPhone = true): Promise<
     target.__emitRendererEvent = (event, messageId) => {
       for (const handler of handlers.get(event) ?? []) handler(messageId)
     }
-  }, showPhone)
+  }, { phoneVisible: showPhone, rendererEnabled })
   await page.addStyleTag({ path: resolve(ROOT, 'st-extension/style.css') })
   await page.addStyleTag({ path: resolve(ROOT, 'core/phone-shell.css') })
   await page.addScriptTag({ path: resolve(ROOT, 'bundle.js'), type: 'module' })
@@ -219,7 +223,7 @@ async function loadRealExtensionRenderer(page: Page, showPhone = true): Promise<
     const emit = (window as Window & { __emitRendererEvent?: (event: string, messageId: number) => void }).__emitRendererEvent
     for (const id of [1, 2, 3]) emit?.('character_message_rendered', id)
   })
-  await expect(page.locator('.st-stage-renderer')).toHaveCount(3)
+  await expect(page.locator('.st-stage-renderer')).toHaveCount(rendererEnabled ? 3 : 0)
   return originals
 }
 
@@ -554,4 +558,34 @@ test('手机设置关闭 Renderer 后逐楼层恢复原始结构化文本', asyn
   for (let index = 0; index < originals.length; index += 1) {
     await expect(messages.nth(index)).toHaveText(originals[index])
   }
+})
+
+test('Renderer 首次引导在启用后收敛为紧凑状态', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await loadRealExtensionRenderer(page, true, false)
+
+  await page.locator('.so-phone-fab').tap()
+  await page.locator('.so-phone-app-icon', { hasText: '渲染' }).tap()
+
+  const settings = page.locator('.renderer-settings')
+  await expect(settings.locator('.renderer-status')).toContainText('未启用')
+  await expect(settings.locator('.renderer-quick-step')).toHaveCount(3)
+  const activation = settings.locator('.renderer-recommend')
+  await expect(activation).toHaveText('启用渲染')
+  expect(await settings.evaluate((root) => root.scrollWidth <= root.clientWidth)).toBe(true)
+
+  const onboarding = await page.screenshot({
+    path: testInfo.outputPath('renderer-onboarding-disabled.png'),
+    fullPage: true,
+  })
+  expect(onboarding.byteLength).toBeGreaterThan(10_000)
+  await testInfo.attach('renderer-onboarding-disabled', { body: onboarding, contentType: 'image/png' })
+
+  await activation.tap()
+
+  await expect(settings.locator('.renderer-status')).toContainText('已启用')
+  await expect(settings.locator('.renderer-quick-step')).toHaveCount(0)
+  await expect(settings.locator('.renderer-recommend')).toHaveCount(0)
+  await expect(page.locator('.st-stage-renderer')).toHaveCount(3)
+  expect(await settings.evaluate((root) => root.scrollWidth <= root.clientWidth)).toBe(true)
 })

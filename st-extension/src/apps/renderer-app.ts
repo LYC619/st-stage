@@ -64,17 +64,16 @@ function quickStart(settings: RendererSettings, onEnable: () => void): HTMLEleme
   const box = el('section', 'so-app-section renderer-quick-start')
   const heading = el('div', 'so-app-title')
   heading.textContent = '快速开始'
-  box.append(
-    heading,
-    rendererStatus(settings),
-    quickStep('1', '打开渲染', '启用下面的总开关，保留至少一个模式。'),
-    quickStep('2', '发送普通消息', '不需要手动粘贴 JSON；插件会把协议说明注入给 AI。'),
-    quickStep('3', '使用回复中的交互', '卡片会填入输入框，战斗按钮在渲染面板内执行。'),
-  )
+  box.append(heading, rendererStatus(settings))
   if (!settings.enabled) {
-    const recommendation = appButton('启用推荐设置', onEnable)
-    recommendation.classList.add('renderer-recommend')
-    box.append(recommendation)
+    const activation = appButton('启用渲染', onEnable)
+    activation.classList.add('renderer-recommend')
+    box.append(
+      quickStep('1', '打开渲染', '启用下面的总开关，保留至少一个模式。'),
+      quickStep('2', '发送普通消息', '不需要手动粘贴 JSON；插件会把协议说明注入给 AI。'),
+      quickStep('3', '使用回复中的交互', '卡片会填入输入框，战斗按钮在渲染面板内执行。'),
+      activation,
+    )
   }
   return box
 }

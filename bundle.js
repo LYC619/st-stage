@@ -4759,7 +4759,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-07 09:00"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-07 02:23"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
   return () => wrapper.remove();
@@ -7081,17 +7081,16 @@ function quickStart(settings, onEnable) {
   const box = el2("section", "so-app-section renderer-quick-start");
   const heading = el2("div", "so-app-title");
   heading.textContent = "快速开始";
-  box.append(
-    heading,
-    rendererStatus(settings),
-    quickStep("1", "打开渲染", "启用下面的总开关，保留至少一个模式。"),
-    quickStep("2", "发送普通消息", "不需要手动粘贴 JSON；插件会把协议说明注入给 AI。"),
-    quickStep("3", "使用回复中的交互", "卡片会填入输入框，战斗按钮在渲染面板内执行。")
-  );
+  box.append(heading, rendererStatus(settings));
   if (!settings.enabled) {
-    const recommendation = appButton("启用推荐设置", onEnable);
-    recommendation.classList.add("renderer-recommend");
-    box.append(recommendation);
+    const activation = appButton("启用渲染", onEnable);
+    activation.classList.add("renderer-recommend");
+    box.append(
+      quickStep("1", "打开渲染", "启用下面的总开关，保留至少一个模式。"),
+      quickStep("2", "发送普通消息", "不需要手动粘贴 JSON；插件会把协议说明注入给 AI。"),
+      quickStep("3", "使用回复中的交互", "卡片会填入输入框，战斗按钮在渲染面板内执行。"),
+      activation
+    );
   }
   return box;
 }
@@ -10743,7 +10742,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-07 09:00"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-07 02:23"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);
