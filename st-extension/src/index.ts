@@ -30,7 +30,7 @@ import { compressImage } from '../../core/image-compress'
 import { createBuiltinApps } from './apps'
 import { createNewvarRuntime } from './apps/newvar/runtime'
 import { createNewvarDesigner } from './apps/newvar/designer'
-import { NEWVAR_CHANNEL, NEWVAR_APP_ID } from './apps/newvar/config'
+import { NEWVAR_CHANNEL, NEWVAR_APP_ID, normalizeNewvarData } from './apps/newvar/config'
 import { createRendererRuntime } from './apps/renderer/runtime'
 import { normalizeRendererSettings, RENDERER_APP_ID } from './apps/renderer/config'
 import { mountGalMode } from './apps/renderer/modes/gal'
@@ -92,8 +92,15 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
    * 不应连累立绘。改核心设置仍走 updateSettings 触发正常 refresh。
    */
   function saveSettingsOnly(next: PluginSettings): void {
+    const previousNewvar = normalizeNewvarData(settings.apps[NEWVAR_APP_ID])
+    const nextNewvar = normalizeNewvarData(next.apps[NEWVAR_APP_ID])
+    const previousHidesUpdates = previousNewvar.enabled && previousNewvar.hideUpdateBlocks
+    const nextHidesUpdates = nextNewvar.enabled && nextNewvar.hideUpdateBlocks
     settings = next
     adapter.saveSettings(settings)
+    if (previousHidesUpdates !== nextHidesUpdates) {
+      reprocessAllMessages(settings)
+    }
   }
 
   /* ---- ctx 能力层（阶段五·5a，docs/superpowers/specs/2026-07-28-ctx-capability-layer-design.md） ---- */
@@ -334,20 +341,42 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     overlay.setVisible(overlayAllowed())
   }
 
-  // 收到 AI 消息：先扇出给 App（能力层，不受立绘总开关影响），再走立绘链路
-  const unsubscribeMessage = adapter.onMessageReceived((text) => {
-    appMessageHub.emit(text)
-    if (!settings.enabled) return
+  function displaySprites(addresses: ReturnType<typeof extractTags>): void {
+    if (!settings.enabled || addresses.length === 0) return
     const characterName = adapter.getCurrentCharacterName()
     const packs = getActivePacks(settings, characterName)
     if (packs.length === 0) return
-    const seq = resolveSprites(packs, extractTags(text))
+    const seq = resolveSprites(packs, addresses)
     preloadMatchedSprites(seq)
-    // 仅楼层模式/手动关闭时不弹悬浮窗（楼层立绘由消息后处理负责）
     if (seq.length > 0 && overlayAllowed()) {
       overlay.setSprites(seq)
       overlay.setVisible(true)
     }
+  }
+
+  let streamedText = ''
+  let streamedTagCount = 0
+  function resetStreamState(): void {
+    streamedText = ''
+    streamedTagCount = 0
+  }
+
+  const unsubscribeStream = adapter.onStreamText((text) => {
+    if (!text.startsWith(streamedText)) streamedTagCount = 0
+    streamedText = text
+    const addresses = extractTags(text)
+    const added = addresses.slice(streamedTagCount)
+    streamedTagCount = addresses.length
+    displaySprites(added)
+  })
+  lifecycle.track(unsubscribeStream)
+  lifecycle.track(adapter.onGenerationEnded(resetStreamState))
+
+  // 收到最终 AI 消息：先扇出给 App，再以最终文本覆盖流式阶段的展示结果。
+  const unsubscribeMessage = adapter.onMessageReceived((text) => {
+    appMessageHub.emit(text)
+    displaySprites(extractTags(text))
+    resetStreamState()
   })
   lifecycle.track(unsubscribeMessage)
 
@@ -373,21 +402,26 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
 
   // 切换聊天/角色时：重新注入 + 刷新悬浮窗和管理弹窗；延迟补渲染窗口内历史楼层
   // （渲染事件逐条触发时窗口守卫已限流，这里兜底渲染事件缺失的旧版 ST / 迟到的 DOM）
-  let cancelPendingReprocess = () => {}
-  const unsubscribeCharacter = adapter.onCharacterChanged(() => {
+  let cancelPendingNavigation = () => {}
+  const handleChatNavigation = () => {
     appCharacterHub.emit(null)
     refresh()
     manager.refreshIfOpen()
-    cancelPendingReprocess()
+    resetStreamState()
+    cancelPendingNavigation()
     const timer = setTimeout(() => {
-      cancelPendingReprocess()
+      cancelPendingNavigation()
+      refresh()
       reprocessAllMessages(settings)
     }, 200)
-    cancelPendingReprocess = lifecycle.track(() => clearTimeout(timer))
-  })
+    cancelPendingNavigation = lifecycle.track(() => clearTimeout(timer))
+  }
+  const unsubscribeCharacter = adapter.onCharacterChanged(handleChatNavigation)
+  const unsubscribeChatCreated = adapter.onChatCreated(handleChatNavigation)
   lifecycle.track(() => {
-    cancelPendingReprocess()
+    cancelPendingNavigation()
     unsubscribeCharacter()
+    unsubscribeChatCreated()
   })
 
   // 设置面板：基础设定（开关/图床前缀）

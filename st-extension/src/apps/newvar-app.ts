@@ -46,6 +46,13 @@ export function newvarApp(deps: NewvarAppDeps): PhoneApp {
             }),
             '不依赖 MVU/酒馆助手：按你的变量定义自动向 AI 注入当前状态与更新规则，解析回复末尾的 <UpdateVariable> 并逐楼保存快照，任何角色卡都能用。变量定义、模板、注入预览都在「变量设计」里。',
           ),
+          hintField(
+            toggleRow('隐藏正文中的变量更新记录', d.hideUpdateBlocks, (v) => {
+              ctx.setAppData({ ...runtime.getData(), hideUpdateBlocks: v })
+              renderCfg()
+            }),
+            '只隐藏消息气泡里完整的 <UpdateVariable>...</UpdateVariable> 区块，不修改 SillyTavern 保存的原始回复，也不影响变量解析和楼层快照。',
+          ),
           appButton('打开变量设计', openDesigner),
         )
         cfgBox.append(section)

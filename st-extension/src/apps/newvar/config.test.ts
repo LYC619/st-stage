@@ -11,6 +11,7 @@ describe('normalizeNewvarData', () => {
   it('合法字段保留', () => {
     const d = normalizeNewvarData({
       enabled: true,
+      hideUpdateBlocks: false,
       format: 'lodash_set',
       injectionDepth: 7,
       schema: {
@@ -24,10 +25,16 @@ describe('normalizeNewvarData', () => {
       },
     })
     expect(d.enabled).toBe(true)
+    expect(d.hideUpdateBlocks).toBe(false)
     expect(d.format).toBe('lodash_set')
     expect(d.injectionDepth).toBe(7)
     expect(d.schema.variables).toHaveLength(2)
     expect(d.schema.variables[0].range).toEqual([0, 100])
+  })
+
+  it('默认隐藏变量更新记录，同时保留用户显式关闭', () => {
+    expect(defaultNewvarData().hideUpdateBlocks).toBe(true)
+    expect(normalizeNewvarData({ hideUpdateBlocks: false }).hideUpdateBlocks).toBe(false)
   })
 
   it('非法定义被清洗：空 key 丢弃、坏类型回 string、默认值按类型兜底并按范围修正', () => {

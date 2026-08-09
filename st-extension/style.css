@@ -1462,7 +1462,18 @@
 }
 
 .so-upload-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
   justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+
+.so-upload-actions > * {
+  min-width: max-content;
+  white-space: nowrap;
 }
 
 /* ---- Renderer 设置 App ---- */

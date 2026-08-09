@@ -18,7 +18,7 @@ import {
   SPRITE_OPACITY_MIN,
 } from '../../../core/types'
 import { getActiveAddresses, getActivePacks } from '../../../core/sprite-store'
-import { el, appButton, foldSection, numberRow, selectRow, textareaRow, toggleRow } from './widgets'
+import { el, appButton, foldSection, hintField, numberRow, selectRow, textareaRow, toggleRow } from './widgets'
 import { BUILTIN_TEMPLATE, buildPrompt } from '../../../core/prompt-builder'
 
 export function spriteApp(): PhoneApp {
@@ -87,7 +87,7 @@ export function spriteApp(): PhoneApp {
           ctx.updateSettings({ ...ctx.getSettings(), recentFloors: v }),
         ),
         numberRow(
-          '立绘不透明度（%）',
+          '悬浮窗立绘不透明度（%）',
           settings.spriteOpacity,
           SPRITE_OPACITY_MIN,
           SPRITE_OPACITY_MAX,
@@ -96,8 +96,11 @@ export function spriteApp(): PhoneApp {
         toggleRow('隐藏 [立绘:xxx] 标签', settings.hideTagInMessage, (v) =>
           ctx.updateSettings({ ...ctx.getSettings(), hideTagInMessage: v }),
         ),
-        toggleRow('渲染消息内插图', settings.renderInlineImages, (v) =>
-          ctx.updateSettings({ ...ctx.getSettings(), renderInlineImages: v }),
+        hintField(
+          toggleRow('解析 <img>编码</img> 插图标签', settings.renderInlineImages, (v) =>
+            ctx.updateSettings({ ...ctx.getSettings(), renderInlineImages: v }),
+          ),
+          '把 AI 正文中的 <img>文件编码</img> 按图床前缀渲染为剧情插图。它与 [立绘:图名] 的悬浮窗/楼层显示位置互相独立。',
         ),
         toggleRow('同角色图包折叠', settings.galleryFoldByRole, (v) =>
           ctx.updateSettings({ ...ctx.getSettings(), galleryFoldByRole: v }),
@@ -105,7 +108,7 @@ export function spriteApp(): PhoneApp {
       )
       const displayHint = el('div', 'so-app-desc')
       displayHint.textContent =
-        '「仅楼层」把 [立绘:xxx] 原位替换为图片且不弹悬浮窗；楼层数限制加载聊天时补渲染的范围（新回复不受限）；不透明度同时作用于悬浮窗与楼层立绘，移动端遮挡正文时可调低。'
+        '「仅楼层」把 [立绘:xxx] 原位替换为图片且不弹悬浮窗；楼层数限制加载聊天时补渲染的范围（新回复不受限）。不透明度只调悬浮窗，楼层立绘始终清晰显示。'
       displaySection.body.append(displayHint)
 
       // 多立绘轮播（默认折叠）

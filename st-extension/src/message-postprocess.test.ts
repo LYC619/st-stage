@@ -16,6 +16,7 @@ import {
 } from './message-postprocess'
 import type { PluginSettings } from '../../core/types'
 import { createDefaultSettings } from '../../core/types'
+import { NEWVAR_APP_ID } from './apps/newvar/config'
 
 interface MsgDef {
   text?: string
@@ -216,6 +217,33 @@ describe('可逆楼层渲染', () => {
     restoreAllMessages()
     expect(el.innerHTML).toBe(originalHtml)
     expect(el.hasAttribute('data-so-fp')).toBe(false)
+  })
+
+  it('立绘不透明度只作用于悬浮窗，楼层立绘保持完全不透明', () => {
+    buildChat([{ text: '[立绘:微笑]' }])
+
+    processMessages(baseSettings({ spriteDisplayMode: 'inline', spriteOpacity: 35 }), 0)
+
+    expect(mesText(0).querySelector<HTMLImageElement>('.so-inline-sprite img')?.style.opacity).toBe('')
+  })
+
+  it('只从可见 DOM 隐藏完整变量记录，并可按设置恢复原始结构', () => {
+    const raw = '剧情正文\n<UpdateVariable><Analysis>检查</Analysis>\n[{"op":"replace","path":"/好感","value":1}]\n</UpdateVariable>\n结尾'
+    buildChat([{ html: `<p>剧情正文</p><div>&lt;UpdateVariable&gt;<b>&lt;Analysis&gt;检查&lt;/Analysis&gt;</b><br>[{"op":"replace","path":"/好感","value":1}]<br>&lt;/UpdateVariable&gt;</div><p>结尾</p>` }])
+    const settings = baseSettings({ enabled: false })
+    settings.apps[NEWVAR_APP_ID] = { enabled: true, hideUpdateBlocks: true }
+
+    processMessages(settings, 0)
+
+    expect(mesText(0).textContent).toContain('剧情正文')
+    expect(mesText(0).textContent).toContain('结尾')
+    expect(mesText(0).textContent).not.toContain('UpdateVariable')
+    expect(raw).toContain('<UpdateVariable>')
+
+    settings.apps[NEWVAR_APP_ID] = { enabled: true, hideUpdateBlocks: false }
+    reprocessAllMessages(settings)
+    expect(mesText(0).textContent).toContain('<UpdateVariable>')
+    expect(mesText(0).querySelector('b')).not.toBeNull()
   })
 
   it('隐藏标签开→关：reprocessAllMessages 立即恢复原文', () => {

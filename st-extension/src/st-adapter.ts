@@ -222,4 +222,31 @@ export class STAdapter implements PlatformAdapter {
     ctx.eventSource.on(eventName, handler)
     return () => ctx.eventSource.removeListener(eventName, handler)
   }
+
+  /** 订阅新聊天创建；CHAT_CHANGED 在部分 ST 版本中会早于新聊天 DOM 稳定。 */
+  onChatCreated(handler: () => void): () => void {
+    const ctx = getContext()
+    const eventName = ctx.eventTypes?.CHAT_CREATED ?? 'chat_created'
+    ctx.eventSource.on(eventName, handler)
+    return () => ctx.eventSource.removeListener(eventName, handler)
+  }
+
+  /** 订阅流式累计文本。ST 每次事件传入从回复开头到当前 token 的完整字符串。 */
+  onStreamText(handler: (text: string) => void): () => void {
+    const ctx = getContext()
+    const eventName = ctx.eventTypes?.STREAM_TOKEN_RECEIVED ?? 'stream_token_received'
+    const wrapped = (text: unknown) => {
+      if (typeof text === 'string') handler(text)
+    }
+    ctx.eventSource.on(eventName, wrapped)
+    return () => ctx.eventSource.removeListener(eventName, wrapped)
+  }
+
+  /** 订阅生成结束，用于清空流式增量状态。 */
+  onGenerationEnded(handler: () => void): () => void {
+    const ctx = getContext()
+    const eventName = ctx.eventTypes?.GENERATION_ENDED ?? 'generation_ended'
+    ctx.eventSource.on(eventName, handler)
+    return () => ctx.eventSource.removeListener(eventName, handler)
+  }
 }

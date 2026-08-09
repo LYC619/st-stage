@@ -23,6 +23,8 @@ export const NEWVAR_EXTRA_KEY = 'st_stage_newvar'
 export interface NewvarData {
   /** 总开关：关闭时不注入、不解析（默认关，用户显式启用） */
   enabled: boolean
+  /** 只从消息气泡中隐藏 AI 的变量更新记录；原始 chat 数据保持不变。 */
+  hideUpdateBlocks: boolean
   /** AI 输出格式：json_patch（默认，新版 MVU 真卡同款）/ lodash_set（老版兼容） */
   format: OutputFormat
   /** 注入深度（IN_CHAT 距末尾楼层数） */
@@ -35,6 +37,7 @@ export interface NewvarData {
 export function defaultNewvarData(): NewvarData {
   return {
     enabled: false,
+    hideUpdateBlocks: true,
     format: 'json_patch',
     injectionDepth: 4,
     schema: { id: 'default', name: '默认方案', version: 1, variables: [] },
@@ -49,6 +52,7 @@ export function normalizeNewvarData(raw: unknown): NewvarData {
   if (!raw || typeof raw !== 'object') return d
   const r = raw as Record<string, unknown>
   if (typeof r.enabled === 'boolean') d.enabled = r.enabled
+  if (typeof r.hideUpdateBlocks === 'boolean') d.hideUpdateBlocks = r.hideUpdateBlocks
   if (r.format === 'json_patch' || r.format === 'lodash_set') d.format = r.format
   if (typeof r.injectionDepth === 'number' && Number.isInteger(r.injectionDepth)) {
     d.injectionDepth = Math.min(100, Math.max(0, r.injectionDepth))

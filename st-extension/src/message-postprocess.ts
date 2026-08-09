@@ -22,6 +22,7 @@ import { hasInlineImageMarkup, replaceInlineImages } from '../../core/inline-ima
 import { getActivePacks, resolveSprite } from '../../core/sprite-store'
 import type { PluginSettings } from '../../core/types'
 import { RECENT_FLOORS_MAX, RECENT_FLOORS_MIN } from '../../core/types'
+import { NEWVAR_APP_ID, normalizeNewvarData } from './apps/newvar/config'
 
 export interface PostprocessDeps {
   getSettings: () => PluginSettings
@@ -57,6 +58,47 @@ interface Snapshot {
 
 const snapshots = new WeakMap<HTMLElement, Snapshot>()
 const postprocessControllers = new Set<PostprocessDeps>()
+
+function updateBlockRanges(text: string): Array<{ start: number; end: number }> {
+  const pattern = /<UpdateVariable(?:\s[^>]*)?>[\s\S]*?<\/UpdateVariable\s*>/gi
+  return Array.from(text.matchAll(pattern), (match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+  }))
+}
+
+function hasUpdateBlock(text: string): boolean {
+  return updateBlockRanges(text).length > 0
+}
+
+/** 按 root.textContent 的全局偏移摘除文本，保留区块外已有的 DOM 结构。 */
+function removeTextRanges(root: HTMLElement, ranges: Array<{ start: number; end: number }>): void {
+  if (ranges.length === 0) return
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  let offset = 0
+  let current: Node | null
+  while ((current = walker.nextNode())) {
+    const node = current as Text
+    const value = node.nodeValue ?? ''
+    const nodeStart = offset
+    const nodeEnd = nodeStart + value.length
+    offset = nodeEnd
+    const cuts = ranges
+      .filter((range) => range.start < nodeEnd && range.end > nodeStart)
+      .map((range) => ({
+        start: Math.max(0, range.start - nodeStart),
+        end: Math.min(value.length, range.end - nodeStart),
+      }))
+    if (cuts.length === 0) continue
+    let kept = ''
+    let cursor = 0
+    for (const cut of cuts) {
+      kept += value.slice(cursor, cut.start)
+      cursor = Math.max(cursor, cut.end)
+    }
+    node.nodeValue = kept + value.slice(cursor)
+  }
+}
 
 export function mountMessagePostprocess(deps: PostprocessDeps): () => void {
   const st = window.SillyTavern
@@ -134,12 +176,13 @@ export function mountMessagePostprocess(deps: PostprocessDeps): () => void {
 
 /** 有任一显示加工功能开启（关了就只做恢复） */
 function anyFeatureOn(settings: PluginSettings): boolean {
-  return (
+  const spritesOn =
     settings.enabled &&
     (settings.hideTagInMessage ||
       settings.renderInlineImages ||
       settings.spriteDisplayMode !== 'overlay')
-  )
+  const newvar = normalizeNewvarData(settings.apps[NEWVAR_APP_ID])
+  return spritesOn || (newvar.enabled && newvar.hideUpdateBlocks)
 }
 
 function clampFloors(settings: PluginSettings): number {
@@ -161,7 +204,7 @@ function collectCandidates(): HTMLElement[] {
     const textEl = mes.querySelector('.mes_text') as HTMLElement | null
     if (!textEl) continue
     const text = originalTextOf(textEl)
-    if (hasTag(text) || hasInlineImageMarkup(text)) out.push(textEl)
+    if (hasTag(text) || hasInlineImageMarkup(text) || hasUpdateBlock(text)) out.push(textEl)
   }
   return out
 }
@@ -246,13 +289,15 @@ function hashText(text: string): string {
 function processMessageElement(root: HTMLElement, settings: PluginSettings): void {
   const inlineSprites = settings.spriteDisplayMode !== 'overlay'
   const host = settings.imageHost.endsWith('/') ? settings.imageHost : `${settings.imageHost}/`
+  const newvar = normalizeNewvarData(settings.apps[NEWVAR_APP_ID])
+  const hideUpdateBlocks = newvar.enabled && newvar.hideUpdateBlocks
 
   const snap = snapshots.get(root)
   const contentIsOurs = snap !== undefined && root.querySelector(`.${MARKER_CLASS}`) !== null
   const originalText = contentIsOurs ? snap.originalText : (root.textContent ?? '')
 
   // 指纹 = 功能开关 + 图床前缀 + 原文 hash：任一变化都会走恢复→重加工
-  const fingerprint = `${settings.hideTagInMessage ? 'T' : ''}${settings.renderInlineImages ? 'I' : ''}${inlineSprites ? 'S' : ''}|${hashText(host)}|${hashText(originalText)}`
+  const fingerprint = `${settings.hideTagInMessage ? 'T' : ''}${settings.renderInlineImages ? 'I' : ''}${inlineSprites ? 'S' : ''}${hideUpdateBlocks ? 'V' : ''}|${hashText(host)}|${hashText(originalText)}`
   if (contentIsOurs && root.getAttribute(FP_ATTR) === fingerprint) return
 
   // 内容还是我们加工的旧版本 → 先恢复原始 DOM；
@@ -273,7 +318,8 @@ function processMessageElement(root: HTMLElement, settings: PluginSettings): voi
   const needsWork =
     (settings.hideTagInMessage && tagged) ||
     (inlineSprites && hasPacks && tagged) ||
-    (settings.renderInlineImages && hasInlineImageMarkup(freshText))
+    (settings.renderInlineImages && hasInlineImageMarkup(freshText)) ||
+    (hideUpdateBlocks && hasUpdateBlock(freshText))
   if (!needsWork) return
 
   // 加工前快照原始子节点（深克隆），恢复时整体放回
@@ -281,6 +327,8 @@ function processMessageElement(root: HTMLElement, settings: PluginSettings): voi
     nodes: Array.from(root.childNodes).map((n) => n.cloneNode(true)),
     originalText: freshText,
   })
+
+  if (hideUpdateBlocks) removeTextRanges(root, updateBlockRanges(freshText))
 
   // 只遍历文本节点：不碰已有元素/属性，无 HTML 注入面
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
@@ -313,8 +361,6 @@ function processMessageElement(root: HTMLElement, settings: PluginSettings): voi
         // 匹配不到的标签退回「隐藏标签」语义：开了隐藏就摘除，否则保留原文
         if (!sprite) return settings.hideTagInMessage ? '' : null
         const image = createImage(sprite.url, sprite.tag, 'so-inline-sprite')
-        // 立绘不透明度只作用于楼层立绘，不影响插图（插图通常是剧情图，要看清内容）
-        if (settings.spriteOpacity < 100) image.style.opacity = String(settings.spriteOpacity / 100)
         return marker(image)
       })
     }
