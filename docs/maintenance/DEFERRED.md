@@ -20,12 +20,12 @@ These items are known and intentionally do not block the merged Gallery, Variabl
 - Impact: updates load correctly, but the product-facing semantic version does not communicate the size of this release.
 - Decision owner: project maintainer.
 
-## Remote Sprite Catalog and Localization
+## Reference Sprite Cleanup and Catalog Expansion
 
-- Behavior: the new reference set is not shipped or copied into `st-distribution/`; remote catalog and manual local/server download are not implemented yet.
-- Baseline: 143 PNG files, 181,125,118 bytes, seven outfit directories, mixed emotion/variant/source filenames.
-- Risk: sampled files contain baked checkerboard pixels and cannot be treated as transparent sprites; a remote catalog must not publish them before cleanup and quality review.
-- Next scoped task: clean/export transparent assets, normalize stable manifest IDs, select an HTTPS host/CDN, and connect the existing manual localization path without placing image data in `settings`.
+- Delivered baseline: five Seraphina outfit presets now use 102 hosted HTTPS WebP links; selected packs can be manually saved to the SillyTavern user-image directory without placing image bytes in settings or `st-distribution/`.
+- Deferred source set: 143 PNG files, 181,125,118 bytes, seven outfit directories, mixed emotion/variant/source filenames.
+- Risk: sampled source files contain baked checkerboard pixels and cannot be published as transparent sprites without cleanup and quality review. Current imgbb links also need a separately owned long-term hosting decision before a larger public catalog is promised.
+- Next scoped task: clean/export transparent assets, normalize stable manifest IDs, select an owned HTTPS host/CDN, then expand or migrate the catalog without bundling image data into the extension.
 
 ## Generated ST Distribution
 
