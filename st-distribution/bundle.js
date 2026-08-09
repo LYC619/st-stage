@@ -26,10 +26,13 @@ function hasTag(text) {
 }
 
 // core/types.ts
-var SETTINGS_VERSION = 4;
+var SETTINGS_VERSION = 5;
 var RECENT_FLOORS_DEFAULT = 6;
 var RECENT_FLOORS_MIN = 1;
 var RECENT_FLOORS_MAX = 50;
+var SPRITE_OPACITY_DEFAULT = 100;
+var SPRITE_OPACITY_MIN = 20;
+var SPRITE_OPACITY_MAX = 100;
 var SPRITE_COUNT_DEFAULT = 1;
 var SPRITE_COUNT_MIN = 1;
 var SPRITE_COUNT_MAX = 10;
@@ -85,13 +88,14 @@ function createDefaultSettings() {
     imageHost: DEFAULT_IMAGE_HOST,
     overlay: { x: 24, y: 80, width: 220 },
     overlayHidden: false,
+    spriteOpacity: SPRITE_OPACITY_DEFAULT,
     recentFloors: RECENT_FLOORS_DEFAULT,
     phone: { x: 24, y: 320, open: false },
     showPhone: true,
     autoSwitch: false,
     autoSwitchSeconds: 3,
     multiRole: false,
-    multiRolePromptMode: "full",
+    multiRolePromptMode: "repeat",
     spriteCount: SPRITE_COUNT_DEFAULT,
     injectionDepth: INJECTION_DEPTH_DEFAULT,
     promptTemplate: "",
@@ -403,6 +407,8 @@ function buildScenes(addresses) {
         key,
         label: sceneLabel(address),
         prefix: scenePrefix(address),
+        role: address.role,
+        outfit: address.outfit,
         tags: [],
         seen: /* @__PURE__ */ new Set()
       };
@@ -445,23 +451,31 @@ function indexSceneNotes(notes) {
 function matchingNotes(noteIndex, scene, placement) {
   return noteIndex.get(scene.key)?.[placement] ?? [];
 }
-function noteLine(scene, note) {
-  return `场景备注（${scene.label}）：${note.note}`;
+function noteLines(scene, note) {
+  const parts = note.note.split("\n").map((line) => line.trim()).filter(Boolean);
+  if (parts.length === 0) return [];
+  const head = parts[0];
+  const rest = parts.slice(1).map((line) => `  ${line}`);
+  if (note.placement === "before-list") {
+    return [`备注（${scene.label}）：${head}`, ...rest];
+  }
+  return [`  备注：${head}`, ...rest.map((line) => `  ${line}`)];
 }
 function renderGroupedSceneList(scenes, noteIndex, reservedTags) {
   const lines = [];
   const ranges = [];
   for (const scene of scenes) {
-    lines.push(...matchingNotes(noteIndex, scene, "before-list").map((note) => noteLine(scene, note)));
+    for (const note of matchingNotes(noteIndex, scene, "before-list")) {
+      lines.push(...noteLines(scene, note));
+    }
     const rendered = renderTags(scene.tags, reservedTags);
     lines.push(`- ${scene.label}：${rendered.text}`);
     ranges.push(...rendered.ranges);
-    lines.push(...matchingNotes(noteIndex, scene, "after-list").map((note) => noteLine(scene, note)));
+    for (const note of matchingNotes(noteIndex, scene, "after-list")) {
+      lines.push(...noteLines(scene, note));
+    }
   }
   return { lines, ranges };
-}
-function hasMatchingNotes(scenes, noteIndex) {
-  return scenes.some((scene) => noteIndex.has(scene.key));
 }
 function fewShotExample(scenes, count) {
   if (count <= 1) return [];
@@ -478,6 +492,19 @@ function fewShotExample(scenes, count) {
     `[立绘:${addr(second)}]`
   ];
 }
+function formatInstruction(scenes) {
+  const hasDefault = scenes.some((scene) => !scene.role);
+  const hasRoleOnly = scenes.some((scene) => scene.role && !scene.outfit);
+  const hasOutfit = scenes.some((scene) => scene.role && scene.outfit);
+  if (hasDefault && !hasRoleOnly && !hasOutfit) {
+    return "输出格式：[立绘:图名]，图名须与上方清单完全一致。";
+  }
+  if (hasOutfit && !hasDefault && !hasRoleOnly) {
+    return "输出格式：[立绘:角色/服装/图名]，角色、服装、图名均须与上方清单完全一致。";
+  }
+  return "输出格式：默认场景直接写 [立绘:图名]；其他场景写 [立绘:场景/图名]。两段地址表示无服装，三级地址表示指定服装。";
+}
+var CLOSING_INSTRUCTION = "只能使用上述场景中实际列出的图名，不要自行拼造不存在的角色/服装/图名组合。";
 function buildGroupedFull(addresses, count, noteIndex, reservedTags) {
   const scenes = buildScenes(addresses);
   const rendered = renderGroupedSceneList(scenes, noteIndex, reservedTags);
@@ -486,59 +513,83 @@ function buildGroupedFull(addresses, count, noteIndex, reservedTags) {
     "可用立绘（按场景）：",
     ...rendered.lines,
     ...rangeInstruction(rendered.ranges),
-    "输出格式：默认场景直接写 [立绘:表情]；其他场景写 [立绘:场景/表情]。两段地址表示无服装，三级地址表示指定服装。",
+    formatInstruction(scenes),
     countInstruction(count),
     ...fewShotExample(scenes, count),
-    "只能使用上述场景中实际列出的表情，不要自行拼造不存在的角色/服装/表情组合。"
+    CLOSING_INSTRUCTION
   ].join("\n");
+}
+var SHARED_LIST_LABEL = "共有图名";
+function findSharedCluster(scenes) {
+  const sets = scenes.map((scene) => new Set(scene.tags));
+  const joinedLen = (tags) => tags.reduce((sum, tag) => sum + tag.length, 0) + Math.max(0, tags.length - 1);
+  const seenCores = /* @__PURE__ */ new Set();
+  let best = null;
+  let bestSavings = 0;
+  for (let i = 0; i < scenes.length; i++) {
+    for (let j = i + 1; j < scenes.length; j++) {
+      const core = scenes[i].tags.filter((tag) => sets[j].has(tag));
+      if (core.length < 2) continue;
+      const signature = core.join("\0");
+      if (seenCores.has(signature)) continue;
+      seenCores.add(signature);
+      const members = sets.map((set) => core.every((tag) => set.has(tag)));
+      const memberCount = members.filter(Boolean).length;
+      const coreLen = joinedLen(core);
+      const savings = memberCount * (coreLen - SHARED_LIST_LABEL.length - 5) - (coreLen + 60);
+      if (savings > bestSavings) {
+        bestSavings = savings;
+        best = { core, members };
+      }
+    }
+  }
+  return best;
 }
 function buildShared(addresses, count, noteIndex, reservedTags) {
   const scenes = buildScenes(addresses);
-  if (scenes.length <= 1 || hasMatchingNotes(scenes, noteIndex)) {
+  if (scenes.length <= 1 || reservedTags.has(SHARED_LIST_LABEL)) {
     return buildGroupedFull(addresses, count, noteIndex, reservedTags);
   }
-  const allTags = [];
-  const seenTags = /* @__PURE__ */ new Set();
-  for (const scene of scenes) {
-    for (const tag of scene.tags) {
-      if (seenTags.has(tag)) continue;
-      seenTags.add(tag);
-      allTags.push(tag);
-    }
-  }
-  const sharedTags = allTags.filter((tag) => scenes.every((scene) => scene.tags.includes(tag)));
-  if (sharedTags.length === 0) {
+  const cluster = findSharedCluster(scenes);
+  if (!cluster) {
     return buildGroupedFull(addresses, count, noteIndex, reservedTags);
   }
-  const sharedSet = new Set(sharedTags);
-  const remainders = scenes.map((scene) => ({
-    scene,
-    tags: scene.tags.filter((tag) => !sharedSet.has(tag))
-  }));
-  const labels = scenes.map(
-    (scene) => scene.prefix ? scene.label : `${scene.label}（直接写表情）`
-  );
-  const renderedShared = renderTags(sharedTags, reservedTags);
-  const ranges = [...renderedShared.ranges];
+  const coreSet = new Set(cluster.core);
+  const renderedCore = renderTags(cluster.core, reservedTags);
+  const ranges = [...renderedCore.ranges];
   const lines = [
     "[角色立绘系统]",
-    `可用场景：${labels.join("、")}`,
-    `共有表情（适用于全部场景）：${renderedShared.text}`
+    `${SHARED_LIST_LABEL}：${renderedCore.text}`,
+    "可用立绘（按场景）："
   ];
-  const withRemainder = remainders.filter((item) => item.tags.length > 0);
-  if (withRemainder.length > 0) {
-    lines.push("各场景其余表情：");
-    for (const { scene, tags } of withRemainder) {
-      const rendered = renderTags(tags, reservedTags);
+  for (const [index, scene] of scenes.entries()) {
+    for (const note of matchingNotes(noteIndex, scene, "before-list")) {
+      lines.push(...noteLines(scene, note));
+    }
+    if (cluster.members[index]) {
+      const remainder = scene.tags.filter((tag) => !coreSet.has(tag));
+      if (remainder.length === 0) {
+        lines.push(`- ${scene.label}：${SHARED_LIST_LABEL}`);
+      } else {
+        const rendered = renderTags(remainder, reservedTags);
+        lines.push(`- ${scene.label}：${SHARED_LIST_LABEL}，另有：${rendered.text}`);
+        ranges.push(...rendered.ranges);
+      }
+    } else {
+      const rendered = renderTags(scene.tags, reservedTags);
       lines.push(`- ${scene.label}：${rendered.text}`);
       ranges.push(...rendered.ranges);
     }
+    for (const note of matchingNotes(noteIndex, scene, "after-list")) {
+      lines.push(...noteLines(scene, note));
+    }
   }
+  lines.push(`场景行写「${SHARED_LIST_LABEL}」表示最上方共有清单里的图名整组可用；「另有」及直接列出的图名只属于所在场景。`);
   lines.push(...rangeInstruction(ranges));
-  lines.push("共有表情可与任一已列场景组合；各场景其余表情只按所在行使用。默认场景直接写 [立绘:表情]，其他场景写 [立绘:场景/表情]。");
+  lines.push(formatInstruction(scenes));
   lines.push(countInstruction(count));
   lines.push(...fewShotExample(scenes, count));
-  lines.push("只能使用实际存在的组合，不要自行拼造不存在的角色/服装/表情。");
+  lines.push(CLOSING_INSTRUCTION);
   return lines.join("\n");
 }
 function chooseShorterPrompt(grouped, shared) {
@@ -584,9 +635,9 @@ var BUILTIN_TEMPLATE = [
   "[角色立绘系统]",
   "可用立绘（按场景）：",
   "{清单}",
-  "输出格式：默认场景直接写 [立绘:表情]；其他场景写 [立绘:场景/表情]。两段地址表示无服装，三级地址表示指定服装。",
+  "输出格式：默认场景直接写 [立绘:图名]；其他场景写 [立绘:场景/图名]。两段地址表示无服装，三级地址表示指定服装。",
   "请根据回复内容，按情节顺序选择 {数量} 张立绘。每个 [立绘:...] 标签单独占一行，插在触发它的剧情段落之后——随剧情分散在正文中，不要集中堆在回复结尾。",
-  "只能使用上述场景中实际列出的表情，不要自行拼造不存在的角色/服装/表情组合。"
+  "只能使用上述场景中实际列出的图名，不要自行拼造不存在的角色/服装/图名组合。"
 ].join("\n");
 function buildPrompt(addresses, mode, count, template = "", budget = 0, notes = []) {
   if (addresses.length === 0) return "";
@@ -804,6 +855,32 @@ function removePack(settings, packId) {
     packs: settings.packs.filter((p) => p.id !== packId),
     bindings
   };
+}
+function removePacks(settings, packIds) {
+  let next = settings;
+  for (const id of packIds) next = removePack(next, id);
+  return next;
+}
+function movePack(settings, packId, offset) {
+  const from = settings.packs.findIndex((p) => p.id === packId);
+  if (from < 0) return settings;
+  const to = from + offset;
+  if (to < 0 || to >= settings.packs.length) return settings;
+  const packs = [...settings.packs];
+  const [moved] = packs.splice(from, 1);
+  packs.splice(to, 0, moved);
+  return { ...settings, packs };
+}
+function movePackBefore(settings, packId, targetId) {
+  if (packId === targetId) return settings;
+  const from = settings.packs.findIndex((p) => p.id === packId);
+  if (from < 0) return settings;
+  const packs = [...settings.packs];
+  const [moved] = packs.splice(from, 1);
+  const to = packs.findIndex((p) => p.id === targetId);
+  if (to < 0) return settings;
+  packs.splice(to, 0, moved);
+  return { ...settings, packs };
 }
 function bindPack(settings, characterName, packId) {
   const existing = settings.bindings.find((b) => b.characterName === characterName);
@@ -1238,6 +1315,7 @@ function createPhoneShell(initialState, deps) {
   let state = { ...initialState };
   let activeApp = null;
   let activeCtxDispose = null;
+  let screenScrollAppId = null;
   let hidden = false;
   let destroyed = false;
   const fab = document.createElement("div");
@@ -1421,6 +1499,8 @@ function createPhoneShell(initialState, deps) {
     }
   }
   function renderScreen() {
+    const prevScrollAppId = screenScrollAppId;
+    const prevScrollTop = screen.scrollTop;
     screen.innerHTML = "";
     backBtn.style.display = activeApp ? "flex" : "none";
     if (activeApp) {
@@ -1440,8 +1520,11 @@ function createPhoneShell(initialState, deps) {
         errBox.textContent = "App 打开失败，详见控制台";
         container.append(errBox);
       }
+      if (prevScrollAppId === activeApp.id && prevScrollTop > 0) screen.scrollTop = prevScrollTop;
+      screenScrollAppId = activeApp.id;
       return;
     }
+    screenScrollAppId = null;
     statusTitle.textContent = "st-stage";
     const grid = document.createElement("div");
     grid.className = "so-phone-home-grid";
@@ -1678,6 +1761,7 @@ function migrateSettings(saved) {
   const defaults = createDefaultSettings();
   if (!saved || typeof saved !== "object") return defaults;
   const raw = saved;
+  const savedVersion = typeof raw.settingsVersion === "number" && Number.isFinite(raw.settingsVersion) ? raw.settingsVersion : 0;
   return {
     settingsVersion: SETTINGS_VERSION,
     enabled: typeof raw.enabled === "boolean" ? raw.enabled : defaults.enabled,
@@ -1687,13 +1771,14 @@ function migrateSettings(saved) {
     imageHost: typeof raw.imageHost === "string" && /^https?:\/\//.test(raw.imageHost) ? raw.imageHost : defaults.imageHost,
     overlay: migrateOverlay(raw.overlay, defaults.overlay),
     overlayHidden: typeof raw.overlayHidden === "boolean" ? raw.overlayHidden : defaults.overlayHidden,
+    spriteOpacity: typeof raw.spriteOpacity === "number" && Number.isFinite(raw.spriteOpacity) ? Math.min(SPRITE_OPACITY_MAX, Math.max(SPRITE_OPACITY_MIN, Math.round(raw.spriteOpacity))) : defaults.spriteOpacity,
     recentFloors: typeof raw.recentFloors === "number" && Number.isFinite(raw.recentFloors) ? Math.min(RECENT_FLOORS_MAX, Math.max(RECENT_FLOORS_MIN, Math.round(raw.recentFloors))) : defaults.recentFloors,
     phone: migratePhone(raw.phone, defaults.phone),
     showPhone: typeof raw.showPhone === "boolean" ? raw.showPhone : defaults.showPhone,
     autoSwitch: typeof raw.autoSwitch === "boolean" ? raw.autoSwitch : defaults.autoSwitch,
     autoSwitchSeconds: typeof raw.autoSwitchSeconds === "number" && Number.isFinite(raw.autoSwitchSeconds) ? Math.min(60, Math.max(1, Math.round(raw.autoSwitchSeconds))) : defaults.autoSwitchSeconds,
     multiRole: typeof raw.multiRole === "boolean" ? raw.multiRole : defaults.multiRole,
-    multiRolePromptMode: raw.multiRolePromptMode === "full" || raw.multiRolePromptMode === "repeat" ? raw.multiRolePromptMode : defaults.multiRolePromptMode,
+    multiRolePromptMode: raw.multiRolePromptMode === "repeat" ? "repeat" : raw.multiRolePromptMode === "full" && savedVersion >= 5 ? "full" : defaults.multiRolePromptMode,
     spriteCount: typeof raw.spriteCount === "number" && Number.isFinite(raw.spriteCount) ? Math.min(SPRITE_COUNT_MAX, Math.max(SPRITE_COUNT_MIN, Math.round(raw.spriteCount))) : defaults.spriteCount,
     injectionDepth: typeof raw.injectionDepth === "number" && Number.isFinite(raw.injectionDepth) ? Math.min(INJECTION_DEPTH_MAX, Math.max(INJECTION_DEPTH_MIN, Math.round(raw.injectionDepth))) : defaults.injectionDepth,
     promptTemplate: typeof raw.promptTemplate === "string" ? raw.promptTemplate : defaults.promptTemplate,
@@ -2093,6 +2178,7 @@ function createOverlay(initialLayout, onLayoutChange, onManage, onClose) {
   let autoSeconds = 3;
   let autoTimer = null;
   let fadeTimer = null;
+  let userOpacity = 1;
   const root = document.createElement("div");
   root.id = "sprite-overlay-root";
   root.style.display = "none";
@@ -2159,9 +2245,9 @@ function createOverlay(initialLayout, onLayoutChange, onManage, onClose) {
       img.src = url;
       tagBadge.textContent = tag;
       img.onload = () => {
-        img.style.opacity = "1";
+        img.style.opacity = String(userOpacity);
       };
-      if (img.complete) img.style.opacity = "1";
+      if (img.complete) img.style.opacity = String(userOpacity);
     }, 180);
   }
   function renderDots() {
@@ -2293,6 +2379,11 @@ function createOverlay(initialLayout, onLayoutChange, onManage, onClose) {
     setLayout(next) {
       layout = { ...next };
       applyLayout();
+    },
+    setOpacity(percent) {
+      const clamped = Math.min(100, Math.max(20, Math.round(percent))) / 100;
+      userOpacity = clamped;
+      if (img.style.opacity !== "0") img.style.opacity = String(clamped);
     },
     destroy() {
       stopAuto();
@@ -3091,6 +3182,11 @@ function createSpriteManager(deps) {
   let spriteFilterQuery = "";
   let spriteFilterLabels = [];
   const expandedRoleGroups = /* @__PURE__ */ new Set();
+  const openSections = /* @__PURE__ */ new Map();
+  let enableListOpen = false;
+  let enableListDocHandler = null;
+  let batchMode = false;
+  const selectedPackIds = /* @__PURE__ */ new Set();
   let openedFrom = "overlay";
   let activeLightbox = null;
   function applyBackdropSize() {
@@ -3112,6 +3208,10 @@ function createSpriteManager(deps) {
     spriteFilterQuery = "";
     spriteFilterLabels = [];
     expandedRoleGroups.clear();
+    openSections.clear();
+    enableListOpen = false;
+    batchMode = false;
+    selectedPackIds.clear();
     backdrop = el("div", "so-manager-backdrop");
     document.addEventListener("keydown", onEscape);
     window.addEventListener("resize", applyBackdropSize);
@@ -3154,6 +3254,7 @@ function createSpriteManager(deps) {
     if (e.defaultPrevented) return;
     if (backdrop?.querySelector(".so-lightbox")) return;
     if (backdrop?.querySelector(".so-popover")) {
+      closeEnableList();
       closePopovers();
       return;
     }
@@ -3167,6 +3268,7 @@ function createSpriteManager(deps) {
   function close() {
     if (!backdrop) return;
     activeLightbox?.controller?.close();
+    closeEnableList();
     document.removeEventListener("keydown", onEscape);
     window.removeEventListener("resize", applyBackdropSize);
     backdrop.remove();
@@ -3375,6 +3477,57 @@ ${options}`,
   function closePopovers() {
     backdrop?.querySelectorAll(".so-popover").forEach((n) => n.remove());
   }
+  function closeEnableList() {
+    enableListOpen = false;
+    backdrop?.querySelectorAll('.so-popover[data-pop="启用包"]').forEach((n) => n.remove());
+    if (enableListDocHandler) {
+      document.removeEventListener("click", enableListDocHandler, true);
+      enableListDocHandler = null;
+    }
+  }
+  function renderEnableList() {
+    const header = backdrop?.querySelector(".so-manager-header");
+    if (!header) return;
+    header.querySelectorAll('.so-popover[data-pop="启用包"]').forEach((n) => n.remove());
+    if (!enableListOpen) return;
+    const characterName = deps.adapter.getCurrentCharacterName();
+    if (!characterName) {
+      closeEnableList();
+      return;
+    }
+    const body = backdrop?.querySelector(".so-manager-body");
+    const settings = deps.getSettings();
+    const boundIds = settings.bindings.find((b) => b.characterName === characterName)?.packIds ?? [];
+    const panel = el("div", "so-popover so-enable-pop");
+    panel.dataset.pop = "启用包";
+    const heading = el("div", "so-popover-title");
+    heading.textContent = `勾选启用（${characterName}，即时生效）`;
+    panel.append(heading);
+    if (settings.packs.length === 0) {
+      const tip = el("div", "so-status");
+      tip.textContent = "还没有立绘包，先用「新建」或「导入」。";
+      panel.append(tip);
+    }
+    for (const p of settings.packs) {
+      panel.append(
+        checkboxRow(`${p.name}（${p.sprites.length} 张）`, boundIds.includes(p.id), (v) => {
+          if (v) bindPackWithChoices(characterName, p.id, body);
+          else commit(unbindPack(deps.getSettings(), characterName, p.id));
+          renderEnableList();
+        })
+      );
+    }
+    header.append(panel);
+    if (!enableListDocHandler) {
+      enableListDocHandler = (e) => {
+        const current2 = backdrop?.querySelector('.so-popover[data-pop="启用包"]');
+        const btn = backdrop?.querySelector(".so-enable-btn");
+        if (current2?.contains(e.target) || btn?.contains(e.target)) return;
+        closeEnableList();
+      };
+      document.addEventListener("click", enableListDocHandler, true);
+    }
+  }
   function dropdownButton(label, build) {
     const btn = button(`${label} ▾`, () => {
       const header = backdrop?.querySelector(".so-manager-header");
@@ -3427,10 +3580,11 @@ ${options}`,
       body.append(msg);
     }
   }
-  function collapsible(titleText, open2 = false) {
+  function collapsible(titleText, open2 = false, key = "") {
     const box = document.createElement("details");
     box.className = "so-section so-collapse";
-    box.open = open2;
+    box.open = key ? openSections.get(key) ?? open2 : open2;
+    if (key) box.addEventListener("toggle", () => openSections.set(key, box.open));
     const summary = document.createElement("summary");
     summary.className = "so-section-title";
     summary.textContent = titleText;
@@ -3443,93 +3597,133 @@ ${options}`,
     const characterName = deps.adapter.getCurrentCharacterName();
     const binding = settings.bindings.find((b) => b.characterName === characterName);
     const boundIds = binding?.packIds ?? [];
-    if (characterName) {
-      const select = document.createElement("select");
-      select.className = "text_pole so-header-select";
-      select.setAttribute("aria-label", `为「${characterName}」添加启用立绘包`);
-      const placeholder = document.createElement("option");
-      placeholder.value = "";
-      placeholder.textContent = boundIds.length > 0 ? "再启用一个包…" : "选择要启用的包…";
-      select.append(placeholder);
-      for (const p of settings.packs) {
-        if (boundIds.includes(p.id)) continue;
-        const opt = document.createElement("option");
-        opt.value = p.id;
-        opt.textContent = `${p.name}（${p.sprites.length} 张）`;
-        select.append(opt);
-      }
-      select.addEventListener("change", () => {
-        const packId = select.value;
-        if (!packId) return;
-        select.value = "";
-        bindPackWithChoices(characterName, packId, body);
-      });
-      actions.append(select);
-    }
-    actions.append(
-      dropdownButton("新建", (panel) => {
-        const heading = el("div", "so-popover-title");
-        heading.textContent = "新建立绘包";
-        const nameInput = textInput("输入新包名称…");
-        nameInput.maxLength = 40;
-        const createBtn = button("创建", () => {
-          const name = sanitizePackName(nameInput.value);
-          if (!name) {
-            toast(body, "包名不能为空（| = @ < > 等符号会被剔除）");
+    if (batchMode) {
+      actions.append(
+        button("全选", () => {
+          const all = settings.packs.filter((p) => !isPresetPack(p.id));
+          if (all.length > 0 && all.every((p) => selectedPackIds.has(p.id))) {
+            selectedPackIds.clear();
+          } else {
+            selectedPackIds.clear();
+            for (const p of all) selectedPackIds.add(p.id);
+          }
+          render3();
+        }),
+        button(`删除所选（${selectedPackIds.size}）`, () => {
+          if (selectedPackIds.size === 0) {
+            toast(body, "先点卡片勾选要删除的包");
             return;
           }
-          const pack = { id: genId(), name, author: "我", sprites: [] };
-          if (!updateChecked(upsertPack(deps.getSettings(), pack))) return;
-          view = { kind: "pack", packId: pack.id };
+          const current2 = deps.getSettings();
+          const names = current2.packs.filter((p) => selectedPackIds.has(p.id)).map((p) => p.name);
+          const preview = names.slice(0, 8).join("、") + (names.length > 8 ? ` 等 ${names.length} 个` : "");
+          if (!window.confirm(`确定删除 ${names.length} 个立绘包？
+${preview}
+绑定关系会一并清除。`)) return;
+          const ids = [...selectedPackIds];
+          selectedPackIds.clear();
+          commit(removePacks(current2, ids));
+          toast(body, `已删除 ${names.length} 个立绘包`);
+        }, "so-btn-danger"),
+        button("完成", () => {
+          batchMode = false;
+          selectedPackIds.clear();
           render3();
-        });
-        nameInput.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" && !e.isComposing) createBtn.click();
-        });
-        panel.append(heading, nameInput, createBtn);
-      }),
-      dropdownButton("导入", (panel) => {
-        const shareHeading = el("div", "so-popover-title");
-        shareHeading.textContent = "从分享字符串导入";
-        const shareInput = document.createElement("textarea");
-        shareInput.className = "text_pole";
-        shareInput.rows = 3;
-        shareInput.placeholder = "粘贴 stpack2:/stpack1: 分享串…";
-        const shareBtn = button("导入", () => {
-          if (!shareInput.value.trim()) return;
-          try {
-            const pack = decodeShareString(shareInput.value);
-            if (!installImportedPack(pack, body)) return;
-            const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
-            if (installed) view = { kind: "pack", packId: installed.id };
-            render3();
-          } catch (err) {
-            toast(body, err instanceof Error ? err.message : "分享串解析失败");
+        })
+      );
+    } else {
+      if (characterName) {
+        const enableBtn = button(
+          boundIds.length > 0 ? `启用包（${boundIds.length}） ▾` : "启用包 ▾",
+          () => {
+            if (enableListOpen) {
+              closeEnableList();
+            } else {
+              closePopovers();
+              enableListOpen = true;
+              renderEnableList();
+            }
           }
-        });
-        const jsonHeading = el("div", "so-popover-title");
-        jsonHeading.textContent = "从 JSON 文件导入";
-        const jsonBtn = button("选择 JSON 文件…", () => {
-          pickFile(".json,application/json", false, async (files) => {
+        );
+        enableBtn.classList.add("so-enable-btn");
+        enableBtn.setAttribute("aria-label", `为「${characterName}」勾选启用立绘包`);
+        actions.append(enableBtn);
+      }
+      actions.append(
+        dropdownButton("新建", (panel) => {
+          const heading = el("div", "so-popover-title");
+          heading.textContent = "新建立绘包";
+          const nameInput = textInput("输入新包名称…");
+          nameInput.maxLength = 40;
+          const createBtn = button("创建", () => {
+            const name = sanitizePackName(nameInput.value);
+            if (!name) {
+              toast(body, "包名不能为空（| = @ < > 等符号会被剔除）");
+              return;
+            }
+            const pack = { id: genId(), name, author: "我", sprites: [] };
+            if (!updateChecked(upsertPack(deps.getSettings(), pack))) return;
+            view = { kind: "pack", packId: pack.id };
+            render3();
+          });
+          nameInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && !e.isComposing) createBtn.click();
+          });
+          panel.append(heading, nameInput, createBtn);
+        }),
+        dropdownButton("导入", (panel) => {
+          const shareHeading = el("div", "so-popover-title");
+          shareHeading.textContent = "从分享字符串导入";
+          const shareInput = document.createElement("textarea");
+          shareInput.className = "text_pole";
+          shareInput.rows = 3;
+          shareInput.placeholder = "粘贴 stpack2:/stpack1: 分享串…";
+          const shareBtn = button("导入", () => {
+            if (!shareInput.value.trim()) return;
             try {
-              const text = await files[0].text();
-              if (text.length > 2 * 1024 * 1024 && !window.confirm(
-                `这个 JSON 有 ${(text.length / 1024 / 1024).toFixed(1)}MB（内嵌 base64 图）。云端部署的酒馆导入大包容易内存爆满，建议让对方先传图床再发分享串。仍要导入吗？`
-              ))
-                return;
-              const pack = importPack(text);
+              const pack = decodeShareString(shareInput.value);
               if (!installImportedPack(pack, body)) return;
               const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
               if (installed) view = { kind: "pack", packId: installed.id };
               render3();
             } catch (err) {
-              toast(body, err instanceof Error ? err.message : "导入失败");
+              toast(body, err instanceof Error ? err.message : "分享串解析失败");
             }
           });
-        });
-        panel.append(shareHeading, shareInput, shareBtn, jsonHeading, jsonBtn);
-      })
-    );
+          const jsonHeading = el("div", "so-popover-title");
+          jsonHeading.textContent = "从 JSON 文件导入";
+          const jsonBtn = button("选择 JSON 文件…", () => {
+            pickFile(".json,application/json", false, async (files) => {
+              try {
+                const text = await files[0].text();
+                if (text.length > 2 * 1024 * 1024 && !window.confirm(
+                  `这个 JSON 有 ${(text.length / 1024 / 1024).toFixed(1)}MB（内嵌 base64 图）。云端部署的酒馆导入大包容易内存爆满，建议让对方先传图床再发分享串。仍要导入吗？`
+                ))
+                  return;
+                const pack = importPack(text);
+                if (!installImportedPack(pack, body)) return;
+                const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
+                if (installed) view = { kind: "pack", packId: installed.id };
+                render3();
+              } catch (err) {
+                toast(body, err instanceof Error ? err.message : "导入失败");
+              }
+            });
+          });
+          panel.append(shareHeading, shareInput, shareBtn, jsonHeading, jsonBtn);
+        })
+      );
+      if (settings.packs.length > 1) {
+        actions.append(
+          button("批量管理", () => {
+            closeEnableList();
+            batchMode = true;
+            selectedPackIds.clear();
+            render3();
+          })
+        );
+      }
+    }
     const strip = el("div", "so-row so-bind-strip");
     if (characterName) {
       const label = el("span", "so-bind-label");
@@ -3574,9 +3768,15 @@ ${options}`,
       strip.append(tip);
     }
     body.append(strip);
-    const grid = el("div", settings.galleryFoldByRole ? "so-pack-list-folded" : "so-pack-grid");
+    if (batchMode) {
+      const tip = el("div", "so-status so-batch-tip");
+      tip.textContent = "批量管理：点卡片勾选；拖拽卡片或用 ◀ ▶ 调整顺序（预设包只可排序，不可删除）。";
+      body.append(tip);
+    }
+    const useFold = settings.galleryFoldByRole && !batchMode;
+    const grid = el("div", useFold ? "so-pack-list-folded" : "so-pack-grid");
     const boundState = (pack) => boundIds.includes(pack.id) ? binding?.enabled ? "active" : "off" : null;
-    if (settings.galleryFoldByRole) {
+    if (useFold) {
       for (const group of groupPacksByRole(settings.packs)) {
         if (!group.role) {
           const standalone = el("div", "so-pack-grid so-role-pack-grid so-role-pack-standalone");
@@ -3615,6 +3815,7 @@ ${options}`,
     }
     body.append(grid);
     body.append(statusBar());
+    renderEnableList();
   }
   function renderPackCard(pack, bound) {
     const card = el("div", "so-pack-card");
@@ -3651,6 +3852,67 @@ ${options}`,
     metaEl.textContent = `${pack.sprites.length} 张 · ${pack.author ?? "未知作者"}`;
     info.append(nameEl, metaEl);
     card.append(coverBox, info);
+    if (batchMode) {
+      const preset = isPresetPack(pack.id);
+      const selected = selectedPackIds.has(pack.id);
+      card.classList.add("so-card-batch");
+      if (selected) card.classList.add("so-card-selected");
+      if (!preset) {
+        const check = el("span", `so-card-check${selected ? " so-card-check-on" : ""}`);
+        check.textContent = selected ? "✓" : "";
+        coverBox.append(check);
+      }
+      const orderRow = el("div", "so-row so-card-order");
+      orderRow.append(
+        iconButton("◀", "前移", () => {
+          commit(movePack(deps.getSettings(), pack.id, -1));
+        }, "so-chip-btn"),
+        iconButton("▶", "后移", () => {
+          commit(movePack(deps.getSettings(), pack.id, 1));
+        }, "so-chip-btn")
+      );
+      card.append(orderRow);
+      card.title = preset ? "预设包不可删除，可拖拽排序" : "点击勾选；可拖拽排序";
+      card.setAttribute("aria-label", `选择立绘包「${pack.name}」`);
+      const toggleSelect = () => {
+        if (preset) {
+          toast(backdrop?.querySelector(".so-manager-body"), "预设包随扩展分发，不可删除");
+          return;
+        }
+        if (selectedPackIds.has(pack.id)) selectedPackIds.delete(pack.id);
+        else selectedPackIds.add(pack.id);
+        render3();
+      };
+      card.addEventListener("click", toggleSelect);
+      card.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          toggleSelect();
+        }
+      });
+      card.draggable = true;
+      card.dataset.packId = pack.id;
+      card.addEventListener("dragstart", (e) => {
+        e.dataTransfer?.setData("text/plain", pack.id);
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+        card.classList.add("so-card-dragging");
+      });
+      card.addEventListener("dragend", () => card.classList.remove("so-card-dragging"));
+      card.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+        card.classList.add("so-card-drop-target");
+      });
+      card.addEventListener("dragleave", () => card.classList.remove("so-card-drop-target"));
+      card.addEventListener("drop", (e) => {
+        e.preventDefault();
+        card.classList.remove("so-card-drop-target");
+        const fromId = e.dataTransfer?.getData("text/plain");
+        if (!fromId || fromId === pack.id) return;
+        commit(movePackBefore(deps.getSettings(), fromId, pack.id));
+      });
+      return card;
+    }
     const enter = () => {
       view = { kind: "pack", packId: pack.id };
       spriteVisibleCount = SPRITE_PAGE_SIZE;
@@ -3679,7 +3941,7 @@ ${options}`,
             pickFile("image/*", true, (files) => openUploadPreview(pack.id, files));
           });
           const upHint = el("div", "so-status");
-          upHint.textContent = "文件名按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png），上传前可预览修正。";
+          upHint.textContent = "默认整个文件名作图名、落入当前包；预览里勾选「自动拆分」可按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png）并按前缀拆分成包。";
           const codeHeading = el("div", "so-popover-title");
           codeHeading.textContent = "按编码添加";
           const codeInput = document.createElement("textarea");
@@ -3765,7 +4027,7 @@ ${options}`,
       note.textContent = "预设包随扩展分发、只读；想改动可先「导出 JSON」再导入为自定义包。";
       body.append(note);
     } else {
-      const metaPanel = collapsible("包信息");
+      const metaPanel = collapsible("包信息", false, `pack-meta:${pack.id}`);
       const metaRow = el("div", "so-row so-meta-row");
       const nameInput = textInput("包名");
       nameInput.value = pack.name;
@@ -3841,8 +4103,11 @@ ${options}`,
         labeled("作者", authorInput),
         labeled("人名", roleInput),
         labeled("服装", outfitInput),
-        labeled("描述", descInput),
-        button("保存", () => {
+        labeled("描述", descInput)
+      );
+      const saveRow = el("div", "so-row so-meta-save-row");
+      saveRow.append(
+        button("保存包信息", () => {
           const name = sanitizePackName(nameInput.value);
           if (!name) {
             toast(body, "包名不能为空");
@@ -3870,12 +4135,14 @@ ${options}`,
           }
           if (Object.keys(outfitNotes).length > 0) nextPack.outfitNotes = outfitNotes;
           else delete nextPack.outfitNotes;
-          commitPack(nextPack);
-        })
+          if (commitChecked(upsertPack(deps.getSettings(), nextPack))) {
+            toast(body, "已保存包信息");
+          }
+        }, "so-btn-primary so-meta-save")
       );
       const metaHint = el("div", "so-status");
       metaHint.textContent = "人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。";
-      metaPanel.body.append(metaRow, promptRow, outfitNotesBox, metaHint);
+      metaPanel.body.append(metaRow, promptRow, outfitNotesBox, metaHint, saveRow);
       body.append(metaPanel.box);
     }
     if (pack.sprites.length === 0) {
@@ -4036,7 +4303,7 @@ ${options}`,
       }
       const splitPreview = previewGroupSplit(pack);
       if (splitPreview.length >= 2) {
-        const splitPanel = collapsible("按分组拆成立绘包");
+        const splitPanel = collapsible("按分组拆成立绘包", false, `pack-split:${pack.id}`);
         const splitDesc = el("div", "so-status");
         splitDesc.textContent = `检测到 ${splitPreview.length} 个分组：${splitPreview.map((s) => `${s.roleName}(${s.count})`).join("、")}。拆分会新建这些包（原包与绑定保留，可稍后自行删除）。`;
         splitPanel.body.append(
@@ -4302,7 +4569,7 @@ ${preview}
   function openUploadPreview(currentPackId, files) {
     const fileArr = Array.from(files);
     const parsed = fileArr.map((f) => parseSpriteFileName(f.name));
-    let autoSplit = true;
+    let autoSplit = false;
     let strategy = "skip";
     let uploading = false;
     const modal = el("div", "so-upload-modal");
@@ -4348,7 +4615,7 @@ ${preview}
     buildRows();
     const opts = el("div", "so-upload-opts");
     opts.append(
-      checkboxRow("自动拆分人名/服装（关闭则整名作图名落当前包）", autoSplit, (v) => {
+      checkboxRow("按文件名前缀自动拆分人名/服装（勾选后在下方预览拆分结果，可拆出新包）", autoSplit, (v) => {
         autoSplit = v;
         buildRows();
       })
@@ -4403,7 +4670,7 @@ ${preview}
       confirmBtn,
       cancelBtn
     );
-    panel.append(head, rows, opts, status, actions);
+    panel.append(head, opts, actions, status, rows);
     modal.append(panel);
     (backdrop ?? document.body).append(modal);
   }
@@ -4760,7 +5027,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-07 02:37"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-09 16:21"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
   return () => wrapper.remove();
@@ -5001,7 +5268,9 @@ function processMessageElement(root, settings) {
       processed = replaceTags(processed, (address) => {
         const sprite = resolveSprite(packs, address);
         if (!sprite) return settings.hideTagInMessage ? "" : null;
-        return marker(createImage(sprite.url, sprite.tag, "so-inline-sprite"));
+        const image = createImage(sprite.url, sprite.tag, "so-inline-sprite");
+        if (settings.spriteOpacity < 100) image.style.opacity = String(settings.spriteOpacity / 100);
+        return marker(image);
       });
     }
     if (needsImages) {
@@ -5206,10 +5475,12 @@ function numberRow(label, value, min, max, onChange) {
   row.append(span, input);
   return row;
 }
-function foldSection(title, open = false) {
+var foldOpenState = /* @__PURE__ */ new Map();
+function foldSection(title, open = false, key = "") {
   const box = document.createElement("details");
   box.className = "so-app-section so-app-fold";
-  box.open = open;
+  box.open = key ? foldOpenState.get(key) ?? open : open;
+  if (key) box.addEventListener("toggle", () => foldOpenState.set(key, box.open));
   const summary = document.createElement("summary");
   summary.className = "so-app-title";
   summary.textContent = title;
@@ -5295,7 +5566,7 @@ function spriteApp() {
         ),
         detail
       );
-      const displaySection = foldSection("显示");
+      const displaySection = foldSection("显示", false, "sprites:display");
       displaySection.body.append(
         selectRow(
           "显示位置",
@@ -5331,6 +5602,13 @@ function spriteApp() {
           RECENT_FLOORS_MAX,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), recentFloors: v })
         ),
+        numberRow(
+          "立绘不透明度（%）",
+          settings.spriteOpacity,
+          SPRITE_OPACITY_MIN,
+          SPRITE_OPACITY_MAX,
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), spriteOpacity: v })
+        ),
         toggleRow(
           "隐藏 [立绘:xxx] 标签",
           settings.hideTagInMessage,
@@ -5348,9 +5626,9 @@ function spriteApp() {
         )
       );
       const displayHint = el2("div", "so-app-desc");
-      displayHint.textContent = "「仅楼层」把 [立绘:xxx] 原位替换为图片且不弹悬浮窗；楼层数限制加载聊天时补渲染的范围（新回复不受限）。";
+      displayHint.textContent = "「仅楼层」把 [立绘:xxx] 原位替换为图片且不弹悬浮窗；楼层数限制加载聊天时补渲染的范围（新回复不受限）；不透明度同时作用于悬浮窗与楼层立绘，移动端遮挡正文时可调低。";
       displaySection.body.append(displayHint);
-      const autoSection = foldSection("多立绘轮播");
+      const autoSection = foldSection("多立绘轮播", false, "sprites:auto");
       autoSection.body.append(
         toggleRow(
           "自动轮播（一条回复多张立绘时）",
@@ -5365,7 +5643,7 @@ function spriteApp() {
           (v) => ctx.updateSettings({ ...ctx.getSettings(), autoSwitchSeconds: v })
         )
       );
-      const promptSection = foldSection("Prompt");
+      const promptSection = foldSection("Prompt", false, "sprites:prompt");
       promptSection.body.append(
         numberRow(
           "每次回复立绘数量",
@@ -5385,12 +5663,12 @@ function spriteApp() {
           "Prompt 模式",
           settings.multiRolePromptMode,
           [
-            { value: "full", label: "全量（枚举全部地址）" },
-            { value: "repeat", label: "智能精简（共有表情 + 场景其余）" }
+            { value: "repeat", label: "自动精简（默认：重合图名列一次）" },
+            { value: "full", label: "全量（枚举全部地址）" }
           ],
           (v) => ctx.updateSettings({
             ...ctx.getSettings(),
-            multiRolePromptMode: v === "repeat" ? "repeat" : "full"
+            multiRolePromptMode: v === "full" ? "full" : "repeat"
           })
         ),
         numberRow(
@@ -5416,10 +5694,10 @@ function spriteApp() {
         settings.promptTemplate
       ) : budgeted;
       const budgetHint = el2("div", "so-app-desc");
-      budgetHint.textContent = budgeted ? `预计注入 ${budgeted.length} 字符` + (budgeted.length < unlimited.length ? `（超预算，已从 ${unlimited.length} 字符每场景均衡截取，保留排前的表情）` : "") : "预计注入：无（当前角色没有可用立绘地址）";
+      budgetHint.textContent = budgeted ? `预计注入 ${budgeted.length} 字符` + (budgeted.length < unlimited.length ? `（超预算，已从 ${unlimited.length} 字符每场景均衡截取，保留排前的图名）` : "") : "预计注入：无（当前角色没有可用立绘地址）";
       promptSection.body.append(budgetHint);
       const promptHint = el2("div", "so-app-desc");
-      promptHint.textContent = "多个包/含人名服装时，Prompt 用完整地址 [立绘:人名/服装/图名]；单包纯图名时用简写 [立绘:图名]。智能精简按实际长度自动取更短的一版：场景/表情较少时仍会显示全量格式，属正常现象。";
+      promptHint.textContent = "多个包/含人名服装时，Prompt 用完整地址 [立绘:人名/服装/图名]；单包纯图名时用简写 [立绘:图名]。自动精简把多套服装重合的图名只列一次，并按实际长度自动取更短的一版：场景少或重合度低时仍显示全量格式，属正常现象。";
       promptSection.body.append(promptHint);
       const tplRow = textareaRow(
         "自定义提示词（留空=用内置）",
@@ -7058,11 +7336,12 @@ function enabledModes(settings) {
 function rendererStatus(settings) {
   const status = el2("div", "renderer-status so-app-desc");
   if (!settings.enabled) {
-    status.textContent = "未启用。启用后，下一条合适的 AI 回复才会尝试显示结构化渲染。";
+    status.textContent = "未启用（当前不注入任何协议提示词）。启用后，下一条合适的 AI 回复才会尝试显示结构化渲染。";
     return status;
   }
   const modes = enabledModes(settings);
-  status.textContent = modes.length > 0 ? `已启用 · 可用模式：${modes.join("、")}` : "已启用，但没有启用模式；请至少打开一个模式。";
+  const injected = buildRendererPrompt(settings);
+  status.textContent = modes.length > 0 ? `已启用 · 可用模式：${modes.join("、")} · 正在注入协议说明 ${injected.length} 字符（深度 ${settings.injectionDepth}）` : "已启用，但没有启用模式——此时不注入提示词；请至少打开一个模式。";
   return status;
 }
 function quickStep(number, title, description) {
@@ -7096,7 +7375,7 @@ function quickStart(settings, onEnable) {
   return box;
 }
 function modeGuide() {
-  const { box, body } = foldSection("模式说明", false);
+  const { box, body } = foldSection("模式说明", false, "renderer:mode-guide");
   box.classList.add("renderer-mode-guide");
   const modes = [
     ["Galgame", "连续对话和分镜节拍；适合让 AI 控制角色、场景和立绘切换。"],
@@ -7113,7 +7392,7 @@ function modeGuide() {
     body.append(row);
   }
   const troubleshooting = el2("p", "so-app-desc renderer-troubleshooting");
-  troubleshooting.textContent = "没有渲染时，普通回复会原样显示。请先确认总开关和模式已开启，再发送下一条消息；只有 AI 返回合法的 STStageRender 块时才会出现面板。";
+  troubleshooting.textContent = "没有渲染时，普通回复会原样显示。自查顺序：先看上方状态行——显示「正在注入协议说明 N 字符」才说明协议在发给 AI；显示未启用或没有模式则先打开开关；之后发送新消息，只有 AI 返回合法的 STStageRender 块时才会出现面板。";
   body.append(troubleshooting);
   return box;
 }
@@ -7124,8 +7403,13 @@ function rendererApp(deps) {
     icon: "🎬",
     order: 7,
     setup(host) {
-      refreshPrompt(host, normalizeRendererSettings(host.getAppData()));
-      return () => host.injectPrompt("");
+      const inject = () => refreshPrompt(host, normalizeRendererSettings(host.getAppData()));
+      inject();
+      const offCharacterChanged = host.onCharacterChanged(inject);
+      return () => {
+        offCharacterChanged();
+        host.injectPrompt("");
+      };
     },
     mount(container, ctx) {
       let current2 = normalizeRendererSettings(ctx.getAppData());
@@ -7155,7 +7439,10 @@ function rendererApp(deps) {
           section(
             "行为",
             numberRow("注入深度", current2.injectionDepth, 0, 20, (injectionDepth) => save({ ...current2, injectionDepth })),
-            toggleRow("打字机", current2.typewriter, (typewriter) => save({ ...current2, typewriter })),
+            hintField(
+              toggleRow("打字机", current2.typewriter, (typewriter) => save({ ...current2, typewriter })),
+              "仅控制 Galgame 渲染面板里对话文字的逐字显示动画，与模型的流式输出无关；关闭后整段文字直接显示。"
+            ),
             toggleRow("减少动态", current2.reducedMotion, (reducedMotion) => save({ ...current2, reducedMotion }))
           )
         );
@@ -10479,11 +10766,12 @@ async function init(lifecycle) {
   }
   if (lifecycle.disposed) return;
   function updateSettings(next) {
-    const displayChanged = next.hideTagInMessage !== settings.hideTagInMessage || next.renderInlineImages !== settings.renderInlineImages || next.spriteDisplayMode !== settings.spriteDisplayMode || next.imageHost !== settings.imageHost || next.enabled !== settings.enabled || next.recentFloors !== settings.recentFloors;
+    const displayChanged = next.hideTagInMessage !== settings.hideTagInMessage || next.renderInlineImages !== settings.renderInlineImages || next.spriteDisplayMode !== settings.spriteDisplayMode || next.imageHost !== settings.imageHost || next.enabled !== settings.enabled || next.recentFloors !== settings.recentFloors || next.spriteOpacity !== settings.spriteOpacity;
     const autoChanged = next.autoSwitch !== settings.autoSwitch || next.autoSwitchSeconds !== settings.autoSwitchSeconds;
     settings = next;
     adapter.saveSettings(settings);
     overlay.setLayout(settings.overlay);
+    overlay.setOpacity(settings.spriteOpacity);
     phone.setVisible(settings.showPhone);
     if (autoChanged) overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds);
     refresh();
@@ -10547,6 +10835,7 @@ async function init(lifecycle) {
   );
   lifecycle.track(() => overlay.destroy());
   overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds);
+  overlay.setOpacity(settings.spriteOpacity);
   const registry = new PhoneAppRegistry();
   function createAppContext(appId, goHome) {
     return createPhoneAppContext({
@@ -10743,7 +11032,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-07 02:37"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-09 16:21"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

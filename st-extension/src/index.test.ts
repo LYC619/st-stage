@@ -49,6 +49,7 @@ vi.mock('./overlay-dom', () => ({
     return {
       setAutoSwitch: vi.fn(), setLayout: vi.fn(), setVisible: vi.fn(),
       setImage: vi.fn(), setSprites: vi.fn(), setPlaceholder: vi.fn(),
+      setOpacity: vi.fn(),
       destroy: mocks.overlayDestroy,
     }
   },

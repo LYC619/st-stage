@@ -102,26 +102,72 @@ describe('buildPrompt — 智能精简', () => {
   )
   entries.push(addr('鸣人', '', '联名'), addr('佐助', '', '联名'), addr('小樱', '', '治愈'))
 
-  it('共有表情只列一次，并明确适用于全部场景', () => {
+  it('共有图名只列一次，簇内场景行写增量', () => {
     const p = buildPrompt(entries, 'repeat', 1)
-    expect(p).toContain('共有表情（适用于全部场景）')
-    expect(p).toContain('可用场景：鸣人、佐助、小樱')
+    expect(p).toContain('共有图名：共有_00项')
     expect(p.match(/共有_00项/g)).toHaveLength(1)
+    expect(p).toMatch(/- 鸣人：共有图名，另有：联名/)
+    expect(p).toMatch(/- 佐助：共有图名，另有：联名/)
+    expect(p).toMatch(/- 小樱：共有图名，另有：治愈/)
   })
 
-  it('非共有项按各场景其余表情列出，不误称专属', () => {
+  it('每个场景保留自己的行，并说明共有图名的用法', () => {
     const p = buildPrompt(entries, 'repeat', 1)
-    expect(p).toContain('各场景其余表情')
+    expect(p).toContain('可用立绘（按场景）：')
+    expect(p).toContain('场景行写「共有图名」')
     expect(p).not.toContain('专属')
-    expect(p).toMatch(/- 鸣人：联名/)
-    expect(p).toMatch(/- 佐助：联名/)
-    expect(p).toMatch(/- 小樱：治愈/)
   })
 
-  it('交集为空或共享格式不更短时使用分组精确格式', () => {
+  it('图名集互不重合或压缩不划算时使用分组精确格式', () => {
     const p = buildPrompt([addr('鸣人', '', '微笑'), addr('佐助', '', '冷漠')], 'repeat', 1)
     expect(p).toContain('可用立绘（按场景）')
-    expect(p).not.toContain('共有表情（适用于全部场景）')
+    expect(p).not.toContain('共有图名')
+  })
+
+  it('部分场景图名集不同（编号前缀、缩水集）时仍能压缩重合的场景簇', () => {
+    // 模拟实测数据形态：一套服装用编号图名、一套战损版图名缩水，其余高度重合
+    const common = ['爱慕', '懊悔', '悲伤', '逗乐', '愤怒', '感激', '关怀', '害怕', '好奇', '惊讶', '困惑', '领悟', '期许', '失望', '释然', '喜悦']
+    const entries2 = [
+      ...['01_中性', '02_关怀', '03_感激'].map((tag) => addr('塞拉', '常服', tag)),
+      ...common.map((tag) => addr('塞拉', '斗篷', tag)),
+      addr('塞拉', '斗篷', '月光透视'),
+      ...common.map((tag) => addr('塞拉', '白裙', tag)),
+      addr('塞拉', '白裙', '治愈绽放'),
+      ...common.map((tag) => addr('塞拉', '仪式袍', tag)),
+      addr('塞拉', '仪式袍', '施法附身'),
+      addr('塞拉', '仪式袍', '赐福觉醒'),
+      ...common.map((tag) => addr('塞拉', '战斗服', tag)),
+      ...['防备', '疲惫', '爱慕', '悲伤'].map((tag) => addr('塞拉', '战损', tag)),
+    ]
+    const p = buildPrompt(entries2, 'repeat', 1)
+    expect(p).toContain('共有图名：爱慕、')
+    expect(p.match(/懊悔/g)).toHaveLength(1)
+    expect(p).toMatch(/- 塞拉\/斗篷：共有图名，另有：月光透视/)
+    expect(p).toMatch(/- 塞拉\/白裙：共有图名，另有：治愈绽放/)
+    expect(p).toMatch(/- 塞拉\/仪式袍：共有图名，另有：施法附身、赐福觉醒/)
+    expect(p).toMatch(/- 塞拉\/战斗服：共有图名/)
+    expect(p).toContain('- 塞拉/常服：01_中性、02_关怀、03_感激')
+    expect(p).toContain('- 塞拉/战损：防备、疲惫、爱慕、悲伤')
+  })
+
+  it('带场景备注时同样可以精简，备注缩进挂在场景行下', () => {
+    const p = buildPrompt(entries, 'repeat', 1, '', 0, [
+      { role: '鸣人', outfit: '', note: '主角常服', placement: 'after-list' },
+    ])
+    expect(p).toContain('共有图名：共有_00项')
+    expect(p).toContain('- 鸣人：共有图名，另有：联名\n  备注：主角常服')
+  })
+
+  it('真实图名与「共有图名」撞名时放弃精简防歧义', () => {
+    const clash = [
+      ...entries,
+      addr('鸣人', '', '共有图名'),
+      addr('佐助', '', '共有图名'),
+      addr('小樱', '', '共有图名'),
+    ]
+    const p = buildPrompt(clash, 'repeat', 1)
+    expect(p).toContain('可用立绘（按场景）：')
+    expect(p).not.toContain('共有图名，另有')
   })
 
   it('长度相同选择分组精确格式', () => {
@@ -392,24 +438,68 @@ describe('buildPrompt — Gallery 兼容基线', () => {
       '[角色立绘系统]',
       '可用立绘（按场景）：',
       '- 鸣人：微笑、害羞',
-      '输出格式：默认场景直接写 [立绘:表情]；其他场景写 [立绘:场景/表情]。两段地址表示无服装，三级地址表示指定服装。',
+      '输出格式：默认场景直接写 [立绘:图名]；其他场景写 [立绘:场景/图名]。两段地址表示无服装，三级地址表示指定服装。',
       '请在每次回复的末尾，选择一个最贴合当前情境与角色情绪的立绘，以 [立绘:名称] 的格式单独标注。',
-      '只能使用上述场景中实际列出的表情，不要自行拼造不存在的角色/服装/表情组合。',
+      '只能使用上述场景中实际列出的图名，不要自行拼造不存在的角色/服装/图名组合。',
     ].join('\n'))
   })
 
-  it('无备注且无可压缩范围时 repeat 输出逐字节保持不变', () => {
+  it('压缩不划算时 repeat 输出与 full 逐字节一致', () => {
     const tags = ['微笑', '害羞', '冷漠', '惊讶', '叹气', '点头', '摇头', '沉思']
     const addresses = ['鸣人', '佐助'].flatMap((role) => tags.map((tag) => addr(role, '', tag)))
 
     expect(buildPrompt(addresses, 'repeat', 1)).toBe([
       '[角色立绘系统]',
-      '可用场景：鸣人、佐助',
-      `共有表情（适用于全部场景）：${tags.join('、')}`,
-      '共有表情可与任一已列场景组合；各场景其余表情只按所在行使用。默认场景直接写 [立绘:表情]，其他场景写 [立绘:场景/表情]。',
+      '可用立绘（按场景）：',
+      `- 鸣人：${tags.join('、')}`,
+      `- 佐助：${tags.join('、')}`,
+      '输出格式：默认场景直接写 [立绘:图名]；其他场景写 [立绘:场景/图名]。两段地址表示无服装，三级地址表示指定服装。',
       '请在每次回复的末尾，选择一个最贴合当前情境与角色情绪的立绘，以 [立绘:名称] 的格式单独标注。',
-      '只能使用实际存在的组合，不要自行拼造不存在的角色/服装/表情。',
+      '只能使用上述场景中实际列出的图名，不要自行拼造不存在的角色/服装/图名组合。',
     ].join('\n'))
+  })
+
+  it('压缩划算时 repeat 输出逐字节保持不变', () => {
+    const shared = Array.from({ length: 12 }, (_, index) => `共有_${index.toString().padStart(2, '0')}项`)
+    const addresses = ['鸣人', '佐助', '小樱'].flatMap((role) =>
+      shared.map((tag) => addr(role, '', tag)),
+    )
+    addresses.push(addr('鸣人', '', '联名'), addr('小樱', '', '治愈'))
+
+    expect(buildPrompt(addresses, 'repeat', 1)).toBe([
+      '[角色立绘系统]',
+      `共有图名：${shared.join('、')}`,
+      '可用立绘（按场景）：',
+      '- 鸣人：共有图名，另有：联名',
+      '- 佐助：共有图名',
+      '- 小樱：共有图名，另有：治愈',
+      '场景行写「共有图名」表示最上方共有清单里的图名整组可用；「另有」及直接列出的图名只属于所在场景。',
+      '输出格式：默认场景直接写 [立绘:图名]；其他场景写 [立绘:场景/图名]。两段地址表示无服装，三级地址表示指定服装。',
+      '请在每次回复的末尾，选择一个最贴合当前情境与角色情绪的立绘，以 [立绘:名称] 的格式单独标注。',
+      '只能使用上述场景中实际列出的图名，不要自行拼造不存在的角色/服装/图名组合。',
+    ].join('\n'))
+  })
+
+  it('全部场景均为角色/服装时输出格式行收窄为三级地址', () => {
+    const p = buildPrompt(
+      [addr('鸣人', '居家服', '微笑'), addr('佐助', '战斗服', '冷漠')],
+      'full',
+      1,
+    )
+    expect(p).toContain('输出格式：[立绘:角色/服装/图名]，角色、服装、图名均须与上方清单完全一致。')
+    expect(p).not.toContain('两段地址')
+  })
+
+  it('备注含换行时续行缩进，不打散清单结构', () => {
+    const p = buildPrompt(
+      [addr('鸣人', '战斗服', '微笑')],
+      'full',
+      1,
+      '',
+      0,
+      [{ role: '鸣人', outfit: '战斗服', note: '第一行说明\n第二行细节', placement: 'after-list' }],
+    )
+    expect(p).toContain('- 鸣人/战斗服：微笑\n  备注：第一行说明\n    第二行细节')
   })
 
   it('无备注且无可压缩范围时自定义模板输出逐字节保持不变', () => {

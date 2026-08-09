@@ -823,6 +823,82 @@
   color: #ff7676;
 }
 
+/* 主操作按钮（保存包信息等）：绿色强调，与输入框区隔开 */
+.so-manager .so-btn-primary {
+  background: rgba(74, 189, 126, 0.22);
+  border: 1px solid rgba(74, 189, 126, 0.6);
+  font-weight: 600;
+}
+
+.so-manager .so-meta-save-row {
+  justify-content: flex-end;
+}
+
+.so-manager .so-meta-save {
+  min-width: 140px;
+  justify-content: center;
+  text-align: center;
+}
+
+/* ---- 列表页批量管理（实测反馈批次）：勾选删除 + 拖拽/按钮排序 ---- */
+.so-manager .so-batch-tip {
+  margin-top: 8px;
+}
+
+.so-manager .so-pack-card.so-card-selected {
+  border-color: rgba(120, 170, 255, 0.85);
+  box-shadow: 0 0 0 2px rgba(120, 170, 255, 0.35);
+}
+
+.so-manager .so-card-check {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1.5px solid rgba(255, 255, 255, 0.7);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.so-manager .so-card-check-on {
+  background: rgba(120, 170, 255, 0.92);
+  border-color: transparent;
+}
+
+.so-manager .so-card-order {
+  justify-content: center;
+  gap: 12px;
+  padding: 2px 0 8px;
+}
+
+.so-manager .so-card-dragging {
+  opacity: 0.5;
+}
+
+.so-manager .so-pack-card.so-card-drop-target {
+  border-color: rgba(255, 214, 120, 0.9);
+  box-shadow: 0 0 0 2px rgba(255, 214, 120, 0.35);
+}
+
+/* ---- 「启用包」勾选浮层：包多时限高滚动 ---- */
+.so-manager .so-enable-pop {
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+}
+
+.so-manager .so-enable-pop .checkbox_label {
+  width: 100%;
+  margin: 0;
+}
+
 .so-manager .so-labeled {
   display: flex;
   align-items: center;
@@ -1281,9 +1357,14 @@
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
 }
 
-/* 楼层内立绘（spriteDisplayMode=inline/both）：立绘多为竖长图，高度比插图更收敛 */
+/* 楼层内立绘（spriteDisplayMode=inline/both）：立绘多为竖长图，高度比插图更收敛。
+   立绘是抠好的透明 PNG：插图那套边框/圆角/投影会把透明矩形轮廓画出来，全部去掉 */
 #chat .so-inline-sprite img {
   max-height: 40vh;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
 }
 
 /* 加载失败：显示编码提示，方便发现写错的编码；整块可点击重试 */
@@ -1321,7 +1402,8 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  width: min(560px, 100%);
+  /* PC 端加宽：设置/按钮区在上、文件预览列表在下，一行放得下三个输入框 */
+  width: min(760px, 96vw);
   max-height: 100%;
   padding: 14px;
   border-radius: 12px;

@@ -455,12 +455,12 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
             className="rounded-lg border border-input bg-background px-2 py-1 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
             aria-label="分组 prompt 模式"
           >
+            <option value="repeat">自动精简（默认：重合图名列一次）</option>
             <option value="full">全量（枚举全部组合）</option>
-            <option value="repeat">智能精简（共有表情 + 场景其余）</option>
           </select>
         </label>
         <p className="text-xs text-muted-foreground">
-          智能精简按实际长度自动取更短的一版：场景/表情较少时仍会显示全量格式，属正常现象。
+          自动精简把多套服装重合的图名只列一次，并按实际长度自动取更短的一版：场景少或重合度低时仍显示全量格式，属正常现象。
         </p>
         <label className="flex items-center justify-between text-sm text-foreground">
           Prompt 预算（字符，0=不限）

@@ -59,6 +59,14 @@ function openUploadPreview(manager: ReturnType<typeof createSpriteManager>, pack
   return modal
 }
 
+/** 勾选「自动拆分」（默认关闭）：按文件名前缀拆人名/服装 */
+function enableAutoSplit(modal: HTMLElement): void {
+  const box = modal.querySelector<HTMLInputElement>('input[type="checkbox"]')
+  if (!box) throw new Error('找不到自动拆分勾选框')
+  box.checked = true
+  box.dispatchEvent(new Event('change'))
+}
+
 function uploadSettings(): PluginSettings {
   return {
     ...createDefaultSettings(),
@@ -132,7 +140,7 @@ describe('createSpriteManager binding conflict UI', () => {
     imageMocks.compressImage.mockReset()
   })
 
-  it('resets the pack selector when a conflicting bind is cancelled', () => {
+  it('冲突启用被取消时勾选框回到未勾选状态', () => {
     let settings: PluginSettings = {
       ...createDefaultSettings(),
       packs: [
@@ -161,13 +169,19 @@ describe('createSpriteManager binding conflict UI', () => {
     vi.spyOn(window, 'prompt').mockReturnValue(null)
 
     manager.open()
-    const select = document.querySelector<HTMLSelectElement>('select[aria-label*="添加启用立绘包"]')
-    expect(select).not.toBeNull()
-    select!.value = 'incoming'
-    select!.dispatchEvent(new Event('change'))
+    findButton(document, '启用包（1） ▾').click()
+    const incomingRow = [...document.querySelectorAll<HTMLElement>('.so-popover[data-pop="启用包"] label')]
+      .find((row) => row.textContent?.includes('待启用包'))
+    expect(incomingRow).not.toBeUndefined()
+    const input = incomingRow!.querySelector<HTMLInputElement>('input')!
+    input.checked = true
+    input.dispatchEvent(new Event('change'))
 
+    // 冲突确认被取消：绑定不变，浮层按真实状态重建、勾选框回到未勾选
     expect(settings.bindings[0].packIds).toEqual(['active'])
-    expect(document.querySelector<HTMLSelectElement>('select[aria-label*="添加启用立绘包"]')?.value).toBe('')
+    const rebuilt = [...document.querySelectorAll<HTMLElement>('.so-popover[data-pop="启用包"] label')]
+      .find((row) => row.textContent?.includes('待启用包'))
+    expect(rebuilt?.querySelector<HTMLInputElement>('input')?.checked).toBe(false)
     manager.close()
   })
 
@@ -728,7 +742,7 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
     notes.get('居家')!.value = '适用于居家场景'
     notes.get('外出')!.value = '适用于外出场景'
     notes.get('礼服')!.value = ''
-    findButton(panel!, '保存').click()
+    findButton(panel!, '保存包信息').click()
 
     const updated = settings.packs[0]
     expect(updated.promptNote).toBe('仅在夜晚剧情使用')
@@ -771,7 +785,7 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
 
     // 只改包名保存：placement 不能被写成另一个值
     panel.querySelector<HTMLInputElement>('input')!.value = '改名后的包'
-    findButton(panel, '保存').click()
+    findButton(panel, '保存包信息').click()
     expect(settings.packs[0].promptNotePlacement).toBe(DEFAULT_PROMPT_NOTE_PLACEMENT)
     manager.close()
   })
@@ -806,7 +820,7 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
     const note = panel.querySelector<HTMLTextAreaElement>('.so-outfit-note-input')!
     expect(note.dataset.outfit).toBe('居家服')
     note.value = '适用于居家场景'
-    findButton(panel, '保存').click()
+    findButton(panel, '保存包信息').click()
 
     const saved = settings.packs[0]
     expect(saved.outfit).toBe('居家服')
@@ -900,6 +914,7 @@ describe('createSpriteManager upload finalization', () => {
       new File(['a'], '鸣人-安全.png'),
       new File(['b'], '鸣人-冲突.png'),
     ])
+    enableAutoSplit(modal)
 
     findButton(modal, '开始上传').click()
 
@@ -933,6 +948,7 @@ describe('createSpriteManager upload finalization', () => {
       },
     })
     const modal = openUploadPreview(manager, '当前包', [new File(['a'], '鸣人-安全.png')])
+    enableAutoSplit(modal)
 
     findButton(modal, '开始上传').click()
 
@@ -947,6 +963,134 @@ describe('createSpriteManager upload finalization', () => {
       '[sprite-overlay] 图片已保存，但后续界面刷新失败',
       expect.objectContaining({ message: 'refresh failed after persistence' }),
     )
+    manager.close()
+  })
+})
+
+describe('createSpriteManager 实测反馈批次（上传默认不拆分 / 批量管理 / 保存不折叠 / 勾选启用）', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+    imageMocks.compressImage.mockReset()
+  })
+
+  function threePackSettings(): PluginSettings {
+    return {
+      ...createDefaultSettings(),
+      packs: [
+        { id: 'a', name: '甲包', sprites: [{ tag: '微笑', url: 'a-url' }] },
+        { id: 'b', name: '乙包', sprites: [{ tag: '生气', url: 'b-url' }] },
+        { id: 'c', name: '丙包', sprites: [{ tag: '哭泣', url: 'c-url' }] },
+      ],
+      bindings: [{ characterName: '阿珍', packIds: ['a'], enabled: true }],
+    }
+  }
+
+  function createManager(initial: PluginSettings) {
+    let settings = initial
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    return { manager, getSettings: () => settings }
+  }
+
+  it('上传预览默认不拆分：整名作图名，人名/服装输入禁用；勾选后才按前缀拆分', () => {
+    const { manager } = createManager(uploadSettings())
+    const modal = openUploadPreview(manager, '当前包', [new File(['a'], '鸣人-居家服-微笑.png')])
+
+    const tagInput = [...modal.querySelectorAll<HTMLInputElement>('input')]
+      .find((input) => input.placeholder === '图名')
+    const roleInput = [...modal.querySelectorAll<HTMLInputElement>('input')]
+      .find((input) => input.placeholder === '人名')
+    expect(tagInput?.value).toBe('鸣人-居家服-微笑')
+    expect(roleInput?.disabled).toBe(true)
+    expect(roleInput?.value).toBe('')
+
+    enableAutoSplit(modal)
+    const roleAfter = [...modal.querySelectorAll<HTMLInputElement>('input')]
+      .find((input) => input.placeholder === '人名')
+    const tagAfter = [...modal.querySelectorAll<HTMLInputElement>('input')]
+      .find((input) => input.placeholder === '图名')
+    expect(roleAfter?.disabled).toBe(false)
+    expect(roleAfter?.value).toBe('鸣人')
+    expect(tagAfter?.value).toBe('微笑')
+    manager.close()
+  })
+
+  it('批量管理：点卡片勾选、删除所选、◀▶ 调整包顺序', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { manager, getSettings } = createManager(threePackSettings())
+    manager.open()
+
+    findButton(document, '批量管理').click()
+    const cardOf = (name: string) =>
+      [...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+        .find((card) => card.textContent?.includes(name))!
+
+    // 后移甲包：a b c → b a c
+    ;([...cardOf('甲包').querySelectorAll<HTMLElement>('[role="button"]')]
+      .find((btn) => btn.getAttribute('aria-label') === '后移'))!.click()
+    expect(getSettings().packs.map((p) => p.id)).toEqual(['b', 'a', 'c'])
+
+    // 勾选乙包 + 丙包后删除：只剩甲包，绑定保留
+    cardOf('乙包').click()
+    cardOf('丙包').click()
+    findButton(document, '删除所选（2）').click()
+    expect(getSettings().packs.map((p) => p.id)).toEqual(['a'])
+    expect(getSettings().bindings).toEqual([{ characterName: '阿珍', packIds: ['a'], enabled: true }])
+
+    findButton(document, '完成').click()
+    expect(document.querySelector('.so-batch-tip')).toBeNull()
+    manager.close()
+  })
+
+  it('保存包信息后面板保持展开、按钮独占一行', () => {
+    const { manager, getSettings } = createManager(threePackSettings())
+    manager.open()
+    ;([...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+      .find((card) => card.textContent?.includes('甲包')))!.click()
+
+    const panel = openPackInfoPanel()
+    panel.dispatchEvent(new Event('toggle'))
+    const nameInput = panel.querySelector<HTMLInputElement>('input')!
+    nameInput.value = '甲包改名'
+    findButton(panel, '保存包信息').click()
+
+    expect(getSettings().packs.find((p) => p.id === 'a')?.name).toBe('甲包改名')
+    const panelAfter = [...document.querySelectorAll<HTMLDetailsElement>('details')]
+      .find((details) => details.querySelector('summary')?.textContent === '包信息')
+    expect(panelAfter?.open).toBe(true)
+    expect(panelAfter?.querySelector('.so-meta-save-row')).not.toBeNull()
+    manager.close()
+  })
+
+  it('启用包勾选浮层：勾=启用、取消勾=停用，操作后浮层保持展开', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { manager, getSettings } = createManager(threePackSettings())
+    manager.open()
+
+    findButton(document, '启用包（1） ▾').click()
+    const panel = document.querySelector<HTMLElement>('.so-popover[data-pop="启用包"]')
+    expect(panel).not.toBeNull()
+    const rowOf = (name: string) =>
+      [...document.querySelectorAll<HTMLElement>('.so-popover[data-pop="启用包"] label')]
+        .find((row) => row.textContent?.includes(name))!
+
+    const bInput = rowOf('乙包').querySelector<HTMLInputElement>('input')!
+    bInput.checked = true
+    bInput.dispatchEvent(new Event('change'))
+    expect(getSettings().bindings[0].packIds).toEqual(['a', 'b'])
+    // 提交触发整体重渲染后浮层原地重建
+    expect(document.querySelector('.so-popover[data-pop="启用包"]')).not.toBeNull()
+
+    const aInput = rowOf('甲包').querySelector<HTMLInputElement>('input')!
+    expect(aInput.checked).toBe(true)
+    aInput.checked = false
+    aInput.dispatchEvent(new Event('change'))
+    expect(getSettings().bindings[0].packIds).toEqual(['b'])
+    expect(document.querySelector('.so-popover[data-pop="启用包"]')).not.toBeNull()
     manager.close()
   })
 })

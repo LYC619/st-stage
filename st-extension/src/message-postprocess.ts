@@ -312,7 +312,10 @@ function processMessageElement(root: HTMLElement, settings: PluginSettings): voi
         const sprite = resolveSprite(packs, address)
         // 匹配不到的标签退回「隐藏标签」语义：开了隐藏就摘除，否则保留原文
         if (!sprite) return settings.hideTagInMessage ? '' : null
-        return marker(createImage(sprite.url, sprite.tag, 'so-inline-sprite'))
+        const image = createImage(sprite.url, sprite.tag, 'so-inline-sprite')
+        // 立绘不透明度只作用于楼层立绘，不影响插图（插图通常是剧情图，要看清内容）
+        if (settings.spriteOpacity < 100) image.style.opacity = String(settings.spriteOpacity / 100)
+        return marker(image)
       })
     }
     if (needsImages) {

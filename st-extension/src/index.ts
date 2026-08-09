@@ -70,13 +70,15 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
       next.spriteDisplayMode !== settings.spriteDisplayMode ||
       next.imageHost !== settings.imageHost ||
       next.enabled !== settings.enabled ||
-      next.recentFloors !== settings.recentFloors
+      next.recentFloors !== settings.recentFloors ||
+      next.spriteOpacity !== settings.spriteOpacity
     const autoChanged =
       next.autoSwitch !== settings.autoSwitch ||
       next.autoSwitchSeconds !== settings.autoSwitchSeconds
     settings = next
     adapter.saveSettings(settings)
     overlay.setLayout(settings.overlay)
+    overlay.setOpacity(settings.spriteOpacity)
     phone.setVisible(settings.showPhone)
     if (autoChanged) overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds)
     refresh()
@@ -158,6 +160,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   )
   lifecycle.track(() => overlay.destroy())
   overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds)
+  overlay.setOpacity(settings.spriteOpacity)
 
   /* ---- 手机框架 ---- */
   const registry = new PhoneAppRegistry()

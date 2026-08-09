@@ -23,9 +23,12 @@ import {
   type ConflictCheckedSettingsResult,
   bindPack,
   genId,
+  movePack,
+  movePackBefore,
   moveSprite,
   previewBindingAddressChanges,
   removePack,
+  removePacks,
   reorderBinding,
   setBinding,
   spriteGroup,
@@ -108,6 +111,14 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   let spriteFilterQuery = ''
   let spriteFilterLabels: string[] = []
   const expandedRoleGroups = new Set<string>()
+  /** 折叠面板展开态（key → open）：commit 触发整体重渲染时保持用户手动展开的面板不收起 */
+  const openSections = new Map<string, boolean>()
+  /** 「启用包」勾选浮层是否展开：勾选提交会整体重渲染，靠这个标记让浮层原地重建 */
+  let enableListOpen = false
+  let enableListDocHandler: ((e: MouseEvent) => void) | null = null
+  /** 列表页批量管理模式（多选删除 + 拖拽/按钮排序） */
+  let batchMode = false
+  const selectedPackIds = new Set<string>()
   let openedFrom: ManagerSource = 'overlay'
   /** 当前放大查看器及其完整列表索引；管理器重渲染不丢失导航位置。 */
   let activeLightbox: ActiveLightbox | null = null
@@ -134,6 +145,10 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     spriteFilterQuery = ''
     spriteFilterLabels = []
     expandedRoleGroups.clear()
+    openSections.clear()
+    enableListOpen = false
+    batchMode = false
+    selectedPackIds.clear()
     backdrop = el('div', 'so-manager-backdrop')
     // 点空白不再关闭（用户实测：误触退出后要重新逐层进入，受挫感强）；关闭走 ✕ 按钮或 Esc
     document.addEventListener('keydown', onEscape)
@@ -185,6 +200,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     if (backdrop?.querySelector('.so-lightbox')) return
     // 先关下拉浮层，再谈返回/关闭
     if (backdrop?.querySelector('.so-popover')) {
+      closeEnableList()
       closePopovers()
       return
     }
@@ -199,6 +215,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   function close(): void {
     if (!backdrop) return
     activeLightbox?.controller?.close()
+    closeEnableList()
     document.removeEventListener('keydown', onEscape)
     window.removeEventListener('resize', applyBackdropSize)
     backdrop.remove()
@@ -433,6 +450,65 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     backdrop?.querySelectorAll('.so-popover').forEach((n) => n.remove())
   }
 
+  function closeEnableList(): void {
+    enableListOpen = false
+    backdrop?.querySelectorAll('.so-popover[data-pop="启用包"]').forEach((n) => n.remove())
+    if (enableListDocHandler) {
+      document.removeEventListener('click', enableListDocHandler, true)
+      enableListDocHandler = null
+    }
+  }
+
+  /**
+   * 「启用包」勾选浮层：勾=启用、取消勾=停用，改完浮层原地保持展开——
+   * 旧 <select> 每选一次都被整体重渲染销毁、必须重新点开（用户实测反馈）。
+   * 每次 render() 后由 renderList 依据 enableListOpen 重建。
+   */
+  function renderEnableList(): void {
+    const header = backdrop?.querySelector('.so-manager-header') as HTMLElement | null
+    if (!header) return
+    header.querySelectorAll('.so-popover[data-pop="启用包"]').forEach((n) => n.remove())
+    if (!enableListOpen) return
+    const characterName = deps.adapter.getCurrentCharacterName()
+    if (!characterName) {
+      closeEnableList()
+      return
+    }
+    const body = backdrop?.querySelector('.so-manager-body') as HTMLElement
+    const settings = deps.getSettings()
+    const boundIds = settings.bindings.find((b) => b.characterName === characterName)?.packIds ?? []
+    const panel = el('div', 'so-popover so-enable-pop')
+    panel.dataset.pop = '启用包'
+    const heading = el('div', 'so-popover-title')
+    heading.textContent = `勾选启用（${characterName}，即时生效）`
+    panel.append(heading)
+    if (settings.packs.length === 0) {
+      const tip = el('div', 'so-status')
+      tip.textContent = '还没有立绘包，先用「新建」或「导入」。'
+      panel.append(tip)
+    }
+    for (const p of settings.packs) {
+      panel.append(
+        checkboxRow(`${p.name}（${p.sprites.length} 张）`, boundIds.includes(p.id), (v) => {
+          if (v) bindPackWithChoices(characterName, p.id, body)
+          else commit(unbindPack(deps.getSettings(), characterName, p.id))
+          // 启用被用户取消（冲突确认框选了否）时没有 commit 重渲染，勾选框会与实际不符——按真实状态重建
+          renderEnableList()
+        }),
+      )
+    }
+    header.append(panel)
+    if (!enableListDocHandler) {
+      enableListDocHandler = (e: MouseEvent) => {
+        const current = backdrop?.querySelector('.so-popover[data-pop="启用包"]')
+        const btn = backdrop?.querySelector('.so-enable-btn')
+        if (current?.contains(e.target as Node) || btn?.contains(e.target as Node)) return
+        closeEnableList()
+      }
+      document.addEventListener('click', enableListDocHandler, true)
+    }
+  }
+
   /** 头部下拉：按钮 + 锚在头部下方靠右的浮层；同时只开一个，Esc/点外部/重渲染关闭 */
   function dropdownButton(label: string, build: (panel: HTMLElement) => void): HTMLElement {
     const btn = button(`${label} ▾`, () => {
@@ -491,11 +567,14 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     }
   }
 
-  /** 折叠面板：图墙占主位，次要功能区默认收起只露标题（用户实测反馈） */
-  function collapsible(titleText: string, open = false): { box: HTMLElement; body: HTMLElement } {
+  /** 折叠面板：图墙占主位，次要功能区默认收起只露标题（用户实测反馈）。
+      传 key 的面板在整体重渲染间保持展开态（实测：点「保存」后面板收起体验差）。 */
+  function collapsible(titleText: string, open = false, key = ''): { box: HTMLElement; body: HTMLElement } {
     const box = document.createElement('details')
     box.className = 'so-section so-collapse'
-    box.open = open
+    box.open = key ? openSections.get(key) ?? open : open
+    // toggle 只在用户点击后触发（插入前赋值不触发），记录的是真实操作
+    if (key) box.addEventListener('toggle', () => openSections.set(key, box.open))
     const summary = document.createElement('summary')
     summary.className = 'so-section-title'
     summary.textContent = titleText
@@ -512,32 +591,59 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     const binding = settings.bindings.find((b) => b.characterName === characterName)
     const boundIds = binding?.packIds ?? []
 
-    // 头部操作区：启用选择 + 新建/导入下拉（替代旧的底部折叠面板）
-    if (characterName) {
-      const select = document.createElement('select')
-      select.className = 'text_pole so-header-select'
-      select.setAttribute('aria-label', `为「${characterName}」添加启用立绘包`)
-      const placeholder = document.createElement('option')
-      placeholder.value = ''
-      placeholder.textContent = boundIds.length > 0 ? '再启用一个包…' : '选择要启用的包…'
-      select.append(placeholder)
-      for (const p of settings.packs) {
-        if (boundIds.includes(p.id)) continue
-        const opt = document.createElement('option')
-        opt.value = p.id
-        opt.textContent = `${p.name}（${p.sprites.length} 张）`
-        select.append(opt)
+    // 头部操作区：批量管理模式=全选/删除/完成；常规=启用勾选浮层 + 新建/导入下拉
+    if (batchMode) {
+      actions.append(
+        button('全选', () => {
+          const all = settings.packs.filter((p) => !isPresetPack(p.id))
+          if (all.length > 0 && all.every((p) => selectedPackIds.has(p.id))) {
+            selectedPackIds.clear()
+          } else {
+            selectedPackIds.clear()
+            for (const p of all) selectedPackIds.add(p.id)
+          }
+          render()
+        }),
+        button(`删除所选（${selectedPackIds.size}）`, () => {
+          if (selectedPackIds.size === 0) {
+            toast(body, '先点卡片勾选要删除的包')
+            return
+          }
+          const current = deps.getSettings()
+          const names = current.packs.filter((p) => selectedPackIds.has(p.id)).map((p) => p.name)
+          const preview = names.slice(0, 8).join('、') + (names.length > 8 ? ` 等 ${names.length} 个` : '')
+          if (!window.confirm(`确定删除 ${names.length} 个立绘包？\n${preview}\n绑定关系会一并清除。`)) return
+          const ids = [...selectedPackIds]
+          selectedPackIds.clear()
+          commit(removePacks(current, ids))
+          toast(body, `已删除 ${names.length} 个立绘包`)
+        }, 'so-btn-danger'),
+        button('完成', () => {
+          batchMode = false
+          selectedPackIds.clear()
+          render()
+        }),
+      )
+    } else {
+      if (characterName) {
+        const enableBtn = button(
+          boundIds.length > 0 ? `启用包（${boundIds.length}） ▾` : '启用包 ▾',
+          () => {
+            if (enableListOpen) {
+              closeEnableList()
+            } else {
+              closePopovers()
+              enableListOpen = true
+              renderEnableList()
+            }
+          },
+        )
+        enableBtn.classList.add('so-enable-btn')
+        enableBtn.setAttribute('aria-label', `为「${characterName}」勾选启用立绘包`)
+        actions.append(enableBtn)
       }
-      select.addEventListener('change', () => {
-        const packId = select.value
-        if (!packId) return
-        select.value = ''
-        bindPackWithChoices(characterName, packId, body)
-      })
-      actions.append(select)
-    }
-    actions.append(
-      dropdownButton('新建', (panel) => {
+      actions.append(
+        dropdownButton('新建', (panel) => {
         const heading = el('div', 'so-popover-title')
         heading.textContent = '新建立绘包'
         const nameInput = textInput('输入新包名称…')
@@ -603,7 +709,18 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         })
         panel.append(shareHeading, shareInput, shareBtn, jsonHeading, jsonBtn)
       }),
-    )
+      )
+      if (settings.packs.length > 1) {
+        actions.append(
+          button('批量管理', () => {
+            closeEnableList()
+            batchMode = true
+            selectedPackIds.clear()
+            render()
+          }),
+        )
+      }
+    }
 
     // 当前角色启用条：横向 chips（可排序/停用）+ 整体启停（六期：一个聊天可启用多个包）
     const strip = el('div', 'so-row so-bind-strip')
@@ -655,10 +772,17 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     body.append(strip)
 
     // 包封面图墙：立绘包是图片集合，用卡片网格浏览（同 ST 角色列表的卡片墙模式）
-    const grid = el('div', settings.galleryFoldByRole ? 'so-pack-list-folded' : 'so-pack-grid')
+    // 批量管理模式强制平铺网格：拖拽排序调整的是包列表的整体顺序，折叠分组下无法直观呈现
+    if (batchMode) {
+      const tip = el('div', 'so-status so-batch-tip')
+      tip.textContent = '批量管理：点卡片勾选；拖拽卡片或用 ◀ ▶ 调整顺序（预设包只可排序，不可删除）。'
+      body.append(tip)
+    }
+    const useFold = settings.galleryFoldByRole && !batchMode
+    const grid = el('div', useFold ? 'so-pack-list-folded' : 'so-pack-grid')
     const boundState = (pack: SpritePack): 'active' | 'off' | null =>
       boundIds.includes(pack.id) ? (binding?.enabled ? 'active' : 'off') : null
-    if (settings.galleryFoldByRole) {
+    if (useFold) {
       for (const group of groupPacksByRole(settings.packs)) {
         if (!group.role) {
           const standalone = el('div', 'so-pack-grid so-role-pack-grid so-role-pack-standalone')
@@ -698,6 +822,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     body.append(grid)
 
     body.append(statusBar())
+    renderEnableList()
   }
 
   function renderPackCard(pack: SpritePack, bound: 'active' | 'off' | null): HTMLElement {
@@ -740,6 +865,72 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     info.append(nameEl, metaEl)
 
     card.append(coverBox, info)
+
+    if (batchMode) {
+      // 批量管理：点卡片=勾选（预设包不可删，不给勾选框）；拖拽或 ◀ ▶ 排序
+      const preset = isPresetPack(pack.id)
+      const selected = selectedPackIds.has(pack.id)
+      card.classList.add('so-card-batch')
+      if (selected) card.classList.add('so-card-selected')
+      if (!preset) {
+        const check = el('span', `so-card-check${selected ? ' so-card-check-on' : ''}`)
+        check.textContent = selected ? '✓' : ''
+        coverBox.append(check)
+      }
+      const orderRow = el('div', 'so-row so-card-order')
+      orderRow.append(
+        iconButton('◀', '前移', () => {
+          commit(movePack(deps.getSettings(), pack.id, -1))
+        }, 'so-chip-btn'),
+        iconButton('▶', '后移', () => {
+          commit(movePack(deps.getSettings(), pack.id, 1))
+        }, 'so-chip-btn'),
+      )
+      card.append(orderRow)
+
+      card.title = preset ? '预设包不可删除，可拖拽排序' : '点击勾选；可拖拽排序'
+      card.setAttribute('aria-label', `选择立绘包「${pack.name}」`)
+      const toggleSelect = () => {
+        if (preset) {
+          toast(backdrop?.querySelector('.so-manager-body') as HTMLElement | null, '预设包随扩展分发，不可删除')
+          return
+        }
+        if (selectedPackIds.has(pack.id)) selectedPackIds.delete(pack.id)
+        else selectedPackIds.add(pack.id)
+        render()
+      }
+      card.addEventListener('click', toggleSelect)
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          toggleSelect()
+        }
+      })
+
+      card.draggable = true
+      card.dataset.packId = pack.id
+      card.addEventListener('dragstart', (e) => {
+        e.dataTransfer?.setData('text/plain', pack.id)
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+        card.classList.add('so-card-dragging')
+      })
+      card.addEventListener('dragend', () => card.classList.remove('so-card-dragging'))
+      card.addEventListener('dragover', (e) => {
+        e.preventDefault()
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+        card.classList.add('so-card-drop-target')
+      })
+      card.addEventListener('dragleave', () => card.classList.remove('so-card-drop-target'))
+      card.addEventListener('drop', (e) => {
+        e.preventDefault()
+        card.classList.remove('so-card-drop-target')
+        const fromId = e.dataTransfer?.getData('text/plain')
+        if (!fromId || fromId === pack.id) return
+        commit(movePackBefore(deps.getSettings(), fromId, pack.id))
+      })
+      return card
+    }
+
     const enter = () => {
       view = { kind: 'pack', packId: pack.id }
       spriteVisibleCount = SPRITE_PAGE_SIZE
@@ -774,7 +965,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           })
           const upHint = el('div', 'so-status')
           upHint.textContent =
-            '文件名按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png），上传前可预览修正。'
+            '默认整个文件名作图名、落入当前包；预览里勾选「自动拆分」可按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png）并按前缀拆分成包。'
 
           const codeHeading = el('div', 'so-popover-title')
           codeHeading.textContent = '按编码添加'
@@ -869,7 +1060,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       note.textContent = '预设包随扩展分发、只读；想改动可先「导出 JSON」再导入为自定义包。'
       body.append(note)
     } else {
-      const metaPanel = collapsible('包信息')
+      const metaPanel = collapsible('包信息', false, `pack-meta:${pack.id}`)
       const metaRow = el('div', 'so-row so-meta-row')
       const nameInput = textInput('包名')
       nameInput.value = pack.name
@@ -952,7 +1143,11 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         labeled('人名', roleInput),
         labeled('服装', outfitInput),
         labeled('描述', descInput),
-        button('保存', () => {
+      )
+      // 保存独占一行、主按钮样式：混在输入框里会被挤到换行尾部，窄屏上几乎看不见（用户实测反馈）
+      const saveRow = el('div', 'so-row so-meta-save-row')
+      saveRow.append(
+        button('保存包信息', () => {
           const name = sanitizePackName(nameInput.value)
           if (!name) {
             toast(body, '包名不能为空')
@@ -982,13 +1177,15 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           }
           if (Object.keys(outfitNotes).length > 0) nextPack.outfitNotes = outfitNotes
           else delete nextPack.outfitNotes
-          commitPack(nextPack)
-        }),
+          if (commitChecked(upsertPack(deps.getSettings(), nextPack))) {
+            toast(body, '已保存包信息')
+          }
+        }, 'so-btn-primary so-meta-save'),
       )
       const metaHint = el('div', 'so-status')
       metaHint.textContent =
         '人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。'
-      metaPanel.body.append(metaRow, promptRow, outfitNotesBox, metaHint)
+      metaPanel.body.append(metaRow, promptRow, outfitNotesBox, metaHint, saveRow)
       body.append(metaPanel.box)
     }
 
@@ -1168,7 +1365,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       // 旧分组拆包：包内有 ≥2 个分组时提供「按分组拆成立绘包」
       const splitPreview = previewGroupSplit(pack)
       if (splitPreview.length >= 2) {
-        const splitPanel = collapsible('按分组拆成立绘包')
+        const splitPanel = collapsible('按分组拆成立绘包', false, `pack-split:${pack.id}`)
         const splitDesc = el('div', 'so-status')
         splitDesc.textContent = `检测到 ${splitPreview.length} 个分组：${splitPreview
           .map((s) => `${s.roleName}(${s.count})`)
@@ -1476,7 +1673,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     const fileArr = Array.from(files)
     // 每个文件解析出的可编辑条目（人名/服装/图名）
     const parsed = fileArr.map((f) => parseSpriteFileName(f.name))
-    let autoSplit = true
+    // 默认不拆分：整名作图名落当前包；用户勾选后才按前缀拆分（实测：默认拆分对多数人是惊吓）
+    let autoSplit = false
     let strategy: ConflictStrategy = 'skip'
     let uploading = false
 
@@ -1527,7 +1725,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
     const opts = el('div', 'so-upload-opts')
     opts.append(
-      checkboxRow('自动拆分人名/服装（关闭则整名作图名落当前包）', autoSplit, (v) => {
+      checkboxRow('按文件名前缀自动拆分人名/服装（勾选后在下方预览拆分结果，可拆出新包）', autoSplit, (v) => {
         autoSplit = v
         buildRows()
       }),
@@ -1584,7 +1782,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       cancelBtn,
     )
 
-    panel.append(head, rows, opts, status, actions)
+    // 布局：设置与按钮在上、文件预览列表在下（PC 大面板；用户实测反馈的操作习惯），进度条紧跟按钮
+    panel.append(head, opts, actions, status, rows)
     modal.append(panel)
     ;(backdrop ?? document.body).append(modal)
   }

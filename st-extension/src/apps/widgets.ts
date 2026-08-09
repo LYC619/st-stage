@@ -92,11 +92,18 @@ export function numberRow(
   return row
 }
 
-/** 折叠分区（details/summary）：标题常显、内容默认收起，防止长页漏看分区 */
-export function foldSection(title: string, open = false): { box: HTMLElement; body: HTMLElement } {
+/** 折叠分区展开态（key → open）：App 因设置变更整体重挂载时，恢复用户手动展开的分区 */
+const foldOpenState = new Map<string, boolean>()
+
+/** 折叠分区（details/summary）：标题常显、内容默认收起，防止长页漏看分区。
+    传 key 的分区跨重挂载记住展开态——每次改设置 App 都会重挂载，
+    没有记忆的话「点一下开关/按钮，折叠区全部收起」（用户实测反馈）。 */
+export function foldSection(title: string, open = false, key = ''): { box: HTMLElement; body: HTMLElement } {
   const box = document.createElement('details')
   box.className = 'so-app-section so-app-fold'
-  box.open = open
+  box.open = key ? foldOpenState.get(key) ?? open : open
+  // toggle 只在用户点击后触发（插入前赋值不触发），记录的是真实操作
+  if (key) box.addEventListener('toggle', () => foldOpenState.set(key, box.open))
   const summary = document.createElement('summary')
   summary.className = 'so-app-title'
   summary.textContent = title

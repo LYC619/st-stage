@@ -3,11 +3,11 @@
  *
  * 七期：
  * - 全量（full）：列出所有实际存在的完整地址
- * - 智能精简（repeat）：多个「场景（人名/服装）」共有的表情只列一次，
- *   各场景其余表情按行增量列出（不生成不存在的组合）
+ * - 智能精简（repeat）：跨场景找「图名集高度重合的场景簇」，共有图名只列一次，
+ *   簇内场景行写「共有图名，另有：…」增量（不生成不存在的组合；带场景备注同样可精简）
  * - 每次回复立绘数量 N：要求 AI 按情节顺序输出 N 个 [立绘:...] 标签
  * 阶段四（大图包稳定化）：
- * - 字符预算 budget：超出时二分「每场景 tag 上限 K」均衡截取，保留排前的表情
+ * - 字符预算 budget：超出时二分「每场景 tag 上限 K」均衡截取，保留排前的图名
  */
 
 import { compactNumberedTags } from './sprite-metadata'
@@ -89,6 +89,8 @@ interface PromptScene {
   key: string
   label: string
   prefix: string
+  role: string
+  outfit: string
   tags: string[]
 }
 
@@ -119,6 +121,8 @@ function buildScenes(addresses: SpriteAddress[]): PromptScene[] {
         key,
         label: sceneLabel(address),
         prefix: scenePrefix(address),
+        role: address.role,
+        outfit: address.outfit,
         tags: [],
         seen: new Set(),
       }
@@ -172,8 +176,20 @@ function matchingNotes(
   return noteIndex.get(scene.key)?.[placement] ?? []
 }
 
-function noteLine(scene: PromptScene, note: PromptSceneNote): string {
-  return `场景备注（${scene.label}）：${note.note}`
+/**
+ * 备注渲染：after-list（默认）缩进挂在场景行下方，不再重复场景名；
+ * before-list 作为场景前的引言行保留场景名（包级引言语义）。
+ * 备注内含换行时续行统一缩进，避免打散清单结构。
+ */
+function noteLines(scene: PromptScene, note: PromptSceneNote): string[] {
+  const parts = note.note.split('\n').map((line) => line.trim()).filter(Boolean)
+  if (parts.length === 0) return []
+  const head = parts[0]
+  const rest = parts.slice(1).map((line) => `  ${line}`)
+  if (note.placement === 'before-list') {
+    return [`备注（${scene.label}）：${head}`, ...rest]
+  }
+  return [`  备注：${head}`, ...rest.map((line) => `  ${line}`)]
 }
 
 function renderGroupedSceneList(
@@ -187,17 +203,17 @@ function renderGroupedSceneList(
   const lines: string[] = []
   const ranges: string[] = []
   for (const scene of scenes) {
-    lines.push(...matchingNotes(noteIndex, scene, 'before-list').map((note) => noteLine(scene, note)))
+    for (const note of matchingNotes(noteIndex, scene, 'before-list')) {
+      lines.push(...noteLines(scene, note))
+    }
     const rendered = renderTags(scene.tags, reservedTags)
     lines.push(`- ${scene.label}：${rendered.text}`)
     ranges.push(...rendered.ranges)
-    lines.push(...matchingNotes(noteIndex, scene, 'after-list').map((note) => noteLine(scene, note)))
+    for (const note of matchingNotes(noteIndex, scene, 'after-list')) {
+      lines.push(...noteLines(scene, note))
+    }
   }
   return { lines, ranges }
-}
-
-function hasMatchingNotes(scenes: PromptScene[], noteIndex: PromptSceneNoteIndex): boolean {
-  return scenes.some((scene) => noteIndex.has(scene.key))
 }
 
 /**
@@ -220,6 +236,25 @@ function fewShotExample(scenes: PromptScene[], count: number): string[] {
   ]
 }
 
+/**
+ * 输出格式说明按实际场景形态收窄：全部是「角色/服装」时不再解释两段/三段地址，
+ * 全部是默认场景时只给最短形式——减少与当前数据无关的说明噪音。
+ */
+function formatInstruction(scenes: PromptScene[]): string {
+  const hasDefault = scenes.some((scene) => !scene.role)
+  const hasRoleOnly = scenes.some((scene) => scene.role && !scene.outfit)
+  const hasOutfit = scenes.some((scene) => scene.role && scene.outfit)
+  if (hasDefault && !hasRoleOnly && !hasOutfit) {
+    return '输出格式：[立绘:图名]，图名须与上方清单完全一致。'
+  }
+  if (hasOutfit && !hasDefault && !hasRoleOnly) {
+    return '输出格式：[立绘:角色/服装/图名]，角色、服装、图名均须与上方清单完全一致。'
+  }
+  return '输出格式：默认场景直接写 [立绘:图名]；其他场景写 [立绘:场景/图名]。两段地址表示无服装，三级地址表示指定服装。'
+}
+
+const CLOSING_INSTRUCTION = '只能使用上述场景中实际列出的图名，不要自行拼造不存在的角色/服装/图名组合。'
+
 /** full：每个 role/outfit 场景只写一次，仍完整覆盖所有实际组合。 */
 function buildGroupedFull(
   addresses: SpriteAddress[],
@@ -234,16 +269,59 @@ function buildGroupedFull(
     '可用立绘（按场景）：',
     ...rendered.lines,
     ...rangeInstruction(rendered.ranges),
-    '输出格式：默认场景直接写 [立绘:表情]；其他场景写 [立绘:场景/表情]。两段地址表示无服装，三级地址表示指定服装。',
+    formatInstruction(scenes),
     countInstruction(count),
     ...fewShotExample(scenes, count),
-    '只能使用上述场景中实际列出的表情，不要自行拼造不存在的角色/服装/表情组合。',
+    CLOSING_INSTRUCTION,
   ].join('\n')
 }
 
+/** 精简模式里「共有图名」是保留短语；真实图名撞名时放弃精简防歧义 */
+const SHARED_LIST_LABEL = '共有图名'
+
+interface SharedCluster {
+  core: string[]
+  members: boolean[]
+}
+
 /**
- * repeat：按场景分组，抽出所有场景共有的表情，剩余项仍按所在场景列出。
- * 两部分合起来可以还原完整的场景 × tag 关系，不生成笛卡尔积之外的组合。
+ * 找「图名集高度重合的场景簇」：任取两场景的图名交集作候选共有核，
+ * 簇 = 包含该核全部图名的场景；按估算节省字符数取最优（确定性：先到先得）。
+ * O(场景数² × 图名数)，实际规模（几十个场景）下开销可忽略。
+ */
+function findSharedCluster(scenes: PromptScene[]): SharedCluster | null {
+  const sets = scenes.map((scene) => new Set(scene.tags))
+  const joinedLen = (tags: string[]): number =>
+    tags.reduce((sum, tag) => sum + tag.length, 0) + Math.max(0, tags.length - 1)
+  const seenCores = new Set<string>()
+  let best: SharedCluster | null = null
+  let bestSavings = 0
+  for (let i = 0; i < scenes.length; i++) {
+    for (let j = i + 1; j < scenes.length; j++) {
+      const core = scenes[i].tags.filter((tag) => sets[j].has(tag))
+      if (core.length < 2) continue
+      const signature = core.join(' ')
+      if (seenCores.has(signature)) continue
+      seenCores.add(signature)
+      const members = sets.map((set) => core.every((tag) => set.has(tag)))
+      const memberCount = members.filter(Boolean).length
+      const coreLen = joinedLen(core)
+      // 每个成员行省下核心清单、换上「共有图名，另有：」前缀；
+      // 额外付出核心行与用法解释行（合计约 60 字符固定成本）
+      const savings = memberCount * (coreLen - SHARED_LIST_LABEL.length - 5) - (coreLen + 60)
+      if (savings > bestSavings) {
+        bestSavings = savings
+        best = { core, members }
+      }
+    }
+  }
+  return best
+}
+
+/**
+ * repeat：按场景簇抽出共有图名列一次，簇内场景行写增量，簇外场景完整列出。
+ * 每个场景保留自己的行（场景备注有锚点，带备注同样可精简），
+ * 整体仍可还原完整的场景 × 图名关系，不生成笛卡尔积之外的组合。
  */
 function buildShared(
   addresses: SpriteAddress[],
@@ -252,53 +330,50 @@ function buildShared(
   reservedTags: ReadonlySet<string>,
 ): string {
   const scenes = buildScenes(addresses)
-  if (scenes.length <= 1 || hasMatchingNotes(scenes, noteIndex)) {
+  if (scenes.length <= 1 || reservedTags.has(SHARED_LIST_LABEL)) {
+    return buildGroupedFull(addresses, count, noteIndex, reservedTags)
+  }
+  const cluster = findSharedCluster(scenes)
+  if (!cluster) {
     return buildGroupedFull(addresses, count, noteIndex, reservedTags)
   }
 
-  const allTags: string[] = []
-  const seenTags = new Set<string>()
-  for (const scene of scenes) {
-    for (const tag of scene.tags) {
-      if (seenTags.has(tag)) continue
-      seenTags.add(tag)
-      allTags.push(tag)
-    }
-  }
-  const sharedTags = allTags.filter((tag) => scenes.every((scene) => scene.tags.includes(tag)))
-  if (sharedTags.length === 0) {
-    return buildGroupedFull(addresses, count, noteIndex, reservedTags)
-  }
-  const sharedSet = new Set(sharedTags)
-  const remainders = scenes.map((scene) => ({
-    scene,
-    tags: scene.tags.filter((tag) => !sharedSet.has(tag)),
-  }))
-
-  const labels = scenes.map((scene) =>
-    scene.prefix ? scene.label : `${scene.label}（直接写表情）`,
-  )
-  const renderedShared = renderTags(sharedTags, reservedTags)
-  const ranges = [...renderedShared.ranges]
+  const coreSet = new Set(cluster.core)
+  const renderedCore = renderTags(cluster.core, reservedTags)
+  const ranges = [...renderedCore.ranges]
   const lines = [
     '[角色立绘系统]',
-    `可用场景：${labels.join('、')}`,
-    `共有表情（适用于全部场景）：${renderedShared.text}`,
+    `${SHARED_LIST_LABEL}：${renderedCore.text}`,
+    '可用立绘（按场景）：',
   ]
-  const withRemainder = remainders.filter((item) => item.tags.length > 0)
-  if (withRemainder.length > 0) {
-    lines.push('各场景其余表情：')
-    for (const { scene, tags } of withRemainder) {
-      const rendered = renderTags(tags, reservedTags)
+  for (const [index, scene] of scenes.entries()) {
+    for (const note of matchingNotes(noteIndex, scene, 'before-list')) {
+      lines.push(...noteLines(scene, note))
+    }
+    if (cluster.members[index]) {
+      const remainder = scene.tags.filter((tag) => !coreSet.has(tag))
+      if (remainder.length === 0) {
+        lines.push(`- ${scene.label}：${SHARED_LIST_LABEL}`)
+      } else {
+        const rendered = renderTags(remainder, reservedTags)
+        lines.push(`- ${scene.label}：${SHARED_LIST_LABEL}，另有：${rendered.text}`)
+        ranges.push(...rendered.ranges)
+      }
+    } else {
+      const rendered = renderTags(scene.tags, reservedTags)
       lines.push(`- ${scene.label}：${rendered.text}`)
       ranges.push(...rendered.ranges)
     }
+    for (const note of matchingNotes(noteIndex, scene, 'after-list')) {
+      lines.push(...noteLines(scene, note))
+    }
   }
+  lines.push(`场景行写「${SHARED_LIST_LABEL}」表示最上方共有清单里的图名整组可用；「另有」及直接列出的图名只属于所在场景。`)
   lines.push(...rangeInstruction(ranges))
-  lines.push('共有表情可与任一已列场景组合；各场景其余表情只按所在行使用。默认场景直接写 [立绘:表情]，其他场景写 [立绘:场景/表情]。')
+  lines.push(formatInstruction(scenes))
   lines.push(countInstruction(count))
   lines.push(...fewShotExample(scenes, count))
-  lines.push('只能使用实际存在的组合，不要自行拼造不存在的角色/服装/表情。')
+  lines.push(CLOSING_INSTRUCTION)
   return lines.join('\n')
 }
 
@@ -365,9 +440,9 @@ export const BUILTIN_TEMPLATE = [
   '[角色立绘系统]',
   '可用立绘（按场景）：',
   '{清单}',
-  '输出格式：默认场景直接写 [立绘:表情]；其他场景写 [立绘:场景/表情]。两段地址表示无服装，三级地址表示指定服装。',
+  '输出格式：默认场景直接写 [立绘:图名]；其他场景写 [立绘:场景/图名]。两段地址表示无服装，三级地址表示指定服装。',
   '请根据回复内容，按情节顺序选择 {数量} 张立绘。每个 [立绘:...] 标签单独占一行，插在触发它的剧情段落之后——随剧情分散在正文中，不要集中堆在回复结尾。',
-  '只能使用上述场景中实际列出的表情，不要自行拼造不存在的角色/服装/表情组合。',
+  '只能使用上述场景中实际列出的图名，不要自行拼造不存在的角色/服装/图名组合。',
 ].join('\n')
 
 /**

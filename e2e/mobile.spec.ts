@@ -488,8 +488,9 @@ test('真实图库在横竖屏中保持可操作，并支持角色折叠与搜�
   await promptNote.fill('适用于夜晚剧情')
   await packInfo.locator('.so-pack-prompt-placement').selectOption('after-list')
   await page.screenshot({ path: testInfo.outputPath('gallery-notes-mobile.png'), fullPage: true })
-  await packInfo.getByRole('button', { name: '保存', exact: true }).tap()
-  await page.locator('details.so-collapse', { hasText: '包信息' }).locator('summary').tap()
+  await packInfo.getByRole('button', { name: '保存包信息', exact: true }).tap()
+  // 保存后面板保持展开（实测反馈批次）：不再需要重新点开
+  await expect(page.locator('details.so-collapse', { hasText: '包信息' })).toHaveJSProperty('open', true)
   await expect(page.locator('.so-pack-prompt-note')).toHaveValue('适用于夜晚剧情')
   await expect(page.locator('.so-pack-prompt-placement')).toHaveValue('after-list')
   await expect(page.locator('.so-outfit-note-input[data-outfit="外出"]'))

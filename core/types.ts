@@ -3,17 +3,22 @@
  * 纯 TS，零框架依赖，Web 测试环境与 SillyTavern 扩展共用。
  *
  * 数据格式版本：
- * - 存储 settingsVersion = 4（旧版本由 core/migrate.ts 自动升级）
+ * - 存储 settingsVersion = 5（旧版本由 core/migrate.ts 自动升级）
  * - 立绘包文件 sprite-pack@3（导入兼容 @1 / @2）
  */
 
 /** 当前设置存储版本 */
-export const SETTINGS_VERSION = 4
+export const SETTINGS_VERSION = 5
 
 /** 楼层模式补渲染的最近 AI 楼层数：默认与上下限 */
 export const RECENT_FLOORS_DEFAULT = 6
 export const RECENT_FLOORS_MIN = 1
 export const RECENT_FLOORS_MAX = 50
+
+/** 立绘显示不透明度（百分比）：默认与上下限（悬浮窗与楼层内立绘共用） */
+export const SPRITE_OPACITY_DEFAULT = 100
+export const SPRITE_OPACITY_MIN = 20
+export const SPRITE_OPACITY_MAX = 100
 
 /** 每次回复的立绘数量：默认与上下限 */
 export const SPRITE_COUNT_DEFAULT = 1
@@ -235,6 +240,11 @@ export interface PluginSettings {
    */
   overlayHidden: boolean
   /**
+   * 立绘显示不透明度（20–100，百分比，默认 100）。
+   * 同时作用于悬浮窗立绘与楼层内立绘——移动端立绘遮挡正文时可调低。
+   */
+  spriteOpacity: number
+  /**
    * 楼层模式补渲染的最近 AI 楼层数（1–50，默认 6）。
    * 只在切换显示模式 / 加载聊天时限制补渲染范围；新收到的 AI 回复不受限。
    */
@@ -249,7 +259,7 @@ export interface PluginSettings {
   autoSwitchSeconds: number
   /** 多角色/分组模式（功能②）：开启后按 [立绘:分组/图名] 寻址，prompt 枚举分组 */
   multiRole: boolean
-  /** 多角色 prompt 生成模式：full=按场景完整分组；repeat=共有表情 + 各场景其余表情 */
+  /** 多角色 prompt 生成模式：repeat=自动精简（按场景簇压缩，不更短时自动回退全量）；full=始终完整分组 */
   multiRolePromptMode: 'full' | 'repeat'
   /** 每次回复的立绘数量（七期，默认 1，范围 1–10）：注入 prompt 要求 AI 输出 N 个标签 */
   spriteCount: number
@@ -337,13 +347,14 @@ export function createDefaultSettings(): PluginSettings {
     imageHost: DEFAULT_IMAGE_HOST,
     overlay: { x: 24, y: 80, width: 220 },
     overlayHidden: false,
+    spriteOpacity: SPRITE_OPACITY_DEFAULT,
     recentFloors: RECENT_FLOORS_DEFAULT,
     phone: { x: 24, y: 320, open: false },
     showPhone: true,
     autoSwitch: false,
     autoSwitchSeconds: 3,
     multiRole: false,
-    multiRolePromptMode: 'full',
+    multiRolePromptMode: 'repeat',
     spriteCount: SPRITE_COUNT_DEFAULT,
     injectionDepth: INJECTION_DEPTH_DEFAULT,
     promptTemplate: '',

@@ -37,6 +37,8 @@ export function createPhoneShell(
   let activeApp: PhoneApp | null = null
   /** 当次 mount 的 ctx 回收句柄（离开 App 时调用，自动退订经 ctx 建立的订阅/定时器） */
   let activeCtxDispose: (() => void) | null = null
+  /** 上一次 renderScreen 时的 App id：同 App 重挂载（设置变更）恢复滚动位置用 */
+  let screenScrollAppId: string | null = null
   // 手机总显隐（功能④）：隐藏时图标与壳都不显示，回退纯悬浮窗模式
   let hidden = false
   let destroyed = false
@@ -254,6 +256,9 @@ export function createPhoneShell(
   }
 
   function renderScreen(): void {
+    // 同一 App 因设置变更整体重挂载时保持滚动位置：拨一个开关整页跳回顶部的体验极差
+    const prevScrollAppId = screenScrollAppId
+    const prevScrollTop = screen.scrollTop
     screen.innerHTML = ''
     backBtn.style.display = activeApp ? 'flex' : 'none'
     if (activeApp) {
@@ -274,9 +279,12 @@ export function createPhoneShell(
         errBox.textContent = 'App 打开失败，详见控制台'
         container.append(errBox)
       }
+      if (prevScrollAppId === activeApp.id && prevScrollTop > 0) screen.scrollTop = prevScrollTop
+      screenScrollAppId = activeApp.id
       return
     }
 
+    screenScrollAppId = null
     statusTitle.textContent = 'st-stage'
     const grid = document.createElement('div')
     grid.className = 'so-phone-home-grid'

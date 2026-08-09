@@ -14,6 +14,8 @@ import {
   RECENT_FLOORS_MIN,
   SPRITE_COUNT_MAX,
   SPRITE_COUNT_MIN,
+  SPRITE_OPACITY_MAX,
+  SPRITE_OPACITY_MIN,
 } from '../../../core/types'
 import { getActiveAddresses, getActivePacks } from '../../../core/sprite-store'
 import { el, appButton, foldSection, numberRow, selectRow, textareaRow, toggleRow } from './widgets'
@@ -52,7 +54,7 @@ export function spriteApp(): PhoneApp {
       )
 
       // 显示方式（默认折叠：标题常显，防止长页漏看分区）
-      const displaySection = foldSection('显示')
+      const displaySection = foldSection('显示', false, 'sprites:display')
       displaySection.body.append(
         selectRow(
           '显示位置',
@@ -84,6 +86,13 @@ export function spriteApp(): PhoneApp {
         numberRow('最近渲染楼层数', settings.recentFloors, RECENT_FLOORS_MIN, RECENT_FLOORS_MAX, (v) =>
           ctx.updateSettings({ ...ctx.getSettings(), recentFloors: v }),
         ),
+        numberRow(
+          '立绘不透明度（%）',
+          settings.spriteOpacity,
+          SPRITE_OPACITY_MIN,
+          SPRITE_OPACITY_MAX,
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), spriteOpacity: v }),
+        ),
         toggleRow('隐藏 [立绘:xxx] 标签', settings.hideTagInMessage, (v) =>
           ctx.updateSettings({ ...ctx.getSettings(), hideTagInMessage: v }),
         ),
@@ -96,11 +105,11 @@ export function spriteApp(): PhoneApp {
       )
       const displayHint = el('div', 'so-app-desc')
       displayHint.textContent =
-        '「仅楼层」把 [立绘:xxx] 原位替换为图片且不弹悬浮窗；楼层数限制加载聊天时补渲染的范围（新回复不受限）。'
+        '「仅楼层」把 [立绘:xxx] 原位替换为图片且不弹悬浮窗；楼层数限制加载聊天时补渲染的范围（新回复不受限）；不透明度同时作用于悬浮窗与楼层立绘，移动端遮挡正文时可调低。'
       displaySection.body.append(displayHint)
 
       // 多立绘轮播（默认折叠）
-      const autoSection = foldSection('多立绘轮播')
+      const autoSection = foldSection('多立绘轮播', false, 'sprites:auto')
       autoSection.body.append(
         toggleRow('自动轮播（一条回复多张立绘时）', settings.autoSwitch, (v) =>
           ctx.updateSettings({ ...ctx.getSettings(), autoSwitch: v }),
@@ -111,7 +120,7 @@ export function spriteApp(): PhoneApp {
       )
 
       // Prompt 设置（默认折叠）
-      const promptSection = foldSection('Prompt')
+      const promptSection = foldSection('Prompt', false, 'sprites:prompt')
       promptSection.body.append(
         numberRow('每次回复立绘数量', settings.spriteCount, SPRITE_COUNT_MIN, SPRITE_COUNT_MAX, (v) =>
           ctx.updateSettings({ ...ctx.getSettings(), spriteCount: v }),
@@ -127,13 +136,13 @@ export function spriteApp(): PhoneApp {
           'Prompt 模式',
           settings.multiRolePromptMode,
           [
+            { value: 'repeat', label: '自动精简（默认：重合图名列一次）' },
             { value: 'full', label: '全量（枚举全部地址）' },
-            { value: 'repeat', label: '智能精简（共有表情 + 场景其余）' },
           ],
           (v) =>
             ctx.updateSettings({
               ...ctx.getSettings(),
-              multiRolePromptMode: v === 'repeat' ? 'repeat' : 'full',
+              multiRolePromptMode: v === 'full' ? 'full' : 'repeat',
             }),
         ),
         numberRow(
@@ -166,14 +175,14 @@ export function spriteApp(): PhoneApp {
       budgetHint.textContent = budgeted
         ? `预计注入 ${budgeted.length} 字符` +
           (budgeted.length < unlimited.length
-            ? `（超预算，已从 ${unlimited.length} 字符每场景均衡截取，保留排前的表情）`
+            ? `（超预算，已从 ${unlimited.length} 字符每场景均衡截取，保留排前的图名）`
             : '')
         : '预计注入：无（当前角色没有可用立绘地址）'
       promptSection.body.append(budgetHint)
       const promptHint = el('div', 'so-app-desc')
       promptHint.textContent =
         '多个包/含人名服装时，Prompt 用完整地址 [立绘:人名/服装/图名]；单包纯图名时用简写 [立绘:图名]。' +
-        '智能精简按实际长度自动取更短的一版：场景/表情较少时仍会显示全量格式，属正常现象。'
+        '自动精简把多套服装重合的图名只列一次，并按实际长度自动取更短的一版：场景少或重合度低时仍显示全量格式，属正常现象。'
       promptSection.body.append(promptHint)
       const tplRow = textareaRow(
         '自定义提示词（留空=用内置）',

@@ -13,6 +13,10 @@
  * v3 → v4：
  * - 补 galleryFoldByRole 字段
  * - 规范化图库提示、服装备注、来源标识与立绘标签
+ * v4 → v5：
+ * - multiRolePromptMode 默认值改为 repeat（自动精简）；
+ *   v4 及更早存档里的 full 是旧默认值而非用户主动选择，一次性迁为 repeat，
+ *   v5 起存档里的 full 视为用户选择原样保留
  */
 
 import type { CharacterBinding, PluginSettings, SpritePack } from './types'
@@ -27,6 +31,8 @@ import {
   SETTINGS_VERSION,
   SPRITE_COUNT_MAX,
   SPRITE_COUNT_MIN,
+  SPRITE_OPACITY_MAX,
+  SPRITE_OPACITY_MIN,
 } from './types'
 import { normalizeTag, sanitizePackName } from './naming'
 import { extractImageCode } from './share-code'
@@ -46,6 +52,10 @@ export function migrateSettings(saved: unknown): PluginSettings {
   const defaults = createDefaultSettings()
   if (!saved || typeof saved !== 'object') return defaults
   const raw = saved as Partial<PluginSettings>
+  const savedVersion =
+    typeof raw.settingsVersion === 'number' && Number.isFinite(raw.settingsVersion)
+      ? raw.settingsVersion
+      : 0
 
   return {
     settingsVersion: SETTINGS_VERSION,
@@ -69,6 +79,10 @@ export function migrateSettings(saved: unknown): PluginSettings {
     overlay: migrateOverlay(raw.overlay, defaults.overlay),
     overlayHidden:
       typeof raw.overlayHidden === 'boolean' ? raw.overlayHidden : defaults.overlayHidden,
+    spriteOpacity:
+      typeof raw.spriteOpacity === 'number' && Number.isFinite(raw.spriteOpacity)
+        ? Math.min(SPRITE_OPACITY_MAX, Math.max(SPRITE_OPACITY_MIN, Math.round(raw.spriteOpacity)))
+        : defaults.spriteOpacity,
     recentFloors:
       typeof raw.recentFloors === 'number' && Number.isFinite(raw.recentFloors)
         ? Math.min(RECENT_FLOORS_MAX, Math.max(RECENT_FLOORS_MIN, Math.round(raw.recentFloors)))
@@ -82,9 +96,11 @@ export function migrateSettings(saved: unknown): PluginSettings {
         : defaults.autoSwitchSeconds,
     multiRole: typeof raw.multiRole === 'boolean' ? raw.multiRole : defaults.multiRole,
     multiRolePromptMode:
-      raw.multiRolePromptMode === 'full' || raw.multiRolePromptMode === 'repeat'
-        ? raw.multiRolePromptMode
-        : defaults.multiRolePromptMode,
+      raw.multiRolePromptMode === 'repeat'
+        ? 'repeat'
+        : raw.multiRolePromptMode === 'full' && savedVersion >= 5
+          ? 'full'
+          : defaults.multiRolePromptMode,
     spriteCount:
       typeof raw.spriteCount === 'number' && Number.isFinite(raw.spriteCount)
         ? Math.min(SPRITE_COUNT_MAX, Math.max(SPRITE_COUNT_MIN, Math.round(raw.spriteCount)))

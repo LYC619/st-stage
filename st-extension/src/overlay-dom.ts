@@ -24,6 +24,8 @@ export interface OverlayController {
   setPlaceholder(text: string): void
   setVisible(visible: boolean): void
   setLayout(layout: OverlayLayout): void
+  /** 立绘不透明度（20–100 百分比）：作为淡入动画的目标透明度，控件不受影响 */
+  setOpacity(percent: number): void
   destroy(): void
 }
 
@@ -45,6 +47,8 @@ export function createOverlay(
   let autoSeconds = 3
   let autoTimer: ReturnType<typeof setInterval> | null = null
   let fadeTimer: ReturnType<typeof setTimeout> | null = null
+  /** 用户配置的立绘不透明度（0–1）：淡入动画的终点值，替代硬编码的 1 */
+  let userOpacity = 1
 
   const root = document.createElement('div')
   root.id = 'sprite-overlay-root'
@@ -133,10 +137,10 @@ export function createOverlay(
       img.src = url
       tagBadge.textContent = tag // 与换图同步，避免标签早于图片翻转
       img.onload = () => {
-        img.style.opacity = '1'
+        img.style.opacity = String(userOpacity)
       }
       // 已缓存图片可能不触发 onload
-      if (img.complete) img.style.opacity = '1'
+      if (img.complete) img.style.opacity = String(userOpacity)
     }, 180)
   }
 
@@ -280,6 +284,12 @@ export function createOverlay(
     setLayout(next: OverlayLayout) {
       layout = { ...next }
       applyLayout()
+    },
+    setOpacity(percent: number) {
+      const clamped = Math.min(100, Math.max(20, Math.round(percent))) / 100
+      userOpacity = clamped
+      // 淡入过程中（opacity 0）不打断动画，终点值由 showImage 里的 userOpacity 决定
+      if (img.style.opacity !== '0') img.style.opacity = String(clamped)
     },
     destroy() {
       stopAuto()

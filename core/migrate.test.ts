@@ -150,8 +150,16 @@ describe('migrateSettings', () => {
 
   it('v3 → v4：图库按角色折叠缺失时默认为 false', () => {
     const migrated = migrateSettings({ settingsVersion: 3, packs: [] })
-    expect(migrated.settingsVersion).toBe(4)
+    expect(migrated.settingsVersion).toBe(SETTINGS_VERSION)
     expect(migrated.galleryFoldByRole).toBe(false)
+  })
+
+  it('v4 → v5：旧存档的 full 是旧默认值，迁为自动精简；v5 起的 full 保留', () => {
+    expect(migrateSettings({ settingsVersion: 4, packs: [], multiRolePromptMode: 'full' }).multiRolePromptMode).toBe('repeat')
+    expect(migrateSettings({ packs: [] }).multiRolePromptMode).toBe('repeat')
+    expect(migrateSettings({ settingsVersion: 4, packs: [], multiRolePromptMode: 'repeat' }).multiRolePromptMode).toBe('repeat')
+    expect(migrateSettings({ settingsVersion: 5, packs: [], multiRolePromptMode: 'full' }).multiRolePromptMode).toBe('full')
+    expect(migrateSettings({ settingsVersion: 6, packs: [], multiRolePromptMode: 'full' }).multiRolePromptMode).toBe('full')
   })
 
   it('v4 图库元数据去除空白并去重立绘标签', () => {

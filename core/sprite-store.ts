@@ -373,6 +373,42 @@ export function removePack(settings: PluginSettings, packId: string): PluginSett
   }
 }
 
+/** 批量删除立绘包（绑定同步摘除）；未知 id 忽略 */
+export function removePacks(settings: PluginSettings, packIds: string[]): PluginSettings {
+  let next = settings
+  for (const id of packIds) next = removePack(next, id)
+  return next
+}
+
+/** 包列表内平移一个包（offset=-1 前移 / +1 后移）；越界或未知 id 原样返回 */
+export function movePack(settings: PluginSettings, packId: string, offset: number): PluginSettings {
+  const from = settings.packs.findIndex((p) => p.id === packId)
+  if (from < 0) return settings
+  const to = from + offset
+  if (to < 0 || to >= settings.packs.length) return settings
+  const packs = [...settings.packs]
+  const [moved] = packs.splice(from, 1)
+  packs.splice(to, 0, moved)
+  return { ...settings, packs }
+}
+
+/** 拖拽排序：把 packId 移到 targetId 之前；同一个包或未知 id 原样返回 */
+export function movePackBefore(
+  settings: PluginSettings,
+  packId: string,
+  targetId: string,
+): PluginSettings {
+  if (packId === targetId) return settings
+  const from = settings.packs.findIndex((p) => p.id === packId)
+  if (from < 0) return settings
+  const packs = [...settings.packs]
+  const [moved] = packs.splice(from, 1)
+  const to = packs.findIndex((p) => p.id === targetId)
+  if (to < 0) return settings
+  packs.splice(to, 0, moved)
+  return { ...settings, packs }
+}
+
 /** 给角色的启用包集合追加一个包（已在其中则不动；自动启用绑定） */
 export function bindPack(
   settings: PluginSettings,

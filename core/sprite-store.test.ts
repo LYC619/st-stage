@@ -10,8 +10,11 @@ import {
   matchAddress,
   matchSprite,
   matchSprites,
+  movePack,
+  movePackBefore,
   moveSprite,
   previewBindingAddressChanges,
+  removePacks,
   removeSprite,
   renameSprite,
   resolveSprite,
@@ -587,5 +590,48 @@ describe('三级身份按有效地址（含包级 roleName/outfit 继承）', ()
     }
     const next = upsertSprite(base, { tag: '微笑', url: 'new', group: '鸣人' })
     expect(next.sprites).toEqual([{ tag: '微笑', url: 'new' }])
+  })
+})
+
+describe('包列表批量操作（实测反馈批次）', () => {
+  const settingsWith = (): PluginSettings => ({
+    ...createDefaultSettings(),
+    packs: [
+      { id: 'a', name: '甲', sprites: [] },
+      { id: 'b', name: '乙', sprites: [] },
+      { id: 'c', name: '丙', sprites: [] },
+    ],
+    bindings: [
+      { characterName: '阿珍', packIds: ['a', 'b'], enabled: true },
+      { characterName: '阿强', packIds: ['b'], enabled: true },
+    ],
+  })
+
+  it('movePack 平移一位并保持越界/未知 id 不变', () => {
+    const s = settingsWith()
+    expect(movePack(s, 'b', -1).packs.map((p) => p.id)).toEqual(['b', 'a', 'c'])
+    expect(movePack(s, 'a', 1).packs.map((p) => p.id)).toEqual(['b', 'a', 'c'])
+    expect(movePack(s, 'a', -1)).toBe(s)
+    expect(movePack(s, 'c', 1)).toBe(s)
+    expect(movePack(s, 'ghost', 1)).toBe(s)
+  })
+
+  it('movePackBefore 移到目标之前；自身/未知 id 原样返回', () => {
+    const s = settingsWith()
+    expect(movePackBefore(s, 'c', 'a').packs.map((p) => p.id)).toEqual(['c', 'a', 'b'])
+    expect(movePackBefore(s, 'a', 'c').packs.map((p) => p.id)).toEqual(['b', 'a', 'c'])
+    expect(movePackBefore(s, 'a', 'a')).toBe(s)
+    expect(movePackBefore(s, 'ghost', 'a')).toBe(s)
+    expect(movePackBefore(s, 'a', 'ghost')).toBe(s)
+  })
+
+  it('removePacks 批量删除并同步摘除绑定（绑定变空整条移除）', () => {
+    const next = removePacks(settingsWith(), ['a', 'b'])
+    expect(next.packs.map((p) => p.id)).toEqual(['c'])
+    expect(next.bindings).toEqual([])
+    const keep = removePacks(settingsWith(), ['b'])
+    expect(keep.bindings).toEqual([
+      { characterName: '阿珍', packIds: ['a'], enabled: true },
+    ])
   })
 })
