@@ -5027,7 +5027,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-09 10:30"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-09 11:51"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
   return () => wrapper.remove();
@@ -7088,14 +7088,38 @@ function dispatchValue(element2, value) {
   element2.dispatchEvent(new Event("input", { bubbles: true }));
   element2.dispatchEvent(new Event("change", { bubbles: true }));
 }
+var sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 async function waitFor(selector, timeout = 2500) {
   const start = Date.now();
   while (Date.now() - start < timeout) {
     const element2 = document.querySelector(selector);
     if (element2) return element2;
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await sleep(50);
   }
   return null;
+}
+async function waitForValue(element2, value, timeout = 5e3) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    if (element2 instanceof HTMLSelectElement) {
+      if ([...element2.options].some((option) => option.value === value)) return true;
+    } else if (element2.value === value) return true;
+    await sleep(80);
+  }
+  return false;
+}
+async function waitForConnection(profile, timeout = 8e3) {
+  const start = Date.now();
+  let latest = null;
+  while (Date.now() - start < timeout) {
+    latest = await readConnection();
+    const sourceMatches = latest?.mainApi === profile.mainApi && (profile.mainApi !== "openai" || latest.source === profile.source);
+    const modelMatches = !profile.model || latest?.model === profile.model;
+    if (latest?.online && sourceMatches && modelMatches) return latest;
+    await sleep(120);
+  }
+  if (profile.model && (!latest?.model || latest.model.toLowerCase() === "none")) throw new Error(`模型「${profile.model}」尚未加载，未将 NONE 视为切换成功`);
+  throw new Error(`连接回验超时${latest?.model ? `（当前模型：${latest.model}）` : ""}`);
 }
 async function writeSecret(st, profile) {
   const descriptor = getSource(profile.mainApi, profile.source);
@@ -7108,10 +7132,12 @@ async function writeSecret(st, profile) {
     if (input) dispatchValue(input, profile.key);
   }
 }
-async function applyProfile(profile) {
+async function applyProfile(profile, onProgress = () => {
+}) {
   const st = getST3();
   if (!st) throw new Error("未检测到 SillyTavern 运行时");
   const descriptor = getSource(profile.mainApi, profile.source);
+  onProgress("正在切换补全方式与渠道…");
   const mainApiSelect = await waitFor("#main_api");
   if (!mainApiSelect) throw new Error("找不到 SillyTavern API 类型选择器");
   dispatchValue(mainApiSelect, profile.mainApi);
@@ -7120,26 +7146,38 @@ async function applyProfile(profile) {
     if (!sourceSelect) throw new Error("找不到聊天补全来源选择器");
     dispatchValue(sourceSelect, profile.source);
   }
+  await sleep(120);
   await writeSecret(st, profile);
   const settings = settingsFor(st, profile.mainApi);
   if (descriptor.sourceField) settings[descriptor.sourceField] = profile.source;
   if (descriptor.urlField) settings[descriptor.urlField] = profile.url;
-  if (descriptor.modelField && profile.model) settings[descriptor.modelField] = profile.model;
   for (const [key, value] of Object.entries(profile.settings)) settings[key] = value;
   if (descriptor.urlSelector) {
     const input = await waitFor(descriptor.urlSelector);
     if (!input) throw new Error(`找不到 ${descriptor.label} 的 URL 输入框`);
     dispatchValue(input, profile.url);
   }
-  if (descriptor.modelSelector && profile.model) {
-    const input = await waitFor(descriptor.modelSelector, 1200);
-    if (input) dispatchValue(input, profile.model);
-  }
   st.saveSettingsDebounced?.();
   if (descriptor.urlField && readString(settings, descriptor.urlField) !== profile.url) throw new Error("URL 写入后回验失败，已停止连接");
   const button2 = await waitFor(descriptor.connectSelector);
   if (!button2) throw new Error(`找不到 ${descriptor.label} 的连接按钮`);
+  let modelControl = null;
+  if (descriptor.modelSelector && profile.model) {
+    modelControl = await waitFor(descriptor.modelSelector, 2500);
+    if (!modelControl) throw new Error(`找不到 ${descriptor.label} 的模型字段`);
+    if (modelControl instanceof HTMLSelectElement && ![...modelControl.options].some((option) => option.value === profile.model)) {
+      onProgress("正在连接渠道并加载可用模型…");
+      button2.click();
+      if (!await waitForValue(modelControl, profile.model)) throw new Error(`可用模型中没有「${profile.model}」，请检查模型 ID 或渠道权限`);
+    }
+    dispatchValue(modelControl, profile.model);
+    if (descriptor.modelField) settings[descriptor.modelField] = profile.model;
+  }
+  onProgress(profile.model ? `正在确认模型「${profile.model}」…` : "正在确认连接…");
   button2.click();
+  const connected = await waitForConnection(profile);
+  if (modelControl && profile.model && modelControl.value !== profile.model) throw new Error(`模型写入被 SillyTavern 覆盖（当前：${modelControl.value || "NONE"}）`);
+  return connected;
 }
 var modelQueue = Promise.resolve();
 function fetchModels(profile) {
@@ -7232,15 +7270,18 @@ async function render2(container, ctx, deps, state) {
   const description = el2("div", "so-app-desc");
   description.textContent = "管理全部 Chat Completion、Text Completion 与其他 SillyTavern API 档案。";
   manage.append(description, appButton("管理连接档案", deps.openManager));
-  container.append(manage);
+  container.append(manage, buildApiGuide());
   async function switchProfile(profile) {
     if (state.busy || !connection) return;
     state.busy = true;
     state.message = `正在应用「${profile.name}」的类型、来源、密钥、URL 与模型…`;
     await render2(container, ctx, deps, state);
     try {
-      await applyProfile(profile);
-      state.message = `「${profile.name}」设置已回验，正在连接…`;
+      const connected = await applyProfile(profile, (message) => {
+        state.message = message;
+        if (container.isConnected) void render2(container, ctx, deps, state);
+      });
+      state.message = `「${profile.name}」已连接${connected.model ? `，实际模型：${connected.model}` : ""}`;
       toast2("success", state.message);
     } catch (error) {
       state.message = `切换失败：${error instanceof Error ? error.message : String(error)}`;
@@ -7251,6 +7292,55 @@ async function render2(container, ctx, deps, state) {
       await render2(container, ctx, deps, state);
     }
   }
+}
+function guideLine(title, text) {
+  const line = el2("div", "so-app-desc");
+  const strong = document.createElement("strong");
+  strong.textContent = `${title}：`;
+  line.append(strong, document.createTextNode(text));
+  return line;
+}
+function buildApiGuide() {
+  const guide = el2("div", "so-app-section");
+  const title = el2("div", "so-app-title");
+  title.textContent = "API 使用说明";
+  guide.append(title);
+  const quick = foldSection("快速开始", false);
+  quick.body.append(
+    guideLine("1. 建档", "在“管理连接档案”中添加档案，或先打开 SillyTavern 原生 API 面板配置好连接，再用“导入当前连接”。"),
+    guideLine("2. 填写", "Key 是访问凭证，URL 是服务入口，模型 ID 必须与渠道实际提供的名称完全一致。"),
+    guideLine("3. 切换", "点击档案后会依次切换渠道、写入凭证、加载模型并做最终连接回验。看到“已连接，实际模型…”才算完成。")
+  );
+  const completion = foldSection("补全方式有什么不同", false);
+  completion.body.append(
+    guideLine("Chat Completion", "以 system、user、assistant 消息列表发送上下文。现代云模型主要使用这种方式，角色与指令边界清晰，通常是首选。"),
+    guideLine("Text Completion", "把整个提示词拼成一段文本续写。适合本地推理后端、旧模型和需要精细控制提示模板的玩法。"),
+    guideLine("NovelAI", "面向创作续写的专用服务，偏小说语料与采样控制，不等同于通用聊天 API。"),
+    guideLine("KoboldAI", "常用于本地或自托管文本生成后端，玩法自由，但 URL、模型加载和性能取决于自己的服务。"),
+    guideLine("KoboldAI Horde", "由社区算力池处理请求，不必自备推理服务；可用模型、排队时间和速度会随在线工作节点变化。"),
+    guideLine("注意", "“补全方式”描述请求协议，不代表模型聪明程度。同一个模型可能被不同后端包装成不同协议。")
+  );
+  const channels = foldSection("Chat Completion 渠道说明", false);
+  channels.body.append(
+    guideLine("OpenAI", "官方直连渠道，模型名称和能力以 OpenAI 当前控制台为准。"),
+    guideLine("Claude", "Anthropic 官方渠道，擅长长上下文与文本任务；使用 Anthropic Key。"),
+    guideLine("OpenRouter", "聚合多家模型的统一入口，切模型方便；模型 ID 通常带厂商前缀，计费与路由由 OpenRouter 管理。"),
+    guideLine("Google AI Studio", "Google Gemini 开发者渠道；区域可用性、限额与模型名以 AI Studio 为准。"),
+    guideLine("Mistral AI / Cohere", "各厂商官方直连，适合明确需要其自有模型、权限和计费体系的用户。"),
+    guideLine("Groq", "提供侧重低延迟的托管推理；可用的是 Groq 当前部署的模型，不是任意模型。"),
+    guideLine("DeepSeek / xAI", "对应厂商官方渠道，分别使用自己的 Key 与模型列表。"),
+    guideLine("自定义 OpenAI 兼容", "用于第三方中转、本地网关或其他兼容服务。通常需填写基础 URL（很多服务要求以 /v1 结尾）和服务方给出的精确模型 ID。")
+  );
+  const fields = foldSection("字段、安全与排障", false);
+  fields.body.append(
+    guideLine("Key 与 secret-id", "Key 写入 SillyTavern 密钥库；新版可用 secret-id 区分同渠道多把 Key。请勿在截图、日志或分享的配置中泄露凭证。"),
+    guideLine("URL", "404 常见于路径不对，请核对是否需要 /v1；不要把具体的 /chat/completions 路径重复填进基础 URL。"),
+    guideLine("NONE", "通常表示模型列表仍在加载、模型 ID 不存在或账号无权限。现在切换会等待并回验，不会把明显的 NONE 当成功。"),
+    guideLine("401 / 403", "通常是 Key 错误、额度/权限不足或服务区域限制。"),
+    guideLine("旧版兼容", "旧版 SillyTavern 可能不允许回读 Key；导入时会保留表单中已有 Key，并回退到单密钥槽位。")
+  );
+  guide.append(quick.box, completion.box, channels.box, fields.box);
+  return guide;
 }
 function buildRow(profile, active, busy, onActivate) {
   const row = el2("div", `stapi-row${active ? " stapi-row-on" : ""}${busy ? " stapi-row-busy" : ""}`);
@@ -10929,7 +11019,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-09 10:30"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-09 11:51"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

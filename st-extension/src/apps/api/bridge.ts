@@ -88,14 +88,40 @@ function dispatchValue(element: HTMLInputElement | HTMLSelectElement, value: str
   element.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
+const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds))
+
 async function waitFor<T extends Element>(selector: string, timeout = 2500): Promise<T | null> {
   const start = Date.now()
   while (Date.now() - start < timeout) {
     const element = document.querySelector<T>(selector)
     if (element) return element
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await sleep(50)
   }
   return null
+}
+
+async function waitForValue(element: HTMLInputElement | HTMLSelectElement, value: string, timeout = 5000): Promise<boolean> {
+  const start = Date.now()
+  while (Date.now() - start < timeout) {
+    if (element instanceof HTMLSelectElement) {
+      if ([...element.options].some((option) => option.value === value)) return true
+    } else if (element.value === value) return true
+    await sleep(80)
+  }
+  return false
+}
+
+async function waitForConnection(profile: ApiProfile, timeout = 8000): Promise<ConnectionInfo> {
+  const start = Date.now(); let latest: ConnectionInfo | null = null
+  while (Date.now() - start < timeout) {
+    latest = await readConnection()
+    const sourceMatches = latest?.mainApi === profile.mainApi && (profile.mainApi !== 'openai' || latest.source === profile.source)
+    const modelMatches = !profile.model || latest?.model === profile.model
+    if (latest?.online && sourceMatches && modelMatches) return latest
+    await sleep(120)
+  }
+  if (profile.model && (!latest?.model || latest.model.toLowerCase() === 'none')) throw new Error(`模型「${profile.model}」尚未加载，未将 NONE 视为切换成功`)
+  throw new Error(`连接回验超时${latest?.model ? `（当前模型：${latest.model}）` : ''}`)
 }
 
 async function writeSecret(st: BridgeContext, profile: ApiProfile): Promise<void> {
@@ -110,9 +136,12 @@ async function writeSecret(st: BridgeContext, profile: ApiProfile): Promise<void
   }
 }
 
-export async function applyProfile(profile: ApiProfile): Promise<void> {
+export type ApplyProfileProgress = (message: string) => void
+
+export async function applyProfile(profile: ApiProfile, onProgress: ApplyProfileProgress = () => {}): Promise<ConnectionInfo> {
   const st = getST(); if (!st) throw new Error('未检测到 SillyTavern 运行时')
   const descriptor = getSource(profile.mainApi, profile.source)
+  onProgress('正在切换补全方式与渠道…')
   const mainApiSelect = await waitFor<HTMLSelectElement>('#main_api')
   if (!mainApiSelect) throw new Error('找不到 SillyTavern API 类型选择器')
   dispatchValue(mainApiSelect, profile.mainApi)
@@ -121,26 +150,40 @@ export async function applyProfile(profile: ApiProfile): Promise<void> {
     if (!sourceSelect) throw new Error('找不到聊天补全来源选择器')
     dispatchValue(sourceSelect, profile.source)
   }
+  await sleep(120)
   await writeSecret(st, profile)
   const settings = settingsFor(st, profile.mainApi)
   if (descriptor.sourceField) settings[descriptor.sourceField] = profile.source
   if (descriptor.urlField) settings[descriptor.urlField] = profile.url
-  if (descriptor.modelField && profile.model) settings[descriptor.modelField] = profile.model
   for (const [key, value] of Object.entries(profile.settings)) settings[key] = value
   if (descriptor.urlSelector) {
     const input = await waitFor<HTMLInputElement>(descriptor.urlSelector)
     if (!input) throw new Error(`找不到 ${descriptor.label} 的 URL 输入框`)
     dispatchValue(input, profile.url)
   }
-  if (descriptor.modelSelector && profile.model) {
-    const input = await waitFor<HTMLInputElement | HTMLSelectElement>(descriptor.modelSelector, 1200)
-    if (input) dispatchValue(input, profile.model)
-  }
   st.saveSettingsDebounced?.()
   if (descriptor.urlField && readString(settings, descriptor.urlField) !== profile.url) throw new Error('URL 写入后回验失败，已停止连接')
   const button = await waitFor<HTMLElement>(descriptor.connectSelector)
   if (!button) throw new Error(`找不到 ${descriptor.label} 的连接按钮`)
+
+  let modelControl: HTMLInputElement | HTMLSelectElement | null = null
+  if (descriptor.modelSelector && profile.model) {
+    modelControl = await waitFor<HTMLInputElement | HTMLSelectElement>(descriptor.modelSelector, 2500)
+    if (!modelControl) throw new Error(`找不到 ${descriptor.label} 的模型字段`)
+    if (modelControl instanceof HTMLSelectElement && ![...modelControl.options].some((option) => option.value === profile.model)) {
+      onProgress('正在连接渠道并加载可用模型…')
+      button.click()
+      if (!await waitForValue(modelControl, profile.model)) throw new Error(`可用模型中没有「${profile.model}」，请检查模型 ID 或渠道权限`)
+    }
+    dispatchValue(modelControl, profile.model)
+    if (descriptor.modelField) settings[descriptor.modelField] = profile.model
+  }
+
+  onProgress(profile.model ? `正在确认模型「${profile.model}」…` : '正在确认连接…')
   button.click()
+  const connected = await waitForConnection(profile)
+  if (modelControl && profile.model && modelControl.value !== profile.model) throw new Error(`模型写入被 SillyTavern 覆盖（当前：${modelControl.value || 'NONE'}）`)
+  return connected
 }
 
 let modelQueue: Promise<void> = Promise.resolve()
