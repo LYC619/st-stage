@@ -2,12 +2,6 @@
 
 These items are known and intentionally do not block the merged Gallery, Variable, and Renderer update. Each should receive its own scoped task if promoted.
 
-## Prompt Compression with Notes
-
-- Behavior: `repeat` mode falls back to `full` when a scene note is present.
-- Impact: correct output but reduced token savings without a user-visible explanation.
-- Location: `core/prompt-builder.ts`.
-
 ## Renderer Snapshot Image Listeners
 
 - Behavior: snapshot restoration replaces cloned message nodes, so inline-image retry listeners attached to original nodes can be lost on the detached-root pruning path.
