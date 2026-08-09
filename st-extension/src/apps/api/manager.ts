@@ -1,5 +1,5 @@
 import { el, appButton, textRow, textareaRow, foldSection, selectRow } from '../widgets'
-import { API_SOURCES, type ApiAppData, type ApiProfile, type MainApi, type ProfileDraft, emptyDraft, findActiveProfile, findUrlDuplicate, getSource, moveProfile, normalizeUrl, profileSummary, upsertProfile } from './core'
+import { COMMON_CHAT_SOURCES, type ApiAppData, type ApiProfile, type MainApi, type ProfileDraft, emptyDraft, findActiveProfile, findUrlDuplicate, getSource, moveProfile, normalizeUrl, profileSummary, upsertProfile } from './core'
 import { fetchModels, readConnection } from './bridge'
 
 export interface ApiManagerDeps { getData(): ApiAppData; setData(next: ApiAppData): void; onClosed?: () => void }
@@ -65,11 +65,14 @@ export function createApiManager(deps: ApiManagerDeps): ApiManager {
     box.append(textRow('档案名称', d.name, '例如：主力 Claude', (value) => { d.name = value }))
     box.append(selectRow('API 大类', d.mainApi, MAIN_API_OPTIONS, (value) => { d.mainApi = value as MainApi; d.source = getSource(value, '').id; d.url = ''; d.model = ''; d.secretId = ''; render() }))
     if (d.mainApi === 'openai') {
-      box.append(selectRow('来源', d.source, API_SOURCES.filter((item) => item.mainApi === 'openai').map((item) => ({ value: item.id, label: item.label })), (value) => { d.source = value; d.url = ''; d.model = ''; d.secretId = ''; render() }))
+      const sources = [...COMMON_CHAT_SOURCES]
+      const currentSource = getSource(d.mainApi, d.source)
+      if (!sources.some((item) => item.id === currentSource.id)) sources.push(currentSource)
+      box.append(selectRow('来源', d.source, sources.map((item) => ({ value: item.id, label: item.label })), (value) => { d.source = value; d.url = ''; d.model = ''; d.secretId = ''; render() }))
     }
     const descriptor = getSource(d.mainApi, d.source)
     if (descriptor.urlField) box.append(textRow('接口地址 URL', d.url, 'https://example.com/v1', (value) => { d.url = value }))
-    if (descriptor.secretKey) box.append(textRow('API Key', d.key, d.secretMode === 'unavailable' ? '当前 ST 不允许读取；留空可保留原值' : '密钥将写入 SillyTavern 密钥库', (value) => { d.key = value.trim(); d.secretMode = value ? 'stored' : d.secretMode }, 'password'))
+    if (descriptor.secretKey) box.append(textRow('API Key', d.key, d.secretMode === 'unavailable' ? '当前 ST 不允许读取；留空可保留原值' : '明文保存在本扩展档案，并同步写入 ST 密钥库', (value) => { d.key = value.trim(); d.secretMode = value ? 'stored' : d.secretMode }, 'password'))
     if (descriptor.modelField || descriptor.supportsModels) box.append(textRow('模型 ID（可空）', d.model, '留空则沿用当前模型', (value) => { d.model = value }))
     if (descriptor.supportsModels) box.append(appButton('从接口获取模型', () => void loadModels(d)))
     const extra = foldSection('附加参数（自定义接口）', Object.values(d.settings).some(Boolean))
@@ -111,8 +114,8 @@ export function createApiManager(deps: ApiManagerDeps): ApiManager {
   }
 
   function buildHelp(): HTMLElement {
-    const box = section('兼容说明'); desc(box, '优先使用 SillyTavern 新版多密钥 secret-id 与密钥读取接口；旧版会回退到对应单密钥槽位。')
-    desc(box, '并非所有来源都支持自定义 URL 或模型枚举；表单只显示该来源真实可用的字段。'); return box
+    const box = section('兼容说明'); desc(box, 'Key 在本扩展档案中明文保存；连接时优先写入 SillyTavern 新版多密钥 secret-id，旧版会回退到对应单密钥槽位。')
+    desc(box, '新档案只列常用渠道；其他兼容 OpenAI 的厂商使用“自定义”入口。历史档案中的旧渠道仍可查看和编辑。'); return box
   }
 
   return { open, close, isOpen: () => backdrop !== null }

@@ -637,6 +637,72 @@ describe('包列表批量操作（实测反馈批次）', () => {
   })
 })
 
+describe('同角色换装的安全相对地址', () => {
+  const packs: SpritePack[] = [
+    {
+      id: 'casual', name: '常服', roleName: '塞拉菲娜', outfit: '常服', sprites: [
+        { tag: '中性', url: 'casual-neutral' },
+        { tag: '喜悦', url: 'casual-happy' },
+      ],
+    },
+    {
+      id: 'shadow', name: '暗影', roleName: '塞拉菲娜', outfit: '暗影斗篷', sprites: [
+        { tag: '中性', url: 'shadow-neutral' },
+        { tag: '月光', url: 'shadow-moon' },
+      ],
+    },
+  ]
+
+  it('裸图名优先使用首个启用包作为默认服装', () => {
+    expect(resolveSprite(packs, '中性')?.url).toBe('casual-neutral')
+    expect(resolveSprite([...packs].reverse(), '中性')?.url).toBe('shadow-neutral')
+  })
+
+  it('服装/图名在没有角色命中时作为相对地址回退', () => {
+    expect(resolveSprite(packs, '暗影斗篷/月光')?.url).toBe('shadow-moon')
+  })
+
+  it('两段旧角色地址优先于同名服装回退', () => {
+    const legacy: SpritePack[] = [
+      { id: 'role', name: '角色包', roleName: '暗影斗篷', sprites: [{ tag: '月光', url: 'legacy-role' }] },
+      ...packs,
+    ]
+    expect(resolveSprite(legacy, '暗影斗篷/月光')?.url).toBe('legacy-role')
+  })
+
+  it('相对服装或默认包内部存在多解时拒绝猜测', () => {
+    const ambiguousDefault: SpritePack[] = [{
+      id: 'mixed', name: '混合', roleName: '塞拉菲娜', sprites: [
+        { tag: '中性', url: 'a', outfit: '常服' },
+        { tag: '中性', url: 'b', outfit: '礼服' },
+      ],
+    }, ...packs]
+    const duplicateOutfit: SpritePack[] = [
+      ...packs,
+      { id: 'shadow-2', name: '另一暗影', roleName: '另一角色', outfit: '暗影斗篷', sprites: [{ tag: '月光', url: 'other' }] },
+    ]
+    expect(resolveSprite(ambiguousDefault, '中性')).toBeNull()
+    expect(resolveSprite(duplicateOutfit, '暗影斗篷/月光')).toBeNull()
+  })
+
+  it('角色名来自 sprite group 时仍与 Prompt 的相对地址条件一致', () => {
+    const grouped: SpritePack[] = [
+      { id: 'a', name: '常服包', outfit: '常服', sprites: [{ tag: '中性', url: 'a', group: '塞拉菲娜' }] },
+      { id: 'b', name: '礼服包', outfit: '礼服', sprites: [{ tag: '中性', url: 'b', group: '塞拉菲娜' }] },
+    ]
+    expect(resolveSprite(grouped, '中性')?.url).toBe('a')
+    expect(resolveSprite(grouped, '礼服/中性')?.url).toBe('b')
+  })
+
+  it('真实角色存在时不会把旧 role/tag 串到另一角色的同名服装', () => {
+    const collision: SpritePack[] = [
+      { id: 'role', name: '角色甲礼服', roleName: '角色甲', outfit: '礼服', sprites: [{ tag: '微笑', url: 'role' }] },
+      { id: 'outfit', name: '角色乙', roleName: '角色乙', outfit: '角色甲', sprites: [{ tag: '微笑', url: 'wrong' }] },
+    ]
+    expect(resolveSprite(collision, '角色甲/微笑')).toBeNull()
+  })
+})
+
 describe('deletableLocalSpritePaths', () => {
   it('returns only unique /user/images files no unselected pack still references', () => {
     const settings: PluginSettings = {

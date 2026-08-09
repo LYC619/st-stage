@@ -377,6 +377,129 @@ function buildShared(
   return lines.join('\n')
 }
 
+const ROLE_BASE_LIST_LABEL = '基础图名池'
+const VARIANT_SUFFIX = '_变'
+
+function findRoleBaseCluster(scenes: PromptScene[]): SharedCluster | null {
+  const plainTags = scenes.map((scene) => scene.tags.filter((tag) => !tag.endsWith(VARIANT_SUFFIX)))
+  const sets = plainTags.map((tags) => new Set(tags))
+  const seen = new Set<string>()
+  let best: SharedCluster | null = null
+  for (let i = 0; i < scenes.length; i++) {
+    for (let j = i + 1; j < scenes.length; j++) {
+      const core = plainTags[i].filter((tag) => sets[j].has(tag))
+      if (core.length < 2) continue
+      const signature = JSON.stringify(core)
+      if (seen.has(signature)) continue
+      seen.add(signature)
+      const members = sets.map((set) => core.every((tag) => set.has(tag)))
+      if (
+        !best
+        || core.length > best.core.length
+        || (core.length === best.core.length
+          && members.filter(Boolean).length > best.members.filter(Boolean).length)
+      ) {
+        best = { core, members }
+      }
+    }
+  }
+  return best
+}
+
+function variantBases(tags: string[]): string[] {
+  const seen = new Set<string>()
+  const bases: string[] = []
+  for (const tag of tags) {
+    if (!tag.endsWith(VARIANT_SUFFIX)) continue
+    const base = tag.slice(0, -VARIANT_SUFFIX.length)
+    if (!base || seen.has(base)) continue
+    seen.add(base)
+    bases.push(base)
+  }
+  return bases
+}
+
+function relativeFewShotExample(scenes: PromptScene[], count: number): string[] {
+  if (count <= 1) return []
+  const scene = scenes[0]
+  if (!scene || scene.tags.length === 0) return []
+  const first = scene.tags[0]
+  const second = scene.tags[1] ?? first
+  return [
+    '插入位置示例（省略号代表你的正文段落）：',
+    '…剧情段落一…',
+    `[立绘:${first}]`,
+    '…剧情段落二…',
+    `[立绘:${second}]`,
+  ]
+}
+
+function buildRoleCompact(
+  addresses: SpriteAddress[],
+  count: number,
+  noteIndex: PromptSceneNoteIndex,
+  reservedTags: ReadonlySet<string>,
+): string | null {
+  const scenes = buildScenes(addresses)
+  const role = scenes[0]?.role
+  if (
+    scenes.length < 2
+    || !role
+    || reservedTags.has(ROLE_BASE_LIST_LABEL)
+    || scenes.some((scene) => scene.role !== role || !scene.outfit)
+  ) return null
+
+  const cluster = findRoleBaseCluster(scenes)
+  if (!cluster || !cluster.members[0]) return null
+
+  const baseSet = new Set(cluster.core)
+  const renderedBase = renderTags(cluster.core, reservedTags)
+  const ranges = [...renderedBase.ranges]
+  const lines = [
+    '[角色立绘系统]',
+    `角色：${role}`,
+    `${ROLE_BASE_LIST_LABEL}：${renderedBase.text}`,
+    '可用服装：',
+  ]
+
+  for (const [index, scene] of scenes.entries()) {
+    for (const note of matchingNotes(noteIndex, scene, 'before-list')) {
+      lines.push(...noteLines(scene, note))
+    }
+
+    const label = `${scene.outfit}${index === 0 ? '（默认）' : cluster.members[index] ? '' : '（仅限）'}`
+    const plainTags = scene.tags.filter((tag) => !tag.endsWith(VARIANT_SUFFIX))
+    if (cluster.members[index]) {
+      const extras = plainTags.filter((tag) => !baseSet.has(tag))
+      if (extras.length === 0) {
+        lines.push(`- ${label}：${ROLE_BASE_LIST_LABEL}`)
+      } else {
+        const rendered = renderTags(extras, reservedTags)
+        lines.push(`- ${label}：${ROLE_BASE_LIST_LABEL}，另有：${rendered.text}`)
+        ranges.push(...rendered.ranges)
+      }
+    } else {
+      const rendered = renderTags(plainTags, reservedTags)
+      lines.push(`- ${label}：${rendered.text}`)
+      ranges.push(...rendered.ranges)
+    }
+
+    const variants = variantBases(scene.tags)
+    if (variants.length > 0) lines.push(`  可用“${VARIANT_SUFFIX}”后缀：${variants.join('、')}`)
+    for (const note of matchingNotes(noteIndex, scene, 'after-list')) {
+      lines.push(...noteLines(scene, note))
+    }
+  }
+
+  lines.push(`服装行写“${ROLE_BASE_LIST_LABEL}”表示该服装可用上方整组图名；“另有”和“仅限”只属于所在服装。`)
+  lines.push(...rangeInstruction(ranges))
+  lines.push('输出格式：[立绘:图名]（默认服装）或 [立绘:服装/图名]（其他服装）；完整 [立绘:角色/服装/图名] 仍兼容。')
+  lines.push(countInstruction(count))
+  lines.push(...relativeFewShotExample(scenes, count))
+  lines.push(CLOSING_INSTRUCTION)
+  return lines.join('\n')
+}
+
 /** UTF-16 string.length 确定性比较；平局选更直观的分组精确格式。 */
 export function chooseShorterPrompt(grouped: string, shared: string): string {
   return shared.length < grouped.length ? shared : grouped
@@ -469,7 +592,7 @@ export function buildPrompt(
   const noteIndex = indexSceneNotes(notes)
   const reservedTags = new Set(addresses.map((address) => address.tag))
   const custom = template.trim()
-  if (custom) {
+  if (custom && custom !== BUILTIN_TEMPLATE.trim()) {
     return fitToBudget(addresses, b, (addrs) => {
       const rendered = renderGroupedSceneList(buildScenes(addrs), noteIndex, reservedTags)
       const list = [...rendered.lines, ...rangeInstruction(rendered.ranges)].join('\n')
@@ -479,7 +602,9 @@ export function buildPrompt(
   return fitToBudget(addresses, b, (addrs) => {
     const grouped = buildGroupedFull(addrs, n, noteIndex, reservedTags)
     if (mode === 'full') return grouped
-    return chooseShorterPrompt(grouped, buildShared(addrs, n, noteIndex, reservedTags))
+    const shared = chooseShorterPrompt(grouped, buildShared(addrs, n, noteIndex, reservedTags))
+    const roleCompact = buildRoleCompact(addrs, n, noteIndex, reservedTags)
+    return roleCompact && roleCompact.length < grouped.length ? roleCompact : shared
   })
 }
 

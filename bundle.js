@@ -1,30 +1,3 @@
-// core/tag-parser.ts
-var TAG_REGEX = /[[【]\s*立绘\s*[:：]\s*([^\]】]+?)\s*[\]】]/g;
-function extractTags(text) {
-  const tags = [];
-  let match;
-  const regex = new RegExp(TAG_REGEX.source, "g");
-  while ((match = regex.exec(text)) !== null) {
-    const tag = match[1].trim();
-    if (tag) tags.push(tag);
-  }
-  return tags;
-}
-function stripTags(text) {
-  return text.replace(new RegExp(TAG_REGEX.source, "g"), "").replace(/[ \t]+$/gm, "");
-}
-function replaceTags(text, replacer) {
-  return text.replace(new RegExp(TAG_REGEX.source, "g"), (raw, address) => {
-    const trimmed = address.trim();
-    if (!trimmed) return raw;
-    const out = replacer(trimmed, raw);
-    return out === null ? raw : out;
-  });
-}
-function hasTag(text) {
-  return new RegExp(TAG_REGEX.source).test(text);
-}
-
 // core/types.ts
 var SETTINGS_VERSION = 5;
 var RECENT_FLOORS_DEFAULT = 6;
@@ -592,6 +565,103 @@ function buildShared(addresses, count, noteIndex, reservedTags) {
   lines.push(CLOSING_INSTRUCTION);
   return lines.join("\n");
 }
+var ROLE_BASE_LIST_LABEL = "基础图名池";
+var VARIANT_SUFFIX = "_变";
+function findRoleBaseCluster(scenes) {
+  const plainTags = scenes.map((scene) => scene.tags.filter((tag) => !tag.endsWith(VARIANT_SUFFIX)));
+  const sets = plainTags.map((tags) => new Set(tags));
+  const seen = /* @__PURE__ */ new Set();
+  let best = null;
+  for (let i = 0; i < scenes.length; i++) {
+    for (let j = i + 1; j < scenes.length; j++) {
+      const core = plainTags[i].filter((tag) => sets[j].has(tag));
+      if (core.length < 2) continue;
+      const signature = JSON.stringify(core);
+      if (seen.has(signature)) continue;
+      seen.add(signature);
+      const members = sets.map((set) => core.every((tag) => set.has(tag)));
+      if (!best || core.length > best.core.length || core.length === best.core.length && members.filter(Boolean).length > best.members.filter(Boolean).length) {
+        best = { core, members };
+      }
+    }
+  }
+  return best;
+}
+function variantBases(tags) {
+  const seen = /* @__PURE__ */ new Set();
+  const bases = [];
+  for (const tag of tags) {
+    if (!tag.endsWith(VARIANT_SUFFIX)) continue;
+    const base = tag.slice(0, -VARIANT_SUFFIX.length);
+    if (!base || seen.has(base)) continue;
+    seen.add(base);
+    bases.push(base);
+  }
+  return bases;
+}
+function relativeFewShotExample(scenes, count) {
+  if (count <= 1) return [];
+  const scene = scenes[0];
+  if (!scene || scene.tags.length === 0) return [];
+  const first = scene.tags[0];
+  const second = scene.tags[1] ?? first;
+  return [
+    "插入位置示例（省略号代表你的正文段落）：",
+    "…剧情段落一…",
+    `[立绘:${first}]`,
+    "…剧情段落二…",
+    `[立绘:${second}]`
+  ];
+}
+function buildRoleCompact(addresses, count, noteIndex, reservedTags) {
+  const scenes = buildScenes(addresses);
+  const role = scenes[0]?.role;
+  if (scenes.length < 2 || !role || reservedTags.has(ROLE_BASE_LIST_LABEL) || scenes.some((scene) => scene.role !== role || !scene.outfit)) return null;
+  const cluster = findRoleBaseCluster(scenes);
+  if (!cluster || !cluster.members[0]) return null;
+  const baseSet = new Set(cluster.core);
+  const renderedBase = renderTags(cluster.core, reservedTags);
+  const ranges = [...renderedBase.ranges];
+  const lines = [
+    "[角色立绘系统]",
+    `角色：${role}`,
+    `${ROLE_BASE_LIST_LABEL}：${renderedBase.text}`,
+    "可用服装："
+  ];
+  for (const [index, scene] of scenes.entries()) {
+    for (const note of matchingNotes(noteIndex, scene, "before-list")) {
+      lines.push(...noteLines(scene, note));
+    }
+    const label = `${scene.outfit}${index === 0 ? "（默认）" : cluster.members[index] ? "" : "（仅限）"}`;
+    const plainTags = scene.tags.filter((tag) => !tag.endsWith(VARIANT_SUFFIX));
+    if (cluster.members[index]) {
+      const extras = plainTags.filter((tag) => !baseSet.has(tag));
+      if (extras.length === 0) {
+        lines.push(`- ${label}：${ROLE_BASE_LIST_LABEL}`);
+      } else {
+        const rendered = renderTags(extras, reservedTags);
+        lines.push(`- ${label}：${ROLE_BASE_LIST_LABEL}，另有：${rendered.text}`);
+        ranges.push(...rendered.ranges);
+      }
+    } else {
+      const rendered = renderTags(plainTags, reservedTags);
+      lines.push(`- ${label}：${rendered.text}`);
+      ranges.push(...rendered.ranges);
+    }
+    const variants = variantBases(scene.tags);
+    if (variants.length > 0) lines.push(`  可用“${VARIANT_SUFFIX}”后缀：${variants.join("、")}`);
+    for (const note of matchingNotes(noteIndex, scene, "after-list")) {
+      lines.push(...noteLines(scene, note));
+    }
+  }
+  lines.push(`服装行写“${ROLE_BASE_LIST_LABEL}”表示该服装可用上方整组图名；“另有”和“仅限”只属于所在服装。`);
+  lines.push(...rangeInstruction(ranges));
+  lines.push("输出格式：[立绘:图名]（默认服装）或 [立绘:服装/图名]（其他服装）；完整 [立绘:角色/服装/图名] 仍兼容。");
+  lines.push(countInstruction(count));
+  lines.push(...relativeFewShotExample(scenes, count));
+  lines.push(CLOSING_INSTRUCTION);
+  return lines.join("\n");
+}
 function chooseShorterPrompt(grouped, shared) {
   return shared.length < grouped.length ? shared : grouped;
 }
@@ -646,7 +716,7 @@ function buildPrompt(addresses, mode, count, template = "", budget = 0, notes = 
   const noteIndex = indexSceneNotes(notes);
   const reservedTags = new Set(addresses.map((address) => address.tag));
   const custom = template.trim();
-  if (custom) {
+  if (custom && custom !== BUILTIN_TEMPLATE.trim()) {
     return fitToBudget(addresses, b, (addrs) => {
       const rendered = renderGroupedSceneList(buildScenes(addrs), noteIndex, reservedTags);
       const list = [...rendered.lines, ...rangeInstruction(rendered.ranges)].join("\n");
@@ -656,7 +726,9 @@ function buildPrompt(addresses, mode, count, template = "", budget = 0, notes = 
   return fitToBudget(addresses, b, (addrs) => {
     const grouped = buildGroupedFull(addrs, n, noteIndex, reservedTags);
     if (mode === "full") return grouped;
-    return chooseShorterPrompt(grouped, buildShared(addrs, n, noteIndex, reservedTags));
+    const shared = chooseShorterPrompt(grouped, buildShared(addrs, n, noteIndex, reservedTags));
+    const roleCompact = buildRoleCompact(addrs, n, noteIndex, reservedTags);
+    return roleCompact && roleCompact.length < grouped.length ? roleCompact : shared;
   });
 }
 
@@ -786,12 +858,52 @@ function matchUniqueTagInPool(pool, tag) {
   }
   return null;
 }
+function strictTagMatch(pool, tag) {
+  const exact = pool.filter((candidate) => candidate.sprite.tag === tag);
+  if (exact.length > 0) return { matched: true, sprite: exact.length === 1 ? exact[0].sprite : null };
+  const fuzzy = pool.filter((candidate) => nameMatches(candidate.sprite.tag, tag));
+  return { matched: fuzzy.length > 0, sprite: fuzzy.length === 1 ? fuzzy[0].sprite : null };
+}
+function isRelativeOutfitSet(packs, candidates) {
+  if (packs.length < 2) return false;
+  const role = candidates[0]?.role;
+  return Boolean(
+    role && candidates.length > 0 && candidates.every((candidate) => candidate.role === role && Boolean(candidate.outfit))
+  );
+}
 function resolveSprite(packs, address) {
   const raw = address.trim();
   if (!raw) return null;
+  const partCount = raw.split("/").length;
   const { role, outfit, tag } = parseAddress(raw);
   if (!tag) return null;
-  let pool = flatten(packs);
+  const all = flatten(packs);
+  if (partCount === 1) {
+    const firstPack = packs[0];
+    if (firstPack && isRelativeOutfitSet(packs, all)) {
+      const preferred = strictTagMatch(
+        all.filter((candidate) => candidate.pack.id === firstPack.id),
+        tag
+      );
+      if (preferred.matched) return preferred.sprite;
+    }
+    return matchUniqueTagInPool(all, tag);
+  }
+  if (partCount === 2) {
+    const roleMatches = filterByName(all, role, (candidate) => candidate.role);
+    if (roleMatches.length > 0) {
+      const rolePool = roleMatches.filter((candidate) => candidate.outfit === "");
+      return strictTagMatch(rolePool, tag).sprite;
+    }
+    const aliasPool = filterByName(all, role, (candidate) => candidate.baseAlias).filter((candidate) => candidate.outfit === "");
+    if (aliasPool.length > 0) {
+      const legacy = strictTagMatch(aliasPool, tag);
+      if (legacy.matched) return legacy.sprite;
+    }
+    const outfitPool = filterByName(all, role, (candidate) => candidate.outfit);
+    return strictTagMatch(outfitPool, tag).sprite;
+  }
+  let pool = all;
   if (role) {
     pool = lockByRole(pool, role);
     if (pool.length === 0) return null;
@@ -1036,6 +1148,47 @@ function toggleBinding(settings, characterName, enabled) {
       (b) => b.characterName === characterName ? { ...b, enabled } : b
     )
   });
+}
+
+// core/active-prompt.ts
+function buildActiveSpritePrompt(settings, characterName, budget = settings.promptBudget) {
+  const packs = getActivePacks(settings, characterName);
+  const addresses = getActiveAddresses(settings, characterName);
+  return buildPrompt(
+    addresses,
+    settings.multiRolePromptMode,
+    settings.spriteCount,
+    settings.promptTemplate,
+    budget,
+    buildPromptSceneNotes(packs, addresses)
+  );
+}
+
+// core/tag-parser.ts
+var TAG_REGEX = /[[【]\s*立绘\s*[:：]\s*([^\]】]+?)\s*[\]】]/g;
+function extractTags(text) {
+  const tags = [];
+  let match;
+  const regex = new RegExp(TAG_REGEX.source, "g");
+  while ((match = regex.exec(text)) !== null) {
+    const tag = match[1].trim();
+    if (tag) tags.push(tag);
+  }
+  return tags;
+}
+function stripTags(text) {
+  return text.replace(new RegExp(TAG_REGEX.source, "g"), "").replace(/[ \t]+$/gm, "");
+}
+function replaceTags(text, replacer) {
+  return text.replace(new RegExp(TAG_REGEX.source, "g"), (raw, address) => {
+    const trimmed = address.trim();
+    if (!trimmed) return raw;
+    const out = replacer(trimmed, raw);
+    return out === null ? raw : out;
+  });
+}
+function hasTag(text) {
+  return new RegExp(TAG_REGEX.source).test(text);
 }
 
 // core/sprite-preload.ts
@@ -5465,7 +5618,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-10 00:44"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-10 01:34"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
   return () => wrapper.remove();
@@ -6296,25 +6449,13 @@ function spriteApp() {
           (v) => ctx.updateSettings({ ...ctx.getSettings(), promptBudget: v })
         )
       );
-      const addresses = getActiveAddresses(settings, characterName);
-      const budgeted = buildPrompt(
-        addresses,
-        settings.multiRolePromptMode,
-        settings.spriteCount,
-        settings.promptTemplate,
-        settings.promptBudget
-      );
-      const unlimited = settings.promptBudget > 0 ? buildPrompt(
-        addresses,
-        settings.multiRolePromptMode,
-        settings.spriteCount,
-        settings.promptTemplate
-      ) : budgeted;
+      const budgeted = buildActiveSpritePrompt(settings, characterName);
+      const unlimited = settings.promptBudget > 0 ? buildActiveSpritePrompt(settings, characterName, 0) : budgeted;
       const budgetHint = el2("div", "so-app-desc");
       budgetHint.textContent = budgeted ? `预计注入 ${budgeted.length} 字符` + (budgeted.length < unlimited.length ? `（超预算，已从 ${unlimited.length} 字符每场景均衡截取，保留排前的图名）` : "") : "预计注入：无（当前角色没有可用立绘地址）";
       promptSection.body.append(budgetHint);
       const promptHint = el2("div", "so-app-desc");
-      promptHint.textContent = "多个包/含人名服装时，Prompt 用完整地址 [立绘:人名/服装/图名]；单包纯图名时用简写 [立绘:图名]。自动精简把多套服装重合的图名只列一次，并按实际长度自动取更短的一版：场景少或重合度低时仍显示全量格式，属正常现象。";
+      promptHint.textContent = "同角色多服装时，默认服装可写 [立绘:图名]，其他服装写 [立绘:服装/图名]；完整三级地址仍兼容。自动精简会抽取基础图名池和服装增量；默认服装不在重合簇或压缩后不更短时，会自动保留原格式。";
       promptSection.body.append(promptHint);
       const tplRow = textareaRow(
         "自定义提示词（留空=用内置）",
@@ -6325,7 +6466,7 @@ function spriteApp() {
       const tplInput = tplRow.querySelector("textarea");
       promptSection.body.append(
         tplRow,
-        appButton("填入内置提示词底稿（在此基础上改）", () => {
+        appButton("填入内置底稿（未修改时仍自动精简）", () => {
           if (tplInput.value.trim() && !window.confirm("用内置底稿覆盖当前已填写的自定义提示词？")) return;
           tplInput.value = BUILTIN_TEMPLATE;
           ctx.updateSettings({ ...ctx.getSettings(), promptTemplate: BUILTIN_TEMPLATE });
@@ -7469,10 +7610,10 @@ var chat = (id, label, options = {}) => ({
   ...options
 });
 var API_SOURCES = [
-  chat("openai", "OpenAI", { modelField: "openai_model", secretKey: "api_key_openai", modelSelector: "#openai_model", keySelector: "#api_key_openai" }),
-  chat("claude", "Claude", { modelField: "claude_model", secretKey: "api_key_claude", modelSelector: "#claude_model", keySelector: "#api_key_claude" }),
-  chat("openrouter", "OpenRouter", { modelField: "openrouter_model", secretKey: "api_key_openrouter", modelSelector: "#openrouter_model", keySelector: "#api_key_openrouter" }),
-  chat("makersuite", "Google AI Studio", { modelField: "google_model", secretKey: "api_key_makersuite", modelSelector: "#google_model", keySelector: "#api_key_makersuite" }),
+  chat("openai", "OpenAI", { modelField: "openai_model", secretKey: "api_key_openai", modelSelector: "#model_openai_select", keySelector: "#api_key_openai" }),
+  chat("claude", "Claude", { modelField: "claude_model", secretKey: "api_key_claude", modelSelector: "#model_claude_select", keySelector: "#api_key_claude" }),
+  chat("openrouter", "OpenRouter", { modelField: "openrouter_model", secretKey: "api_key_openrouter", modelSelector: "#model_openrouter_select", keySelector: "#api_key_openrouter" }),
+  chat("makersuite", "Google AI Studio", { modelField: "google_model", secretKey: "api_key_makersuite", modelSelector: "#model_google_select", keySelector: "#api_key_makersuite" }),
   chat("mistralai", "Mistral AI", { modelField: "mistralai_model", secretKey: "api_key_mistralai", modelSelector: "#mistralai_model", keySelector: "#api_key_mistralai" }),
   chat("cohere", "Cohere", { modelField: "cohere_model", secretKey: "api_key_cohere", modelSelector: "#cohere_model", keySelector: "#api_key_cohere" }),
   chat("groq", "Groq", { modelField: "groq_model", secretKey: "api_key_groq", modelSelector: "#groq_model", keySelector: "#api_key_groq" }),
@@ -7484,6 +7625,10 @@ var API_SOURCES = [
   { id: "kobold", mainApi: "kobold", label: "KoboldAI", urlField: "api_server", connectSelector: "#api_button", urlSelector: "#api_url_text" },
   { id: "koboldhorde", mainApi: "koboldhorde", label: "KoboldAI Horde", secretKey: "api_key_horde", connectSelector: "#api_button", keySelector: "#horde_api_key" }
 ];
+var COMMON_CHAT_SOURCE_IDS = /* @__PURE__ */ new Set(["openai", "claude", "openrouter", "makersuite", "custom"]);
+var COMMON_CHAT_SOURCES = API_SOURCES.filter(
+  (item) => item.mainApi === "openai" && COMMON_CHAT_SOURCE_IDS.has(item.id)
+);
 function getSource(mainApi, source = "") {
   return API_SOURCES.find((item) => item.mainApi === mainApi && (item.mainApi !== "openai" || item.id === source)) ?? API_SOURCES.find((item) => item.mainApi === mainApi) ?? API_SOURCES.find((item) => item.id === "custom");
 }
@@ -7890,7 +8035,7 @@ function buildApiGuide() {
   const quick = foldSection("快速开始", false);
   quick.body.append(
     guideLine("1. 建档", "在“管理连接档案”中添加档案，或先打开 SillyTavern 原生 API 面板配置好连接，再用“导入当前连接”。"),
-    guideLine("2. 填写", "Key 是访问凭证，URL 是服务入口，模型 ID 必须与渠道实际提供的名称完全一致。"),
+    guideLine("2. 填写", "Key 是访问凭证，URL 是服务入口，模型 ID 必须与渠道实际提供的名称完全一致。Key 会明文保存在本扩展档案中。"),
     guideLine("3. 切换", "点击档案后会依次切换渠道、写入凭证、加载模型并做最终连接回验。看到“已连接，实际模型…”才算完成。")
   );
   const completion = foldSection("补全方式有什么不同", false);
@@ -7908,14 +8053,12 @@ function buildApiGuide() {
     guideLine("Claude", "Anthropic 官方渠道，擅长长上下文与文本任务；使用 Anthropic Key。"),
     guideLine("OpenRouter", "聚合多家模型的统一入口，切模型方便；模型 ID 通常带厂商前缀，计费与路由由 OpenRouter 管理。"),
     guideLine("Google AI Studio", "Google Gemini 开发者渠道；区域可用性、限额与模型名以 AI Studio 为准。"),
-    guideLine("Mistral AI / Cohere", "各厂商官方直连，适合明确需要其自有模型、权限和计费体系的用户。"),
-    guideLine("Groq", "提供侧重低延迟的托管推理；可用的是 Groq 当前部署的模型，不是任意模型。"),
-    guideLine("DeepSeek / xAI", "对应厂商官方渠道，分别使用自己的 Key 与模型列表。"),
-    guideLine("自定义 OpenAI 兼容", "用于第三方中转、本地网关或其他兼容服务。通常需填写基础 URL（很多服务要求以 /v1 结尾）和服务方给出的精确模型 ID。")
+    guideLine("自定义 OpenAI 兼容", "用于第三方中转、本地网关或其他兼容服务。通常需填写基础 URL（很多服务要求以 /v1 结尾）和服务方给出的精确模型 ID。"),
+    guideLine("其他厂商", "DeepSeek、xAI、Mistral、Groq 等兼容 OpenAI 请求格式的服务统一使用“自定义 OpenAI 兼容”，不再重复提供厂商入口。")
   );
   const fields = foldSection("字段、安全与排障", false);
   fields.body.append(
-    guideLine("Key 与 secret-id", "Key 写入 SillyTavern 密钥库；新版可用 secret-id 区分同渠道多把 Key。请勿在截图、日志或分享的配置中泄露凭证。"),
+    guideLine("Key 与 secret-id", "输入框会遮罩显示，但 Key 在本扩展档案中明文保存，并同步写入 SillyTavern 密钥库；新版可用 secret-id 区分同渠道多把 Key。请勿分享含档案数据的配置。"),
     guideLine("URL", "404 常见于路径不对，请核对是否需要 /v1；不要把具体的 /chat/completions 路径重复填进基础 URL。"),
     guideLine("NONE", "通常表示模型列表仍在加载、模型 ID 不存在或账号无权限。现在切换会等待并回验，不会把明显的 NONE 当成功。"),
     guideLine("401 / 403", "通常是 Key 错误、额度/权限不足或服务区域限制。"),
@@ -11092,7 +11235,10 @@ function createApiManager(deps) {
       render3();
     }));
     if (d.mainApi === "openai") {
-      box.append(selectRow("来源", d.source, API_SOURCES.filter((item) => item.mainApi === "openai").map((item) => ({ value: item.id, label: item.label })), (value) => {
+      const sources = [...COMMON_CHAT_SOURCES];
+      const currentSource = getSource(d.mainApi, d.source);
+      if (!sources.some((item) => item.id === currentSource.id)) sources.push(currentSource);
+      box.append(selectRow("来源", d.source, sources.map((item) => ({ value: item.id, label: item.label })), (value) => {
         d.source = value;
         d.url = "";
         d.model = "";
@@ -11104,7 +11250,7 @@ function createApiManager(deps) {
     if (descriptor.urlField) box.append(textRow("接口地址 URL", d.url, "https://example.com/v1", (value) => {
       d.url = value;
     }));
-    if (descriptor.secretKey) box.append(textRow("API Key", d.key, d.secretMode === "unavailable" ? "当前 ST 不允许读取；留空可保留原值" : "密钥将写入 SillyTavern 密钥库", (value) => {
+    if (descriptor.secretKey) box.append(textRow("API Key", d.key, d.secretMode === "unavailable" ? "当前 ST 不允许读取；留空可保留原值" : "明文保存在本扩展档案，并同步写入 ST 密钥库", (value) => {
       d.key = value.trim();
       d.secretMode = value ? "stored" : d.secretMode;
     }, "password"));
@@ -11190,8 +11336,8 @@ ${models.join("\n")}
   }
   function buildHelp() {
     const box = section2("兼容说明");
-    desc(box, "优先使用 SillyTavern 新版多密钥 secret-id 与密钥读取接口；旧版会回退到对应单密钥槽位。");
-    desc(box, "并非所有来源都支持自定义 URL 或模型枚举；表单只显示该来源真实可用的字段。");
+    desc(box, "Key 在本扩展档案中明文保存；连接时优先写入 SillyTavern 新版多密钥 secret-id，旧版会回退到对应单密钥槽位。");
+    desc(box, "新档案只列常用渠道；其他兼容 OpenAI 的厂商使用“自定义”入口。历史档案中的旧渠道仍可查看和编辑。");
     return box;
   }
   return { open, close, isOpen: () => backdrop !== null };
@@ -11433,16 +11579,7 @@ async function init(lifecycle) {
     const characterName = adapter.getCurrentCharacterName();
     const packs = getActivePacks(settings, characterName);
     const pack = packs[0] ?? null;
-    const addresses = getActiveAddresses(settings, characterName);
-    const sceneNotes = buildPromptSceneNotes(packs, addresses);
-    const prompt = buildPrompt(
-      addresses,
-      settings.multiRolePromptMode,
-      settings.spriteCount,
-      settings.promptTemplate,
-      settings.promptBudget,
-      sceneNotes
-    );
+    const prompt = buildActiveSpritePrompt(settings, characterName);
     adapter.injectPrompt(prompt, settings.injectionDepth);
     const contentKey = `${characterName}|${packs.map((p) => p.id).join(",")}|${pack ? pack.sprites.length > 0 : false}`;
     if (contentKey !== lastOverlayContentKey) {
@@ -11540,7 +11677,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-10 00:44"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-10 01:34"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

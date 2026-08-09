@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { buildActiveSpritePrompt } from '../../core/active-prompt'
 import { createDefaultSettings } from '../../core/types'
 import { NEWVAR_CHANNEL } from './apps/newvar/config'
 
@@ -302,6 +303,7 @@ describe('extension entry lifecycle', () => {
     await flushInit()
 
     const prompt = mocks.injectPrompt.mock.calls.at(-1)?.[0] as string
+    expect(prompt).toBe(buildActiveSpritePrompt(settings, '当前角色'))
     const bScene = prompt.indexOf('- 角色B覆盖：冷漠')
     const aScene = prompt.indexOf('- 角色A/礼服：微笑')
     const bPackNote = prompt.indexOf('B包前置备注')

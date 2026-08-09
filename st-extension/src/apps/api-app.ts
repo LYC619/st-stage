@@ -69,7 +69,7 @@ function buildApiGuide(): HTMLElement {
   const quick = foldSection('快速开始', false)
   quick.body.append(
     guideLine('1. 建档', '在“管理连接档案”中添加档案，或先打开 SillyTavern 原生 API 面板配置好连接，再用“导入当前连接”。'),
-    guideLine('2. 填写', 'Key 是访问凭证，URL 是服务入口，模型 ID 必须与渠道实际提供的名称完全一致。'),
+    guideLine('2. 填写', 'Key 是访问凭证，URL 是服务入口，模型 ID 必须与渠道实际提供的名称完全一致。Key 会明文保存在本扩展档案中。'),
     guideLine('3. 切换', '点击档案后会依次切换渠道、写入凭证、加载模型并做最终连接回验。看到“已连接，实际模型…”才算完成。'),
   )
 
@@ -89,15 +89,13 @@ function buildApiGuide(): HTMLElement {
     guideLine('Claude', 'Anthropic 官方渠道，擅长长上下文与文本任务；使用 Anthropic Key。'),
     guideLine('OpenRouter', '聚合多家模型的统一入口，切模型方便；模型 ID 通常带厂商前缀，计费与路由由 OpenRouter 管理。'),
     guideLine('Google AI Studio', 'Google Gemini 开发者渠道；区域可用性、限额与模型名以 AI Studio 为准。'),
-    guideLine('Mistral AI / Cohere', '各厂商官方直连，适合明确需要其自有模型、权限和计费体系的用户。'),
-    guideLine('Groq', '提供侧重低延迟的托管推理；可用的是 Groq 当前部署的模型，不是任意模型。'),
-    guideLine('DeepSeek / xAI', '对应厂商官方渠道，分别使用自己的 Key 与模型列表。'),
     guideLine('自定义 OpenAI 兼容', '用于第三方中转、本地网关或其他兼容服务。通常需填写基础 URL（很多服务要求以 /v1 结尾）和服务方给出的精确模型 ID。'),
+    guideLine('其他厂商', 'DeepSeek、xAI、Mistral、Groq 等兼容 OpenAI 请求格式的服务统一使用“自定义 OpenAI 兼容”，不再重复提供厂商入口。'),
   )
 
   const fields = foldSection('字段、安全与排障', false)
   fields.body.append(
-    guideLine('Key 与 secret-id', 'Key 写入 SillyTavern 密钥库；新版可用 secret-id 区分同渠道多把 Key。请勿在截图、日志或分享的配置中泄露凭证。'),
+    guideLine('Key 与 secret-id', '输入框会遮罩显示，但 Key 在本扩展档案中明文保存，并同步写入 SillyTavern 密钥库；新版可用 secret-id 区分同渠道多把 Key。请勿分享含档案数据的配置。'),
     guideLine('URL', '404 常见于路径不对，请核对是否需要 /v1；不要把具体的 /chat/completions 路径重复填进基础 URL。'),
     guideLine('NONE', '通常表示模型列表仍在加载、模型 ID 不存在或账号无权限。现在切换会等待并回验，不会把明显的 NONE 当成功。'),
     guideLine('401 / 403', '通常是 Key 错误、额度/权限不足或服务区域限制。'),

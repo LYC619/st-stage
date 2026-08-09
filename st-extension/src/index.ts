@@ -6,10 +6,9 @@
  */
 
 import type { PluginSettings } from '../../core/types'
+import { buildActiveSpritePrompt } from '../../core/active-prompt'
 import { extractTags } from '../../core/tag-parser'
-import { buildPrompt, buildPromptSceneNotes } from '../../core/prompt-builder'
 import {
-  getActiveAddresses,
   getActivePacks,
   resolveSprite,
   resolveSprites,
@@ -311,17 +310,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     const characterName = adapter.getCurrentCharacterName()
     const packs = getActivePacks(settings, characterName)
     const pack = packs[0] ?? null
-    const addresses = getActiveAddresses(settings, characterName)
-    const sceneNotes = buildPromptSceneNotes(packs, addresses)
-    // 三级地址列表 → prompt（纯图名场景自然退化为旧的图名清单）
-    const prompt = buildPrompt(
-      addresses,
-      settings.multiRolePromptMode,
-      settings.spriteCount,
-      settings.promptTemplate,
-      settings.promptBudget,
-      sceneNotes,
-    )
+    const prompt = buildActiveSpritePrompt(settings, characterName)
     adapter.injectPrompt(prompt, settings.injectionDepth)
 
     const contentKey = `${characterName}|${packs.map((p) => p.id).join(',')}|${pack ? pack.sprites.length > 0 : false}`

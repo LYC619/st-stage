@@ -36,22 +36,50 @@ describe('SillyTavern bridge', () => {
     await expect(readConnection()).resolves.toMatchObject({ model: 'model-a', online: true })
   })
 
+  it.each([
+    ['openai', 'openai_model', 'model_openai_select', 'api_key_openai'],
+    ['claude', 'claude_model', 'model_claude_select', 'api_key_claude'],
+    ['openrouter', 'openrouter_model', 'model_openrouter_select', 'api_key_openrouter'],
+    ['makersuite', 'google_model', 'model_google_select', 'api_key_makersuite'],
+  ])('writes the %s key and model through its native ST fields', async (source, modelField, modelSelector, secretKey) => {
+    const settings = installST({ chat_completion_source: source, [modelField]: 'old' })
+    document.body.innerHTML = [
+      '<select id="main_api"><option value="openai">openai</option></select>',
+      `<select id="chat_completion_source"><option value="${source}">${source}</option></select>`,
+      `<select id="${modelSelector}"><option value="model-next">model-next</option></select>`,
+      `<input id="${secretKey}">`,
+      '<button id="api_button_openai"></button>',
+    ].join('')
+    const writes: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/write')) writes.push(String(init?.body))
+      return response(true)
+    }))
+
+    await applyProfile(profile({ source, url: '', model: 'model-next', secretId: '' }))
+
+    expect(settings).toMatchObject({ chat_completion_source: source, [modelField]: 'model-next' })
+    expect(writes[0]).toContain(`"key":"${secretKey}"`)
+    expect(writes[0]).toContain('"value":"secret"')
+    expect((document.querySelector(`#${secretKey}`) as HTMLInputElement).value).toBe('secret')
+  })
+
   it('connects once to load a delayed model option, then selects it and reconnects', async () => {
     const settings = installST({ chat_completion_source: 'openai', openai_model: 'none' })
-    document.body.innerHTML = '<select id="main_api"><option value="openai">openai</option></select><select id="chat_completion_source"><option value="openai">openai</option></select><select id="openai_model"><option value="none">NONE</option></select><input id="api_key_openai"><button id="api_button_openai"></button>'
+    document.body.innerHTML = '<select id="main_api"><option value="openai">openai</option></select><select id="chat_completion_source"><option value="openai">openai</option></select><select id="model_openai_select"><option value="none">NONE</option></select><input id="api_key_openai"><button id="api_button_openai"></button>'
     vi.stubGlobal('fetch', vi.fn(async () => response(true)))
     const button = document.querySelector('#api_button_openai')!
     let clicks = 0
     button.addEventListener('click', () => {
       clicks += 1
       if (clicks === 1) setTimeout(() => {
-        const select = document.querySelector<HTMLSelectElement>('#openai_model')!
+        const select = document.querySelector<HTMLSelectElement>('#model_openai_select')!
         select.add(new Option('gpt-test', 'gpt-test'))
       }, 30)
     })
     const connected = await applyProfile(profile({ source: 'openai', url: '', model: 'gpt-test' }))
     expect(clicks).toBe(2)
-    expect((document.querySelector('#openai_model') as HTMLSelectElement).value).toBe('gpt-test')
+    expect((document.querySelector('#model_openai_select') as HTMLSelectElement).value).toBe('gpt-test')
     expect(settings).toMatchObject({ openai_model: 'gpt-test' })
     expect(connected.model).toBe('gpt-test')
   })

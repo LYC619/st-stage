@@ -235,6 +235,23 @@ function matchUniqueTagInPool(pool: Candidate[], tag: string): Sprite | null {
   return null
 }
 
+function strictTagMatch(pool: Candidate[], tag: string): { matched: boolean; sprite: Sprite | null } {
+  const exact = pool.filter((candidate) => candidate.sprite.tag === tag)
+  if (exact.length > 0) return { matched: true, sprite: exact.length === 1 ? exact[0].sprite : null }
+  const fuzzy = pool.filter((candidate) => nameMatches(candidate.sprite.tag, tag))
+  return { matched: fuzzy.length > 0, sprite: fuzzy.length === 1 ? fuzzy[0].sprite : null }
+}
+
+function isRelativeOutfitSet(packs: SpritePack[], candidates: Candidate[]): boolean {
+  if (packs.length < 2) return false
+  const role = candidates[0]?.role
+  return Boolean(
+    role
+      && candidates.length > 0
+      && candidates.every((candidate) => candidate.role === role && Boolean(candidate.outfit)),
+  )
+}
+
 /**
  * 多包严格地址解析（六期核心）：地址 → 立绘。
  * - 「图名」：全局按图名匹配；跨包多解时返回 null，
@@ -246,10 +263,40 @@ function matchUniqueTagInPool(pool: Candidate[], tag: string): Sprite | null {
 export function resolveSprite(packs: SpritePack[], address: string): Sprite | null {
   const raw = address.trim()
   if (!raw) return null
+  const partCount = raw.split('/').length
   const { role, outfit, tag } = parseAddress(raw)
   if (!tag) return null
 
-  let pool = flatten(packs)
+  const all = flatten(packs)
+  if (partCount === 1) {
+    const firstPack = packs[0]
+    if (firstPack && isRelativeOutfitSet(packs, all)) {
+      const preferred = strictTagMatch(
+        all.filter((candidate) => candidate.pack.id === firstPack.id),
+        tag,
+      )
+      if (preferred.matched) return preferred.sprite
+    }
+    return matchUniqueTagInPool(all, tag)
+  }
+
+  if (partCount === 2) {
+    const roleMatches = filterByName(all, role, (candidate) => candidate.role)
+    if (roleMatches.length > 0) {
+      const rolePool = roleMatches.filter((candidate) => candidate.outfit === '')
+      return strictTagMatch(rolePool, tag).sprite
+    }
+    const aliasPool = filterByName(all, role, (candidate) => candidate.baseAlias)
+      .filter((candidate) => candidate.outfit === '')
+    if (aliasPool.length > 0) {
+      const legacy = strictTagMatch(aliasPool, tag)
+      if (legacy.matched) return legacy.sprite
+    }
+    const outfitPool = filterByName(all, role, (candidate) => candidate.outfit)
+    return strictTagMatch(outfitPool, tag).sprite
+  }
+
+  let pool = all
   if (role) {
     pool = lockByRole(pool, role)
     if (pool.length === 0) return null // 严格：请求人名/包名均不存在，不跨角色回退

@@ -5,6 +5,7 @@
  */
 
 import type { PhoneApp } from '../../../core/phone-registry'
+import { buildActiveSpritePrompt } from '../../../core/active-prompt'
 import {
   INJECTION_DEPTH_MAX,
   INJECTION_DEPTH_MIN,
@@ -17,9 +18,9 @@ import {
   SPRITE_OPACITY_MAX,
   SPRITE_OPACITY_MIN,
 } from '../../../core/types'
-import { getActiveAddresses, getActivePacks } from '../../../core/sprite-store'
+import { getActivePacks } from '../../../core/sprite-store'
 import { el, appButton, foldSection, hintField, numberRow, selectRow, textareaRow, toggleRow } from './widgets'
-import { BUILTIN_TEMPLATE, buildPrompt } from '../../../core/prompt-builder'
+import { BUILTIN_TEMPLATE } from '../../../core/prompt-builder'
 
 export function spriteApp(): PhoneApp {
   return {
@@ -157,22 +158,10 @@ export function spriteApp(): PhoneApp {
         ),
       )
       // 预算反馈：算一遍实际会注入的 prompt，超预算时同时给出截取前的长度
-      const addresses = getActiveAddresses(settings, characterName)
-      const budgeted = buildPrompt(
-        addresses,
-        settings.multiRolePromptMode,
-        settings.spriteCount,
-        settings.promptTemplate,
-        settings.promptBudget,
-      )
+      const budgeted = buildActiveSpritePrompt(settings, characterName)
       const unlimited =
         settings.promptBudget > 0
-          ? buildPrompt(
-              addresses,
-              settings.multiRolePromptMode,
-              settings.spriteCount,
-              settings.promptTemplate,
-            )
+          ? buildActiveSpritePrompt(settings, characterName, 0)
           : budgeted
       const budgetHint = el('div', 'so-app-desc')
       budgetHint.textContent = budgeted
@@ -184,8 +173,8 @@ export function spriteApp(): PhoneApp {
       promptSection.body.append(budgetHint)
       const promptHint = el('div', 'so-app-desc')
       promptHint.textContent =
-        '多个包/含人名服装时，Prompt 用完整地址 [立绘:人名/服装/图名]；单包纯图名时用简写 [立绘:图名]。' +
-        '自动精简把多套服装重合的图名只列一次，并按实际长度自动取更短的一版：场景少或重合度低时仍显示全量格式，属正常现象。'
+        '同角色多服装时，默认服装可写 [立绘:图名]，其他服装写 [立绘:服装/图名]；完整三级地址仍兼容。' +
+        '自动精简会抽取基础图名池和服装增量；默认服装不在重合簇或压缩后不更短时，会自动保留原格式。'
       promptSection.body.append(promptHint)
       const tplRow = textareaRow(
         '自定义提示词（留空=用内置）',
@@ -196,7 +185,7 @@ export function spriteApp(): PhoneApp {
       const tplInput = tplRow.querySelector('textarea') as HTMLTextAreaElement
       promptSection.body.append(
         tplRow,
-        appButton('填入内置提示词底稿（在此基础上改）', () => {
+        appButton('填入内置底稿（未修改时仍自动精简）', () => {
           if (tplInput.value.trim() && !window.confirm('用内置底稿覆盖当前已填写的自定义提示词？')) return
           tplInput.value = BUILTIN_TEMPLATE
           ctx.updateSettings({ ...ctx.getSettings(), promptTemplate: BUILTIN_TEMPLATE })

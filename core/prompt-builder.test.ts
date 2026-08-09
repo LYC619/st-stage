@@ -8,6 +8,8 @@ import {
   chooseShorterPrompt,
 } from './prompt-builder'
 import type { SpriteAddress, SpritePack } from './types'
+import { spriteAddress } from './types'
+import { getPresetPacks } from './presets'
 
 const addr = (role: string, outfit: string, tag: string): SpriteAddress => ({ role, outfit, tag })
 
@@ -240,11 +242,37 @@ describe('buildPrompt — 自定义模板', () => {
     expect(buildPrompt([], 'full', 1, '自定义 {清单}')).toBe('')
   })
 
-  it('BUILTIN_TEMPLATE 与内置措辞同步（模板渲染的每一行都出现在内置输出中）', () => {
+  it('未修改的 BUILTIN_TEMPLATE 仍走内置压缩逻辑', () => {
     const addrs = [addr('鸣人', '', '微笑'), addr('鸣人', '', '害羞')]
-    const builtin = buildPrompt(addrs, 'full', 3)
-    const rendered = buildPrompt(addrs, 'full', 3, BUILTIN_TEMPLATE)
-    for (const line of rendered.split('\n')) expect(builtin).toContain(line)
+    expect(buildPrompt(addrs, 'repeat', 3, BUILTIN_TEMPLATE)).toBe(buildPrompt(addrs, 'repeat', 3))
+  })
+})
+
+describe('buildPrompt — 同角色服装级压缩', () => {
+  const packs = getPresetPacks()
+  const addresses = packs.flatMap((pack) => pack.sprites.map((sprite) => spriteAddress(pack, sprite)))
+  const notes = buildPromptSceneNotes(packs, addresses)
+
+  it('只写一次角色和基础池，并按服装列增量、后缀变体和缩水集合', () => {
+    const compact = buildPrompt(addresses, 'repeat', 3, '', 0, notes)
+    const full = buildPrompt(addresses, 'full', 3, '', 0, notes)
+
+    expect(compact.match(/角色：塞拉菲娜/g)).toHaveLength(1)
+    expect(compact.match(/基础图名池：/g)).toHaveLength(1)
+    expect(compact).toContain('- 常服（默认）：基础图名池，另有：翻白眼吐舌')
+    expect(compact).toContain('- 暗影斗篷：基础图名池，另有：妩媚、月光透视')
+    expect(compact).toContain('- 治愈白裙：基础图名池，另有：治愈绽放')
+    expect(compact).toContain('可用“_变”后缀：启仪、施法、爱慕、感激、关怀、好奇、领悟、期许、释然、妩媚、喜悦、中性')
+    expect(compact).toContain('- 战斗服（仅限）：懊悔、悲伤、逗乐、愤怒')
+    expect(compact).not.toContain('- 战斗服（仅限）：爱慕')
+    expect(compact).toContain('[立绘:图名]（默认服装）或 [立绘:服装/图名]')
+    expect(compact.length).toBeLessThan(full.length)
+  })
+
+  it('填入未修改的内置底稿不会绕过同角色压缩', () => {
+    expect(buildPrompt(addresses, 'repeat', 3, BUILTIN_TEMPLATE, 0, notes)).toBe(
+      buildPrompt(addresses, 'repeat', 3, '', 0, notes),
+    )
   })
 })
 

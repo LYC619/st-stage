@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { API_SOURCES, emptyDraft, findActiveProfile, getSource, normalizeUrl, parseModelList, sanitizeAppData, upsertProfile, validateDraft } from './core'
+import { API_SOURCES, COMMON_CHAT_SOURCES, emptyDraft, findActiveProfile, getSource, normalizeUrl, parseModelList, sanitizeAppData, upsertProfile, validateDraft } from './core'
 
 describe('API profile v2', () => {
   it('migrates legacy custom profiles without losing connection fields', () => {
@@ -12,6 +12,23 @@ describe('API profile v2', () => {
     expect(validateDraft(draft)).toBeNull()
     const saved = upsertProfile([], draft, null)
     expect('profiles' in saved && saved.profiles[0].source).toBe('openai')
+  })
+
+  it('keeps plaintext keys in current profiles', () => {
+    const result = sanitizeAppData({ profiles: [{
+      version: 2,
+      id: 'plain',
+      name: '主力',
+      mainApi: 'openai',
+      source: 'openai',
+      url: '',
+      key: 'sk-plain',
+      secretId: '',
+      secretMode: 'stored',
+      model: 'gpt-test',
+      settings: {},
+    }] })
+    expect(result.profiles[0]).toMatchObject({ key: 'sk-plain', secretMode: 'stored' })
   })
 
   it('requires a valid URL only for URL-based sources', () => {
@@ -31,6 +48,25 @@ describe('API profile v2', () => {
   it('describes chat and text completion sources', () => {
     expect(API_SOURCES.some((item) => item.mainApi === 'openai' && item.id === 'custom')).toBe(true)
     expect(getSource('textgenerationwebui').urlField).toBeTruthy()
+  })
+
+
+  it('offers only common native channels plus the OpenAI-compatible custom entry', () => {
+    expect(COMMON_CHAT_SOURCES.map((item) => item.id)).toEqual([
+      'openai',
+      'claude',
+      'openrouter',
+      'makersuite',
+      'custom',
+    ])
+    expect(COMMON_CHAT_SOURCES.every((item) => item.mainApi === 'openai')).toBe(true)
+    expect(COMMON_CHAT_SOURCES.map((item) => [item.id, item.modelField, item.modelSelector, item.secretKey, item.keySelector])).toEqual([
+      ['openai', 'openai_model', '#model_openai_select', 'api_key_openai', '#api_key_openai'],
+      ['claude', 'claude_model', '#model_claude_select', 'api_key_claude', '#api_key_claude'],
+      ['openrouter', 'openrouter_model', '#model_openrouter_select', 'api_key_openrouter', '#api_key_openrouter'],
+      ['makersuite', 'google_model', '#model_google_select', 'api_key_makersuite', '#api_key_makersuite'],
+      ['custom', 'custom_model', '#custom_model_id', 'api_key_custom', '#api_key_custom'],
+    ])
   })
 })
 

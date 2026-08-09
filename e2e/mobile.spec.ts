@@ -470,9 +470,11 @@ test('真实图库在横竖屏中保持可操作，并支持角色折叠与搜�
   await openRealGalleryManager(page)
   await expectInsideViewport(page, '.so-manager')
 
+  const roleStack = page.locator('.so-role-pack-stack', { hasText: '小雪' })
+  await expect(roleStack).toContainText('2 个图包')
+  await expect(roleStack).toHaveAttribute('aria-expanded', 'false')
+  await roleStack.tap()
   const roleRow = page.locator('.so-role-pack-row', { hasText: '小雪' })
-  await expect(roleRow).toContainText('2 个图包')
-  await roleRow.tap()
   await expect(roleRow).toHaveAttribute('aria-expanded', 'true')
   await page.locator('.so-pack-card', { hasText: '小雪居家' }).tap()
 

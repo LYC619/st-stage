@@ -29,10 +29,10 @@ const chat = (id: string, label: string, options: Partial<ApiSourceDescriptor> =
 })
 
 export const API_SOURCES: readonly ApiSourceDescriptor[] = [
-  chat('openai', 'OpenAI', { modelField: 'openai_model', secretKey: 'api_key_openai', modelSelector: '#openai_model', keySelector: '#api_key_openai' }),
-  chat('claude', 'Claude', { modelField: 'claude_model', secretKey: 'api_key_claude', modelSelector: '#claude_model', keySelector: '#api_key_claude' }),
-  chat('openrouter', 'OpenRouter', { modelField: 'openrouter_model', secretKey: 'api_key_openrouter', modelSelector: '#openrouter_model', keySelector: '#api_key_openrouter' }),
-  chat('makersuite', 'Google AI Studio', { modelField: 'google_model', secretKey: 'api_key_makersuite', modelSelector: '#google_model', keySelector: '#api_key_makersuite' }),
+  chat('openai', 'OpenAI', { modelField: 'openai_model', secretKey: 'api_key_openai', modelSelector: '#model_openai_select', keySelector: '#api_key_openai' }),
+  chat('claude', 'Claude', { modelField: 'claude_model', secretKey: 'api_key_claude', modelSelector: '#model_claude_select', keySelector: '#api_key_claude' }),
+  chat('openrouter', 'OpenRouter', { modelField: 'openrouter_model', secretKey: 'api_key_openrouter', modelSelector: '#model_openrouter_select', keySelector: '#api_key_openrouter' }),
+  chat('makersuite', 'Google AI Studio', { modelField: 'google_model', secretKey: 'api_key_makersuite', modelSelector: '#model_google_select', keySelector: '#api_key_makersuite' }),
   chat('mistralai', 'Mistral AI', { modelField: 'mistralai_model', secretKey: 'api_key_mistralai', modelSelector: '#mistralai_model', keySelector: '#api_key_mistralai' }),
   chat('cohere', 'Cohere', { modelField: 'cohere_model', secretKey: 'api_key_cohere', modelSelector: '#cohere_model', keySelector: '#api_key_cohere' }),
   chat('groq', 'Groq', { modelField: 'groq_model', secretKey: 'api_key_groq', modelSelector: '#groq_model', keySelector: '#api_key_groq' }),
@@ -44,6 +44,13 @@ export const API_SOURCES: readonly ApiSourceDescriptor[] = [
   { id: 'kobold', mainApi: 'kobold', label: 'KoboldAI', urlField: 'api_server', connectSelector: '#api_button', urlSelector: '#api_url_text' },
   { id: 'koboldhorde', mainApi: 'koboldhorde', label: 'KoboldAI Horde', secretKey: 'api_key_horde', connectSelector: '#api_button', keySelector: '#horde_api_key' },
 ]
+
+const COMMON_CHAT_SOURCE_IDS = new Set(['openai', 'claude', 'openrouter', 'makersuite', 'custom'])
+
+/** 新建档案只展示高频入口；完整 API_SOURCES 继续服务历史档案与桥接兼容。 */
+export const COMMON_CHAT_SOURCES: readonly ApiSourceDescriptor[] = API_SOURCES.filter(
+  (item) => item.mainApi === 'openai' && COMMON_CHAT_SOURCE_IDS.has(item.id),
+)
 
 export function getSource(mainApi: string, source = ''): ApiSourceDescriptor {
   return API_SOURCES.find((item) => item.mainApi === mainApi && (item.mainApi !== 'openai' || item.id === source))
