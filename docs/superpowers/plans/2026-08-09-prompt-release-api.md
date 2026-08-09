@@ -52,4 +52,4 @@
 - [x] Add/adjust build tests proving no image assets or development/reference files enter `st-distribution/`.
 - [x] Run focused tests after each task, then full Vitest, lint, typecheck, Next build, mobile E2E, and `git diff --check`.
 - [x] Rebuild root and distribution with one fixed stamp and compare shared SHA-256 hashes.
-- [ ] Record automated evidence separately from real-ST checks, update deferred items honestly, and leave semantic version at 0.9.0 until the maintainer completes final acceptance.
+- [x] Record automated evidence separately from real-ST checks, update deferred items honestly, and leave semantic version at 0.9.0 until the maintainer completes final acceptance.
