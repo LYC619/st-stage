@@ -4,12 +4,12 @@ project: st-stage
 base_branch: main
 verified_code_head: 2c6195388239f80ac3ce2c46fb0ac48e279e7d22
 remote_code_head_at_update: 4b51166c26fdbb70983fcf7b3257ab45b43b2a4b
-build_version: 0.9.0+202608091030
-phase: api-profile-real-sillytavern-acceptance
+build_version: 0.9.0+202608091151
+phase: api-model-switch-real-sillytavern-retest
 updated_at: 2026-08-09
 updated_by: v0
-verification_source: v0-api-profile-refactor-2026-08-09
-history: docs/maintenance/history/2026-08-09-api-profile-refactor.md
+verification_source: v0-api-model-switch-fix-2026-08-09
+history: docs/maintenance/history/2026-08-09-api-model-switch-fix.md
 ---
 
 # Current Project Status
@@ -17,7 +17,9 @@ history: docs/maintenance/history/2026-08-09-api-profile-refactor.md
 ## Snapshot
 
 - API 管理已从单一 OpenAI-compatible 站点切换器重构为版本化连接档案：覆盖 SillyTavern Chat Completion 来源、Text Completion、NovelAI、KoboldAI 与 Horde；旧档案会迁移为 `openai/custom`。
-- 桥接层现在优先使用 `/api/secrets/find` 和带 `secret-id` 的多密钥写入，失败时回退旧单槽位；URL、模型及来源设置写回后会先回验再连接。
+- 根据真实 SillyTavern 反馈，模型切换流程现会先连接加载动态模型列表，等待目标模型出现后再选择并执行最终连接回验；明确的 `NONE` 不再被当作成功。
+- API App 已加入快速开始、补全方式、全部当前 Chat Completion 渠道、字段安全和常见排障的可折叠中文说明。
+- 桥接层继续优先使用 `/api/secrets/find` 和带 `secret-id` 的多密钥写入，失败时回退旧单槽位；URL、模型及来源设置写回后会先回验再连接。
 - 自动化验证已完成，但多供应商真实 SillyTavern 验收尚未完成，因此 `verified_code_head` 暂时保留在上一个已验证提交，待本分支提交并完成真实 ST 检查后更新。
 - Gallery, new-variable, and Renderer V1 updates are implemented and on `origin/main`.
 - The first real-ST test round produced eight findings; all are fixed in `2c61953` (details in the history entry): upload auto-split default-off and layout, pack-list batch delete/reorder, prominent non-collapsing pack-info save, enable-pack checkbox popover, fold-state and scroll preservation across app remounts, prompt rework (图名 wording, indented notes, scene-cluster compression, repeat as migrated default, settings v5), transparent inline sprites plus a spriteOpacity setting, and renderer re-injection with an injection status line.
@@ -73,7 +75,8 @@ Round-1 fix re-verification (from the 2026-08-09 feedback):
 
 ## API Profile Acceptance
 
-1. 在最新 SillyTavern release 中导入并切换一个自定义 OpenAI-compatible 档案，确认 Key、URL、模型和附加参数均可读回并成功连接。
+1. 在最新 SillyTavern release 中切换两个模型不同的档案，确认“可用模型”不会停留在 `NONE`、无需手动第二次点击连接，且成功提示显示实际生效模型。
+2. 导入并切换一个自定义 OpenAI-compatible 档案，确认 Key、URL、模型和附加参数均可读回并成功连接。
 2. 导入并切换至少一个非 custom Chat Completion 来源，确认来源、模型和对应密钥槽位正确。
 3. 导入并切换一个 Text Completion 来源，确认动态面板渲染后 URL 写入与连接按钮正确。
 4. 在不支持 `/api/secrets/find` 或 secret-id 的旧版/模拟环境验证单槽位回退，确认失败事务不会污染当前 Key。
