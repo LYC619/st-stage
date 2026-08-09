@@ -1,215 +1,170 @@
-/**
- * 「API」App 的 ST 交互层：与 SillyTavern 的全部耦合收敛在此，UI 层不碰 ST 细节。
- * 交互方式核实自 ST release 源码（public/scripts/openai.js / st-context.js）：
- * - getContext().chatCompletionSettings 就是 oai_settings 活引用。「附加参数」三项
- *   （custom_include_body / custom_exclude_body / custom_include_headers）的 textarea
- *   只在 ST 自己的弹窗打开期间存在，必须直接写该对象，不能走 DOM
- * - URL/模型走常驻输入框 + 原生 input 事件，让 ST 自己的 handler 同步 oai_settings
- * - 密钥写 /api/secrets/write 槽位 api_key_custom；同时必须同步可见 Key 输入框——
- *   否则点「连接」时 ST 会把输入框残留的旧 Key 写回密钥库（参考项目验证过的经典坑）
- * - 拉模型列表需临时写目标站 Key，结束后还原当前连接的 Key，防止污染现有连接
- */
+import type { ApiProfile, ConnectionIdentity, SecretMode } from './core'
+import { getSource, parseModelList } from './core'
 
-import type { ApiProfile } from './core'
-import { parseModelList } from './core'
-
-/** 本层用到的 ST context 最小切面（字段可能随版本缺失，全部可选） */
 interface BridgeContext {
   chatCompletionSettings?: Record<string, unknown>
+  textCompletionSettings?: Record<string, unknown>
+  powerUserSettings?: Record<string, unknown>
   getRequestHeaders?: () => Record<string, string>
   saveSettingsDebounced?: () => void
   onlineStatus?: string
   mainApi?: string
-  eventSource?: {
-    on(event: string, handler: () => void): void
-    removeListener(event: string, handler: () => void): void
-  }
+  eventSource?: { on(event: string, handler: () => void): void; removeListener(event: string, handler: () => void): void }
   event_types?: Record<string, string>
 }
 
 function getST(): BridgeContext | undefined {
-  try {
-    return window.SillyTavern?.getContext() as unknown as BridgeContext | undefined
-  } catch {
-    return undefined
-  }
+  try { return window.SillyTavern?.getContext() as unknown as BridgeContext | undefined } catch { return undefined }
 }
 
-/** toastr 是 ST 全局的通知库；模拟器等场景可能不存在，仅作锦上添花 */
 export function toast(kind: 'success' | 'error', message: string): void {
   const t = (window as { toastr?: Record<string, (msg: string, title?: string) => void> }).toastr
   t?.[kind]?.(message, 'API 切换')
 }
 
-function readStr(obj: Record<string, unknown>, key: string): string {
-  const v = obj[key]
-  return typeof v === 'string' ? v : ''
+function readString(object: Record<string, unknown> | undefined, key?: string): string {
+  const value = key ? object?.[key] : undefined
+  return typeof value === 'string' ? value : ''
 }
 
-export interface ConnectionInfo {
-  /** 当前自定义接口 URL（未配置为空串） */
-  url: string
-  model: string
-  /** 是否正在使用「聊天补全 → 自定义(OpenAI 兼容)」接口 */
-  isCustomSource: boolean
-  /** ST 报告的在线状态（false = no_connection） */
+function settingsFor(st: BridgeContext, mainApi: string): Record<string, unknown> {
+  return mainApi === 'openai' ? st.chatCompletionSettings ?? {} : st.textCompletionSettings ?? st.powerUserSettings ?? {}
+}
+
+const SOURCE_SETTING_KEYS = ['custom_include_body', 'custom_exclude_body', 'custom_include_headers'] as const
+
+export interface ConnectionInfo extends ConnectionIdentity {
   online: boolean
-  includeBody: string
-  excludeBody: string
-  includeHeaders: string
+  settings: Record<string, string | number | boolean>
+  key: string
+  secretId: string
+  secretMode: SecretMode
 }
 
-/** 读当前连接状态；无 ST 运行时（Web 模拟器）返回 null */
-export function readConnection(): ConnectionInfo | null {
-  const st = getST()
-  const oai = st?.chatCompletionSettings
-  if (!st || !oai) return null
+async function secretRequest(path: 'find' | 'write', body: Record<string, string>, st: BridgeContext): Promise<Response> {
+  return fetch(`/api/secrets/${path}`, { method: 'POST', headers: st.getRequestHeaders?.() ?? { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+}
+
+async function readSecret(st: BridgeContext, secretKey?: string, secretId = ''): Promise<{ key: string; mode: SecretMode }> {
+  if (!secretKey) return { key: '', mode: 'unavailable' }
+  try {
+    const response = await secretRequest('find', { key: secretKey, id: secretId }, st)
+    if (!response.ok) return { key: '', mode: 'unavailable' }
+    const json = await response.json() as { value?: unknown }
+    return { key: typeof json.value === 'string' ? json.value : '', mode: 'read' }
+  } catch { return { key: '', mode: 'unavailable' } }
+}
+
+export async function readConnection(): Promise<ConnectionInfo | null> {
+  const st = getST(); if (!st) return null
+  const mainApi = st.mainApi ?? (document.querySelector<HTMLSelectElement>('#main_api')?.value || 'openai')
+  const settings = settingsFor(st, mainApi)
+  const source = mainApi === 'openai' ? readString(settings, 'chat_completion_source') || document.querySelector<HTMLSelectElement>('#chat_completion_source')?.value || 'openai' : mainApi
+  const descriptor = getSource(mainApi, source)
+  const secretId = readString(settings, `${descriptor.secretKey}_id`) || readString(settings, 'secret_id')
+  const secret = await readSecret(st, descriptor.secretKey, secretId)
+  const snapshot: Record<string, string | number | boolean> = {}
+  for (const key of SOURCE_SETTING_KEYS) {
+    const value = settings[key]
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') snapshot[key] = value
+  }
   return {
-    url: readStr(oai, 'custom_url'),
-    model: readStr(oai, 'custom_model'),
-    isCustomSource: st.mainApi === 'openai' && readStr(oai, 'chat_completion_source') === 'custom',
-    online: (st.onlineStatus ?? 'no_connection') !== 'no_connection',
-    includeBody: readStr(oai, 'custom_include_body'),
-    excludeBody: readStr(oai, 'custom_exclude_body'),
-    includeHeaders: readStr(oai, 'custom_include_headers'),
+    mainApi, source: descriptor.id, url: readString(settings, descriptor.urlField) || (descriptor.urlSelector ? document.querySelector<HTMLInputElement>(descriptor.urlSelector)?.value ?? '' : ''),
+    model: readString(settings, descriptor.modelField) || (descriptor.modelSelector ? document.querySelector<HTMLInputElement | HTMLSelectElement>(descriptor.modelSelector)?.value ?? '' : ''),
+    online: (st.onlineStatus ?? 'no_connection') !== 'no_connection', settings: snapshot, key: secret.key, secretId, secretMode: secret.mode,
   }
 }
 
-/**
- * 订阅 ST 在线状态变化（连接成功/失败/断开都会触发），返回退订函数。
- * 参考项目没有生命周期只能定时猜状态；我们的 App 有 unmount，走真事件。
- * 旧版 ST 缺事件时返回空退订，调用方自然退化为「切换后刷新一次」。
- */
 export function onOnlineStatusChanged(handler: () => void): () => void {
-  const st = getST()
-  const eventName = st?.event_types?.ONLINE_STATUS_CHANGED ?? 'online_status_changed'
-  const source = st?.eventSource
+  const st = getST(); const source = st?.eventSource
   if (!source) return () => {}
-  source.on(eventName, handler)
-  return () => source.removeListener(eventName, handler)
+  const eventName = st.event_types?.ONLINE_STATUS_CHANGED ?? 'online_status_changed'
+  source.on(eventName, handler); return () => source.removeListener(eventName, handler)
 }
 
-async function writeSecret(st: BridgeContext, key: string): Promise<void> {
-  const headers = st.getRequestHeaders?.() ?? { 'Content-Type': 'application/json' }
-  const res = await fetch('/api/secrets/write', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ key: 'api_key_custom', value: key ?? '' }),
-  })
-  if (!res.ok) throw new Error(`密钥写入 ST 失败（HTTP ${res.status}）`)
+function dispatchValue(element: HTMLInputElement | HTMLSelectElement, value: string): void {
+  element.value = value
+  element.dispatchEvent(new Event('input', { bubbles: true }))
+  element.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
-
-function setInput(input: HTMLInputElement, value: string): void {
-  input.value = value
-  // jQuery 事件走原生监听，原生 dispatchEvent 能命中 ST 的 input/change handler
-  input.dispatchEvent(new Event('input', { bubbles: true }))
-  input.dispatchEvent(new Event('change', { bubbles: true }))
-}
-
-function setSelect(select: HTMLSelectElement, value: string): void {
-  select.value = value
-  select.dispatchEvent(new Event('change', { bubbles: true }))
-}
-
-/**
- * 一键切换：写密钥 → 切自定义源 → 填 URL/模型 → 同步可见 Key → 写附加参数 → 连接。
- * 失败抛错（消息可直接展示给用户）。
- */
-export async function applyProfile(p: ApiProfile): Promise<void> {
-  const st = getST()
-  const oai = st?.chatCompletionSettings
-  if (!st || !oai) throw new Error('未检测到 SillyTavern 运行时')
-  const mainApiSel = document.querySelector<HTMLSelectElement>('#main_api')
-  const sourceSel = document.querySelector<HTMLSelectElement>('#chat_completion_source')
-  const urlInput = document.querySelector<HTMLInputElement>('#custom_api_url_text')
-  const connectBtn = document.querySelector<HTMLElement>('#api_button_openai')
-  if (!mainApiSel || !sourceSel || !urlInput || !connectBtn) {
-    throw new Error('找不到 ST 的连接设置面板，可能是酒馆版本太老（需 1.12+）')
+async function waitFor<T extends Element>(selector: string, timeout = 2500): Promise<T | null> {
+  const start = Date.now()
+  while (Date.now() - start < timeout) {
+    const element = document.querySelector<T>(selector)
+    if (element) return element
+    await new Promise((resolve) => setTimeout(resolve, 50))
   }
-
-  await writeSecret(st, p.key)
-  setSelect(mainApiSel, 'openai')
-  setSelect(sourceSel, 'custom')
-  await sleep(150)
-
-  setInput(urlInput, p.url)
-  const keyInput = document.querySelector<HTMLInputElement>('#api_key_custom')
-  if (keyInput) setInput(keyInput, p.key)
-  const modelInput = document.querySelector<HTMLInputElement>('#custom_model_id')
-  if (modelInput && p.model) setInput(modelInput, p.model)
-
-  // 附加参数无常驻 DOM，直接写 oai_settings；ST 组装请求时读这三项
-  oai['custom_include_body'] = p.includeBody
-  oai['custom_exclude_body'] = p.excludeBody
-  oai['custom_include_headers'] = p.includeHeaders
-  st.saveSettingsDebounced?.()
-  await sleep(150)
-
-  connectBtn.click()
+  return null
 }
 
-/**
- * 从站点接口拉模型列表。
- * @param restoreKey 结束后要还原的 Key（调用方传当前生效站点的 Key；可见输入框有值时优先用它）
- */
-let fetchModelsQueue: Promise<void> = Promise.resolve()
+async function writeSecret(st: BridgeContext, profile: ApiProfile): Promise<void> {
+  const descriptor = getSource(profile.mainApi, profile.source)
+  if (!descriptor.secretKey || !profile.key) return
+  let response = await secretRequest('write', { key: descriptor.secretKey, value: profile.key, id: profile.secretId }, st)
+  if (!response.ok && profile.secretId) response = await secretRequest('write', { key: descriptor.secretKey, value: profile.key }, st)
+  if (!response.ok) throw new Error(`密钥写入 ST 失败（HTTP ${response.status}）`)
+  if (descriptor.keySelector) {
+    const input = await waitFor<HTMLInputElement>(descriptor.keySelector, 800)
+    if (input) dispatchValue(input, profile.key)
+  }
+}
 
-export function fetchModels(url: string, key: string, restoreKey: string): Promise<string[]> {
-  const result = fetchModelsQueue.then(() => fetchModelsTransaction(url, key, restoreKey))
-  fetchModelsQueue = result.then(
-    () => undefined,
-    () => undefined,
-  )
+export async function applyProfile(profile: ApiProfile): Promise<void> {
+  const st = getST(); if (!st) throw new Error('未检测到 SillyTavern 运行时')
+  const descriptor = getSource(profile.mainApi, profile.source)
+  const mainApiSelect = await waitFor<HTMLSelectElement>('#main_api')
+  if (!mainApiSelect) throw new Error('找不到 SillyTavern API 类型选择器')
+  dispatchValue(mainApiSelect, profile.mainApi)
+  if (profile.mainApi === 'openai') {
+    const sourceSelect = await waitFor<HTMLSelectElement>('#chat_completion_source')
+    if (!sourceSelect) throw new Error('找不到聊天补全来源选择器')
+    dispatchValue(sourceSelect, profile.source)
+  }
+  await writeSecret(st, profile)
+  const settings = settingsFor(st, profile.mainApi)
+  if (descriptor.sourceField) settings[descriptor.sourceField] = profile.source
+  if (descriptor.urlField) settings[descriptor.urlField] = profile.url
+  if (descriptor.modelField && profile.model) settings[descriptor.modelField] = profile.model
+  for (const [key, value] of Object.entries(profile.settings)) settings[key] = value
+  if (descriptor.urlSelector) {
+    const input = await waitFor<HTMLInputElement>(descriptor.urlSelector)
+    if (!input) throw new Error(`找不到 ${descriptor.label} 的 URL 输入框`)
+    dispatchValue(input, profile.url)
+  }
+  if (descriptor.modelSelector && profile.model) {
+    const input = await waitFor<HTMLInputElement | HTMLSelectElement>(descriptor.modelSelector, 1200)
+    if (input) dispatchValue(input, profile.model)
+  }
+  st.saveSettingsDebounced?.()
+  if (descriptor.urlField && readString(settings, descriptor.urlField) !== profile.url) throw new Error('URL 写入后回验失败，已停止连接')
+  const button = await waitFor<HTMLElement>(descriptor.connectSelector)
+  if (!button) throw new Error(`找不到 ${descriptor.label} 的连接按钮`)
+  button.click()
+}
+
+let modelQueue: Promise<void> = Promise.resolve()
+export function fetchModels(profile: Pick<ApiProfile, 'mainApi' | 'source' | 'url' | 'key' | 'secretId'>): Promise<string[]> {
+  const result = modelQueue.then(() => fetchModelsTransaction(profile))
+  modelQueue = result.then(() => undefined, () => undefined)
   return result
 }
 
-async function fetchModelsTransaction(url: string, key: string, restoreKey: string): Promise<string[]> {
-  const st = getST()
-  if (!st) throw new Error('未检测到 SillyTavern 运行时')
-  const visibleKey = document.querySelector<HTMLInputElement>('#api_key_custom')?.value ?? ''
-  const prevKey = visibleKey || restoreKey
-  const wrote = !!key && key !== prevKey
-  if (wrote) await writeSecret(st, key)
-  let requestFailed = false
-  let requestError: unknown
-  let restoreFailed = false
-  let restoreError: unknown
-  let models: string[] = []
+async function fetchModelsTransaction(profile: Pick<ApiProfile, 'mainApi' | 'source' | 'url' | 'key' | 'secretId'>): Promise<string[]> {
+  const st = getST(); if (!st) throw new Error('未检测到 SillyTavern 运行时')
+  const descriptor = getSource(profile.mainApi, profile.source)
+  if (!descriptor.supportsModels) throw new Error('该来源不支持自动获取模型，请手动填写')
+  const current = await readConnection()
+  const temporary: ApiProfile = { version: 2, id: 'temporary', name: 'temporary', model: '', settings: {}, secretMode: 'stored', ...profile }
+  await writeSecret(st, temporary)
   try {
-    const ac = new AbortController()
-    const timer = setTimeout(() => ac.abort(), 20000)
-    let res: Response
+    const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 20000)
     try {
-      res = await fetch('/api/backends/chat-completions/status', {
-        method: 'POST',
-        headers: st.getRequestHeaders?.() ?? { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_completion_source: 'custom', custom_url: url }),
-        signal: ac.signal,
-      })
-    } finally {
-      clearTimeout(timer)
-    }
-    if (!res.ok) throw new Error(`模型列表请求失败（HTTP ${res.status}）`)
-    models = parseModelList(await res.json())
-  } catch (error) {
-    requestFailed = true
-    requestError = error
+      const response = await fetch('/api/backends/chat-completions/status', { method: 'POST', headers: st.getRequestHeaders?.() ?? { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_completion_source: profile.source, custom_url: profile.url }), signal: controller.signal })
+      if (!response.ok) throw new Error(`模型列表请求失败（HTTP ${response.status}）`)
+      return parseModelList(await response.json())
+    } finally { clearTimeout(timer) }
   } finally {
-    if (wrote) {
-      try {
-        await writeSecret(st, prevKey)
-      } catch (error) {
-        restoreFailed = true
-        restoreError = error
-      }
-    }
+    if (current?.key) await writeSecret(st, { ...temporary, mainApi: current.mainApi as ApiProfile['mainApi'], source: current.source, url: current.url, key: current.key, secretId: current.secretId })
   }
-  if (requestFailed) {
-    if (restoreFailed) console.warn('[st-stage] API：请求失败后还原密钥也失败', restoreError)
-    throw requestError
-  }
-  if (restoreFailed) throw restoreError
-  return models
 }

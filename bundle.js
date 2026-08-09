@@ -1984,8 +1984,8 @@ function storyArchiveKey(parts) {
   const owner = groupId ? `group:${groupId}` : characterId || (characterName ? `name:${characterName}` : "unknown");
   const chatId = clean(parts.chatId);
   const title = clean(parts.title);
-  const chat = chatId || (title ? `title:${title}` : "current");
-  return `${owner}::${chat}`;
+  const chat2 = chatId || (title ? `title:${title}` : "current");
+  return `${owner}::${chat2}`;
 }
 function upsertStorySprite(settings, story, source) {
   const existingIndex = settings.packs.findIndex((pack2) => pack2.sourceStoryKey === story.key);
@@ -2146,9 +2146,9 @@ var STAdapter = class {
     const wrapped = (...args) => {
       try {
         const messageId = args[0];
-        const chat = getContext().chat;
+        const chat2 = getContext().chat;
         const idNum = typeof messageId === "number" ? messageId : typeof messageId === "string" && messageId.trim() !== "" ? Number(messageId) : NaN;
-        const message = Number.isInteger(idNum) && idNum >= 0 && idNum < chat.length ? chat[idNum] : chat[chat.length - 1];
+        const message = Number.isInteger(idNum) && idNum >= 0 && idNum < chat2.length ? chat2[idNum] : chat2[chat2.length - 1];
         if (message && !message.is_user && typeof message.mes === "string") {
           handler(message.mes);
         }
@@ -5027,7 +5027,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-09 16:21"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-09 10:30"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
   return () => wrapper.remove();
@@ -6492,8 +6492,8 @@ function getLastMessageId() {
     } catch {
     }
   }
-  const chat = getST2()?.chat;
-  if (Array.isArray(chat) && chat.length > 0) return chat.length - 1;
+  const chat2 = getST2()?.chat;
+  if (Array.isArray(chat2) && chat2.length > 0) return chat2.length - 1;
   return -1;
 }
 async function waitForMvuInitialized(timeoutMs) {
@@ -6877,69 +6877,104 @@ function newvarApp(deps) {
 
 // st-extension/src/apps/api/core.ts
 var API_APP_ID = "api";
+var API_PROFILE_VERSION = 2;
+var chat = (id, label, options = {}) => ({
+  id,
+  label,
+  mainApi: "openai",
+  sourceField: "chat_completion_source",
+  connectSelector: "#api_button_openai",
+  ...options
+});
+var API_SOURCES = [
+  chat("openai", "OpenAI", { modelField: "openai_model", secretKey: "api_key_openai", modelSelector: "#openai_model", keySelector: "#api_key_openai" }),
+  chat("claude", "Claude", { modelField: "claude_model", secretKey: "api_key_claude", modelSelector: "#claude_model", keySelector: "#api_key_claude" }),
+  chat("openrouter", "OpenRouter", { modelField: "openrouter_model", secretKey: "api_key_openrouter", modelSelector: "#openrouter_model", keySelector: "#api_key_openrouter" }),
+  chat("makersuite", "Google AI Studio", { modelField: "google_model", secretKey: "api_key_makersuite", modelSelector: "#google_model", keySelector: "#api_key_makersuite" }),
+  chat("mistralai", "Mistral AI", { modelField: "mistralai_model", secretKey: "api_key_mistralai", modelSelector: "#mistralai_model", keySelector: "#api_key_mistralai" }),
+  chat("cohere", "Cohere", { modelField: "cohere_model", secretKey: "api_key_cohere", modelSelector: "#cohere_model", keySelector: "#api_key_cohere" }),
+  chat("groq", "Groq", { modelField: "groq_model", secretKey: "api_key_groq", modelSelector: "#groq_model", keySelector: "#api_key_groq" }),
+  chat("deepseek", "DeepSeek", { modelField: "deepseek_model", secretKey: "api_key_deepseek", modelSelector: "#deepseek_model", keySelector: "#api_key_deepseek" }),
+  chat("xai", "xAI", { modelField: "xai_model", secretKey: "api_key_xai", modelSelector: "#xai_model", keySelector: "#api_key_xai" }),
+  chat("custom", "自定义（OpenAI 兼容）", { urlField: "custom_url", modelField: "custom_model", secretKey: "api_key_custom", urlSelector: "#custom_api_url_text", modelSelector: "#custom_model_id", keySelector: "#api_key_custom", supportsModels: true }),
+  { id: "textgenerationwebui", mainApi: "textgenerationwebui", label: "Text Completion", urlField: "api_server_textgenerationwebui", connectSelector: "#api_button_textgenerationwebui", urlSelector: "#api_url_text" },
+  { id: "novel", mainApi: "novel", label: "NovelAI", secretKey: "api_key_novel", connectSelector: "#api_button_novel", keySelector: "#api_key_novel" },
+  { id: "kobold", mainApi: "kobold", label: "KoboldAI", urlField: "api_server", connectSelector: "#api_button", urlSelector: "#api_url_text" },
+  { id: "koboldhorde", mainApi: "koboldhorde", label: "KoboldAI Horde", secretKey: "api_key_horde", connectSelector: "#api_button", keySelector: "#horde_api_key" }
+];
+function getSource(mainApi, source = "") {
+  return API_SOURCES.find((item) => item.mainApi === mainApi && (item.mainApi !== "openai" || item.id === source)) ?? API_SOURCES.find((item) => item.mainApi === mainApi) ?? API_SOURCES.find((item) => item.id === "custom");
+}
 function emptyDraft() {
-  return { name: "", url: "", key: "", model: "", includeBody: "", excludeBody: "", includeHeaders: "" };
+  return { name: "", mainApi: "openai", source: "custom", url: "", key: "", secretId: "", secretMode: "stored", model: "", settings: {} };
 }
-function normalizeUrl(u) {
-  return String(u ?? "").trim().replace(/\/+$/, "");
+function normalizeUrl(value) {
+  return String(value ?? "").trim().replace(/\/+$/, "");
 }
-function str(v) {
-  return typeof v === "string" ? v : "";
-}
-function sanitizeAppData(raw) {
-  const profiles = [];
-  const list = raw?.profiles;
-  if (Array.isArray(list)) {
-    for (const item of list) {
-      if (!item || typeof item !== "object") continue;
-      const p = item;
-      const name = str(p.name).trim();
-      const url = normalizeUrl(str(p.url));
-      if (!name || !url) continue;
-      profiles.push({
-        id: str(p.id) || newProfileId(),
-        name,
-        url,
-        key: str(p.key),
-        model: str(p.model).trim(),
-        includeBody: str(p.includeBody),
-        excludeBody: str(p.excludeBody),
-        includeHeaders: str(p.includeHeaders)
-      });
-    }
-  }
-  return { profiles };
+function str(value) {
+  return typeof value === "string" ? value : "";
 }
 function newProfileId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
+function sanitizeAppData(raw) {
+  const profiles = [];
+  const list = raw?.profiles;
+  if (!Array.isArray(list)) return { profiles };
+  for (const item of list) {
+    if (!item || typeof item !== "object") continue;
+    const p = item;
+    const name = str(p.name).trim();
+    if (!name) continue;
+    const legacy = p.version !== API_PROFILE_VERSION;
+    const mainApi = legacy ? "openai" : str(p.mainApi);
+    const source = legacy ? "custom" : str(p.source);
+    const url = normalizeUrl(str(p.url));
+    const descriptor = getSource(mainApi, source);
+    if (descriptor.urlField && !url) continue;
+    const settings = !legacy && p.settings && typeof p.settings === "object" ? p.settings : {};
+    if (legacy) {
+      settings.custom_include_body = str(p.includeBody);
+      settings.custom_exclude_body = str(p.excludeBody);
+      settings.custom_include_headers = str(p.includeHeaders);
+    }
+    profiles.push({
+      version: 2,
+      id: str(p.id) || newProfileId(),
+      name,
+      mainApi,
+      source: descriptor.id,
+      url,
+      key: str(p.key),
+      secretId: str(p.secretId),
+      secretMode: str(p.secretMode) || (str(p.key) ? "legacy" : "unavailable"),
+      model: str(p.model).trim(),
+      settings
+    });
+  }
+  return { profiles };
+}
 function validateDraft(draft) {
-  if (!draft.name.trim()) return "给站点起个名称吧。";
-  const url = normalizeUrl(draft.url);
-  if (!url) return "接口地址 URL 还没填。";
-  if (!/^https?:\/\//i.test(url)) return "接口地址要以 http:// 或 https:// 开头。";
+  if (!draft.name.trim()) return "给连接档案起个名称吧。";
+  const descriptor = getSource(draft.mainApi, draft.source);
+  if (descriptor.urlField) {
+    const url = normalizeUrl(draft.url);
+    if (!url) return "这个来源需要填写接口地址 URL。";
+    if (!/^https?:\/\//i.test(url)) return "接口地址要以 http:// 或 https:// 开头。";
+  }
   return null;
 }
 function upsertProfile(profiles, draft, editingId) {
   const invalid = validateDraft(draft);
   if (invalid) return { error: invalid };
   const name = draft.name.trim();
-  const dup = profiles.find((p) => p.name === name && p.id !== editingId);
-  if (dup) return { error: `站点名「${name}」已被占用，换一个吧。` };
-  const clean2 = {
-    name,
-    url: normalizeUrl(draft.url),
-    key: draft.key,
-    model: draft.model.trim(),
-    includeBody: draft.includeBody,
-    excludeBody: draft.excludeBody,
-    includeHeaders: draft.includeHeaders
-  };
-  if (editingId !== null) {
-    const idx = profiles.findIndex((p) => p.id === editingId);
-    if (idx < 0) return { error: "要编辑的站点已不存在。" };
+  if (profiles.some((p) => p.name === name && p.id !== editingId)) return { error: `连接档案「${name}」已存在。` };
+  const clean2 = { ...draft, version: 2, name, url: normalizeUrl(draft.url), model: draft.model.trim(), settings: { ...draft.settings } };
+  if (editingId) {
+    const index = profiles.findIndex((p) => p.id === editingId);
+    if (index < 0) return { error: "要编辑的连接档案已不存在。" };
     const next = [...profiles];
-    next[idx] = { ...clean2, id: editingId };
+    next[index] = { ...clean2, id: editingId };
     return { profiles: next };
   }
   return { profiles: [...profiles, { ...clean2, id: newProfileId() }] };
@@ -6958,29 +6993,24 @@ function moveProfile(profiles, id, delta) {
   next.splice(to, 0, item);
   return next;
 }
-function findActiveProfile(profiles, currentUrl, currentModel = "") {
-  const cur = normalizeUrl(currentUrl);
-  if (!cur) return void 0;
-  const sameUrl = profiles.filter((p) => normalizeUrl(p.url) === cur);
-  if (sameUrl.length <= 1) return sameUrl[0];
-  return sameUrl.find((p) => p.model !== "" && p.model === currentModel) ?? sameUrl[0];
+function findActiveProfile(profiles, current2, currentModel = "") {
+  const identity = typeof current2 === "string" ? { mainApi: "openai", source: "custom", url: current2, model: currentModel } : current2;
+  const candidates = profiles.filter((p) => p.mainApi === identity.mainApi && (p.mainApi !== "openai" || p.source === identity.source) && (!p.url || normalizeUrl(p.url) === normalizeUrl(identity.url)));
+  return candidates.find((p) => p.model && p.model === identity.model) ?? candidates[0];
+}
+function profileSummary(profile) {
+  const source = getSource(profile.mainApi, profile.source);
+  return [source.label, profile.url || "", profile.model || "", profile.key || profile.secretId ? "已配 Key" : "缺 Key"].filter(Boolean);
 }
 function parseModelList(json) {
   if (json && typeof json === "object" && "error" in json && json.error) {
-    const msg = json.message;
-    throw new Error(typeof msg === "string" && msg ? msg : "站点接口返回了错误");
+    const message = json.message;
+    throw new Error(typeof message === "string" && message ? message : "站点接口返回了错误");
   }
   const box = json;
   const arr = Array.isArray(box) ? box : Array.isArray(box?.data) ? box.data : Array.isArray(box?.models) ? box.models : [];
-  const names = arr.map((m) => {
-    if (typeof m === "string") return m;
-    if (m && typeof m === "object") {
-      const o = m;
-      return str(o.id) || str(o.model) || str(o.name);
-    }
-    return "";
-  }).filter((s) => s !== "");
-  if (names.length === 0) throw new Error("站点没有返回任何模型");
+  const names = arr.map((m) => typeof m === "string" ? m : m && typeof m === "object" ? str(m.id) || str(m.model) || str(m.name) : "").filter(Boolean);
+  if (!names.length) throw new Error("站点没有返回任何模型");
   return [...new Set(names)].sort();
 }
 
@@ -6996,135 +7026,148 @@ function toast2(kind, message) {
   const t = window.toastr;
   t?.[kind]?.(message, "API 切换");
 }
-function readStr(obj, key) {
-  const v = obj[key];
-  return typeof v === "string" ? v : "";
+function readString(object, key) {
+  const value = key ? object?.[key] : void 0;
+  return typeof value === "string" ? value : "";
 }
-function readConnection() {
+function settingsFor(st, mainApi) {
+  return mainApi === "openai" ? st.chatCompletionSettings ?? {} : st.textCompletionSettings ?? st.powerUserSettings ?? {};
+}
+var SOURCE_SETTING_KEYS = ["custom_include_body", "custom_exclude_body", "custom_include_headers"];
+async function secretRequest(path, body, st) {
+  return fetch(`/api/secrets/${path}`, { method: "POST", headers: st.getRequestHeaders?.() ?? { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+async function readSecret(st, secretKey, secretId = "") {
+  if (!secretKey) return { key: "", mode: "unavailable" };
+  try {
+    const response = await secretRequest("find", { key: secretKey, id: secretId }, st);
+    if (!response.ok) return { key: "", mode: "unavailable" };
+    const json = await response.json();
+    return { key: typeof json.value === "string" ? json.value : "", mode: "read" };
+  } catch {
+    return { key: "", mode: "unavailable" };
+  }
+}
+async function readConnection() {
   const st = getST3();
-  const oai = st?.chatCompletionSettings;
-  if (!st || !oai) return null;
+  if (!st) return null;
+  const mainApi = st.mainApi ?? (document.querySelector("#main_api")?.value || "openai");
+  const settings = settingsFor(st, mainApi);
+  const source = mainApi === "openai" ? readString(settings, "chat_completion_source") || document.querySelector("#chat_completion_source")?.value || "openai" : mainApi;
+  const descriptor = getSource(mainApi, source);
+  const secretId = readString(settings, `${descriptor.secretKey}_id`) || readString(settings, "secret_id");
+  const secret = await readSecret(st, descriptor.secretKey, secretId);
+  const snapshot = {};
+  for (const key of SOURCE_SETTING_KEYS) {
+    const value = settings[key];
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") snapshot[key] = value;
+  }
   return {
-    url: readStr(oai, "custom_url"),
-    model: readStr(oai, "custom_model"),
-    isCustomSource: st.mainApi === "openai" && readStr(oai, "chat_completion_source") === "custom",
+    mainApi,
+    source: descriptor.id,
+    url: readString(settings, descriptor.urlField) || (descriptor.urlSelector ? document.querySelector(descriptor.urlSelector)?.value ?? "" : ""),
+    model: readString(settings, descriptor.modelField) || (descriptor.modelSelector ? document.querySelector(descriptor.modelSelector)?.value ?? "" : ""),
     online: (st.onlineStatus ?? "no_connection") !== "no_connection",
-    includeBody: readStr(oai, "custom_include_body"),
-    excludeBody: readStr(oai, "custom_exclude_body"),
-    includeHeaders: readStr(oai, "custom_include_headers")
+    settings: snapshot,
+    key: secret.key,
+    secretId,
+    secretMode: secret.mode
   };
 }
 function onOnlineStatusChanged(handler) {
   const st = getST3();
-  const eventName = st?.event_types?.ONLINE_STATUS_CHANGED ?? "online_status_changed";
   const source = st?.eventSource;
   if (!source) return () => {
   };
+  const eventName = st.event_types?.ONLINE_STATUS_CHANGED ?? "online_status_changed";
   source.on(eventName, handler);
   return () => source.removeListener(eventName, handler);
 }
-async function writeSecret(st, key) {
-  const headers = st.getRequestHeaders?.() ?? { "Content-Type": "application/json" };
-  const res = await fetch("/api/secrets/write", {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ key: "api_key_custom", value: key ?? "" })
-  });
-  if (!res.ok) throw new Error(`密钥写入 ST 失败（HTTP ${res.status}）`);
+function dispatchValue(element2, value) {
+  element2.value = value;
+  element2.dispatchEvent(new Event("input", { bubbles: true }));
+  element2.dispatchEvent(new Event("change", { bubbles: true }));
 }
-var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-function setInput(input, value) {
-  input.value = value;
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  input.dispatchEvent(new Event("change", { bubbles: true }));
-}
-function setSelect(select, value) {
-  select.value = value;
-  select.dispatchEvent(new Event("change", { bubbles: true }));
-}
-async function applyProfile(p) {
-  const st = getST3();
-  const oai = st?.chatCompletionSettings;
-  if (!st || !oai) throw new Error("未检测到 SillyTavern 运行时");
-  const mainApiSel = document.querySelector("#main_api");
-  const sourceSel = document.querySelector("#chat_completion_source");
-  const urlInput = document.querySelector("#custom_api_url_text");
-  const connectBtn = document.querySelector("#api_button_openai");
-  if (!mainApiSel || !sourceSel || !urlInput || !connectBtn) {
-    throw new Error("找不到 ST 的连接设置面板，可能是酒馆版本太老（需 1.12+）");
+async function waitFor(selector, timeout = 2500) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    const element2 = document.querySelector(selector);
+    if (element2) return element2;
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  await writeSecret(st, p.key);
-  setSelect(mainApiSel, "openai");
-  setSelect(sourceSel, "custom");
-  await sleep(150);
-  setInput(urlInput, p.url);
-  const keyInput = document.querySelector("#api_key_custom");
-  if (keyInput) setInput(keyInput, p.key);
-  const modelInput = document.querySelector("#custom_model_id");
-  if (modelInput && p.model) setInput(modelInput, p.model);
-  oai["custom_include_body"] = p.includeBody;
-  oai["custom_exclude_body"] = p.excludeBody;
-  oai["custom_include_headers"] = p.includeHeaders;
-  st.saveSettingsDebounced?.();
-  await sleep(150);
-  connectBtn.click();
+  return null;
 }
-var fetchModelsQueue = Promise.resolve();
-function fetchModels(url, key, restoreKey) {
-  const result = fetchModelsQueue.then(() => fetchModelsTransaction(url, key, restoreKey));
-  fetchModelsQueue = result.then(
-    () => void 0,
-    () => void 0
-  );
-  return result;
+async function writeSecret(st, profile) {
+  const descriptor = getSource(profile.mainApi, profile.source);
+  if (!descriptor.secretKey || !profile.key) return;
+  let response = await secretRequest("write", { key: descriptor.secretKey, value: profile.key, id: profile.secretId }, st);
+  if (!response.ok && profile.secretId) response = await secretRequest("write", { key: descriptor.secretKey, value: profile.key }, st);
+  if (!response.ok) throw new Error(`密钥写入 ST 失败（HTTP ${response.status}）`);
+  if (descriptor.keySelector) {
+    const input = await waitFor(descriptor.keySelector, 800);
+    if (input) dispatchValue(input, profile.key);
+  }
 }
-async function fetchModelsTransaction(url, key, restoreKey) {
+async function applyProfile(profile) {
   const st = getST3();
   if (!st) throw new Error("未检测到 SillyTavern 运行时");
-  const visibleKey = document.querySelector("#api_key_custom")?.value ?? "";
-  const prevKey = visibleKey || restoreKey;
-  const wrote = !!key && key !== prevKey;
-  if (wrote) await writeSecret(st, key);
-  let requestFailed = false;
-  let requestError;
-  let restoreFailed = false;
-  let restoreError;
-  let models = [];
+  const descriptor = getSource(profile.mainApi, profile.source);
+  const mainApiSelect = await waitFor("#main_api");
+  if (!mainApiSelect) throw new Error("找不到 SillyTavern API 类型选择器");
+  dispatchValue(mainApiSelect, profile.mainApi);
+  if (profile.mainApi === "openai") {
+    const sourceSelect = await waitFor("#chat_completion_source");
+    if (!sourceSelect) throw new Error("找不到聊天补全来源选择器");
+    dispatchValue(sourceSelect, profile.source);
+  }
+  await writeSecret(st, profile);
+  const settings = settingsFor(st, profile.mainApi);
+  if (descriptor.sourceField) settings[descriptor.sourceField] = profile.source;
+  if (descriptor.urlField) settings[descriptor.urlField] = profile.url;
+  if (descriptor.modelField && profile.model) settings[descriptor.modelField] = profile.model;
+  for (const [key, value] of Object.entries(profile.settings)) settings[key] = value;
+  if (descriptor.urlSelector) {
+    const input = await waitFor(descriptor.urlSelector);
+    if (!input) throw new Error(`找不到 ${descriptor.label} 的 URL 输入框`);
+    dispatchValue(input, profile.url);
+  }
+  if (descriptor.modelSelector && profile.model) {
+    const input = await waitFor(descriptor.modelSelector, 1200);
+    if (input) dispatchValue(input, profile.model);
+  }
+  st.saveSettingsDebounced?.();
+  if (descriptor.urlField && readString(settings, descriptor.urlField) !== profile.url) throw new Error("URL 写入后回验失败，已停止连接");
+  const button2 = await waitFor(descriptor.connectSelector);
+  if (!button2) throw new Error(`找不到 ${descriptor.label} 的连接按钮`);
+  button2.click();
+}
+var modelQueue = Promise.resolve();
+function fetchModels(profile) {
+  const result = modelQueue.then(() => fetchModelsTransaction(profile));
+  modelQueue = result.then(() => void 0, () => void 0);
+  return result;
+}
+async function fetchModelsTransaction(profile) {
+  const st = getST3();
+  if (!st) throw new Error("未检测到 SillyTavern 运行时");
+  const descriptor = getSource(profile.mainApi, profile.source);
+  if (!descriptor.supportsModels) throw new Error("该来源不支持自动获取模型，请手动填写");
+  const current2 = await readConnection();
+  const temporary = { version: 2, id: "temporary", name: "temporary", model: "", settings: {}, secretMode: "stored", ...profile };
+  await writeSecret(st, temporary);
   try {
-    const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), 2e4);
-    let res;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2e4);
     try {
-      res = await fetch("/api/backends/chat-completions/status", {
-        method: "POST",
-        headers: st.getRequestHeaders?.() ?? { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_completion_source: "custom", custom_url: url }),
-        signal: ac.signal
-      });
+      const response = await fetch("/api/backends/chat-completions/status", { method: "POST", headers: st.getRequestHeaders?.() ?? { "Content-Type": "application/json" }, body: JSON.stringify({ chat_completion_source: profile.source, custom_url: profile.url }), signal: controller.signal });
+      if (!response.ok) throw new Error(`模型列表请求失败（HTTP ${response.status}）`);
+      return parseModelList(await response.json());
     } finally {
       clearTimeout(timer);
     }
-    if (!res.ok) throw new Error(`模型列表请求失败（HTTP ${res.status}）`);
-    models = parseModelList(await res.json());
-  } catch (error) {
-    requestFailed = true;
-    requestError = error;
   } finally {
-    if (wrote) {
-      try {
-        await writeSecret(st, prevKey);
-      } catch (error) {
-        restoreFailed = true;
-        restoreError = error;
-      }
-    }
+    if (current2?.key) await writeSecret(st, { ...temporary, mainApi: current2.mainApi, source: current2.source, url: current2.url, key: current2.key, secretId: current2.secretId });
   }
-  if (requestFailed) {
-    if (restoreFailed) console.warn("[st-stage] API：请求失败后还原密钥也失败", restoreError);
-    throw requestError;
-  }
-  if (restoreFailed) throw restoreError;
-  return models;
 }
 
 // st-extension/src/apps/api-app.ts
@@ -7136,10 +7179,10 @@ function apiApp(deps) {
     icon: "📡",
     order: 6,
     mount(container, ctx) {
-      const state = { busy: false };
-      render2(container, ctx, deps, state);
+      const state = { busy: false, message: "" };
+      void render2(container, ctx, deps, state);
       unsubscribe = onOnlineStatusChanged(() => {
-        if (!state.busy && container.isConnected) render2(container, ctx, deps, state);
+        if (!state.busy && container.isConnected) void render2(container, ctx, deps, state);
       });
     },
     unmount() {
@@ -7148,113 +7191,91 @@ function apiApp(deps) {
     }
   };
 }
-function render2(container, ctx, deps, state) {
-  container.textContent = "";
+async function render2(container, ctx, deps, state) {
   const data = sanitizeAppData(ctx.getAppData());
-  const conn = readConnection();
-  const active = conn ? findActiveProfile(data.profiles, conn.url, conn.model) : void 0;
-  const rerender = () => {
-    if (container.isConnected) render2(container, ctx, deps, state);
-  };
+  const connection = await readConnection();
+  if (!container.isConnected) return;
+  const active = connection ? findActiveProfile(data.profiles, connection) : void 0;
+  container.textContent = "";
   const status = el2("div", "so-app-section");
   const title = el2("div", "so-app-title");
   title.textContent = "当前连接";
   status.append(title);
-  if (!conn) {
-    const d = el2("div", "so-app-desc");
-    d.textContent = "未检测到 SillyTavern 运行时（Web 模拟器中仅展示站点列表）。";
-    status.append(d);
-  } else {
-    const line = el2("div", "so-app-desc");
-    const dot = el2("span", `stapi-dot${conn.online ? " stapi-dot-on" : ""}`);
-    const text = document.createElement("span");
-    text.textContent = conn.online ? "已连接" : "未连接";
-    line.append(dot, text);
-    status.append(line);
-    const site = el2("div", "so-app-desc");
-    site.textContent = active ? `站点：${active.name}` : conn.url ? `接口：${conn.url}（还没存成站点，可在管理页「导入当前连接」一键录入）` : "尚未配置自定义接口。";
-    status.append(site);
-    if (conn.model) {
-      const model = el2("div", "so-app-desc");
-      model.textContent = `模型：${conn.model}`;
-      status.append(model);
-    }
-    if (!conn.isCustomSource) {
-      const warn = el2("div", "so-app-desc");
-      warn.textContent = "当前没有走「自定义(OpenAI 兼容)」接口；点下方任一站点即可切换接管。";
-      status.append(warn);
-    }
+  const line = el2("div", "so-app-desc");
+  if (!connection) line.textContent = "未检测到 SillyTavern 运行时（这里只展示已保存档案）。";
+  else {
+    const source = getSource(connection.mainApi, connection.source);
+    line.textContent = `${connection.online ? "已连接" : "未连接"} · ${source.label}${active ? ` · ${active.name}` : ""}`;
+    const detail = el2("div", "so-app-desc");
+    detail.textContent = [connection.url, connection.model].filter(Boolean).join(" · ") || "该来源没有地址或模型字段";
+    status.append(detail);
   }
+  status.append(line);
   container.append(status);
-  const sites = el2("div", "so-app-section");
-  const sitesTitle = el2("div", "so-app-title");
-  sitesTitle.textContent = `站点（${data.profiles.length}）`;
-  sites.append(sitesTitle);
-  const feedback = el2("div", "so-app-desc");
-  feedback.hidden = true;
-  const say = (text) => {
-    feedback.textContent = text;
-    feedback.hidden = false;
-  };
-  if (data.profiles.length === 0) {
+  const profiles = el2("div", "so-app-section");
+  const profilesTitle = el2("div", "so-app-title");
+  profilesTitle.textContent = `连接档案（${data.profiles.length}）`;
+  profiles.append(profilesTitle);
+  if (!data.profiles.length) {
     const empty = el2("div", "so-app-desc");
-    empty.textContent = "还没有站点，点下方「管理站点」添加。";
-    sites.append(empty);
+    empty.textContent = "还没有连接档案，请进入管理页添加或导入。";
+    profiles.append(empty);
   }
-  const doSwitch = (p) => {
-    if (state.busy) return;
-    if (!conn) {
-      say("仅在 SillyTavern 内可切换。");
-      return;
-    }
-    state.busy = true;
-    say(`正在切换到「${p.name}」…`);
-    sites.querySelectorAll(".stapi-row").forEach((r) => r.classList.add("stapi-row-busy"));
-    applyProfile(p).then(() => {
-      toast2("success", `「${p.name}」配置已应用，正在连接…`);
-    }).catch((err) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast2("error", msg);
-      say(`切换失败：${msg}`);
-      console.error("[st-stage] API 切换失败", err);
-    }).then(() => {
-      state.busy = false;
-      rerender();
-    });
-  };
-  for (const p of data.profiles) {
-    const isActive = active?.id === p.id;
-    const row = el2("div", `stapi-row${isActive ? " stapi-row-on" : ""}`);
-    row.setAttribute("role", "button");
-    row.tabIndex = 0;
-    const main = el2("div", "stapi-row-main");
-    const name = el2("div", "stapi-row-name");
-    name.textContent = p.name;
-    main.append(name);
-    const subParts = [p.model || "模型沿用当前"];
-    if (p.includeBody.trim() || p.excludeBody.trim() || p.includeHeaders.trim()) subParts.push("附加参数");
-    const sub = el2("div", "stapi-row-sub");
-    sub.textContent = subParts.join(" · ");
-    main.append(sub);
-    const mark = el2("div", "stapi-row-mark");
-    mark.textContent = isActive ? "✓" : "›";
-    row.append(main, mark);
-    row.addEventListener("click", () => doSwitch(p));
-    row.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        doSwitch(p);
-      }
-    });
-    sites.append(row);
+  for (const profile of data.profiles) profiles.append(buildRow(profile, active?.id === profile.id, state.busy, () => void switchProfile(profile)));
+  if (state.message) {
+    const feedback = el2("div", "so-app-desc");
+    feedback.textContent = state.message;
+    profiles.append(feedback);
   }
-  sites.append(feedback);
-  container.append(sites);
+  container.append(profiles);
   const manage = el2("div", "so-app-section");
-  const manageDesc = el2("div", "so-app-desc");
-  manageDesc.textContent = "添加/编辑站点 · 从接口获取模型 · 附加参数（随站点切换）。";
-  manage.append(manageDesc, appButton("管理站点", () => deps.openManager()));
+  const description = el2("div", "so-app-desc");
+  description.textContent = "管理全部 Chat Completion、Text Completion 与其他 SillyTavern API 档案。";
+  manage.append(description, appButton("管理连接档案", deps.openManager));
   container.append(manage);
+  async function switchProfile(profile) {
+    if (state.busy || !connection) return;
+    state.busy = true;
+    state.message = `正在应用「${profile.name}」的类型、来源、密钥、URL 与模型…`;
+    await render2(container, ctx, deps, state);
+    try {
+      await applyProfile(profile);
+      state.message = `「${profile.name}」设置已回验，正在连接…`;
+      toast2("success", state.message);
+    } catch (error) {
+      state.message = `切换失败：${error instanceof Error ? error.message : String(error)}`;
+      toast2("error", state.message);
+      console.error("[st-stage] API 切换失败", error);
+    } finally {
+      state.busy = false;
+      await render2(container, ctx, deps, state);
+    }
+  }
+}
+function buildRow(profile, active, busy, onActivate) {
+  const row = el2("div", `stapi-row${active ? " stapi-row-on" : ""}${busy ? " stapi-row-busy" : ""}`);
+  row.setAttribute("role", "button");
+  row.tabIndex = busy ? -1 : 0;
+  row.setAttribute("aria-disabled", String(busy));
+  const main = el2("div", "stapi-row-main");
+  const name = el2("div", "stapi-row-name");
+  name.textContent = profile.name;
+  const summary = el2("div", "stapi-row-sub");
+  summary.textContent = profileSummary(profile).join(" · ");
+  main.append(name, summary);
+  const mark = el2("div", "stapi-row-mark");
+  mark.textContent = active ? "使用中" : "切换";
+  row.append(main, mark);
+  row.addEventListener("click", () => {
+    if (!busy) onActivate();
+  });
+  row.addEventListener("keydown", (event) => {
+    if (!busy && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      onActivate();
+    }
+  });
+  return row;
 }
 
 // st-extension/src/apps/renderer/prompt.ts
@@ -8030,27 +8051,27 @@ function createNewvarRuntime(deps) {
       return v;
     }
   }
-  function findSnapshotBefore(chat, fromId) {
-    for (let i = Math.min(fromId, chat.length - 1); i >= 0; i--) {
-      const snap = floorSnapshot(chat[i]);
+  function findSnapshotBefore(chat2, fromId) {
+    for (let i = Math.min(fromId, chat2.length - 1); i >= 0; i--) {
+      const snap = floorSnapshot(chat2[i]);
       if (snap) return clone2(snap);
     }
     return null;
   }
   function getCurrentState() {
     const schema = getData().schema;
-    const chat = getST4()?.chat;
-    if (Array.isArray(chat)) {
-      const snap = findSnapshotBefore(chat, chat.length - 1);
+    const chat2 = getST4()?.chat;
+    if (Array.isArray(chat2)) {
+      const snap = findSnapshotBefore(chat2, chat2.length - 1);
       if (snap) return fillDefaults(snap, schema);
     }
     return initStateFromSchema(schema);
   }
   function getPrevState() {
-    const chat = getST4()?.chat;
-    if (!Array.isArray(chat)) return null;
-    for (let i = chat.length - 1; i >= 0; i--) {
-      if (floorSnapshot(chat[i])) return findSnapshotBefore(chat, i - 1);
+    const chat2 = getST4()?.chat;
+    if (!Array.isArray(chat2)) return null;
+    for (let i = chat2.length - 1; i >= 0; i--) {
+      if (floorSnapshot(chat2[i])) return findSnapshotBefore(chat2, i - 1);
     }
     return null;
   }
@@ -8088,12 +8109,12 @@ function createNewvarRuntime(deps) {
     const data = getData();
     if (!data.enabled) return;
     const st = getST4();
-    const chat = st?.chat;
-    if (!st || !Array.isArray(chat)) return;
+    const chat2 = st?.chat;
+    if (!st || !Array.isArray(chat2)) return;
     const rawId = args[0];
     const idNum = typeof rawId === "number" ? rawId : typeof rawId === "string" && rawId.trim() !== "" ? Number(rawId) : NaN;
-    const messageId = Number.isInteger(idNum) && idNum >= 0 && idNum < chat.length ? idNum : chat.length - 1;
-    const msg = chat[messageId];
+    const messageId = Number.isInteger(idNum) && idNum >= 0 && idNum < chat2.length ? idNum : chat2.length - 1;
+    const msg = chat2[messageId];
     if (!msg || msg.is_user || typeof msg.mes !== "string") return;
     const parsed = parseUpdateBlock(msg.mes, data.format);
     if (!parsed.found) return;
@@ -8102,7 +8123,7 @@ function createNewvarRuntime(deps) {
       notify();
       return;
     }
-    const snapBase = findSnapshotBefore(chat, messageId - 1);
+    const snapBase = findSnapshotBefore(chat2, messageId - 1);
     const base = snapBase ? fillDefaults(snapBase, data.schema) : initStateFromSchema(data.schema);
     const result = applyOps(base, parsed.ops, data.schema);
     const parseLog = (parsed.rejected ?? []).map(({ index, reason }) => ({
@@ -8117,11 +8138,11 @@ function createNewvarRuntime(deps) {
   }
   function mutateCurrent(mutate) {
     const st = getST4();
-    const chat = st?.chat;
-    if (!st || !Array.isArray(chat) || chat.length === 0) return false;
+    const chat2 = st?.chat;
+    if (!st || !Array.isArray(chat2) || chat2.length === 0) return false;
     const state = getCurrentState();
     mutate(state);
-    writeSnapshot(st, chat.length - 1, state);
+    writeSnapshot(st, chat2.length - 1, state);
     reinject();
     notify();
     return true;
@@ -10357,58 +10378,49 @@ function createComposerBridge(deps = {}) {
 }
 
 // st-extension/src/apps/api/manager.ts
+var MAIN_API_OPTIONS = [
+  { value: "openai", label: "聊天补全（Chat Completion）" },
+  { value: "textgenerationwebui", label: "文本补全（Text Completion）" },
+  { value: "novel", label: "NovelAI" },
+  { value: "kobold", label: "KoboldAI" },
+  { value: "koboldhorde", label: "KoboldAI Horde" }
+];
 function createApiManager(deps) {
   let backdrop = null;
-  let dialog = null;
   let body = null;
-  let picker = null;
   let draft = null;
   let editingId = null;
-  let formNotice = "";
-  let scrollToEditor = false;
-  function applyBackdropSize() {
-    if (!backdrop) return;
-    backdrop.style.left = "0";
-    backdrop.style.top = "0";
-    backdrop.style.width = `${window.innerWidth}px`;
-    backdrop.style.height = `${window.innerHeight}px`;
-  }
-  function onEscape(e) {
-    if (e.key !== "Escape") return;
-    if (picker) closePicker();
-    else close();
-  }
+  let notice = "";
+  const section2 = (title) => {
+    const box = el2("div", "so-section");
+    const heading = el2("div", "so-section-title");
+    heading.textContent = title;
+    box.append(heading);
+    return box;
+  };
+  const desc = (box, text) => {
+    const line = el2("div", "so-app-desc");
+    line.textContent = text;
+    box.append(line);
+  };
+  const save = (data) => {
+    deps.setData(data);
+    render3();
+  };
   function open() {
-    if (backdrop) {
-      render3();
-      return;
-    }
-    draft = null;
-    editingId = null;
-    formNotice = "";
+    if (backdrop) return render3();
     backdrop = el2("div", "so-manager-backdrop");
-    document.addEventListener("keydown", onEscape);
-    window.addEventListener("resize", applyBackdropSize);
-    applyBackdropSize();
-    dialog = el2("div", "so-manager");
+    backdrop.style.inset = "0";
+    const dialog = el2("div", "so-manager");
     dialog.setAttribute("role", "dialog");
-    dialog.setAttribute("aria-label", "API 站点管理");
+    dialog.setAttribute("aria-label", "API 连接档案管理");
     const header = el2("div", "so-manager-header");
     const title = el2("div", "so-manager-title");
-    title.textContent = "API 站点管理";
-    const closeBtn = el2("div", "menu_button so-manager-close");
-    closeBtn.textContent = "✕";
-    closeBtn.title = "关闭";
-    closeBtn.setAttribute("role", "button");
-    closeBtn.tabIndex = 0;
-    closeBtn.addEventListener("click", close);
-    closeBtn.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        close();
-      }
-    });
-    header.append(title, closeBtn);
+    title.textContent = "API 连接档案管理";
+    const closeButton = el2("button", "menu_button so-manager-close");
+    closeButton.textContent = "关闭";
+    closeButton.addEventListener("click", close);
+    header.append(title, closeButton);
     body = el2("div", "so-manager-body");
     dialog.append(header, body);
     backdrop.append(dialog);
@@ -10416,199 +10428,142 @@ function createApiManager(deps) {
     render3();
   }
   function close() {
-    if (!backdrop) return;
-    document.removeEventListener("keydown", onEscape);
-    window.removeEventListener("resize", applyBackdropSize);
-    backdrop.remove();
+    backdrop?.remove();
     backdrop = null;
-    dialog = null;
     body = null;
-    picker = null;
     draft = null;
     editingId = null;
     deps.onClosed?.();
   }
-  function save(next) {
-    deps.setData(next);
+  function edit(profile) {
+    const { id: _id, version: _version, ...value } = profile;
+    draft = { ...value, settings: { ...value.settings } };
+    editingId = profile.id;
+    notice = "";
     render3();
   }
   function render3() {
     if (!body) return;
-    try {
-      body.textContent = "";
-      body.append(buildListSection(), buildEditorSection(), buildNoteSection());
-      if (scrollToEditor) {
-        scrollToEditor = false;
-        body.querySelector(".stapi-editor")?.scrollIntoView({ block: "nearest" });
-      }
-    } catch (err) {
-      console.error("[st-stage] API 站点管理弹窗渲染失败", err);
-    }
+    body.textContent = "";
+    body.append(buildList(), buildEditor(), buildHelp());
   }
-  function section2(titleText) {
-    const box = el2("div", "so-section");
-    const title = el2("div", "so-section-title");
-    title.textContent = titleText;
-    box.append(title);
-    return box;
-  }
-  function descLine2(parent, text) {
-    const d = el2("div", "so-app-desc");
-    d.textContent = text;
-    parent.append(d);
-  }
-  function buildListSection() {
+  function buildList() {
     const data = deps.getData();
-    const box = section2(`站点（${data.profiles.length}）`);
-    const conn = readConnection();
-    const activeId = findActiveProfile(data.profiles, conn?.url ?? "", conn?.model ?? "")?.id;
-    if (data.profiles.length === 0) {
-      descLine2(box, "列表还是空的。点下方「＋ 添加站点」，或先在 ST 里连好一个接口再用「导入当前连接」一键录入。");
-    } else {
-      descLine2(box, "列表顺序即手机页顺序，常用的用 ↑ 排前面。");
-    }
-    for (const p of data.profiles) {
-      const row = el2("div", `vm-leaf${editingId === p.id ? " nv-def-selected" : ""}`);
+    const box = section2(`连接档案（${data.profiles.length}）`);
+    if (!data.profiles.length) desc(box, "还没有档案。可新建，或导入 SillyTavern 当前连接。");
+    void readConnection().then((connection) => {
+      if (!connection || !body) return;
+      const active = findActiveProfile(data.profiles, connection);
+      body.querySelector(`[data-profile-id="${active?.id ?? ""}"]`)?.classList.add("stapi-row-on");
+    });
+    for (const profile of data.profiles) {
+      const row = el2("div", "vm-leaf");
+      row.dataset.profileId = profile.id;
       const main = el2("div", "vm-leaf-main");
-      const name = el2("span", "vm-key");
-      name.textContent = p.id === activeId ? `${p.name} · 使用中` : p.name;
-      const meta = el2("span", "vm-val");
-      const parts = [p.url];
-      if (p.model) parts.push(p.model);
-      parts.push(p.key ? "已配 Key" : "缺 Key");
-      if (p.includeBody.trim() || p.excludeBody.trim() || p.includeHeaders.trim()) parts.push("附加参数 ✓");
-      meta.textContent = parts.join(" · ");
-      main.append(name, meta);
-      main.setAttribute("role", "button");
       main.tabIndex = 0;
-      const edit = () => {
-        draft = {
-          name: p.name,
-          url: p.url,
-          key: p.key,
-          model: p.model,
-          includeBody: p.includeBody,
-          excludeBody: p.excludeBody,
-          includeHeaders: p.includeHeaders
-        };
-        editingId = p.id;
-        formNotice = "";
-        scrollToEditor = true;
-        render3();
+      main.setAttribute("role", "button");
+      const name = el2("span", "vm-key");
+      name.textContent = profile.name;
+      const meta = el2("span", "vm-val");
+      meta.textContent = profileSummary(profile).join(" · ");
+      main.append(name, meta);
+      main.addEventListener("click", () => edit(profile));
+      const move = (label, delta) => {
+        const button2 = el2("button", "vm-del stapi-move");
+        button2.textContent = label;
+        button2.addEventListener("click", () => save({ profiles: moveProfile(deps.getData().profiles, profile.id, delta) }));
+        return button2;
       };
-      main.addEventListener("click", edit);
-      main.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          edit();
-        }
+      const remove = el2("button", "vm-del");
+      remove.textContent = "删除";
+      remove.addEventListener("click", () => {
+        if (window.confirm(`删除连接档案「${profile.name}」？`)) save({ profiles: deps.getData().profiles.filter((item) => item.id !== profile.id) });
       });
-      const moveBtn = (label, delta) => {
-        const btn = el2("button", "vm-del stapi-move");
-        btn.setAttribute("aria-label", delta < 0 ? "上移" : "下移");
-        btn.title = delta < 0 ? "上移（列表顺序即手机页顺序）" : "下移";
-        btn.textContent = label;
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          save({ profiles: moveProfile(deps.getData().profiles, p.id, delta) });
-        });
-        return btn;
-      };
-      const del = el2("button", "vm-del");
-      del.setAttribute("aria-label", "删除站点");
-      del.title = "删除该站点";
-      del.textContent = "✕";
-      del.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (!window.confirm(`删除站点「${p.name}」？（不影响 ST 当前连接）`)) return;
-        if (editingId === p.id) {
-          draft = null;
-          editingId = null;
-        }
-        save({ profiles: deps.getData().profiles.filter((x) => x.id !== p.id) });
-      });
-      row.append(main, moveBtn("↑", -1), moveBtn("↓", 1), del);
+      row.append(main, move("↑", -1), move("↓", 1), remove);
       box.append(row);
     }
-    box.append(
-      appButton("＋ 添加站点", () => {
-        draft = emptyDraft();
-        editingId = null;
-        formNotice = "";
-        scrollToEditor = true;
-        render3();
-      })
-    );
+    box.append(appButton("＋ 添加连接档案", () => {
+      draft = emptyDraft();
+      editingId = null;
+      notice = "";
+      render3();
+    }));
     return box;
   }
-  function buildEditorSection() {
-    const box = section2(!draft ? "站点编辑" : editingId === null ? "新增站点" : `编辑：${draft.name || "（未命名）"}`);
-    box.classList.add("stapi-editor");
+  function buildEditor() {
+    const box = section2(draft ? editingId ? `编辑：${draft.name || "未命名"}` : "新增连接档案" : "档案编辑");
     if (!draft) {
-      descLine2(box, "点击上方站点进行编辑，或「＋ 添加站点」新建。");
+      desc(box, "选择上方档案进行编辑，或添加一个新档案。");
       return box;
     }
     const d = draft;
-    const notice = el2("div", "so-app-desc vm-add-err");
-    notice.textContent = formNotice;
-    notice.hidden = formNotice === "";
-    formNotice = "";
-    box.append(notice);
-    const showNotice = (text) => {
-      notice.textContent = text;
-      notice.hidden = false;
-    };
-    box.append(
-      textRow("站点名称", d.name, "起个好认的名字，如：主力中转", (v) => d.name = v),
-      textRow("接口地址 URL", d.url, "形如 https://example.com/v1", (v) => d.url = v),
-      textRow("API Key", d.key, "只存在你本机的 ST 设置里（明文），公用设备慎用", (v) => d.key = v.trim(), "password"),
-      textRow("模型 ID（可空）", d.model, "留空则切换时沿用 ST 当前模型", (v) => d.model = v),
-      appButton("从站点拉取模型列表", () => {
-        const url = normalizeUrl(d.url);
-        if (!url) {
-          showNotice("先把接口地址 URL 填上，才能拉模型。");
-          return;
-        }
-        openPicker(url, d.key, (m) => {
-          d.model = m;
-          render3();
-        });
+    if (notice) {
+      desc(box, notice);
+      notice = "";
+    }
+    box.append(textRow("档案名称", d.name, "例如：主力 Claude", (value) => {
+      d.name = value;
+    }));
+    box.append(selectRow("API 大类", d.mainApi, MAIN_API_OPTIONS, (value) => {
+      d.mainApi = value;
+      d.source = getSource(value, "").id;
+      d.url = "";
+      d.model = "";
+      d.secretId = "";
+      render3();
+    }));
+    if (d.mainApi === "openai") {
+      box.append(selectRow("来源", d.source, API_SOURCES.filter((item) => item.mainApi === "openai").map((item) => ({ value: item.id, label: item.label })), (value) => {
+        d.source = value;
+        d.url = "";
+        d.model = "";
+        d.secretId = "";
+        render3();
+      }));
+    }
+    const descriptor = getSource(d.mainApi, d.source);
+    if (descriptor.urlField) box.append(textRow("接口地址 URL", d.url, "https://example.com/v1", (value) => {
+      d.url = value;
+    }));
+    if (descriptor.secretKey) box.append(textRow("API Key", d.key, d.secretMode === "unavailable" ? "当前 ST 不允许读取；留空可保留原值" : "密钥将写入 SillyTavern 密钥库", (value) => {
+      d.key = value.trim();
+      d.secretMode = value ? "stored" : d.secretMode;
+    }, "password"));
+    if (descriptor.modelField || descriptor.supportsModels) box.append(textRow("模型 ID（可空）", d.model, "留空则沿用当前模型", (value) => {
+      d.model = value;
+    }));
+    if (descriptor.supportsModels) box.append(appButton("从接口获取模型", () => void loadModels(d)));
+    const extra = foldSection("附加参数（自定义接口）", Object.values(d.settings).some(Boolean));
+    extra.body.append(
+      textareaRow("包括主体参数", String(d.settings.custom_include_body ?? ""), "YAML 对象", (value) => {
+        d.settings.custom_include_body = value;
+      }),
+      textareaRow("排除主体参数", String(d.settings.custom_exclude_body ?? ""), "每行一个参数名", (value) => {
+        d.settings.custom_exclude_body = value;
+      }),
+      textareaRow("包含请求标头", String(d.settings.custom_include_headers ?? ""), "YAML 对象", (value) => {
+        d.settings.custom_include_headers = value;
       })
     );
-    const extra = foldSection(
-      "附加参数（可选，随站点一起切换）",
-      Boolean(d.includeBody.trim() || d.excludeBody.trim() || d.includeHeaders.trim())
-    );
-    const extraDesc = el2("div", "so-app-desc");
-    extraDesc.textContent = "对应 ST 连接面板的「附加参数」，YAML 格式原样透传；切换到本站点时自动写入，无需再去 ST 里手改。";
-    extra.body.append(
-      extraDesc,
-      textareaRow("包括主体参数（YAML 对象）", d.includeBody, "写进每次请求主体的参数，一行一条：\ntop_k: 20\nrepetition_penalty: 1.1", (v) => d.includeBody = v),
-      textareaRow("排除主体参数（每行一个）", d.excludeBody, "不想让 ST 发出去的参数名，一行一个：\ntop_p", (v) => d.excludeBody = v),
-      textareaRow("包含请求标头（YAML 对象）", d.includeHeaders, "随请求附带的自定义 Header：\nX-My-Header: 某值", (v) => d.includeHeaders = v)
-    );
-    box.append(extra.box);
+    if (d.source === "custom") box.append(extra.box);
     const actions = el2("div", "vm-actions");
-    const saveBtn = el2("button", "menu_button vm-act");
-    saveBtn.textContent = editingId === null ? "保存站点" : "保存修改";
-    saveBtn.addEventListener("click", () => {
-      const cur = deps.getData().profiles;
-      const urlDup = findUrlDuplicate(cur, d.url, editingId);
-      if (urlDup && !window.confirm(
-        `站点「${urlDup.name}」已经在用这个地址了。
-同地址多配置是允许的（比如同一网关配不同模型），确定再存一份吗？`
-      )) {
-        return;
-      }
-      const r = upsertProfile(cur, d, editingId);
-      if ("error" in r) {
-        showNotice(r.error);
-        return;
+    const saveButton = el2("button", "menu_button vm-act");
+    saveButton.textContent = editingId ? "保存修改" : "保存档案";
+    saveButton.addEventListener("click", () => {
+      const duplicate = findUrlDuplicate(deps.getData().profiles, d.url, editingId);
+      if (duplicate && !window.confirm(`「${duplicate.name}」使用相同 URL，仍要保存吗？`)) return;
+      const result = upsertProfile(deps.getData().profiles, d, editingId);
+      if ("error" in result) {
+        notice = result.error;
+        return render3();
       }
       draft = null;
       editingId = null;
-      save({ profiles: r.profiles });
+      save({ profiles: result.profiles });
     });
+    const importButton = el2("button", "menu_button vm-act vm-act-ghost");
+    importButton.textContent = "导入当前连接";
+    importButton.addEventListener("click", () => void importCurrent());
     const cancel = el2("button", "menu_button vm-act vm-act-ghost");
     cancel.textContent = "取消";
     cancel.addEventListener("click", () => {
@@ -10616,107 +10571,49 @@ function createApiManager(deps) {
       editingId = null;
       render3();
     });
-    const readCur = el2("button", "menu_button vm-act vm-act-ghost");
-    readCur.textContent = "导入当前连接";
-    readCur.title = "把 ST 正在使用的 URL/模型/附加参数填进表单（Key 读不回，需手填）";
-    readCur.addEventListener("click", () => {
-      const conn = readConnection();
-      if (!conn) {
-        showNotice("未检测到 SillyTavern 运行时，导入不了。");
-        return;
-      }
-      d.url = conn.url;
-      d.model = conn.model;
-      d.includeBody = conn.includeBody;
-      d.excludeBody = conn.excludeBody;
-      d.includeHeaders = conn.includeHeaders;
-      formNotice = "已导入当前 URL/模型/附加参数；Key 出于安全读不回来，请手动补上。";
-      render3();
-    });
-    actions.append(saveBtn, cancel, readCur);
+    actions.append(saveButton, importButton, cancel);
     box.append(actions);
     return box;
   }
-  function buildNoteSection() {
-    const box = section2("说明");
-    descLine2(box, "Key 随 ST 设置明文保存在你自己的设备上（扩展设置的通用机制），公用设备上请谨慎。");
-    descLine2(box, "切换在手机「API」页进行：点站点行 → 写入 Key、切到自定义(OpenAI 兼容)接口、写附加参数 → 自动连接。");
+  async function importCurrent() {
+    const current2 = await readConnection();
+    if (!current2 || !draft) {
+      notice = "未检测到 SillyTavern 运行时。";
+      return render3();
+    }
+    draft.mainApi = current2.mainApi;
+    draft.source = current2.source;
+    draft.url = current2.url;
+    draft.model = current2.model;
+    draft.settings = { ...current2.settings };
+    draft.secretId = current2.secretId;
+    if (current2.key) draft.key = current2.key;
+    draft.secretMode = current2.secretMode;
+    notice = current2.secretMode === "read" ? "已完整导入当前连接和密钥。" : "已导入连接设置；当前版本无法回读密钥，已保留表单中的 Key。";
+    render3();
+  }
+  async function loadModels(value) {
+    if (!normalizeUrl(value.url)) {
+      notice = "请先填写接口地址。";
+      return render3();
+    }
+    try {
+      const models = await fetchModels({ ...value });
+      const selected = window.prompt(`可用模型：
+${models.join("\n")}
+
+请输入要使用的模型 ID：`, value.model || models[0]);
+      if (selected && draft) draft.model = selected;
+    } catch (error) {
+      notice = `获取模型失败：${error instanceof Error ? error.message : String(error)}`;
+    }
+    render3();
+  }
+  function buildHelp() {
+    const box = section2("兼容说明");
+    desc(box, "优先使用 SillyTavern 新版多密钥 secret-id 与密钥读取接口；旧版会回退到对应单密钥槽位。");
+    desc(box, "并非所有来源都支持自定义 URL 或模型枚举；表单只显示该来源真实可用的字段。");
     return box;
-  }
-  function closePicker() {
-    picker?.remove();
-    picker = null;
-  }
-  function openPicker(url, key, onPick) {
-    if (!dialog) return;
-    closePicker();
-    picker = el2("div", "stapi-picker");
-    const box = el2("div", "stapi-picker-box");
-    const head = el2("div", "stapi-picker-head");
-    const title = el2("div", "so-section-title");
-    title.textContent = "选择模型";
-    const closeBtn = el2("button", "menu_button vm-act vm-act-ghost");
-    closeBtn.textContent = "✕";
-    closeBtn.setAttribute("aria-label", "关闭");
-    closeBtn.addEventListener("click", closePicker);
-    head.append(title, closeBtn);
-    const filter = document.createElement("input");
-    filter.type = "text";
-    filter.className = "text_pole so-app-input";
-    filter.placeholder = "输入关键字筛选";
-    filter.autocomplete = "off";
-    const list = el2("div", "stapi-picker-list");
-    const loading = el2("div", "so-app-desc");
-    loading.textContent = "正在向站点请求模型列表…";
-    list.append(loading);
-    box.append(head, filter, list);
-    picker.append(box);
-    picker.addEventListener("click", (e) => {
-      if (e.target === picker) closePicker();
-    });
-    dialog.append(picker);
-    const restoreKey = findActiveProfile(deps.getData().profiles, readConnection()?.url ?? "")?.key ?? "";
-    fetchModels(url, key, restoreKey).then((models) => {
-      if (!picker) return;
-      const renderList = (kw) => {
-        list.textContent = "";
-        const f = kw.trim().toLowerCase();
-        const subset = models.filter((m) => m.toLowerCase().includes(f));
-        if (subset.length === 0) {
-          const empty = el2("div", "so-app-desc");
-          empty.textContent = "没有筛到匹配的模型";
-          list.append(empty);
-          return;
-        }
-        for (const m of subset) {
-          const item = el2("div", "stapi-picker-item");
-          item.textContent = m;
-          item.setAttribute("role", "button");
-          item.tabIndex = 0;
-          const pick = () => {
-            closePicker();
-            onPick(m);
-          };
-          item.addEventListener("click", pick);
-          item.addEventListener("keydown", (e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              pick();
-            }
-          });
-          list.append(item);
-        }
-      };
-      renderList("");
-      filter.addEventListener("input", () => renderList(filter.value));
-      filter.focus();
-    }).catch((err) => {
-      if (!picker) return;
-      list.textContent = "";
-      const fail2 = el2("div", "so-app-desc");
-      fail2.textContent = `拉取失败：${err instanceof Error ? err.message : String(err)}`;
-      list.append(fail2);
-    });
   }
   return { open, close, isOpen: () => backdrop !== null };
 }
@@ -11032,7 +10929,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-09 16:21"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-09 10:30"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);
