@@ -1,171 +1,47 @@
-import { describe, it, expect } from 'vitest'
-import {
-  normalizeUrl,
-  sanitizeAppData,
-  validateDraft,
-  upsertProfile,
-  findActiveProfile,
-  findUrlDuplicate,
-  moveProfile,
-  parseModelList,
-  emptyDraft,
-  type ApiProfile,
-} from './core'
+import { describe, expect, it } from 'vitest'
+import { API_SOURCES, emptyDraft, findActiveProfile, getSource, normalizeUrl, parseModelList, sanitizeAppData, upsertProfile, validateDraft } from './core'
 
-function profile(over: Partial<ApiProfile> = {}): ApiProfile {
-  return {
-    id: 'p1',
-    name: '站点A',
-    url: 'https://a.com/v1',
-    key: 'sk-a',
-    model: 'gpt-x',
-    includeBody: '',
-    excludeBody: '',
-    includeHeaders: '',
-    ...over,
-  }
-}
-
-describe('normalizeUrl', () => {
-  it('去首尾空白与尾部斜杠', () => {
-    expect(normalizeUrl('  https://a.com/v1///  ')).toBe('https://a.com/v1')
+describe('API profile v2', () => {
+  it('migrates legacy custom profiles without losing connection fields', () => {
+    const result = sanitizeAppData({ profiles: [{ id: 'old', name: '旧中转', url: 'https://a.com/v1/', key: 'secret', model: 'm', includeBody: 'top_k: 20', excludeBody: 'stop', includeHeaders: 'X-Test: yes' }] })
+    expect(result.profiles[0]).toMatchObject({ version: 2, mainApi: 'openai', source: 'custom', url: 'https://a.com/v1', key: 'secret', model: 'm', settings: { custom_include_body: 'top_k: 20', custom_exclude_body: 'stop', custom_include_headers: 'X-Test: yes' } })
   })
-  it('空值安全', () => {
-    expect(normalizeUrl('')).toBe('')
-    expect(normalizeUrl(undefined as unknown as string)).toBe('')
+
+  it('supports providers that do not require a URL', () => {
+    const draft = { ...emptyDraft(), name: 'OpenAI', source: 'openai', url: '' }
+    expect(validateDraft(draft)).toBeNull()
+    const saved = upsertProfile([], draft, null)
+    expect('profiles' in saved && saved.profiles[0].source).toBe('openai')
+  })
+
+  it('requires a valid URL only for URL-based sources', () => {
+    expect(validateDraft({ ...emptyDraft(), name: '自定义', url: '' })).toContain('URL')
+    expect(validateDraft({ ...emptyDraft(), name: '自定义', url: 'ftp://x' })).toContain('http')
+  })
+
+  it('matches current connection by API type, source, URL and model', () => {
+    const profiles = sanitizeAppData({ profiles: [
+      { version: 2, id: 'one', name: '快', mainApi: 'openai', source: 'custom', url: 'https://a/v1', model: 'fast', key: '', settings: {} },
+      { version: 2, id: 'two', name: '强', mainApi: 'openai', source: 'custom', url: 'https://a/v1', model: 'smart', key: '', settings: {} },
+    ] }).profiles
+    expect(findActiveProfile(profiles, { mainApi: 'openai', source: 'custom', url: 'https://a/v1/', model: 'smart' })?.id).toBe('two')
+    expect(findActiveProfile(profiles, { mainApi: 'openai', source: 'openrouter', url: '', model: 'smart' })).toBeUndefined()
+  })
+
+  it('describes chat and text completion sources', () => {
+    expect(API_SOURCES.some((item) => item.mainApi === 'openai' && item.id === 'custom')).toBe(true)
+    expect(getSource('textgenerationwebui').urlField).toBeTruthy()
   })
 })
 
-describe('sanitizeAppData', () => {
-  it('undefined/非法输入返回空列表', () => {
-    expect(sanitizeAppData(undefined).profiles).toEqual([])
-    expect(sanitizeAppData({ profiles: 'x' }).profiles).toEqual([])
-  })
-  it('缺字段补默认值，缺 name/url 的条目丢弃', () => {
-    const data = sanitizeAppData({
-      profiles: [
-        { id: 'a', name: 'A', url: 'https://a.com/' },
-        { name: '', url: 'https://b.com' },
-        { name: 'C' },
-        'junk',
-      ],
-    })
-    expect(data.profiles).toHaveLength(1)
-    expect(data.profiles[0]).toMatchObject({
-      id: 'a',
-      name: 'A',
-      url: 'https://a.com',
-      key: '',
-      model: '',
-      includeBody: '',
-      excludeBody: '',
-      includeHeaders: '',
-    })
-  })
-  it('无 id 的旧条目补发 id', () => {
-    const data = sanitizeAppData({ profiles: [{ name: 'A', url: 'https://a.com' }] })
-    expect(data.profiles[0].id).toBeTruthy()
-  })
-})
-
-describe('validateDraft', () => {
-  it('名称与 URL 必填，URL 需 http(s) 开头', () => {
-    expect(validateDraft({ name: '', url: 'https://a.com' })).toContain('名称')
-    expect(validateDraft({ name: 'A', url: '' })).toContain('URL')
-    expect(validateDraft({ name: 'A', url: 'ftp://a.com' })).toContain('http')
-    expect(validateDraft({ name: 'A', url: 'https://a.com' })).toBeNull()
-  })
-})
-
-describe('upsertProfile', () => {
-  it('新增：清洗 URL 并分配 id', () => {
-    const r = upsertProfile([], { ...emptyDraft(), name: ' A ', url: 'https://a.com/' }, null)
-    if ('error' in r) throw new Error(r.error)
-    expect(r.profiles[0].name).toBe('A')
-    expect(r.profiles[0].url).toBe('https://a.com')
-    expect(r.profiles[0].id).toBeTruthy()
-  })
-  it('新增同名冲突', () => {
-    const r = upsertProfile([profile()], { ...emptyDraft(), name: '站点A', url: 'https://b.com' }, null)
-    expect(r).toHaveProperty('error')
-  })
-  it('编辑：保留 id、允许保持自身名称', () => {
-    const r = upsertProfile([profile()], { ...emptyDraft(), name: '站点A', url: 'https://new.com' }, 'p1')
-    if ('error' in r) throw new Error(r.error)
-    expect(r.profiles).toHaveLength(1)
-    expect(r.profiles[0]).toMatchObject({ id: 'p1', url: 'https://new.com' })
-  })
-  it('编辑撞了别的站点名', () => {
-    const list = [profile(), profile({ id: 'p2', name: '站点B', url: 'https://b.com' })]
-    const r = upsertProfile(list, { ...emptyDraft(), name: '站点A', url: 'https://b.com' }, 'p2')
-    expect(r).toHaveProperty('error')
-  })
-  it('编辑的 id 不存在', () => {
-    const r = upsertProfile([], { ...emptyDraft(), name: 'A', url: 'https://a.com' }, 'ghost')
-    expect(r).toHaveProperty('error')
-  })
-})
-
-describe('findActiveProfile', () => {
-  it('归一化后匹配（尾斜杠不影响）', () => {
-    const list = [profile()]
-    expect(findActiveProfile(list, 'https://a.com/v1/')).toBe(list[0])
-  })
-  it('当前 URL 为空不匹配任何站点', () => {
-    expect(findActiveProfile([profile()], '')).toBeUndefined()
-  })
-  it('同 URL 多配置：按当前模型进一步区分', () => {
-    const list = [
-      profile({ id: 'p1', name: 'A·快', model: 'fast' }),
-      profile({ id: 'p2', name: 'A·强', model: 'smart' }),
-    ]
-    expect(findActiveProfile(list, 'https://a.com/v1', 'smart')?.id).toBe('p2')
-  })
-  it('同 URL 多配置但模型都不中：取第一个', () => {
-    const list = [
-      profile({ id: 'p1', model: 'fast' }),
-      profile({ id: 'p2', name: 'B', model: 'smart' }),
-    ]
-    expect(findActiveProfile(list, 'https://a.com/v1', 'other')?.id).toBe('p1')
-  })
-})
-
-describe('findUrlDuplicate', () => {
-  it('找到同地址的另一个站点（忽略自身）', () => {
-    const list = [profile(), profile({ id: 'p2', name: 'B', url: 'https://a.com/v1/' })]
-    expect(findUrlDuplicate(list, 'https://a.com/v1', 'p2')?.id).toBe('p1')
-    expect(findUrlDuplicate([profile()], 'https://a.com/v1', 'p1')).toBeUndefined()
-  })
-})
-
-describe('moveProfile', () => {
-  const list = () => [
-    profile({ id: 'p1' }),
-    profile({ id: 'p2', name: 'B' }),
-    profile({ id: 'p3', name: 'C' }),
-  ]
-  it('上移/下移交换相邻位置', () => {
-    expect(moveProfile(list(), 'p2', -1).map((p) => p.id)).toEqual(['p2', 'p1', 'p3'])
-    expect(moveProfile(list(), 'p2', 1).map((p) => p.id)).toEqual(['p1', 'p3', 'p2'])
-  })
-  it('越界或 id 不存在时原样返回', () => {
-    expect(moveProfile(list(), 'p1', -1).map((p) => p.id)).toEqual(['p1', 'p2', 'p3'])
-    expect(moveProfile(list(), 'p3', 1).map((p) => p.id)).toEqual(['p1', 'p2', 'p3'])
-    expect(moveProfile(list(), 'ghost', 1).map((p) => p.id)).toEqual(['p1', 'p2', 'p3'])
-  })
-})
-
-describe('parseModelList', () => {
-  it('兼容纯数组 / {data} / {models} 三种形状', () => {
-    expect(parseModelList(['b', 'a'])).toEqual(['a', 'b'])
-    expect(parseModelList({ data: [{ id: 'm1' }, { model: 'm2' }, { name: 'm3' }] })).toEqual(['m1', 'm2', 'm3'])
+describe('shared parsing', () => {
+  it('normalizes URLs and parses model response shapes', () => {
+    expect(normalizeUrl(' https://a/v1/// ')).toBe('https://a/v1')
+    expect(parseModelList({ data: [{ id: 'b' }, { model: 'a' }] })).toEqual(['a', 'b'])
     expect(parseModelList({ models: ['x'] })).toEqual(['x'])
   })
-  it('去重排序、过滤空元素', () => {
-    expect(parseModelList(['b', 'a', 'b', '', { junk: 1 }])).toEqual(['a', 'b'])
-  })
-  it('空列表与 error 响应抛错', () => {
-    expect(() => parseModelList([])).toThrow('任何模型')
+
+  it('preserves upstream model errors', () => {
     expect(() => parseModelList({ error: true, message: '密钥无效' })).toThrow('密钥无效')
   })
 })

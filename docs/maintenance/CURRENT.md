@@ -4,18 +4,21 @@ project: st-stage
 base_branch: main
 verified_code_head: 2c6195388239f80ac3ce2c46fb0ac48e279e7d22
 remote_code_head_at_update: 4b51166c26fdbb70983fcf7b3257ab45b43b2a4b
-build_version: 0.9.0+202608091621
-phase: real-sillytavern-acceptance
+build_version: 0.9.0+202608091030
+phase: api-profile-real-sillytavern-acceptance
 updated_at: 2026-08-09
-updated_by: claude-code
-verification_source: claude-code-maintenance-run-2026-08-09-round1
-history: docs/maintenance/history/2026-08-09-acceptance-round1-fixes.md
+updated_by: v0
+verification_source: v0-api-profile-refactor-2026-08-09
+history: docs/maintenance/history/2026-08-09-api-profile-refactor.md
 ---
 
 # Current Project Status
 
 ## Snapshot
 
+- API 管理已从单一 OpenAI-compatible 站点切换器重构为版本化连接档案：覆盖 SillyTavern Chat Completion 来源、Text Completion、NovelAI、KoboldAI 与 Horde；旧档案会迁移为 `openai/custom`。
+- 桥接层现在优先使用 `/api/secrets/find` 和带 `secret-id` 的多密钥写入，失败时回退旧单槽位；URL、模型及来源设置写回后会先回验再连接。
+- 自动化验证已完成，但多供应商真实 SillyTavern 验收尚未完成，因此 `verified_code_head` 暂时保留在上一个已验证提交，待本分支提交并完成真实 ST 检查后更新。
 - Gallery, new-variable, and Renderer V1 updates are implemented and on `origin/main`.
 - The first real-ST test round produced eight findings; all are fixed in `2c61953` (details in the history entry): upload auto-split default-off and layout, pack-list batch delete/reorder, prominent non-collapsing pack-info save, enable-pack checkbox popover, fold-state and scroll preservation across app remounts, prompt rework (图名 wording, indented notes, scene-cluster compression, repeat as migrated default, settings v5), transparent inline sprites plus a spriteOpacity setting, and renderer re-injection with an injection status line.
 - The release build stamp is `0.9.0+202608091621`; `manifest.json` remains at product version `0.9.0`.
@@ -68,8 +71,17 @@ Round-1 fix re-verification (from the 2026-08-09 feedback):
 15. Inline sprites: no border/shadow box around transparent cutouts; 立绘不透明度 dims both overlay and in-floor sprites.
 16. Renderer: status line shows 正在注入协议说明 N 字符 after enabling, the protocol block appears in the sent prompt, and the 打字机 ⓘ hint reads correctly.
 
+## API Profile Acceptance
+
+1. 在最新 SillyTavern release 中导入并切换一个自定义 OpenAI-compatible 档案，确认 Key、URL、模型和附加参数均可读回并成功连接。
+2. 导入并切换至少一个非 custom Chat Completion 来源，确认来源、模型和对应密钥槽位正确。
+3. 导入并切换一个 Text Completion 来源，确认动态面板渲染后 URL 写入与连接按钮正确。
+4. 在不支持 `/api/secrets/find` 或 secret-id 的旧版/模拟环境验证单槽位回退，确认失败事务不会污染当前 Key。
+5. 核对上游当前 release 中其余供应商 selector/字段；发现差异时记录并补充 descriptor，而不是宣称已真实覆盖。
+
 ## Next Actions
 
+- Execute the API Profile Acceptance list in a real SillyTavern environment and record results before updating `verified_code_head`.
 - Execute the acceptance list above against `origin/main` and record the results in a follow-up dated history entry.
 - Resolve only failures discovered by acceptance testing; keep unrelated deferred items scoped separately.
 - Decide separately whether the product version should move from `0.9.0` to `0.10.0` (or `1.0` if acceptance passes, per the maintainer's stated intent).

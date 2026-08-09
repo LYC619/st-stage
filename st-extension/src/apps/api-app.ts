@@ -1,176 +1,65 @@
-/**
- * 「API」App — OpenAI 兼容接口快速切换（手机页只做「展示 + 快速切换 + 入口」）：
- * - 当前连接卡：在线状态 / 命中的站点名 / 模型
- * - 站点列表：点行即切换（写 Key → 切自定义源 → 填 URL/模型/附加参数 → 自动连接）
- * - 「管理站点」入口：增删改、拉模型、附加参数走全屏弹窗（api/manager.ts）
- *
- * ST 交互细节全部收敛在 api/bridge.ts；Web 模拟器无 ST 运行时，降级为只读列表。
- */
-
 import type { PhoneApp, PhoneAppContext } from '../../../core/phone-registry'
 import { el, appButton } from './widgets'
-import { API_APP_ID, sanitizeAppData, findActiveProfile, type ApiProfile } from './api/core'
-import { readConnection, applyProfile, onOnlineStatusChanged, toast } from './api/bridge'
+import { API_APP_ID, findActiveProfile, getSource, profileSummary, sanitizeAppData, type ApiProfile } from './api/core'
+import { applyProfile, onOnlineStatusChanged, readConnection, toast } from './api/bridge'
 
-export interface ApiAppDeps {
-  /** 打开站点管理弹窗（index.ts 负责收起手机并在关闭后回本页） */
-  openManager: () => void
-}
+export interface ApiAppDeps { openManager: () => void }
 
 export function apiApp(deps: ApiAppDeps): PhoneApp {
   let unsubscribe: (() => void) | null = null
   return {
-    id: API_APP_ID,
-    name: 'API',
-    icon: '📡',
-    order: 6,
+    id: API_APP_ID, name: 'API', icon: '📡', order: 6,
     mount(container, ctx) {
-      const state = { busy: false }
-      render(container, ctx, deps, state)
-      // 连接结果异步返回：订阅 ST 在线状态事件实时刷新状态点
-      // （切换中不打断反馈行，等切换流程自己收尾刷新）
-      unsubscribe = onOnlineStatusChanged(() => {
-        if (!state.busy && container.isConnected) render(container, ctx, deps, state)
-      })
+      const state = { busy: false, message: '' }
+      void render(container, ctx, deps, state)
+      unsubscribe = onOnlineStatusChanged(() => { if (!state.busy && container.isConnected) void render(container, ctx, deps, state) })
     },
-    unmount() {
-      unsubscribe?.()
-      unsubscribe = null
-    },
+    unmount() { unsubscribe?.(); unsubscribe = null },
   }
 }
 
-function render(
-  container: HTMLElement,
-  ctx: PhoneAppContext,
-  deps: ApiAppDeps,
-  state: { busy: boolean },
-): void {
+async function render(container: HTMLElement, ctx: PhoneAppContext, deps: ApiAppDeps, state: { busy: boolean; message: string }): Promise<void> {
+  const data = sanitizeAppData(ctx.getAppData()); const connection = await readConnection()
+  if (!container.isConnected) return
+  const active = connection ? findActiveProfile(data.profiles, connection) : undefined
   container.textContent = ''
-  const data = sanitizeAppData(ctx.getAppData())
-  const conn = readConnection()
-  // 同 URL 存了多份配置（同一网关不同模型）时，用当前模型进一步区分
-  const active = conn ? findActiveProfile(data.profiles, conn.url, conn.model) : undefined
-  const rerender = () => {
-    // 切换是异步的：期间用户可能已退出本 App（container 随之失效）
-    if (container.isConnected) render(container, ctx, deps, state)
+
+  const status = el('div', 'so-app-section'); const title = el('div', 'so-app-title'); title.textContent = '当前连接'; status.append(title)
+  const line = el('div', 'so-app-desc')
+  if (!connection) line.textContent = '未检测到 SillyTavern 运行时（这里只展示已保存档案）。'
+  else {
+    const source = getSource(connection.mainApi, connection.source)
+    line.textContent = `${connection.online ? '已连接' : '未连接'} · ${source.label}${active ? ` · ${active.name}` : ''}`
+    const detail = el('div', 'so-app-desc'); detail.textContent = [connection.url, connection.model].filter(Boolean).join(' · ') || '该来源没有地址或模型字段'; status.append(detail)
   }
+  status.append(line); container.append(status)
 
-  // —— 当前连接 ——
-  const status = el('div', 'so-app-section')
-  const title = el('div', 'so-app-title')
-  title.textContent = '当前连接'
-  status.append(title)
-  if (!conn) {
-    const d = el('div', 'so-app-desc')
-    d.textContent = '未检测到 SillyTavern 运行时（Web 模拟器中仅展示站点列表）。'
-    status.append(d)
-  } else {
-    const line = el('div', 'so-app-desc')
-    const dot = el('span', `stapi-dot${conn.online ? ' stapi-dot-on' : ''}`)
-    const text = document.createElement('span')
-    text.textContent = conn.online ? '已连接' : '未连接'
-    line.append(dot, text)
-    status.append(line)
+  const profiles = el('div', 'so-app-section'); const profilesTitle = el('div', 'so-app-title'); profilesTitle.textContent = `连接档案（${data.profiles.length}）`; profiles.append(profilesTitle)
+  if (!data.profiles.length) { const empty = el('div', 'so-app-desc'); empty.textContent = '还没有连接档案，请进入管理页添加或导入。'; profiles.append(empty) }
+  for (const profile of data.profiles) profiles.append(buildRow(profile, active?.id === profile.id, state.busy, () => void switchProfile(profile)))
+  if (state.message) { const feedback = el('div', 'so-app-desc'); feedback.textContent = state.message; profiles.append(feedback) }
+  container.append(profiles)
 
-    const site = el('div', 'so-app-desc')
-    site.textContent = active
-      ? `站点：${active.name}`
-      : conn.url
-        ? `接口：${conn.url}（还没存成站点，可在管理页「导入当前连接」一键录入）`
-        : '尚未配置自定义接口。'
-    status.append(site)
-    if (conn.model) {
-      const model = el('div', 'so-app-desc')
-      model.textContent = `模型：${conn.model}`
-      status.append(model)
-    }
-    if (!conn.isCustomSource) {
-      const warn = el('div', 'so-app-desc')
-      warn.textContent = '当前没有走「自定义(OpenAI 兼容)」接口；点下方任一站点即可切换接管。'
-      status.append(warn)
+  const manage = el('div', 'so-app-section'); const description = el('div', 'so-app-desc'); description.textContent = '管理全部 Chat Completion、Text Completion 与其他 SillyTavern API 档案。'; manage.append(description, appButton('管理连接档案', deps.openManager)); container.append(manage)
+
+  async function switchProfile(profile: ApiProfile): Promise<void> {
+    if (state.busy || !connection) return
+    state.busy = true; state.message = `正在应用「${profile.name}」的类型、来源、密钥、URL 与模型…`; await render(container, ctx, deps, state)
+    try {
+      await applyProfile(profile); state.message = `「${profile.name}」设置已回验，正在连接…`; toast('success', state.message)
+    } catch (error) {
+      state.message = `切换失败：${error instanceof Error ? error.message : String(error)}`; toast('error', state.message); console.error('[st-stage] API 切换失败', error)
+    } finally {
+      state.busy = false; await render(container, ctx, deps, state)
     }
   }
-  container.append(status)
+}
 
-  // —— 站点列表（点行即切换）——
-  const sites = el('div', 'so-app-section')
-  const sitesTitle = el('div', 'so-app-title')
-  sitesTitle.textContent = `站点（${data.profiles.length}）`
-  sites.append(sitesTitle)
-
-  const feedback = el('div', 'so-app-desc')
-  feedback.hidden = true
-  const say = (text: string) => {
-    feedback.textContent = text
-    feedback.hidden = false
-  }
-
-  if (data.profiles.length === 0) {
-    const empty = el('div', 'so-app-desc')
-    empty.textContent = '还没有站点，点下方「管理站点」添加。'
-    sites.append(empty)
-  }
-
-  const doSwitch = (p: ApiProfile) => {
-    if (state.busy) return
-    if (!conn) {
-      say('仅在 SillyTavern 内可切换。')
-      return
-    }
-    state.busy = true
-    say(`正在切换到「${p.name}」…`)
-    // 切换期间列表整体降透明防连点（busy 守卫是硬保险，这只是视觉反馈）
-    sites.querySelectorAll('.stapi-row').forEach((r) => r.classList.add('stapi-row-busy'))
-    applyProfile(p)
-      .then(() => {
-        toast('success', `「${p.name}」配置已应用，正在连接…`)
-      })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err)
-        toast('error', msg)
-        say(`切换失败：${msg}`)
-        console.error('[st-stage] API 切换失败', err)
-      })
-      .then(() => {
-        state.busy = false
-        rerender()
-      })
-  }
-
-  for (const p of data.profiles) {
-    const isActive = active?.id === p.id
-    const row = el('div', `stapi-row${isActive ? ' stapi-row-on' : ''}`)
-    row.setAttribute('role', 'button')
-    row.tabIndex = 0
-    const main = el('div', 'stapi-row-main')
-    const name = el('div', 'stapi-row-name')
-    name.textContent = p.name
-    main.append(name)
-    const subParts = [p.model || '模型沿用当前']
-    if (p.includeBody.trim() || p.excludeBody.trim() || p.includeHeaders.trim()) subParts.push('附加参数')
-    const sub = el('div', 'stapi-row-sub')
-    sub.textContent = subParts.join(' · ')
-    main.append(sub)
-    const mark = el('div', 'stapi-row-mark')
-    mark.textContent = isActive ? '✓' : '›'
-    row.append(main, mark)
-    row.addEventListener('click', () => doSwitch(p))
-    row.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault()
-        doSwitch(p)
-      }
-    })
-    sites.append(row)
-  }
-  sites.append(feedback)
-  container.append(sites)
-
-  // —— 管理入口 ——
-  const manage = el('div', 'so-app-section')
-  const manageDesc = el('div', 'so-app-desc')
-  manageDesc.textContent = '添加/编辑站点 · 从接口获取模型 · 附加参数（随站点切换）。'
-  manage.append(manageDesc, appButton('管理站点', () => deps.openManager()))
-  container.append(manage)
+function buildRow(profile: ApiProfile, active: boolean, busy: boolean, onActivate: () => void): HTMLElement {
+  const row = el('div', `stapi-row${active ? ' stapi-row-on' : ''}${busy ? ' stapi-row-busy' : ''}`); row.setAttribute('role', 'button'); row.tabIndex = busy ? -1 : 0; row.setAttribute('aria-disabled', String(busy))
+  const main = el('div', 'stapi-row-main'); const name = el('div', 'stapi-row-name'); name.textContent = profile.name
+  const summary = el('div', 'stapi-row-sub'); summary.textContent = profileSummary(profile).join(' · '); main.append(name, summary)
+  const mark = el('div', 'stapi-row-mark'); mark.textContent = active ? '使用中' : '切换'; row.append(main, mark)
+  row.addEventListener('click', () => { if (!busy) onActivate() }); row.addEventListener('keydown', (event) => { if (!busy && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onActivate() } })
+  return row
 }

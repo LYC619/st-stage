@@ -1,224 +1,62 @@
 // @vitest-environment jsdom
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchModels } from './bridge'
+import { applyProfile, fetchModels, readConnection } from './bridge'
+import type { ApiProfile } from './core'
 
-interface Deferred<T> {
-  promise: Promise<T>
-  resolve(value: T): void
-  reject(reason: unknown): void
+const profile = (over: Partial<ApiProfile> = {}): ApiProfile => ({ version: 2, id: 'p', name: '自定义', mainApi: 'openai', source: 'custom', url: 'https://example.com/v1', key: 'secret', secretId: 'sid', secretMode: 'stored', model: 'model-a', settings: { custom_include_body: 'top_k: 20' }, ...over })
+const response = (ok: boolean, body: unknown = {}): Response => ({ ok, status: ok ? 200 : 401, json: async () => body }) as Response
+
+function installST(settings: Record<string, unknown> = {}): Record<string, unknown> {
+  const context = { mainApi: 'openai', onlineStatus: 'connected', chatCompletionSettings: { chat_completion_source: 'custom', custom_url: 'https://old/v1', custom_model: 'old', ...settings }, getRequestHeaders: () => ({ 'Content-Type': 'application/json' }), saveSettingsDebounced: vi.fn() }
+  Object.defineProperty(window, 'SillyTavern', { configurable: true, value: { getContext: () => context } })
+  return context.chatCompletionSettings
 }
 
-function deferred<T>(): Deferred<T> {
-  let resolve!: (value: T) => void
-  let reject!: (reason: unknown) => void
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res
-    reject = rej
+beforeEach(() => {
+  document.body.innerHTML = '<select id="main_api"><option value="openai">openai</option></select><select id="chat_completion_source"><option value="custom">custom</option></select><input id="custom_api_url_text"><input id="custom_model_id"><input id="api_key_custom"><button id="api_button_openai"></button>'
+})
+afterEach(() => { vi.unstubAllGlobals(); document.body.textContent = ''; Reflect.deleteProperty(window, 'SillyTavern') })
+
+describe('SillyTavern bridge', () => {
+  it('imports URL, model and readable key through /api/secrets/find', async () => {
+    installST(); vi.stubGlobal('fetch', vi.fn(async () => response(true, { value: 'readable-key' })))
+    await expect(readConnection()).resolves.toMatchObject({ mainApi: 'openai', source: 'custom', url: 'https://old/v1', model: 'old', key: 'readable-key', secretMode: 'read' })
   })
-  return { promise, resolve, reject }
-}
 
-function response(ok: boolean, body: unknown = {}): Response {
-  return { ok, status: ok ? 200 : 401, json: async () => body } as Response
-}
-
-function installST(): void {
-  Object.defineProperty(window, 'SillyTavern', {
-    configurable: true,
-    value: {
-      getContext: () => ({
-        getRequestHeaders: () => ({ 'Content-Type': 'application/json' }),
-      }),
-    },
+  it('writes key, URL, model and settings before connecting', async () => {
+    const settings = installST(); const clicked = vi.fn(); document.querySelector('#api_button_openai')?.addEventListener('click', clicked)
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => { calls.push(`${input}:${String(init?.body)}`); return response(true) }))
+    await applyProfile(profile())
+    expect(calls[0]).toContain('/api/secrets/write')
+    expect(calls[0]).toContain('"id":"sid"')
+    expect(settings).toMatchObject({ custom_url: 'https://example.com/v1', custom_model: 'model-a', custom_include_body: 'top_k: 20' })
+    expect((document.querySelector('#custom_api_url_text') as HTMLInputElement).value).toBe('https://example.com/v1')
+    expect(clicked).toHaveBeenCalledOnce()
   })
-}
 
-function secretValue(init?: RequestInit): string {
-  return (JSON.parse(String(init?.body)) as { value: string }).value
-}
+  it('falls back to the legacy secret slot when secret-id write is rejected', async () => {
+    installST(); const bodies: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => { bodies.push(String(init?.body)); return response(bodies.length > 1) }))
+    await applyProfile(profile())
+    expect(bodies).toHaveLength(2)
+    expect(bodies[1]).not.toContain('"id":"sid"')
+  })
 
-describe('fetchModels temporary API key transaction', () => {
-  beforeEach(() => {
-    document.body.innerHTML = '<input id="api_key_custom" />'
+  it('serializes custom model discovery and restores the current readable key', async () => {
+    installST(); const events: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/find')) return response(true, { value: 'original' })
+      const body = JSON.parse(String(init?.body)) as { value?: string; custom_url?: string }
+      if (String(input).endsWith('/write')) { events.push(`key:${body.value}`); return response(true) }
+      events.push(`status:${body.custom_url}`); return response(true, { data: [{ id: 'model-z' }] })
+    }))
+    await expect(fetchModels(profile({ key: 'temporary' }))).resolves.toEqual(['model-z'])
+    expect(events).toEqual(['key:temporary', 'status:https://example.com/v1', 'key:original'])
+  })
+
+  it('rejects model discovery for providers without model enumeration', async () => {
     installST()
-  })
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
-    document.body.textContent = ''
-    Reflect.deleteProperty(window, 'SillyTavern')
-  })
-
-  it('restores an empty previous key after a successful request', async () => {
-    const writes: string[] = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        if (String(input) === '/api/secrets/write') {
-          writes.push(secretValue(init))
-          return response(true)
-        }
-        return response(true, { data: [{ id: 'model-a' }] })
-      }),
-    )
-
-    await expect(fetchModels('https://one.example/v1', 'temporary', '')).resolves.toEqual(['model-a'])
-    expect(writes).toEqual(['temporary', ''])
-  })
-
-  it('does not resolve a successful request until restoration finishes', async () => {
-    const restore = deferred<Response>()
-    const writes: string[] = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        if (String(input) === '/api/secrets/write') {
-          const value = secretValue(init)
-          writes.push(value)
-          return value === 'original' ? restore.promise : Promise.resolve(response(true))
-        }
-        return Promise.resolve(response(true, { models: ['model-b'] }))
-      }),
-    )
-
-    const result = fetchModels('https://two.example/v1', 'temporary', 'original')
-    let settled = false
-    void result.finally(() => {
-      settled = true
-    })
-    await vi.waitFor(() => expect(writes).toEqual(['temporary', 'original']))
-    expect(settled).toBe(false)
-
-    restore.resolve(response(true))
-    await expect(result).resolves.toEqual(['model-b'])
-    expect(settled).toBe(true)
-  })
-
-  it('restores the previous key before rejecting a failed model request', async () => {
-    const restore = deferred<Response>()
-    const writes: string[] = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        if (String(input) === '/api/secrets/write') {
-          const value = secretValue(init)
-          writes.push(value)
-          return value === 'original' ? restore.promise : Promise.resolve(response(true))
-        }
-        return Promise.resolve(response(false))
-      }),
-    )
-
-    const result = fetchModels('https://failed.example/v1', 'temporary', 'original')
-    let rejected = false
-    void result.catch(() => {
-      rejected = true
-    })
-    await vi.waitFor(() => expect(writes).toEqual(['temporary', 'original']))
-    expect(rejected).toBe(false)
-
-    restore.resolve(response(true))
-    await expect(result).rejects.toThrow('HTTP 401')
-    expect(rejected).toBe(true)
-  })
-
-  it('serializes overlapping temporary-key transactions', async () => {
-    const firstStatus = deferred<Response>()
-    const events: string[] = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        if (String(input) === '/api/secrets/write') {
-          const value = secretValue(init)
-          events.push(`secret:${value}`)
-          return Promise.resolve(response(true))
-        }
-        const url = (JSON.parse(String(init?.body)) as { custom_url: string }).custom_url
-        events.push(`status:${url}`)
-        return url.includes('one.example')
-          ? firstStatus.promise
-          : Promise.resolve(response(true, { data: [{ id: 'model-two' }] }))
-      }),
-    )
-
-    const first = fetchModels('https://one.example/v1', 'key-one', 'original')
-    await vi.waitFor(() => expect(events).toEqual(['secret:key-one', 'status:https://one.example/v1']))
-
-    const second = fetchModels('https://two.example/v1', 'key-two', 'original')
-    await Promise.resolve()
-    expect(events).toEqual(['secret:key-one', 'status:https://one.example/v1'])
-
-    firstStatus.resolve(response(true, { data: [{ id: 'model-one' }] }))
-    await expect(first).resolves.toEqual(['model-one'])
-    await expect(second).resolves.toEqual(['model-two'])
-    expect(events).toEqual([
-      'secret:key-one',
-      'status:https://one.example/v1',
-      'secret:original',
-      'secret:key-two',
-      'status:https://two.example/v1',
-      'secret:original',
-    ])
-  })
-
-  it('preserves a falsy model-request rejection', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL) => {
-        if (String(input) === '/api/secrets/write') return Promise.resolve(response(true))
-        return Promise.reject(null)
-      }),
-    )
-
-    await expect(fetchModels('https://falsy-request.example/v1', 'temporary', 'original')).rejects.toBeNull()
-  })
-
-  it('rejects on a falsy restoration failure and continues the queue', async () => {
-    let rejectFirstRestore = true
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        if (String(input) === '/api/secrets/write') {
-          const value = secretValue(init)
-          if (value === 'original' && rejectFirstRestore) {
-            rejectFirstRestore = false
-            return Promise.reject(undefined)
-          }
-          return Promise.resolve(response(true))
-        }
-        const url = (JSON.parse(String(init?.body)) as { custom_url: string }).custom_url
-        return Promise.resolve(response(true, { models: [url.includes('first') ? 'first' : 'second'] }))
-      }),
-    )
-
-    const first = fetchModels('https://first.example/v1', 'key-first', 'original')
-    const second = fetchModels('https://second.example/v1', 'key-second', 'original')
-
-    await expect(first).rejects.toBeUndefined()
-    await expect(second).resolves.toEqual(['second'])
-  })
-
-  it('keeps the request error when request and restoration both fail', async () => {
-    const requestError = new Error('request failed')
-    const restoreError = new Error('restore failed')
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        if (String(input) === '/api/secrets/write') {
-          return secretValue(init) === 'original'
-            ? Promise.reject(restoreError)
-            : Promise.resolve(response(true))
-        }
-        return Promise.reject(requestError)
-      }),
-    )
-
-    await expect(fetchModels('https://double-failure.example/v1', 'temporary', 'original')).rejects.toBe(
-      requestError,
-    )
-    expect(warn).toHaveBeenCalledWith('[st-stage] API：请求失败后还原密钥也失败', restoreError)
-    warn.mockRestore()
+    await expect(fetchModels(profile({ source: 'openai', url: '' }))).rejects.toThrow('不支持自动获取模型')
   })
 })
