@@ -380,6 +380,49 @@ export function removePacks(settings: PluginSettings, packIds: string[]): Plugin
   return next
 }
 
+function localUserImagePath(url: string): string | null {
+  const path = url.split(/[?#]/, 1)[0].replace(/\\/g, '/')
+  if (!path.startsWith('/user/images/')) return null
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(path)
+  } catch {
+    return null
+  }
+  const segments = decoded.split('/')
+  if (segments.some((segment) => segment === '.' || segment === '..')) return null
+  return decoded
+}
+
+/**
+ * 选中包删除时允许一并清理的物理文件：仅 ST 用户图片目录，且没有未选中包继续引用。
+ * 同一路径在选中包内重复出现时只返回一次。
+ */
+export function deletableLocalSpritePaths(settings: PluginSettings, packIds: string[]): string[] {
+  const selected = new Set(packIds)
+  const keptReferences = new Set<string>()
+  for (const pack of settings.packs) {
+    if (selected.has(pack.id)) continue
+    for (const sprite of pack.sprites) {
+      const path = localUserImagePath(sprite.url)
+      if (path) keptReferences.add(path)
+    }
+  }
+
+  const result: string[] = []
+  const seen = new Set<string>()
+  for (const pack of settings.packs) {
+    if (!selected.has(pack.id)) continue
+    for (const sprite of pack.sprites) {
+      const path = localUserImagePath(sprite.url)
+      if (!path || seen.has(path) || keptReferences.has(path)) continue
+      seen.add(path)
+      result.push(path)
+    }
+  }
+  return result
+}
+
 /** 包列表内平移一个包（offset=-1 前移 / +1 后移）；越界或未知 id 原样返回 */
 export function movePack(settings: PluginSettings, packId: string, offset: number): PluginSettings {
   const from = settings.packs.findIndex((p) => p.id === packId)

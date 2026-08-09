@@ -22,6 +22,7 @@ import {
   type BindingConflict,
   type ConflictCheckedSettingsResult,
   bindPack,
+  deletableLocalSpritePaths,
   genId,
   movePack,
   movePackBefore,
@@ -110,7 +111,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   let spriteVisibleCount = SPRITE_PAGE_SIZE
   let spriteFilterQuery = ''
   let spriteFilterLabels: string[] = []
-  const expandedRoleGroups = new Set<string>()
+  /** 同一时间只展开一个角色组，避免多组图包同时把列表撑得过长。 */
+  let expandedRoleGroupKey = ''
   /** 折叠面板展开态（key → open）：commit 触发整体重渲染时保持用户手动展开的面板不收起 */
   const openSections = new Map<string, boolean>()
   /** 「启用包」勾选浮层是否展开：勾选提交会整体重渲染，靠这个标记让浮层原地重建 */
@@ -119,6 +121,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   /** 列表页批量管理模式（多选删除 + 拖拽/按钮排序） */
   let batchMode = false
   const selectedPackIds = new Set<string>()
+  let batchResourceBusy = false
   let openedFrom: ManagerSource = 'overlay'
   /** 当前放大查看器及其完整列表索引；管理器重渲染不丢失导航位置。 */
   let activeLightbox: ActiveLightbox | null = null
@@ -144,7 +147,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     spriteVisibleCount = SPRITE_PAGE_SIZE
     spriteFilterQuery = ''
     spriteFilterLabels = []
-    expandedRoleGroups.clear()
+    expandedRoleGroupKey = ''
     openSections.clear()
     enableListOpen = false
     batchMode = false
@@ -593,6 +596,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
     // 头部操作区：批量管理模式=全选/删除/完成；常规=启用勾选浮层 + 新建/导入下拉
     if (batchMode) {
+      const selectedCount = selectedPackIds.size
       actions.append(
         button('全选', () => {
           const all = settings.packs.filter((p) => !isPresetPack(p.id))
@@ -604,6 +608,15 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           }
           render()
         }),
+        button(`上传云端（${selectedCount}）`, () => {
+          void uploadSelectedPacks()
+        }),
+        button(`保存本地（${selectedCount}）`, () => {
+          void localizeSelectedPacks()
+        }),
+        button(`复制分享串（${selectedCount}）`, () => {
+          void copySelectedPackShares()
+        }),
         button(`删除所选（${selectedPackIds.size}）`, () => {
           if (selectedPackIds.size === 0) {
             toast(body, '先点卡片勾选要删除的包')
@@ -612,11 +625,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           const current = deps.getSettings()
           const names = current.packs.filter((p) => selectedPackIds.has(p.id)).map((p) => p.name)
           const preview = names.slice(0, 8).join('、') + (names.length > 8 ? ` 等 ${names.length} 个` : '')
-          if (!window.confirm(`确定删除 ${names.length} 个立绘包？\n${preview}\n绑定关系会一并清除。`)) return
           const ids = [...selectedPackIds]
-          selectedPackIds.clear()
-          commit(removePacks(current, ids))
-          toast(body, `已删除 ${names.length} 个立绘包`)
+          void deletePacksWithChoice(ids, names, preview)
         }, 'so-btn-danger'),
         button('完成', () => {
           batchMode = false
@@ -791,28 +801,30 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           continue
         }
         const section = el('div', 'so-role-pack-group')
-        const row = el('button', 'so-role-pack-row') as HTMLButtonElement
-        row.type = 'button'
-        const expanded = expandedRoleGroups.has(group.key)
-        row.setAttribute('aria-expanded', String(expanded))
-        const title = el('b')
-        title.textContent = group.role
-        const counts = el('span')
-        counts.textContent = `${group.packCount} 个图包 · ${group.spriteCount} 张`
-        const arrow = el('span', 'so-role-pack-arrow')
-        arrow.textContent = expanded ? '▾' : '›'
-        row.append(title, counts, arrow)
-        row.addEventListener('click', () => {
-          if (expanded) expandedRoleGroups.delete(group.key)
-          else expandedRoleGroups.add(group.key)
-          row.setAttribute('aria-expanded', String(!expanded))
+        section.dataset.roleKey = group.key
+        const expanded = expandedRoleGroupKey === group.key
+        const toggle = () => {
+          expandedRoleGroupKey = expanded ? '' : group.key
           render()
-        })
-        section.append(row)
+        }
         if (expanded) {
-          const packs = el('div', 'so-pack-grid so-role-pack-grid')
+          const row = el('button', 'so-role-pack-row') as HTMLButtonElement
+          row.type = 'button'
+          row.setAttribute('aria-expanded', 'true')
+          const title = el('b')
+          title.textContent = group.role
+          const counts = el('span')
+          counts.textContent = `${group.packCount} 个图包 · ${group.spriteCount} 张`
+          const arrow = el('span', 'so-role-pack-arrow')
+          arrow.textContent = '▾'
+          row.append(title, counts, arrow)
+          row.addEventListener('click', toggle)
+          const packs = el('div', 'so-role-pack-strip')
+          packs.setAttribute('aria-label', `${group.role}的图包`)
           for (const pack of group.packs) packs.append(renderPackCard(pack, boundState(pack)))
-          section.append(packs)
+          section.append(row, packs)
+        } else {
+          section.append(renderRolePackStack(group.role, group.key, group.packs, group.spriteCount, boundState, toggle))
         }
         grid.append(section)
       }
@@ -823,6 +835,227 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
     body.append(statusBar())
     renderEnableList()
+  }
+
+  function selectedPacks(): SpritePack[] {
+    return deps.getSettings().packs.filter((pack) => selectedPackIds.has(pack.id))
+  }
+
+  function sameSprite(pack: SpritePack, source: Sprite): Sprite | null {
+    return pack.sprites.find((candidate) =>
+      candidate.tag === source.tag &&
+      spriteGroup(candidate) === spriteGroup(source) &&
+      (candidate.outfit ?? '') === (source.outfit ?? ''),
+    ) ?? null
+  }
+
+  async function uploadSelectedPacks(): Promise<void> {
+    if (batchResourceBusy) return
+    const packs = selectedPacks()
+    if (packs.length === 0) {
+      toast(currentManagerBody(), '先勾选要上传云端的图包')
+      return
+    }
+    const apiKey = deps.getSettings().imgbbApiKey.trim()
+    if (!apiKey) {
+      toast(currentManagerBody(), '请先在「图库」App 配置 imgbb API Key')
+      return
+    }
+    batchResourceBusy = true
+    let uploaded = 0
+    let failed = 0
+    try {
+      for (const pack of packs) {
+        const pending = pack.sprites.filter(
+          (sprite) => getSpriteSource(sprite) !== 'hosted' &&
+            !(sprite.remoteUrl && /^https?:\/\//.test(sprite.remoteUrl)),
+        )
+        for (const sprite of pending) {
+          try {
+            const dataUri = sprite.url.startsWith('data:') ? sprite.url : await urlToDataUri(sprite.url)
+            const result = await uploadToImgbb(apiKey, dataUri)
+            if (!isValidImgbbResult(result)) throw new Error('图床响应无效')
+            const latestPack = deps.getSettings().packs.find((candidate) => candidate.id === pack.id)
+            const latestSprite = latestPack ? sameSprite(latestPack, sprite) : null
+            if (!latestPack || !latestSprite) throw new Error('立绘在上传期间已变化')
+            if (!updateChecked(upsertPack(
+              deps.getSettings(),
+              upsertSprite(latestPack, { ...latestSprite, code: result.code, remoteUrl: result.url }),
+            ))) throw new Error('更新图包失败')
+            uploaded++
+          } catch (error) {
+            console.warn('[sprite-overlay] 批量上传云端失败', { packId: pack.id, tag: sprite.tag, error })
+            failed++
+          }
+        }
+      }
+    } finally {
+      batchResourceBusy = false
+      render()
+      toast(currentManagerBody(), `上传云端完成：成功 ${uploaded} 张，失败 ${failed} 张${failed > 0 ? '（可再次点击重试）' : ''}`)
+    }
+  }
+
+  async function localizeSelectedPacks(): Promise<void> {
+    if (batchResourceBusy) return
+    const packs = selectedPacks()
+    if (packs.length === 0) {
+      toast(currentManagerBody(), '先勾选要保存到本地的图包')
+      return
+    }
+    batchResourceBusy = true
+    let localizedCount = 0
+    let failed = 0
+    try {
+      for (const pack of packs) {
+        const remoteSprites = pack.sprites.filter((sprite) => getSpriteSource(sprite) === 'hosted')
+        for (const sprite of remoteSprites) {
+          try {
+            const parts = [pack.name, spriteGroup(sprite), sprite.outfit ?? '', sprite.tag].filter(Boolean)
+            const fileName = `${parts.join('-')}.webp`
+            const localized = await localizeSprite(sprite, fileName, {
+              fetch: window.fetch.bind(window),
+              compress: compressImage,
+              saveImage: (file, name) => deps.adapter.saveImageFile(
+                file,
+                name,
+                deps.adapter.getCurrentCharacterName() || pack.name || 'shared',
+              ),
+            })
+            const latestPack = deps.getSettings().packs.find((candidate) => candidate.id === pack.id)
+            const latestSprite = latestPack ? sameSprite(latestPack, sprite) : null
+            if (!latestPack || !latestSprite || latestSprite.url !== sprite.url) {
+              throw new Error('立绘在保存期间已变化')
+            }
+            if (!updateChecked(upsertPack(
+              deps.getSettings(),
+              upsertSprite(latestPack, { ...latestSprite, url: localized.url, remoteUrl: localized.remoteUrl }),
+            ))) throw new Error('更新图包失败')
+            localizedCount++
+          } catch (error) {
+            console.warn('[sprite-overlay] 批量保存本地失败', { packId: pack.id, tag: sprite.tag, error })
+            failed++
+          }
+        }
+      }
+    } finally {
+      batchResourceBusy = false
+      render()
+      toast(currentManagerBody(), `保存本地完成：成功 ${localizedCount} 张，失败 ${failed} 张${failed > 0 ? '（可再次点击重试）' : ''}`)
+    }
+  }
+
+  async function copySelectedPackShares(): Promise<void> {
+    if (batchResourceBusy) return
+    const packs = selectedPacks()
+    if (packs.length === 0) {
+      toast(currentManagerBody(), '先勾选要复制分享串的图包')
+      return
+    }
+    const encoded = packs
+      .map((pack) => ({ pack, result: encodeShareStringV2(pack) }))
+      .filter((entry): entry is { pack: SpritePack; result: NonNullable<ReturnType<typeof encodeShareStringV2>> } => entry.result !== null)
+    if (encoded.length === 0) {
+      toast(currentManagerBody(), '所选图包都没有可分享的远程图片')
+      return
+    }
+    const missingCount = encoded.reduce((count, entry) => count + entry.result.missing.length, 0)
+    if (missingCount > 0 && !window.confirm(
+      `所选图包中还有 ${missingCount} 张图片没有远程地址，不会进入分享串。仍要复制吗？`,
+    )) return
+    const text = encoded.map((entry) => entry.result.text).join('\n\n')
+    const ok = await copyText(text)
+    toast(
+      currentManagerBody(),
+      ok
+        ? `已复制 ${encoded.length} 个图包的分享串${missingCount > 0 ? `，缺少 ${missingCount} 张` : ''}`
+        : '复制失败，请手动复制弹出的文本',
+    )
+    if (!ok) window.prompt('手动复制分享串：', text)
+  }
+
+  async function deletePacksWithChoice(packIds: string[], names: string[], preview: string): Promise<void> {
+    if (!window.confirm(`确定删除 ${names.length} 个立绘包？\n${preview}\n绑定关系会一并清除。`)) return
+    const current = deps.getSettings()
+    const localPaths = deletableLocalSpritePaths(current, packIds)
+    const deleteLocal = localPaths.length > 0 && window.confirm(
+      `检测到 ${localPaths.length} 个仅由这些包使用的本地图片文件。\n` +
+      '同时从 SillyTavern 服务器删除它们吗？\n\n选择“取消”将只删除图包记录，文件继续保留。',
+    )
+
+    selectedPackIds.clear()
+    view = { kind: 'list' }
+    commit(removePacks(current, packIds))
+    if (!deleteLocal) {
+      toast(currentManagerBody(), `已删除 ${names.length} 个立绘包，本地文件未删除`)
+      return
+    }
+
+    let deleted = 0
+    let failed = 0
+    for (const path of localPaths) {
+      try {
+        await deps.adapter.deleteImage(path)
+        deleted++
+      } catch (error) {
+        console.warn('[sprite-overlay] 删除本地图片失败', { path, error })
+        failed++
+      }
+    }
+    toast(
+      currentManagerBody(),
+      `已删除 ${names.length} 个立绘包；本地文件删除成功 ${deleted} 张${failed > 0 ? `，失败 ${failed} 张` : ''}`,
+    )
+  }
+
+  function renderRolePackStack(
+    role: string,
+    roleKey: string,
+    packs: SpritePack[],
+    spriteCount: number,
+    boundState: (pack: SpritePack) => 'active' | 'off' | null,
+    expand: () => void,
+  ): HTMLElement {
+    const stack = el('button', 'so-role-pack-stack') as HTMLButtonElement
+    stack.type = 'button'
+    stack.dataset.roleKey = roleKey
+    stack.setAttribute('aria-expanded', 'false')
+    stack.setAttribute('aria-label', `展开「${role}」的 ${packs.length} 个图包`)
+    for (let index = 2; index >= 1; index -= 1) {
+      const layer = el('span', `so-role-stack-layer so-role-stack-layer-${index}`)
+      layer.setAttribute('aria-hidden', 'true')
+      stack.append(layer)
+    }
+
+    const face = el('span', 'so-role-stack-face')
+    const coverBox = el('span', 'so-role-stack-cover')
+    const first = packs[0]
+    const cover = first ? getPackCover(first) : null
+    if (cover) {
+      const image = document.createElement('img')
+      image.src = cover.url
+      image.alt = ''
+      image.loading = 'lazy'
+      coverBox.append(image)
+    } else {
+      coverBox.textContent = '暂无立绘'
+    }
+    const activeCount = packs.filter((pack) => boundState(pack) === 'active').length
+    if (activeCount > 0) {
+      const badge = el('span', 'so-card-badge')
+      badge.textContent = activeCount === 1 ? '使用中' : `使用中 ${activeCount}`
+      coverBox.append(badge)
+    }
+    const info = el('span', 'so-card-info')
+    const title = el('b')
+    title.textContent = role
+    const detail = el('small')
+    detail.textContent = `${packs.length} 个图包 · ${spriteCount} 张`
+    info.append(title, detail)
+    face.append(coverBox, info)
+    stack.append(face)
+    stack.addEventListener('click', expand)
+    return stack
   }
 
   function renderPackCard(pack: SpritePack, bound: 'active' | 'off' | null): HTMLElement {
@@ -1046,9 +1279,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     if (!readonly) {
       topRow.append(
         button('删除立绘包', () => {
-          if (!window.confirm(`确定删除立绘包「${pack.name}」？绑定关系会一并清除。`)) return
-          view = { kind: 'list' }
-          commit(removePack(deps.getSettings(), pack.id))
+          void deletePacksWithChoice([pack.id], [pack.name], pack.name)
         }, 'so-btn-danger'),
       )
     }

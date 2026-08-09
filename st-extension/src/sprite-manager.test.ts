@@ -10,6 +10,7 @@ import { buildPromptSceneNotes } from '../../core/prompt-builder'
 import { MAX_NOTE_CODE_POINTS } from '../../core/sprite-metadata'
 
 const imageMocks = vi.hoisted(() => ({ compressImage: vi.fn() }))
+const imgbbMocks = vi.hoisted(() => ({ uploadToImgbb: vi.fn() }))
 
 vi.mock('../../core/image-compress', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../core/image-compress')>()
@@ -245,7 +246,7 @@ describe('createSpriteManager binding conflict UI', () => {
       '✎重命名',
       '#标签',
       '🏷设分组',
-      '🖼替换图片',
+      '🖼重新上传 / 替换图片',
       '↓保存到本地',
       '🔗远程地址',
       '★设为封面',
@@ -670,13 +671,15 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
     manager.close()
   })
 
-  it('folds packs by role into one expandable row while leaving empty-role packs independent', () => {
+  it('folds each role into a first-cover card stack and expands one horizontal row at a time', () => {
     let settings: PluginSettings = {
       ...createDefaultSettings(),
       galleryFoldByRole: true,
       packs: [
         { id: 'a', name: '小雅居家', roleName: '小雅', sprites: [{ tag: '一', url: 'a' }] },
         { id: 'b', name: '小雅外出', roleName: '小雅', sprites: [{ tag: '二', url: 'b' }] },
+        { id: 'c', name: '小雪居家', roleName: '小雪', sprites: [{ tag: '四', url: 'd' }] },
+        { id: 'd', name: '小雪礼服', roleName: '小雪', sprites: [{ tag: '五', url: 'e' }] },
         { id: 'free', name: '独立包', sprites: [{ tag: '三', url: 'c' }] },
       ],
     }
@@ -687,14 +690,26 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
     })
     manager.open()
 
-    const row = document.querySelector<HTMLElement>('.so-role-pack-row')!
-    expect(row.textContent).toContain('小雅')
-    expect(row.textContent).toContain('2 个图包')
+    const stacks = document.querySelectorAll<HTMLElement>('.so-role-pack-stack')
+    expect(stacks).toHaveLength(2)
+    expect(stacks[0].textContent).toContain('小雅')
+    expect(stacks[0].textContent).toContain('2 个图包')
+    expect(stacks[0].querySelector<HTMLImageElement>('.so-role-stack-cover img')?.getAttribute('src')).toBe('a')
+    expect(stacks[0].querySelectorAll('[aria-hidden="true"].so-role-stack-layer')).toHaveLength(2)
     expect(document.querySelectorAll('.so-pack-card')).toHaveLength(1)
     expect(document.querySelector('.so-role-pack-standalone')).not.toBeNull()
-    row.click()
-    expect(document.querySelectorAll('.so-pack-card')).toHaveLength(3)
-    expect(row.getAttribute('aria-expanded')).toBe('true')
+
+    stacks[0].click()
+    let strip = document.querySelector<HTMLElement>('.so-role-pack-strip')!
+    expect(strip).not.toBeNull()
+    expect(strip.querySelectorAll('.so-pack-card')).toHaveLength(2)
+    expect(strip.scrollWidth).toBeGreaterThanOrEqual(strip.clientWidth)
+    expect(document.querySelectorAll('.so-role-pack-stack')).toHaveLength(1)
+
+    document.querySelector<HTMLElement>('.so-role-pack-stack')!.click()
+    strip = document.querySelector<HTMLElement>('.so-role-pack-strip')!
+    expect(strip.closest('.so-role-pack-group')?.textContent).toContain('小雪')
+    expect(document.querySelectorAll('.so-role-pack-strip')).toHaveLength(1)
     manager.close()
   })
 
@@ -1091,6 +1106,182 @@ describe('createSpriteManager 实测反馈批次（上传默认不拆分 / 批�
     aInput.dispatchEvent(new Event('change'))
     expect(getSettings().bindings[0].packIds).toEqual(['b'])
     expect(document.querySelector('.so-popover[data-pop="启用包"]')).not.toBeNull()
+    manager.close()
+  })
+})
+
+vi.mock('../../core/imgbb', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../core/imgbb')>()
+  return { ...actual, uploadToImgbb: imgbbMocks.uploadToImgbb }
+})
+
+describe('createSpriteManager safe pack deletion', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+  })
+
+  it('removes metadata only when local deletion is declined', async () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{ id: 'a', name: '本地包', sprites: [{ tag: '微笑', url: '/user/images/a.webp' }] }],
+    }
+    const deleteImage = vi.fn()
+    vi.spyOn(window, 'confirm').mockReturnValueOnce(true).mockReturnValueOnce(false)
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍', deleteImage } as unknown as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    document.querySelector<HTMLElement>('.so-pack-card')!.click()
+
+    findButton(document, '删除立绘包').click()
+    await Promise.resolve()
+
+    expect(settings.packs).toHaveLength(0)
+    expect(deleteImage).not.toHaveBeenCalled()
+    manager.close()
+  })
+
+  it('deletes eligible local files after metadata and reports physical failures', async () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{
+        id: 'a', name: '本地包', sprites: [
+          { tag: '成功', url: '/user/images/a.webp' },
+          { tag: '失败', url: '/user/images/b.webp' },
+        ],
+      }],
+    }
+    const deleteImage = vi.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('HTTP 500'))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍', deleteImage } as unknown as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    document.querySelector<HTMLElement>('.so-pack-card')!.click()
+
+    findButton(document, '删除立绘包').click()
+    await vi.waitFor(() => expect(deleteImage).toHaveBeenCalledTimes(2))
+
+    expect(settings.packs).toHaveLength(0)
+    expect(document.querySelector('.so-toast')?.textContent).toContain('本地文件删除成功 1 张，失败 1 张')
+    manager.close()
+  })
+})
+
+describe('createSpriteManager selected-pack resource actions', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    imageMocks.compressImage.mockReset()
+    imgbbMocks.uploadToImgbb.mockReset()
+  })
+
+  function selectAll(manager: ReturnType<typeof createSpriteManager>): void {
+    manager.open()
+    findButton(document, '批量管理').click()
+    findButton(document, '全选').click()
+  }
+
+  it('uploads selected packs to imgbb sequentially and keeps local display URLs', async () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      imgbbApiKey: 'key',
+      packs: [
+        { id: 'a', name: '甲', sprites: [{ tag: '一', url: 'data:image/png;base64,QQ==' }] },
+        { id: 'b', name: '乙', sprites: [{ tag: '二', url: 'data:image/png;base64,Qg==' }] },
+      ],
+    }
+    imgbbMocks.uploadToImgbb
+      .mockResolvedValueOnce({ url: 'https://i.ibb.co/a.webp', code: 'a.webp' })
+      .mockResolvedValueOnce({ url: 'https://i.ibb.co/b.webp', code: 'b.webp' })
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    selectAll(manager)
+
+    findButton(document, '上传云端（2）').click()
+    await vi.waitFor(() => expect(imgbbMocks.uploadToImgbb).toHaveBeenCalledTimes(2))
+
+    expect(settings.packs[0].sprites[0]).toMatchObject({
+      url: 'data:image/png;base64,QQ==', remoteUrl: 'https://i.ibb.co/a.webp', code: 'a.webp',
+    })
+    expect(settings.packs[1].sprites[0].remoteUrl).toBe('https://i.ibb.co/b.webp')
+    expect(document.querySelector('.so-toast')?.textContent).toContain('上传云端完成：成功 2 张，失败 0 张')
+    manager.close()
+  })
+
+  it('localizes hosted sprites in selected packs and summarizes retryable failures', async () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [
+        { id: 'a', name: '甲', sprites: [{ tag: '一', url: 'https://img.test/a.webp' }] },
+        { id: 'b', name: '乙', sprites: [{ tag: '二', url: 'https://img.test/b.webp' }] },
+      ],
+    }
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        blob: async () => new Blob(['a'], { type: 'image/webp' }),
+      })
+      .mockRejectedValueOnce(new Error('offline')))
+    imageMocks.compressImage.mockResolvedValue({
+      dataUri: 'data:image/webp;base64,QQ==', compressed: false, bytes: 1,
+    })
+    const saveImageFile = vi.fn().mockResolvedValue('/user/images/local-a.webp')
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍', saveImageFile } as unknown as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    selectAll(manager)
+
+    findButton(document, '保存本地（2）').click()
+    await vi.waitFor(() => expect(document.querySelector('.so-toast')?.textContent).toContain('保存本地完成'))
+
+    expect(settings.packs[0].sprites[0]).toMatchObject({
+      url: '/user/images/local-a.webp', remoteUrl: 'https://img.test/a.webp',
+    })
+    expect(settings.packs[1].sprites[0].url).toBe('https://img.test/b.webp')
+    expect(document.querySelector('.so-toast')?.textContent).toContain('成功 1 张，失败 1 张')
+    manager.close()
+  })
+
+  it('copies one share string per selected pack', async () => {
+    const settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [
+        { id: 'a', name: '甲', sprites: [{ tag: '一', url: 'https://img.test/a.webp' }] },
+        { id: 'b', name: '乙', sprites: [{ tag: '二', url: 'https://img.test/b.webp' }] },
+      ],
+    }
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: vi.fn(),
+    })
+    selectAll(manager)
+
+    findButton(document, '复制分享串（2）').click()
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledOnce())
+
+    const copied = writeText.mock.calls[0][0] as string
+    expect(copied).toContain('stpack2:甲|')
+    expect(copied).toContain('stpack2:乙|')
+    expect(copied.split('\n\n')).toHaveLength(2)
     manager.close()
   })
 })

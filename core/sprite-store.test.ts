@@ -4,6 +4,7 @@ import { createDefaultSettings, formatAddress, getPackCover, getSpriteSource } f
 import {
   bindCharacter,
   bindPack,
+  deletableLocalSpritePaths,
   getActiveAddresses,
   getActivePacks,
   getGroups,
@@ -632,6 +633,39 @@ describe('包列表批量操作（实测反馈批次）', () => {
     const keep = removePacks(settingsWith(), ['b'])
     expect(keep.bindings).toEqual([
       { characterName: '阿珍', packIds: ['a'], enabled: true },
+    ])
+  })
+})
+
+describe('deletableLocalSpritePaths', () => {
+  it('returns only unique /user/images files no unselected pack still references', () => {
+    const settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [
+        {
+          id: 'selected', name: '待删', sprites: [
+            { tag: '独占', url: '/user/images/sprite-overlay/a/only.webp' },
+            { tag: '共享', url: '/user/images/sprite-overlay/shared.webp' },
+            { tag: '重复', url: '/user/images/sprite-overlay/a/only.webp' },
+            { tag: '扩展资源', url: '/scripts/extensions/third-party/st-stage/a.webp' },
+            { tag: '远程', url: 'https://i.ibb.co/a.webp' },
+            { tag: '内嵌', url: 'data:image/png;base64,AA==' },
+          ],
+        },
+        {
+          id: 'kept', name: '保留', sprites: [
+            { tag: '仍引用共享', url: '/user/images/sprite-overlay/shared.webp' },
+          ],
+        },
+      ],
+    }
+
+    expect(deletableLocalSpritePaths(settings, ['selected'])).toEqual([
+      '/user/images/sprite-overlay/a/only.webp',
+    ])
+    expect(deletableLocalSpritePaths(settings, ['selected', 'kept'])).toEqual([
+      '/user/images/sprite-overlay/a/only.webp',
+      '/user/images/sprite-overlay/shared.webp',
     ])
   })
 })

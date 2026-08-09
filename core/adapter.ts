@@ -16,6 +16,8 @@ export interface PlatformAdapter {
    * Web 端：转 data URI；ST 端：写入用户数据目录并返回静态路由路径。
    */
   saveImage(fileName: string, base64Data: string, characterName: string): Promise<string>
+  /** 删除 ST 用户图片目录中的文件；不支持物理删除的平台可省略。 */
+  deleteImage?(url: string): Promise<void>
   /** 获取当前对话的角色名 */
   getCurrentCharacterName(): string
   /**

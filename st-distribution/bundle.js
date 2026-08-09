@@ -861,6 +861,42 @@ function removePacks(settings, packIds) {
   for (const id of packIds) next = removePack(next, id);
   return next;
 }
+function localUserImagePath(url) {
+  const path = url.split(/[?#]/, 1)[0].replace(/\\/g, "/");
+  if (!path.startsWith("/user/images/")) return null;
+  let decoded;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    return null;
+  }
+  const segments = decoded.split("/");
+  if (segments.some((segment) => segment === "." || segment === "..")) return null;
+  return decoded;
+}
+function deletableLocalSpritePaths(settings, packIds) {
+  const selected = new Set(packIds);
+  const keptReferences = /* @__PURE__ */ new Set();
+  for (const pack of settings.packs) {
+    if (selected.has(pack.id)) continue;
+    for (const sprite of pack.sprites) {
+      const path = localUserImagePath(sprite.url);
+      if (path) keptReferences.add(path);
+    }
+  }
+  const result = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const pack of settings.packs) {
+    if (!selected.has(pack.id)) continue;
+    for (const sprite of pack.sprites) {
+      const path = localUserImagePath(sprite.url);
+      if (!path || seen.has(path) || keptReferences.has(path)) continue;
+      seen.add(path);
+      result.push(path);
+    }
+  }
+  return result;
+}
 function movePack(settings, packId, offset) {
   const from = settings.packs.findIndex((p) => p.id === packId);
   if (from < 0) return settings;
@@ -1868,36 +1904,187 @@ function migratePack(raw) {
 }
 
 // core/presets.ts
+var CASUAL = [
+  ["中性", "https://i.ibb.co/xq4cf5cL/3dd68e58257c.webp"],
+  ["关怀", "https://i.ibb.co/zhxnSVDC/a649145f4804.webp"],
+  ["感激", "https://i.ibb.co/BHCvK9FK/f2a89a044460.webp"],
+  ["喜悦", "https://i.ibb.co/v6ZQ675V/da65a3d6f363.webp"],
+  ["释然", "https://i.ibb.co/5h6nTHr9/2e8dedc8c995.webp"],
+  ["爱慕", "https://i.ibb.co/0VBkYJS8/84cf5eacdcb6.webp"],
+  ["悲伤", "https://i.ibb.co/67brywRx/f4026cce61a5.webp"],
+  ["害怕", "https://i.ibb.co/svTgVcqT/24b9ec4fe0f8.webp"],
+  ["困惑", "https://i.ibb.co/PsLKDkVz/74e88f58013c.webp"],
+  ["惊讶", "https://i.ibb.co/8Djg9L3T/804de98cf50d.webp"],
+  ["失望", "https://i.ibb.co/ps3dq2r/331d09bc4bb5.webp"],
+  ["领悟", "https://i.ibb.co/fGqpR9wZ/90ae3698d869.webp"],
+  ["逗乐", "https://i.ibb.co/xqwJSBH1/acd0e14a6003.webp"],
+  ["愤怒", "https://i.ibb.co/Z4qKB6L/fd9668f6ceb7.webp"],
+  ["好奇", "https://i.ibb.co/wTFM3zG/cb05a7f6daec.webp"],
+  ["期许", "https://i.ibb.co/xKkHbDG1/247fdc8430fb.webp"],
+  ["懊悔", "https://i.ibb.co/DHgcqX50/0439ea39b11e.webp"],
+  ["翻白眼吐舌", "https://i.ibb.co/Dgs304F4/801e25cfe603.webp"]
+];
+var SHADOW = [
+  ["爱慕", "https://i.ibb.co/60pF1rrf/adbb1bd58d94.webp"],
+  ["懊悔", "https://i.ibb.co/TM4D64jN/8766ffda8f10.webp"],
+  ["悲伤", "https://i.ibb.co/ksCBgD1S/d547c9ec2684.webp"],
+  ["逗乐", "https://i.ibb.co/S4Fg4ZHP/b8dac8fb2dc4.webp"],
+  ["愤怒", "https://i.ibb.co/kgQY0dmZ/1d8b20b34a9c.webp"],
+  ["感激", "https://i.ibb.co/spj7cm0B/803c75db520f.webp"],
+  ["关怀", "https://i.ibb.co/MyW7mC51/805c6e6f2fda.webp"],
+  ["害怕", "https://i.ibb.co/NgH8zHKY/ad70f87dbe3a.webp"],
+  ["好奇", "https://i.ibb.co/PZZcZGT2/01878109e17e.webp"],
+  ["惊讶", "https://i.ibb.co/G47GR2Xn/0b6612046f08.webp"],
+  ["困惑", "https://i.ibb.co/MkrpPrX2/6bcaa9e1864e.webp"],
+  ["领悟", "https://i.ibb.co/B5rT02yj/92259638b108.webp"],
+  ["期许", "https://i.ibb.co/Ts3Ndt0/5c84cae66be6.webp"],
+  ["失望", "https://i.ibb.co/VcRDvnJZ/fa1338ba2d5b.webp"],
+  ["释然", "https://i.ibb.co/8ntLvxkC/e2cbd128cf32.webp"],
+  ["妩媚", "https://i.ibb.co/W42FK6ck/2da7682a5aca.webp"],
+  ["喜悦", "https://i.ibb.co/RZpHBGw/d196fad4ebd9.webp"],
+  ["月光透视", "https://i.ibb.co/Y4GNnH1g/c71429c95fb1.webp"],
+  ["中性", "https://i.ibb.co/Vc0rcqS3/e9572425090f.webp"]
+];
+var HEALING = [
+  ["爱慕", "https://i.ibb.co/Kz0qqXwy/943e80b09794.webp"],
+  ["懊悔", "https://i.ibb.co/ynDm48B2/d0455c0f8d56.webp"],
+  ["悲伤", "https://i.ibb.co/Cs1CJ9Jx/db1bc0f21b91.webp"],
+  ["逗乐", "https://i.ibb.co/xqhBPr9f/e17c1185bfe6.webp"],
+  ["愤怒", "https://i.ibb.co/d0Sv6wpv/585dae5c1cdc.webp"],
+  ["感激", "https://i.ibb.co/xW92rH4/0010903b4cc1.webp"],
+  ["关怀", "https://i.ibb.co/PsR6Q63Z/bb10d8ab6dd7.webp"],
+  ["害怕", "https://i.ibb.co/xtzGDZNX/347987abde75.webp"],
+  ["好奇", "https://i.ibb.co/bRrSvX2b/79f774151ac6.webp"],
+  ["惊讶", "https://i.ibb.co/b5YJS5h8/1c4feec0e58d.webp"],
+  ["困惑", "https://i.ibb.co/PvDLR31C/921b9266d04a.webp"],
+  ["领悟", "https://i.ibb.co/KpgfW9GX/d35fcbb4fc71.webp"],
+  ["期许", "https://i.ibb.co/chyS8pMV/85153d9f7564.webp"],
+  ["失望", "https://i.ibb.co/gbgDpg9c/81d8a3d4502c.webp"],
+  ["释然", "https://i.ibb.co/QvJ1gMXD/b00ab1b50e48.webp"],
+  ["喜悦", "https://i.ibb.co/svwRkfnV/df602cb11428.webp"],
+  ["治愈绽放", "https://i.ibb.co/PZhSQd5V/64b508544524.webp"],
+  ["中性", "https://i.ibb.co/SDzshHs8/ae718842095e.webp"]
+];
+var PRIEST = [
+  ["启仪_变", "https://i.ibb.co/wFsqCvGY/13b312237d50.webp"],
+  ["施法_变", "https://i.ibb.co/chdysgxL/0b5ab955de6c.webp"],
+  ["爱慕", "https://i.ibb.co/CKBg2km1/78ae74a2723f.webp"],
+  ["爱慕_变", "https://i.ibb.co/kVkkscbn/00260a4feba1.webp"],
+  ["懊悔", "https://i.ibb.co/YTKgtzjD/f7a718c449ff.webp"],
+  ["悲伤", "https://i.ibb.co/Kz6940LS/c14da4f09dbd.webp"],
+  ["逗乐", "https://i.ibb.co/0vbDwQL/520b7638c1b0.webp"],
+  ["愤怒", "https://i.ibb.co/3y9JmhK1/b0822e479741.webp"],
+  ["感激", "https://i.ibb.co/gMHYkGJ0/18f28786a9f4.webp"],
+  ["感激_变", "https://i.ibb.co/chVBLdKP/c0119e0d2181.webp"],
+  ["关怀", "https://i.ibb.co/R4M427Yv/be710e562c6f.webp"],
+  ["关怀_变", "https://i.ibb.co/jP6TYrr8/e3847545ce6f.webp"],
+  ["害怕", "https://i.ibb.co/xSrGj0Y4/a4e07cd690ab.webp"],
+  ["好奇", "https://i.ibb.co/wNNXFkm1/e2632830682d.webp"],
+  ["好奇_变", "https://i.ibb.co/rKCJjwN7/8e97d9255dfa.webp"],
+  ["惊讶", "https://i.ibb.co/TBpb5L25/1656c2d618d3.webp"],
+  ["困惑", "https://i.ibb.co/CpBn8429/07b8b190dcea.webp"],
+  ["领悟", "https://i.ibb.co/7JBZ1bdz/e34f5355ff9e.webp"],
+  ["领悟_变", "https://i.ibb.co/s9mbmZ4v/82b0711944b0.webp"],
+  ["期许", "https://i.ibb.co/9HnJTNd3/f02a51d2d3f7.webp"],
+  ["期许_变", "https://i.ibb.co/xp3Yrrm/87df334b9495.webp"],
+  ["森林赐福觉醒", "https://i.ibb.co/PsMKZxcD/25f73b4d1353.webp"],
+  ["失望", "https://i.ibb.co/wZYSGcb8/26282c1c0140.webp"],
+  ["释然", "https://i.ibb.co/278Vgcfj/7e310449df6f.webp"],
+  ["释然_变", "https://i.ibb.co/b5pKXttg/a2c01ff8d658.webp"],
+  ["妩媚_变", "https://i.ibb.co/Fb97dRp9/090dc1ec60bc.webp"],
+  ["喜悦", "https://i.ibb.co/BHTwvPpp/83fad5398fbb.webp"],
+  ["喜悦_变", "https://i.ibb.co/sdKxRR6K/ff4e310ca857.webp"],
+  ["中性", "https://i.ibb.co/4RkyVzmK/0cdecdd14d36.webp"],
+  ["中性_变", "https://i.ibb.co/1GXq8zXG/b0b8fd3ac8a0.webp"]
+];
+var BATTLE = [
+  ["懊悔", "https://i.ibb.co/9H2xWG2x/91152cce4459.webp"],
+  ["悲伤", "https://i.ibb.co/5XJp8LHf/3c211c8b83cc.webp"],
+  ["逗乐", "https://i.ibb.co/whg2hdCs/8cfebde27a4b.webp"],
+  ["愤怒", "https://i.ibb.co/tTZ4J7FQ/c3f950d3633c.webp"],
+  ["感激", "https://i.ibb.co/pvSmYKJ9/d94cbc8cfa25.webp"],
+  ["关怀", "https://i.ibb.co/R47nycMX/224cc7f5eb41.webp"],
+  ["害怕", "https://i.ibb.co/qLpXyBdK/d00f0cb7ac32.webp"],
+  ["好奇", "https://i.ibb.co/Kcjwtx4W/e08d99a6afda.webp"],
+  ["惊讶", "https://i.ibb.co/TBndwYZX/62cf3d53fcc0.webp"],
+  ["困惑", "https://i.ibb.co/PsMrjMmP/85e7abd8c74d.webp"],
+  ["领悟", "https://i.ibb.co/NnL183Sy/b06aaccd6bf5.webp"],
+  ["期许", "https://i.ibb.co/B5CyGzn6/c7c6f8f64085.webp"],
+  ["失望", "https://i.ibb.co/V0k3sS7f/6496d55b49bd.webp"],
+  ["释然", "https://i.ibb.co/qYvP9y6g/b9e5a2f36684.webp"],
+  ["喜悦", "https://i.ibb.co/5WRcBW8x/77e9f76adbe4.webp"],
+  ["中性", "https://i.ibb.co/5fpPBcb/25edd6692c97.webp"],
+  ["自然共鸣觉醒", "https://i.ibb.co/gbq20w38/75a67df38a8c.webp"]
+];
 var PRESET_DEFS = [
   {
-    id: "preset_silver_loli",
-    name: "银发萝莉",
-    description: "内置预设 · 银发双马尾萝莉，8 个常用表情",
-    dir: "silver-loli",
-    tags: ["微笑", "害羞", "恼怒", "惊讶", "哭泣", "得意", "无奈", "开心"]
+    id: "preset_seraphina_casual",
+    name: "塞拉菲娜·常服",
+    description: "内置云端预设 · 日常常服",
+    roleName: "塞拉菲娜",
+    outfit: "常服",
+    promptNote: "日常场景中穿的衣服。",
+    sprites: CASUAL
   },
   {
-    id: "preset_raven_onee",
-    name: "黑长直御姐",
-    description: "内置预设 · 黑长直冷艳御姐，8 个常用表情",
-    dir: "raven-onee",
-    tags: ["微笑", "害羞", "恼怒", "惊讶", "哭泣", "得意", "冷淡", "温柔"]
+    id: "preset_seraphina_shadow",
+    name: "塞拉菲娜·暗影斗篷",
+    description: "内置云端预设 · 夜间巡行服装",
+    roleName: "塞拉菲娜",
+    outfit: "暗影斗篷",
+    promptNote: "夜晚外出巡夜时的服装。",
+    sprites: SHADOW
+  },
+  {
+    id: "preset_seraphina_healing",
+    name: "塞拉菲娜·治愈白裙",
+    description: "内置云端预设 · 白天外出服装",
+    roleName: "塞拉菲娜",
+    outfit: "治愈白裙",
+    promptNote: "白天外出时的服装。",
+    sprites: HEALING
+  },
+  {
+    id: "preset_seraphina_priest",
+    name: "塞拉菲娜·祭司仪式袍",
+    description: "内置云端预设 · 森林仪式服装",
+    roleName: "塞拉菲娜",
+    outfit: "祭司仪式袍",
+    promptNote: "粗麻多层长袍、露肩、藤蔓束带、翡翠胸针。适用：森林仪式、祈祷、神谕祝福。仪式中可切换至带“_变”后缀的成熟形态。",
+    sprites: PRIEST
+  },
+  {
+    id: "preset_seraphina_battle",
+    name: "塞拉菲娜·战斗服",
+    description: "内置云端预设 · 野外战斗服装",
+    roleName: "塞拉菲娜",
+    outfit: "战斗服",
+    promptNote: "橄榄绿粗布抹胸、撕裂短裹裙、腹部交叉绑带，适用：野外战斗、训练、紧张对峙。",
+    sprites: BATTLE
   }
 ];
+var LEGACY_PRESET_IDS = /* @__PURE__ */ new Set(["preset_silver_loli", "preset_raven_onee"]);
 function getPresetPacks(baseUrl = "") {
+  void baseUrl;
   return PRESET_DEFS.map((def) => ({
     id: def.id,
     name: def.name,
     author: "内置预设",
     description: def.description,
-    sprites: def.tags.map((tag) => ({
+    roleName: def.roleName,
+    outfit: def.outfit,
+    promptNote: def.promptNote,
+    promptNotePlacement: "after-list",
+    sprites: def.sprites.map(([tag, url]) => ({
       tag,
-      url: `${baseUrl}/presets/${def.dir}/${encodeURIComponent(tag)}.png`
+      url,
+      remoteUrl: url,
+      code: url.slice(url.lastIndexOf("/") + 1)
     }))
   }));
 }
 function isPresetPack(packId) {
-  return PRESET_DEFS.some((d) => d.id === packId);
+  return LEGACY_PRESET_IDS.has(packId) || PRESET_DEFS.some((def) => def.id === packId);
 }
 
 // core/image-compress.ts
@@ -2104,6 +2291,26 @@ var STAdapter = class {
   async saveImageFile(file, fileName, characterName) {
     return this.saveImage(fileName, await blobToDataUri(file), characterName);
   }
+  async deleteImage(url) {
+    const rawPath = url.split(/[?#]/, 1)[0].replace(/\\/g, "/");
+    let path;
+    try {
+      path = decodeURIComponent(rawPath);
+    } catch {
+      throw new Error("只能删除 SillyTavern 用户图片目录中的文件");
+    }
+    const segments = path.split("/");
+    if (!path.startsWith("/user/images/") || segments.some((segment) => segment === "." || segment === "..")) {
+      throw new Error("只能删除 SillyTavern 用户图片目录中的文件");
+    }
+    const ctx = getContext();
+    const response = await fetch("/api/images/delete", {
+      method: "POST",
+      headers: ctx.getRequestHeaders?.() ?? { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: path.slice(1) })
+    });
+    if (!response.ok) throw new Error(`删除本地图片失败：HTTP ${response.status}`);
+  }
   getCurrentCharacterName() {
     const ctx = getContext();
     const id = ctx.characterId;
@@ -2163,6 +2370,30 @@ var STAdapter = class {
   onCharacterChanged(handler) {
     const ctx = getContext();
     const eventName = ctx.eventTypes?.CHAT_CHANGED ?? "chat_id_changed";
+    ctx.eventSource.on(eventName, handler);
+    return () => ctx.eventSource.removeListener(eventName, handler);
+  }
+  /** 订阅新聊天创建；CHAT_CHANGED 在部分 ST 版本中会早于新聊天 DOM 稳定。 */
+  onChatCreated(handler) {
+    const ctx = getContext();
+    const eventName = ctx.eventTypes?.CHAT_CREATED ?? "chat_created";
+    ctx.eventSource.on(eventName, handler);
+    return () => ctx.eventSource.removeListener(eventName, handler);
+  }
+  /** 订阅流式累计文本。ST 每次事件传入从回复开头到当前 token 的完整字符串。 */
+  onStreamText(handler) {
+    const ctx = getContext();
+    const eventName = ctx.eventTypes?.STREAM_TOKEN_RECEIVED ?? "stream_token_received";
+    const wrapped = (text) => {
+      if (typeof text === "string") handler(text);
+    };
+    ctx.eventSource.on(eventName, wrapped);
+    return () => ctx.eventSource.removeListener(eventName, wrapped);
+  }
+  /** 订阅生成结束，用于清空流式增量状态。 */
+  onGenerationEnded(handler) {
+    const ctx = getContext();
+    const eventName = ctx.eventTypes?.GENERATION_ENDED ?? "generation_ended";
     ctx.eventSource.on(eventName, handler);
     return () => ctx.eventSource.removeListener(eventName, handler);
   }
@@ -2852,7 +3083,7 @@ function createSpriteActions(context) {
     },
     {
       id: "replace",
-      label: "替换图片",
+      label: "重新上传 / 替换图片",
       icon: "🖼",
       run() {
         if (!current(context)) return;
@@ -3181,12 +3412,13 @@ function createSpriteManager(deps) {
   let spriteVisibleCount = SPRITE_PAGE_SIZE;
   let spriteFilterQuery = "";
   let spriteFilterLabels = [];
-  const expandedRoleGroups = /* @__PURE__ */ new Set();
+  let expandedRoleGroupKey = "";
   const openSections = /* @__PURE__ */ new Map();
   let enableListOpen = false;
   let enableListDocHandler = null;
   let batchMode = false;
   const selectedPackIds = /* @__PURE__ */ new Set();
+  let batchResourceBusy = false;
   let openedFrom = "overlay";
   let activeLightbox = null;
   function applyBackdropSize() {
@@ -3207,7 +3439,7 @@ function createSpriteManager(deps) {
     spriteVisibleCount = SPRITE_PAGE_SIZE;
     spriteFilterQuery = "";
     spriteFilterLabels = [];
-    expandedRoleGroups.clear();
+    expandedRoleGroupKey = "";
     openSections.clear();
     enableListOpen = false;
     batchMode = false;
@@ -3598,6 +3830,7 @@ ${options}`,
     const binding = settings.bindings.find((b) => b.characterName === characterName);
     const boundIds = binding?.packIds ?? [];
     if (batchMode) {
+      const selectedCount = selectedPackIds.size;
       actions.append(
         button("全选", () => {
           const all = settings.packs.filter((p) => !isPresetPack(p.id));
@@ -3609,6 +3842,15 @@ ${options}`,
           }
           render3();
         }),
+        button(`上传云端（${selectedCount}）`, () => {
+          void uploadSelectedPacks();
+        }),
+        button(`保存本地（${selectedCount}）`, () => {
+          void localizeSelectedPacks();
+        }),
+        button(`复制分享串（${selectedCount}）`, () => {
+          void copySelectedPackShares();
+        }),
         button(`删除所选（${selectedPackIds.size}）`, () => {
           if (selectedPackIds.size === 0) {
             toast(body, "先点卡片勾选要删除的包");
@@ -3617,13 +3859,8 @@ ${options}`,
           const current2 = deps.getSettings();
           const names = current2.packs.filter((p) => selectedPackIds.has(p.id)).map((p) => p.name);
           const preview = names.slice(0, 8).join("、") + (names.length > 8 ? ` 等 ${names.length} 个` : "");
-          if (!window.confirm(`确定删除 ${names.length} 个立绘包？
-${preview}
-绑定关系会一并清除。`)) return;
           const ids = [...selectedPackIds];
-          selectedPackIds.clear();
-          commit(removePacks(current2, ids));
-          toast(body, `已删除 ${names.length} 个立绘包`);
+          void deletePacksWithChoice(ids, names, preview);
         }, "so-btn-danger"),
         button("完成", () => {
           batchMode = false;
@@ -3785,28 +4022,30 @@ ${preview}
           continue;
         }
         const section2 = el("div", "so-role-pack-group");
-        const row = el("button", "so-role-pack-row");
-        row.type = "button";
-        const expanded = expandedRoleGroups.has(group.key);
-        row.setAttribute("aria-expanded", String(expanded));
-        const title = el("b");
-        title.textContent = group.role;
-        const counts = el("span");
-        counts.textContent = `${group.packCount} 个图包 · ${group.spriteCount} 张`;
-        const arrow = el("span", "so-role-pack-arrow");
-        arrow.textContent = expanded ? "▾" : "›";
-        row.append(title, counts, arrow);
-        row.addEventListener("click", () => {
-          if (expanded) expandedRoleGroups.delete(group.key);
-          else expandedRoleGroups.add(group.key);
-          row.setAttribute("aria-expanded", String(!expanded));
+        section2.dataset.roleKey = group.key;
+        const expanded = expandedRoleGroupKey === group.key;
+        const toggle = () => {
+          expandedRoleGroupKey = expanded ? "" : group.key;
           render3();
-        });
-        section2.append(row);
+        };
         if (expanded) {
-          const packs = el("div", "so-pack-grid so-role-pack-grid");
+          const row = el("button", "so-role-pack-row");
+          row.type = "button";
+          row.setAttribute("aria-expanded", "true");
+          const title = el("b");
+          title.textContent = group.role;
+          const counts = el("span");
+          counts.textContent = `${group.packCount} 个图包 · ${group.spriteCount} 张`;
+          const arrow = el("span", "so-role-pack-arrow");
+          arrow.textContent = "▾";
+          row.append(title, counts, arrow);
+          row.addEventListener("click", toggle);
+          const packs = el("div", "so-role-pack-strip");
+          packs.setAttribute("aria-label", `${group.role}的图包`);
           for (const pack of group.packs) packs.append(renderPackCard(pack, boundState(pack)));
-          section2.append(packs);
+          section2.append(row, packs);
+        } else {
+          section2.append(renderRolePackStack(group.role, group.key, group.packs, group.spriteCount, boundState, toggle));
         }
         grid.append(section2);
       }
@@ -3816,6 +4055,207 @@ ${preview}
     body.append(grid);
     body.append(statusBar());
     renderEnableList();
+  }
+  function selectedPacks() {
+    return deps.getSettings().packs.filter((pack) => selectedPackIds.has(pack.id));
+  }
+  function sameSprite(pack, source) {
+    return pack.sprites.find(
+      (candidate) => candidate.tag === source.tag && spriteGroup(candidate) === spriteGroup(source) && (candidate.outfit ?? "") === (source.outfit ?? "")
+    ) ?? null;
+  }
+  async function uploadSelectedPacks() {
+    if (batchResourceBusy) return;
+    const packs = selectedPacks();
+    if (packs.length === 0) {
+      toast(currentManagerBody(), "先勾选要上传云端的图包");
+      return;
+    }
+    const apiKey = deps.getSettings().imgbbApiKey.trim();
+    if (!apiKey) {
+      toast(currentManagerBody(), "请先在「图库」App 配置 imgbb API Key");
+      return;
+    }
+    batchResourceBusy = true;
+    let uploaded = 0;
+    let failed = 0;
+    try {
+      for (const pack of packs) {
+        const pending = pack.sprites.filter(
+          (sprite) => getSpriteSource(sprite) !== "hosted" && !(sprite.remoteUrl && /^https?:\/\//.test(sprite.remoteUrl))
+        );
+        for (const sprite of pending) {
+          try {
+            const dataUri = sprite.url.startsWith("data:") ? sprite.url : await urlToDataUri(sprite.url);
+            const result = await uploadToImgbb(apiKey, dataUri);
+            if (!isValidImgbbResult(result)) throw new Error("图床响应无效");
+            const latestPack = deps.getSettings().packs.find((candidate) => candidate.id === pack.id);
+            const latestSprite = latestPack ? sameSprite(latestPack, sprite) : null;
+            if (!latestPack || !latestSprite) throw new Error("立绘在上传期间已变化");
+            if (!updateChecked(upsertPack(
+              deps.getSettings(),
+              upsertSprite(latestPack, { ...latestSprite, code: result.code, remoteUrl: result.url })
+            ))) throw new Error("更新图包失败");
+            uploaded++;
+          } catch (error) {
+            console.warn("[sprite-overlay] 批量上传云端失败", { packId: pack.id, tag: sprite.tag, error });
+            failed++;
+          }
+        }
+      }
+    } finally {
+      batchResourceBusy = false;
+      render3();
+      toast(currentManagerBody(), `上传云端完成：成功 ${uploaded} 张，失败 ${failed} 张${failed > 0 ? "（可再次点击重试）" : ""}`);
+    }
+  }
+  async function localizeSelectedPacks() {
+    if (batchResourceBusy) return;
+    const packs = selectedPacks();
+    if (packs.length === 0) {
+      toast(currentManagerBody(), "先勾选要保存到本地的图包");
+      return;
+    }
+    batchResourceBusy = true;
+    let localizedCount = 0;
+    let failed = 0;
+    try {
+      for (const pack of packs) {
+        const remoteSprites = pack.sprites.filter((sprite) => getSpriteSource(sprite) === "hosted");
+        for (const sprite of remoteSprites) {
+          try {
+            const parts = [pack.name, spriteGroup(sprite), sprite.outfit ?? "", sprite.tag].filter(Boolean);
+            const fileName = `${parts.join("-")}.webp`;
+            const localized = await localizeSprite(sprite, fileName, {
+              fetch: window.fetch.bind(window),
+              compress: compressImage,
+              saveImage: (file, name) => deps.adapter.saveImageFile(
+                file,
+                name,
+                deps.adapter.getCurrentCharacterName() || pack.name || "shared"
+              )
+            });
+            const latestPack = deps.getSettings().packs.find((candidate) => candidate.id === pack.id);
+            const latestSprite = latestPack ? sameSprite(latestPack, sprite) : null;
+            if (!latestPack || !latestSprite || latestSprite.url !== sprite.url) {
+              throw new Error("立绘在保存期间已变化");
+            }
+            if (!updateChecked(upsertPack(
+              deps.getSettings(),
+              upsertSprite(latestPack, { ...latestSprite, url: localized.url, remoteUrl: localized.remoteUrl })
+            ))) throw new Error("更新图包失败");
+            localizedCount++;
+          } catch (error) {
+            console.warn("[sprite-overlay] 批量保存本地失败", { packId: pack.id, tag: sprite.tag, error });
+            failed++;
+          }
+        }
+      }
+    } finally {
+      batchResourceBusy = false;
+      render3();
+      toast(currentManagerBody(), `保存本地完成：成功 ${localizedCount} 张，失败 ${failed} 张${failed > 0 ? "（可再次点击重试）" : ""}`);
+    }
+  }
+  async function copySelectedPackShares() {
+    if (batchResourceBusy) return;
+    const packs = selectedPacks();
+    if (packs.length === 0) {
+      toast(currentManagerBody(), "先勾选要复制分享串的图包");
+      return;
+    }
+    const encoded = packs.map((pack) => ({ pack, result: encodeShareStringV2(pack) })).filter((entry) => entry.result !== null);
+    if (encoded.length === 0) {
+      toast(currentManagerBody(), "所选图包都没有可分享的远程图片");
+      return;
+    }
+    const missingCount = encoded.reduce((count, entry) => count + entry.result.missing.length, 0);
+    if (missingCount > 0 && !window.confirm(
+      `所选图包中还有 ${missingCount} 张图片没有远程地址，不会进入分享串。仍要复制吗？`
+    )) return;
+    const text = encoded.map((entry) => entry.result.text).join("\n\n");
+    const ok = await copyText(text);
+    toast(
+      currentManagerBody(),
+      ok ? `已复制 ${encoded.length} 个图包的分享串${missingCount > 0 ? `，缺少 ${missingCount} 张` : ""}` : "复制失败，请手动复制弹出的文本"
+    );
+    if (!ok) window.prompt("手动复制分享串：", text);
+  }
+  async function deletePacksWithChoice(packIds, names, preview) {
+    if (!window.confirm(`确定删除 ${names.length} 个立绘包？
+${preview}
+绑定关系会一并清除。`)) return;
+    const current2 = deps.getSettings();
+    const localPaths = deletableLocalSpritePaths(current2, packIds);
+    const deleteLocal = localPaths.length > 0 && window.confirm(
+      `检测到 ${localPaths.length} 个仅由这些包使用的本地图片文件。
+同时从 SillyTavern 服务器删除它们吗？
+
+选择“取消”将只删除图包记录，文件继续保留。`
+    );
+    selectedPackIds.clear();
+    view = { kind: "list" };
+    commit(removePacks(current2, packIds));
+    if (!deleteLocal) {
+      toast(currentManagerBody(), `已删除 ${names.length} 个立绘包，本地文件未删除`);
+      return;
+    }
+    let deleted = 0;
+    let failed = 0;
+    for (const path of localPaths) {
+      try {
+        await deps.adapter.deleteImage(path);
+        deleted++;
+      } catch (error) {
+        console.warn("[sprite-overlay] 删除本地图片失败", { path, error });
+        failed++;
+      }
+    }
+    toast(
+      currentManagerBody(),
+      `已删除 ${names.length} 个立绘包；本地文件删除成功 ${deleted} 张${failed > 0 ? `，失败 ${failed} 张` : ""}`
+    );
+  }
+  function renderRolePackStack(role, roleKey, packs, spriteCount, boundState, expand) {
+    const stack = el("button", "so-role-pack-stack");
+    stack.type = "button";
+    stack.dataset.roleKey = roleKey;
+    stack.setAttribute("aria-expanded", "false");
+    stack.setAttribute("aria-label", `展开「${role}」的 ${packs.length} 个图包`);
+    for (let index = 2; index >= 1; index -= 1) {
+      const layer = el("span", `so-role-stack-layer so-role-stack-layer-${index}`);
+      layer.setAttribute("aria-hidden", "true");
+      stack.append(layer);
+    }
+    const face = el("span", "so-role-stack-face");
+    const coverBox = el("span", "so-role-stack-cover");
+    const first = packs[0];
+    const cover = first ? getPackCover(first) : null;
+    if (cover) {
+      const image = document.createElement("img");
+      image.src = cover.url;
+      image.alt = "";
+      image.loading = "lazy";
+      coverBox.append(image);
+    } else {
+      coverBox.textContent = "暂无立绘";
+    }
+    const activeCount = packs.filter((pack) => boundState(pack) === "active").length;
+    if (activeCount > 0) {
+      const badge = el("span", "so-card-badge");
+      badge.textContent = activeCount === 1 ? "使用中" : `使用中 ${activeCount}`;
+      coverBox.append(badge);
+    }
+    const info = el("span", "so-card-info");
+    const title = el("b");
+    title.textContent = role;
+    const detail = el("small");
+    detail.textContent = `${packs.length} 个图包 · ${spriteCount} 张`;
+    info.append(title, detail);
+    face.append(coverBox, info);
+    stack.append(face);
+    stack.addEventListener("click", expand);
+    return stack;
   }
   function renderPackCard(pack, bound) {
     const card = el("div", "so-pack-card");
@@ -4015,9 +4455,7 @@ ${preview}
     if (!readonly) {
       topRow.append(
         button("删除立绘包", () => {
-          if (!window.confirm(`确定删除立绘包「${pack.name}」？绑定关系会一并清除。`)) return;
-          view = { kind: "list" };
-          commit(removePack(deps.getSettings(), pack.id));
+          void deletePacksWithChoice([pack.id], [pack.name], pack.name);
         }, "so-btn-danger")
       );
     }
@@ -5027,7 +5465,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-09 11:51"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-10 00:44"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
   return () => wrapper.remove();
@@ -5076,11 +5514,183 @@ function replaceInlineImages(text, replacer) {
   });
 }
 
+// st-extension/src/apps/path-utils.ts
+var FORBIDDEN_PATH_SEGMENTS = /* @__PURE__ */ new Set(["__proto__", "prototype", "constructor"]);
+function parsePath(path) {
+  const segments = path.split(".");
+  return segments.some((segment) => segment.length === 0 || FORBIDDEN_PATH_SEGMENTS.has(segment)) ? null : segments;
+}
+function isSafePath(path) {
+  return parsePath(path) !== null;
+}
+function getNested(obj, path) {
+  const segments = parsePath(path);
+  if (!segments) return void 0;
+  let cur = obj;
+  for (const seg of segments) {
+    if (cur == null || typeof cur !== "object") return void 0;
+    cur = cur[seg];
+  }
+  return cur;
+}
+function setNested(obj, path, value) {
+  const segs = parsePath(path);
+  if (!segs || segs.length === 0) return;
+  let cur = obj;
+  for (let i = 0; i < segs.length - 1; i++) {
+    const seg = segs[i];
+    const next = cur[seg];
+    if (next == null || typeof next !== "object" || Array.isArray(next)) cur[seg] = {};
+    cur = cur[seg];
+  }
+  cur[segs[segs.length - 1]] = value;
+}
+function deleteNested(obj, path) {
+  const segs = parsePath(path);
+  if (!segs || segs.length === 0) return;
+  let cur = obj;
+  for (let i = 0; i < segs.length - 1; i++) {
+    if (cur == null || typeof cur !== "object") return;
+    cur = cur[segs[i]];
+  }
+  if (cur != null && typeof cur === "object") delete cur[segs[segs.length - 1]];
+}
+
+// st-extension/src/apps/newvar/config.ts
+var NEWVAR_APP_ID = "newvar";
+var NEWVAR_CHANNEL = "newvar";
+var NEWVAR_EXTRA_KEY = "st_stage_newvar";
+function defaultNewvarData() {
+  return {
+    enabled: false,
+    hideUpdateBlocks: true,
+    format: "json_patch",
+    injectionDepth: 4,
+    schema: { id: "default", name: "默认方案", version: 1, variables: [] },
+    customTemplates: []
+  };
+}
+var VAR_TYPES = ["number", "string", "boolean", "enum"];
+function normalizeNewvarData(raw) {
+  const d = defaultNewvarData();
+  if (!raw || typeof raw !== "object") return d;
+  const r = raw;
+  if (typeof r.enabled === "boolean") d.enabled = r.enabled;
+  if (typeof r.hideUpdateBlocks === "boolean") d.hideUpdateBlocks = r.hideUpdateBlocks;
+  if (r.format === "json_patch" || r.format === "lodash_set") d.format = r.format;
+  if (typeof r.injectionDepth === "number" && Number.isInteger(r.injectionDepth)) {
+    d.injectionDepth = Math.min(100, Math.max(0, r.injectionDepth));
+  }
+  const schema = r.schema;
+  if (schema && typeof schema === "object") {
+    const s = schema;
+    if (typeof s.id === "string" && s.id) d.schema.id = s.id;
+    if (typeof s.name === "string" && s.name) d.schema.name = s.name;
+    if (typeof s.version === "number") d.schema.version = s.version;
+    if (Array.isArray(s.variables)) {
+      d.schema.variables = s.variables.map(normalizeDefinition).filter((v) => v !== null);
+    }
+  }
+  if (Array.isArray(r.customTemplates)) {
+    d.customTemplates = r.customTemplates.map(normalizeCustomTemplate).filter((t) => t !== null);
+  }
+  return d;
+}
+function normalizeCustomTemplate(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw;
+  if (typeof r.id !== "string" || r.id === "" || typeof r.name !== "string" || r.name === "") return null;
+  const variables = Array.isArray(r.variables) ? r.variables.map(normalizeDefinition).filter((v) => v !== null) : [];
+  if (variables.length === 0) return null;
+  return {
+    id: r.id,
+    name: r.name,
+    description: typeof r.description === "string" ? r.description : "",
+    variables
+  };
+}
+function normalizeDefinition(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw;
+  if (typeof r.key !== "string" || r.key.trim() === "" || !isSafePath(r.key.trim())) return null;
+  const type = VAR_TYPES.includes(r.type) ? r.type : "string";
+  const def = {
+    key: r.key.trim(),
+    type,
+    default: r.default,
+    description: typeof r.description === "string" ? r.description : ""
+  };
+  if (r.hidden === true) def.hidden = true;
+  if (typeof r.updateRule === "string" && r.updateRule.trim() !== "") def.updateRule = r.updateRule;
+  if (type === "number" && Array.isArray(r.range) && r.range.length === 2 && typeof r.range[0] === "number" && typeof r.range[1] === "number" && Number.isFinite(r.range[0]) && Number.isFinite(r.range[1]) && r.range[0] <= r.range[1]) {
+    def.range = [r.range[0], r.range[1]];
+  }
+  if (type === "enum") {
+    const options = Array.isArray(r.enum) ? r.enum.filter((x) => typeof x === "string" && x !== "") : [];
+    if (options.length === 0) return null;
+    def.enum = options;
+  }
+  def.default = coerceDefault(def, def.default);
+  return def;
+}
+function coerceDefault(def, raw) {
+  switch (def.type) {
+    case "number": {
+      const n = typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
+      if (def.range) return Math.min(def.range[1], Math.max(def.range[0], n));
+      return n;
+    }
+    case "boolean":
+      return typeof raw === "boolean" ? raw : false;
+    case "enum": {
+      const options = def.enum ?? [];
+      return typeof raw === "string" && options.includes(raw) ? raw : options[0];
+    }
+    default:
+      return typeof raw === "string" ? raw : raw == null ? "" : String(raw);
+  }
+}
+
 // st-extension/src/message-postprocess.ts
 var FP_ATTR = "data-so-fp";
 var MARKER_CLASS = "so-processed-marker";
 var snapshots = /* @__PURE__ */ new WeakMap();
 var postprocessControllers = /* @__PURE__ */ new Set();
+function updateBlockRanges(text) {
+  const pattern = /<UpdateVariable(?:\s[^>]*)?>[\s\S]*?<\/UpdateVariable\s*>/gi;
+  return Array.from(text.matchAll(pattern), (match) => ({
+    start: match.index,
+    end: match.index + match[0].length
+  }));
+}
+function hasUpdateBlock(text) {
+  return updateBlockRanges(text).length > 0;
+}
+function removeTextRanges(root, ranges) {
+  if (ranges.length === 0) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let offset = 0;
+  let current2;
+  while (current2 = walker.nextNode()) {
+    const node = current2;
+    const value = node.nodeValue ?? "";
+    const nodeStart = offset;
+    const nodeEnd = nodeStart + value.length;
+    offset = nodeEnd;
+    const cuts = ranges.filter((range) => range.start < nodeEnd && range.end > nodeStart).map((range) => ({
+      start: Math.max(0, range.start - nodeStart),
+      end: Math.min(value.length, range.end - nodeStart)
+    }));
+    if (cuts.length === 0) continue;
+    let kept = "";
+    let cursor = 0;
+    for (const cut of cuts) {
+      kept += value.slice(cursor, cut.start);
+      cursor = Math.max(cursor, cut.end);
+    }
+    node.nodeValue = kept + value.slice(cursor);
+  }
+}
 function mountMessagePostprocess(deps) {
   const st = window.SillyTavern;
   if (!st) return () => {
@@ -5150,7 +5760,9 @@ function mountMessagePostprocess(deps) {
   return () => cleanup(() => ctx.eventSource.removeListener(fallbackEvent, fallbackHandler));
 }
 function anyFeatureOn(settings) {
-  return settings.enabled && (settings.hideTagInMessage || settings.renderInlineImages || settings.spriteDisplayMode !== "overlay");
+  const spritesOn = settings.enabled && (settings.hideTagInMessage || settings.renderInlineImages || settings.spriteDisplayMode !== "overlay");
+  const newvar = normalizeNewvarData(settings.apps[NEWVAR_APP_ID]);
+  return spritesOn || newvar.enabled && newvar.hideUpdateBlocks;
 }
 function clampFloors(settings) {
   const n = Math.round(settings.recentFloors);
@@ -5167,7 +5779,7 @@ function collectCandidates() {
     const textEl = mes.querySelector(".mes_text");
     if (!textEl) continue;
     const text = originalTextOf(textEl);
-    if (hasTag(text) || hasInlineImageMarkup(text)) out.push(textEl);
+    if (hasTag(text) || hasInlineImageMarkup(text) || hasUpdateBlock(text)) out.push(textEl);
   }
   return out;
 }
@@ -5226,10 +5838,12 @@ function hashText(text) {
 function processMessageElement(root, settings) {
   const inlineSprites = settings.spriteDisplayMode !== "overlay";
   const host = settings.imageHost.endsWith("/") ? settings.imageHost : `${settings.imageHost}/`;
+  const newvar = normalizeNewvarData(settings.apps[NEWVAR_APP_ID]);
+  const hideUpdateBlocks = newvar.enabled && newvar.hideUpdateBlocks;
   const snap = snapshots.get(root);
   const contentIsOurs = snap !== void 0 && root.querySelector(`.${MARKER_CLASS}`) !== null;
   const originalText = contentIsOurs ? snap.originalText : root.textContent ?? "";
-  const fingerprint = `${settings.hideTagInMessage ? "T" : ""}${settings.renderInlineImages ? "I" : ""}${inlineSprites ? "S" : ""}|${hashText(host)}|${hashText(originalText)}`;
+  const fingerprint = `${settings.hideTagInMessage ? "T" : ""}${settings.renderInlineImages ? "I" : ""}${inlineSprites ? "S" : ""}${hideUpdateBlocks ? "V" : ""}|${hashText(host)}|${hashText(originalText)}`;
   if (contentIsOurs && root.getAttribute(FP_ATTR) === fingerprint) return;
   if (contentIsOurs) {
     root.replaceChildren(...snap.nodes);
@@ -5241,12 +5855,13 @@ function processMessageElement(root, settings) {
   const hasPacks = packs.length > 0;
   const freshText = root.textContent ?? "";
   const tagged = hasTag(freshText);
-  const needsWork = settings.hideTagInMessage && tagged || inlineSprites && hasPacks && tagged || settings.renderInlineImages && hasInlineImageMarkup(freshText);
+  const needsWork = settings.hideTagInMessage && tagged || inlineSprites && hasPacks && tagged || settings.renderInlineImages && hasInlineImageMarkup(freshText) || hideUpdateBlocks && hasUpdateBlock(freshText);
   if (!needsWork) return;
   snapshots.set(root, {
     nodes: Array.from(root.childNodes).map((n) => n.cloneNode(true)),
     originalText: freshText
   });
+  if (hideUpdateBlocks) removeTextRanges(root, updateBlockRanges(freshText));
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const textNodes = [];
   let current2;
@@ -5269,7 +5884,6 @@ function processMessageElement(root, settings) {
         const sprite = resolveSprite(packs, address);
         if (!sprite) return settings.hideTagInMessage ? "" : null;
         const image = createImage(sprite.url, sprite.tag, "so-inline-sprite");
-        if (settings.spriteOpacity < 100) image.style.opacity = String(settings.spriteOpacity / 100);
         return marker(image);
       });
     }
@@ -5603,7 +6217,7 @@ function spriteApp() {
           (v) => ctx.updateSettings({ ...ctx.getSettings(), recentFloors: v })
         ),
         numberRow(
-          "立绘不透明度（%）",
+          "悬浮窗立绘不透明度（%）",
           settings.spriteOpacity,
           SPRITE_OPACITY_MIN,
           SPRITE_OPACITY_MAX,
@@ -5614,10 +6228,13 @@ function spriteApp() {
           settings.hideTagInMessage,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), hideTagInMessage: v })
         ),
-        toggleRow(
-          "渲染消息内插图",
-          settings.renderInlineImages,
-          (v) => ctx.updateSettings({ ...ctx.getSettings(), renderInlineImages: v })
+        hintField(
+          toggleRow(
+            "解析 <img>编码</img> 插图标签",
+            settings.renderInlineImages,
+            (v) => ctx.updateSettings({ ...ctx.getSettings(), renderInlineImages: v })
+          ),
+          "把 AI 正文中的 <img>文件编码</img> 按图床前缀渲染为剧情插图。它与 [立绘:图名] 的悬浮窗/楼层显示位置互相独立。"
         ),
         toggleRow(
           "同角色图包折叠",
@@ -5626,7 +6243,7 @@ function spriteApp() {
         )
       );
       const displayHint = el2("div", "so-app-desc");
-      displayHint.textContent = "「仅楼层」把 [立绘:xxx] 原位替换为图片且不弹悬浮窗；楼层数限制加载聊天时补渲染的范围（新回复不受限）；不透明度同时作用于悬浮窗与楼层立绘，移动端遮挡正文时可调低。";
+      displayHint.textContent = "「仅楼层」把 [立绘:xxx] 原位替换为图片且不弹悬浮窗；楼层数限制加载聊天时补渲染的范围（新回复不受限）。不透明度只调悬浮窗，楼层立绘始终清晰显示。";
       displaySection.body.append(displayHint);
       const autoSection = foldSection("多立绘轮播", false, "sprites:auto");
       autoSection.body.append(
@@ -6035,48 +6652,6 @@ function render(container, ctx) {
   descLine(check.body, "输入卡顿最常见元凶是第三方扩展：逐个禁用排查（扩展启停改动需刷新页面才真正生效）。");
   container.append(check.box);
   container.append(buildGuide());
-}
-
-// st-extension/src/apps/path-utils.ts
-var FORBIDDEN_PATH_SEGMENTS = /* @__PURE__ */ new Set(["__proto__", "prototype", "constructor"]);
-function parsePath(path) {
-  const segments = path.split(".");
-  return segments.some((segment) => segment.length === 0 || FORBIDDEN_PATH_SEGMENTS.has(segment)) ? null : segments;
-}
-function isSafePath(path) {
-  return parsePath(path) !== null;
-}
-function getNested(obj, path) {
-  const segments = parsePath(path);
-  if (!segments) return void 0;
-  let cur = obj;
-  for (const seg of segments) {
-    if (cur == null || typeof cur !== "object") return void 0;
-    cur = cur[seg];
-  }
-  return cur;
-}
-function setNested(obj, path, value) {
-  const segs = parsePath(path);
-  if (!segs || segs.length === 0) return;
-  let cur = obj;
-  for (let i = 0; i < segs.length - 1; i++) {
-    const seg = segs[i];
-    const next = cur[seg];
-    if (next == null || typeof next !== "object" || Array.isArray(next)) cur[seg] = {};
-    cur = cur[seg];
-  }
-  cur[segs[segs.length - 1]] = value;
-}
-function deleteNested(obj, path) {
-  const segs = parsePath(path);
-  if (!segs || segs.length === 0) return;
-  let cur = obj;
-  for (let i = 0; i < segs.length - 1; i++) {
-    if (cur == null || typeof cur !== "object") return;
-    cur = cur[segs[i]];
-  }
-  if (cur != null && typeof cur === "object") delete cur[segs[segs.length - 1]];
 }
 
 // st-extension/src/apps/variable-tree.ts
@@ -6833,6 +7408,13 @@ function newvarApp(deps) {
               renderCfg();
             }),
             "不依赖 MVU/酒馆助手：按你的变量定义自动向 AI 注入当前状态与更新规则，解析回复末尾的 <UpdateVariable> 并逐楼保存快照，任何角色卡都能用。变量定义、模板、注入预览都在「变量设计」里。"
+          ),
+          hintField(
+            toggleRow("隐藏正文中的变量更新记录", d.hideUpdateBlocks, (v) => {
+              ctx.setAppData({ ...runtime.getData(), hideUpdateBlocks: v });
+              renderCfg();
+            }),
+            "只隐藏消息气泡里完整的 <UpdateVariable>...</UpdateVariable> 区块，不修改 SillyTavern 保存的原始回复，也不影响变量解析和楼层快照。"
           ),
           appButton("打开变量设计", openDesigner)
         );
@@ -8008,99 +8590,6 @@ function buildInjection(state, schema, format) {
     formatLines.join("\n"),
     "</variable_update_format>"
   ].join("\n");
-}
-
-// st-extension/src/apps/newvar/config.ts
-var NEWVAR_APP_ID = "newvar";
-var NEWVAR_CHANNEL = "newvar";
-var NEWVAR_EXTRA_KEY = "st_stage_newvar";
-function defaultNewvarData() {
-  return {
-    enabled: false,
-    format: "json_patch",
-    injectionDepth: 4,
-    schema: { id: "default", name: "默认方案", version: 1, variables: [] },
-    customTemplates: []
-  };
-}
-var VAR_TYPES = ["number", "string", "boolean", "enum"];
-function normalizeNewvarData(raw) {
-  const d = defaultNewvarData();
-  if (!raw || typeof raw !== "object") return d;
-  const r = raw;
-  if (typeof r.enabled === "boolean") d.enabled = r.enabled;
-  if (r.format === "json_patch" || r.format === "lodash_set") d.format = r.format;
-  if (typeof r.injectionDepth === "number" && Number.isInteger(r.injectionDepth)) {
-    d.injectionDepth = Math.min(100, Math.max(0, r.injectionDepth));
-  }
-  const schema = r.schema;
-  if (schema && typeof schema === "object") {
-    const s = schema;
-    if (typeof s.id === "string" && s.id) d.schema.id = s.id;
-    if (typeof s.name === "string" && s.name) d.schema.name = s.name;
-    if (typeof s.version === "number") d.schema.version = s.version;
-    if (Array.isArray(s.variables)) {
-      d.schema.variables = s.variables.map(normalizeDefinition).filter((v) => v !== null);
-    }
-  }
-  if (Array.isArray(r.customTemplates)) {
-    d.customTemplates = r.customTemplates.map(normalizeCustomTemplate).filter((t) => t !== null);
-  }
-  return d;
-}
-function normalizeCustomTemplate(raw) {
-  if (!raw || typeof raw !== "object") return null;
-  const r = raw;
-  if (typeof r.id !== "string" || r.id === "" || typeof r.name !== "string" || r.name === "") return null;
-  const variables = Array.isArray(r.variables) ? r.variables.map(normalizeDefinition).filter((v) => v !== null) : [];
-  if (variables.length === 0) return null;
-  return {
-    id: r.id,
-    name: r.name,
-    description: typeof r.description === "string" ? r.description : "",
-    variables
-  };
-}
-function normalizeDefinition(raw) {
-  if (!raw || typeof raw !== "object") return null;
-  const r = raw;
-  if (typeof r.key !== "string" || r.key.trim() === "" || !isSafePath(r.key.trim())) return null;
-  const type = VAR_TYPES.includes(r.type) ? r.type : "string";
-  const def = {
-    key: r.key.trim(),
-    type,
-    default: r.default,
-    description: typeof r.description === "string" ? r.description : ""
-  };
-  if (r.hidden === true) def.hidden = true;
-  if (typeof r.updateRule === "string" && r.updateRule.trim() !== "") def.updateRule = r.updateRule;
-  if (type === "number" && Array.isArray(r.range) && r.range.length === 2 && typeof r.range[0] === "number" && typeof r.range[1] === "number" && Number.isFinite(r.range[0]) && Number.isFinite(r.range[1]) && r.range[0] <= r.range[1]) {
-    def.range = [r.range[0], r.range[1]];
-  }
-  if (type === "enum") {
-    const options = Array.isArray(r.enum) ? r.enum.filter((x) => typeof x === "string" && x !== "") : [];
-    if (options.length === 0) return null;
-    def.enum = options;
-  }
-  def.default = coerceDefault(def, def.default);
-  return def;
-}
-function coerceDefault(def, raw) {
-  switch (def.type) {
-    case "number": {
-      const n = typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
-      if (def.range) return Math.min(def.range[1], Math.max(def.range[0], n));
-      return n;
-    }
-    case "boolean":
-      return typeof raw === "boolean" ? raw : false;
-    case "enum": {
-      const options = def.enum ?? [];
-      return typeof raw === "string" && options.includes(raw) ? raw : options[0];
-    }
-    default:
-      return typeof raw === "string" ? raw : raw == null ? "" : String(raw);
-  }
 }
 
 // st-extension/src/apps/newvar/runtime.ts
@@ -10765,8 +11254,15 @@ async function init(lifecycle) {
     if (displayChanged) reprocessAllMessages(settings);
   }
   function saveSettingsOnly(next) {
+    const previousNewvar = normalizeNewvarData(settings.apps[NEWVAR_APP_ID]);
+    const nextNewvar = normalizeNewvarData(next.apps[NEWVAR_APP_ID]);
+    const previousHidesUpdates = previousNewvar.enabled && previousNewvar.hideUpdateBlocks;
+    const nextHidesUpdates = nextNewvar.enabled && nextNewvar.hideUpdateBlocks;
     settings = next;
     adapter.saveSettings(settings);
+    if (previousHidesUpdates !== nextHidesUpdates) {
+      reprocessAllMessages(settings);
+    }
   }
   const appMessageHub = createEventHub();
   const appCharacterHub = createEventHub();
@@ -10962,18 +11458,38 @@ async function init(lifecycle) {
     }
     overlay.setVisible(overlayAllowed());
   }
-  const unsubscribeMessage = adapter.onMessageReceived((text) => {
-    appMessageHub.emit(text);
-    if (!settings.enabled) return;
+  function displaySprites(addresses) {
+    if (!settings.enabled || addresses.length === 0) return;
     const characterName = adapter.getCurrentCharacterName();
     const packs = getActivePacks(settings, characterName);
     if (packs.length === 0) return;
-    const seq = resolveSprites(packs, extractTags(text));
+    const seq = resolveSprites(packs, addresses);
     preloadMatchedSprites(seq);
     if (seq.length > 0 && overlayAllowed()) {
       overlay.setSprites(seq);
       overlay.setVisible(true);
     }
+  }
+  let streamedText = "";
+  let streamedTagCount = 0;
+  function resetStreamState() {
+    streamedText = "";
+    streamedTagCount = 0;
+  }
+  const unsubscribeStream = adapter.onStreamText((text) => {
+    if (!text.startsWith(streamedText)) streamedTagCount = 0;
+    streamedText = text;
+    const addresses = extractTags(text);
+    const added = addresses.slice(streamedTagCount);
+    streamedTagCount = addresses.length;
+    displaySprites(added);
+  });
+  lifecycle.track(unsubscribeStream);
+  lifecycle.track(adapter.onGenerationEnded(resetStreamState));
+  const unsubscribeMessage = adapter.onMessageReceived((text) => {
+    appMessageHub.emit(text);
+    displaySprites(extractTags(text));
+    resetStreamState();
   });
   lifecycle.track(unsubscribeMessage);
   const storyCapture = createStoryImageCapture({
@@ -10994,22 +11510,27 @@ async function init(lifecycle) {
     reprocessMessages: rendererRuntime.reprocessAll,
     cleanupMessages: rendererRuntime.dispose
   }));
-  let cancelPendingReprocess = () => {
+  let cancelPendingNavigation = () => {
   };
-  const unsubscribeCharacter = adapter.onCharacterChanged(() => {
+  const handleChatNavigation = () => {
     appCharacterHub.emit(null);
     refresh();
     manager.refreshIfOpen();
-    cancelPendingReprocess();
+    resetStreamState();
+    cancelPendingNavigation();
     const timer = setTimeout(() => {
-      cancelPendingReprocess();
+      cancelPendingNavigation();
+      refresh();
       reprocessAllMessages(settings);
     }, 200);
-    cancelPendingReprocess = lifecycle.track(() => clearTimeout(timer));
-  });
+    cancelPendingNavigation = lifecycle.track(() => clearTimeout(timer));
+  };
+  const unsubscribeCharacter = adapter.onCharacterChanged(handleChatNavigation);
+  const unsubscribeChatCreated = adapter.onChatCreated(handleChatNavigation);
   lifecycle.track(() => {
-    cancelPendingReprocess();
+    cancelPendingNavigation();
     unsubscribeCharacter();
+    unsubscribeChatCreated();
   });
   lifecycle.track(mountSettingsPanel({
     getSettings: () => settings,
@@ -11019,7 +11540,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-09 11:51"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-10 00:44"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

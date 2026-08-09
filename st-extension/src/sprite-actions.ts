@@ -97,7 +97,7 @@ export function createSpriteActions(context: SpriteActionContext): SpriteAction[
     },
     {
       id: 'replace',
-      label: '替换图片',
+      label: '重新上传 / 替换图片',
       icon: '🖼',
       run() {
         if (!current(context)) return

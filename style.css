@@ -662,6 +662,97 @@
   margin: 0 0 4px;
 }
 
+.so-manager .so-role-pack-stack {
+  position: relative;
+  width: min(220px, calc(100% - 18px));
+  margin: 4px 0 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  isolation: isolate;
+}
+
+.so-manager .so-role-stack-layer,
+.so-manager .so-role-stack-face {
+  display: block;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+  border-radius: 8px;
+  background: rgba(26, 26, 30, 0.96);
+}
+
+.so-manager .so-role-stack-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.so-manager .so-role-stack-layer-1 {
+  transform: translate(7px, 7px);
+  z-index: -1;
+  opacity: 0.82;
+}
+
+.so-manager .so-role-stack-layer-2 {
+  transform: translate(14px, 14px);
+  z-index: -2;
+  opacity: 0.55;
+}
+
+.so-manager .so-role-stack-face {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.so-manager .so-role-pack-stack:hover .so-role-stack-face,
+.so-manager .so-role-pack-stack:focus-visible .so-role-stack-face {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.42);
+}
+
+.so-manager .so-role-pack-stack:focus-visible {
+  outline: none;
+}
+
+.so-manager .so-role-stack-cover {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.22);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.so-manager .so-role-stack-cover img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.so-manager .so-role-pack-strip {
+  display: flex;
+  gap: 12px;
+  margin: 0 0 8px;
+  padding: 4px 4px 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-inline: contain;
+}
+
+.so-manager .so-role-pack-strip .so-pack-card {
+  flex: 0 0 clamp(140px, 22vw, 220px);
+  scroll-snap-align: start;
+}
+
 .so-manager .so-role-pack-standalone {
   grid-template-columns: minmax(104px, 220px);
 }
@@ -1462,7 +1553,18 @@
 }
 
 .so-upload-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
   justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+
+.so-upload-actions > * {
+  min-width: max-content;
+  white-space: nowrap;
 }
 
 /* ---- Renderer 设置 App ---- */

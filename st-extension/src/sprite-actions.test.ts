@@ -35,7 +35,7 @@ describe('createSpriteActions', () => {
       ['rename', '重命名'],
       ['labels', '标签'],
       ['group', '设分组'],
-      ['replace', '替换图片'],
+      ['replace', '重新上传 / 替换图片'],
       ['localize', '保存到本地'],
       ['remote', '远程地址'],
       ['cover', '设为封面'],

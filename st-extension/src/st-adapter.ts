@@ -63,6 +63,7 @@ interface STContext {
   chatMetadata?: { name?: string; file_name?: string }
   groups?: Array<{ id?: string | number; name?: string }>
   chat: Array<{ mes: string; is_user: boolean }>
+  getRequestHeaders?: () => Record<string, string>
 }
 
 declare global {
@@ -87,7 +88,7 @@ export class STAdapter implements PlatformAdapter {
   async loadSettings(): Promise<PluginSettings> {
     const ctx = getContext()
     const saved = ctx.extensionSettings[MODULE_NAME]
-    // 内置预设包随扩展仓库分发（public/presets/），每次加载都以当前安装路径刷新 URL
+    // 内置预设是代码内的远程清单；加载时替换旧清单，用户可在图库中按需保存到本地
     const presets = getPresetPacks(`${getExtensionBaseUrl()}/public`)
     if (saved && typeof saved === 'object') {
       // 任意历史版本 → 当前版本（v1 无 settingsVersion 字段，migrate 会补齐新字段并反推图床编码）
@@ -133,6 +134,30 @@ export class STAdapter implements PlatformAdapter {
 
   async saveImageFile(file: File, fileName: string, characterName: string): Promise<string> {
     return this.saveImage(fileName, await blobToDataUri(file), characterName)
+  }
+
+  async deleteImage(url: string): Promise<void> {
+    const rawPath = url.split(/[?#]/, 1)[0].replace(/\\/g, '/')
+    let path: string
+    try {
+      path = decodeURIComponent(rawPath)
+    } catch {
+      throw new Error('只能删除 SillyTavern 用户图片目录中的文件')
+    }
+    const segments = path.split('/')
+    if (
+      !path.startsWith('/user/images/') ||
+      segments.some((segment) => segment === '.' || segment === '..')
+    ) {
+      throw new Error('只能删除 SillyTavern 用户图片目录中的文件')
+    }
+    const ctx = getContext()
+    const response = await fetch('/api/images/delete', {
+      method: 'POST',
+      headers: ctx.getRequestHeaders?.() ?? { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: path.slice(1) }),
+    })
+    if (!response.ok) throw new Error(`删除本地图片失败：HTTP ${response.status}`)
   }
 
   getCurrentCharacterName(): string {

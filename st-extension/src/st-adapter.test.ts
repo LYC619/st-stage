@@ -5,6 +5,7 @@ import { STAdapter } from './st-adapter'
 
 afterEach(() => {
   delete window.SillyTavern
+  vi.unstubAllGlobals()
 })
 
 describe('STAdapter story context', () => {
@@ -70,5 +71,35 @@ describe('STAdapter runtime events', () => {
     expect(handler).toHaveBeenCalledWith('正文 [立绘:微笑]')
     off()
     expect(removeListener).toHaveBeenCalledWith('stream_token_received', wrapped)
+  })
+})
+
+describe('STAdapter local image deletion', () => {
+  it('posts a validated user-image path with SillyTavern request headers', async () => {
+    const request = vi.fn().mockResolvedValue(new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', request)
+    window.SillyTavern = {
+      getContext: () => ({
+        getRequestHeaders: () => ({ 'Content-Type': 'application/json', 'X-CSRF-Token': 'token' }),
+      }),
+    } as never
+
+    await new STAdapter().deleteImage('/user/images/sprite-overlay/小雪/微笑.webp?cache=1')
+
+    expect(request).toHaveBeenCalledWith('/api/images/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': 'token' },
+      body: JSON.stringify({ path: 'user/images/sprite-overlay/小雪/微笑.webp' }),
+    })
+  })
+
+  it.each([
+    'https://example.com/a.webp',
+    '/scripts/extensions/a.webp',
+    '/user/images/../secrets.txt',
+    '/user/images/%2e%2e/secrets.txt',
+  ])('rejects a path outside /user/images/: %s', async (path) => {
+    window.SillyTavern = { getContext: () => ({}) } as never
+    await expect(new STAdapter().deleteImage(path)).rejects.toThrow('用户图片目录')
   })
 })

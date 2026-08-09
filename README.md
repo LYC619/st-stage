@@ -172,7 +172,7 @@ core/                     平台无关核心逻辑（双端共用，vitest 单�
 ├─ inline-image.ts        楼层内插图标记解析
 ├─ pack-io/share-code/pack-split/pack-merge.ts   JSON 导入导出 / 分享串 / 拆包 / 合并
 ├─ imgbb.ts / image-compress.ts / sprite-preload.ts   图床直传 / 压缩 / 有界预加载
-└─ naming.ts / presets.ts 名称清洗 / 内置预设包
+└─ naming.ts / presets.ts 名称清洗 / 轻量云端预设包
 
 st-extension/             ST 端（esbuild 打包为根目录产物）
 ├─ build.mjs              打包脚本（版本注入 + 热更新三段式产物）
@@ -201,7 +201,7 @@ st-extension/             ST 端（esbuild 打包为根目录产物）
    └─ message-postprocess.ts   楼层内标签→图片渲染
 
 app/ components/ lib/     Next.js 网页模拟器（同一套 core + 手机壳，本地开发调试用）
-public/presets/           网页模拟器的示例预设立绘图片
+                            内置预设只保存远程直链，不再随仓库携带图片文件
 docs/SPRITE.md            ★ 立绘 App 完整使用指南（含数据格式）
 docs/VARIABLES.md         ★ 变量 App 指南（MVU + 新变量：选择、设计、更新规则、FAQ）
 docs/BUTLER.md            ★ 管家 App 指南（每个性能选项的含义与推荐值）
