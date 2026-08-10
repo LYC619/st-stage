@@ -8,7 +8,7 @@
  *   导出 JSON / 复制分享串
  *
  * 安全：所有用户可控文本（包名/tag/作者）一律 textContent，不进 innerHTML。
- * 预设包只读（加载时由代码清单重建，改了也会丢），仅允许绑定/导出/分享。
+ * 预设包只读（加载时由代码清单重建）；本地化时创建可持久化的普通副本。
  */
 
 import type { PluginSettings, Sprite, SpritePack } from '../../core/types'
@@ -597,9 +597,12 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     // 头部操作区：批量管理模式=全选/删除/完成；常规=启用勾选浮层 + 新建/导入下拉
     if (batchMode) {
       const selectedCount = selectedPackIds.size
+      const deletablePacks = settings.packs.filter(
+        (pack) => selectedPackIds.has(pack.id) && !isPresetPack(pack.id),
+      )
       actions.append(
         button('全选', () => {
-          const all = settings.packs.filter((p) => !isPresetPack(p.id))
+          const all = settings.packs
           if (all.length > 0 && all.every((p) => selectedPackIds.has(p.id))) {
             selectedPackIds.clear()
           } else {
@@ -617,15 +620,16 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         button(`复制分享串（${selectedCount}）`, () => {
           void copySelectedPackShares()
         }),
-        button(`删除所选（${selectedPackIds.size}）`, () => {
-          if (selectedPackIds.size === 0) {
-            toast(body, '先点卡片勾选要删除的包')
+        button(`删除所选（${deletablePacks.length}）`, () => {
+          if (deletablePacks.length === 0) {
+            toast(body, selectedPackIds.size > 0
+              ? '预设包不可删除；可保存本地、上传云端或复制分享串'
+              : '先点卡片勾选要删除的包')
             return
           }
-          const current = deps.getSettings()
-          const names = current.packs.filter((p) => selectedPackIds.has(p.id)).map((p) => p.name)
+          const names = deletablePacks.map((pack) => pack.name)
           const preview = names.slice(0, 8).join('、') + (names.length > 8 ? ` 等 ${names.length} 个` : '')
-          const ids = [...selectedPackIds]
+          const ids = deletablePacks.map((pack) => pack.id)
           void deletePacksWithChoice(ids, names, preview)
         }, 'so-btn-danger'),
         button('完成', () => {
@@ -720,7 +724,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         panel.append(shareHeading, shareInput, shareBtn, jsonHeading, jsonBtn)
       }),
       )
-      if (settings.packs.length > 1) {
+      if (settings.packs.length > 0) {
         actions.append(
           button('批量管理', () => {
             closeEnableList()
@@ -785,7 +789,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     // 批量管理模式强制平铺网格：拖拽排序调整的是包列表的整体顺序，折叠分组下无法直观呈现
     if (batchMode) {
       const tip = el('div', 'so-status so-batch-tip')
-      tip.textContent = '批量管理：点卡片勾选；拖拽卡片或用 ◀ ▶ 调整顺序（预设包只可排序，不可删除）。'
+      tip.textContent = '批量管理：点卡片勾选资源操作；拖拽卡片或用 ◀ ▶ 调整顺序。预设包可保存本地或分享，但不可删除。'
       body.append(tip)
     }
     const useFold = settings.galleryFoldByRole && !batchMode
@@ -909,6 +913,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     try {
       for (const pack of packs) {
         const remoteSprites = pack.sprites.filter((sprite) => getSpriteSource(sprite) === 'hosted')
+        let localizedPack = pack
+        let packLocalizedCount = 0
         for (const sprite of remoteSprites) {
           try {
             const parts = [pack.name, spriteGroup(sprite), sprite.outfit ?? '', sprite.tag].filter(Boolean)
@@ -922,20 +928,49 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
                 deps.adapter.getCurrentCharacterName() || pack.name || 'shared',
               ),
             })
-            const latestPack = deps.getSettings().packs.find((candidate) => candidate.id === pack.id)
-            const latestSprite = latestPack ? sameSprite(latestPack, sprite) : null
-            if (!latestPack || !latestSprite || latestSprite.url !== sprite.url) {
+            const latestSprite = sameSprite(localizedPack, sprite)
+            if (!latestSprite || latestSprite.url !== sprite.url) {
               throw new Error('立绘在保存期间已变化')
             }
-            if (!updateChecked(upsertPack(
-              deps.getSettings(),
-              upsertSprite(latestPack, { ...latestSprite, url: localized.url, remoteUrl: localized.remoteUrl }),
-            ))) throw new Error('更新图包失败')
+            localizedPack = upsertSprite(
+              localizedPack,
+              { ...latestSprite, url: localized.url, remoteUrl: localized.remoteUrl },
+            )
+            packLocalizedCount++
             localizedCount++
           } catch (error) {
             console.warn('[sprite-overlay] 批量保存本地失败', { packId: pack.id, tag: sprite.tag, error })
             failed++
           }
+        }
+        if (packLocalizedCount === 0) continue
+
+        if (isPresetPack(pack.id)) {
+          const localCopy: SpritePack = {
+            ...localizedPack,
+            id: genId(),
+            name: `${pack.name}（本地）`,
+            updatedAt: new Date().toISOString(),
+          }
+          const added = upsertPack(deps.getSettings(), localCopy)
+          if (!added.ok) {
+            failed += packLocalizedCount
+            localizedCount -= packLocalizedCount
+            continue
+          }
+          const next: PluginSettings = {
+            ...added.settings,
+            bindings: added.settings.bindings.map((binding) => ({
+              ...binding,
+              packIds: [...new Set(binding.packIds.map((id) => id === pack.id ? localCopy.id : id))],
+            })),
+          }
+          selectedPackIds.delete(pack.id)
+          selectedPackIds.add(localCopy.id)
+          commit(next)
+        } else if (!updateChecked(upsertPack(deps.getSettings(), localizedPack))) {
+          failed += packLocalizedCount
+          localizedCount -= packLocalizedCount
         }
       }
     } finally {
@@ -983,10 +1018,10 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       '同时从 SillyTavern 服务器删除它们吗？\n\n选择“取消”将只删除图包记录，文件继续保留。',
     )
 
-    selectedPackIds.clear()
-    view = { kind: 'list' }
-    commit(removePacks(current, packIds))
     if (!deleteLocal) {
+      selectedPackIds.clear()
+      view = { kind: 'list' }
+      commit(removePacks(current, packIds))
       toast(currentManagerBody(), `已删除 ${names.length} 个立绘包，本地文件未删除`)
       return
     }
@@ -1002,10 +1037,17 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         failed++
       }
     }
-    toast(
-      currentManagerBody(),
-      `已删除 ${names.length} 个立绘包；本地文件删除成功 ${deleted} 张${failed > 0 ? `，失败 ${failed} 张` : ''}`,
-    )
+    if (failed > 0) {
+      toast(
+        currentManagerBody(),
+        `本地文件删除成功 ${deleted} 张，失败 ${failed} 张；图包尚未删除，可再次重试`,
+      )
+      return
+    }
+    selectedPackIds.clear()
+    view = { kind: 'list' }
+    commit(removePacks(current, packIds))
+    toast(currentManagerBody(), `已删除 ${names.length} 个立绘包及 ${deleted} 张本地文件`)
   }
 
   function renderRolePackStack(
@@ -1100,16 +1142,14 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     card.append(coverBox, info)
 
     if (batchMode) {
-      // 批量管理：点卡片=勾选（预设包不可删，不给勾选框）；拖拽或 ◀ ▶ 排序
+      // 批量管理：点卡片勾选资源操作；删除动作单独过滤只读预设。
       const preset = isPresetPack(pack.id)
       const selected = selectedPackIds.has(pack.id)
       card.classList.add('so-card-batch')
       if (selected) card.classList.add('so-card-selected')
-      if (!preset) {
-        const check = el('span', `so-card-check${selected ? ' so-card-check-on' : ''}`)
-        check.textContent = selected ? '✓' : ''
-        coverBox.append(check)
-      }
+      const check = el('span', `so-card-check${selected ? ' so-card-check-on' : ''}`)
+      check.textContent = selected ? '✓' : ''
+      coverBox.append(check)
       const orderRow = el('div', 'so-row so-card-order')
       orderRow.append(
         iconButton('◀', '前移', () => {
@@ -1121,13 +1161,11 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       )
       card.append(orderRow)
 
-      card.title = preset ? '预设包不可删除，可拖拽排序' : '点击勾选；可拖拽排序'
+      card.title = preset
+        ? '点击勾选资源操作；预设包不可删除，可拖拽排序'
+        : '点击勾选；可拖拽排序'
       card.setAttribute('aria-label', `选择立绘包「${pack.name}」`)
       const toggleSelect = () => {
-        if (preset) {
-          toast(backdrop?.querySelector('.so-manager-body') as HTMLElement | null, '预设包随扩展分发，不可删除')
-          return
-        }
         if (selectedPackIds.has(pack.id)) selectedPackIds.delete(pack.id)
         else selectedPackIds.add(pack.id)
         render()

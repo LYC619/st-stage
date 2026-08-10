@@ -93,11 +93,26 @@ describe('STAdapter local image deletion', () => {
     })
   })
 
+  it('does not decode an already validated path again and treats missing files as deleted', async () => {
+    const request = vi.fn().mockResolvedValue(new Response(null, { status: 404 }))
+    vi.stubGlobal('fetch', request)
+    window.SillyTavern = {
+      getContext: () => ({ getRequestHeaders: () => ({ 'Content-Type': 'application/json' }) }),
+    } as never
+
+    await new STAdapter().deleteImage('/user/images/100%.webp')
+
+    expect(request).toHaveBeenCalledWith('/api/images/delete', expect.objectContaining({
+      body: JSON.stringify({ path: 'user/images/100%.webp' }),
+    }))
+  })
+
   it.each([
     'https://example.com/a.webp',
     '/scripts/extensions/a.webp',
     '/user/images/../secrets.txt',
     '/user/images/%2e%2e/secrets.txt',
+    '/user/images/..%5C..%5Csecrets.txt',
   ])('rejects a path outside /user/images/: %s', async (path) => {
     window.SillyTavern = { getContext: () => ({}) } as never
     await expect(new STAdapter().deleteImage(path)).rejects.toThrow('用户图片目录')

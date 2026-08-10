@@ -46,4 +46,3 @@
 - [ ] Relabel story-image parsing and add a help hint using the existing widgets.
 - [ ] Give `.so-upload-actions` its own non-wrapping flex layout and stable button dimensions; add a DOM/class regression assertion.
 - [ ] Run focused tests, typecheck, and lint.
-

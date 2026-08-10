@@ -259,7 +259,7 @@ export interface PluginSettings {
   autoSwitchSeconds: number
   /** 多角色/分组模式（功能②）：开启后按 [立绘:分组/图名] 寻址，prompt 枚举分组 */
   multiRole: boolean
-  /** 多角色 prompt 生成模式：repeat=自动精简（按场景簇压缩，不更短时自动回退全量）；full=始终完整分组 */
+  /** 多角色 prompt 生成模式：repeat=自动精简（相对地址格式优先比全量短，否则取旧格式较短者）；full=始终完整分组 */
   multiRolePromptMode: 'full' | 'repeat'
   /** 每次回复的立绘数量（七期，默认 1，范围 1–10）：注入 prompt 要求 AI 输出 N 个标签 */
   spriteCount: number

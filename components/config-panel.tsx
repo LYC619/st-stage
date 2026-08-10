@@ -460,7 +460,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
           </select>
         </label>
         <p className="text-xs text-muted-foreground">
-          自动精简把多套服装重合的图名只列一次，并按实际长度自动取更短的一版：场景少或重合度低时仍显示全量格式，属正常现象。
+          自动精简会把多套服装重合的图名只列一次；适合相对地址时优先使用角色级格式（只要比全量短），否则在旧场景压缩和全量格式中取更短者。
         </p>
         <label className="flex items-center justify-between text-sm text-foreground">
           Prompt 预算（字符，0=不限）

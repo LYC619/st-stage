@@ -46,4 +46,3 @@
 - [ ] Encode every valid supplied remote entry; omit battle `爱慕` and damaged outfit until URLs exist.
 - [ ] Remove the two old demo asset directories from the working tree.
 - [ ] Verify no `/public/presets/` URL remains in generated extension code.
-

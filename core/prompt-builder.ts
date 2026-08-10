@@ -602,6 +602,8 @@ export function buildPrompt(
   return fitToBudget(addresses, b, (addrs) => {
     const grouped = buildGroupedFull(addrs, n, noteIndex, reservedTags)
     if (mode === 'full') return grouped
+    // 角色级格式的收益不只在字符数：它让模型学会服装/图名相对地址。
+    // 因此只要它比全量格式短就优先；不适用时再在两个旧格式中取更短者。
     const shared = chooseShorterPrompt(grouped, buildShared(addrs, n, noteIndex, reservedTags))
     const roleCompact = buildRoleCompact(addrs, n, noteIndex, reservedTags)
     return roleCompact && roleCompact.length < grouped.length ? roleCompact : shared

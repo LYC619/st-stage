@@ -1144,7 +1144,7 @@ describe('createSpriteManager safe pack deletion', () => {
     manager.close()
   })
 
-  it('deletes eligible local files after metadata and reports physical failures', async () => {
+  it('keeps pack metadata when physical deletion fails so the user can retry', async () => {
     let settings: PluginSettings = {
       ...createDefaultSettings(),
       packs: [{
@@ -1169,8 +1169,8 @@ describe('createSpriteManager safe pack deletion', () => {
     findButton(document, '删除立绘包').click()
     await vi.waitFor(() => expect(deleteImage).toHaveBeenCalledTimes(2))
 
-    expect(settings.packs).toHaveLength(0)
-    expect(document.querySelector('.so-toast')?.textContent).toContain('本地文件删除成功 1 张，失败 1 张')
+    expect(settings.packs).toHaveLength(1)
+    expect(document.querySelector('.so-toast')?.textContent).toContain('图包尚未删除，可再次重试')
     manager.close()
   })
 })
@@ -1255,6 +1255,73 @@ describe('createSpriteManager selected-pack resource actions', () => {
     })
     expect(settings.packs[1].sprites[0].url).toBe('https://img.test/b.webp')
     expect(document.querySelector('.so-toast')?.textContent).toContain('成功 1 张，失败 1 张')
+    manager.close()
+  })
+
+  it('selects a hosted preset, saves it as a persistent local copy, and replaces active bindings', async () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{
+        id: 'preset_seraphina_casual',
+        name: '塞拉菲娜预设',
+        roleName: '塞拉菲娜',
+        outfit: '常服',
+        sprites: [{ tag: '中性', url: 'https://img.test/preset.webp' }],
+      }],
+      bindings: [{ characterName: '阿珍', packIds: ['preset_seraphina_casual'], enabled: true }],
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      blob: async () => new Blob(['preset'], { type: 'image/webp' }),
+    }))
+    imageMocks.compressImage.mockResolvedValue({
+      dataUri: 'data:image/webp;base64,QQ==', compressed: false, bytes: 1,
+    })
+    const saveImageFile = vi.fn().mockResolvedValue('/user/images/preset-local.webp')
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍', saveImageFile } as unknown as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    selectAll(manager)
+
+    findButton(document, '保存本地（1）').click()
+    await vi.waitFor(() => expect(document.querySelector('.so-toast')?.textContent).toContain('保存本地完成'))
+
+    const preset = settings.packs.find((pack) => pack.id === 'preset_seraphina_casual')!
+    const localCopy = settings.packs.find((pack) => !pack.id.startsWith('preset_'))!
+    expect(preset.sprites[0].url).toBe('https://img.test/preset.webp')
+    expect(localCopy).toMatchObject({ name: '塞拉菲娜预设（本地）', roleName: '塞拉菲娜', outfit: '常服' })
+    expect(localCopy.sprites[0]).toMatchObject({
+      url: '/user/images/preset-local.webp',
+      remoteUrl: 'https://img.test/preset.webp',
+    })
+    expect(settings.bindings[0].packIds).toEqual([localCopy.id])
+    manager.close()
+  })
+
+  it('allows preset selection for resource actions but excludes presets from deletion', () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [
+        { id: 'preset_seraphina_casual', name: '预设', sprites: [{ tag: '一', url: 'https://img.test/a.webp' }] },
+        { id: 'custom', name: '自建', sprites: [{ tag: '二', url: '/user/images/b.webp' }] },
+      ],
+    }
+    vi.spyOn(window, 'confirm').mockReturnValueOnce(true).mockReturnValueOnce(false)
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    selectAll(manager)
+
+    expect(findButton(document, '保存本地（2）')).toBeTruthy()
+    findButton(document, '删除所选（1）').click()
+
+    expect(settings.packs.map((pack) => pack.id)).toEqual(['preset_seraphina_casual'])
     manager.close()
   })
 

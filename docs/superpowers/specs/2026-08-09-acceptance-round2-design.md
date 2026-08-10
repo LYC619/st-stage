@@ -41,4 +41,3 @@ API profiles may store their key in plaintext settings. Applying a profile write
 ## Verification
 
 Each behavior starts with a failing regression test. Every batch runs focused tests, typecheck, and lint. Final verification adds the full Vitest suite, Next production build, deterministic root/distribution builds and hash comparison, mobile Playwright E2E, `git diff --check`, and a clean status review. Real SillyTavern checks remain explicitly open until performed by the maintainer.
-

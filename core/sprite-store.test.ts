@@ -670,6 +670,21 @@ describe('同角色换装的安全相对地址', () => {
     expect(resolveSprite(legacy, '暗影斗篷/月光')?.url).toBe('legacy-role')
   })
 
+  it('精确服装优先于模糊角色，避免短服装名被角色名遮蔽', () => {
+    const collision: SpritePack[] = [
+      {
+        id: 'role', name: '角色包', roleName: '塞拉菲娜', outfit: '常服',
+        sprites: [{ tag: '中性', url: 'role-neutral' }],
+      },
+      {
+        id: 'outfit', name: '服装包', roleName: '另一角色', outfit: '塞拉',
+        sprites: [{ tag: '中性', url: 'outfit-neutral' }],
+      },
+    ]
+
+    expect(resolveSprite(collision, '塞拉/中性')?.url).toBe('outfit-neutral')
+  })
+
   it('相对服装或默认包内部存在多解时拒绝猜测', () => {
     const ambiguousDefault: SpritePack[] = [{
       id: 'mixed', name: '混合', roleName: '塞拉菲娜', sprites: [
@@ -685,7 +700,7 @@ describe('同角色换装的安全相对地址', () => {
     expect(resolveSprite(duplicateOutfit, '暗影斗篷/月光')).toBeNull()
   })
 
-  it('角色名来自 sprite group 时仍与 Prompt 的相对地址条件一致', () => {
+  it('角色名来自 sprite group 时解析器仍支持更宽松的相对地址', () => {
     const grouped: SpritePack[] = [
       { id: 'a', name: '常服包', outfit: '常服', sprites: [{ tag: '中性', url: 'a', group: '塞拉菲娜' }] },
       { id: 'b', name: '礼服包', outfit: '礼服', sprites: [{ tag: '中性', url: 'b', group: '塞拉菲娜' }] },
@@ -732,6 +747,24 @@ describe('deletableLocalSpritePaths', () => {
     expect(deletableLocalSpritePaths(settings, ['selected', 'kept'])).toEqual([
       '/user/images/sprite-overlay/a/only.webp',
       '/user/images/sprite-overlay/shared.webp',
+    ])
+  })
+
+  it('decodes once before normalizing separators and rejects encoded traversal', () => {
+    const settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{
+        id: 'selected',
+        name: '待删除',
+        sprites: [
+          { tag: '百分号', url: '/user/images/100%25.webp' },
+          { tag: '穿越', url: '/user/images/..%5C..%5Csecret.webp' },
+        ],
+      }],
+    }
+
+    expect(deletableLocalSpritePaths(settings, ['selected'])).toEqual([
+      '/user/images/100%.webp',
     ])
   })
 })

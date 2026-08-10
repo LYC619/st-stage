@@ -174,7 +174,7 @@ export function spriteApp(): PhoneApp {
       const promptHint = el('div', 'so-app-desc')
       promptHint.textContent =
         '同角色多服装时，默认服装可写 [立绘:图名]，其他服装写 [立绘:服装/图名]；完整三级地址仍兼容。' +
-        '自动精简会抽取基础图名池和服装增量；默认服装不在重合簇或压缩后不更短时，会自动保留原格式。'
+        '自动精简会抽取基础图名池和服装增量；适合相对地址时优先使用角色级格式（只要比全量短），否则在旧场景压缩和全量格式中取更短者。'
       promptSection.body.append(promptHint)
       const tplRow = textareaRow(
         '自定义提示词（留空=用内置）',

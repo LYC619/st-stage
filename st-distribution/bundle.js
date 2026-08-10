@@ -890,18 +890,30 @@ function resolveSprite(packs, address) {
     return matchUniqueTagInPool(all, tag);
   }
   if (partCount === 2) {
-    const roleMatches = filterByName(all, role, (candidate) => candidate.role);
-    if (roleMatches.length > 0) {
-      const rolePool = roleMatches.filter((candidate) => candidate.outfit === "");
+    const exactRole = all.filter((candidate) => candidate.role === role);
+    if (exactRole.length > 0) {
+      const rolePool = exactRole.filter((candidate) => candidate.outfit === "");
       return strictTagMatch(rolePool, tag).sprite;
     }
-    const aliasPool = filterByName(all, role, (candidate) => candidate.baseAlias).filter((candidate) => candidate.outfit === "");
-    if (aliasPool.length > 0) {
-      const legacy = strictTagMatch(aliasPool, tag);
+    const exactAliasPool = all.filter((candidate) => candidate.baseAlias === role).filter((candidate) => candidate.outfit === "");
+    if (exactAliasPool.length > 0) {
+      const legacy = strictTagMatch(exactAliasPool, tag);
       if (legacy.matched) return legacy.sprite;
     }
-    const outfitPool = filterByName(all, role, (candidate) => candidate.outfit);
-    return strictTagMatch(outfitPool, tag).sprite;
+    const exactOutfit = all.filter((candidate) => candidate.outfit === role);
+    if (exactOutfit.length > 0) return strictTagMatch(exactOutfit, tag).sprite;
+    const fuzzyRole = all.filter((candidate) => nameMatches(candidate.role, role));
+    if (fuzzyRole.length > 0) {
+      const rolePool = fuzzyRole.filter((candidate) => candidate.outfit === "");
+      return strictTagMatch(rolePool, tag).sprite;
+    }
+    const fuzzyAliasPool = all.filter((candidate) => nameMatches(candidate.baseAlias, role)).filter((candidate) => candidate.outfit === "");
+    if (fuzzyAliasPool.length > 0) {
+      const legacy = strictTagMatch(fuzzyAliasPool, tag);
+      if (legacy.matched) return legacy.sprite;
+    }
+    const fuzzyOutfit = all.filter((candidate) => nameMatches(candidate.outfit, role));
+    return strictTagMatch(fuzzyOutfit, tag).sprite;
   }
   let pool = all;
   if (role) {
@@ -973,18 +985,21 @@ function removePacks(settings, packIds) {
   for (const id of packIds) next = removePack(next, id);
   return next;
 }
+function isSafeLocalUserImagePath(path) {
+  if (!path.startsWith("/user/images/") || /%(?:2e|2f|5c)/i.test(path) || path.includes("\0")) return false;
+  return !path.split("/").some((segment) => segment === "." || segment === "..");
+}
 function localUserImagePath(url) {
-  const path = url.split(/[?#]/, 1)[0].replace(/\\/g, "/");
-  if (!path.startsWith("/user/images/")) return null;
+  const rawPath = url.split(/[?#]/, 1)[0];
   let decoded;
   try {
-    decoded = decodeURIComponent(path);
+    decoded = decodeURIComponent(rawPath);
   } catch {
     return null;
   }
-  const segments = decoded.split("/");
-  if (segments.some((segment) => segment === "." || segment === "..")) return null;
-  return decoded;
+  const normalized = decoded.replace(/\\/g, "/");
+  if (!isSafeLocalUserImagePath(normalized)) return null;
+  return normalized;
 }
 function deletableLocalSpritePaths(settings, packIds) {
   const selected = new Set(packIds);
@@ -2217,8 +2232,7 @@ var PRESET_DEFS = [
   }
 ];
 var LEGACY_PRESET_IDS = /* @__PURE__ */ new Set(["preset_silver_loli", "preset_raven_onee"]);
-function getPresetPacks(baseUrl = "") {
-  void baseUrl;
+function getPresetPacks() {
   return PRESET_DEFS.map((def) => ({
     id: def.id,
     name: def.name,
@@ -2383,18 +2397,6 @@ function hash(value) {
 
 // st-extension/src/st-adapter.ts
 var MODULE_NAME = "sprite_overlay";
-var DEFAULT_EXTENSION_FOLDER = "st-stage";
-function getExtensionBaseUrl() {
-  try {
-    const stack = new Error().stack ?? "";
-    const match = stack.match(/\/scripts\/extensions\/third-party\/([^/]+)\//);
-    if (match) {
-      return `/scripts/extensions/third-party/${match[1]}`;
-    }
-  } catch {
-  }
-  return `/scripts/extensions/third-party/${DEFAULT_EXTENSION_FOLDER}`;
-}
 function getContext() {
   const st = window.SillyTavern;
   if (!st) throw new Error("[sprite-overlay] SillyTavern 全局对象不存在，扩展只能在 ST 内运行");
@@ -2408,7 +2410,7 @@ var STAdapter = class {
   async loadSettings() {
     const ctx = getContext();
     const saved = ctx.extensionSettings[MODULE_NAME];
-    const presets = getPresetPacks(`${getExtensionBaseUrl()}/public`);
+    const presets = getPresetPacks();
     if (saved && typeof saved === "object") {
       const merged = migrateSettings(saved);
       const customPacks = merged.packs.filter((p) => !isPresetPack(p.id));
@@ -2445,15 +2447,8 @@ var STAdapter = class {
     return this.saveImage(fileName, await blobToDataUri(file), characterName);
   }
   async deleteImage(url) {
-    const rawPath = url.split(/[?#]/, 1)[0].replace(/\\/g, "/");
-    let path;
-    try {
-      path = decodeURIComponent(rawPath);
-    } catch {
-      throw new Error("只能删除 SillyTavern 用户图片目录中的文件");
-    }
-    const segments = path.split("/");
-    if (!path.startsWith("/user/images/") || segments.some((segment) => segment === "." || segment === "..")) {
+    const path = url.split(/[?#]/, 1)[0].replace(/\\/g, "/");
+    if (!isSafeLocalUserImagePath(path)) {
       throw new Error("只能删除 SillyTavern 用户图片目录中的文件");
     }
     const ctx = getContext();
@@ -2462,7 +2457,9 @@ var STAdapter = class {
       headers: ctx.getRequestHeaders?.() ?? { "Content-Type": "application/json" },
       body: JSON.stringify({ path: path.slice(1) })
     });
-    if (!response.ok) throw new Error(`删除本地图片失败：HTTP ${response.status}`);
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`删除本地图片失败：HTTP ${response.status}`);
+    }
   }
   getCurrentCharacterName() {
     const ctx = getContext();
@@ -3984,9 +3981,12 @@ ${options}`,
     const boundIds = binding?.packIds ?? [];
     if (batchMode) {
       const selectedCount = selectedPackIds.size;
+      const deletablePacks = settings.packs.filter(
+        (pack) => selectedPackIds.has(pack.id) && !isPresetPack(pack.id)
+      );
       actions.append(
         button("全选", () => {
-          const all = settings.packs.filter((p) => !isPresetPack(p.id));
+          const all = settings.packs;
           if (all.length > 0 && all.every((p) => selectedPackIds.has(p.id))) {
             selectedPackIds.clear();
           } else {
@@ -4004,15 +4004,14 @@ ${options}`,
         button(`复制分享串（${selectedCount}）`, () => {
           void copySelectedPackShares();
         }),
-        button(`删除所选（${selectedPackIds.size}）`, () => {
-          if (selectedPackIds.size === 0) {
-            toast(body, "先点卡片勾选要删除的包");
+        button(`删除所选（${deletablePacks.length}）`, () => {
+          if (deletablePacks.length === 0) {
+            toast(body, selectedPackIds.size > 0 ? "预设包不可删除；可保存本地、上传云端或复制分享串" : "先点卡片勾选要删除的包");
             return;
           }
-          const current2 = deps.getSettings();
-          const names = current2.packs.filter((p) => selectedPackIds.has(p.id)).map((p) => p.name);
+          const names = deletablePacks.map((pack) => pack.name);
           const preview = names.slice(0, 8).join("、") + (names.length > 8 ? ` 等 ${names.length} 个` : "");
-          const ids = [...selectedPackIds];
+          const ids = deletablePacks.map((pack) => pack.id);
           void deletePacksWithChoice(ids, names, preview);
         }, "so-btn-danger"),
         button("完成", () => {
@@ -4103,7 +4102,7 @@ ${options}`,
           panel.append(shareHeading, shareInput, shareBtn, jsonHeading, jsonBtn);
         })
       );
-      if (settings.packs.length > 1) {
+      if (settings.packs.length > 0) {
         actions.append(
           button("批量管理", () => {
             closeEnableList();
@@ -4160,7 +4159,7 @@ ${options}`,
     body.append(strip);
     if (batchMode) {
       const tip = el("div", "so-status so-batch-tip");
-      tip.textContent = "批量管理：点卡片勾选；拖拽卡片或用 ◀ ▶ 调整顺序（预设包只可排序，不可删除）。";
+      tip.textContent = "批量管理：点卡片勾选资源操作；拖拽卡片或用 ◀ ▶ 调整顺序。预设包可保存本地或分享，但不可删除。";
       body.append(tip);
     }
     const useFold = settings.galleryFoldByRole && !batchMode;
@@ -4275,6 +4274,8 @@ ${options}`,
     try {
       for (const pack of packs) {
         const remoteSprites = pack.sprites.filter((sprite) => getSpriteSource(sprite) === "hosted");
+        let localizedPack = pack;
+        let packLocalizedCount = 0;
         for (const sprite of remoteSprites) {
           try {
             const parts = [pack.name, spriteGroup(sprite), sprite.outfit ?? "", sprite.tag].filter(Boolean);
@@ -4288,20 +4289,48 @@ ${options}`,
                 deps.adapter.getCurrentCharacterName() || pack.name || "shared"
               )
             });
-            const latestPack = deps.getSettings().packs.find((candidate) => candidate.id === pack.id);
-            const latestSprite = latestPack ? sameSprite(latestPack, sprite) : null;
-            if (!latestPack || !latestSprite || latestSprite.url !== sprite.url) {
+            const latestSprite = sameSprite(localizedPack, sprite);
+            if (!latestSprite || latestSprite.url !== sprite.url) {
               throw new Error("立绘在保存期间已变化");
             }
-            if (!updateChecked(upsertPack(
-              deps.getSettings(),
-              upsertSprite(latestPack, { ...latestSprite, url: localized.url, remoteUrl: localized.remoteUrl })
-            ))) throw new Error("更新图包失败");
+            localizedPack = upsertSprite(
+              localizedPack,
+              { ...latestSprite, url: localized.url, remoteUrl: localized.remoteUrl }
+            );
+            packLocalizedCount++;
             localizedCount++;
           } catch (error) {
             console.warn("[sprite-overlay] 批量保存本地失败", { packId: pack.id, tag: sprite.tag, error });
             failed++;
           }
+        }
+        if (packLocalizedCount === 0) continue;
+        if (isPresetPack(pack.id)) {
+          const localCopy = {
+            ...localizedPack,
+            id: genId(),
+            name: `${pack.name}（本地）`,
+            updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+          };
+          const added = upsertPack(deps.getSettings(), localCopy);
+          if (!added.ok) {
+            failed += packLocalizedCount;
+            localizedCount -= packLocalizedCount;
+            continue;
+          }
+          const next = {
+            ...added.settings,
+            bindings: added.settings.bindings.map((binding) => ({
+              ...binding,
+              packIds: [...new Set(binding.packIds.map((id) => id === pack.id ? localCopy.id : id))]
+            }))
+          };
+          selectedPackIds.delete(pack.id);
+          selectedPackIds.add(localCopy.id);
+          commit(next);
+        } else if (!updateChecked(upsertPack(deps.getSettings(), localizedPack))) {
+          failed += packLocalizedCount;
+          localizedCount -= packLocalizedCount;
         }
       }
     } finally {
@@ -4346,10 +4375,10 @@ ${preview}
 
 选择“取消”将只删除图包记录，文件继续保留。`
     );
-    selectedPackIds.clear();
-    view = { kind: "list" };
-    commit(removePacks(current2, packIds));
     if (!deleteLocal) {
+      selectedPackIds.clear();
+      view = { kind: "list" };
+      commit(removePacks(current2, packIds));
       toast(currentManagerBody(), `已删除 ${names.length} 个立绘包，本地文件未删除`);
       return;
     }
@@ -4364,10 +4393,17 @@ ${preview}
         failed++;
       }
     }
-    toast(
-      currentManagerBody(),
-      `已删除 ${names.length} 个立绘包；本地文件删除成功 ${deleted} 张${failed > 0 ? `，失败 ${failed} 张` : ""}`
-    );
+    if (failed > 0) {
+      toast(
+        currentManagerBody(),
+        `本地文件删除成功 ${deleted} 张，失败 ${failed} 张；图包尚未删除，可再次重试`
+      );
+      return;
+    }
+    selectedPackIds.clear();
+    view = { kind: "list" };
+    commit(removePacks(current2, packIds));
+    toast(currentManagerBody(), `已删除 ${names.length} 个立绘包及 ${deleted} 张本地文件`);
   }
   function renderRolePackStack(role, roleKey, packs, spriteCount, boundState, expand) {
     const stack = el("button", "so-role-pack-stack");
@@ -4450,11 +4486,9 @@ ${preview}
       const selected = selectedPackIds.has(pack.id);
       card.classList.add("so-card-batch");
       if (selected) card.classList.add("so-card-selected");
-      if (!preset) {
-        const check = el("span", `so-card-check${selected ? " so-card-check-on" : ""}`);
-        check.textContent = selected ? "✓" : "";
-        coverBox.append(check);
-      }
+      const check = el("span", `so-card-check${selected ? " so-card-check-on" : ""}`);
+      check.textContent = selected ? "✓" : "";
+      coverBox.append(check);
       const orderRow = el("div", "so-row so-card-order");
       orderRow.append(
         iconButton("◀", "前移", () => {
@@ -4465,13 +4499,9 @@ ${preview}
         }, "so-chip-btn")
       );
       card.append(orderRow);
-      card.title = preset ? "预设包不可删除，可拖拽排序" : "点击勾选；可拖拽排序";
+      card.title = preset ? "点击勾选资源操作；预设包不可删除，可拖拽排序" : "点击勾选；可拖拽排序";
       card.setAttribute("aria-label", `选择立绘包「${pack.name}」`);
       const toggleSelect = () => {
-        if (preset) {
-          toast(backdrop?.querySelector(".so-manager-body"), "预设包随扩展分发，不可删除");
-          return;
-        }
         if (selectedPackIds.has(pack.id)) selectedPackIds.delete(pack.id);
         else selectedPackIds.add(pack.id);
         render3();
@@ -5618,7 +5648,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-10 01:34"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-10 19:11"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
   return () => wrapper.remove();
@@ -6455,7 +6485,7 @@ function spriteApp() {
       budgetHint.textContent = budgeted ? `预计注入 ${budgeted.length} 字符` + (budgeted.length < unlimited.length ? `（超预算，已从 ${unlimited.length} 字符每场景均衡截取，保留排前的图名）` : "") : "预计注入：无（当前角色没有可用立绘地址）";
       promptSection.body.append(budgetHint);
       const promptHint = el2("div", "so-app-desc");
-      promptHint.textContent = "同角色多服装时，默认服装可写 [立绘:图名]，其他服装写 [立绘:服装/图名]；完整三级地址仍兼容。自动精简会抽取基础图名池和服装增量；默认服装不在重合簇或压缩后不更短时，会自动保留原格式。";
+      promptHint.textContent = "同角色多服装时，默认服装可写 [立绘:图名]，其他服装写 [立绘:服装/图名]；完整三级地址仍兼容。自动精简会抽取基础图名池和服装增量；适合相对地址时优先使用角色级格式（只要比全量短），否则在旧场景压缩和全量格式中取更短者。";
       promptSection.body.append(promptHint);
       const tplRow = textareaRow(
         "自定义提示词（留空=用内置）",
@@ -11677,7 +11707,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-10 01:34"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-10 19:11"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

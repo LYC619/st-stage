@@ -181,9 +181,8 @@ const PRESET_DEFS: readonly PresetDef[] = [
 
 const LEGACY_PRESET_IDS = new Set(['preset_silver_loli', 'preset_raven_onee'])
 
-/** baseUrl 为历史兼容参数；远程预设不再拼接扩展静态目录。 */
-export function getPresetPacks(baseUrl = ''): SpritePack[] {
-  void baseUrl
+/** 返回代码内维护的远程预设清单。 */
+export function getPresetPacks(): SpritePack[] {
   return PRESET_DEFS.map((def) => ({
     id: def.id,
     name: def.name,

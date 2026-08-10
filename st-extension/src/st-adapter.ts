@@ -15,6 +15,7 @@ import type { PluginSettings } from '../../core/types'
 import { createDefaultSettings, INJECTION_DEPTH_DEFAULT } from '../../core/types'
 import { migrateSettings } from '../../core/migrate'
 import { getPresetPacks, isPresetPack } from '../../core/presets'
+import { isSafeLocalUserImagePath } from '../../core/sprite-store'
 import { sanitizePathSegment } from '../../core/naming'
 import { blobToDataUri } from '../../core/image-compress'
 import { storyArchiveKey, type StoryContext } from '../../core/story-archive'
@@ -22,27 +23,6 @@ import { storyArchiveKey, type StoryContext } from '../../core/story-archive'
 export const MODULE_NAME = 'sprite_overlay'
 
 /** 仓库名即扩展安装目录名（通过 GitHub 链接安装时） */
-const DEFAULT_EXTENSION_FOLDER = 'st-stage'
-
-/**
- * 探测扩展的静态资源根路径。
- * ST 把第三方扩展 clone 到 /scripts/extensions/third-party/<仓库名>/ 并静态托管。
- * 通过错误堆栈中的脚本 URL 动态解析目录名，用户改文件夹名也不会失效；
- * 解析失败时回退到默认仓库名。
- */
-export function getExtensionBaseUrl(): string {
-  try {
-    const stack = new Error().stack ?? ''
-    const match = stack.match(/\/scripts\/extensions\/third-party\/([^/]+)\//)
-    if (match) {
-      return `/scripts/extensions/third-party/${match[1]}`
-    }
-  } catch {
-    // 忽略，走回退
-  }
-  return `/scripts/extensions/third-party/${DEFAULT_EXTENSION_FOLDER}`
-}
-
 /** ST 全局 context 的最小类型描述 */
 interface STContext {
   extensionSettings: Record<string, unknown>
@@ -89,7 +69,7 @@ export class STAdapter implements PlatformAdapter {
     const ctx = getContext()
     const saved = ctx.extensionSettings[MODULE_NAME]
     // 内置预设是代码内的远程清单；加载时替换旧清单，用户可在图库中按需保存到本地
-    const presets = getPresetPacks(`${getExtensionBaseUrl()}/public`)
+    const presets = getPresetPacks()
     if (saved && typeof saved === 'object') {
       // 任意历史版本 → 当前版本（v1 无 settingsVersion 字段，migrate 会补齐新字段并反推图床编码）
       const merged = migrateSettings(saved)
@@ -137,18 +117,8 @@ export class STAdapter implements PlatformAdapter {
   }
 
   async deleteImage(url: string): Promise<void> {
-    const rawPath = url.split(/[?#]/, 1)[0].replace(/\\/g, '/')
-    let path: string
-    try {
-      path = decodeURIComponent(rawPath)
-    } catch {
-      throw new Error('只能删除 SillyTavern 用户图片目录中的文件')
-    }
-    const segments = path.split('/')
-    if (
-      !path.startsWith('/user/images/') ||
-      segments.some((segment) => segment === '.' || segment === '..')
-    ) {
+    const path = url.split(/[?#]/, 1)[0].replace(/\\/g, '/')
+    if (!isSafeLocalUserImagePath(path)) {
       throw new Error('只能删除 SillyTavern 用户图片目录中的文件')
     }
     const ctx = getContext()
@@ -157,7 +127,9 @@ export class STAdapter implements PlatformAdapter {
       headers: ctx.getRequestHeaders?.() ?? { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: path.slice(1) }),
     })
-    if (!response.ok) throw new Error(`删除本地图片失败：HTTP ${response.status}`)
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`删除本地图片失败：HTTP ${response.status}`)
+    }
   }
 
   getCurrentCharacterName(): string {

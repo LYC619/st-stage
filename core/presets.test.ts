@@ -3,7 +3,7 @@ import { getPresetPacks, isPresetPack } from './presets'
 
 describe('remote built-in presets', () => {
   it('ships five stable Seraphina outfit packs with only valid HTTPS images', () => {
-    const packs = getPresetPacks('/ignored-local-base')
+    const packs = getPresetPacks()
 
     expect(packs.map((pack) => pack.id)).toEqual([
       'preset_seraphina_casual',

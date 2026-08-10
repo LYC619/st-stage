@@ -281,19 +281,37 @@ export function resolveSprite(packs: SpritePack[], address: string): Sprite | nu
   }
 
   if (partCount === 2) {
-    const roleMatches = filterByName(all, role, (candidate) => candidate.role)
-    if (roleMatches.length > 0) {
-      const rolePool = roleMatches.filter((candidate) => candidate.outfit === '')
+    const exactRole = all.filter((candidate) => candidate.role === role)
+    if (exactRole.length > 0) {
+      const rolePool = exactRole.filter((candidate) => candidate.outfit === '')
       return strictTagMatch(rolePool, tag).sprite
     }
-    const aliasPool = filterByName(all, role, (candidate) => candidate.baseAlias)
+
+    const exactAliasPool = all
+      .filter((candidate) => candidate.baseAlias === role)
       .filter((candidate) => candidate.outfit === '')
-    if (aliasPool.length > 0) {
-      const legacy = strictTagMatch(aliasPool, tag)
+    if (exactAliasPool.length > 0) {
+      const legacy = strictTagMatch(exactAliasPool, tag)
       if (legacy.matched) return legacy.sprite
     }
-    const outfitPool = filterByName(all, role, (candidate) => candidate.outfit)
-    return strictTagMatch(outfitPool, tag).sprite
+
+    const exactOutfit = all.filter((candidate) => candidate.outfit === role)
+    if (exactOutfit.length > 0) return strictTagMatch(exactOutfit, tag).sprite
+
+    const fuzzyRole = all.filter((candidate) => nameMatches(candidate.role, role))
+    if (fuzzyRole.length > 0) {
+      const rolePool = fuzzyRole.filter((candidate) => candidate.outfit === '')
+      return strictTagMatch(rolePool, tag).sprite
+    }
+    const fuzzyAliasPool = all
+      .filter((candidate) => nameMatches(candidate.baseAlias, role))
+      .filter((candidate) => candidate.outfit === '')
+    if (fuzzyAliasPool.length > 0) {
+      const legacy = strictTagMatch(fuzzyAliasPool, tag)
+      if (legacy.matched) return legacy.sprite
+    }
+    const fuzzyOutfit = all.filter((candidate) => nameMatches(candidate.outfit, role))
+    return strictTagMatch(fuzzyOutfit, tag).sprite
   }
 
   let pool = all
@@ -427,18 +445,28 @@ export function removePacks(settings: PluginSettings, packIds: string[]): Plugin
   return next
 }
 
-function localUserImagePath(url: string): string | null {
-  const path = url.split(/[?#]/, 1)[0].replace(/\\/g, '/')
-  if (!path.startsWith('/user/images/')) return null
+/** 验证已经完成 URI 解码的 ST 用户图片路径；调用方不得再次解码。 */
+export function isSafeLocalUserImagePath(path: string): boolean {
+  if (
+    !path.startsWith('/user/images/') ||
+    /%(?:2e|2f|5c)/i.test(path) ||
+    path.includes('\0')
+  ) return false
+  return !path.split('/').some((segment) => segment === '.' || segment === '..')
+}
+
+/** 解码一次并规范化分隔符，返回可交给 ST 删除 API 的路径。 */
+export function localUserImagePath(url: string): string | null {
+  const rawPath = url.split(/[?#]/, 1)[0]
   let decoded: string
   try {
-    decoded = decodeURIComponent(path)
+    decoded = decodeURIComponent(rawPath)
   } catch {
     return null
   }
-  const segments = decoded.split('/')
-  if (segments.some((segment) => segment === '.' || segment === '..')) return null
-  return decoded
+  const normalized = decoded.replace(/\\/g, '/')
+  if (!isSafeLocalUserImagePath(normalized)) return null
+  return normalized
 }
 
 /**
