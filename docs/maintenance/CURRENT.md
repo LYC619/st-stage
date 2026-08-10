@@ -2,22 +2,22 @@
 status_version: 1
 project: st-stage
 base_branch: main
-verified_code_head: 35826442eac5bfbdaced5b3ced56e5a094e1249e
+verified_code_head: 10e562822087a6868fa90ae4909a27b3b1324492
 remote_code_head_at_update: 55e0b981bcf27ab6503c8237b2eac40a9a28bed8
-build_version: 0.9.0+202608101911
+build_version: 0.9.0+202608101952
 phase: acceptance-round2-review-fixed-awaiting-real-sillytavern
-updated_at: 2026-08-10T19:20:00+08:00
+updated_at: 2026-08-10T20:23:25+08:00
 updated_by: codex
 verification_source: codex-acceptance-round2-2026-08-10
-history: docs/maintenance/history/2026-08-10-acceptance-review-fixes.md
+history: docs/maintenance/history/2026-08-10-acceptance-review-followup.md
 ---
 
 # Current Project Status
 
 ## Snapshot
 
-- 第二轮验收修复与 CC 审查修复均在 `codex/acceptance-round2`；最新代码提交为 `3582644`，尚未合并或推送，`origin/main` 仍为 `55e0b98`。
-- 产品版本仍为 `0.9.0`，构建戳为 `0.9.0+202608101911`。真实 SillyTavern 验收通过后再决定并执行 `1.0.0` 升版。
+- 第二轮验收修复与两轮 CC 审查修复均在 `codex/acceptance-round2`；最新代码提交为 `10e5628`，尚未合并或推送，`origin/main` 仍为 `55e0b98`。
+- 产品版本仍为 `0.9.0`，构建戳为 `0.9.0+202608101952`。真实 SillyTavern 验收通过后再决定并执行 `1.0.0` 升版。
 - 自动化验证已完成；真实 SillyTavern 的模型输出、文件 API、缓存更新和供应商连接仍必须由维护者实测，不能由模拟器结果代替。
 
 ## Delivered Scope
@@ -30,17 +30,18 @@ history: docs/maintenance/history/2026-08-10-acceptance-review-fixes.md
 - API：明文 Key 策略如实展示；新建 Chat 档案只列 OpenAI、Claude、OpenRouter、Google AI Studio、自定义 OpenAI 兼容；历史冷门渠道仍可编辑；常用原生模型 selector 已按当前 SillyTavern release 源码修正。
 - “带场景备注时的 Prompt 压缩性能优化”已完成，不再属于延期事项。
 - CC 审查提出的预设选择、删除二次解码/失败重试、精确服装匹配、EOF 门禁和过度承诺文案问题已处理；`getPresetPacks` 的死参数已移除。
+- CC 复审提出的两个异步旧快照问题已处理：本地化逐张基于最新 settings 核验并提交，删除文件成功后基于最新 settings 移除目标包。预设与本地副本的同地址重复启用会被现有冲突检测阻止，并有专门回归测试，不作为延期风险记录。
 
 ## Recorded Verification
 
-Fresh automated evidence represented by code head `3582644`:
+Fresh automated evidence represented by code head `10e5628`:
 
-- Vitest：54 files, 631/631 tests passed.
+- Vitest：54 files, 634/634 tests passed.
 - TypeScript typecheck and ESLint: passed.
 - Next.js production build: passed with webpack. Turbopack cannot traverse this isolated worktree's external `node_modules` symlink, so it was not used as the final build runner.
-- Mobile Playwright E2E: 22/22 across Pixel 7 and Galaxy S8; test server stopped after completion.
+- Mobile Playwright E2E: 22/22 across Pixel 7 and Galaxy S8.
 - Extension build tests: 15/15 passed.
-- Fixed-stamp root/distribution builds completed at `0.9.0+202608101911`; shared artifact SHA-256 hashes match.
+- Fixed-stamp root/distribution builds completed at `0.9.0+202608101952`; shared artifact SHA-256 hashes match.
 - `st-distribution/`: 6 files, no image, `public/`, `reference/`, or preset-source assets.
 - `git diff --check`: passed on the working tree and `origin/main..HEAD` commit range, including the three previously reported EOF errors.
 
@@ -50,7 +51,7 @@ These are automated and source-review results only. No item below is marked comp
 
 ### Install And Runtime
 
-1. Update an already installed extension and confirm the settings page shows `0.9.0+202608101911`, proving the loader cache key changed.
+1. Update an already installed extension and confirm the settings page shows `0.9.0+202608101952`, proving the loader cache key changed.
 2. Create and switch chats/characters; confirm sprite and Renderer prompts appear immediately and remain present after the delayed self-heal.
 3. During a real streaming response, confirm only newly completed `[立绘:...]` tags advance the overlay and the final message becomes authoritative without duplicate jumps.
 4. Enable new variables, generate a real `<UpdateVariable>` block, confirm the UI hides it while raw chat data remains intact, then disable the feature and confirm text restoration.
