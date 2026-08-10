@@ -436,6 +436,36 @@ describe('冲突检查的原子设置变更契约', () => {
     expect(first.settings.bindings[0].packIds).toEqual(['a'])
   })
 
+  it('rejects enabling a hosted preset beside its same-address local copy', () => {
+    const initial: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [
+        {
+          id: 'preset_seraphina_casual',
+          name: '塞拉菲娜预设',
+          roleName: '塞拉菲娜',
+          outfit: '常服',
+          sprites: [{ tag: '中性', url: 'https://img.test/preset.webp' }],
+        },
+        {
+          id: 'local-copy',
+          name: '塞拉菲娜预设（本地）',
+          roleName: '塞拉菲娜',
+          outfit: '常服',
+          sprites: [{ tag: '中性', url: '/user/images/preset.webp' }],
+        },
+      ],
+      bindings: [{ characterName: '阿珍', packIds: ['local-copy'], enabled: true }],
+    }
+
+    const result = bindPack(initial, '阿珍', 'preset_seraphina_casual')
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('duplicate preset bind should conflict')
+    expect(result.conflicts[0].formattedAddress).toBe('塞拉菲娜/常服/中性')
+    expect(initial.bindings[0].packIds).toEqual(['local-copy'])
+  })
+
   it('setBinding 在最终 multiPack 文脉重算两个包的 fallback', () => {
     const sameName: PluginSettings = {
       ...createDefaultSettings(),

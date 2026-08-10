@@ -1173,6 +1173,33 @@ describe('createSpriteManager safe pack deletion', () => {
     expect(document.querySelector('.so-toast')?.textContent).toContain('图包尚未删除，可再次重试')
     manager.close()
   })
+
+  it('preserves settings changes made while local files are being deleted', async () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{ id: 'a', name: '待删除', sprites: [{ tag: '微笑', url: '/user/images/a.webp' }] }],
+    }
+    const deleteImage = vi.fn(async () => {
+      settings = {
+        ...settings,
+        packs: [...settings.packs, { id: 'concurrent', name: '并发新增', sprites: [] }],
+      }
+    })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍', deleteImage } as unknown as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    document.querySelector<HTMLElement>('.so-pack-card')!.click()
+
+    findButton(document, '删除立绘包').click()
+    await vi.waitFor(() => expect(document.querySelector('.so-toast')?.textContent).toContain('已删除'))
+
+    expect(settings.packs.map((pack) => pack.id)).toEqual(['concurrent'])
+    manager.close()
+  })
 })
 
 describe('createSpriteManager selected-pack resource actions', () => {
@@ -1255,6 +1282,44 @@ describe('createSpriteManager selected-pack resource actions', () => {
     })
     expect(settings.packs[1].sprites[0].url).toBe('https://img.test/b.webp')
     expect(document.querySelector('.so-toast')?.textContent).toContain('成功 1 张，失败 1 张')
+    manager.close()
+  })
+
+  it('does not overwrite a sprite changed while its hosted image is being saved', async () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{ id: 'a', name: '甲', sprites: [{ tag: '一', url: 'https://img.test/original.webp' }] }],
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      blob: async () => new Blob(['a'], { type: 'image/webp' }),
+    }))
+    imageMocks.compressImage.mockResolvedValue({
+      dataUri: 'data:image/webp;base64,QQ==', compressed: false, bytes: 1,
+    })
+    const saveImageFile = vi.fn(async () => {
+      settings = {
+        ...settings,
+        packs: settings.packs.map((pack) => pack.id === 'a'
+          ? { ...pack, sprites: [{ tag: '一', url: 'https://img.test/replaced.webp' }] }
+          : pack),
+      }
+      return '/user/images/local-a.webp'
+    })
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍', saveImageFile } as unknown as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    selectAll(manager)
+
+    findButton(document, '保存本地（1）').click()
+    await vi.waitFor(() => expect(document.querySelector('.so-toast')?.textContent).toContain('保存本地完成'))
+
+    expect(settings.packs[0].sprites[0].url).toBe('https://img.test/replaced.webp')
+    expect(document.querySelector('.so-toast')?.textContent).toContain('成功 0 张，失败 1 张')
     manager.close()
   })
 

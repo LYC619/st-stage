@@ -4274,7 +4274,8 @@ ${options}`,
     try {
       for (const pack of packs) {
         const remoteSprites = pack.sprites.filter((sprite) => getSpriteSource(sprite) === "hosted");
-        let localizedPack = pack;
+        const preset = isPresetPack(pack.id);
+        const localizedSprites = [];
         let packLocalizedCount = 0;
         for (const sprite of remoteSprites) {
           try {
@@ -4289,14 +4290,18 @@ ${options}`,
                 deps.adapter.getCurrentCharacterName() || pack.name || "shared"
               )
             });
-            const latestSprite = sameSprite(localizedPack, sprite);
-            if (!latestSprite || latestSprite.url !== sprite.url) {
+            const latestSettings = deps.getSettings();
+            const latestPack = latestSettings.packs.find((candidate) => candidate.id === pack.id);
+            const latestSprite = latestPack ? sameSprite(latestPack, sprite) : null;
+            if (!latestPack || !latestSprite || latestSprite.url !== sprite.url) {
               throw new Error("立绘在保存期间已变化");
             }
-            localizedPack = upsertSprite(
-              localizedPack,
-              { ...latestSprite, url: localized.url, remoteUrl: localized.remoteUrl }
-            );
+            const localizedSprite = { ...latestSprite, url: localized.url, remoteUrl: localized.remoteUrl };
+            if (preset) {
+              localizedSprites.push({ source: sprite, localized: localizedSprite });
+            } else if (!updateChecked(upsertPack(latestSettings, upsertSprite(latestPack, localizedSprite)))) {
+              throw new Error("更新图包失败");
+            }
             packLocalizedCount++;
             localizedCount++;
           } catch (error) {
@@ -4305,17 +4310,41 @@ ${options}`,
           }
         }
         if (packLocalizedCount === 0) continue;
-        if (isPresetPack(pack.id)) {
+        if (preset) {
+          const latestSettings = deps.getSettings();
+          const latestPack = latestSettings.packs.find((candidate) => candidate.id === pack.id);
+          if (!latestPack) {
+            failed += packLocalizedCount;
+            localizedCount -= packLocalizedCount;
+            continue;
+          }
+          let localizedPack = latestPack;
+          let validLocalizedCount = 0;
+          for (const result of localizedSprites) {
+            const latestSprite = sameSprite(latestPack, result.source);
+            if (!latestSprite || latestSprite.url !== result.source.url) {
+              failed++;
+              localizedCount--;
+              continue;
+            }
+            localizedPack = upsertSprite(localizedPack, {
+              ...latestSprite,
+              url: result.localized.url,
+              remoteUrl: result.localized.remoteUrl
+            });
+            validLocalizedCount++;
+          }
+          if (validLocalizedCount === 0) continue;
           const localCopy = {
             ...localizedPack,
             id: genId(),
-            name: `${pack.name}（本地）`,
+            name: `${latestPack.name}（本地）`,
             updatedAt: (/* @__PURE__ */ new Date()).toISOString()
           };
-          const added = upsertPack(deps.getSettings(), localCopy);
+          const added = upsertPack(latestSettings, localCopy);
           if (!added.ok) {
-            failed += packLocalizedCount;
-            localizedCount -= packLocalizedCount;
+            failed += validLocalizedCount;
+            localizedCount -= validLocalizedCount;
             continue;
           }
           const next = {
@@ -4328,9 +4357,6 @@ ${options}`,
           selectedPackIds.delete(pack.id);
           selectedPackIds.add(localCopy.id);
           commit(next);
-        } else if (!updateChecked(upsertPack(deps.getSettings(), localizedPack))) {
-          failed += packLocalizedCount;
-          localizedCount -= packLocalizedCount;
         }
       }
     } finally {
@@ -4402,7 +4428,7 @@ ${preview}
     }
     selectedPackIds.clear();
     view = { kind: "list" };
-    commit(removePacks(current2, packIds));
+    commit(removePacks(deps.getSettings(), packIds));
     toast(currentManagerBody(), `已删除 ${names.length} 个立绘包及 ${deleted} 张本地文件`);
   }
   function renderRolePackStack(role, roleKey, packs, spriteCount, boundState, expand) {
@@ -5648,7 +5674,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-10 19:11"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-10 19:52"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
   return () => wrapper.remove();
@@ -11707,7 +11733,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-10 19:11"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-10 19:52"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

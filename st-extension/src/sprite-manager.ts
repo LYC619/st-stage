@@ -913,7 +913,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     try {
       for (const pack of packs) {
         const remoteSprites = pack.sprites.filter((sprite) => getSpriteSource(sprite) === 'hosted')
-        let localizedPack = pack
+        const preset = isPresetPack(pack.id)
+        const localizedSprites: Array<{ source: Sprite; localized: Sprite }> = []
         let packLocalizedCount = 0
         for (const sprite of remoteSprites) {
           try {
@@ -928,14 +929,18 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
                 deps.adapter.getCurrentCharacterName() || pack.name || 'shared',
               ),
             })
-            const latestSprite = sameSprite(localizedPack, sprite)
-            if (!latestSprite || latestSprite.url !== sprite.url) {
+            const latestSettings = deps.getSettings()
+            const latestPack = latestSettings.packs.find((candidate) => candidate.id === pack.id)
+            const latestSprite = latestPack ? sameSprite(latestPack, sprite) : null
+            if (!latestPack || !latestSprite || latestSprite.url !== sprite.url) {
               throw new Error('立绘在保存期间已变化')
             }
-            localizedPack = upsertSprite(
-              localizedPack,
-              { ...latestSprite, url: localized.url, remoteUrl: localized.remoteUrl },
-            )
+            const localizedSprite = { ...latestSprite, url: localized.url, remoteUrl: localized.remoteUrl }
+            if (preset) {
+              localizedSprites.push({ source: sprite, localized: localizedSprite })
+            } else if (!updateChecked(upsertPack(latestSettings, upsertSprite(latestPack, localizedSprite)))) {
+              throw new Error('更新图包失败')
+            }
             packLocalizedCount++
             localizedCount++
           } catch (error) {
@@ -945,17 +950,41 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         }
         if (packLocalizedCount === 0) continue
 
-        if (isPresetPack(pack.id)) {
+        if (preset) {
+          const latestSettings = deps.getSettings()
+          const latestPack = latestSettings.packs.find((candidate) => candidate.id === pack.id)
+          if (!latestPack) {
+            failed += packLocalizedCount
+            localizedCount -= packLocalizedCount
+            continue
+          }
+          let localizedPack = latestPack
+          let validLocalizedCount = 0
+          for (const result of localizedSprites) {
+            const latestSprite = sameSprite(latestPack, result.source)
+            if (!latestSprite || latestSprite.url !== result.source.url) {
+              failed++
+              localizedCount--
+              continue
+            }
+            localizedPack = upsertSprite(localizedPack, {
+              ...latestSprite,
+              url: result.localized.url,
+              remoteUrl: result.localized.remoteUrl,
+            })
+            validLocalizedCount++
+          }
+          if (validLocalizedCount === 0) continue
           const localCopy: SpritePack = {
             ...localizedPack,
             id: genId(),
-            name: `${pack.name}（本地）`,
+            name: `${latestPack.name}（本地）`,
             updatedAt: new Date().toISOString(),
           }
-          const added = upsertPack(deps.getSettings(), localCopy)
+          const added = upsertPack(latestSettings, localCopy)
           if (!added.ok) {
-            failed += packLocalizedCount
-            localizedCount -= packLocalizedCount
+            failed += validLocalizedCount
+            localizedCount -= validLocalizedCount
             continue
           }
           const next: PluginSettings = {
@@ -968,9 +997,6 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           selectedPackIds.delete(pack.id)
           selectedPackIds.add(localCopy.id)
           commit(next)
-        } else if (!updateChecked(upsertPack(deps.getSettings(), localizedPack))) {
-          failed += packLocalizedCount
-          localizedCount -= packLocalizedCount
         }
       }
     } finally {
@@ -1046,7 +1072,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     }
     selectedPackIds.clear()
     view = { kind: 'list' }
-    commit(removePacks(current, packIds))
+    commit(removePacks(deps.getSettings(), packIds))
     toast(currentManagerBody(), `已删除 ${names.length} 个立绘包及 ${deleted} 张本地文件`)
   }
 
