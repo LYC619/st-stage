@@ -40,7 +40,7 @@ Fresh automated evidence represented by code head `3582644`:
 - Next.js production build: passed with webpack. Turbopack cannot traverse this isolated worktree's external `node_modules` symlink, so it was not used as the final build runner.
 - Mobile Playwright E2E: 22/22 across Pixel 7 and Galaxy S8; test server stopped after completion.
 - Extension build tests: 15/15 passed.
-- Fixed-stamp root/distribution builds completed at `0.9.0+202608100134`; shared artifact SHA-256 hashes match.
+- Fixed-stamp root/distribution builds completed at `0.9.0+202608101911`; shared artifact SHA-256 hashes match.
 - `st-distribution/`: 6 files, no image, `public/`, `reference/`, or preset-source assets.
 - `git diff --check`: passed on the working tree and `origin/main..HEAD` commit range, including the three previously reported EOF errors.
 
@@ -50,7 +50,7 @@ These are automated and source-review results only. No item below is marked comp
 
 ### Install And Runtime
 
-1. Update an already installed extension and confirm the settings page shows `0.9.0+202608100134`, proving the loader cache key changed.
+1. Update an already installed extension and confirm the settings page shows `0.9.0+202608101911`, proving the loader cache key changed.
 2. Create and switch chats/characters; confirm sprite and Renderer prompts appear immediately and remain present after the delayed self-heal.
 3. During a real streaming response, confirm only newly completed `[立绘:...]` tags advance the overlay and the final message becomes authoritative without duplicate jumps.
 4. Enable new variables, generate a real `<UpdateVariable>` block, confirm the UI hides it while raw chat data remains intact, then disable the feature and confirm text restoration.
