@@ -9,7 +9,7 @@ phase: acceptance-round2-merged-pushed-awaiting-real-sillytavern
 updated_at: 2026-08-10T20:37:52+08:00
 updated_by: codex
 verification_source: codex-acceptance-round2-2026-08-10
-history: docs/maintenance/history/2026-08-10-acceptance-review-followup.md
+history: docs/maintenance/history/2026-08-10-acceptance-round2-merge-push.md
 ---
 
 # Current Project Status
