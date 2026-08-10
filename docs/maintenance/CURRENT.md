@@ -3,10 +3,10 @@ status_version: 1
 project: st-stage
 base_branch: main
 verified_code_head: 10e562822087a6868fa90ae4909a27b3b1324492
-remote_code_head_at_update: 55e0b981bcf27ab6503c8237b2eac40a9a28bed8
+remote_code_head_at_update: 9e5b4d18918edabf5b508169f194839ebcc060a4
 build_version: 0.9.0+202608101952
-phase: acceptance-round2-review-fixed-awaiting-real-sillytavern
-updated_at: 2026-08-10T20:23:25+08:00
+phase: acceptance-round2-merged-pushed-awaiting-real-sillytavern
+updated_at: 2026-08-10T20:37:52+08:00
 updated_by: codex
 verification_source: codex-acceptance-round2-2026-08-10
 history: docs/maintenance/history/2026-08-10-acceptance-review-followup.md
@@ -16,7 +16,7 @@ history: docs/maintenance/history/2026-08-10-acceptance-review-followup.md
 
 ## Snapshot
 
-- 第二轮验收修复与两轮 CC 审查修复均在 `codex/acceptance-round2`；最新代码提交为 `10e5628`，尚未合并或推送，`origin/main` 仍为 `55e0b98`。
+- 第二轮验收修复与两轮 CC 审查修复已快进合并到 `main` 并推送；集成提交为 `9e5b4d1`，`origin/main` 已同步。验收分支仍保留在 `codex/acceptance-round2`，便于回溯。
 - 产品版本仍为 `0.9.0`，构建戳为 `0.9.0+202608101952`。真实 SillyTavern 验收通过后再决定并执行 `1.0.0` 升版。
 - 自动化验证已完成；真实 SillyTavern 的模型输出、文件 API、缓存更新和供应商连接仍必须由维护者实测，不能由模拟器结果代替。
 
@@ -96,6 +96,6 @@ See `docs/maintenance/DEFERRED.md` for details.
 
 ## Next Actions
 
-- Merge or otherwise install the branch build only when ready to run the real SillyTavern checklist above; record each result without converting automated evidence into manual evidence.
+- 从 `main` 安装或更新扩展后执行上方真实 SillyTavern 验收清单，逐项记录结果，不要把自动化证据转换为手工验收证据。
 - Fix only failures exposed by that acceptance round.
 - If all blocking items pass, update `manifest.json` and build artifacts to `1.0.0`, run the release gates again, refresh this document, then merge and push.
