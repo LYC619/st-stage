@@ -28,6 +28,25 @@ describe('STAdapter story context', () => {
 })
 
 describe('STAdapter runtime events', () => {
+  it('reads one raw chat message by its exact numeric id without exposing the chat array', () => {
+    window.SillyTavern = {
+      getContext: () => ({
+        chat: [
+          { mes: '用户消息', is_user: true },
+          { mes: '正文\n<UpdateVariable>变更</UpdateVariable>', is_user: false },
+        ],
+      }),
+    } as never
+
+    const adapter = new STAdapter()
+
+    expect(adapter.getRawMessage(1)).toBe('正文\n<UpdateVariable>变更</UpdateVariable>')
+    expect(adapter.getRawMessage('1')).toBe('正文\n<UpdateVariable>变更</UpdateVariable>')
+    expect(adapter.getRawMessage('')).toBeNull()
+    expect(adapter.getRawMessage('1x')).toBeNull()
+    expect(adapter.getRawMessage(9)).toBeNull()
+  })
+
   it.each([
     ['onChatCreated', 'CHAT_CREATED', 'chat_created'],
     ['onGenerationEnded', 'GENERATION_ENDED', 'generation_ended'],

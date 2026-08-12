@@ -65,6 +65,18 @@ export function findComposerTextarea(root: ParentNode = document): HTMLTextAreaE
 }
 
 export class STAdapter implements PlatformAdapter {
+  /** 只读返回指定消息的原始文本，供可见 DOM 的保守后处理建立边界证据。 */
+  getRawMessage(messageId: string | number): string | null {
+    const index = typeof messageId === 'number'
+      ? messageId
+      : /^(?:0|[1-9]\d*)$/.test(messageId)
+        ? Number(messageId)
+        : NaN
+    if (!Number.isInteger(index) || index < 0) return null
+    const message = getContext().chat[index]
+    return typeof message?.mes === 'string' ? message.mes : null
+  }
+
   async loadSettings(): Promise<PluginSettings> {
     const ctx = getContext()
     const saved = ctx.extensionSettings[MODULE_NAME]

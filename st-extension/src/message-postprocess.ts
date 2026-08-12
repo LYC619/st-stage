@@ -26,6 +26,7 @@ import { NEWVAR_APP_ID, normalizeNewvarData } from './apps/newvar/config'
 
 export interface PostprocessDeps {
   getSettings: () => PluginSettings
+  getRawMessage?: (messageId: string | number) => string | null
   decorateImages?: (root: ParentNode) => void
   cleanupImages?: () => void
   /** 交给独立功能处理单个已渲染消息，不把功能逻辑耦合进本模块。 */
@@ -71,6 +72,81 @@ function hasUpdateBlock(text: string): boolean {
   return updateBlockRanges(text).length > 0
 }
 
+function sanitizedUpdateRange(rawMessage: string | null, visibleText: string): { start: number; end: number } | null {
+  if (rawMessage === null) return null
+
+  const openings = rawMessage.match(/<UpdateVariable(?:\s[^>]*)?>/gi) ?? []
+  const closings = rawMessage.match(/<\/UpdateVariable\s*>/gi) ?? []
+  if (openings.length !== 1 || closings.length !== 1) return null
+
+  const block = /<UpdateVariable(?:\s[^>]*)?>([\s\S]*?)<\/UpdateVariable\s*>/i.exec(rawMessage)
+  if (!block) return null
+  const expectedVisible = normalizeWhitespace(
+    rawMessage
+      .replace(/<\/?UpdateVariable(?:\s[^>]*)?>/gi, '')
+      .replace(/<\/?Analysis(?:\s[^>]*)?>/gi, ''),
+  )
+  if (expectedVisible !== normalizeWhitespace(visibleText)) return null
+  const candidate = normalizeWhitespace(
+    block[1]
+      .replace(/<Analysis(?:\s[^>]*)?>/gi, '')
+      .replace(/<\/Analysis\s*>/gi, ''),
+  )
+  if (!candidate) return null
+
+  const visible = normalizeWhitespaceWithOffsets(visibleText)
+  const matches: number[] = []
+  let from = 0
+  while (from <= visible.text.length - candidate.length) {
+    const index = visible.text.indexOf(candidate, from)
+    if (index < 0) break
+    matches.push(index)
+    if (matches.length > 1) return null
+    from = index + 1
+  }
+  if (matches.length !== 1) return null
+
+  const startIndex = matches[0]
+  return {
+    start: visible.starts[startIndex],
+    end: visible.ends[startIndex + candidate.length - 1],
+  }
+}
+
+function normalizeWhitespace(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+function normalizeWhitespaceWithOffsets(text: string): { text: string; starts: number[]; ends: number[] } {
+  let normalized = ''
+  const starts: number[] = []
+  const ends: number[] = []
+  let index = 0
+
+  while (index < text.length) {
+    const start = index
+    if (/\s/.test(text[index])) {
+      while (index < text.length && /\s/.test(text[index])) index += 1
+      normalized += ' '
+    } else {
+      index += 1
+      normalized += text[start]
+    }
+    starts.push(start)
+    ends.push(index)
+  }
+
+  let first = 0
+  let last = normalized.length
+  while (first < last && normalized[first] === ' ') first += 1
+  while (last > first && normalized[last - 1] === ' ') last -= 1
+  return {
+    text: normalized.slice(first, last),
+    starts: starts.slice(first, last),
+    ends: ends.slice(first, last),
+  }
+}
+
 /** 按 root.textContent 的全局偏移摘除文本，保留区块外已有的 DOM 结构。 */
 function removeTextRanges(root: HTMLElement, ranges: Array<{ start: number; end: number }>): void {
   if (ranges.length === 0) return
@@ -113,7 +189,7 @@ export function mountMessagePostprocess(deps: PostprocessDeps): () => void {
 
   let active = true
   const pendingTimers = new Set<ReturnType<typeof setTimeout>>()
-  if (deps.decorateImages || deps.cleanupImages || deps.processMessage || deps.reprocessMessages || deps.cleanupMessages) {
+  if (deps.getRawMessage || deps.decorateImages || deps.cleanupImages || deps.processMessage || deps.reprocessMessages || deps.cleanupMessages) {
     postprocessControllers.add(deps)
   }
   const cleanup = (unsubscribe: () => void): void => {
@@ -127,7 +203,15 @@ export function mountMessagePostprocess(deps: PostprocessDeps): () => void {
     postprocessControllers.delete(deps)
   }
   const processRendered = (messageId: unknown): void => {
-    processMessages(deps.getSettings(), messageId)
+    let rawMessage: string | null = null
+    if (typeof messageId === 'string' || typeof messageId === 'number') {
+      try {
+        rawMessage = deps.getRawMessage?.(messageId) ?? null
+      } catch (error) {
+        console.warn('[sprite-overlay] 读取原始消息失败，变量块仅按可见标签处理', error)
+      }
+    }
+    processMessages(deps.getSettings(), messageId, rawMessage)
     const bodies: HTMLElement[] = []
     if (messageId === null || messageId === undefined || `${messageId}` === '') {
       bodies.push(...Array.from(document.querySelectorAll<HTMLElement>('#chat .mes .mes_text')))
@@ -198,14 +282,16 @@ function originalTextOf(el: HTMLElement): string {
 }
 
 /** 收集「可能含立绘标签/插图标记的 AI 楼层」气泡（按楼层顺序） */
-function collectCandidates(): HTMLElement[] {
+function collectCandidates(extraCandidates: ReadonlySet<HTMLElement> = new Set()): HTMLElement[] {
   const out: HTMLElement[] = []
   for (const mes of Array.from(document.querySelectorAll('#chat .mes'))) {
     if (mes.getAttribute('is_user') === 'true' || mes.getAttribute('is_system') === 'true') continue
     const textEl = mes.querySelector('.mes_text') as HTMLElement | null
     if (!textEl) continue
     const text = originalTextOf(textEl)
-    if (hasTag(text) || hasInlineImageMarkup(text) || hasUpdateBlock(text)) out.push(textEl)
+    if (hasTag(text) || hasInlineImageMarkup(text) || hasUpdateBlock(text) || extraCandidates.has(textEl)) {
+      out.push(textEl)
+    }
   }
   return out
 }
@@ -216,7 +302,11 @@ function collectCandidates(): HTMLElement[] {
  *   （聊天加载时 ST 会对每条历史消息触发渲染事件，窗口限制避免全量重加工）
  * - messageId 为空：批量处理最近 N 个候选 AI 楼层
  */
-export function processMessages(settings: PluginSettings, messageId: unknown = null): void {
+export function processMessages(
+  settings: PluginSettings,
+  messageId: unknown = null,
+  rawMessage: string | null = null,
+): void {
   if (!anyFeatureOn(settings)) return
 
   if (messageId !== null && messageId !== undefined && `${messageId}` !== '') {
@@ -232,11 +322,14 @@ export function processMessages(settings: PluginSettings, messageId: unknown = n
     let windowSet: Set<HTMLElement> | null = null
     for (const el of scope) {
       if (lastMes !== null && el.closest('.mes') === lastMes) {
-        processMessageElement(el, settings)
+        processMessageElement(el, settings, rawMessage)
         continue
       }
-      windowSet ??= new Set(collectCandidates().slice(-clampFloors(settings)))
-      if (windowSet.has(el)) processMessageElement(el, settings)
+      const rawCandidate = rawMessage !== null && sanitizedUpdateRange(rawMessage, originalTextOf(el)) !== null
+        ? new Set([el])
+        : undefined
+      windowSet ??= new Set(collectCandidates(rawCandidate).slice(-clampFloors(settings)))
+      if (windowSet.has(el)) processMessageElement(el, settings, rawMessage)
     }
     return
   }
@@ -252,7 +345,29 @@ export function processMessages(settings: PluginSettings, messageId: unknown = n
  */
 export function reprocessAllMessages(settings: PluginSettings): void {
   restoreAllMessages()
-  if (anyFeatureOn(settings)) processMessages(settings)
+  if (anyFeatureOn(settings)) {
+    const rawGetters = [...postprocessControllers]
+      .map((controller) => controller.getRawMessage)
+      .filter((getter): getter is NonNullable<PostprocessDeps['getRawMessage']> => getter !== undefined)
+    if (rawGetters.length === 0) {
+      processMessages(settings)
+    } else {
+      for (const message of Array.from(document.querySelectorAll<HTMLElement>('#chat .mes'))) {
+        const messageId = message.getAttribute('mesid')
+        if (messageId === null) continue
+        let rawMessage: string | null = null
+        for (const getter of rawGetters) {
+          try {
+            rawMessage = getter(messageId)
+          } catch (error) {
+            console.warn('[sprite-overlay] 读取原始消息失败，变量块仅按可见标签处理', error)
+          }
+          if (rawMessage !== null) break
+        }
+        processMessages(settings, messageId, rawMessage)
+      }
+    }
+  }
   for (const controller of postprocessControllers) {
     controller.reprocessMessages?.()
     controller.decorateImages?.(document)
@@ -287,7 +402,7 @@ function hashText(text: string): string {
   return (h >>> 0).toString(36)
 }
 
-function processMessageElement(root: HTMLElement, settings: PluginSettings): void {
+function processMessageElement(root: HTMLElement, settings: PluginSettings, rawMessage: string | null = null): void {
   const inlineSprites = settings.spriteDisplayMode !== 'overlay'
   const host = settings.imageHost.endsWith('/') ? settings.imageHost : `${settings.imageHost}/`
   const newvar = normalizeNewvarData(settings.apps[NEWVAR_APP_ID])
@@ -298,7 +413,7 @@ function processMessageElement(root: HTMLElement, settings: PluginSettings): voi
   const originalText = contentIsOurs ? snap.originalText : (root.textContent ?? '')
 
   // 指纹 = 功能开关 + 图床前缀 + 原文 hash：任一变化都会走恢复→重加工
-  const fingerprint = `${settings.hideTagInMessage ? 'T' : ''}${settings.renderInlineImages ? 'I' : ''}${inlineSprites ? 'S' : ''}${hideUpdateBlocks ? 'V' : ''}|${hashText(host)}|${hashText(originalText)}`
+  const fingerprint = `${settings.hideTagInMessage ? 'T' : ''}${settings.renderInlineImages ? 'I' : ''}${inlineSprites ? 'S' : ''}${hideUpdateBlocks ? 'V' : ''}|${hashText(host)}|${hashText(originalText)}|${rawMessage === null ? '' : hashText(rawMessage)}`
   if (contentIsOurs && root.getAttribute(FP_ATTR) === fingerprint) return
 
   // 内容还是我们加工的旧版本 → 先恢复原始 DOM；
@@ -315,12 +430,17 @@ function processMessageElement(root: HTMLElement, settings: PluginSettings): voi
   const hasPacks = packs.length > 0
 
   const freshText = root.textContent ?? ''
+  const literalUpdateRanges = hideUpdateBlocks ? updateBlockRanges(freshText) : []
+  const sanitizedRange = hideUpdateBlocks && literalUpdateRanges.length === 0
+    ? sanitizedUpdateRange(rawMessage, freshText)
+    : null
+  const updateRanges = sanitizedRange ? [sanitizedRange] : literalUpdateRanges
   const tagged = hasTag(freshText)
   const needsWork =
     (settings.hideTagInMessage && tagged) ||
     (inlineSprites && hasPacks && tagged) ||
     (settings.renderInlineImages && hasInlineImageMarkup(freshText)) ||
-    (hideUpdateBlocks && hasUpdateBlock(freshText))
+    updateRanges.length > 0
   if (!needsWork) return
 
   // 加工前快照原始子节点（深克隆），恢复时整体放回
@@ -329,7 +449,7 @@ function processMessageElement(root: HTMLElement, settings: PluginSettings): voi
     originalText: freshText,
   })
 
-  if (hideUpdateBlocks) removeTextRanges(root, updateBlockRanges(freshText))
+  if (hideUpdateBlocks) removeTextRanges(root, updateRanges)
 
   // 只遍历文本节点：不碰已有元素/属性，无 HTML 注入面
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)

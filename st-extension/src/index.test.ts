@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => ({
   reprocess: vi.fn(),
   overlayCreates: 0,
   currentCharacterName: '',
+  rawMessages: new Map<string, string>(),
 }))
 
 vi.mock('./st-adapter', () => ({
@@ -48,6 +49,7 @@ vi.mock('./st-adapter', () => ({
     injectPrompt = mocks.injectPrompt
     injectChannel = mocks.injectChannel
     getCurrentCharacterName = () => mocks.currentCharacterName
+    getRawMessage = (messageId: string | number) => mocks.rawMessages.get(String(messageId)) ?? null
     onMessageReceived = (handler: (text: string) => void) => {
       mocks.messageHandler = handler
       return mocks.messageOff
@@ -153,6 +155,7 @@ beforeEach(() => {
     generationEndedHandler: undefined,
     overlayCreates: 0,
     currentCharacterName: '',
+    rawMessages: new Map<string, string>(),
     postprocessDeps: undefined,
     builtinDeps: undefined,
     builtinApps: [],
@@ -253,11 +256,13 @@ describe('extension entry lifecycle', () => {
   })
 
   it('把 Renderer runtime 接到消息后处理入口', async () => {
+    mocks.rawMessages.set('3', '原始消息')
     await importEntry('renderer-postprocess')
     await flushInit()
 
     expect(mocks.postprocessDeps?.processMessage).toBe(mocks.rendererProcessMessage)
     expect(mocks.postprocessDeps?.cleanupMessages).toBe(mocks.rendererRuntimeDispose)
+    expect((mocks.postprocessDeps?.getRawMessage as (id: number) => string | null)(3)).toBe('原始消息')
     expect(mocks.builtinDeps?.rendererRuntime).toEqual(expect.objectContaining({
       processMessage: mocks.rendererProcessMessage,
       dispose: mocks.rendererRuntimeDispose,

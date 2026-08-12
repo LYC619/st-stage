@@ -278,6 +278,131 @@ describe('可逆楼层渲染', () => {
     expect(mesText(0).querySelector('b')).not.toBeNull()
   })
 
+  it('用 raw message 唯一证据隐藏被 ST 清洗标签后的变量内容，并在关闭设置后恢复', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => void>()
+    const raw = '正文\n<UpdateVariable><Analysis type="reasoning">检查</Analysis>\n[{"op":"replace","path":"/好感","value":1}]\n</UpdateVariable>\n结尾'
+    buildChat([{ html: '<p>正文\n</p><div><b>检查</b>\n[{"op":"replace","path":"/好感","value":1}]\n</div><p>结尾</p>' }])
+    const originalHtml = mesText(0).innerHTML
+    const settings = baseSettings({ enabled: false })
+    settings.apps[NEWVAR_APP_ID] = { enabled: true, hideUpdateBlocks: true }
+    const getRawMessage = vi.fn(() => raw)
+    window.SillyTavern = {
+      getContext: () => ({
+        eventTypes: { CHARACTER_MESSAGE_RENDERED: 'rendered' },
+        eventSource: {
+          on: (event: string, handler: (...args: unknown[]) => void) => handlers.set(event, handler),
+          removeListener: vi.fn(),
+        },
+      }),
+    } as never
+    const cleanup = mountMessagePostprocess({
+      getSettings: () => settings,
+      getRawMessage,
+    })
+
+    handlers.get('rendered')?.(0)
+    await Promise.resolve()
+
+    expect(getRawMessage).toHaveBeenCalledWith(0)
+    expect(mesText(0).textContent).toContain('正文')
+    expect(mesText(0).textContent).toContain('结尾')
+    expect(mesText(0).textContent).not.toContain('检查')
+    expect(mesText(0).textContent).not.toContain('/好感')
+
+    reprocessAllMessages(settings)
+    expect(mesText(0).textContent).not.toContain('检查')
+    expect(mesText(0).textContent).not.toContain('/好感')
+
+    settings.apps[NEWVAR_APP_ID] = { enabled: true, hideUpdateBlocks: false }
+    reprocessAllMessages(settings)
+
+    expect(mesText(0).innerHTML).toBe(originalHtml)
+    cleanup()
+  })
+
+  it('raw message getter 失败时仍处理可见的字面变量块', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => void>()
+    buildChat([{ text: '正文\n<UpdateVariable>变更</UpdateVariable>\n结尾' }])
+    const settings = baseSettings({ enabled: false })
+    settings.apps[NEWVAR_APP_ID] = { enabled: true, hideUpdateBlocks: true }
+    window.SillyTavern = {
+      getContext: () => ({
+        eventTypes: { CHARACTER_MESSAGE_RENDERED: 'rendered' },
+        eventSource: {
+          on: (event: string, handler: (...args: unknown[]) => void) => handlers.set(event, handler),
+          removeListener: vi.fn(),
+        },
+      }),
+    } as never
+    const cleanup = mountMessagePostprocess({
+      getSettings: () => settings,
+      getRawMessage: () => { throw new Error('chat unavailable') },
+    })
+
+    handlers.get('rendered')?.(0)
+    await Promise.resolve()
+
+    expect(mesText(0).textContent).toBe('正文\n\n结尾')
+    cleanup()
+  })
+
+  it('可见内容重复时不隐藏被清洗的变量内容', () => {
+    const content = '检查\n[{"op":"replace","path":"/好感","value":1}]'
+    const raw = `正文\n<UpdateVariable><Analysis>检查</Analysis>\n[{"op":"replace","path":"/好感","value":1}]\n</UpdateVariable>\n结尾`
+    buildChat([{ text: `正文\n${content}\n中间\n${content}\n结尾` }])
+    const settings = baseSettings({ enabled: false })
+    settings.apps[NEWVAR_APP_ID] = { enabled: true, hideUpdateBlocks: true }
+
+    processMessages(settings, 0, raw)
+
+    expect(mesText(0).textContent?.match(/检查/g)).toHaveLength(2)
+    expect(mesText(0).hasAttribute('data-so-fp')).toBe(false)
+  })
+
+  it('raw 块内容已被整段移除时不把正文里的同文误判为变量块', () => {
+    const raw = '变量值也在正文出现\n<UpdateVariable>变量值也在正文出现</UpdateVariable>\n结尾'
+    buildChat([{ text: '变量值也在正文出现\n结尾' }])
+    const settings = baseSettings({ enabled: false })
+    settings.apps[NEWVAR_APP_ID] = { enabled: true, hideUpdateBlocks: true }
+
+    processMessages(settings, 0, raw)
+
+    expect(mesText(0).textContent).toBe('变量值也在正文出现\n结尾')
+    expect(mesText(0).hasAttribute('data-so-fp')).toBe(false)
+  })
+
+  it.each([
+    {
+      name: '多个完整块',
+      raw: '<UpdateVariable>第一块</UpdateVariable>\n<UpdateVariable>第二块</UpdateVariable>',
+      visible: '正文\n第一块\n结尾',
+    },
+    {
+      name: '未闭合块',
+      raw: '<UpdateVariable><Analysis>检查</Analysis>\n变更内容',
+      visible: '正文\n检查\n变更内容\n结尾',
+    },
+    {
+      name: '空内容块',
+      raw: '<UpdateVariable><Analysis> \n </Analysis></UpdateVariable>',
+      visible: '正文\n结尾',
+    },
+    {
+      name: 'raw 缺失',
+      raw: null,
+      visible: '正文\n检查\n变更内容\n结尾',
+    },
+  ])('$name 时不隐藏可见内容', ({ raw, visible }) => {
+    buildChat([{ text: visible }])
+    const settings = baseSettings({ enabled: false })
+    settings.apps[NEWVAR_APP_ID] = { enabled: true, hideUpdateBlocks: true }
+
+    processMessages(settings, 0, raw)
+
+    expect(mesText(0).textContent).toBe(visible)
+    expect(mesText(0).hasAttribute('data-so-fp')).toBe(false)
+  })
+
   it('隐藏标签开→关：reprocessAllMessages 立即恢复原文', () => {
     buildChat([{ text: '心情不错 [立绘:微笑]' }])
     const el = mesText(0)
@@ -348,6 +473,40 @@ describe('可逆楼层渲染', () => {
 })
 
 describe('recentFloors 窗口', () => {
+  it('把有 raw 证据的清洗变量楼层纳入候选窗口', () => {
+    buildChat([
+      { text: '待隐藏的变量内容' },
+      { text: '后续候选一 [立绘:微笑]' },
+      { text: '后续候选二 [立绘:微笑]' },
+      { text: '最新普通楼层' },
+    ])
+    const settings = baseSettings({ enabled: false, recentFloors: 3 })
+    settings.apps[NEWVAR_APP_ID] = { enabled: true, hideUpdateBlocks: true }
+    const raw = '<UpdateVariable>待隐藏的变量内容</UpdateVariable>'
+
+    processMessages(settings, 0, raw)
+
+    expect(mesText(0).textContent).toBe('')
+    expect(mesText(0).hasAttribute('data-so-fp')).toBe(true)
+  })
+
+  it('raw 证据不会让清洗后的旧变量楼层绕过历史窗口', () => {
+    buildChat([
+      { text: '待保留的变量内容' },
+      { text: '后续候选一 [立绘:微笑]' },
+      { text: '后续候选二 [立绘:微笑]' },
+      { text: '后续候选三 [立绘:微笑]' },
+      { text: '最新普通楼层' },
+    ])
+    const settings = baseSettings({ enabled: false, recentFloors: 3 })
+    settings.apps[NEWVAR_APP_ID] = { enabled: true, hideUpdateBlocks: true }
+
+    processMessages(settings, 0, '<UpdateVariable>待保留的变量内容</UpdateVariable>')
+
+    expect(mesText(0).textContent).toBe('待保留的变量内容')
+    expect(mesText(0).hasAttribute('data-so-fp')).toBe(false)
+  })
+
   it('批量补渲染只处理最近 N 个候选 AI 楼层', () => {
     const msgs: MsgDef[] = []
     for (let i = 0; i < 12; i++) {

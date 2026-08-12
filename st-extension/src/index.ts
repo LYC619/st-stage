@@ -382,6 +382,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   // 消息渲染后处理：隐藏标签 / 渲染插图 / 外部图片归档操作
   lifecycle.track(mountMessagePostprocess({
     getSettings: () => settings,
+    getRawMessage: (messageId) => adapter.getRawMessage(messageId),
     decorateImages: storyCapture.decorate,
     cleanupImages: storyCapture.cleanup,
     processMessage: rendererRuntime.processMessage,
