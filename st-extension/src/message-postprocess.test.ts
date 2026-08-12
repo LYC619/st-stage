@@ -75,6 +75,38 @@ afterEach(() => {
 })
 
 describe('mountMessagePostprocess lifecycle', () => {
+  it('重新处理 ST 编辑完成后发出的 MESSAGE_UPDATED 楼层', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => void>()
+    const processMessage = vi.fn()
+    const removeListener = vi.fn()
+    window.SillyTavern = {
+      getContext: () => ({
+        eventTypes: {
+          CHARACTER_MESSAGE_RENDERED: 'rendered',
+          MESSAGE_UPDATED: 'updated',
+        },
+        eventSource: {
+          on: (event: string, handler: (...args: unknown[]) => void) => handlers.set(event, handler),
+          removeListener,
+        },
+      }),
+    } as never
+    buildChat([{ text: '编辑前' }])
+    const cleanup = mountMessagePostprocess({
+      getSettings: () => baseSettings(),
+      processMessage,
+    })
+
+    mesText(0).textContent = '编辑后 [立绘:微笑]'
+    handlers.get('updated')?.(0)
+    await Promise.resolve()
+
+    expect(handlers.get('updated')).toBeTypeOf('function')
+    expect(processMessage).toHaveBeenCalledWith(mesText(0))
+    cleanup()
+    expect(removeListener).toHaveBeenCalledWith('updated', expect.any(Function))
+  })
+
   it('把渲染后的消息交给通用 hook，并在销毁时清理 hook 资源', async () => {
     let handler: ((...args: unknown[]) => void) | undefined
     const processMessage = vi.fn()
@@ -209,7 +241,7 @@ describe('可逆楼层渲染', () => {
     const el = mesText(0)
     const originalHtml = el.innerHTML
 
-    processMessages(baseSettings({ spriteDisplayMode: 'inline' }), 0)
+    processMessages(baseSettings({ spriteDisplayMode: 'inline', hideTagInMessage: true }), 0)
     expect(el.querySelectorAll('img').length).toBe(1)
     expect(el.querySelector('img')?.getAttribute('alt')).toBe('微笑')
     expect(el.textContent).not.toContain('[立绘:微笑]')
@@ -257,6 +289,18 @@ describe('可逆楼层渲染', () => {
     reprocessAllMessages(baseSettings({ hideTagInMessage: false }))
     expect(el.textContent).toBe(original)
   })
+
+  it.each(['inline', 'both'] as const)(
+    '%s 模式下隐藏开关关闭时保留标签并在原位插入立绘',
+    (spriteDisplayMode) => {
+      buildChat([{ text: '心情不错 [立绘:微笑]' }])
+
+      processMessages(baseSettings({ spriteDisplayMode, hideTagInMessage: false }), 0)
+
+      expect(mesText(0).textContent).toContain('[立绘:微笑]')
+      expect(mesText(0).querySelectorAll('.so-inline-sprite')).toHaveLength(1)
+    },
+  )
 
   it('总开关关闭：reprocessAllMessages 只恢复不再加工', () => {
     buildChat([{ text: '你好 [立绘:微笑]' }])

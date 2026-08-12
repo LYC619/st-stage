@@ -105,10 +105,11 @@ export function mountMessagePostprocess(deps: PostprocessDeps): () => void {
   if (!st) return () => {}
   const ctx = st.getContext() as unknown as STContextLike
 
-  const renderedEvents = [
+  const renderedEvents = [...new Set([
     ctx.eventTypes?.CHARACTER_MESSAGE_RENDERED,
     ctx.eventTypes?.USER_MESSAGE_RENDERED,
-  ].filter((e): e is string => typeof e === 'string' && e.length > 0)
+    ctx.eventTypes?.MESSAGE_UPDATED,
+  ].filter((e): e is string => typeof e === 'string' && e.length > 0))]
 
   let active = true
   const pendingTimers = new Set<ReturnType<typeof setTimeout>>()
@@ -356,12 +357,13 @@ function processMessageElement(root: HTMLElement, settings: PluginSettings): voi
     const marker = (el: HTMLElement) => `\0${elements.push(el) - 1}\0`
 
     if (needsSprites && hasPacks) {
-      processed = replaceTags(processed, (address) => {
+      processed = replaceTags(processed, (address, raw) => {
         const sprite = resolveSprite(packs, address)
         // 匹配不到的标签退回「隐藏标签」语义：开了隐藏就摘除，否则保留原文
         if (!sprite) return settings.hideTagInMessage ? '' : null
         const image = createImage(sprite.url, sprite.tag, 'so-inline-sprite')
-        return marker(image)
+        const imageMarker = marker(image)
+        return settings.hideTagInMessage ? imageMarker : `${raw}${imageMarker}`
       })
     }
     if (needsImages) {
