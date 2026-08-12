@@ -26,6 +26,8 @@ describe('buildRendererPrompt', () => {
 
     expect(prompt).toMatch(/普通回复.*不需要/)
     expect(prompt).toMatch(/最多.*一个/)
+    expect(prompt).toContain('不得只输出裸 JSON')
+    expect(prompt).toMatch(/完整.*<STStageRender>.*<\/STStageRender>/)
     expect(prompt).toMatch(/禁止.*HTML|不得.*HTML/)
     expect(prompt).toMatch(/代码/)
     expect(prompt).toMatch(/块外.*独立可读/)
@@ -33,7 +35,7 @@ describe('buildRendererPrompt', () => {
 
   it('每个模式示例都是解析器可接受的独立 JSON 块', () => {
     const prompt = buildRendererPrompt(enabledSettings())
-    const examples = [...prompt.matchAll(/<STStageRender>[\s\S]*?<\/STStageRender>/g)].map((match) => match[0])
+    const examples = [...prompt.matchAll(/示例：\s*(<STStageRender>[\s\S]*?<\/STStageRender>)/g)].map((match) => match[1])
 
     expect(examples).toHaveLength(3)
     expect(examples.map((example) => parseRendererBlock(example))).toEqual([

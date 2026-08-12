@@ -5,12 +5,16 @@ import { defaultRendererSettings, type RendererSettings } from './config'
 import { createRendererRuntime, type RendererModeFactory } from './runtime'
 
 function galBlock(text = '你好'): string {
-  return `<STStageRender>${JSON.stringify({
+  return `<STStageRender>${galJson(text)}</STStageRender>`
+}
+
+function galJson(text = '你好'): string {
+  return JSON.stringify({
     version: 1,
     mode: 'gal',
     scene: '月台',
     beats: [{ speaker: '小雪', text }],
-  })}</STStageRender>`
+  })
 }
 
 function buildMessage(text: string, isUser = false): HTMLElement {
@@ -43,6 +47,26 @@ describe('createRendererRuntime', () => {
     const runtime = createRendererRuntime({ getSettings: () => enabledSettings(), factories: { gal: factory } })
     const raw = galBlock()
     const body = buildMessage(`前文 ${raw} 后文`)
+
+    runtime.processMessage(body)
+
+    expect(factory).toHaveBeenCalledTimes(1)
+    expect(body.querySelectorAll('.st-stage-renderer')).toHaveLength(1)
+    const source = body.querySelector('.st-stage-render-source') as HTMLElement | null
+    expect(source?.hidden).toBe(true)
+    expect(source?.textContent).toBe(raw)
+    expect(body.textContent).toContain('前文')
+    expect(body.textContent).toContain('后文')
+  })
+
+  it('裸 Gal 只隐藏 JSON 并保留前后文后挂载', () => {
+    const factory = vi.fn<RendererModeFactory>((root, block) => {
+      root.textContent = block.mode
+      return { destroy: vi.fn() }
+    })
+    const runtime = createRendererRuntime({ getSettings: () => enabledSettings(), factories: { gal: factory } })
+    const raw = galJson()
+    const body = buildMessage(`前文\n${raw}\n后文`)
 
     runtime.processMessage(body)
 

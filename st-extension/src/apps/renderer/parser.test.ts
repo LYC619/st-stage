@@ -28,6 +28,35 @@ const fighter = {
   statuses: [{ id: 'focus', name: '专注', duration: 2, attackDelta: 3 }],
 }
 
+const bareBlocks = [
+  {
+    name: 'Galgame',
+    value: { version: 1, mode: 'gal', scene: '月台', beats: [{ speaker: '小雪', text: '你好' }] },
+  },
+  {
+    name: '卡片选择',
+    value: {
+      version: 1,
+      mode: 'cards',
+      title: '选择',
+      cards: [
+        { id: 'forward', title: '前进', description: '继续探索', action: '我选择前进' },
+        { id: 'rest', title: '休息', description: '恢复体力', action: '我选择休息' },
+      ],
+    },
+  },
+  {
+    name: '战斗',
+    value: {
+      version: 1,
+      mode: 'battle',
+      title: '遗迹守卫战',
+      player: fighter,
+      enemy: { ...fighter, id: 'guard', name: '遗迹守卫' },
+    },
+  },
+] as const
+
 describe('parseRendererBlock', () => {
   it('解析合法 Galgame 块', () => {
     const result = parseRendererBlock(
@@ -82,6 +111,85 @@ describe('parseRendererBlock', () => {
 
   it('无块时返回 found=false', () => {
     expect(parseRendererBlock('普通回复')).toEqual({ ok: false, found: false })
+  })
+
+  it.each(bareBlocks)('保守恢复唯一裸 $name JSON', ({ value }) => {
+    const raw = JSON.stringify(value)
+
+    expect(parseRendererBlock(raw)).toMatchObject({ ok: true, raw, block: { mode: value.mode } })
+  })
+
+  it('裸 JSON 只返回候选切片并保留块外正文', () => {
+    const raw = JSON.stringify(bareBlocks[0].value)
+
+    expect(parseRendererBlock(`前文\n${raw}\n后文`)).toMatchObject({ ok: true, raw })
+  })
+
+  it('字符串内的大括号和转义引号不会截断裸 JSON', () => {
+    const value = {
+      version: 1,
+      mode: 'gal',
+      scene: '门上写着 {请进}',
+      beats: [{ speaker: '小雪', text: '她说："别把 } 当作结尾。"' }],
+    }
+    const raw = JSON.stringify(value)
+
+    expect(parseRendererBlock(`前文 ${raw} 后文`)).toMatchObject({
+      ok: true,
+      raw,
+      block: { mode: 'gal', scene: '门上写着 {请进}', beats: [{ text: '她说："别把 } 当作结尾。"' }] },
+    })
+  })
+
+  it('两个合法裸对象存在歧义时拒绝恢复', () => {
+    const first = JSON.stringify(bareBlocks[0].value)
+    const second = JSON.stringify(bareBlocks[1].value)
+
+    expect(parseRendererBlock(`${first}\n${second}`)).toEqual({ ok: false, found: false })
+  })
+
+  it('合法裸对象与无关对象并存时只接受合法候选', () => {
+    const raw = JSON.stringify(bareBlocks[0].value)
+
+    expect(parseRendererBlock(`配置：{"theme":"dark"}\n${raw}`)).toMatchObject({ ok: true, raw })
+  })
+
+  it('数组中的嵌套对象不作为顶层裸候选', () => {
+    expect(parseRendererBlock(JSON.stringify([bareBlocks[0].value]))).toEqual({ ok: false, found: false })
+  })
+
+  it('孤立闭标签作为协议残片处理且不尝试裸 JSON', () => {
+    const raw = JSON.stringify(bareBlocks[0].value)
+
+    expect(parseRendererBlock(`${raw}</STStageRender>`)).toMatchObject({
+      ok: false,
+      found: true,
+      error: expect.stringMatching(/标签|协议/),
+    })
+  })
+
+  it.each(['<STStageRender', '</STStageRender'])(
+    '不完整标签前缀 %s 也阻止裸 JSON 兜底',
+    (fragment) => {
+      const raw = JSON.stringify(bareBlocks[0].value)
+
+      expect(parseRendererBlock(`${fragment}\n${raw}`)).toMatchObject({
+        ok: false,
+        found: true,
+        error: expect.stringMatching(/标签|协议|未闭合/),
+      })
+    },
+  )
+
+  it('忽略超长裸对象和非协议 JSON，且不虚报 found=true', () => {
+    const oversized = JSON.stringify({
+      ...bareBlocks[0].value,
+      beats: Array.from({ length: 50 }, (_, index) => ({ speaker: `角色${index}`, text: '界'.repeat(500) })),
+    })
+
+    expect(new TextEncoder().encode(oversized).byteLength).toBeGreaterThan(64 * 1024)
+    expect(parseRendererBlock(oversized)).toEqual({ ok: false, found: false })
+    expect(parseRendererBlock('{"theme":"dark","items":[{"id":1}]}')).toEqual({ ok: false, found: false })
   })
 
   it('拒绝未闭合、非法 JSON 和重复块', () => {

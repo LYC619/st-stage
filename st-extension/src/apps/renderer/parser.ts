@@ -14,7 +14,10 @@ import type {
 
 const OPEN_TAG = '<STStageRender>'
 const CLOSE_TAG = '</STStageRender>'
+const TAG_PREFIX = '<STStageRender'
+const CLOSE_TAG_PREFIX = '</STStageRender'
 const MAX_JSON_BYTES = 64 * 1024
+const MAX_BARE_SCAN_CHARS = 1024 * 1024
 const MAX_ARRAY_ITEMS = 12
 const MAX_BEATS = 50
 const MAX_CARDS = 8
@@ -399,11 +402,71 @@ function validateBlock(value: unknown): RendererBlock | string {
   return 'mode 只支持 gal、cards 或 battle'
 }
 
+/** 在无标签回复中寻找数组外的平衡 JSON 对象，只接受唯一合法协议候选。 */
+function parseBareRendererBlock(source: string): RendererParseResult {
+  if (source.length > MAX_BARE_SCAN_CHARS) return { ok: false, found: false }
+  const accepted: Array<{ block: RendererBlock; raw: string }> = []
+  let objectStart = -1
+  let objectDepth = 0
+  let arrayDepth = 0
+  let inString = false
+  let escaped = false
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (char === '\\') escaped = true
+      else if (char === '"') inString = false
+      continue
+    }
+    if (char === '"') {
+      inString = true
+      continue
+    }
+    if (objectDepth > 0) {
+      if (char === '{') objectDepth += 1
+      else if (char === '}') objectDepth -= 1
+      if (objectDepth !== 0) continue
+
+      const raw = source.slice(objectStart, index + 1)
+      objectStart = -1
+      if (new TextEncoder().encode(raw).byteLength > MAX_JSON_BYTES) continue
+      let value: unknown
+      try {
+        value = JSON.parse(raw)
+      } catch {
+        continue
+      }
+      const block = validateBlock(value)
+      if (typeof block === 'string') continue
+      accepted.push({ block, raw })
+      if (accepted.length > 1) return { ok: false, found: false }
+      continue
+    }
+    if (char === '[') arrayDepth += 1
+    else if (char === ']') arrayDepth = Math.max(0, arrayDepth - 1)
+    else if (char === '{' && arrayDepth === 0) {
+      objectStart = index
+      objectDepth = 1
+    }
+  }
+
+  return accepted.length === 1
+    ? { ok: true, block: accepted[0].block, raw: accepted[0].raw }
+    : { ok: false, found: false }
+}
+
 /** 从 AI 回复中提取并校验唯一的完整渲染块，失败时保留原文由上层回退显示。 */
 export function parseRendererBlock(source: string): RendererParseResult {
   if (typeof source !== 'string') return { ok: false, found: false }
   const firstStart = source.indexOf(OPEN_TAG)
-  if (firstStart < 0) return { ok: false, found: false }
+  if (firstStart < 0) {
+    if (source.includes(TAG_PREFIX) || source.includes(CLOSE_TAG_PREFIX)) {
+      return fail('检测到不完整的 STStageRender 标签')
+    }
+    return parseBareRendererBlock(source)
+  }
   const secondStart = source.indexOf(OPEN_TAG, firstStart + OPEN_TAG.length)
   const firstEnd = source.indexOf(CLOSE_TAG, firstStart + OPEN_TAG.length)
   if (firstEnd < 0) return fail('STStageRender 块未闭合')

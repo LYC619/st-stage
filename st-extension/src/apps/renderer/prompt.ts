@@ -28,6 +28,7 @@ export function buildRendererPrompt(settings: RendererSettings): string {
 
 普通回复不需要输出渲染块；仅在当前场景明显适合以下已启用模式时使用。
 每条回复最多输出一个 STStageRender 标签块，标签内部必须是严格 JSON。
+使用时必须输出完整 <STStageRender>JSON</STStageRender> 标签，不得只输出裸 JSON。
 禁止输出 HTML、脚本或其他可执行代码，也不要增加协议未声明的字段。
 叙事正文放在块外，并保证块外内容脱离渲染器后仍然独立可读。
 所有数值使用整数，图片只使用可信的 http(s)、base64 栅格 data:image、/user/ 或扩展相对路径。
