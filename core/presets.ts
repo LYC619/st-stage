@@ -1,6 +1,9 @@
 /** 轻量内置预设：只保存远程直链，不再随仓库分发图片文件。 */
 
-import type { SpritePack } from './types'
+import type { PresetPackOverride, Sprite, SpritePack } from './types'
+import { normalizeTag, sanitizePackName } from './naming'
+import { isSafeLocalUserImagePath } from './sprite-store'
+import { normalizeNote, normalizeOutfitNotes } from './sprite-metadata'
 
 type RemoteSpriteDef = readonly [tag: string, url: string]
 
@@ -199,6 +202,114 @@ export function getPresetPacks(): SpritePack[] {
       code: url.slice(url.lastIndexOf('/') + 1),
     })),
   }))
+}
+
+/** 预设立绘覆盖使用原始 sprite 坐标，不受包级元数据编辑影响。 */
+export function presetSpriteKey(sprite: Pick<Sprite, 'group' | 'outfit' | 'tag'>): string {
+  return JSON.stringify([sprite.group || '', sprite.outfit || '', sprite.tag])
+}
+
+function sanitizedNullableText(value: unknown): string | null | undefined {
+  if (value === null) return null
+  return typeof value === 'string' ? value.trim() : undefined
+}
+
+function sanitizedNullableTag(value: unknown): string | null | undefined {
+  if (value === null) return null
+  if (typeof value !== 'string') return undefined
+  return normalizeTag(value) || undefined
+}
+
+/** 清洗不可信覆盖数据；未知预设、未知立绘键和非法本地路径均丢弃。 */
+export function sanitizePresetOverrides(
+  raw: unknown,
+  presets: SpritePack[] = getPresetPacks(),
+): Record<string, PresetPackOverride> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const result: Record<string, PresetPackOverride> = {}
+
+  for (const preset of presets) {
+    const value = (raw as Record<string, unknown>)[preset.id]
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+    const input = value as Record<string, unknown>
+    const override: PresetPackOverride = {}
+    const metadataInput = input.metadata
+    if (metadataInput && typeof metadataInput === 'object' && !Array.isArray(metadataInput)) {
+      const source = metadataInput as Record<string, unknown>
+      const metadata: NonNullable<PresetPackOverride['metadata']> = {}
+      if (typeof source.name === 'string') {
+        const name = sanitizePackName(source.name)
+        if (name) metadata.name = name
+      }
+      for (const field of ['author', 'description'] as const) {
+        const sanitized = sanitizedNullableText(source[field])
+        if (sanitized !== undefined) metadata[field] = sanitized
+      }
+      for (const field of ['roleName', 'outfit'] as const) {
+        const sanitized = sanitizedNullableTag(source[field])
+        if (sanitized !== undefined) metadata[field] = sanitized
+      }
+      if (source.promptNote === null) metadata.promptNote = null
+      else if (typeof source.promptNote === 'string') {
+        const note = normalizeNote(source.promptNote)
+        if (note) metadata.promptNote = note
+      }
+      if (source.promptNotePlacement === null) metadata.promptNotePlacement = null
+      else if (source.promptNotePlacement === 'before-list' || source.promptNotePlacement === 'after-list') {
+        metadata.promptNotePlacement = source.promptNotePlacement
+      }
+      if (source.outfitNotes && typeof source.outfitNotes === 'object' && !Array.isArray(source.outfitNotes)) {
+        metadata.outfitNotes = normalizeOutfitNotes(source.outfitNotes)
+      }
+      if (Object.keys(metadata).length > 0) override.metadata = metadata
+    }
+
+    if (input.localSprites && typeof input.localSprites === 'object' && !Array.isArray(input.localSprites)) {
+      const validKeys = new Set(preset.sprites.map(presetSpriteKey))
+      const localSprites: Record<string, string> = {}
+      for (const [key, path] of Object.entries(input.localSprites)) {
+        if (validKeys.has(key) && typeof path === 'string' && isSafeLocalUserImagePath(path)) {
+          localSprites[key] = path
+        }
+      }
+      if (Object.keys(localSprites).length > 0) override.localSprites = localSprites
+    }
+    if (typeof input.updatedAt === 'string' && input.updatedAt.trim()) {
+      override.updatedAt = input.updatedAt.trim()
+    }
+    if (Object.keys(override).length > 0) result[preset.id] = override
+  }
+  return result
+}
+
+/** 从当前代码预设清单生成运行时包，并叠加同 ID 用户覆盖。 */
+export function mergePresetPacks(overrides: unknown): SpritePack[] {
+  const presets = getPresetPacks()
+  const sanitized = sanitizePresetOverrides(overrides, presets)
+  return presets.map((preset) => {
+    const override = sanitized[preset.id]
+    if (!override) return preset
+    const merged: SpritePack = { ...preset }
+    const metadata = override.metadata
+    if (metadata) {
+      if (metadata.name !== undefined) merged.name = metadata.name
+      for (const field of ['author', 'description', 'roleName', 'outfit', 'promptNote'] as const) {
+        const value = metadata[field]
+        if (value === null) delete merged[field]
+        else if (value !== undefined) merged[field] = value
+      }
+      if (metadata.promptNotePlacement === null) delete merged.promptNotePlacement
+      else if (metadata.promptNotePlacement !== undefined) {
+        merged.promptNotePlacement = metadata.promptNotePlacement
+      }
+      if (metadata.outfitNotes !== undefined) merged.outfitNotes = metadata.outfitNotes
+    }
+    merged.sprites = preset.sprites.map((sprite) => {
+      const local = override.localSprites?.[presetSpriteKey(sprite)]
+      return local ? { ...sprite, url: local, remoteUrl: sprite.url } : sprite
+    })
+    return merged
+  })
 }
 
 /** 当前和已移除的历史预设都视为只读预设，避免升级后误持久化。 */

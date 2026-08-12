@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { migrateSettings, needsMigration } from './migrate'
+import { migrateLegacyLocalPresetCopies, migrateSettings, needsMigration } from './migrate'
+import { getPresetPacks, presetSpriteKey } from './presets'
 import { createDefaultSettings, SETTINGS_VERSION } from './types'
 
 /** 模拟 v1 时代持久化的 settings（无 settingsVersion 等新字段） */
@@ -148,10 +149,176 @@ describe('migrateSettings', () => {
     expect(migrateSettings({ ...V1_SAVED, recentFloors: 'many' }).recentFloors).toBe(6)
   })
 
-  it('v3 → v4：图库按角色折叠缺失时默认为 false', () => {
-    const migrated = migrateSettings({ settingsVersion: 3, packs: [] })
-    expect(migrated.settingsVersion).toBe(SETTINGS_VERSION)
-    expect(migrated.galleryFoldByRole).toBe(false)
+  it('v5 → v6：旧 false 和缺失值迁为 true，v6 起显式 false 保留', () => {
+    expect(createDefaultSettings().galleryFoldByRole).toBe(true)
+    expect(migrateSettings({ settingsVersion: 5, packs: [], galleryFoldByRole: false }).galleryFoldByRole).toBe(true)
+    expect(migrateSettings({ packs: [], galleryFoldByRole: false }).galleryFoldByRole).toBe(true)
+    expect(migrateSettings({ settingsVersion: 6, packs: [], galleryFoldByRole: false }).galleryFoldByRole).toBe(false)
+    expect(migrateSettings({ settingsVersion: 6, packs: [], galleryFoldByRole: true }).galleryFoldByRole).toBe(true)
+  })
+
+  it('v6 presetOverrides 缺失时补空对象，并逐字段清洗', () => {
+    const preset = getPresetPacks()[0]
+    const key = presetSpriteKey(preset.sprites[0])
+    const migrated = migrateSettings({
+      settingsVersion: 6,
+      packs: [],
+      presetOverrides: {
+        [preset.id]: {
+          metadata: {
+            name: '自定义名', author: null, description: 1, roleName: null,
+            outfit: null, promptNote: null, promptNotePlacement: null,
+            outfitNotes: { 常服: ' 备注 ', bad: 3 },
+          },
+          localSprites: {
+            [key]: '/user/images/sprite-overlay/local.webp',
+            badHttp: 'https://example.com/a.webp',
+            badData: 'data:image/png;base64,abc',
+            badExtension: '/scripts/extensions/a.webp',
+          },
+          updatedAt: '2026-08-12T12:00:00.000Z',
+        },
+        unknown: { metadata: { name: '未知预设应忽略' } },
+        broken: 'nope',
+      },
+    } as never)
+
+    expect(migrateSettings({ settingsVersion: 6, packs: [] }).presetOverrides).toEqual({})
+    expect(migrated.presetOverrides).toEqual({
+      [preset.id]: {
+        metadata: {
+          name: '自定义名', author: null, roleName: null, outfit: null,
+          promptNote: null, promptNotePlacement: null, outfitNotes: { 常服: '备注' },
+        },
+        localSprites: { [key]: '/user/images/sprite-overlay/local.webp' },
+        updatedAt: '2026-08-12T12:00:00.000Z',
+      },
+    })
+  })
+
+  it('precisely migrates one legacy local preset copy and rewrites bindings without duplicates', () => {
+    const preset = getPresetPacks()[0]
+    const copy = {
+      ...preset,
+      id: 'pack_local_copy',
+      name: `${preset.name}（本地）`,
+      sprites: preset.sprites.map((sprite, index) => ({
+        ...sprite,
+        url: `/user/images/sprite-overlay/local/${index}.webp`,
+        remoteUrl: sprite.url,
+      })),
+    }
+
+    const result = migrateLegacyLocalPresetCopies(
+      [copy, { id: 'custom', name: '自定义', sprites: [] }],
+      [{ characterName: '塞拉菲娜', packIds: [copy.id, preset.id, 'custom'], enabled: true }],
+      {},
+      [preset],
+    )
+
+    expect(result.packs.map((pack) => pack.id)).toEqual(['custom'])
+    expect(result.bindings[0].packIds).toEqual([preset.id, 'custom'])
+    expect(result.presetOverrides[preset.id].localSprites).toEqual(Object.fromEntries(
+      preset.sprites.map((sprite, index) => [presetSpriteKey(sprite), `/user/images/sprite-overlay/local/${index}.webp`]),
+    ))
+  })
+
+  it('keeps approximate, ambiguous, and unsafe legacy copies as custom packs', () => {
+    const preset = getPresetPacks()[0]
+    const makeCopy = (id: string) => ({
+      ...preset,
+      id,
+      name: `${preset.name}（本地）`,
+      sprites: preset.sprites.map((sprite, index) => ({
+        ...sprite,
+        url: `/user/images/sprite-overlay/local/${index}.webp`,
+        remoteUrl: sprite.url,
+      })),
+    })
+    const near = { ...makeCopy('near'), roleName: '近似角色' }
+    const unsafe = makeCopy('unsafe')
+    unsafe.sprites[0].url = 'data:image/webp;base64,abc'
+    const duplicateA = makeCopy('duplicate-a')
+    const duplicateB = makeCopy('duplicate-b')
+
+    const result = migrateLegacyLocalPresetCopies(
+      [near, unsafe, duplicateA, duplicateB],
+      [{ characterName: '塞拉菲娜', packIds: ['near', 'unsafe', 'duplicate-a'], enabled: true }],
+      {},
+      [preset],
+    )
+
+    expect(result.packs.map((pack) => pack.id)).toEqual(['near', 'unsafe', 'duplicate-a', 'duplicate-b'])
+    expect(result.bindings[0].packIds).toEqual(['near', 'unsafe', 'duplicate-a'])
+    expect(result.presetOverrides).toEqual({})
+  })
+
+  it('does not migrate a safe copy when a second exact candidate has an unsafe local path', () => {
+    const preset = getPresetPacks()[0]
+    const makeCopy = (id: string) => ({
+      ...preset,
+      id,
+      name: `${preset.name}（本地）`,
+      sprites: preset.sprites.map((sprite, index) => ({
+        ...sprite,
+        url: `/user/images/sprite-overlay/local/${index}.webp`,
+        remoteUrl: sprite.url,
+      })),
+    })
+    const safe = makeCopy('safe')
+    const unsafe = makeCopy('unsafe')
+    unsafe.sprites[0].url = 'https://example.com/not-local.webp'
+
+    const result = migrateLegacyLocalPresetCopies([safe, unsafe], [], {}, [preset])
+
+    expect(result.packs.map((pack) => pack.id)).toEqual(['safe', 'unsafe'])
+    expect(result.presetOverrides).toEqual({})
+  })
+
+  it('runs precise legacy-copy migration from migrateSettings', () => {
+    const preset = getPresetPacks()[0]
+    const copy = {
+      ...preset,
+      id: 'legacy-local',
+      name: `${preset.name}（本地）`,
+      sprites: preset.sprites.map((sprite, index) => ({
+        ...sprite,
+        url: `/user/images/sprite-overlay/local/${index}.webp`,
+        remoteUrl: sprite.url,
+      })),
+    }
+    const migrated = migrateSettings({
+      settingsVersion: 5,
+      packs: [copy],
+      bindings: [{ characterName: '塞拉菲娜', packIds: [copy.id], enabled: true }],
+    })
+
+    expect(migrated.packs).toEqual([])
+    expect(migrated.bindings[0].packIds).toEqual([preset.id])
+    expect(Object.keys(migrated.presetOverrides[preset.id].localSprites ?? {})).toHaveLength(preset.sprites.length)
+  })
+
+  it('does not re-run legacy-copy migration for v6 settings', () => {
+    const preset = getPresetPacks()[0]
+    const copy = {
+      ...preset,
+      id: 'v6-custom-copy',
+      name: `${preset.name}（本地）`,
+      sprites: preset.sprites.map((sprite, index) => ({
+        ...sprite,
+        url: `/user/images/sprite-overlay/v6/${index}.webp`,
+        remoteUrl: sprite.url,
+      })),
+    }
+    const migrated = migrateSettings({
+      ...createDefaultSettings(),
+      packs: [copy],
+      bindings: [{ characterName: '塞拉菲娜', packIds: [copy.id], enabled: true }],
+    })
+
+    expect(migrated.packs.map((pack) => pack.id)).toEqual([copy.id])
+    expect(migrated.bindings[0].packIds).toEqual([copy.id])
+    expect(migrated.presetOverrides).toEqual({})
   })
 
   it('v4 → v5：旧存档的 full 是旧默认值，迁为自动精简；v5 起的 full 保留', () => {

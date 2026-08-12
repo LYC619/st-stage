@@ -14,7 +14,7 @@ import type { PlatformAdapter } from '../../core/adapter'
 import type { PluginSettings } from '../../core/types'
 import { createDefaultSettings, INJECTION_DEPTH_DEFAULT } from '../../core/types'
 import { migrateSettings } from '../../core/migrate'
-import { getPresetPacks, isPresetPack } from '../../core/presets'
+import { isPresetPack, mergePresetPacks } from '../../core/presets'
 import { isSafeLocalUserImagePath } from '../../core/sprite-store'
 import { sanitizePathSegment } from '../../core/naming'
 import { blobToDataUri } from '../../core/image-compress'
@@ -81,16 +81,15 @@ export class STAdapter implements PlatformAdapter {
     const ctx = getContext()
     const saved = ctx.extensionSettings[MODULE_NAME]
     // 内置预设是代码内的远程清单；加载时替换旧清单，用户可在图库中按需保存到本地
-    const presets = getPresetPacks()
     if (saved && typeof saved === 'object') {
       // 任意历史版本 → 当前版本（v1 无 settingsVersion 字段，migrate 会补齐新字段并反推图床编码）
       const merged = migrateSettings(saved)
       const customPacks = merged.packs.filter((p) => !isPresetPack(p.id))
-      merged.packs = [...presets, ...customPacks]
+      merged.packs = [...mergePresetPacks(merged.presetOverrides), ...customPacks]
       return merged
     }
     const defaults = createDefaultSettings()
-    defaults.packs = presets
+    defaults.packs = mergePresetPacks(defaults.presetOverrides)
     ctx.extensionSettings[MODULE_NAME] = defaults
     ctx.saveSettingsDebounced()
     return defaults

@@ -10,7 +10,7 @@ import type { PlatformAdapter } from '@/core/adapter'
 import type { PluginSettings } from '@/core/types'
 import { createDefaultSettings } from '@/core/types'
 import { migrateSettings } from '@/core/migrate'
-import { getPresetPacks } from '@/core/presets'
+import { isPresetPack, mergePresetPacks } from '@/core/presets'
 
 const STORAGE_KEY = 'sprite-overlay-settings-v1'
 
@@ -24,7 +24,7 @@ export class WebAdapter implements PlatformAdapter {
   async loadSettings(): Promise<PluginSettings> {
     const defaults = createDefaultSettings()
     // 内置预设包始终存在；默认角色开箱绑定银发萝莉预设
-    defaults.packs = getPresetPacks()
+    defaults.packs = mergePresetPacks(defaults.presetOverrides)
     defaults.bindings = [{ characterName: '小雪', packIds: ['preset_silver_loli'], enabled: true }]
     if (typeof window === 'undefined') return defaults
     try {
@@ -32,11 +32,11 @@ export class WebAdapter implements PlatformAdapter {
       if (!raw) return defaults
       // 任意历史版本 → 当前版本；预设包以代码内清单为准（保证图片路径正确），用户自定义包保留
       const saved = migrateSettings(JSON.parse(raw))
-      const customPacks = saved.packs.filter((p) => !p.id.startsWith('preset_'))
+      const customPacks = saved.packs.filter((p) => !isPresetPack(p.id))
       return {
         ...saved,
         bindings: saved.bindings.length > 0 ? saved.bindings : defaults.bindings,
-        packs: [...getPresetPacks(), ...customPacks],
+        packs: [...mergePresetPacks(saved.presetOverrides), ...customPacks],
       }
     } catch {
       return defaults
@@ -46,7 +46,10 @@ export class WebAdapter implements PlatformAdapter {
   async saveSettings(settings: PluginSettings): Promise<void> {
     if (typeof window === 'undefined') return
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        ...settings,
+        packs: settings.packs.filter((pack) => !isPresetPack(pack.id)),
+      }))
     } catch (err) {
       // 图片 base64 过大可能超出 localStorage 限额，仅提示不中断
       console.warn('[sprite-overlay] 设置保存失败（可能超出存储限额）', err)

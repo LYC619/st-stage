@@ -17,9 +17,17 @@
  * - multiRolePromptMode 默认值改为 repeat（自动精简）；
  *   v4 及更早存档里的 full 是旧默认值而非用户主动选择，一次性迁为 repeat，
  *   v5 起存档里的 full 视为用户选择原样保留
+ * v5 → v6：
+ * - galleryFoldByRole 的旧默认 false 一次性迁为 true
+ * - 增加同 ID 预设覆盖层，并精确迁移旧“（本地）”副本
  */
 
-import type { CharacterBinding, PluginSettings, SpritePack } from './types'
+import type {
+  CharacterBinding,
+  PluginSettings,
+  PresetPackOverride,
+  SpritePack,
+} from './types'
 import {
   createDefaultSettings,
   INJECTION_DEPTH_MAX,
@@ -37,6 +45,12 @@ import {
 import { normalizeTag, sanitizePackName } from './naming'
 import { extractImageCode } from './share-code'
 import { normalizeLabels, normalizeNote, normalizeOutfitNotes } from './sprite-metadata'
+import {
+  getPresetPacks,
+  presetSpriteKey,
+  sanitizePresetOverrides,
+} from './presets'
+import { isSafeLocalUserImagePath } from './sprite-store'
 
 /** 判断持久化对象是否需要迁移 */
 export function needsMigration(saved: unknown): boolean {
@@ -57,7 +71,7 @@ export function migrateSettings(saved: unknown): PluginSettings {
       ? raw.settingsVersion
       : 0
 
-  return {
+  const migrated: PluginSettings = {
     settingsVersion: SETTINGS_VERSION,
     enabled: typeof raw.enabled === 'boolean' ? raw.enabled : defaults.enabled,
     hideTagInMessage:
@@ -118,14 +132,99 @@ export function migrateSettings(saved: unknown): PluginSettings {
     imgbbApiKey: typeof raw.imgbbApiKey === 'string' ? raw.imgbbApiKey : defaults.imgbbApiKey,
     autoUpload: typeof raw.autoUpload === 'boolean' ? raw.autoUpload : defaults.autoUpload,
     galleryFoldByRole:
-      typeof raw.galleryFoldByRole === 'boolean'
+      savedVersion >= 6 && typeof raw.galleryFoldByRole === 'boolean'
         ? raw.galleryFoldByRole
         : defaults.galleryFoldByRole,
     packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
+    presetOverrides: sanitizePresetOverrides(raw.presetOverrides),
     bindings: Array.isArray(raw.bindings)
       ? raw.bindings.flatMap((b) => migrateBinding(b) ?? [])
       : [],
     apps: raw.apps && typeof raw.apps === 'object' && !Array.isArray(raw.apps) ? raw.apps : {},
+  }
+  if (savedVersion <= 5) {
+    const localCopies = migrateLegacyLocalPresetCopies(
+      migrated.packs,
+      migrated.bindings,
+      migrated.presetOverrides,
+    )
+    return { ...migrated, ...localCopies }
+  }
+  return migrated
+}
+
+export interface LegacyLocalPresetMigration {
+  packs: SpritePack[]
+  bindings: CharacterBinding[]
+  presetOverrides: Record<string, PresetPackOverride>
+}
+
+/**
+ * 精确识别旧版“保存本地”生成的副本。任何歧义都保守保留为自定义包。
+ * presets 参数用于纯函数测试，生产调用使用当前代码清单。
+ */
+export function migrateLegacyLocalPresetCopies(
+  packs: SpritePack[],
+  bindings: CharacterBinding[],
+  presetOverrides: Record<string, PresetPackOverride>,
+  presets: SpritePack[] = getPresetPacks(),
+): LegacyLocalPresetMigration {
+  const candidatesByPreset = new Map<string, SpritePack[]>()
+
+  for (const preset of presets) {
+    const remoteByKey = new Map(preset.sprites.map((sprite) => [presetSpriteKey(sprite), sprite.url]))
+    const candidates = packs.filter((pack) => {
+      if (
+        pack.name !== `${preset.name}（本地）` ||
+        (pack.roleName ?? '') !== (preset.roleName ?? '') ||
+        (pack.outfit ?? '') !== (preset.outfit ?? '') ||
+        pack.sprites.length !== preset.sprites.length
+      ) return false
+      const keys = new Set<string>()
+      for (const sprite of pack.sprites) {
+        const key = presetSpriteKey(sprite)
+        if (
+          keys.has(key) ||
+          remoteByKey.get(key) !== sprite.remoteUrl
+        ) return false
+        keys.add(key)
+      }
+      return keys.size === remoteByKey.size
+    })
+    if (
+      candidates.length === 1 &&
+      candidates[0].sprites.every((sprite) => isSafeLocalUserImagePath(sprite.url))
+    ) candidatesByPreset.set(preset.id, candidates)
+  }
+
+  const copyToPreset = new Map<string, string>()
+  const nextOverrides: Record<string, PresetPackOverride> = { ...presetOverrides }
+  for (const [presetId, [copy]] of candidatesByPreset) {
+    copyToPreset.set(copy.id, presetId)
+    const existing = nextOverrides[presetId] ?? {}
+    nextOverrides[presetId] = {
+      ...existing,
+      localSprites: {
+        ...existing.localSprites,
+        ...Object.fromEntries(copy.sprites.map((sprite) => [presetSpriteKey(sprite), sprite.url])),
+      },
+      ...(copy.updatedAt ? { updatedAt: copy.updatedAt } : {}),
+    }
+  }
+
+  const migratedBindings = bindings.map((binding) => {
+    const packIds: string[] = []
+    for (const id of binding.packIds) {
+      const nextId = copyToPreset.get(id) ?? id
+      if (!packIds.includes(nextId)) packIds.push(nextId)
+    }
+    return { ...binding, packIds }
+  })
+
+  return {
+    packs: packs.filter((pack) => !copyToPreset.has(pack.id)),
+    bindings: migratedBindings,
+    presetOverrides: nextOverrides,
   }
 }
 

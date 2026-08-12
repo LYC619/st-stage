@@ -3,12 +3,12 @@
  * 纯 TS，零框架依赖，Web 测试环境与 SillyTavern 扩展共用。
  *
  * 数据格式版本：
- * - 存储 settingsVersion = 5（旧版本由 core/migrate.ts 自动升级）
+ * - 存储 settingsVersion = 6（旧版本由 core/migrate.ts 自动升级）
  * - 立绘包文件 sprite-pack@3（导入兼容 @1 / @2）
  */
 
 /** 当前设置存储版本 */
-export const SETTINGS_VERSION = 5
+export const SETTINGS_VERSION = 6
 
 /** 楼层模式补渲染的最近 AI 楼层数：默认与上下限 */
 export const RECENT_FLOORS_DEFAULT = 6
@@ -120,6 +120,23 @@ export interface SpritePack {
   updatedAt?: string
   /** 立绘列表 */
   sprites: Sprite[]
+}
+
+/** 用户对代码内预设包的同 ID 覆盖层。 */
+export interface PresetPackOverride {
+  metadata?: Partial<{
+    name: string
+    author: string | null
+    description: string | null
+    roleName: string | null
+    outfit: string | null
+    promptNote: string | null
+    promptNotePlacement: PromptNotePlacement | null
+    outfitNotes: Record<string, string>
+  }>
+  /** 原始立绘坐标键 → SillyTavern 用户图片路径。 */
+  localSprites?: Record<string, string>
+  updatedAt?: string
 }
 
 /** 取包封面立绘（coverTag 优先，回退第一张），空包返回 null */
@@ -280,6 +297,8 @@ export interface PluginSettings {
   galleryFoldByRole: boolean
   /** 所有立绘包 */
   packs: SpritePack[]
+  /** 代码内预设的元数据和本地图片覆盖层。 */
+  presetOverrides: Record<string, PresetPackOverride>
   /** 角色绑定 */
   bindings: CharacterBinding[]
   /**
@@ -361,8 +380,9 @@ export function createDefaultSettings(): PluginSettings {
     promptBudget: PROMPT_BUDGET_DEFAULT,
     imgbbApiKey: '',
     autoUpload: false,
-    galleryFoldByRole: false,
+    galleryFoldByRole: true,
     packs: [],
+    presetOverrides: {},
     bindings: [],
     apps: {},
   }

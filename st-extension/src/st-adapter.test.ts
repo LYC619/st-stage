@@ -2,6 +2,8 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { STAdapter } from './st-adapter'
+import { createDefaultSettings } from '../../core/types'
+import { getPresetPacks, presetSpriteKey } from '../../core/presets'
 
 afterEach(() => {
   delete window.SillyTavern
@@ -24,6 +26,60 @@ describe('STAdapter story context', () => {
       title: '第一章',
       characterName: '小雪',
     })
+  })
+})
+
+describe('STAdapter settings persistence', () => {
+  it('loads merged preset overrides beside custom packs', async () => {
+    const preset = getPresetPacks()[0]
+    const sprite = preset.sprites[0]
+    const saved = {
+      ...createDefaultSettings(),
+      packs: [{ id: 'custom', name: '自定义', sprites: [] }],
+      presetOverrides: {
+        [preset.id]: {
+          metadata: { name: '本地常服' },
+          localSprites: { [presetSpriteKey(sprite)]: '/user/images/sprite-overlay/local.webp' },
+        },
+      },
+    }
+    window.SillyTavern = {
+      getContext: () => ({ extensionSettings: { sprite_overlay: saved } }),
+    } as never
+
+    const loaded = await new STAdapter().loadSettings()
+    const mergedPreset = loaded.packs.find((pack) => pack.id === preset.id)!
+
+    expect(mergedPreset.name).toBe('本地常服')
+    expect(mergedPreset.sprites[0]).toMatchObject({
+      url: '/user/images/sprite-overlay/local.webp',
+      remoteUrl: sprite.url,
+    })
+    expect(loaded.packs.some((pack) => pack.id === 'custom')).toBe(true)
+  })
+
+  it('persists only custom packs and preset overrides', async () => {
+    const saveSettingsDebounced = vi.fn()
+    const context = { extensionSettings: {} as Record<string, unknown>, saveSettingsDebounced }
+    window.SillyTavern = { getContext: () => context } as never
+    const settings = createDefaultSettings()
+    settings.packs = [
+      ...getPresetPacks(),
+      { id: 'preset_custom_story', name: '前缀只是巧合', sprites: [] },
+      { id: 'custom', name: '自定义', sprites: [] },
+    ]
+    settings.presetOverrides[getPresetPacks()[0].id] = { metadata: { name: '覆盖名' } }
+
+    await new STAdapter().saveSettings(settings)
+
+    expect(context.extensionSettings.sprite_overlay).toMatchObject({
+      presetOverrides: settings.presetOverrides,
+      packs: [
+        { id: 'preset_custom_story', name: '前缀只是巧合', sprites: [] },
+        { id: 'custom', name: '自定义', sprites: [] },
+      ],
+    })
+    expect(saveSettingsDebounced).toHaveBeenCalledOnce()
   })
 })
 
