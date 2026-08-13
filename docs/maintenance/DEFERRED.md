@@ -1,6 +1,6 @@
 # Deferred Findings
 
-These items are known and intentionally do not block the merged Gallery, Variable, and Renderer update. Each should receive its own scoped task if promoted.
+These items are known and intentionally do not block the current acceptance branch. Each should receive its own scoped task if promoted.
 
 ## Renderer Snapshot Image Listeners
 
@@ -14,13 +14,6 @@ These items are known and intentionally do not block the merged Gallery, Variabl
 - Impact: the structured block safely falls back to original text, but valid prose may not render through the enhanced mode.
 - Location: `st-extension/src/apps/renderer/parser.ts`.
 
-## Capability Layer 5b Dogfood
-
-- Behavior: capability-layer phase 5a is implemented, but no completed feature batch has yet recorded the phase 5b dogfood findings or decided the open chat-read-side API shape.
-- Current consumer: the Butler 2.0 design will exercise App storage, `openModal`, managed timers, and lifecycle cleanup; ST performance settings, extension APIs, browser metrics, and DOM inspection remain host-specific escape-hatch work.
-- Required output: record a capability-layer v1.5 candidate list after Butler implementation, separating reusable ctx needs from ST-only bridge needs. Do not expose full chat text before a second independent consumer proves that contract is needed.
-- Design: `docs/superpowers/specs/2026-08-11-butler-performance-2-design.md`.
-
 ## Product Version Decision
 
 - Behavior: the cache-busting build stamp was refreshed, while `manifest.json` remains `0.9.0`.
@@ -29,7 +22,7 @@ These items are known and intentionally do not block the merged Gallery, Variabl
 
 ## Reference Sprite Cleanup and Catalog Expansion
 
-- Delivered baseline: five Seraphina outfit presets now use 102 hosted HTTPS WebP links; selected packs can be manually saved to the SillyTavern user-image directory without placing image bytes in settings or `st-distribution/`.
+- Delivered baseline: five Seraphina outfit presets now use 102 hosted HTTPS WebP links; each preset can be localized in place through a same-ID override without placing image bytes in settings or `st-distribution/`.
 - Deferred source set: 143 PNG files, 181,125,118 bytes, seven outfit directories, mixed emotion/variant/source filenames.
 - Risk: sampled source files contain baked checkerboard pixels and cannot be published as transparent sprites without cleanup and quality review. Current imgbb links also need a separately owned long-term hosting decision before a larger public catalog is promised.
 - Next scoped task: clean/export transparent assets, normalize stable manifest IDs, select an owned HTTPS host/CDN, then expand or migrate the catalog without bundling image data into the extension.

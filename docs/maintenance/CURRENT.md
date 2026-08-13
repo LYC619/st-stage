@@ -2,87 +2,99 @@
 status_version: 1
 project: st-stage
 base_branch: main
-verified_code_head: 10e562822087a6868fa90ae4909a27b3b1324492
-remote_code_head_at_update: 9e5b4d18918edabf5b508169f194839ebcc060a4
-build_version: 0.9.0+202608101952
-phase: acceptance-round2-merged-pushed-awaiting-real-sillytavern
-updated_at: 2026-08-10T20:37:52+08:00
+verified_code_head: 4317d0bdc5a9904bf1cf143b7d937dec46c0ea93
+remote_code_head_at_update: bf44be7e75e08806eda8064543e9118b88ab133b
+build_version: 0.9.0+202608132024
+phase: round3-and-butler-ready-awaiting-real-sillytavern
+updated_at: 2026-08-13T20:39:01+08:00
 updated_by: codex
-verification_source: codex-acceptance-round2-2026-08-10
-history: docs/maintenance/history/2026-08-10-acceptance-round2-merge-push.md
+verification_source: codex-round3-butler-2026-08-13
+history: docs/maintenance/history/2026-08-13-acceptance-round3-butler-performance.md
 ---
 
 # Current Project Status
 
 ## Snapshot
 
-- 第二轮验收修复与两轮 CC 审查修复已快进合并到 `main` 并推送；集成提交为 `9e5b4d1`，`origin/main` 已同步。验收分支仍保留在 `codex/acceptance-round2`，便于回溯。
-- 产品版本仍为 `0.9.0`，构建戳为 `0.9.0+202608101952`。真实 SillyTavern 验收通过后再决定并执行 `1.0.0` 升版。
-- 自动化验证已完成；真实 SillyTavern 的模型输出、文件 API、缓存更新和供应商连接仍必须由维护者实测，不能由模拟器结果代替。
+- 第三轮真实 ST 实测暴露的问题与管家 2.0 已在分支 `codex/butler-performance-2-design` 完成，代码与固定构建产物提交为 `4317d0b`。
+- 当前尚未合并或推送；`origin/main` 仍为 `bf44be7`。产品版本保持 `0.9.0`，构建戳为 `0.9.0+202608132024`。
+- 自动化门禁已完成。下一步是从该分支安装到真实 SillyTavern，复验修复项并执行管家新增验收；通过后再决定 `1.0.0`。
+- API 管理本轮未改。维护者已确认 OpenAI 兼容快速切换基本满足需求，冷门同格式渠道不再扩充；后续只按真实用户反馈修复。
 
 ## Delivered Scope
 
-- 运行时：新聊天/角色切换双阶段自愈，完整标签增量流式消费，最终消息权威收敛；新变量更新块 DOM 隐藏可逆。
-- 显示与上传：不透明度仅作用悬浮窗，楼层立绘保持清晰；上传按钮横排；Renderer/插图协议说明补齐。
-- 图库：同角色多层卡片堆叠与横向展开；预设包可批量选择并保存为持久化本地副本；批量上传、保存本地、复制分享串；安全删除元数据与未被引用的 `/user/images/` 文件。
-- 资源：五套塞拉菲娜云端预设共 102 张，旧内置图片已从安装产物移除；`st-distribution/` 只保留 6 个安装文件。
-- Prompt：默认服装和服装相对地址；角色级基础图名池、服装增量、`_变` 后缀与缩水集合；场景备注参与压缩；相对地址格式在比全量短时优先；解析器保留有意的更宽松兼容；内置底稿未修改时仍自动精简；预览和注入共用同一构建入口。
-- API：明文 Key 策略如实展示；新建 Chat 档案只列 OpenAI、Claude、OpenRouter、Google AI Studio、自定义 OpenAI 兼容；历史冷门渠道仍可编辑；常用原生模型 selector 已按当前 SillyTavern release 源码修正。
-- “带场景备注时的 Prompt 压缩性能优化”已完成，不再属于延期事项。
-- CC 审查提出的预设选择、删除二次解码/失败重试、精确服装匹配、EOF 门禁和过度承诺文案问题已处理；`getPresetPacks` 的死参数已移除。
-- CC 复审提出的两个异步旧快照问题已处理：本地化逐张基于最新 settings 核验并提交，删除文件成功后基于最新 settings 移除目标包。预设与本地副本的同地址重复启用会被现有冲突检测阻止，并有专门回归测试，不作为延期风险记录。
+### Round Three Fixes
+
+- 消息编辑后会重新处理立绘与 Renderer；关闭“隐藏立绘标签”或变量块隐藏后可恢复原始可见内容，原始聊天数据不被改写。
+- Renderer 支持唯一、合法的裸 JSON 保守恢复；提示词明确要求用户主动测试或指定 Galgame/选项卡/战斗模式时必须输出结构化块。
+- 立绘不透明度改为滑块并即时预览；悬浮窗眼睛按钮可直达立绘 App。
+- 普通图包按角色显示多层卡片并横向展开，批量模式强制平铺；选择框与“使用中”标记不再遮挡。
+- 图包卡片显示“本地 / 云端 / 本地+云端 / 部分本地”资源状态。
+- 预设包保存本地改为同 ID 覆盖，不再生成“（本地）”副本；用户可编辑预设元数据、恢复内置信息，并保留远程地址供分享与回退。
+- 旧“表情”版内置 Prompt 在未被用户修改时精确迁移到当前压缩底稿；三种地址形式与塞拉菲娜预设矩阵已覆盖回归测试。
+
+### Butler 2.0
+
+- 四层可解释体检：聊天与消息 DOM、主线程与渲染、媒体与资源、扩展与配置。只展示可观测事实和不可用原因，不生成综合分。
+- 支持固定 6 秒静置采样与受控滚动探针；聊天切换、页面隐藏、生成或用户干预会使样本取消或失效。
+- 一键安全方案只降低或保持现有开销，不会把用户更低的 FPS 或消息加载数调高；无有效动态样本时先自动采基线。
+- 每次动作先保存分组事务，再读取实际值；支持同探针复测、可比性判断、冲突保护恢复和最近 10 次记录，App 数据总预算 64 KiB。
+- 扩展治理只调用 SillyTavern 1.18.0 官方启停接口；支持依赖警告、自身保护、选定扩展 A/B、二分隔离、跨刷新续接和完整恢复。
+- 最初禁用清单同时保存在 App 数据、可用时的 `localStorage` 和控制台恢复命令；受限存储环境会安全降级，不再阻断其他 App 注册。
+- World Info、Vector Storage、Summarize、Regex 与服务端建议位于独立只读顾问，不进入安全优化方案，不自动改变生成语义。
+- Capability Layer 5b dogfood 已完成并形成候选结论，详见 `docs/maintenance/history/2026-08-13-butler-capability-dogfood.md`。
 
 ## Recorded Verification
 
-Fresh automated evidence represented by code head `10e5628`:
+Fresh automated evidence represented by code head `4317d0b`:
 
-- Vitest：54 files, 634/634 tests passed.
-- TypeScript typecheck and ESLint: passed.
-- Next.js production build: passed with webpack. Turbopack cannot traverse this isolated worktree's external `node_modules` symlink, so it was not used as the final build runner.
-- Mobile Playwright E2E: 22/22 across Pixel 7 and Galaxy S8.
-- Extension build tests: 15/15 passed.
-- Fixed-stamp root/distribution builds completed at `0.9.0+202608101952`; shared artifact SHA-256 hashes match.
-- `st-distribution/`: 6 files, no image, `public/`, `reference/`, or preset-source assets.
-- `git diff --check`: passed on the working tree and `origin/main..HEAD` commit range, including the three previously reported EOF errors.
+- Vitest：69 files, 868/868 tests passed。构建测试通过时将 `TEMP/TMP` 指向仓库内临时目录，以避开沙箱对用户临时目录的读取限制。
+- TypeScript typecheck and full ESLint: passed.
+- Next.js 16.2.6 production build with Turbopack: passed.
+- Playwright：25/25 across desktop Chromium, Pixel 7, and Galaxy S8. 沙箱内 Chromium 启动被权限层阻断后，使用批准的项目限定命令完成复跑。
+- Extension build tests：15/15，包含在全量 Vitest 中。
+- `git diff --check` passed；`core/prompt-builder.ts` 无真实 NUL 字节。
+- 固定戳根目录与 `st-distribution/` 双轮重建稳定；4 个共享文件 SHA-256 逐项一致。
+- `st-distribution/` 恰好 6 个文件，不含图片、`public/`、`reference/` 或预设源码。
+- Frozen install was attempted but not verified：本机 Corepack 离线时无法解析锁定的 pnpm 10.32.1，包装命令又因无 TTY 拒绝重建 `node_modules`。其余门禁使用现有锁文件对应的依赖树完成，`pnpm-lock.yaml` 未修改。
 
-These are automated and source-review results only. No item below is marked complete by this record.
+These are automated and source-review results only. The real-ST items below remain manual evidence.
 
-## 1.0 Real SillyTavern Acceptance
+## Next Real SillyTavern Acceptance
 
-### Install And Runtime
+### Runtime And Renderer
 
-1. Update an already installed extension and confirm the settings page shows `0.9.0+202608101952`, proving the loader cache key changed.
-2. Create and switch chats/characters; confirm sprite and Renderer prompts appear immediately and remain present after the delayed self-heal.
-3. During a real streaming response, confirm only newly completed `[立绘:...]` tags advance the overlay and the final message becomes authoritative without duplicate jumps.
-4. Enable new variables, generate a real `<UpdateVariable>` block, confirm the UI hides it while raw chat data remains intact, then disable the feature and confirm text restoration.
+1. 从该分支更新已安装扩展，确认设置页显示 `0.9.0+202608132024`，且聊天/角色切换后立绘与 Renderer 注入仍会自愈。
+2. 编辑已有 AI 消息再保存，确认立绘与 Renderer 立即重处理；进入编辑再取消不会让渲染永久失效。
+3. 分别开关“隐藏立绘标签”和变量块隐藏，确认可见内容能恢复，重新加载聊天后原始消息没有被改写。
+4. 让模型明确“测试 Galgame 能力”，确认其输出结构化协议并成功渲染；再验证唯一合法裸 JSON 可恢复、错误或多段 JSON 保留原文。
+5. 复验 Galgame、选项卡、战斗三种 Renderer 的流式、交互、设置变化与源文本兜底。
+6. 复验立绘悬浮窗滑块的即时透明度变化，松手后持久化；点击眼睛按钮可直接打开立绘 App。
 
-### Renderer And Display
+### Gallery And Prompt
 
-5. Generate real Galgame, card-choice, and battle protocol blocks; verify streaming, swipes, composer insertion, settings changes, and fallback to source text.
-6. Confirm Renderer onboarding/status/help is readable, protocol injection reports a nonzero length, and the typewriter hint is understood as a local text animation rather than model streaming.
-7. Compare overlay and inline sprites at reduced opacity: only the overlay should dim; transparent inline sprites should have no frame, shadow, or checkerboard supplied by the extension.
+7. 普通模式下，同角色图包以首包封面堆叠并横向展开；切到批量管理后全部平铺，选择框不被“使用中”覆盖。
+8. 检查纯云端、纯本地、同时本地+云端和部分本地图包的资源标签是否与实际图片地址一致。
+9. 将一个内置预设保存到本地，确认仍是同一张卡、同一 ID 和原绑定，没有“（本地）”副本；失败可重试，成功项不会重复下载。
+10. 编辑预设角色名、服装名、备注和别名并重载，确认覆盖持久化；恢复内置信息后本地图片仍保留。
+11. 复验上传预览、默认关闭自动拆分、包启用清单、分页、批量排序/删除/上传与分享串。
+12. 删除本地图片时检查 Network：只请求安全的 `/user/images/` 路径；500 保留元数据供重试，404 可收敛为已删除。
+13. 对旧“表情”版未修改底稿升级，确认自动迁移到“图名”压缩版；用户自定义 Prompt 不应被覆盖。
+14. 检查塞拉菲娜注入内容包含共有图名、服装增量、`_变` 后缀、战损缩水集合和缩进备注，不再出现旧输出格式。
+15. 真机生成并解析 `[立绘:图名]`、`[立绘:服装/图名]`、`[立绘:角色/服装/图名]`；错误、歧义或跨角色地址不能误显示。
 
-### Gallery And Resources
+### Butler 2.0
 
-8. In the real ST viewport, confirm a collapsed same-role stack uses the first pack cover, shows layered cards, and expands horizontally with only one role open at a time.
-9. Recheck upload preview: auto-split is off by default, controls stay above the preview list, and action buttons remain horizontal on desktop.
-10. Exercise batch reorder/delete. For local deletion, confirm only eligible `/user/images/` files are removed and files referenced by an unselected pack remain; a 500 keeps metadata for retry, while an already-missing file is treated as deleted.
-11. Exercise batch cloud upload, local save, and multi-share copying with both success and retryable failure cases, including a hosted preset selection.
-12. Load all five hosted Seraphina presets, then save one locally and confirm a persistent “（本地）” copy replaces the active binding, uses the ST user-image copy, and still retains the remote source for sharing.
-13. Recheck pack-info save, enable-pack checklist, fold-state/scroll preservation, large-pack pagination, story-image archiving, and mobile lightbox layout in the real ST DOM.
-
-### Prompt
-
-14. Inspect the injected Seraphina prompt: one role header, one base image-name pool, outfit increments, `_变` suffix list, battle-only reduced set, and notes indented under their outfit.
-15. Generate and resolve `[立绘:图名]`, `[立绘:服装/图名]`, and full `[立绘:角色/服装/图名]`; confirm exact outfit names take precedence over fuzzy role matches, and ambiguous or wrong-role addresses do not render another pack's image.
-16. Click “填入内置底稿” without editing it; confirm automatic compression remains active and the displayed preview character count matches the actual injected prompt.
-
-### API
-
-17. For OpenAI, Claude, OpenRouter, and Google AI Studio, import or create a profile and verify Key, source, model, secret-id behavior, model-list loading, final connection, and actual model identity. `NONE` must never be reported as success or require a manual second connect.
-18. Test one custom OpenAI-compatible service with URL, plaintext Key, exact model ID, model discovery, and additional body/header parameters.
-19. Open an existing niche-provider profile and confirm it remains readable/editable although it is absent from the new-profile source list.
-20. Test one retained non-Chat completion backend used by the maintainer, and verify old single-secret-slot fallback only if an older SillyTavern instance is available.
+16. 在同一长聊天分别运行 6 秒静置和受控滚动探针；滚动位置恢复，切后台、切聊天、生成或用户干预会取消并给出重试说明。
+17. 检查四层报告只展示原始证据、设置摘要和不可用原因，没有综合分或未经 A/B 证明的因果结论。
+18. 在 FPS 或消息加载数已更保守时应用安全方案，确认不会被调高；无动态样本时应先完成基线再写设置。
+19. 应用后逐项查看“改了什么、为什么、影响、是否刷新、怎么恢复”，用同一探针复测，并完整恢复事务前实际值。
+20. 修改一个动作后的字段再点恢复，确认出现冲突提示而非静默覆盖；重复复测始终与本次事务前基线比较。
+21. 禁用一个可牺牲的第三方扩展并刷新，确认其脚本和样式未加载；恢复后重新加载。系统扩展默认不进入候选，st-stage 自身不可选。
+22. 选择有依赖关系的扩展，确认依赖警告和二次确认；批量操作部分失败时不刷新，也不能继续给出错误的二分判断。
+23. 运行选定扩展 A/B 与一次二分隔离，确认跨刷新续接；结束时 UI、`localStorage` 紧急副本和控制台命令都能恢复最初禁用清单。
+24. 在 Chrome 与不支持部分 Performance API 的环境各体检一次，确认支持项显示真实值，不支持项明确降级且不造数。
+25. 检查玩法/服务端顾问默认只读；管家历史不得包含 Key、Prompt、聊天正文或带查询参数的完整 URL。
 
 ## Deferred
 
@@ -90,12 +102,12 @@ These are automated and source-review results only. No item below is marked comp
 - Conservative Renderer HTML detection.
 - Cleanup/catalog expansion for the 143-file reference source set and selection of owned long-term hosting.
 - Extraction/publishing automation for the generated standalone ST distribution repository.
-- Product semantic version decision: remain `0.9.0` until the real-ST list passes, then release `1.0.0`.
+- Product semantic version decision after real-ST acceptance.
 
 See `docs/maintenance/DEFERRED.md` for details.
 
 ## Next Actions
 
-- 从 `main` 安装或更新扩展后执行上方真实 SillyTavern 验收清单，逐项记录结果，不要把自动化证据转换为手工验收证据。
-- Fix only failures exposed by that acceptance round.
-- If all blocking items pass, update `manifest.json` and build artifacts to `1.0.0`, run the release gates again, refresh this document, then merge and push.
+- 安装分支 `codex/butler-performance-2-design` 的构建，执行上方 25 项真实 SillyTavern 验收并记录失败项。
+- 只修真实验收暴露的问题；API 管理不扩张渠道矩阵，除非真实用户反馈证明当前 OpenAI 兼容路径不足。
+- 全部阻断项通过后，再将 `manifest.json` 与构建产物升级为 `1.0.0`，重新跑发布门禁，然后合并并推送。
