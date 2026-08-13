@@ -154,6 +154,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   })
   lifecycle.track(() => manager.destroy())
 
+  let openSpritesApp = () => {}
   const overlay: OverlayController = createOverlay(
     settings.overlay,
     (layout) => {
@@ -163,6 +164,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     () => manager.open(),
     // 悬浮窗 ✕：只隐藏窗体并记住状态，立绘功能（含楼层立绘）不受影响
     () => updateSettings({ ...settings, overlayHidden: true }),
+    () => openSpritesApp(),
   )
   lifecycle.track(() => overlay.destroy())
   overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds)
@@ -195,6 +197,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     },
   })
   lifecycle.track(() => phone.destroy())
+  openSpritesApp = () => phone.openApp('sprites')
 
   /** 收起手机壳并持久化（打开全屏弹窗前用，避免手机挡在弹窗上） */
   function collapsePhone(): void {
@@ -253,6 +256,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   lifecycle.track(() => apiManager.close())
 
   for (const app of createBuiltinApps({
+    previewSpriteOpacity: (percent) => overlay.setOpacity(percent),
     // 从手机开图库弹窗：先收起手机（避免挡在弹窗上），来源标记=手机（关闭后回图库页）
     openGalleryManager: () => {
       collapsePhone()

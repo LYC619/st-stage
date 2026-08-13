@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { migrateLegacyLocalPresetCopies, migrateSettings, needsMigration } from './migrate'
+import { BUILTIN_TEMPLATE, LEGACY_BUILTIN_TEMPLATES } from './prompt-builder'
 import { getPresetPacks, presetSpriteKey } from './presets'
 import { createDefaultSettings, SETTINGS_VERSION } from './types'
 
@@ -114,6 +115,20 @@ describe('migrateSettings', () => {
     expect(migrateSettings(V1_SAVED).promptTemplate).toBe('')
     expect(migrateSettings({ ...V1_SAVED, promptTemplate: '自定义 {清单}' }).promptTemplate).toBe('自定义 {清单}')
     expect(migrateSettings({ ...V1_SAVED, promptTemplate: 42 }).promptTemplate).toBe('')
+  })
+
+  it('精确迁移历史内置底稿为空值，用户改动过的模板保持原样', () => {
+    const legacy = LEGACY_BUILTIN_TEMPLATES[0]
+    const customized = legacy.replace('[角色立绘系统]', '[我的角色立绘系统]')
+
+    expect(migrateSettings({ settingsVersion: 5, packs: [], promptTemplate: legacy }).promptTemplate).toBe('')
+    expect(migrateSettings({ settingsVersion: 6, packs: [], promptTemplate: legacy }).promptTemplate).toBe('')
+    expect(migrateSettings({ settingsVersion: 6, packs: [], promptTemplate: BUILTIN_TEMPLATE }).promptTemplate).toBe('')
+    expect(migrateSettings({ settingsVersion: 6, packs: [], promptTemplate: legacy.replace(/\n/g, '\r\n') }).promptTemplate).toBe('')
+    expect(migrateSettings({ settingsVersion: 6, packs: [], promptTemplate: `${legacy}\n` }).promptTemplate)
+      .toBe(`${legacy}\n`)
+    expect(migrateSettings({ settingsVersion: 5, packs: [], promptTemplate: customized }).promptTemplate)
+      .toBe(customized)
   })
 
   it('promptBudget 缺省 0（不限），取整夹到 [0,20000]（阶段四）', () => {

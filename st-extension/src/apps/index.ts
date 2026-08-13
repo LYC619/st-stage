@@ -17,6 +17,8 @@ import type { NewvarRuntime } from './newvar/runtime'
 import type { RendererRuntime } from './renderer/runtime'
 
 export interface BuiltinAppDeps {
+  /** 不持久化地预览悬浮立绘透明度。 */
+  previewSpriteOpacity: (percent: number) => void
   /** 从手机打开图库管理弹窗（收起手机 + 记录来源，关闭后回手机图库页） */
   openGalleryManager: () => void
   /** 「新变量」运行时：入口创建并 start（注入/解析/存储常驻），App 只是它的控制台 */
@@ -31,7 +33,7 @@ export interface BuiltinAppDeps {
 
 export function createBuiltinApps(deps: BuiltinAppDeps): PhoneApp[] {
   return [
-    spriteApp(),
+    spriteApp({ previewOpacity: deps.previewSpriteOpacity }),
     galleryApp({ openManager: deps.openGalleryManager }),
     butlerApp(),
     mvuApp(),

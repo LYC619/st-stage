@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PluginSettings, SpritePack } from './types'
 import { createDefaultSettings, parseAddress, formatAddress } from './types'
+import { getPresetPacks, mergePresetPacks, presetSpriteKey } from './presets'
 import {
   bindPack,
   getActiveAddresses,
@@ -113,6 +114,63 @@ describe('resolveSprites — 序列', () => {
     const packs = [narutoHome, sasuke]
     const seq = resolveSprites(packs, ['鸣人/居家服/微笑', '鸣人/居家服/微笑', '佐助/冷漠', '雏田/x'])
     expect(seq.map((s) => s.url)).toEqual(['n-home-smile', 's-cold'])
+  })
+})
+
+describe('塞拉菲娜预设地址矩阵', () => {
+  const presets = getPresetPacks()
+
+  it.each(presets.map((pack) => [pack.outfit!, pack.sprites.at(-1)!] as const))(
+    '%s 支持服装/图名与完整地址',
+    (outfit, sprite) => {
+      expect(resolveSprite(presets, `${outfit}/${sprite.tag}`)?.url).toBe(sprite.url)
+      expect(resolveSprite(presets, `塞拉菲娜/${outfit}/${sprite.tag}`)?.url).toBe(sprite.url)
+    },
+  )
+
+  it('默认服装支持裸图名并优先于其他包的同名图名', () => {
+    const casual = presets.find((pack) => pack.outfit === '常服')!
+    for (const tag of ['中性', '爱慕']) {
+      expect(resolveSprite(presets, tag)?.url).toBe(casual.sprites.find((sprite) => sprite.tag === tag)?.url)
+    }
+  })
+
+  it('错误服装、角色、图名和跨服装组合均不渲染', () => {
+    expect(resolveSprite(presets, '不存在服装/月光透视')).toBeNull()
+    expect(resolveSprite(presets, '其他角色/暗影斗篷/月光透视')).toBeNull()
+    expect(resolveSprite(presets, '塞拉菲娜/常服/月光透视')).toBeNull()
+    expect(resolveSprite(presets, '暗影斗篷/不存在图名')).toBeNull()
+    expect(resolveSprite(presets, '塞拉菲娜/战斗服/治愈绽放')).toBeNull()
+  })
+
+  it('精确服装优先于模糊角色，非相对地址集合的跨包裸图名保持安全歧义', () => {
+    const decoy: SpritePack = {
+      id: 'decoy',
+      name: '暗影角色',
+      roleName: '暗影',
+      sprites: [{ tag: '月光透视', url: 'decoy.webp' }],
+    }
+    expect(resolveSprite([...presets, decoy], '暗影斗篷/月光透视')?.url).toBe(
+      presets.find((pack) => pack.outfit === '暗影斗篷')?.sprites.find((sprite) => sprite.tag === '月光透视')?.url,
+    )
+    expect(resolveSprite([
+      { id: 'a', name: 'A', roleName: 'A', sprites: [{ tag: '重复', url: 'a.webp' }] },
+      { id: 'b', name: 'B', roleName: 'B', sprites: [{ tag: '重复', url: 'b.webp' }] },
+    ], '重复')).toBeNull()
+  })
+
+  it('同 ID 本地覆盖沿用相同地址并优先返回本地 URL', () => {
+    const preset = presets[0]
+    const sprite = preset.sprites.find((item) => item.tag === '中性')!
+    const localUrl = '/user/images/sprite-overlay/seraphina/neutral.webp'
+    const merged = mergePresetPacks({
+      [preset.id]: { localSprites: { [presetSpriteKey(sprite)]: localUrl } },
+    })
+
+    expect(resolveSprite(merged, '中性')?.url).toBe(localUrl)
+    expect(resolveSprite(merged, '常服/中性')?.url).toBe(localUrl)
+    expect(resolveSprite(merged, '塞拉菲娜/常服/中性')?.url).toBe(localUrl)
+    expect(resolveSprite(merged, '塞拉菲娜/常服/中性')?.remoteUrl).toBe(sprite.url)
   })
 })
 

@@ -258,7 +258,8 @@ export function sanitizePresetOverrides(
       else if (source.promptNotePlacement === 'before-list' || source.promptNotePlacement === 'after-list') {
         metadata.promptNotePlacement = source.promptNotePlacement
       }
-      if (source.outfitNotes && typeof source.outfitNotes === 'object' && !Array.isArray(source.outfitNotes)) {
+      if (source.outfitNotes === null) metadata.outfitNotes = null
+      else if (source.outfitNotes && typeof source.outfitNotes === 'object' && !Array.isArray(source.outfitNotes)) {
         metadata.outfitNotes = normalizeOutfitNotes(source.outfitNotes)
       }
       if (Object.keys(metadata).length > 0) override.metadata = metadata
@@ -283,8 +284,10 @@ export function sanitizePresetOverrides(
 }
 
 /** 从当前代码预设清单生成运行时包，并叠加同 ID 用户覆盖。 */
-export function mergePresetPacks(overrides: unknown): SpritePack[] {
-  const presets = getPresetPacks()
+export function mergePresetPacks(
+  overrides: unknown,
+  presets: SpritePack[] = getPresetPacks(),
+): SpritePack[] {
   const sanitized = sanitizePresetOverrides(overrides, presets)
   return presets.map((preset) => {
     const override = sanitized[preset.id]
@@ -302,7 +305,8 @@ export function mergePresetPacks(overrides: unknown): SpritePack[] {
       else if (metadata.promptNotePlacement !== undefined) {
         merged.promptNotePlacement = metadata.promptNotePlacement
       }
-      if (metadata.outfitNotes !== undefined) merged.outfitNotes = metadata.outfitNotes
+      if (metadata.outfitNotes === null) delete merged.outfitNotes
+      else if (metadata.outfitNotes !== undefined) merged.outfitNotes = metadata.outfitNotes
     }
     merged.sprites = preset.sprites.map((sprite) => {
       const local = override.localSprites?.[presetSpriteKey(sprite)]

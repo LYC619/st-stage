@@ -8,7 +8,7 @@
  *   导出 JSON / 复制分享串
  *
  * 安全：所有用户可控文本（包名/tag/作者）一律 textContent，不进 innerHTML。
- * 预设包只读（加载时由代码清单重建）；本地化时创建可持久化的普通副本。
+ * 预设包的图片内容只读，包信息和本地图片通过 same-ID 覆盖层持久化。
  */
 
 import type { PluginSettings, Sprite, SpritePack } from '../../core/types'
@@ -64,6 +64,12 @@ import {
 import { compressImage, formatBytes } from '../../core/image-compress'
 import { isValidImgbbResult, uploadToImgbb } from '../../core/imgbb'
 import { isPresetPack } from '../../core/presets'
+import { summarizePackResources } from '../../core/sprite-resources'
+import {
+  clearPresetMetadata,
+  setPresetLocalSprite,
+  setPresetMetadata,
+} from '../../core/preset-overrides'
 import {
   filterSprites,
   groupPacksByRole,
@@ -544,6 +550,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     const body = backdrop.querySelector('.so-manager-body') as HTMLElement
     body.innerHTML = ''
     actions.innerHTML = ''
+    backdrop.querySelector('.so-manager')?.classList.toggle('so-manager-batch-mode', batchMode)
     closePopovers()
 
     // 渲染兜错：任何异常都显示在弹窗里，不留“只有标题栏”的空壳（移动端无控制台可查）
@@ -914,8 +921,6 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       for (const pack of packs) {
         const remoteSprites = pack.sprites.filter((sprite) => getSpriteSource(sprite) === 'hosted')
         const preset = isPresetPack(pack.id)
-        const localizedSprites: Array<{ source: Sprite; localized: Sprite }> = []
-        let packLocalizedCount = 0
         for (const sprite of remoteSprites) {
           try {
             const parts = [pack.name, spriteGroup(sprite), sprite.outfit ?? '', sprite.tag].filter(Boolean)
@@ -935,68 +940,21 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
             if (!latestPack || !latestSprite || latestSprite.url !== sprite.url) {
               throw new Error('立绘在保存期间已变化')
             }
-            const localizedSprite = { ...latestSprite, url: localized.url, remoteUrl: localized.remoteUrl }
             if (preset) {
-              localizedSprites.push({ source: sprite, localized: localizedSprite })
-            } else if (!updateChecked(upsertPack(latestSettings, upsertSprite(latestPack, localizedSprite)))) {
+              const next = setPresetLocalSprite(latestSettings, pack.id, latestSprite, localized.url)
+              if (next === latestSettings) throw new Error('更新预设覆盖失败')
+              deps.updateSettings(next)
+            } else if (!updateChecked(upsertPack(
+              latestSettings,
+              upsertSprite(latestPack, { ...latestSprite, url: localized.url, remoteUrl: localized.remoteUrl }),
+            ))) {
               throw new Error('更新图包失败')
             }
-            packLocalizedCount++
             localizedCount++
           } catch (error) {
             console.warn('[sprite-overlay] 批量保存本地失败', { packId: pack.id, tag: sprite.tag, error })
             failed++
           }
-        }
-        if (packLocalizedCount === 0) continue
-
-        if (preset) {
-          const latestSettings = deps.getSettings()
-          const latestPack = latestSettings.packs.find((candidate) => candidate.id === pack.id)
-          if (!latestPack) {
-            failed += packLocalizedCount
-            localizedCount -= packLocalizedCount
-            continue
-          }
-          let localizedPack = latestPack
-          let validLocalizedCount = 0
-          for (const result of localizedSprites) {
-            const latestSprite = sameSprite(latestPack, result.source)
-            if (!latestSprite || latestSprite.url !== result.source.url) {
-              failed++
-              localizedCount--
-              continue
-            }
-            localizedPack = upsertSprite(localizedPack, {
-              ...latestSprite,
-              url: result.localized.url,
-              remoteUrl: result.localized.remoteUrl,
-            })
-            validLocalizedCount++
-          }
-          if (validLocalizedCount === 0) continue
-          const localCopy: SpritePack = {
-            ...localizedPack,
-            id: genId(),
-            name: `${latestPack.name}（本地）`,
-            updatedAt: new Date().toISOString(),
-          }
-          const added = upsertPack(latestSettings, localCopy)
-          if (!added.ok) {
-            failed += validLocalizedCount
-            localizedCount -= validLocalizedCount
-            continue
-          }
-          const next: PluginSettings = {
-            ...added.settings,
-            bindings: added.settings.bindings.map((binding) => ({
-              ...binding,
-              packIds: [...new Set(binding.packIds.map((id) => id === pack.id ? localCopy.id : id))],
-            })),
-          }
-          selectedPackIds.delete(pack.id)
-          selectedPackIds.add(localCopy.id)
-          commit(next)
         }
       }
     } finally {
@@ -1150,12 +1108,28 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       if (bound === 'active') card.classList.add('so-card-active')
       const badge = el('span', bound === 'active' ? 'so-card-badge' : 'so-card-badge so-card-badge-off')
       badge.textContent = bound === 'active' ? '使用中' : '已停用'
+      badge.dataset.corner = 'bottom-left'
       coverBox.append(badge)
     }
     if (isPresetPack(pack.id)) {
       const chip = el('span', 'so-card-chip')
       chip.textContent = '预设'
       coverBox.append(chip)
+    }
+    const resources = summarizePackResources(pack)
+    if (resources.total > 0) {
+      const status = el('span', 'so-card-resource-status')
+      status.dataset.corner = 'bottom-right'
+      const resourceLabel = (kind: 'local' | 'cloud', label: string) => {
+        const count = resources[kind]
+        if (count === 0) return
+        const chip = el('span', `so-card-resource-chip so-card-resource-${kind}`)
+        chip.textContent = count === resources.total ? label : `${label} ${count}/${resources.total}`
+        status.append(chip)
+      }
+      resourceLabel('local', '本地')
+      resourceLabel('cloud', '云端')
+      coverBox.append(status)
     }
 
     const info = el('div', 'so-card-info')
@@ -1175,6 +1149,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       if (selected) card.classList.add('so-card-selected')
       const check = el('span', `so-card-check${selected ? ' so-card-check-on' : ''}`)
       check.textContent = selected ? '✓' : ''
+      check.dataset.corner = 'top-left'
       coverBox.append(check)
       const orderRow = el('div', 'so-row so-card-order')
       orderRow.append(
@@ -1350,11 +1325,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     body.append(topRow)
 
     // 包信息：折叠面板（默认收起——顶部留给图墙；展开后输入框均分一行、窄屏自动换行）
-    if (readonly) {
-      const note = el('div', 'so-status')
-      note.textContent = '预设包随扩展分发、只读；想改动可先「导出 JSON」再导入为自定义包。'
-      body.append(note)
-    } else {
+    {
       const metaPanel = collapsible('包信息', false, `pack-meta:${pack.id}`)
       const metaRow = el('div', 'so-row so-meta-row')
       const nameInput = textInput('包名')
@@ -1453,6 +1424,26 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           const promptNote = normalizeNote(promptNoteInput.value)
           syncOutfitNoteDrafts()
           const outfitNotes = normalizeOutfitNotes(Object.fromEntries(outfitNoteDrafts))
+          if (readonly) {
+            const current = deps.getSettings()
+            const next = setPresetMetadata(current, pack.id, {
+              name,
+              author: sanitizePackName(authorInput.value) || null,
+              description: sanitizeDescription(descInput.value) || null,
+              roleName: roleName || null,
+              outfit: outfit || null,
+              promptNote: promptNote || null,
+              promptNotePlacement: promptNote
+                ? placementSelect.value === 'after-list' ? 'after-list' : 'before-list'
+                : null,
+              outfitNotes: Object.keys(outfitNotes).length > 0 ? outfitNotes : null,
+            })
+            const materialized = next.packs.find((candidate) => candidate.id === pack.id)
+            if (!materialized || !checkedSettings(upsertPack(current, materialized))) return
+            commit(next)
+            toast(body, '已保存包信息')
+            return
+          }
           const nextPack: SpritePack = {
             ...pack,
             name,
@@ -1477,9 +1468,22 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           }
         }, 'so-btn-primary so-meta-save'),
       )
+      if (readonly) {
+        saveRow.append(button('恢复内置信息', () => {
+          if (!window.confirm('确定恢复扩展内置的包信息吗？已保存的本地图片会保留。')) return
+          const current = deps.getSettings()
+          const next = clearPresetMetadata(current, pack.id)
+          const materialized = next.packs.find((candidate) => candidate.id === pack.id)
+          if (!materialized || !checkedSettings(upsertPack(current, materialized))) return
+          commit(next)
+          toast(body, '已恢复内置信息，本地图片保持不变')
+        }))
+      }
       const metaHint = el('div', 'so-status')
       metaHint.textContent =
-        '人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。'
+        readonly
+          ? '可覆盖预设包信息；立绘图片本身仍不可添加、改名或删除。'
+          : '人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。'
       metaPanel.body.append(metaRow, promptRow, outfitNotesBox, metaHint, saveRow)
       body.append(metaPanel.box)
     }

@@ -92,6 +92,45 @@ export function numberRow(
   return row
 }
 
+/** 滑块行：input 用于即时预览，change 用于一次性提交，避免拖动时反复重挂载 App。 */
+export function rangeRow(
+  label: string,
+  value: number,
+  min: number,
+  max: number,
+  onInput: (v: number) => void,
+  onCommit: (v: number) => void,
+  format: (v: number) => string = String,
+): HTMLElement {
+  const row = el('label', 'so-app-toggle so-app-range')
+  const span = document.createElement('span')
+  span.textContent = label
+  const controls = el('span', 'so-app-range-controls')
+  const input = document.createElement('input')
+  input.type = 'range'
+  input.min = String(min)
+  input.max = String(max)
+  input.step = '1'
+  input.value = String(Math.min(max, Math.max(min, Math.round(value))))
+  const output = document.createElement('output')
+
+  const read = (): number => {
+    const parsed = Math.round(Number(input.value))
+    const clamped = Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : min
+    input.value = String(clamped)
+    output.value = format(clamped)
+    output.textContent = output.value
+    return clamped
+  }
+
+  read()
+  input.addEventListener('input', () => onInput(read()))
+  input.addEventListener('change', () => onCommit(read()))
+  controls.append(input, output)
+  row.append(span, controls)
+  return row
+}
+
 /** 折叠分区展开态（key → open）：App 因设置变更整体重挂载时，恢复用户手动展开的分区 */
 const foldOpenState = new Map<string, boolean>()
 

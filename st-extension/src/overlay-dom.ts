@@ -37,6 +37,7 @@ export function createOverlay(
   onLayoutChange: (layout: OverlayLayout) => void,
   onManage?: () => void,
   onClose?: () => void,
+  onOpenSprites?: () => void,
 ): OverlayController {
   let layout = { ...initialLayout }
 
@@ -88,6 +89,25 @@ export function createOverlay(
     onManage?.()
   })
 
+  const spritesBtn = document.createElement('div')
+  spritesBtn.className = 'sprite-overlay-sprites fa-solid fa-eye'
+  spritesBtn.title = '打开立绘 App'
+  spritesBtn.setAttribute('role', 'button')
+  spritesBtn.setAttribute('aria-label', '打开立绘 App')
+  spritesBtn.tabIndex = 0
+  spritesBtn.addEventListener('pointerdown', (e) => e.stopPropagation())
+  const openSprites = (e: Event) => {
+    e.stopPropagation()
+    onOpenSprites?.()
+  }
+  spritesBtn.addEventListener('click', openSprites)
+  spritesBtn.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      openSprites(e)
+    }
+  })
+
   // 关闭按钮：只隐藏窗体并记住状态（不关立绘功能），重新打开入口在「立绘」App
   const closeBtn = document.createElement('div')
   closeBtn.className = 'sprite-overlay-close'
@@ -101,7 +121,7 @@ export function createOverlay(
     onClose?.()
   })
 
-  frame.append(img, placeholder, tagBadge, dots, gearBtn, closeBtn, resizeHandle)
+  frame.append(img, placeholder, tagBadge, dots, spritesBtn, gearBtn, closeBtn, resizeHandle)
   root.append(frame)
   document.body.append(root)
 

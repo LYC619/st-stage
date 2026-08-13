@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   BUILTIN_TEMPLATE,
+  LEGACY_BUILTIN_TEMPLATES,
   buildInjectionPrompt,
   buildMultiRolePrompt,
   buildPrompt,
   buildPromptSceneNotes,
   chooseShorterPrompt,
+  isKnownBuiltinTemplate,
 } from './prompt-builder'
 import type { SpriteAddress, SpritePack } from './types'
 import { spriteAddress } from './types'
@@ -245,6 +247,41 @@ describe('buildPrompt — 自定义模板', () => {
   it('未修改的 BUILTIN_TEMPLATE 仍走内置压缩逻辑', () => {
     const addrs = [addr('鸣人', '', '微笑'), addr('鸣人', '', '害羞')]
     expect(buildPrompt(addrs, 'repeat', 3, BUILTIN_TEMPLATE)).toBe(buildPrompt(addrs, 'repeat', 3))
+  })
+
+  it('历史内置“表情”底稿仍走当前自动压缩逻辑', () => {
+    const legacy = LEGACY_BUILTIN_TEMPLATES[0]
+    const addrs = [
+      addr('角色', '常服', '中性'),
+      addr('角色', '常服', '喜悦'),
+      addr('角色', '礼服', '中性'),
+      addr('角色', '礼服', '喜悦'),
+    ]
+
+    expect(isKnownBuiltinTemplate(legacy)).toBe(true)
+    expect(buildPrompt(addrs, 'repeat', 3, legacy)).toBe(buildPrompt(addrs, 'repeat', 3))
+    expect(buildPrompt(addrs, 'repeat', 3, legacy)).not.toContain('表情')
+  })
+
+  it('历史底稿只按精确内容识别，用户改动一个字符后保持自定义语义', () => {
+    const legacy = LEGACY_BUILTIN_TEMPLATES[0]
+    const customized = legacy.replace('[角色立绘系统]', '[我的角色立绘系统]')
+    const addrs = [addr('角色', '常服', '中性')]
+
+    expect(isKnownBuiltinTemplate(customized)).toBe(false)
+    expect(buildPrompt(addrs, 'repeat', 3, customized)).toContain('[我的角色立绘系统]')
+    expect(buildPrompt(addrs, 'repeat', 3, customized)).toContain('表情')
+  })
+
+  it('历史底稿只归一 CRLF，首尾空白也属于用户改动', () => {
+    const legacy = LEGACY_BUILTIN_TEMPLATES[0]
+    const addrs = [addr('角色', '常服', '中性')]
+
+    expect(isKnownBuiltinTemplate(legacy.replace(/\n/g, '\r\n'))).toBe(true)
+    expect(isKnownBuiltinTemplate(` ${legacy}`)).toBe(false)
+    expect(isKnownBuiltinTemplate(`${legacy}\n`)).toBe(false)
+    expect(buildPrompt(addrs, 'repeat', 3, ` ${legacy}`)).toContain('表情')
+    expect(buildPrompt(addrs, 'repeat', 3, `${legacy}\n`)).toContain('表情')
   })
 })
 

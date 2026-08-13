@@ -300,7 +300,7 @@ function findSharedCluster(scenes: PromptScene[]): SharedCluster | null {
     for (let j = i + 1; j < scenes.length; j++) {
       const core = scenes[i].tags.filter((tag) => sets[j].has(tag))
       if (core.length < 2) continue
-      const signature = core.join(' ')
+      const signature = core.join('\u0000')
       if (seenCores.has(signature)) continue
       seenCores.add(signature)
       const members = sets.map((set) => core.every((tag) => set.has(tag)))
@@ -568,6 +568,29 @@ export const BUILTIN_TEMPLATE = [
   '只能使用上述场景中实际列出的图名，不要自行拼造不存在的角色/服装/图名组合。',
 ].join('\n')
 
+/** 仓库曾发布过、但后来被新版内置逻辑替代的精确底稿。 */
+export const LEGACY_BUILTIN_TEMPLATES = [
+  [
+    '[角色立绘系统]',
+    '可用立绘（按场景）：',
+    '{清单}',
+    '输出格式：默认场景直接写 [立绘:表情]；其他场景写 [立绘:场景/表情]。两段地址表示无服装，三级地址表示指定服装。',
+    '请根据回复内容，按情节顺序选择 {数量} 张立绘。每个 [立绘:...] 标签单独占一行，插在触发它的剧情段落之后——随剧情分散在正文中，不要集中堆在回复结尾。',
+    '只能使用上述场景中实际列出的表情，不要自行拼造不存在的角色/服装/表情组合。',
+  ].join('\n'),
+] as const
+
+function normalizeTemplateLineEndings(template: string): string {
+  return template.replace(/\r\n?/g, '\n')
+}
+
+/** 只认当前或真实发布过的完整底稿；任意内容改动都视为用户自定义。 */
+export function isKnownBuiltinTemplate(template: string): boolean {
+  const normalized = normalizeTemplateLineEndings(template)
+  return [BUILTIN_TEMPLATE, ...LEGACY_BUILTIN_TEMPLATES]
+    .some((known) => normalized === known)
+}
+
 /**
  * 主入口：根据三级地址列表构建注入 prompt。
  * addresses 为空时返回空字符串（不注入）。
@@ -592,7 +615,7 @@ export function buildPrompt(
   const noteIndex = indexSceneNotes(notes)
   const reservedTags = new Set(addresses.map((address) => address.tag))
   const custom = template.trim()
-  if (custom && custom !== BUILTIN_TEMPLATE.trim()) {
+  if (custom && !isKnownBuiltinTemplate(template)) {
     return fitToBudget(addresses, b, (addrs) => {
       const rendered = renderGroupedSceneList(buildScenes(addrs), noteIndex, reservedTags)
       const list = [...rendered.lines, ...rangeInstruction(rendered.ranges)].join('\n')

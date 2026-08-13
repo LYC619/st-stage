@@ -51,6 +51,7 @@ import {
   sanitizePresetOverrides,
 } from './presets'
 import { isSafeLocalUserImagePath } from './sprite-store'
+import { isKnownBuiltinTemplate } from './prompt-builder'
 
 /** 判断持久化对象是否需要迁移 */
 export function needsMigration(saved: unknown): boolean {
@@ -124,7 +125,9 @@ export function migrateSettings(saved: unknown): PluginSettings {
         ? Math.min(INJECTION_DEPTH_MAX, Math.max(INJECTION_DEPTH_MIN, Math.round(raw.injectionDepth)))
         : defaults.injectionDepth,
     promptTemplate:
-      typeof raw.promptTemplate === 'string' ? raw.promptTemplate : defaults.promptTemplate,
+      typeof raw.promptTemplate === 'string' && !isKnownBuiltinTemplate(raw.promptTemplate)
+        ? raw.promptTemplate
+        : defaults.promptTemplate,
     promptBudget:
       typeof raw.promptBudget === 'number' && Number.isFinite(raw.promptBudget)
         ? Math.min(PROMPT_BUDGET_MAX, Math.max(PROMPT_BUDGET_MIN, Math.round(raw.promptBudget)))

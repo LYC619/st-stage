@@ -191,7 +191,8 @@
   line-height: 1.6;
 }
 
-#sprite-overlay-root .sprite-overlay-gear {
+#sprite-overlay-root .sprite-overlay-gear,
+#sprite-overlay-root .sprite-overlay-sprites {
   position: absolute;
   right: 6px;
   top: 6px;
@@ -210,7 +211,12 @@
   backdrop-filter: blur(4px);
 }
 
-#sprite-overlay-root .sprite-overlay-frame:hover .sprite-overlay-gear {
+#sprite-overlay-root .sprite-overlay-sprites {
+  right: 70px;
+}
+
+#sprite-overlay-root .sprite-overlay-frame:hover .sprite-overlay-gear,
+#sprite-overlay-root .sprite-overlay-frame:hover .sprite-overlay-sprites {
   opacity: 1;
 }
 
@@ -872,10 +878,10 @@
   white-space: nowrap;
 }
 
-/* 封面角标：使用中（左上）/ 预设（右上）；实底保证压在图上仍可读 */
+/* 封面角标：使用中（左下）/ 预设（右上）；实底保证压在图上仍可读 */
 .so-manager .so-card-badge {
   position: absolute;
-  top: 6px;
+  bottom: 6px;
   left: 6px;
   z-index: 1;
   padding: 2px 8px;
@@ -885,6 +891,48 @@
   color: #fff;
   background: rgba(34, 139, 84, 0.92);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  box-sizing: border-box;
+  max-width: calc(50% - 10px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.so-manager .so-card-resource-status {
+  position: absolute;
+  left: 50%;
+  right: 6px;
+  bottom: 6px;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: calc(50% - 6px);
+  pointer-events: none;
+}
+
+.so-manager .so-card-resource-chip {
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #fff;
+  background: rgba(18, 18, 22, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.so-manager .so-card-resource-local {
+  border-color: rgba(74, 189, 126, 0.72);
+}
+
+.so-manager .so-card-resource-cloud {
+  border-color: rgba(105, 166, 255, 0.72);
 }
 
 .so-manager .so-card-badge-off {
@@ -1186,6 +1234,7 @@
   }
 
   #sprite-overlay-root .sprite-overlay-gear,
+  #sprite-overlay-root .sprite-overlay-sprites,
   #sprite-overlay-root .sprite-overlay-close {
     opacity: 0.9;
   }
@@ -2495,6 +2544,38 @@
   box-sizing: border-box;
 }
 
+.so-app-range {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.so-app-range > span:first-child {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.so-app-range-controls {
+  display: grid;
+  grid-template-columns: minmax(96px, 1fr) 44px;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 150px;
+  min-width: 0;
+}
+
+.so-app-range-controls input[type='range'] {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+
+.so-app-range-controls output {
+  width: 44px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .so-app-input {
   width: 100%;
   box-sizing: border-box;
@@ -2555,6 +2636,298 @@
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
   border-left: 2px solid rgba(255, 255, 255, 0.28);
+}
+
+/* —— 管家 2.0：可解释体检、事务恢复与扩展排障 —— */
+.so-butler-app {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.so-butler-hero {
+  border-left: 3px solid rgba(93, 197, 143, 0.72);
+}
+
+.so-butler-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.so-butler-summary-item {
+  display: flex;
+  flex-direction: column;
+  min-height: 46px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  box-sizing: border-box;
+}
+
+.so-butler-summary-item small {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 10.5px;
+}
+
+.so-butler-summary-item strong {
+  margin-top: 2px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.so-butler-text,
+.so-butler-lead,
+.so-butler-muted,
+.so-butler-alert {
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.so-butler-lead {
+  padding: 8px 10px;
+  border-left: 2px solid rgba(105, 166, 255, 0.68);
+  background: rgba(105, 166, 255, 0.07);
+}
+
+.so-butler-muted {
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.so-butler-alert {
+  color: #ffc9c9;
+}
+
+.so-butler-section-title,
+.so-butler-modal-title {
+  color: rgba(255, 255, 255, 0.96);
+  font-weight: 700;
+}
+
+.so-butler-modal-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.so-butler-section-title {
+  margin: 10px 0 4px;
+  font-size: 13px;
+}
+
+.so-butler-finding {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.025);
+  overflow: hidden;
+}
+
+.so-butler-finding + .so-butler-finding {
+  margin-top: 6px;
+}
+
+.so-butler-finding > summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+  padding: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.45;
+  list-style: none;
+}
+
+.so-butler-finding > summary::-webkit-details-marker {
+  display: none;
+}
+
+.so-butler-finding > summary::after {
+  content: '›';
+  grid-column: 2;
+  justify-self: end;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.so-butler-finding[open] > summary::after {
+  transform: rotate(90deg);
+}
+
+.so-butler-layer {
+  padding: 2px 5px;
+  border: 1px solid rgba(105, 166, 255, 0.35);
+  border-radius: 4px;
+  color: #b9d7ff;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.so-butler-severity-risk {
+  border-left: 3px solid rgba(255, 112, 112, 0.75);
+}
+
+.so-butler-severity-suggestion {
+  border-left: 3px solid rgba(255, 194, 102, 0.72);
+}
+
+.so-butler-severity-info {
+  border-left: 3px solid rgba(105, 166, 255, 0.62);
+}
+
+.so-butler-finding-body {
+  padding: 0 8px 8px;
+}
+
+.so-butler-explanation-row {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.so-butler-explanation-row strong {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 11px;
+}
+
+.so-butler-actions,
+.so-butler-modal-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.so-butler-modal-actions {
+  grid-template-columns: 1fr;
+}
+
+.so-butler-actions .so-app-btn,
+.so-butler-modal-actions .so-app-btn {
+  min-width: 0;
+  margin: 0;
+  white-space: normal;
+}
+
+.so-butler-notice {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(20, 20, 25, 0.96);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.so-butler-notice-success {
+  border-color: rgba(74, 189, 126, 0.58);
+}
+
+.so-butler-notice-error {
+  border-color: rgba(255, 112, 112, 0.58);
+  color: #ffc9c9;
+}
+
+.so-butler-pending {
+  border-color: rgba(255, 194, 102, 0.5);
+}
+
+.so-butler-kv {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.45fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: 12px;
+}
+
+.so-butler-kv strong {
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.so-butler-metric-block pre {
+  max-height: 220px;
+  margin: 5px 0 10px;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  color: rgba(255, 255, 255, 0.76);
+  font: 11px/1.45 var(--monoFontFamily, ui-monospace, monospace);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.so-butler-extension-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.so-butler-extension-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.so-butler-extension-row input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.so-butler-extension-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.so-butler-extension-row small {
+  max-width: 120px;
+  text-align: right;
+}
+
+@media (max-width: 520px) {
+  .so-butler-explanation-row,
+  .so-butler-kv {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .so-butler-kv strong {
+    text-align: left;
+  }
+
+  .so-butler-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .so-butler-extension-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .so-butler-extension-row small {
+    grid-column: 2;
+    max-width: none;
+    text-align: left;
+  }
 }
 
 .so-app-sprite-strip {

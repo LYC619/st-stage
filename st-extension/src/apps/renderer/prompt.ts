@@ -27,6 +27,7 @@ export function buildRendererPrompt(settings: RendererSettings): string {
   return `# ST Stage 结构化渲染协议
 
 普通回复不需要输出渲染块；仅在当前场景明显适合以下已启用模式时使用。
+用户明确要求使用某个已启用模式、演示该模式或测试该模式时，必须输出对应的结构化渲染块，不得只用普通文本说明。
 每条回复最多输出一个 STStageRender 标签块，标签内部必须是严格 JSON。
 使用时必须输出完整 <STStageRender>JSON</STStageRender> 标签，不得只输出裸 JSON。
 禁止输出 HTML、脚本或其他可执行代码，也不要增加协议未声明的字段。

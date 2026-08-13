@@ -36,4 +36,30 @@ describe('spriteApp', () => {
     const injected = buildActiveSpritePrompt(settings, characterName)
     expect(container.textContent).toContain(`预计注入 ${injected.length} 字符`)
   })
+
+  it('悬浮窗不透明度使用滑块，拖动只预览读数、松手后提交设置', () => {
+    const settings = createDefaultSettings()
+    const updateSettings = vi.fn()
+    const previewOpacity = vi.fn()
+    const ctx = {
+      getSettings: () => settings,
+      getCharacterName: () => '',
+      updateSettings,
+    } as unknown as PhoneAppContext
+    const container = document.createElement('div')
+
+    spriteApp({ previewOpacity }).mount(container, ctx)
+
+    const slider = container.querySelector<HTMLInputElement>('input[type="range"]')!
+    expect(slider).not.toBeNull()
+    expect(slider.value).toBe(String(settings.spriteOpacity))
+    slider.value = '47'
+    slider.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(container.querySelector<HTMLOutputElement>('output')?.value).toBe('47%')
+    expect(previewOpacity).toHaveBeenCalledWith(47)
+    expect(updateSettings).not.toHaveBeenCalled()
+
+    slider.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(updateSettings).toHaveBeenCalledWith({ ...settings, spriteOpacity: 47 })
+  })
 })

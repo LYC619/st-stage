@@ -109,7 +109,7 @@ interface PresetPackOverride {
     outfit: string | null
     promptNote: string | null
     promptNotePlacement: PromptNotePlacement | null
-    outfitNotes: Record<string, string>
+    outfitNotes: Record<string, string> | null
   }>
   localSprites?: Record<string, string>
   updatedAt?: string

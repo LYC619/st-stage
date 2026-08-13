@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { getPresetPacks, isPresetPack, mergePresetPacks, presetSpriteKey } from './presets'
+import {
+  getPresetPacks,
+  isPresetPack,
+  mergePresetPacks,
+  presetSpriteKey,
+  sanitizePresetOverrides,
+} from './presets'
 
 describe('remote built-in presets', () => {
   it('ships five stable Seraphina outfit packs with only valid HTTPS images', () => {
@@ -96,5 +102,23 @@ describe('remote built-in presets', () => {
 
     expect(merged).toHaveLength(getPresetPacks().length)
     expect(merged[0]).toEqual(original)
+  })
+
+  it('preserves an explicit null outfit-notes override and removes built-in outfit notes at runtime', () => {
+    const fixture = {
+      ...getPresetPacks()[0],
+      outfitNotes: { 常服: '内置服装备注' },
+    }
+    const overrides = sanitizePresetOverrides({
+      [fixture.id]: { metadata: { outfitNotes: null } },
+    }, [fixture])
+
+    expect(overrides[fixture.id]?.metadata?.outfitNotes).toBeNull()
+
+    const merged = mergePresetPacks(overrides, [fixture])
+    expect(merged).toHaveLength(1)
+    expect(merged[0].id).toBe(fixture.id)
+    expect(merged[0].outfitNotes).toBeUndefined()
+    expect(fixture.outfitNotes).toEqual({ 常服: '内置服装备注' })
   })
 })

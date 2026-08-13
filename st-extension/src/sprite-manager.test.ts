@@ -7,6 +7,8 @@ import {
   type PluginSettings,
 } from '../../core/types'
 import { buildPromptSceneNotes } from '../../core/prompt-builder'
+import { getPresetPacks, presetSpriteKey } from '../../core/presets'
+import { setPresetLocalSprite, setPresetMetadata } from '../../core/preset-overrides'
 import { MAX_NOTE_CODE_POINTS } from '../../core/sprite-metadata'
 
 const imageMocks = vi.hoisted(() => ({ compressImage: vi.fn() }))
@@ -71,6 +73,7 @@ function enableAutoSplit(modal: HTMLElement): void {
 function uploadSettings(): PluginSettings {
   return {
     ...createDefaultSettings(),
+    galleryFoldByRole: false,
     packs: [
       { id: 'current', name: '当前包', roleName: '鸣人', sprites: [] },
       {
@@ -775,6 +778,7 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
     // 就把注入位置静默改掉了。
     let settings: PluginSettings = {
       ...createDefaultSettings(),
+      galleryFoldByRole: false,
       packs: [{
         id: 'imported',
         name: '导入包',
@@ -808,6 +812,7 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
   it('keys outfit notes by the normalized outfit name so injection can match them', () => {
     let settings: PluginSettings = {
       ...createDefaultSettings(),
+      galleryFoldByRole: false,
       packs: [{
         id: 'dirty-outfit',
         name: '脏服装包',
@@ -1323,17 +1328,13 @@ describe('createSpriteManager selected-pack resource actions', () => {
     manager.close()
   })
 
-  it('selects a hosted preset, saves it as a persistent local copy, and replaces active bindings', async () => {
+  it('localizes a hosted preset in place and keeps its id, pack count, bindings, and remote URL', async () => {
+    const builtIn = getPresetPacks()[0]
+    const source = builtIn.sprites[0]
     let settings: PluginSettings = {
       ...createDefaultSettings(),
-      packs: [{
-        id: 'preset_seraphina_casual',
-        name: '塞拉菲娜预设',
-        roleName: '塞拉菲娜',
-        outfit: '常服',
-        sprites: [{ tag: '中性', url: 'https://img.test/preset.webp' }],
-      }],
-      bindings: [{ characterName: '阿珍', packIds: ['preset_seraphina_casual'], enabled: true }],
+      packs: [{ ...builtIn, sprites: [source] }],
+      bindings: [{ characterName: '阿珍', packIds: [builtIn.id], enabled: true }],
     }
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
@@ -1355,15 +1356,437 @@ describe('createSpriteManager selected-pack resource actions', () => {
     findButton(document, '保存本地（1）').click()
     await vi.waitFor(() => expect(document.querySelector('.so-toast')?.textContent).toContain('保存本地完成'))
 
-    const preset = settings.packs.find((pack) => pack.id === 'preset_seraphina_casual')!
-    const localCopy = settings.packs.find((pack) => !pack.id.startsWith('preset_'))!
-    expect(preset.sprites[0].url).toBe('https://img.test/preset.webp')
-    expect(localCopy).toMatchObject({ name: '塞拉菲娜预设（本地）', roleName: '塞拉菲娜', outfit: '常服' })
-    expect(localCopy.sprites[0]).toMatchObject({
+    expect(settings.packs).toHaveLength(1)
+    expect(settings.packs[0].id).toBe(builtIn.id)
+    expect(settings.packs[0].sprites[0]).toMatchObject({
       url: '/user/images/preset-local.webp',
-      remoteUrl: 'https://img.test/preset.webp',
+      remoteUrl: source.url,
     })
-    expect(settings.bindings[0].packIds).toEqual([localCopy.id])
+    expect(settings.presetOverrides[builtIn.id]?.localSprites).toEqual({
+      [presetSpriteKey(source)]: '/user/images/preset-local.webp',
+    })
+    expect(settings.bindings[0].packIds).toEqual([builtIn.id])
+    manager.close()
+  })
+
+  it('图包卡片显示本地/云端完整或部分资源状态', () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      galleryFoldByRole: false,
+      packs: [
+        { id: 'cloud', name: '仅云端', sprites: [{ tag: '一', url: 'https://img.test/a.webp' }] },
+        { id: 'local', name: '仅本地', sprites: [{ tag: '二', url: '/user/images/b.webp' }] },
+        {
+          id: 'dual',
+          name: '双端',
+          sprites: [{ tag: '三', url: '/user/images/c.webp', remoteUrl: 'https://img.test/c.webp' }],
+        },
+        {
+          id: 'partial',
+          name: '部分',
+          sprites: [
+            { tag: '四', url: '/user/images/d.webp', remoteUrl: 'https://img.test/d.webp' },
+            { tag: '五', url: 'https://img.test/e.webp' },
+            { tag: '六', url: '/user/images/f.webp' },
+          ],
+        },
+      ],
+      bindings: [{ characterName: '阿珍', packIds: ['cloud'], enabled: true }],
+    }
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    const card = (name: string) => [...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+      .find((item) => item.textContent?.includes(name))!
+
+    expect(card('仅云端').querySelector('.so-card-resource-status')?.textContent).toBe('云端')
+    expect(card('仅云端').querySelector('.so-card-badge[data-corner="bottom-left"]')?.textContent).toBe('使用中')
+    expect(card('仅云端').querySelector('.so-card-resource-status[data-corner="bottom-right"]')).not.toBeNull()
+    expect(card('仅本地').querySelector('.so-card-resource-status')?.textContent).toBe('本地')
+    expect(card('双端').querySelector('.so-card-resource-status')?.textContent).toBe('本地云端')
+    expect(card('部分').querySelector('.so-card-resource-status')?.textContent).toBe('本地 2/3云端 2/3')
+    manager.close()
+  })
+
+  it('批量模式平铺所有卡片并使用独立勾选角标区域', () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      galleryFoldByRole: true,
+      packs: [
+        { id: 'a', name: '甲包', roleName: '同角色', sprites: [{ tag: '微笑', url: 'a-url' }] },
+        { id: 'b', name: '乙包', roleName: '同角色', sprites: [{ tag: '生气', url: 'b-url' }] },
+        { id: 'c', name: '丙包', roleName: '同角色', sprites: [{ tag: '哭泣', url: 'c-url' }] },
+      ],
+    }
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    findButton(document, '批量管理').click()
+
+    const root = document.querySelector('.so-manager')!
+    expect(root.classList.contains('so-manager-batch-mode')).toBe(true)
+    expect(document.querySelectorAll('.so-role-pack-stack')).toHaveLength(0)
+    expect(document.querySelectorAll('.so-pack-card.so-card-batch')).toHaveLength(3)
+    expect(document.querySelectorAll('.so-card-check')).toHaveLength(3)
+    expect(document.querySelectorAll('.so-card-check[data-corner="top-left"]')).toHaveLength(3)
+    expect(document.querySelectorAll('.so-card-resource-status[data-corner="bottom-right"]')).toHaveLength(3)
+
+    findButton(document, '完成').click()
+    expect(root.classList.contains('so-manager-batch-mode')).toBe(false)
+    manager.close()
+  })
+
+  it('edits preset package metadata in place without enabling destructive sprite actions', () => {
+    const builtIn = getPresetPacks()[0]
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      galleryFoldByRole: false,
+      packs: [builtIn],
+    }
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '塞拉菲娜' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    document.querySelector<HTMLElement>('.so-pack-card')!.click()
+
+    expect([...document.querySelectorAll<HTMLElement>('[role="button"]')]
+      .some((item) => item.textContent?.startsWith('添加立绘'))).toBe(false)
+    expect([...document.querySelectorAll<HTMLElement>('[role="button"]')]
+      .some((item) => item.textContent === '删除立绘包')).toBe(false)
+
+    const panel = openPackInfoPanel()
+    const input = (placeholder: string) => [...panel.querySelectorAll<HTMLInputElement>('input')]
+      .find((item) => item.placeholder === placeholder)!
+    input('包名').value = '我的常服'
+    input('作者').value = '用户作者'
+    input('描述（可选）').value = '用户描述'
+    input('人名（可空）').value = '新角色'
+    input('服装（可空）').value = '新服装'
+    panel.querySelector<HTMLTextAreaElement>('.so-pack-prompt-note')!.value = '用户备注'
+    panel.querySelector<HTMLSelectElement>('.so-pack-prompt-placement')!.value = 'after-list'
+    findButton(panel, '保存包信息').click()
+
+    expect(settings.packs).toHaveLength(1)
+    expect(settings.packs[0]).toMatchObject({
+      id: builtIn.id,
+      name: '我的常服',
+      author: '用户作者',
+      description: '用户描述',
+      roleName: '新角色',
+      outfit: '新服装',
+      promptNote: '用户备注',
+      promptNotePlacement: 'after-list',
+    })
+    expect(settings.presetOverrides[builtIn.id]?.metadata).toEqual({
+      name: '我的常服',
+      author: '用户作者',
+      description: '用户描述',
+      roleName: '新角色',
+      outfit: '新服装',
+      promptNote: '用户备注',
+      promptNotePlacement: 'after-list',
+      outfitNotes: null,
+    })
+
+    document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
+    expect(document.querySelectorAll('.so-sprite-actions')).toHaveLength(0)
+    expect(document.querySelectorAll('.so-lightbox [data-action-id]')).toHaveLength(0)
+    manager.close()
+  })
+
+  it('rejects preset metadata edits that conflict with another enabled pack address', () => {
+    const builtIn = getPresetPacks()[0]
+    const source = builtIn.sprites[0]
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      galleryFoldByRole: false,
+      packs: [
+        { ...builtIn, sprites: [source] },
+        {
+          id: 'enabled-custom',
+          name: '已启用自定义包',
+          roleName: '冲突角色',
+          outfit: '冲突服装',
+          sprites: [{ tag: source.tag, url: 'https://img.test/conflict.webp' }],
+        },
+      ],
+      bindings: [{
+        characterName: '塞拉菲娜',
+        packIds: [builtIn.id, 'enabled-custom'],
+        enabled: true,
+      }],
+    }
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '塞拉菲娜' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    ;([...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+      .find((card) => card.textContent?.includes(builtIn.name)))!.click()
+
+    const before = structuredClone(settings)
+    const panel = openPackInfoPanel()
+    const input = (placeholder: string) => [...panel.querySelectorAll<HTMLInputElement>('input')]
+      .find((item) => item.placeholder === placeholder)!
+    input('人名（可空）').value = '冲突角色'
+    input('服装（可空）').value = '冲突服装'
+    findButton(panel, '保存包信息').click()
+
+    expect(settings).toEqual(before)
+    expect(settings.presetOverrides[builtIn.id]).toBeUndefined()
+    expect(document.querySelector('.so-toast')?.textContent)
+      .toContain('操作未生效，存在地址冲突')
+    manager.close()
+  })
+
+  it('writes null when all preset outfit notes are cleared in the metadata form', () => {
+    const builtIn = getPresetPacks()[0]
+    let settings = setPresetMetadata(
+      {
+        ...createDefaultSettings(),
+        galleryFoldByRole: false,
+        packs: [builtIn],
+      },
+      builtIn.id,
+      { outfitNotes: { 常服: '用户备注' } },
+    )
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '塞拉菲娜' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    document.querySelector<HTMLElement>('.so-pack-card')!.click()
+
+    const panel = openPackInfoPanel()
+    const note = panel.querySelector<HTMLTextAreaElement>('.so-outfit-note-input')!
+    expect(note.value).toBe('用户备注')
+    note.value = ''
+    findButton(panel, '保存包信息').click()
+
+    expect(settings.presetOverrides[builtIn.id]?.metadata?.outfitNotes).toBeNull()
+    expect(settings.packs[0].outfitNotes).toBeUndefined()
+    manager.close()
+  })
+
+  it('restores built-in preset metadata after confirmation without clearing local sprites', () => {
+    const builtIn = getPresetPacks()[0]
+    const source = builtIn.sprites[0]
+    let settings = setPresetMetadata(
+      setPresetLocalSprite(
+        { ...createDefaultSettings(), galleryFoldByRole: false, packs: [builtIn] },
+        builtIn.id,
+        source,
+        '/user/images/preset-local.webp',
+      ),
+      builtIn.id,
+      { name: '我的常服', author: '用户作者', promptNote: '用户备注' },
+    )
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '塞拉菲娜' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    manager.open()
+    document.querySelector<HTMLElement>('.so-pack-card')!.click()
+
+    const panel = openPackInfoPanel()
+    findButton(panel, '恢复内置信息').click()
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('本地图片'))
+    expect(settings.presetOverrides[builtIn.id]?.metadata).toBeUndefined()
+    expect(settings.presetOverrides[builtIn.id]?.localSprites).toEqual({
+      [presetSpriteKey(source)]: '/user/images/preset-local.webp',
+    })
+    expect(settings.packs[0].name).toBe(builtIn.name)
+    expect(settings.packs[0].sprites[0]).toMatchObject({
+      url: '/user/images/preset-local.webp',
+      remoteUrl: source.url,
+    })
+    manager.close()
+  })
+
+  it('blocks restoring preset metadata when the built-in address conflicts with another enabled pack', () => {
+    const builtIn = getPresetPacks()[0]
+    const source = builtIn.sprites[0]
+    let settings = setPresetMetadata(
+      {
+        ...createDefaultSettings(),
+        galleryFoldByRole: false,
+        packs: [
+          { ...builtIn, sprites: [source] },
+          {
+            id: 'enabled-custom',
+            name: '占用内置地址的自定义包',
+            roleName: builtIn.roleName,
+            outfit: builtIn.outfit,
+            sprites: [{ tag: source.tag, url: 'https://img.test/conflict.webp' }],
+          },
+        ],
+        bindings: [{
+          characterName: '塞拉菲娜',
+          packIds: [builtIn.id, 'enabled-custom'],
+          enabled: true,
+        }],
+      },
+      builtIn.id,
+      { roleName: '避让角色', outfit: '避让服装' },
+    )
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '塞拉菲娜' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    manager.open()
+    ;([...document.querySelectorAll<HTMLElement>('.so-pack-card')]
+      .find((card) => card.textContent?.includes(builtIn.name)))!.click()
+
+    const before = structuredClone(settings)
+    const panel = openPackInfoPanel()
+    findButton(panel, '恢复内置信息').click()
+
+    expect(settings).toEqual(before)
+    expect(settings.presetOverrides[builtIn.id]?.metadata).toMatchObject({
+      roleName: '避让角色',
+      outfit: '避让服装',
+    })
+    expect(document.querySelector('.so-toast')?.textContent)
+      .toContain('操作未生效，存在地址冲突')
+    manager.close()
+  })
+
+  it('does not persist a preset override when the source changes while saving', async () => {
+    const builtIn = getPresetPacks()[0]
+    const source = builtIn.sprites[0]
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{ ...builtIn, sprites: [source] }],
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      blob: async () => new Blob(['preset'], { type: 'image/webp' }),
+    }))
+    imageMocks.compressImage.mockResolvedValue({
+      dataUri: 'data:image/webp;base64,QQ==', compressed: false, bytes: 1,
+    })
+    const changedUrl = 'https://img.test/replaced-during-save.webp'
+    const saveImageFile = vi.fn(async () => {
+      settings = {
+        ...settings,
+        packs: settings.packs.map((pack) => pack.id === builtIn.id
+          ? { ...pack, sprites: [{ ...source, url: changedUrl }] }
+          : pack),
+      }
+      return '/user/images/preset-local.webp'
+    })
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍', saveImageFile } as unknown as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    selectAll(manager)
+
+    findButton(document, '保存本地（1）').click()
+    await vi.waitFor(() => expect(document.querySelector('.so-toast')?.textContent).toContain('保存本地完成'))
+
+    expect(settings.presetOverrides[builtIn.id]).toBeUndefined()
+    expect(settings.packs[0].sprites[0].url).toBe(changedUrl)
+    expect(document.querySelector('.so-toast')?.textContent).toContain('成功 0 张，失败 1 张')
+    manager.close()
+  })
+
+  it('keeps successful preset sprite overrides when another download fails', async () => {
+    const builtIn = getPresetPacks()[0]
+    const sources = builtIn.sprites.slice(0, 2)
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{ ...builtIn, sprites: sources }],
+    }
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        blob: async () => new Blob(['preset'], { type: 'image/webp' }),
+      })
+      .mockRejectedValueOnce(new Error('offline')))
+    imageMocks.compressImage.mockResolvedValue({
+      dataUri: 'data:image/webp;base64,QQ==', compressed: false, bytes: 1,
+    })
+    const saveImageFile = vi.fn().mockResolvedValue('/user/images/preset-local.webp')
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍', saveImageFile } as unknown as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    selectAll(manager)
+
+    findButton(document, '保存本地（1）').click()
+    await vi.waitFor(() => expect(document.querySelector('.so-toast')?.textContent).toContain('保存本地完成'))
+
+    expect(settings.packs).toHaveLength(1)
+    expect(settings.bindings).toEqual([])
+    expect(settings.presetOverrides[builtIn.id]?.localSprites).toEqual({
+      [presetSpriteKey(sources[0])]: '/user/images/preset-local.webp',
+    })
+    expect(document.querySelector('.so-toast')?.textContent).toContain('成功 1 张，失败 1 张')
+    manager.close()
+  })
+
+  it('preserves concurrent settings changes while localizing preset sprites one by one', async () => {
+    const builtIn = getPresetPacks()[0]
+    const sources = builtIn.sprites.slice(0, 2)
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{ ...builtIn, sprites: sources }],
+      bindings: [{ characterName: '阿珍', packIds: [builtIn.id], enabled: true }],
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      blob: async () => new Blob(['preset'], { type: 'image/webp' }),
+    }))
+    imageMocks.compressImage.mockResolvedValue({
+      dataUri: 'data:image/webp;base64,QQ==', compressed: false, bytes: 1,
+    })
+    let saved = 0
+    const saveImageFile = vi.fn(async () => {
+      saved++
+      if (saved === 1) {
+        settings = {
+          ...settings,
+          packs: [...settings.packs, { id: 'concurrent', name: '并发新增', sprites: [] }],
+        }
+      }
+      return `/user/images/preset-local-${saved}.webp`
+    })
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍', saveImageFile } as unknown as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    selectAll(manager)
+
+    findButton(document, '保存本地（1）').click()
+    await vi.waitFor(() => expect(document.querySelector('.so-toast')?.textContent).toContain('成功 2 张，失败 0 张'))
+
+    expect(settings.packs.map((pack) => pack.id)).toEqual([builtIn.id, 'concurrent'])
+    expect(settings.bindings[0].packIds).toEqual([builtIn.id])
+    expect(Object.keys(settings.presetOverrides[builtIn.id]?.localSprites ?? {})).toHaveLength(2)
     manager.close()
   })
 

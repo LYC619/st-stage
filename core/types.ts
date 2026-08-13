@@ -15,7 +15,7 @@ export const RECENT_FLOORS_DEFAULT = 6
 export const RECENT_FLOORS_MIN = 1
 export const RECENT_FLOORS_MAX = 50
 
-/** 立绘显示不透明度（百分比）：默认与上下限（悬浮窗与楼层内立绘共用） */
+/** 悬浮窗立绘不透明度（百分比）：默认值与上下限 */
 export const SPRITE_OPACITY_DEFAULT = 100
 export const SPRITE_OPACITY_MIN = 20
 export const SPRITE_OPACITY_MAX = 100
@@ -132,7 +132,7 @@ export interface PresetPackOverride {
     outfit: string | null
     promptNote: string | null
     promptNotePlacement: PromptNotePlacement | null
-    outfitNotes: Record<string, string>
+    outfitNotes: Record<string, string> | null
   }>
   /** 原始立绘坐标键 → SillyTavern 用户图片路径。 */
   localSprites?: Record<string, string>
@@ -258,7 +258,7 @@ export interface PluginSettings {
   overlayHidden: boolean
   /**
    * 立绘显示不透明度（20–100，百分比，默认 100）。
-   * 同时作用于悬浮窗立绘与楼层内立绘——移动端立绘遮挡正文时可调低。
+   * 只作用于悬浮窗立绘；楼层内立绘保持清晰显示。
    */
   spriteOpacity: number
   /**

@@ -15,12 +15,18 @@ export default defineConfig({
     baseURL: 'http://localhost:3101',
   },
   webServer: {
-    command: 'pnpm dev -p 3101',
+    command: 'node node_modules/next/dist/bin/next dev -p 3101',
     url: 'http://localhost:3101',
     reuseExistingServer: true,
     timeout: 180_000,
   },
   projects: [
+    // 桌面端只跑管家响应式规格；其余测试包含移动端触摸/旋转语义。
+    {
+      name: 'desktop-butler',
+      testMatch: /butler\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1366, height: 900 } },
+    },
     // 主流安卓机（412×915）
     { name: 'mobile', use: { ...devices['Pixel 7'] } },
     // 小屏窄机（360×740）：验证手机壳"窄屏收窄"钳位

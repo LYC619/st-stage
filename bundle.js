@@ -1,5 +1,5 @@
 // core/types.ts
-var SETTINGS_VERSION = 5;
+var SETTINGS_VERSION = 6;
 var RECENT_FLOORS_DEFAULT = 6;
 var RECENT_FLOORS_MIN = 1;
 var RECENT_FLOORS_MAX = 50;
@@ -75,8 +75,9 @@ function createDefaultSettings() {
     promptBudget: PROMPT_BUDGET_DEFAULT,
     imgbbApiKey: "",
     autoUpload: false,
-    galleryFoldByRole: false,
+    galleryFoldByRole: true,
     packs: [],
+    presetOverrides: {},
     bindings: [],
     apps: {}
   };
@@ -251,9 +252,9 @@ function parseSpriteFileName(fileName) {
   }
   return { role: "", outfit: "", tag: fileNameToTag(base) };
 }
-function splitAtMost(text, sep, n) {
+function splitAtMost(text3, sep, n) {
   const out = [];
-  let rest = text;
+  let rest = text3;
   const single = new RegExp(sep.source);
   while (out.length < n - 1) {
     const m = single.exec(rest);
@@ -322,13 +323,13 @@ function findAddressConflicts(packs) {
 function buildPromptSceneNotes(packs, addresses) {
   const notes = [];
   const multiPack = packs.length > 1;
-  const available = new Set(addresses.map(addressConflictKey));
+  const available2 = new Set(addresses.map(addressConflictKey));
   for (const pack of packs) {
     const scenes = [];
     const seen = /* @__PURE__ */ new Set();
     for (const sprite of pack.sprites) {
       const scene = effectiveSpriteAddress(pack, sprite, multiPack);
-      if (!available.has(addressConflictKey(scene))) continue;
+      if (!available2.has(addressConflictKey(scene))) continue;
       const key = JSON.stringify([scene.role, scene.outfit]);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -709,6 +710,23 @@ var BUILTIN_TEMPLATE = [
   "请根据回复内容，按情节顺序选择 {数量} 张立绘。每个 [立绘:...] 标签单独占一行，插在触发它的剧情段落之后——随剧情分散在正文中，不要集中堆在回复结尾。",
   "只能使用上述场景中实际列出的图名，不要自行拼造不存在的角色/服装/图名组合。"
 ].join("\n");
+var LEGACY_BUILTIN_TEMPLATES = [
+  [
+    "[角色立绘系统]",
+    "可用立绘（按场景）：",
+    "{清单}",
+    "输出格式：默认场景直接写 [立绘:表情]；其他场景写 [立绘:场景/表情]。两段地址表示无服装，三级地址表示指定服装。",
+    "请根据回复内容，按情节顺序选择 {数量} 张立绘。每个 [立绘:...] 标签单独占一行，插在触发它的剧情段落之后——随剧情分散在正文中，不要集中堆在回复结尾。",
+    "只能使用上述场景中实际列出的表情，不要自行拼造不存在的角色/服装/表情组合。"
+  ].join("\n")
+];
+function normalizeTemplateLineEndings(template) {
+  return template.replace(/\r\n?/g, "\n");
+}
+function isKnownBuiltinTemplate(template) {
+  const normalized = normalizeTemplateLineEndings(template);
+  return [BUILTIN_TEMPLATE, ...LEGACY_BUILTIN_TEMPLATES].some((known) => normalized === known);
+}
 function buildPrompt(addresses, mode, count, template = "", budget = 0, notes = []) {
   if (addresses.length === 0) return "";
   const n = Math.max(1, Math.round(count) || 1);
@@ -716,7 +734,7 @@ function buildPrompt(addresses, mode, count, template = "", budget = 0, notes = 
   const noteIndex = indexSceneNotes(notes);
   const reservedTags = new Set(addresses.map((address) => address.tag));
   const custom = template.trim();
-  if (custom && custom !== BUILTIN_TEMPLATE.trim()) {
+  if (custom && !isKnownBuiltinTemplate(template)) {
     return fitToBudget(addresses, b, (addrs) => {
       const rendered = renderGroupedSceneList(buildScenes(addrs), noteIndex, reservedTags);
       const list = [...rendered.lines, ...rangeInstruction(rendered.ranges)].join("\n");
@@ -1181,29 +1199,29 @@ function buildActiveSpritePrompt(settings, characterName, budget = settings.prom
 
 // core/tag-parser.ts
 var TAG_REGEX = /[[【]\s*立绘\s*[:：]\s*([^\]】]+?)\s*[\]】]/g;
-function extractTags(text) {
+function extractTags(text3) {
   const tags = [];
   let match;
   const regex = new RegExp(TAG_REGEX.source, "g");
-  while ((match = regex.exec(text)) !== null) {
+  while ((match = regex.exec(text3)) !== null) {
     const tag = match[1].trim();
     if (tag) tags.push(tag);
   }
   return tags;
 }
-function stripTags(text) {
-  return text.replace(new RegExp(TAG_REGEX.source, "g"), "").replace(/[ \t]+$/gm, "");
+function stripTags(text3) {
+  return text3.replace(new RegExp(TAG_REGEX.source, "g"), "").replace(/[ \t]+$/gm, "");
 }
-function replaceTags(text, replacer) {
-  return text.replace(new RegExp(TAG_REGEX.source, "g"), (raw, address) => {
+function replaceTags(text3, replacer) {
+  return text3.replace(new RegExp(TAG_REGEX.source, "g"), (raw, address) => {
     const trimmed = address.trim();
     if (!trimmed) return raw;
     const out = replacer(trimmed, raw);
     return out === null ? raw : out;
   });
 }
-function hasTag(text) {
-  return new RegExp(TAG_REGEX.source).test(text);
+function hasTag(text3) {
+  return new RegExp(TAG_REGEX.source).test(text3);
 }
 
 // core/sprite-preload.ts
@@ -1293,12 +1311,12 @@ function createEventHub() {
 
 // core/phone-registry.ts
 var CTX_API_VERSION = 2;
-function capInjectionText(appId, text) {
-  if (text.length <= PROMPT_BUDGET_MAX) return text;
+function capInjectionText(appId, text3) {
+  if (text3.length <= PROMPT_BUDGET_MAX) return text3;
   console.warn(
-    `[sprite-overlay] App「${appId}」注入 ${text.length} 字符超上限，已截断到 ${PROMPT_BUDGET_MAX}`
+    `[sprite-overlay] App「${appId}」注入 ${text3.length} 字符超上限，已截断到 ${PROMPT_BUDGET_MAX}`
   );
-  return text.slice(0, PROMPT_BUDGET_MAX);
+  return text3.slice(0, PROMPT_BUDGET_MAX);
 }
 function createAppHost(deps, tracker) {
   return {
@@ -1312,7 +1330,7 @@ function createAppHost(deps, tracker) {
     }),
     onMessageReceived: (handler) => tracker.track(deps.onMessageReceived(handler)),
     onCharacterChanged: (handler) => tracker.track(deps.onCharacterChanged(handler)),
-    injectPrompt: (text, depth) => deps.injectPrompt(deps.appId, capInjectionText(deps.appId, text), depth),
+    injectPrompt: (text3, depth) => deps.injectPrompt(deps.appId, capInjectionText(deps.appId, text3), depth),
     toast: (kind, message) => deps.toast(kind, message)
   };
 }
@@ -1820,17 +1838,17 @@ function extractImageCode(url) {
   return isValidImageCode(seg) ? seg : null;
 }
 function decodeShareString(raw) {
-  const text = raw.trim();
-  if (text.indexOf(SHARE_PREFIX_V2) !== -1) return decodeShareStringV2(text);
-  return decodeShareStringV1(text);
+  const text3 = raw.trim();
+  if (text3.indexOf(SHARE_PREFIX_V2) !== -1) return decodeShareStringV2(text3);
+  return decodeShareStringV1(text3);
 }
 function decodeShareStringV1(raw) {
-  const text = raw.trim();
-  const prefixIndex = text.indexOf(SHARE_PREFIX);
+  const text3 = raw.trim();
+  const prefixIndex = text3.indexOf(SHARE_PREFIX);
   if (prefixIndex === -1) {
     throw new Error(`导入失败：没有找到 ${SHARE_PREFIX} 开头的分享串`);
   }
-  const body = text.slice(prefixIndex + SHARE_PREFIX.length).trim();
+  const body = text3.slice(prefixIndex + SHARE_PREFIX.length).trim();
   const segments = body.split("|");
   const name = sanitizePackName(segments[0] ?? "") || "分享立绘包";
   let host = DEFAULT_IMAGE_HOST;
@@ -1895,12 +1913,12 @@ function encodeShareStringV2(pack) {
   };
 }
 function decodeShareStringV2(raw) {
-  const text = raw.trim();
-  const prefixIndex = text.indexOf(SHARE_PREFIX_V2);
+  const text3 = raw.trim();
+  const prefixIndex = text3.indexOf(SHARE_PREFIX_V2);
   if (prefixIndex === -1) {
     throw new Error(`导入失败：没有找到 ${SHARE_PREFIX_V2} 开头的分享串`);
   }
-  const body = text.slice(prefixIndex + SHARE_PREFIX_V2.length).trim();
+  const body = text3.slice(prefixIndex + SHARE_PREFIX_V2.length).trim();
   const segments = body.split("|");
   const name = sanitizePackName(segments[0] ?? "") || "分享立绘包";
   let author;
@@ -1957,117 +1975,6 @@ function decodeShareStringV2(raw) {
     ...commonOutfit ? { outfit: commonOutfit } : {},
     sprites,
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-  };
-}
-
-// core/migrate.ts
-function migrateSettings(saved) {
-  const defaults = createDefaultSettings();
-  if (!saved || typeof saved !== "object") return defaults;
-  const raw = saved;
-  const savedVersion = typeof raw.settingsVersion === "number" && Number.isFinite(raw.settingsVersion) ? raw.settingsVersion : 0;
-  return {
-    settingsVersion: SETTINGS_VERSION,
-    enabled: typeof raw.enabled === "boolean" ? raw.enabled : defaults.enabled,
-    hideTagInMessage: typeof raw.hideTagInMessage === "boolean" ? raw.hideTagInMessage : defaults.hideTagInMessage,
-    spriteDisplayMode: raw.spriteDisplayMode === "overlay" || raw.spriteDisplayMode === "inline" || raw.spriteDisplayMode === "both" ? raw.spriteDisplayMode : defaults.spriteDisplayMode,
-    renderInlineImages: typeof raw.renderInlineImages === "boolean" ? raw.renderInlineImages : defaults.renderInlineImages,
-    imageHost: typeof raw.imageHost === "string" && /^https?:\/\//.test(raw.imageHost) ? raw.imageHost : defaults.imageHost,
-    overlay: migrateOverlay(raw.overlay, defaults.overlay),
-    overlayHidden: typeof raw.overlayHidden === "boolean" ? raw.overlayHidden : defaults.overlayHidden,
-    spriteOpacity: typeof raw.spriteOpacity === "number" && Number.isFinite(raw.spriteOpacity) ? Math.min(SPRITE_OPACITY_MAX, Math.max(SPRITE_OPACITY_MIN, Math.round(raw.spriteOpacity))) : defaults.spriteOpacity,
-    recentFloors: typeof raw.recentFloors === "number" && Number.isFinite(raw.recentFloors) ? Math.min(RECENT_FLOORS_MAX, Math.max(RECENT_FLOORS_MIN, Math.round(raw.recentFloors))) : defaults.recentFloors,
-    phone: migratePhone(raw.phone, defaults.phone),
-    showPhone: typeof raw.showPhone === "boolean" ? raw.showPhone : defaults.showPhone,
-    autoSwitch: typeof raw.autoSwitch === "boolean" ? raw.autoSwitch : defaults.autoSwitch,
-    autoSwitchSeconds: typeof raw.autoSwitchSeconds === "number" && Number.isFinite(raw.autoSwitchSeconds) ? Math.min(60, Math.max(1, Math.round(raw.autoSwitchSeconds))) : defaults.autoSwitchSeconds,
-    multiRole: typeof raw.multiRole === "boolean" ? raw.multiRole : defaults.multiRole,
-    multiRolePromptMode: raw.multiRolePromptMode === "repeat" ? "repeat" : raw.multiRolePromptMode === "full" && savedVersion >= 5 ? "full" : defaults.multiRolePromptMode,
-    spriteCount: typeof raw.spriteCount === "number" && Number.isFinite(raw.spriteCount) ? Math.min(SPRITE_COUNT_MAX, Math.max(SPRITE_COUNT_MIN, Math.round(raw.spriteCount))) : defaults.spriteCount,
-    injectionDepth: typeof raw.injectionDepth === "number" && Number.isFinite(raw.injectionDepth) ? Math.min(INJECTION_DEPTH_MAX, Math.max(INJECTION_DEPTH_MIN, Math.round(raw.injectionDepth))) : defaults.injectionDepth,
-    promptTemplate: typeof raw.promptTemplate === "string" ? raw.promptTemplate : defaults.promptTemplate,
-    promptBudget: typeof raw.promptBudget === "number" && Number.isFinite(raw.promptBudget) ? Math.min(PROMPT_BUDGET_MAX, Math.max(PROMPT_BUDGET_MIN, Math.round(raw.promptBudget))) : defaults.promptBudget,
-    imgbbApiKey: typeof raw.imgbbApiKey === "string" ? raw.imgbbApiKey : defaults.imgbbApiKey,
-    autoUpload: typeof raw.autoUpload === "boolean" ? raw.autoUpload : defaults.autoUpload,
-    galleryFoldByRole: typeof raw.galleryFoldByRole === "boolean" ? raw.galleryFoldByRole : defaults.galleryFoldByRole,
-    packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
-    bindings: Array.isArray(raw.bindings) ? raw.bindings.flatMap((b) => migrateBinding(b) ?? []) : [],
-    apps: raw.apps && typeof raw.apps === "object" && !Array.isArray(raw.apps) ? raw.apps : {}
-  };
-}
-function migrateOverlay(raw, fallback) {
-  if (raw && typeof raw.x === "number" && typeof raw.y === "number" && typeof raw.width === "number" && Number.isFinite(raw.x + raw.y + raw.width)) {
-    return { x: raw.x, y: raw.y, width: raw.width };
-  }
-  return fallback;
-}
-function migratePhone(raw, fallback) {
-  if (raw && typeof raw.x === "number" && typeof raw.y === "number" && Number.isFinite(raw.x + raw.y)) {
-    return { x: raw.x, y: raw.y, open: typeof raw.open === "boolean" ? raw.open : fallback.open };
-  }
-  return fallback;
-}
-function migrateBinding(raw) {
-  if (!raw || typeof raw !== "object") return null;
-  const b = raw;
-  if (typeof b.characterName !== "string" || !b.characterName) return null;
-  const ids = [];
-  if (Array.isArray(b.packIds)) {
-    for (const id of b.packIds) if (typeof id === "string" && id && !ids.includes(id)) ids.push(id);
-  }
-  if (typeof b.packId === "string" && b.packId && !ids.includes(b.packId)) ids.push(b.packId);
-  if (ids.length === 0) return null;
-  return {
-    characterName: b.characterName,
-    packIds: ids,
-    enabled: typeof b.enabled === "boolean" ? b.enabled : true
-  };
-}
-function migratePack(raw) {
-  if (!raw || typeof raw !== "object") return null;
-  const p = raw;
-  if (typeof p.id !== "string" || !p.id || !Array.isArray(p.sprites)) return null;
-  const name = sanitizePackName(typeof p.name === "string" ? p.name : "") || "未命名立绘包";
-  const sprites = p.sprites.flatMap((s) => {
-    if (!s || typeof s.tag !== "string" || typeof s.url !== "string" || !s.url) return [];
-    const tag = normalizeTag(s.tag) || s.tag.trim();
-    if (!tag) return [];
-    const code = typeof s.code === "string" && s.code ? s.code : extractImageCode(s.url) ?? void 0;
-    const group = typeof s.group === "string" ? normalizeTag(s.group) : "";
-    const outfit2 = typeof s.outfit === "string" ? normalizeTag(s.outfit) : "";
-    const remoteUrl = typeof s.remoteUrl === "string" && /^https?:\/\//.test(s.remoteUrl) ? s.remoteUrl : "";
-    const labels = normalizeLabels(s.labels);
-    return [
-      {
-        tag,
-        url: s.url,
-        ...code ? { code } : {},
-        ...group ? { group } : {},
-        ...outfit2 ? { outfit: outfit2 } : {},
-        ...remoteUrl ? { remoteUrl } : {},
-        ...labels.length > 0 ? { labels } : {}
-      }
-    ];
-  });
-  const roleName = typeof p.roleName === "string" ? normalizeTag(p.roleName) : "";
-  const outfit = typeof p.outfit === "string" ? normalizeTag(p.outfit) : "";
-  const promptNote = normalizeNote(p.promptNote);
-  const outfitNotes = normalizeOutfitNotes(p.outfitNotes);
-  const sourceStoryKey = typeof p.sourceStoryKey === "string" ? p.sourceStoryKey.trim() : "";
-  return {
-    id: p.id,
-    name,
-    ...typeof p.author === "string" && p.author ? { author: p.author } : {},
-    ...typeof p.description === "string" && p.description ? { description: p.description } : {},
-    ...roleName ? { roleName } : {},
-    ...outfit ? { outfit } : {},
-    ...promptNote ? { promptNote } : {},
-    ...p.promptNotePlacement === "before-list" || p.promptNotePlacement === "after-list" ? { promptNotePlacement: p.promptNotePlacement } : {},
-    ...Object.keys(outfitNotes).length > 0 ? { outfitNotes } : {},
-    ...sourceStoryKey ? { sourceStoryKey } : {},
-    ...typeof p.coverTag === "string" && p.coverTag ? { coverTag: p.coverTag } : {},
-    ...typeof p.updatedAt === "string" && p.updatedAt ? { updatedAt: p.updatedAt } : {},
-    sprites
   };
 }
 
@@ -2250,8 +2157,269 @@ function getPresetPacks() {
     }))
   }));
 }
+function presetSpriteKey(sprite) {
+  return JSON.stringify([sprite.group || "", sprite.outfit || "", sprite.tag]);
+}
+function sanitizedNullableText(value) {
+  if (value === null) return null;
+  return typeof value === "string" ? value.trim() : void 0;
+}
+function sanitizedNullableTag(value) {
+  if (value === null) return null;
+  if (typeof value !== "string") return void 0;
+  return normalizeTag(value) || void 0;
+}
+function sanitizePresetOverrides(raw, presets = getPresetPacks()) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const result = {};
+  for (const preset of presets) {
+    const value = raw[preset.id];
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const input = value;
+    const override = {};
+    const metadataInput = input.metadata;
+    if (metadataInput && typeof metadataInput === "object" && !Array.isArray(metadataInput)) {
+      const source = metadataInput;
+      const metadata = {};
+      if (typeof source.name === "string") {
+        const name = sanitizePackName(source.name);
+        if (name) metadata.name = name;
+      }
+      for (const field of ["author", "description"]) {
+        const sanitized = sanitizedNullableText(source[field]);
+        if (sanitized !== void 0) metadata[field] = sanitized;
+      }
+      for (const field of ["roleName", "outfit"]) {
+        const sanitized = sanitizedNullableTag(source[field]);
+        if (sanitized !== void 0) metadata[field] = sanitized;
+      }
+      if (source.promptNote === null) metadata.promptNote = null;
+      else if (typeof source.promptNote === "string") {
+        const note = normalizeNote(source.promptNote);
+        if (note) metadata.promptNote = note;
+      }
+      if (source.promptNotePlacement === null) metadata.promptNotePlacement = null;
+      else if (source.promptNotePlacement === "before-list" || source.promptNotePlacement === "after-list") {
+        metadata.promptNotePlacement = source.promptNotePlacement;
+      }
+      if (source.outfitNotes === null) metadata.outfitNotes = null;
+      else if (source.outfitNotes && typeof source.outfitNotes === "object" && !Array.isArray(source.outfitNotes)) {
+        metadata.outfitNotes = normalizeOutfitNotes(source.outfitNotes);
+      }
+      if (Object.keys(metadata).length > 0) override.metadata = metadata;
+    }
+    if (input.localSprites && typeof input.localSprites === "object" && !Array.isArray(input.localSprites)) {
+      const validKeys = new Set(preset.sprites.map(presetSpriteKey));
+      const localSprites = {};
+      for (const [key, path] of Object.entries(input.localSprites)) {
+        if (validKeys.has(key) && typeof path === "string" && isSafeLocalUserImagePath(path)) {
+          localSprites[key] = path;
+        }
+      }
+      if (Object.keys(localSprites).length > 0) override.localSprites = localSprites;
+    }
+    if (typeof input.updatedAt === "string" && input.updatedAt.trim()) {
+      override.updatedAt = input.updatedAt.trim();
+    }
+    if (Object.keys(override).length > 0) result[preset.id] = override;
+  }
+  return result;
+}
+function mergePresetPacks(overrides, presets = getPresetPacks()) {
+  const sanitized = sanitizePresetOverrides(overrides, presets);
+  return presets.map((preset) => {
+    const override = sanitized[preset.id];
+    if (!override) return preset;
+    const merged = { ...preset };
+    const metadata = override.metadata;
+    if (metadata) {
+      if (metadata.name !== void 0) merged.name = metadata.name;
+      for (const field of ["author", "description", "roleName", "outfit", "promptNote"]) {
+        const value = metadata[field];
+        if (value === null) delete merged[field];
+        else if (value !== void 0) merged[field] = value;
+      }
+      if (metadata.promptNotePlacement === null) delete merged.promptNotePlacement;
+      else if (metadata.promptNotePlacement !== void 0) {
+        merged.promptNotePlacement = metadata.promptNotePlacement;
+      }
+      if (metadata.outfitNotes === null) delete merged.outfitNotes;
+      else if (metadata.outfitNotes !== void 0) merged.outfitNotes = metadata.outfitNotes;
+    }
+    merged.sprites = preset.sprites.map((sprite) => {
+      const local = override.localSprites?.[presetSpriteKey(sprite)];
+      return local ? { ...sprite, url: local, remoteUrl: sprite.url } : sprite;
+    });
+    return merged;
+  });
+}
 function isPresetPack(packId) {
   return LEGACY_PRESET_IDS.has(packId) || PRESET_DEFS.some((def) => def.id === packId);
+}
+
+// core/migrate.ts
+function migrateSettings(saved) {
+  const defaults = createDefaultSettings();
+  if (!saved || typeof saved !== "object") return defaults;
+  const raw = saved;
+  const savedVersion = typeof raw.settingsVersion === "number" && Number.isFinite(raw.settingsVersion) ? raw.settingsVersion : 0;
+  const migrated = {
+    settingsVersion: SETTINGS_VERSION,
+    enabled: typeof raw.enabled === "boolean" ? raw.enabled : defaults.enabled,
+    hideTagInMessage: typeof raw.hideTagInMessage === "boolean" ? raw.hideTagInMessage : defaults.hideTagInMessage,
+    spriteDisplayMode: raw.spriteDisplayMode === "overlay" || raw.spriteDisplayMode === "inline" || raw.spriteDisplayMode === "both" ? raw.spriteDisplayMode : defaults.spriteDisplayMode,
+    renderInlineImages: typeof raw.renderInlineImages === "boolean" ? raw.renderInlineImages : defaults.renderInlineImages,
+    imageHost: typeof raw.imageHost === "string" && /^https?:\/\//.test(raw.imageHost) ? raw.imageHost : defaults.imageHost,
+    overlay: migrateOverlay(raw.overlay, defaults.overlay),
+    overlayHidden: typeof raw.overlayHidden === "boolean" ? raw.overlayHidden : defaults.overlayHidden,
+    spriteOpacity: typeof raw.spriteOpacity === "number" && Number.isFinite(raw.spriteOpacity) ? Math.min(SPRITE_OPACITY_MAX, Math.max(SPRITE_OPACITY_MIN, Math.round(raw.spriteOpacity))) : defaults.spriteOpacity,
+    recentFloors: typeof raw.recentFloors === "number" && Number.isFinite(raw.recentFloors) ? Math.min(RECENT_FLOORS_MAX, Math.max(RECENT_FLOORS_MIN, Math.round(raw.recentFloors))) : defaults.recentFloors,
+    phone: migratePhone(raw.phone, defaults.phone),
+    showPhone: typeof raw.showPhone === "boolean" ? raw.showPhone : defaults.showPhone,
+    autoSwitch: typeof raw.autoSwitch === "boolean" ? raw.autoSwitch : defaults.autoSwitch,
+    autoSwitchSeconds: typeof raw.autoSwitchSeconds === "number" && Number.isFinite(raw.autoSwitchSeconds) ? Math.min(60, Math.max(1, Math.round(raw.autoSwitchSeconds))) : defaults.autoSwitchSeconds,
+    multiRole: typeof raw.multiRole === "boolean" ? raw.multiRole : defaults.multiRole,
+    multiRolePromptMode: raw.multiRolePromptMode === "repeat" ? "repeat" : raw.multiRolePromptMode === "full" && savedVersion >= 5 ? "full" : defaults.multiRolePromptMode,
+    spriteCount: typeof raw.spriteCount === "number" && Number.isFinite(raw.spriteCount) ? Math.min(SPRITE_COUNT_MAX, Math.max(SPRITE_COUNT_MIN, Math.round(raw.spriteCount))) : defaults.spriteCount,
+    injectionDepth: typeof raw.injectionDepth === "number" && Number.isFinite(raw.injectionDepth) ? Math.min(INJECTION_DEPTH_MAX, Math.max(INJECTION_DEPTH_MIN, Math.round(raw.injectionDepth))) : defaults.injectionDepth,
+    promptTemplate: typeof raw.promptTemplate === "string" && !isKnownBuiltinTemplate(raw.promptTemplate) ? raw.promptTemplate : defaults.promptTemplate,
+    promptBudget: typeof raw.promptBudget === "number" && Number.isFinite(raw.promptBudget) ? Math.min(PROMPT_BUDGET_MAX, Math.max(PROMPT_BUDGET_MIN, Math.round(raw.promptBudget))) : defaults.promptBudget,
+    imgbbApiKey: typeof raw.imgbbApiKey === "string" ? raw.imgbbApiKey : defaults.imgbbApiKey,
+    autoUpload: typeof raw.autoUpload === "boolean" ? raw.autoUpload : defaults.autoUpload,
+    galleryFoldByRole: savedVersion >= 6 && typeof raw.galleryFoldByRole === "boolean" ? raw.galleryFoldByRole : defaults.galleryFoldByRole,
+    packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
+    presetOverrides: sanitizePresetOverrides(raw.presetOverrides),
+    bindings: Array.isArray(raw.bindings) ? raw.bindings.flatMap((b) => migrateBinding(b) ?? []) : [],
+    apps: raw.apps && typeof raw.apps === "object" && !Array.isArray(raw.apps) ? raw.apps : {}
+  };
+  if (savedVersion <= 5) {
+    const localCopies = migrateLegacyLocalPresetCopies(
+      migrated.packs,
+      migrated.bindings,
+      migrated.presetOverrides
+    );
+    return { ...migrated, ...localCopies };
+  }
+  return migrated;
+}
+function migrateLegacyLocalPresetCopies(packs, bindings, presetOverrides, presets = getPresetPacks()) {
+  const candidatesByPreset = /* @__PURE__ */ new Map();
+  for (const preset of presets) {
+    const remoteByKey = new Map(preset.sprites.map((sprite) => [presetSpriteKey(sprite), sprite.url]));
+    const candidates = packs.filter((pack) => {
+      if (pack.name !== `${preset.name}（本地）` || (pack.roleName ?? "") !== (preset.roleName ?? "") || (pack.outfit ?? "") !== (preset.outfit ?? "") || pack.sprites.length !== preset.sprites.length) return false;
+      const keys = /* @__PURE__ */ new Set();
+      for (const sprite of pack.sprites) {
+        const key = presetSpriteKey(sprite);
+        if (keys.has(key) || remoteByKey.get(key) !== sprite.remoteUrl) return false;
+        keys.add(key);
+      }
+      return keys.size === remoteByKey.size;
+    });
+    if (candidates.length === 1 && candidates[0].sprites.every((sprite) => isSafeLocalUserImagePath(sprite.url))) candidatesByPreset.set(preset.id, candidates);
+  }
+  const copyToPreset = /* @__PURE__ */ new Map();
+  const nextOverrides = { ...presetOverrides };
+  for (const [presetId, [copy]] of candidatesByPreset) {
+    copyToPreset.set(copy.id, presetId);
+    const existing = nextOverrides[presetId] ?? {};
+    nextOverrides[presetId] = {
+      ...existing,
+      localSprites: {
+        ...existing.localSprites,
+        ...Object.fromEntries(copy.sprites.map((sprite) => [presetSpriteKey(sprite), sprite.url]))
+      },
+      ...copy.updatedAt ? { updatedAt: copy.updatedAt } : {}
+    };
+  }
+  const migratedBindings = bindings.map((binding) => {
+    const packIds = [];
+    for (const id of binding.packIds) {
+      const nextId = copyToPreset.get(id) ?? id;
+      if (!packIds.includes(nextId)) packIds.push(nextId);
+    }
+    return { ...binding, packIds };
+  });
+  return {
+    packs: packs.filter((pack) => !copyToPreset.has(pack.id)),
+    bindings: migratedBindings,
+    presetOverrides: nextOverrides
+  };
+}
+function migrateOverlay(raw, fallback) {
+  if (raw && typeof raw.x === "number" && typeof raw.y === "number" && typeof raw.width === "number" && Number.isFinite(raw.x + raw.y + raw.width)) {
+    return { x: raw.x, y: raw.y, width: raw.width };
+  }
+  return fallback;
+}
+function migratePhone(raw, fallback) {
+  if (raw && typeof raw.x === "number" && typeof raw.y === "number" && Number.isFinite(raw.x + raw.y)) {
+    return { x: raw.x, y: raw.y, open: typeof raw.open === "boolean" ? raw.open : fallback.open };
+  }
+  return fallback;
+}
+function migrateBinding(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const b = raw;
+  if (typeof b.characterName !== "string" || !b.characterName) return null;
+  const ids = [];
+  if (Array.isArray(b.packIds)) {
+    for (const id of b.packIds) if (typeof id === "string" && id && !ids.includes(id)) ids.push(id);
+  }
+  if (typeof b.packId === "string" && b.packId && !ids.includes(b.packId)) ids.push(b.packId);
+  if (ids.length === 0) return null;
+  return {
+    characterName: b.characterName,
+    packIds: ids,
+    enabled: typeof b.enabled === "boolean" ? b.enabled : true
+  };
+}
+function migratePack(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const p = raw;
+  if (typeof p.id !== "string" || !p.id || !Array.isArray(p.sprites)) return null;
+  const name = sanitizePackName(typeof p.name === "string" ? p.name : "") || "未命名立绘包";
+  const sprites = p.sprites.flatMap((s) => {
+    if (!s || typeof s.tag !== "string" || typeof s.url !== "string" || !s.url) return [];
+    const tag = normalizeTag(s.tag) || s.tag.trim();
+    if (!tag) return [];
+    const code = typeof s.code === "string" && s.code ? s.code : extractImageCode(s.url) ?? void 0;
+    const group = typeof s.group === "string" ? normalizeTag(s.group) : "";
+    const outfit2 = typeof s.outfit === "string" ? normalizeTag(s.outfit) : "";
+    const remoteUrl = typeof s.remoteUrl === "string" && /^https?:\/\//.test(s.remoteUrl) ? s.remoteUrl : "";
+    const labels = normalizeLabels(s.labels);
+    return [
+      {
+        tag,
+        url: s.url,
+        ...code ? { code } : {},
+        ...group ? { group } : {},
+        ...outfit2 ? { outfit: outfit2 } : {},
+        ...remoteUrl ? { remoteUrl } : {},
+        ...labels.length > 0 ? { labels } : {}
+      }
+    ];
+  });
+  const roleName = typeof p.roleName === "string" ? normalizeTag(p.roleName) : "";
+  const outfit = typeof p.outfit === "string" ? normalizeTag(p.outfit) : "";
+  const promptNote = normalizeNote(p.promptNote);
+  const outfitNotes = normalizeOutfitNotes(p.outfitNotes);
+  const sourceStoryKey = typeof p.sourceStoryKey === "string" ? p.sourceStoryKey.trim() : "";
+  return {
+    id: p.id,
+    name,
+    ...typeof p.author === "string" && p.author ? { author: p.author } : {},
+    ...typeof p.description === "string" && p.description ? { description: p.description } : {},
+    ...roleName ? { roleName } : {},
+    ...outfit ? { outfit } : {},
+    ...promptNote ? { promptNote } : {},
+    ...p.promptNotePlacement === "before-list" || p.promptNotePlacement === "after-list" ? { promptNotePlacement: p.promptNotePlacement } : {},
+    ...Object.keys(outfitNotes).length > 0 ? { outfitNotes } : {},
+    ...sourceStoryKey ? { sourceStoryKey } : {},
+    ...typeof p.coverTag === "string" && p.coverTag ? { coverTag: p.coverTag } : {},
+    ...typeof p.updatedAt === "string" && p.updatedAt ? { updatedAt: p.updatedAt } : {},
+    sprites
+  };
 }
 
 // core/image-compress.ts
@@ -2337,8 +2505,8 @@ function storyArchiveKey(parts) {
   const characterName = clean(parts.characterName);
   const owner = groupId ? `group:${groupId}` : characterId || (characterName ? `name:${characterName}` : "unknown");
   const chatId = clean(parts.chatId);
-  const title = clean(parts.title);
-  const chat2 = chatId || (title ? `title:${title}` : "current");
+  const title2 = clean(parts.title);
+  const chat2 = chatId || (title2 ? `title:${title2}` : "current");
   return `${owner}::${chat2}`;
 }
 function upsertStorySprite(settings, story, source) {
@@ -2362,10 +2530,10 @@ function upsertStorySprite(settings, story, source) {
   return { ...settings, packs };
 }
 function createStoryPack(story) {
-  const title = sanitizePackName(story.title) || sanitizePackName(story.characterName) || "Untitled";
+  const title2 = sanitizePackName(story.title) || sanitizePackName(story.characterName) || "Untitled";
   return {
     id: `story_${hash(story.key)}`,
-    name: sanitizePackName(`Story - ${title}`) || "Story",
+    name: sanitizePackName(`Story - ${title2}`) || "Story",
     roleName: normalizeTag(story.characterName) || void 0,
     sourceStoryKey: story.key,
     sprites: []
@@ -2407,18 +2575,24 @@ function findComposerTextarea(root = document) {
   return input instanceof HTMLTextAreaElement ? input : null;
 }
 var STAdapter = class {
+  /** 只读返回指定消息的原始文本，供可见 DOM 的保守后处理建立边界证据。 */
+  getRawMessage(messageId) {
+    const index = typeof messageId === "number" ? messageId : /^(?:0|[1-9]\d*)$/.test(messageId) ? Number(messageId) : NaN;
+    if (!Number.isInteger(index) || index < 0) return null;
+    const message = getContext().chat[index];
+    return typeof message?.mes === "string" ? message.mes : null;
+  }
   async loadSettings() {
     const ctx = getContext();
     const saved = ctx.extensionSettings[MODULE_NAME];
-    const presets = getPresetPacks();
     if (saved && typeof saved === "object") {
       const merged = migrateSettings(saved);
       const customPacks = merged.packs.filter((p) => !isPresetPack(p.id));
-      merged.packs = [...presets, ...customPacks];
+      merged.packs = [...mergePresetPacks(merged.presetOverrides), ...customPacks];
       return merged;
     }
     const defaults = createDefaultSettings();
-    defaults.packs = presets;
+    defaults.packs = mergePresetPacks(defaults.presetOverrides);
     ctx.extensionSettings[MODULE_NAME] = defaults;
     ctx.saveSettingsDebounced();
     return defaults;
@@ -2476,16 +2650,16 @@ var STAdapter = class {
     const group = groupId === void 0 || groupId === null ? void 0 : ctx.groups?.find((candidate) => `${candidate.id ?? ""}` === `${groupId}`);
     const characterName = group?.name || this.getCurrentCharacterName() || "Unknown";
     const chatId = ctx.chatId ?? ctx.chatMetadata?.file_name;
-    const title = ctx.chatMetadata?.name || ctx.chatMetadata?.file_name || `${chatId ?? ""}` || characterName;
+    const title2 = ctx.chatMetadata?.name || ctx.chatMetadata?.file_name || `${chatId ?? ""}` || characterName;
     return {
       key: storyArchiveKey({
         chatId,
         characterId: ctx.characterId,
         groupId,
-        title,
+        title: title2,
         characterName
       }),
-      title,
+      title: title2,
       characterName
     };
   }
@@ -2534,8 +2708,8 @@ var STAdapter = class {
   onStreamText(handler) {
     const ctx = getContext();
     const eventName = ctx.eventTypes?.STREAM_TOKEN_RECEIVED ?? "stream_token_received";
-    const wrapped = (text) => {
-      if (typeof text === "string") handler(text);
+    const wrapped = (text3) => {
+      if (typeof text3 === "string") handler(text3);
     };
     ctx.eventSource.on(eventName, wrapped);
     return () => ctx.eventSource.removeListener(eventName, wrapped);
@@ -2551,7 +2725,7 @@ var STAdapter = class {
 
 // st-extension/src/overlay-dom.ts
 var DRAG_THRESHOLD2 = 6;
-function createOverlay(initialLayout, onLayoutChange, onManage, onClose) {
+function createOverlay(initialLayout, onLayoutChange, onManage, onClose, onOpenSprites) {
   let layout = { ...initialLayout };
   let sprites = [];
   let index = 0;
@@ -2587,6 +2761,24 @@ function createOverlay(initialLayout, onLayoutChange, onManage, onClose) {
     e.stopPropagation();
     onManage?.();
   });
+  const spritesBtn = document.createElement("div");
+  spritesBtn.className = "sprite-overlay-sprites fa-solid fa-eye";
+  spritesBtn.title = "打开立绘 App";
+  spritesBtn.setAttribute("role", "button");
+  spritesBtn.setAttribute("aria-label", "打开立绘 App");
+  spritesBtn.tabIndex = 0;
+  spritesBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  const openSprites = (e) => {
+    e.stopPropagation();
+    onOpenSprites?.();
+  };
+  spritesBtn.addEventListener("click", openSprites);
+  spritesBtn.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openSprites(e);
+    }
+  });
   const closeBtn = document.createElement("div");
   closeBtn.className = "sprite-overlay-close";
   closeBtn.title = "关闭悬浮窗（立绘功能不受影响，可在手机「立绘」App 重新打开）";
@@ -2598,7 +2790,7 @@ function createOverlay(initialLayout, onLayoutChange, onManage, onClose) {
     e.stopPropagation();
     onClose?.();
   });
-  frame.append(img, placeholder, tagBadge, dots, gearBtn, closeBtn, resizeHandle);
+  frame.append(img, placeholder, tagBadge, dots, spritesBtn, gearBtn, closeBtn, resizeHandle);
   root.append(frame);
   document.body.append(root);
   function applyLayout() {
@@ -2743,7 +2935,7 @@ function createOverlay(initialLayout, onLayoutChange, onManage, onClose) {
       autoSeconds = Math.max(1, seconds);
       startAuto();
     },
-    setPlaceholder(text) {
+    setPlaceholder(text3) {
       stopAuto();
       sprites = [];
       index = 0;
@@ -2751,7 +2943,7 @@ function createOverlay(initialLayout, onLayoutChange, onManage, onClose) {
       dots.style.display = "none";
       img.style.display = "none";
       tagBadge.style.display = "none";
-      placeholder.textContent = text;
+      placeholder.textContent = text3;
       placeholder.style.display = "flex";
     },
     setVisible(visible) {
@@ -3159,6 +3351,83 @@ async function uploadToImgbb(apiKey, base64DataUri, fetchImpl = fetch) {
   return result;
 }
 
+// core/sprite-resources.ts
+function isCloudUrl(value) {
+  return typeof value === "string" && /^https?:\/\//i.test(value);
+}
+function hasLocalResource(sprite) {
+  return !isCloudUrl(sprite.url);
+}
+function hasCloudResource(sprite) {
+  return isCloudUrl(sprite.url) || isCloudUrl(sprite.remoteUrl);
+}
+function summarizePackResources(pack) {
+  let local = 0;
+  let cloud = 0;
+  for (const sprite of pack.sprites) {
+    if (hasLocalResource(sprite)) local += 1;
+    if (hasCloudResource(sprite)) cloud += 1;
+  }
+  return { total: pack.sprites.length, local, cloud };
+}
+
+// core/preset-overrides.ts
+function getCurrentPreset(presetId) {
+  if (!isPresetPack(presetId)) return void 0;
+  return getPresetPacks().find((preset) => preset.id === presetId);
+}
+function withSanitizedOverride(settings, presetId, rawOverride) {
+  const sanitized = sanitizePresetOverrides({ [presetId]: rawOverride })[presetId];
+  const presetOverrides = { ...settings.presetOverrides };
+  if (sanitized) presetOverrides[presetId] = sanitized;
+  else delete presetOverrides[presetId];
+  const materialized = mergePresetPacks(presetOverrides).find((preset) => preset.id === presetId);
+  return {
+    ...settings,
+    presetOverrides,
+    packs: materialized ? settings.packs.map((pack) => pack.id === presetId ? materialized : pack) : settings.packs
+  };
+}
+function setPresetLocalSprite(settings, presetId, sourceSprite, localUrl) {
+  const preset = getCurrentPreset(presetId);
+  if (!preset || typeof localUrl !== "string" || !isSafeLocalUserImagePath(localUrl)) {
+    return settings;
+  }
+  const sourceKey = presetSpriteKey(sourceSprite);
+  if (!preset.sprites.some((sprite) => presetSpriteKey(sprite) === sourceKey)) return settings;
+  const existing = settings.presetOverrides[presetId] ?? {};
+  return withSanitizedOverride(settings, presetId, {
+    ...existing,
+    localSprites: {
+      ...existing.localSprites,
+      [sourceKey]: localUrl
+    }
+  });
+}
+function setPresetMetadata(settings, presetId, metadata) {
+  if (!getCurrentPreset(presetId)) return settings;
+  const existing = settings.presetOverrides[presetId] ?? {};
+  return withSanitizedOverride(settings, presetId, {
+    ...existing,
+    metadata
+  });
+}
+function clearPresetMetadata(settings, presetId) {
+  if (!getCurrentPreset(presetId)) return settings;
+  const existing = settings.presetOverrides[presetId];
+  if (!existing?.metadata) return settings;
+  const { metadata: _metadata, ...rest } = existing;
+  const presetOverrides = { ...settings.presetOverrides };
+  if (Object.keys(rest).length > 0) presetOverrides[presetId] = rest;
+  else delete presetOverrides[presetId];
+  const materialized = mergePresetPacks(presetOverrides).find((preset) => preset.id === presetId);
+  return {
+    ...settings,
+    presetOverrides,
+    packs: materialized ? settings.packs.map((pack) => pack.id === presetId ? materialized : pack) : settings.packs
+  };
+}
+
 // st-extension/src/sprite-actions.ts
 function current(context) {
   const pack = context.getPack();
@@ -3371,7 +3640,7 @@ function openSpriteLightbox(options) {
       actionRail.append(button2);
     }
   };
-  const render3 = () => {
+  const render2 = () => {
     const sprite = currentPack.sprites[currentIndex];
     if (sprite) {
       image.src = sprite.url;
@@ -3391,7 +3660,7 @@ function openSpriteLightbox(options) {
     const count = currentPack.sprites.length;
     if (closed || count === 0) return;
     currentIndex = (currentIndex + delta + count) % count;
-    render3();
+    render2();
     options.onNavigate(currentIndex);
   };
   const close = () => {
@@ -3454,12 +3723,12 @@ function openSpriteLightbox(options) {
       currentPack = pack;
       currentIndex = clampIndex(index, pack.sprites.length);
       if (actions) currentActions = actions;
-      render3();
+      render2();
     },
     close
   };
   applyViewport();
-  render3();
+  render2();
   document.body.append(layer);
   return controller;
 }
@@ -3472,11 +3741,11 @@ function element(tag, className) {
   node.className = className;
   return node;
 }
-function control(text, label, className) {
+function control(text3, label, className) {
   const button2 = document.createElement("button");
   button2.type = "button";
   button2.className = className;
-  button2.textContent = text;
+  button2.textContent = text3;
   button2.title = label;
   button2.setAttribute("aria-label", label);
   return button2;
@@ -3582,7 +3851,7 @@ function createSpriteManager(deps) {
     if (destroyed) return;
     openedFrom = source;
     if (backdrop) {
-      render3();
+      render2();
       return;
     }
     view = { kind: "list" };
@@ -3609,7 +3878,7 @@ function createSpriteManager(deps) {
     backBtn.tabIndex = 0;
     const goBack = () => {
       view = { kind: "list" };
-      render3();
+      render2();
     };
     backBtn.addEventListener("click", goBack);
     backBtn.addEventListener("keydown", (e) => {
@@ -3618,18 +3887,18 @@ function createSpriteManager(deps) {
         goBack();
       }
     });
-    const title = el("b", "so-manager-title");
+    const title2 = el("b", "so-manager-title");
     const actions = el("div", "so-manager-actions");
     const closeBtn = el("div", "menu_button so-manager-close");
     closeBtn.title = "关闭";
     closeBtn.textContent = "✕";
     closeBtn.addEventListener("click", () => close());
-    header.append(backBtn, title, actions, closeBtn);
+    header.append(backBtn, title2, actions, closeBtn);
     const body = el("div", "so-manager-body");
     dialog.append(header, body);
     backdrop.append(dialog);
     document.body.append(backdrop);
-    render3();
+    render2();
   }
   function onEscape(e) {
     if (e.key !== "Escape") return;
@@ -3642,7 +3911,7 @@ function createSpriteManager(deps) {
     }
     if (view.kind === "pack") {
       view = { kind: "list" };
-      render3();
+      render2();
     } else {
       close();
     }
@@ -3659,13 +3928,13 @@ function createSpriteManager(deps) {
   }
   function refreshIfOpen() {
     if (backdrop) {
-      render3();
+      render2();
       refreshLightbox();
     }
   }
   function commit(next) {
     deps.updateSettings(next);
-    render3();
+    render2();
     refreshLightbox();
   }
   function conflictText(conflicts) {
@@ -3680,7 +3949,7 @@ function createSpriteManager(deps) {
     else window.alert(message);
   }
   function rejectConflicts(conflicts) {
-    render3();
+    render2();
     showConflicts(conflicts);
     return false;
   }
@@ -3931,14 +4200,15 @@ ${options}`,
     });
     return btn;
   }
-  function render3() {
+  function render2() {
     if (!backdrop) return;
     const backBtn = backdrop.querySelector(".so-manager-back");
-    const title = backdrop.querySelector(".so-manager-title");
+    const title2 = backdrop.querySelector(".so-manager-title");
     const actions = backdrop.querySelector(".so-manager-actions");
     const body = backdrop.querySelector(".so-manager-body");
     body.innerHTML = "";
     actions.innerHTML = "";
+    backdrop.querySelector(".so-manager")?.classList.toggle("so-manager-batch-mode", batchMode);
     closePopovers();
     try {
       if (view.kind === "pack") {
@@ -3946,14 +4216,14 @@ ${options}`,
         const pack = deps.getSettings().packs.find((p) => p.id === packId);
         if (pack) {
           backBtn.style.display = "inline-flex";
-          title.textContent = pack.name;
+          title2.textContent = pack.name;
           renderPackDetail(body, actions, pack);
           return;
         }
         view = { kind: "list" };
       }
       backBtn.style.display = "none";
-      title.textContent = "立绘包管理";
+      title2.textContent = "立绘包管理";
       renderList(body, actions);
     } catch (err) {
       console.error("[sprite-overlay] 管理弹窗渲染失败", err);
@@ -3993,7 +4263,7 @@ ${options}`,
             selectedPackIds.clear();
             for (const p of all) selectedPackIds.add(p.id);
           }
-          render3();
+          render2();
         }),
         button(`上传云端（${selectedCount}）`, () => {
           void uploadSelectedPacks();
@@ -4017,7 +4287,7 @@ ${options}`,
         button("完成", () => {
           batchMode = false;
           selectedPackIds.clear();
-          render3();
+          render2();
         })
       );
     } else {
@@ -4053,7 +4323,7 @@ ${options}`,
             const pack = { id: genId(), name, author: "我", sprites: [] };
             if (!updateChecked(upsertPack(deps.getSettings(), pack))) return;
             view = { kind: "pack", packId: pack.id };
-            render3();
+            render2();
           });
           nameInput.addEventListener("keydown", (e) => {
             if (e.key === "Enter" && !e.isComposing) createBtn.click();
@@ -4074,7 +4344,7 @@ ${options}`,
               if (!installImportedPack(pack, body)) return;
               const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
               if (installed) view = { kind: "pack", packId: installed.id };
-              render3();
+              render2();
             } catch (err) {
               toast(body, err instanceof Error ? err.message : "分享串解析失败");
             }
@@ -4084,16 +4354,16 @@ ${options}`,
           const jsonBtn = button("选择 JSON 文件…", () => {
             pickFile(".json,application/json", false, async (files) => {
               try {
-                const text = await files[0].text();
-                if (text.length > 2 * 1024 * 1024 && !window.confirm(
-                  `这个 JSON 有 ${(text.length / 1024 / 1024).toFixed(1)}MB（内嵌 base64 图）。云端部署的酒馆导入大包容易内存爆满，建议让对方先传图床再发分享串。仍要导入吗？`
+                const text3 = await files[0].text();
+                if (text3.length > 2 * 1024 * 1024 && !window.confirm(
+                  `这个 JSON 有 ${(text3.length / 1024 / 1024).toFixed(1)}MB（内嵌 base64 图）。云端部署的酒馆导入大包容易内存爆满，建议让对方先传图床再发分享串。仍要导入吗？`
                 ))
                   return;
-                const pack = importPack(text);
+                const pack = importPack(text3);
                 if (!installImportedPack(pack, body)) return;
                 const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
                 if (installed) view = { kind: "pack", packId: installed.id };
-                render3();
+                render2();
               } catch (err) {
                 toast(body, err instanceof Error ? err.message : "导入失败");
               }
@@ -4108,7 +4378,7 @@ ${options}`,
             closeEnableList();
             batchMode = true;
             selectedPackIds.clear();
-            render3();
+            render2();
           })
         );
       }
@@ -4178,19 +4448,19 @@ ${options}`,
         const expanded = expandedRoleGroupKey === group.key;
         const toggle = () => {
           expandedRoleGroupKey = expanded ? "" : group.key;
-          render3();
+          render2();
         };
         if (expanded) {
           const row = el("button", "so-role-pack-row");
           row.type = "button";
           row.setAttribute("aria-expanded", "true");
-          const title = el("b");
-          title.textContent = group.role;
+          const title2 = el("b");
+          title2.textContent = group.role;
           const counts = el("span");
           counts.textContent = `${group.packCount} 个图包 · ${group.spriteCount} 张`;
           const arrow = el("span", "so-role-pack-arrow");
           arrow.textContent = "▾";
-          row.append(title, counts, arrow);
+          row.append(title2, counts, arrow);
           row.addEventListener("click", toggle);
           const packs = el("div", "so-role-pack-strip");
           packs.setAttribute("aria-label", `${group.role}的图包`);
@@ -4257,7 +4527,7 @@ ${options}`,
       }
     } finally {
       batchResourceBusy = false;
-      render3();
+      render2();
       toast(currentManagerBody(), `上传云端完成：成功 ${uploaded} 张，失败 ${failed} 张${failed > 0 ? "（可再次点击重试）" : ""}`);
     }
   }
@@ -4275,8 +4545,6 @@ ${options}`,
       for (const pack of packs) {
         const remoteSprites = pack.sprites.filter((sprite) => getSpriteSource(sprite) === "hosted");
         const preset = isPresetPack(pack.id);
-        const localizedSprites = [];
-        let packLocalizedCount = 0;
         for (const sprite of remoteSprites) {
           try {
             const parts = [pack.name, spriteGroup(sprite), sprite.outfit ?? "", sprite.tag].filter(Boolean);
@@ -4296,72 +4564,26 @@ ${options}`,
             if (!latestPack || !latestSprite || latestSprite.url !== sprite.url) {
               throw new Error("立绘在保存期间已变化");
             }
-            const localizedSprite = { ...latestSprite, url: localized.url, remoteUrl: localized.remoteUrl };
             if (preset) {
-              localizedSprites.push({ source: sprite, localized: localizedSprite });
-            } else if (!updateChecked(upsertPack(latestSettings, upsertSprite(latestPack, localizedSprite)))) {
+              const next = setPresetLocalSprite(latestSettings, pack.id, latestSprite, localized.url);
+              if (next === latestSettings) throw new Error("更新预设覆盖失败");
+              deps.updateSettings(next);
+            } else if (!updateChecked(upsertPack(
+              latestSettings,
+              upsertSprite(latestPack, { ...latestSprite, url: localized.url, remoteUrl: localized.remoteUrl })
+            ))) {
               throw new Error("更新图包失败");
             }
-            packLocalizedCount++;
             localizedCount++;
           } catch (error) {
             console.warn("[sprite-overlay] 批量保存本地失败", { packId: pack.id, tag: sprite.tag, error });
             failed++;
           }
         }
-        if (packLocalizedCount === 0) continue;
-        if (preset) {
-          const latestSettings = deps.getSettings();
-          const latestPack = latestSettings.packs.find((candidate) => candidate.id === pack.id);
-          if (!latestPack) {
-            failed += packLocalizedCount;
-            localizedCount -= packLocalizedCount;
-            continue;
-          }
-          let localizedPack = latestPack;
-          let validLocalizedCount = 0;
-          for (const result of localizedSprites) {
-            const latestSprite = sameSprite(latestPack, result.source);
-            if (!latestSprite || latestSprite.url !== result.source.url) {
-              failed++;
-              localizedCount--;
-              continue;
-            }
-            localizedPack = upsertSprite(localizedPack, {
-              ...latestSprite,
-              url: result.localized.url,
-              remoteUrl: result.localized.remoteUrl
-            });
-            validLocalizedCount++;
-          }
-          if (validLocalizedCount === 0) continue;
-          const localCopy = {
-            ...localizedPack,
-            id: genId(),
-            name: `${latestPack.name}（本地）`,
-            updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-          };
-          const added = upsertPack(latestSettings, localCopy);
-          if (!added.ok) {
-            failed += validLocalizedCount;
-            localizedCount -= validLocalizedCount;
-            continue;
-          }
-          const next = {
-            ...added.settings,
-            bindings: added.settings.bindings.map((binding) => ({
-              ...binding,
-              packIds: [...new Set(binding.packIds.map((id) => id === pack.id ? localCopy.id : id))]
-            }))
-          };
-          selectedPackIds.delete(pack.id);
-          selectedPackIds.add(localCopy.id);
-          commit(next);
-        }
       }
     } finally {
       batchResourceBusy = false;
-      render3();
+      render2();
       toast(currentManagerBody(), `保存本地完成：成功 ${localizedCount} 张，失败 ${failed} 张${failed > 0 ? "（可再次点击重试）" : ""}`);
     }
   }
@@ -4381,13 +4603,13 @@ ${options}`,
     if (missingCount > 0 && !window.confirm(
       `所选图包中还有 ${missingCount} 张图片没有远程地址，不会进入分享串。仍要复制吗？`
     )) return;
-    const text = encoded.map((entry) => entry.result.text).join("\n\n");
-    const ok = await copyText(text);
+    const text3 = encoded.map((entry) => entry.result.text).join("\n\n");
+    const ok = await copyText(text3);
     toast(
       currentManagerBody(),
       ok ? `已复制 ${encoded.length} 个图包的分享串${missingCount > 0 ? `，缺少 ${missingCount} 张` : ""}` : "复制失败，请手动复制弹出的文本"
     );
-    if (!ok) window.prompt("手动复制分享串：", text);
+    if (!ok) window.prompt("手动复制分享串：", text3);
   }
   async function deletePacksWithChoice(packIds, names, preview) {
     if (!window.confirm(`确定删除 ${names.length} 个立绘包？
@@ -4462,11 +4684,11 @@ ${preview}
       coverBox.append(badge);
     }
     const info = el("span", "so-card-info");
-    const title = el("b");
-    title.textContent = role;
+    const title2 = el("b");
+    title2.textContent = role;
     const detail = el("small");
     detail.textContent = `${packs.length} 个图包 · ${spriteCount} 张`;
-    info.append(title, detail);
+    info.append(title2, detail);
     face.append(coverBox, info);
     stack.append(face);
     stack.addEventListener("click", expand);
@@ -4493,12 +4715,28 @@ ${preview}
       if (bound === "active") card.classList.add("so-card-active");
       const badge = el("span", bound === "active" ? "so-card-badge" : "so-card-badge so-card-badge-off");
       badge.textContent = bound === "active" ? "使用中" : "已停用";
+      badge.dataset.corner = "bottom-left";
       coverBox.append(badge);
     }
     if (isPresetPack(pack.id)) {
       const chip = el("span", "so-card-chip");
       chip.textContent = "预设";
       coverBox.append(chip);
+    }
+    const resources = summarizePackResources(pack);
+    if (resources.total > 0) {
+      const status = el("span", "so-card-resource-status");
+      status.dataset.corner = "bottom-right";
+      const resourceLabel = (kind, label) => {
+        const count = resources[kind];
+        if (count === 0) return;
+        const chip = el("span", `so-card-resource-chip so-card-resource-${kind}`);
+        chip.textContent = count === resources.total ? label : `${label} ${count}/${resources.total}`;
+        status.append(chip);
+      };
+      resourceLabel("local", "本地");
+      resourceLabel("cloud", "云端");
+      coverBox.append(status);
     }
     const info = el("div", "so-card-info");
     const nameEl = el("b");
@@ -4514,6 +4752,7 @@ ${preview}
       if (selected) card.classList.add("so-card-selected");
       const check = el("span", `so-card-check${selected ? " so-card-check-on" : ""}`);
       check.textContent = selected ? "✓" : "";
+      check.dataset.corner = "top-left";
       coverBox.append(check);
       const orderRow = el("div", "so-row so-card-order");
       orderRow.append(
@@ -4530,7 +4769,7 @@ ${preview}
       const toggleSelect = () => {
         if (selectedPackIds.has(pack.id)) selectedPackIds.delete(pack.id);
         else selectedPackIds.add(pack.id);
-        render3();
+        render2();
       };
       card.addEventListener("click", toggleSelect);
       card.addEventListener("keydown", (e) => {
@@ -4567,7 +4806,7 @@ ${preview}
       spriteVisibleCount = SPRITE_PAGE_SIZE;
       spriteFilterQuery = "";
       spriteFilterLabels = [];
-      render3();
+      render2();
     };
     card.addEventListener("click", enter);
     card.addEventListener("keydown", (e) => {
@@ -4669,11 +4908,7 @@ ${preview}
       );
     }
     body.append(topRow);
-    if (readonly) {
-      const note = el("div", "so-status");
-      note.textContent = "预设包随扩展分发、只读；想改动可先「导出 JSON」再导入为自定义包。";
-      body.append(note);
-    } else {
+    {
       const metaPanel = collapsible("包信息", false, `pack-meta:${pack.id}`);
       const metaRow = el("div", "so-row so-meta-row");
       const nameInput = textInput("包名");
@@ -4721,9 +4956,9 @@ ${preview}
         ].filter(Boolean))];
         outfitNotesBox.replaceChildren();
         if (outfits.length === 0) return;
-        const title = el("div", "so-section-title");
-        title.textContent = "服装备注";
-        outfitNotesBox.append(title);
+        const title2 = el("div", "so-section-title");
+        title2.textContent = "服装备注";
+        outfitNotesBox.append(title2);
         for (const outfit of outfits) {
           const input = document.createElement("textarea");
           input.className = "text_pole so-outfit-note-input";
@@ -4765,6 +5000,24 @@ ${preview}
           const promptNote = normalizeNote(promptNoteInput.value);
           syncOutfitNoteDrafts();
           const outfitNotes = normalizeOutfitNotes(Object.fromEntries(outfitNoteDrafts));
+          if (readonly) {
+            const current2 = deps.getSettings();
+            const next = setPresetMetadata(current2, pack.id, {
+              name,
+              author: sanitizePackName(authorInput.value) || null,
+              description: sanitizeDescription(descInput.value) || null,
+              roleName: roleName || null,
+              outfit: outfit || null,
+              promptNote: promptNote || null,
+              promptNotePlacement: promptNote ? placementSelect.value === "after-list" ? "after-list" : "before-list" : null,
+              outfitNotes: Object.keys(outfitNotes).length > 0 ? outfitNotes : null
+            });
+            const materialized = next.packs.find((candidate) => candidate.id === pack.id);
+            if (!materialized || !checkedSettings(upsertPack(current2, materialized))) return;
+            commit(next);
+            toast(body, "已保存包信息");
+            return;
+          }
           const nextPack = {
             ...pack,
             name,
@@ -4787,8 +5040,19 @@ ${preview}
           }
         }, "so-btn-primary so-meta-save")
       );
+      if (readonly) {
+        saveRow.append(button("恢复内置信息", () => {
+          if (!window.confirm("确定恢复扩展内置的包信息吗？已保存的本地图片会保留。")) return;
+          const current2 = deps.getSettings();
+          const next = clearPresetMetadata(current2, pack.id);
+          const materialized = next.packs.find((candidate) => candidate.id === pack.id);
+          if (!materialized || !checkedSettings(upsertPack(current2, materialized))) return;
+          commit(next);
+          toast(body, "已恢复内置信息，本地图片保持不变");
+        }));
+      }
       const metaHint = el("div", "so-status");
-      metaHint.textContent = "人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。";
+      metaHint.textContent = readonly ? "可覆盖预设包信息；立绘图片本身仍不可添加、改名或删除。" : "人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。";
       metaPanel.body.append(metaRow, promptRow, outfitNotesBox, metaHint, saveRow);
       body.append(metaPanel.box);
     }
@@ -5137,7 +5401,7 @@ ${preview}
         toast(currentManagerBody(), `已将「${source.tag}」保存到本地`);
       },
       refresh: () => {
-        render3();
+        render2();
         refreshLightbox();
       },
       close: closeAction
@@ -5149,7 +5413,7 @@ ${preview}
       state.packId,
       (pack) => pack.sprites[state.index] ?? null,
       () => {
-        render3();
+        render2();
         state.controller?.close();
       }
     );
@@ -5184,7 +5448,7 @@ ${preview}
         (candidate) => candidate.tag === identity.tag && spriteGroup(candidate) === identity.group && (candidate.outfit ?? "") === identity.outfit
       ) ?? null,
       () => {
-        render3();
+        render2();
         refreshLightbox();
       }
     );
@@ -5222,9 +5486,9 @@ ${preview}
     const modal = el("div", "so-upload-modal");
     const panel = el("div", "so-upload-panel");
     const head = el("div", "so-upload-head");
-    const title = el("b");
-    title.textContent = `批量上传预览（${fileArr.length} 张）`;
-    head.append(title);
+    const title2 = el("b");
+    title2.textContent = `批量上传预览（${fileArr.length} 张）`;
+    head.append(title2);
     const rows = el("div", "so-upload-rows");
     const inputs = [];
     function buildRows() {
@@ -5453,7 +5717,7 @@ ${preview}
         console.error("[sprite-overlay] 关闭上传窗口失败", error);
       }
       try {
-        render3();
+        render2();
       } catch (error) {
         console.error("[sprite-overlay] 上传后刷新失败", error);
       }
@@ -5515,7 +5779,7 @@ ${preview}
         fail2++;
       }
     }
-    render3();
+    render2();
     toast(
       backdrop?.querySelector(".so-manager-body"),
       `补传完成：成功 ${ok} 张${fail2 > 0 ? `，失败 ${fail2} 张（可再次点击重试）` : ""}`
@@ -5572,12 +5836,12 @@ function button(label, onClick, extraClass = "") {
   });
   return btn;
 }
-function iconButton(icon, title, onClick, className = "so-icon-btn", disabled = false) {
+function iconButton(icon, title2, onClick, className = "so-icon-btn", disabled = false) {
   const btn = el("div", className);
   btn.textContent = icon;
-  btn.title = title;
+  btn.title = title2;
   btn.setAttribute("role", "button");
-  btn.setAttribute("aria-label", title);
+  btn.setAttribute("aria-label", title2);
   btn.setAttribute("aria-disabled", String(disabled));
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -5615,14 +5879,14 @@ function downloadJson(data, fileName) {
   a.click();
   URL.revokeObjectURL(url);
 }
-async function copyText(text) {
+async function copyText(text3) {
   try {
-    await navigator.clipboard.writeText(text);
+    await navigator.clipboard.writeText(text3);
     return true;
   } catch {
     try {
       const ta = document.createElement("textarea");
-      ta.value = text;
+      ta.value = text3;
       ta.style.position = "fixed";
       ta.style.opacity = "0";
       document.body.append(ta);
@@ -5674,7 +5938,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-10 19:52"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-13 20:24"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
   return () => wrapper.remove();
@@ -5710,12 +5974,12 @@ function checkboxRow2(label, checked, onChange, help) {
 var HTML_STYLE_SOURCE = "<\\s*(img|illustration)\\s*>\\s*([^<]+?)\\s*<\\/\\s*\\1\\s*>";
 var BRACKET_STYLE_SOURCE = "[\\[【]\\s*(插图|图)\\s*[:：]\\s*([^\\]】]+?)\\s*[\\]】]";
 var COMBINED_SOURCE = `${HTML_STYLE_SOURCE}|${BRACKET_STYLE_SOURCE}`;
-function hasInlineImageMarkup(text) {
-  return new RegExp(COMBINED_SOURCE, "i").test(text);
+function hasInlineImageMarkup(text3) {
+  return new RegExp(COMBINED_SOURCE, "i").test(text3);
 }
-function replaceInlineImages(text, replacer) {
+function replaceInlineImages(text3, replacer) {
   const regex = new RegExp(COMBINED_SOURCE, "gi");
-  return text.replace(regex, (raw, ...groups) => {
+  return text3.replace(regex, (raw, ...groups) => {
     const code = (groups[1] ?? groups[3] ?? "").trim();
     if (!isValidImageCode(code)) return raw;
     const out = replacer({ raw, code });
@@ -5865,15 +6129,77 @@ var FP_ATTR = "data-so-fp";
 var MARKER_CLASS = "so-processed-marker";
 var snapshots = /* @__PURE__ */ new WeakMap();
 var postprocessControllers = /* @__PURE__ */ new Set();
-function updateBlockRanges(text) {
+function updateBlockRanges(text3) {
   const pattern = /<UpdateVariable(?:\s[^>]*)?>[\s\S]*?<\/UpdateVariable\s*>/gi;
-  return Array.from(text.matchAll(pattern), (match) => ({
+  return Array.from(text3.matchAll(pattern), (match) => ({
     start: match.index,
     end: match.index + match[0].length
   }));
 }
-function hasUpdateBlock(text) {
-  return updateBlockRanges(text).length > 0;
+function hasUpdateBlock(text3) {
+  return updateBlockRanges(text3).length > 0;
+}
+function sanitizedUpdateRange(rawMessage, visibleText) {
+  if (rawMessage === null) return null;
+  const openings = rawMessage.match(/<UpdateVariable(?:\s[^>]*)?>/gi) ?? [];
+  const closings = rawMessage.match(/<\/UpdateVariable\s*>/gi) ?? [];
+  if (openings.length !== 1 || closings.length !== 1) return null;
+  const block = /<UpdateVariable(?:\s[^>]*)?>([\s\S]*?)<\/UpdateVariable\s*>/i.exec(rawMessage);
+  if (!block) return null;
+  const expectedVisible = normalizeWhitespace(
+    rawMessage.replace(/<\/?UpdateVariable(?:\s[^>]*)?>/gi, "").replace(/<\/?Analysis(?:\s[^>]*)?>/gi, "")
+  );
+  if (expectedVisible !== normalizeWhitespace(visibleText)) return null;
+  const candidate = normalizeWhitespace(
+    block[1].replace(/<Analysis(?:\s[^>]*)?>/gi, "").replace(/<\/Analysis\s*>/gi, "")
+  );
+  if (!candidate) return null;
+  const visible = normalizeWhitespaceWithOffsets(visibleText);
+  const matches = [];
+  let from = 0;
+  while (from <= visible.text.length - candidate.length) {
+    const index = visible.text.indexOf(candidate, from);
+    if (index < 0) break;
+    matches.push(index);
+    if (matches.length > 1) return null;
+    from = index + 1;
+  }
+  if (matches.length !== 1) return null;
+  const startIndex = matches[0];
+  return {
+    start: visible.starts[startIndex],
+    end: visible.ends[startIndex + candidate.length - 1]
+  };
+}
+function normalizeWhitespace(text3) {
+  return text3.replace(/\s+/g, " ").trim();
+}
+function normalizeWhitespaceWithOffsets(text3) {
+  let normalized = "";
+  const starts = [];
+  const ends = [];
+  let index = 0;
+  while (index < text3.length) {
+    const start = index;
+    if (/\s/.test(text3[index])) {
+      while (index < text3.length && /\s/.test(text3[index])) index += 1;
+      normalized += " ";
+    } else {
+      index += 1;
+      normalized += text3[start];
+    }
+    starts.push(start);
+    ends.push(index);
+  }
+  let first = 0;
+  let last = normalized.length;
+  while (first < last && normalized[first] === " ") first += 1;
+  while (last > first && normalized[last - 1] === " ") last -= 1;
+  return {
+    text: normalized.slice(first, last),
+    starts: starts.slice(first, last),
+    ends: ends.slice(first, last)
+  };
 }
 function removeTextRanges(root, ranges) {
   if (ranges.length === 0) return;
@@ -5905,13 +6231,14 @@ function mountMessagePostprocess(deps) {
   if (!st) return () => {
   };
   const ctx = st.getContext();
-  const renderedEvents = [
+  const renderedEvents = [...new Set([
     ctx.eventTypes?.CHARACTER_MESSAGE_RENDERED,
-    ctx.eventTypes?.USER_MESSAGE_RENDERED
-  ].filter((e) => typeof e === "string" && e.length > 0);
+    ctx.eventTypes?.USER_MESSAGE_RENDERED,
+    ctx.eventTypes?.MESSAGE_UPDATED
+  ].filter((e) => typeof e === "string" && e.length > 0))];
   let active = true;
   const pendingTimers = /* @__PURE__ */ new Set();
-  if (deps.decorateImages || deps.cleanupImages || deps.processMessage || deps.reprocessMessages || deps.cleanupMessages) {
+  if (deps.getRawMessage || deps.decorateImages || deps.cleanupImages || deps.processMessage || deps.reprocessMessages || deps.cleanupMessages) {
     postprocessControllers.add(deps);
   }
   const cleanup = (unsubscribe) => {
@@ -5925,7 +6252,15 @@ function mountMessagePostprocess(deps) {
     postprocessControllers.delete(deps);
   };
   const processRendered = (messageId) => {
-    processMessages(deps.getSettings(), messageId);
+    let rawMessage = null;
+    if (typeof messageId === "string" || typeof messageId === "number") {
+      try {
+        rawMessage = deps.getRawMessage?.(messageId) ?? null;
+      } catch (error) {
+        console.warn("[sprite-overlay] 读取原始消息失败，变量块仅按可见标签处理", error);
+      }
+    }
+    processMessages(deps.getSettings(), messageId, rawMessage);
     const bodies = [];
     if (messageId === null || messageId === void 0 || `${messageId}` === "") {
       bodies.push(...Array.from(document.querySelectorAll("#chat .mes .mes_text")));
@@ -5981,18 +6316,20 @@ function clampFloors(settings) {
 function originalTextOf(el3) {
   return snapshots.get(el3)?.originalText ?? el3.textContent ?? "";
 }
-function collectCandidates() {
+function collectCandidates(extraCandidates = /* @__PURE__ */ new Set()) {
   const out = [];
   for (const mes of Array.from(document.querySelectorAll("#chat .mes"))) {
     if (mes.getAttribute("is_user") === "true" || mes.getAttribute("is_system") === "true") continue;
     const textEl = mes.querySelector(".mes_text");
     if (!textEl) continue;
-    const text = originalTextOf(textEl);
-    if (hasTag(text) || hasInlineImageMarkup(text) || hasUpdateBlock(text)) out.push(textEl);
+    const text3 = originalTextOf(textEl);
+    if (hasTag(text3) || hasInlineImageMarkup(text3) || hasUpdateBlock(text3) || extraCandidates.has(textEl)) {
+      out.push(textEl);
+    }
   }
   return out;
 }
-function processMessages(settings, messageId = null) {
+function processMessages(settings, messageId = null, rawMessage = null) {
   if (!anyFeatureOn(settings)) return;
   if (messageId !== null && messageId !== void 0 && `${messageId}` !== "") {
     const idStr = `${messageId}`;
@@ -6002,11 +6339,12 @@ function processMessages(settings, messageId = null) {
     let windowSet = null;
     for (const el3 of scope) {
       if (lastMes !== null && el3.closest(".mes") === lastMes) {
-        processMessageElement(el3, settings);
+        processMessageElement(el3, settings, rawMessage);
         continue;
       }
-      windowSet ?? (windowSet = new Set(collectCandidates().slice(-clampFloors(settings))));
-      if (windowSet.has(el3)) processMessageElement(el3, settings);
+      const rawCandidate = rawMessage !== null && sanitizedUpdateRange(rawMessage, originalTextOf(el3)) !== null ? /* @__PURE__ */ new Set([el3]) : void 0;
+      windowSet ?? (windowSet = new Set(collectCandidates(rawCandidate).slice(-clampFloors(settings))));
+      if (windowSet.has(el3)) processMessageElement(el3, settings, rawMessage);
     }
     return;
   }
@@ -6016,7 +6354,27 @@ function processMessages(settings, messageId = null) {
 }
 function reprocessAllMessages(settings) {
   restoreAllMessages();
-  if (anyFeatureOn(settings)) processMessages(settings);
+  if (anyFeatureOn(settings)) {
+    const rawGetters = [...postprocessControllers].map((controller) => controller.getRawMessage).filter((getter) => getter !== void 0);
+    if (rawGetters.length === 0) {
+      processMessages(settings);
+    } else {
+      for (const message of Array.from(document.querySelectorAll("#chat .mes"))) {
+        const messageId = message.getAttribute("mesid");
+        if (messageId === null) continue;
+        let rawMessage = null;
+        for (const getter of rawGetters) {
+          try {
+            rawMessage = getter(messageId);
+          } catch (error) {
+            console.warn("[sprite-overlay] 读取原始消息失败，变量块仅按可见标签处理", error);
+          }
+          if (rawMessage !== null) break;
+        }
+        processMessages(settings, messageId, rawMessage);
+      }
+    }
+  }
   for (const controller of postprocessControllers) {
     controller.reprocessMessages?.();
     controller.decorateImages?.(document);
@@ -6037,14 +6395,14 @@ function restoreElement(root) {
   snapshots.delete(root);
   root.removeAttribute(FP_ATTR);
 }
-function hashText(text) {
+function hashText(text3) {
   let h = 5381;
-  for (let i = 0; i < text.length; i++) {
-    h = (h << 5) + h + text.charCodeAt(i) | 0;
+  for (let i = 0; i < text3.length; i++) {
+    h = (h << 5) + h + text3.charCodeAt(i) | 0;
   }
   return (h >>> 0).toString(36);
 }
-function processMessageElement(root, settings) {
+function processMessageElement(root, settings, rawMessage = null) {
   const inlineSprites = settings.spriteDisplayMode !== "overlay";
   const host = settings.imageHost.endsWith("/") ? settings.imageHost : `${settings.imageHost}/`;
   const newvar = normalizeNewvarData(settings.apps[NEWVAR_APP_ID]);
@@ -6052,7 +6410,7 @@ function processMessageElement(root, settings) {
   const snap = snapshots.get(root);
   const contentIsOurs = snap !== void 0 && root.querySelector(`.${MARKER_CLASS}`) !== null;
   const originalText = contentIsOurs ? snap.originalText : root.textContent ?? "";
-  const fingerprint = `${settings.hideTagInMessage ? "T" : ""}${settings.renderInlineImages ? "I" : ""}${inlineSprites ? "S" : ""}${hideUpdateBlocks ? "V" : ""}|${hashText(host)}|${hashText(originalText)}`;
+  const fingerprint = `${settings.hideTagInMessage ? "T" : ""}${settings.renderInlineImages ? "I" : ""}${inlineSprites ? "S" : ""}${hideUpdateBlocks ? "V" : ""}|${hashText(host)}|${hashText(originalText)}|${rawMessage === null ? "" : hashText(rawMessage)}`;
   if (contentIsOurs && root.getAttribute(FP_ATTR) === fingerprint) return;
   if (contentIsOurs) {
     root.replaceChildren(...snap.nodes);
@@ -6063,14 +6421,17 @@ function processMessageElement(root, settings) {
   const packs = chName ? getActivePacks(settings, chName) : [];
   const hasPacks = packs.length > 0;
   const freshText = root.textContent ?? "";
+  const literalUpdateRanges = hideUpdateBlocks ? updateBlockRanges(freshText) : [];
+  const sanitizedRange = hideUpdateBlocks && literalUpdateRanges.length === 0 ? sanitizedUpdateRange(rawMessage, freshText) : null;
+  const updateRanges = sanitizedRange ? [sanitizedRange] : literalUpdateRanges;
   const tagged = hasTag(freshText);
-  const needsWork = settings.hideTagInMessage && tagged || inlineSprites && hasPacks && tagged || settings.renderInlineImages && hasInlineImageMarkup(freshText) || hideUpdateBlocks && hasUpdateBlock(freshText);
+  const needsWork = settings.hideTagInMessage && tagged || inlineSprites && hasPacks && tagged || settings.renderInlineImages && hasInlineImageMarkup(freshText) || updateRanges.length > 0;
   if (!needsWork) return;
   snapshots.set(root, {
     nodes: Array.from(root.childNodes).map((n) => n.cloneNode(true)),
     originalText: freshText
   });
-  if (hideUpdateBlocks) removeTextRanges(root, updateBlockRanges(freshText));
+  if (hideUpdateBlocks) removeTextRanges(root, updateRanges);
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const textNodes = [];
   let current2;
@@ -6078,29 +6439,30 @@ function processMessageElement(root, settings) {
     textNodes.push(current2);
   }
   for (const textNode of textNodes) {
-    const text = textNode.nodeValue ?? "";
-    if (!text) continue;
-    const nodeTagged = hasTag(text);
+    const text3 = textNode.nodeValue ?? "";
+    if (!text3) continue;
+    const nodeTagged = hasTag(text3);
     const needsSprites = inlineSprites && hasPacks && nodeTagged;
     const needsStrip = settings.hideTagInMessage && nodeTagged && !needsSprites;
-    const needsImages = settings.renderInlineImages && hasInlineImageMarkup(text);
+    const needsImages = settings.renderInlineImages && hasInlineImageMarkup(text3);
     if (!needsSprites && !needsStrip && !needsImages) continue;
-    let processed = needsStrip ? stripTags(text) : text;
+    let processed = needsStrip ? stripTags(text3) : text3;
     const elements = [];
     const marker = (el3) => `\0${elements.push(el3) - 1}\0`;
     if (needsSprites && hasPacks) {
-      processed = replaceTags(processed, (address) => {
+      processed = replaceTags(processed, (address, raw) => {
         const sprite = resolveSprite(packs, address);
         if (!sprite) return settings.hideTagInMessage ? "" : null;
         const image = createImage(sprite.url, sprite.tag, "so-inline-sprite");
-        return marker(image);
+        const imageMarker = marker(image);
+        return settings.hideTagInMessage ? imageMarker : `${raw}${imageMarker}`;
       });
     }
     if (needsImages) {
       processed = replaceInlineImages(processed, (m) => marker(createImage(host + m.code, m.code)));
     }
     if (elements.length === 0) {
-      if (processed !== text) textNode.nodeValue = processed;
+      if (processed !== text3) textNode.nodeValue = processed;
       continue;
     }
     const fragment = document.createDocumentFragment();
@@ -6298,30 +6660,57 @@ function numberRow(label, value, min, max, onChange) {
   row.append(span, input);
   return row;
 }
+function rangeRow(label, value, min, max, onInput, onCommit, format = String) {
+  const row = el2("label", "so-app-toggle so-app-range");
+  const span = document.createElement("span");
+  span.textContent = label;
+  const controls = el2("span", "so-app-range-controls");
+  const input = document.createElement("input");
+  input.type = "range";
+  input.min = String(min);
+  input.max = String(max);
+  input.step = "1";
+  input.value = String(Math.min(max, Math.max(min, Math.round(value))));
+  const output = document.createElement("output");
+  const read = () => {
+    const parsed = Math.round(Number(input.value));
+    const clamped = Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : min;
+    input.value = String(clamped);
+    output.value = format(clamped);
+    output.textContent = output.value;
+    return clamped;
+  };
+  read();
+  input.addEventListener("input", () => onInput(read()));
+  input.addEventListener("change", () => onCommit(read()));
+  controls.append(input, output);
+  row.append(span, controls);
+  return row;
+}
 var foldOpenState = /* @__PURE__ */ new Map();
-function foldSection(title, open = false, key = "") {
+function foldSection(title2, open = false, key = "") {
   const box = document.createElement("details");
   box.className = "so-app-section so-app-fold";
   box.open = key ? foldOpenState.get(key) ?? open : open;
   if (key) box.addEventListener("toggle", () => foldOpenState.set(key, box.open));
   const summary = document.createElement("summary");
   summary.className = "so-app-title";
-  summary.textContent = title;
+  summary.textContent = title2;
   const body = el2("div", "so-app-fold-body");
   box.append(summary, body);
   return { box, body };
 }
 function textareaRow(label, value, placeholder, onCommit) {
   const wrap = el2("div", "so-app-field");
-  const title = el2("div", "so-app-title");
-  title.textContent = label;
+  const title2 = el2("div", "so-app-title");
+  title2.textContent = label;
   const input = document.createElement("textarea");
   input.className = "text_pole so-app-input";
   input.rows = 5;
   input.value = value;
   input.placeholder = placeholder;
   input.addEventListener("change", () => onCommit(input.value));
-  wrap.append(title, input);
+  wrap.append(title2, input);
   return wrap;
 }
 function hintField(row, hint) {
@@ -6350,8 +6739,8 @@ function hintField(row, hint) {
 }
 function textRow(label, value, placeholder, onCommit, type = "text") {
   const wrap = el2("div", "so-app-field");
-  const title = el2("div", "so-app-title");
-  title.textContent = label;
+  const title2 = el2("div", "so-app-title");
+  title2.textContent = label;
   const input = document.createElement("input");
   input.type = type;
   input.className = "text_pole so-app-input";
@@ -6359,12 +6748,12 @@ function textRow(label, value, placeholder, onCommit, type = "text") {
   input.placeholder = placeholder;
   input.autocomplete = "off";
   input.addEventListener("change", () => onCommit(input.value));
-  wrap.append(title, input);
+  wrap.append(title2, input);
   return wrap;
 }
 
 // st-extension/src/apps/sprite-app.ts
-function spriteApp() {
+function spriteApp(deps = {}) {
   return {
     id: "sprites",
     name: "立绘",
@@ -6376,12 +6765,12 @@ function spriteApp() {
       const packs = getActivePacks(settings, characterName);
       const pack = packs[0] ?? null;
       const stateSection = el2("div", "so-app-section");
-      const title = el2("div", "so-app-title");
-      title.textContent = characterName ? `当前角色：${characterName}` : "尚未打开角色聊天";
+      const title2 = el2("div", "so-app-title");
+      title2.textContent = characterName ? `当前角色：${characterName}` : "尚未打开角色聊天";
       const detail = el2("div", "so-app-desc");
       detail.textContent = settings.enabled ? pack ? packs.length > 1 ? `立绘功能运行中 — 已启用 ${packs.length} 个包（${packs.reduce((n, p) => n + p.sprites.length, 0)} 张）` : `立绘功能运行中 — 已绑定「${pack.name}」（${pack.sprites.length} 张）` : "立绘功能已开启，但当前角色未绑定立绘包（到「图库」绑定）" : "立绘功能已关闭：不注入 Prompt、不解析标签，旧楼层已恢复原文";
       stateSection.append(
-        title,
+        title2,
         toggleRow(
           "启用立绘功能",
           settings.enabled,
@@ -6425,12 +6814,14 @@ function spriteApp() {
           RECENT_FLOORS_MAX,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), recentFloors: v })
         ),
-        numberRow(
+        rangeRow(
           "悬浮窗立绘不透明度（%）",
           settings.spriteOpacity,
           SPRITE_OPACITY_MIN,
           SPRITE_OPACITY_MAX,
-          (v) => ctx.updateSettings({ ...ctx.getSettings(), spriteOpacity: v })
+          (v) => deps.previewOpacity?.(v),
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), spriteOpacity: v }),
+          (v) => `${v}%`
         ),
         toggleRow(
           "隐藏 [立绘:xxx] 标签",
@@ -6548,9 +6939,9 @@ function galleryApp(deps) {
       section2.append(desc, appButton("打开立绘包管理", () => deps.openManager()));
       container.append(section2);
       const list = el2("div", "so-app-section");
-      const title = el2("div", "so-app-title");
-      title.textContent = `共 ${settings.packs.length} 个立绘包`;
-      list.append(title);
+      const title2 = el2("div", "so-app-title");
+      title2.textContent = `共 ${settings.packs.length} 个立绘包`;
+      list.append(title2);
       const boundIds = new Set(settings.bindings.flatMap((b) => b.packIds));
       const sorted = [...settings.packs].sort(
         (a, b) => Number(boundIds.has(b.id)) - Number(boundIds.has(a.id))
@@ -6610,6 +7001,1458 @@ function galleryApp(deps) {
   };
 }
 
+// st-extension/src/apps/butler/actions.ts
+function errorText(error) {
+  return error instanceof Error && error.message ? error.message : "未知错误";
+}
+function equalJson(left, right) {
+  if (left === right) return true;
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+function cloneActions(actions) {
+  return actions.map((action) => ({ ...action }));
+}
+async function applyTransaction(inputActions, bridge, baselineMeasurementId) {
+  const actions = cloneActions(inputActions);
+  const group = actions[0]?.group ?? "performanceSettings";
+  if (actions.some((action) => action.group !== group)) throw new Error("事务内动作必须属于同一分组");
+  const current2 = await bridge.readGroup(group);
+  const before = {};
+  const requested = {};
+  for (const action of actions) {
+    const actualBefore = current2[action.field];
+    if (actualBefore !== void 0) action.before = actualBefore;
+    before[action.field] = action.before;
+    requested[action.field] = action.requested;
+  }
+  const transaction = {
+    id: bridge.createId(),
+    group,
+    createdAt: bridge.now(),
+    status: "applying",
+    restoreStatus: "available",
+    ...baselineMeasurementId ? { baselineMeasurementId } : {},
+    before,
+    requested,
+    actual: { ...before },
+    actions
+  };
+  await bridge.persistTransaction(transaction);
+  for (const action of actions) {
+    if (action.status === "unchanged" || equalJson(action.before, action.requested)) {
+      action.status = "unchanged";
+      action.actual = action.before;
+      transaction.actual[action.field] = action.before;
+      continue;
+    }
+    try {
+      await bridge.writeGroup(group, { [action.field]: action.requested });
+      const reread = await bridge.readGroup(group);
+      action.actual = reread[action.field] ?? null;
+      transaction.actual[action.field] = action.actual;
+      if (equalJson(action.actual, action.requested)) {
+        action.status = "applied";
+      } else {
+        action.status = "failed";
+        action.error = "SillyTavern 实际值与请求值不一致";
+      }
+    } catch (error) {
+      action.status = "failed";
+      action.error = errorText(error);
+      const reread = await bridge.readGroup(group);
+      action.actual = reread[action.field] ?? null;
+      transaction.actual[action.field] = action.actual;
+    }
+  }
+  const changed = actions.filter((action) => action.status !== "unchanged");
+  const applied = changed.filter((action) => action.status === "applied").length;
+  const failed = changed.filter((action) => action.status === "failed").length;
+  transaction.status = failed === 0 ? "applied" : applied > 0 ? "partial" : "failed";
+  transaction.completedAt = bridge.now();
+  transaction.actual = { ...await bridge.readGroup(group) };
+  await bridge.persistTransaction(transaction);
+  return transaction;
+}
+async function restoreTransaction(source, bridge, confirmedConflictFields = []) {
+  const transaction = {
+    ...source,
+    before: { ...source.before },
+    requested: { ...source.requested },
+    actual: { ...source.actual },
+    actions: cloneActions(source.actions),
+    restoreStatus: "restoring"
+  };
+  await bridge.persistTransaction(transaction);
+  const current2 = await bridge.readGroup(transaction.group);
+  const confirmed = new Set(confirmedConflictFields);
+  const conflicts = [];
+  const fieldsToRestore = [];
+  for (const [field, before] of Object.entries(transaction.before)) {
+    const after = transaction.actual[field] ?? transaction.requested[field];
+    const value = current2[field];
+    if (equalJson(value, before)) continue;
+    if (!equalJson(value, after) && !confirmed.has(field)) {
+      conflicts.push({ field, before, after, current: value });
+      continue;
+    }
+    fieldsToRestore.push([field, before]);
+  }
+  if (conflicts.length > 0) {
+    transaction.restoreStatus = "conflict";
+    await bridge.persistTransaction(transaction);
+    return { transaction, conflicts };
+  }
+  try {
+    for (const [field, before] of fieldsToRestore) {
+      await bridge.writeGroup(transaction.group, { [field]: before });
+    }
+    const restored = await bridge.readGroup(transaction.group);
+    const failedFields = Object.entries(transaction.before).filter(([field, before]) => !equalJson(restored[field], before));
+    if (failedFields.length > 0) {
+      transaction.restoreStatus = "conflict";
+      transaction.error = `恢复后 ${failedFields.map(([field]) => field).join("、")} 未回到原值`;
+    } else {
+      transaction.status = "restored";
+      transaction.restoreStatus = "restored";
+      transaction.completedAt = bridge.now();
+      delete transaction.error;
+    }
+  } catch (error) {
+    transaction.restoreStatus = "conflict";
+    transaction.error = `恢复失败：${errorText(error)}`;
+  }
+  await bridge.persistTransaction(transaction);
+  return { transaction, conflicts: [] };
+}
+function capabilitySignature(snapshot) {
+  return [...snapshot.capabilities].map((capability) => `${capability.id}:${capability.available ? "1" : "0"}`).sort().join("|");
+}
+function flattenNumbers(value, prefix = "", output = {}) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (prefix) output[prefix] = value;
+    return output;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return output;
+  for (const [key, child] of Object.entries(value)) {
+    flattenNumbers(child, prefix ? `${prefix}.${key}` : key, output);
+  }
+  return output;
+}
+function compareMeasurements(before, after) {
+  const reasons = [];
+  if (before.invalidReason || after.invalidReason) reasons.push("样本无效");
+  if (!before.chatKey || !after.chatKey || before.chatKey !== after.chatKey) reasons.push("聊天不同");
+  if (before.probe !== after.probe) reasons.push("探针不同");
+  if (!before.foreground || !after.foreground || before.foreground !== after.foreground) reasons.push("前台状态不同");
+  if (before.durationMs !== after.durationMs || before.durationMs !== 6e3) reasons.push("采样时长不同");
+  if (capabilitySignature(before) !== capabilitySignature(after)) reasons.push("能力集合不同");
+  const deltas = {};
+  if (reasons.length === 0) {
+    const beforeNumbers = flattenNumbers(before.metrics);
+    const afterNumbers = flattenNumbers(after.metrics);
+    for (const [key, beforeValue] of Object.entries(beforeNumbers)) {
+      const afterValue = afterNumbers[key];
+      if (afterValue !== void 0) deltas[key] = afterValue - beforeValue;
+    }
+  }
+  return {
+    comparable: reasons.length === 0,
+    reasons,
+    before: before.metrics,
+    after: after.metrics,
+    deltas
+  };
+}
+
+// st-extension/src/apps/butler/diagnosis.ts
+function finding(input) {
+  return {
+    id: input.id,
+    layer: input.layer,
+    evidence: input.evidence,
+    severity: input.severity,
+    confidence: input.confidence,
+    ...input.actionId ? { actionId: input.actionId } : {},
+    explanation: {
+      ...input.explanation,
+      result: input.explanation.result ?? "尚未应用 / 待复测。"
+    }
+  };
+}
+function planAction(id, label, field, before, requested, reloadRequired = false) {
+  return {
+    id,
+    group: "performanceSettings",
+    label,
+    field,
+    before,
+    requested,
+    status: before === requested ? "unchanged" : "planned",
+    reloadRequired
+  };
+}
+function buildSafePlan(current2, deviceClass) {
+  const messageLimit = deviceClass === "mobile" ? 20 : 50;
+  const nextMessages = current2.chat_truncation === 0 ? messageLimit : Math.min(current2.chat_truncation, messageLimit);
+  const candidates = [
+    planAction("perf-fast-ui", "开启 No Blur", "fast_ui_mode", current2.fast_ui_mode, true),
+    planAction("perf-reduced-motion", "开启减少动画", "reduced_motion", current2.reduced_motion, true, true),
+    planAction("perf-no-shadows", "关闭阴影", "noShadows", current2.noShadows, true),
+    planAction("perf-smooth-streaming", "关闭平滑流式", "smooth_streaming", current2.smooth_streaming, false),
+    planAction("perf-stream-fade", "关闭流式淡入", "stream_fade_in", current2.stream_fade_in, false),
+    planAction(
+      "perf-streaming-fps",
+      "降低流式帧率",
+      "streaming_fps",
+      current2.streaming_fps,
+      Math.min(current2.streaming_fps, 15)
+    ),
+    planAction(
+      "perf-chat-truncation",
+      "限制消息 DOM 数量",
+      "chat_truncation",
+      current2.chat_truncation,
+      nextMessages,
+      true
+    )
+  ];
+  return {
+    deviceClass,
+    actions: candidates.filter((action) => action.status === "planned"),
+    unchanged: candidates.filter((action) => action.status === "unchanged")
+  };
+}
+function settingFinding(id, actionId, detected, change, reason, impact, reload) {
+  return finding({
+    id,
+    layer: "pageRendering",
+    evidence: { detected },
+    severity: "suggestion",
+    confidence: "setting",
+    actionId,
+    explanation: {
+      detected,
+      change,
+      reason,
+      impact,
+      reload,
+      restore: "可以从本次性能设置事务恢复到修改前的原值。"
+    }
+  });
+}
+function numberRecord(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value;
+}
+function resourceGroups(snapshot) {
+  const resources = numberRecord(snapshot.metrics.resources);
+  return Array.isArray(resources?.groups) ? resources.groups.filter((item) => typeof item === "object" && item !== null && !Array.isArray(item)) : [];
+}
+function unavailableCapabilities(capabilities) {
+  return capabilities.filter(
+    (capability) => !capability.available
+  );
+}
+function capabilityAvailable(snapshot, id) {
+  return snapshot.capabilities.some((capability) => capability.id === id && capability.available);
+}
+function diagnose(snapshot, current2) {
+  const findings = [];
+  if (current2) {
+    if (!current2.fast_ui_mode) findings.push(settingFinding(
+      "setting-no-blur",
+      "perf-fast-ui",
+      "No Blur 当前未开启，界面仍可能使用背景模糊。",
+      "开启 No Blur。",
+      "背景模糊会增加合成与 GPU 工作。",
+      "界面毛玻璃效果会减少，功能与生成语义不变。",
+      "通常立即生效；部分界面在刷新后完全更新。"
+    ));
+    if (!current2.reduced_motion) findings.push(settingFinding(
+      "setting-reduced-motion",
+      "perf-reduced-motion",
+      "减少动画当前未开启。",
+      "开启减少动画。",
+      "减少持续过渡和动画更新可降低主线程与合成工作。",
+      "界面过渡会更直接，功能与生成语义不变。",
+      "刷新页面后完全生效。"
+    ));
+    if (!current2.noShadows) findings.push(settingFinding(
+      "setting-no-shadows",
+      "perf-no-shadows",
+      "关闭阴影当前未开启。",
+      "开启关闭阴影。",
+      "减少阴影绘制可降低重绘成本。",
+      "界面层次感会减弱，功能与生成语义不变。",
+      "通常立即生效。"
+    ));
+    if (current2.smooth_streaming) findings.push(settingFinding(
+      "setting-smooth-streaming",
+      "perf-smooth-streaming",
+      "平滑流式当前开启。",
+      "关闭平滑流式。",
+      "减少生成期间持续的文字动画与重绘。",
+      "文字会更直接地更新，不改变模型输出内容。",
+      "立即影响后续流式回复。"
+    ));
+    if (current2.stream_fade_in) findings.push(settingFinding(
+      "setting-stream-fade",
+      "perf-stream-fade",
+      "流式淡入当前开启。",
+      "关闭流式淡入。",
+      "减少每批新文字的视觉动画。",
+      "新文字不再淡入，不改变模型输出内容。",
+      "立即影响后续流式回复。"
+    ));
+    if (current2.streaming_fps > 15) findings.push(settingFinding(
+      "setting-streaming-fps",
+      "perf-streaming-fps",
+      `流式帧率为 ${current2.streaming_fps} FPS，高于安全方案上限 15 FPS。`,
+      "降低到 15 FPS；已有更低值不会调高。",
+      "减少生成期间 UI 更新频率。",
+      "流式动画细腻度会降低，不改变回复内容。",
+      "立即影响后续流式回复。"
+    ));
+    const limit = snapshot.environment.mobile.available ? snapshot.environment.mobile.value ? 20 : 50 : null;
+    if (limit !== null && (current2.chat_truncation === 0 || current2.chat_truncation > limit)) findings.push(settingFinding(
+      "setting-chat-truncation",
+      "perf-chat-truncation",
+      current2.chat_truncation === 0 ? "消息加载数为 0，会把当前聊天全部放入 DOM。" : `消息加载数为 ${current2.chat_truncation}，高于当前设备建议上限 ${limit}。`,
+      `限制到 ${limit}；已有更低的非零值不会调高。`,
+      "减少同时渲染的历史消息与 DOM 节点。",
+      "上翻时仍可继续加载历史消息，不会删除聊天数据。",
+      "需要重载当前聊天。"
+    ));
+  }
+  const dynamic = numberRecord(snapshot.metrics.dynamic);
+  const longestTask = typeof dynamic?.longestTaskMs === "number" ? dynamic.longestTaskMs : 0;
+  const longTaskCount = typeof dynamic?.longTaskCount === "number" ? dynamic.longTaskCount : 0;
+  if (capabilityAvailable(snapshot, "longTasks") && longTaskCount > 0 && longestTask >= 50) findings.push(finding({
+    id: "measured-long-tasks",
+    layer: "pageRendering",
+    evidence: { longTaskCount, longestTaskMs: longestTask },
+    severity: longestTask >= 100 ? "risk" : "suggestion",
+    confidence: "measurement",
+    explanation: {
+      detected: `6 秒样本中观察到 ${longTaskCount} 次 Long Task，最长 ${longestTask}ms。`,
+      change: "先应用安全渲染方案并用相同探针复测；若仍存在，再做扩展 A/B。",
+      reason: "Long Task 表示主线程连续占用至少 50ms，会阻塞输入和绘制。",
+      impact: "该指标属于整个页面，不能单独归因到某个扩展。",
+      reload: "安全渲染项按各字段要求生效；扩展 A/B 需要刷新。",
+      restore: "安全设置和扩展实验分别保存恢复状态。"
+    }
+  }));
+  const extensionResources = resourceGroups(snapshot).filter((group) => typeof group.key === "string" && group.key.startsWith("extension:"));
+  if (capabilityAvailable(snapshot, "resourceTiming") && extensionResources.length > 0) findings.push(finding({
+    id: "extension-resource-evidence",
+    layer: "extensions",
+    evidence: { groups: extensionResources },
+    severity: "info",
+    confidence: "correlation",
+    explanation: {
+      detected: `Resource Timing 记录到 ${extensionResources.length} 个扩展资源分组。`,
+      change: "只把这些扩展作为刷新后 A/B 的候选，不自动禁用。",
+      reason: "下载或加载记录仅提供相关线索，不能归因持续 CPU 或内存成本。",
+      impact: "A/B 暂时禁用扩展可能影响对应功能，必须由用户选择。",
+      reload: "扩展启停需要刷新后才真正改变加载状态。",
+      restore: "A/B 流程保留最初禁用清单，可全部恢复。"
+    }
+  }));
+  const page = numberRecord(snapshot.metrics.page);
+  if (page && capabilityAvailable(snapshot, "pageSummary")) findings.push(finding({
+    id: "evidence-page-dom",
+    layer: "pageRendering",
+    evidence: page,
+    severity: "info",
+    confidence: "measurement",
+    explanation: {
+      detected: "已记录当前聊天消息数、已渲染楼层和 DOM 节点摘要。",
+      change: "仅作为环境证据，不因数量本身自动修改设置。",
+      reason: "相同数量在不同设备和内容结构上的开销差异很大。",
+      impact: "无自动变更。",
+      reload: "不需要。",
+      restore: "没有修改，无需恢复。"
+    }
+  }));
+  const media = numberRecord(snapshot.metrics.media);
+  if (media && capabilityAvailable(snapshot, "mediaDom")) findings.push(finding({
+    id: "evidence-media",
+    layer: "mediaResourcesStorage",
+    evidence: media,
+    severity: "info",
+    confidence: "measurement",
+    explanation: {
+      detected: "已记录页面媒体元素及可见/离屏摘要。",
+      change: "仅作为环境证据，不自动暂停媒体或控制 GIF。",
+      reason: "元素数量不能直接代表解码、显存或播放成本。",
+      impact: "无自动变更。",
+      reload: "不需要。",
+      restore: "没有修改，无需恢复。"
+    }
+  }));
+  const unavailable2 = unavailableCapabilities(snapshot.capabilities);
+  if (unavailable2.length > 0) findings.push(finding({
+    id: "capability-unavailable",
+    layer: "mediaResourcesStorage",
+    evidence: { capabilities: unavailable2.map((item) => ({ id: item.id, reason: item.reason })) },
+    severity: "info",
+    confidence: "correlation",
+    explanation: {
+      detected: `${unavailable2.length} 项浏览器或 ST 指标在当前环境不可用。`,
+      change: "保留缺失原因，不生成估算值。",
+      reason: "不同浏览器和 ST 版本公开的能力不同。",
+      impact: "报告信息会减少，但不会影响其他可用指标。",
+      reload: "通常不需要。",
+      restore: "没有修改，无需恢复。"
+    }
+  }));
+  return findings;
+}
+
+// st-extension/src/apps/butler/experiments.ts
+var BACKUP_STORAGE_KEY = "st-stage:butler:extension-recovery:v1";
+function uniqueSorted(values) {
+  return [...new Set(values.filter(Boolean))].sort();
+}
+function isSelf(name) {
+  return name === "st-stage" || name === "third-party/st-stage";
+}
+function isSystem(item) {
+  return item.type.toLowerCase() === "system";
+}
+function trialForCandidates(kind, candidates) {
+  if (kind === "selectedExtensions") return [...candidates];
+  return candidates.slice(0, Math.max(1, Math.ceil(candidates.length / 2)));
+}
+function defaultExperimentCandidates(inventory) {
+  return inventory.extensions.filter((item) => item.configuredEnabled && !item.isSelf && !isSelf(item.name) && !isSystem(item)).map((item) => item.name);
+}
+function dependencyWarnings(inventory, selectedNames) {
+  const selected = new Set(selectedNames);
+  const warnings = [];
+  for (const dependent of inventory.extensions) {
+    if (!dependent.configuredEnabled || selected.has(dependent.name)) continue;
+    if (dependent.manifest?.dependencies.status !== "valid") continue;
+    for (const dependency of dependent.manifest.dependencies.names) {
+      if (selected.has(dependency)) warnings.push({ dependency, dependent: dependent.name });
+    }
+  }
+  return warnings;
+}
+function recoveryCommand(backup) {
+  const disabled = JSON.stringify(uniqueSorted(backup.disabledExtensions));
+  return `(async()=>{const m=await import('/scripts/extensions.js');const d=new Set(${disabled});for(const n of m.extensionNames){await (d.has(n)?m.disableExtension(n,false):m.enableExtension(n,false));}location.reload();})()`;
+}
+var buildEmergencyBackup = Object.assign(
+  (disabledExtensions, createdAt) => ({
+    version: 1,
+    createdAt,
+    disabledExtensions: uniqueSorted(disabledExtensions)
+  }),
+  { recoveryCommand }
+);
+function readEmergencyBackup(storage) {
+  let raw;
+  try {
+    raw = storage.getItem(BACKUP_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw);
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const record = value;
+    if (record.version !== 1 || typeof record.createdAt !== "number" || !Number.isFinite(record.createdAt) || !Array.isArray(record.disabledExtensions) || !record.disabledExtensions.every((name) => typeof name === "string" && name.length > 0) || record.disabledExtensions.some((name) => typeof name === "string" && isSelf(name))) return null;
+    return buildEmergencyBackup(record.disabledExtensions, record.createdAt);
+  } catch {
+    return null;
+  }
+}
+function prepareExtensionExperiment(kind, candidateNames, inventory, baselineMeasurementId, deps) {
+  const known = new Set(inventory.extensions.map((item) => item.name));
+  const candidates = uniqueSorted(candidateNames);
+  if (candidates.some(isSelf)) throw new Error("st-stage 自身不能进入扩展实验");
+  const unknown = candidates.filter((name) => !known.has(name));
+  if (unknown.length > 0) throw new Error(`未找到扩展：${unknown.join("、")}`);
+  if (candidates.length === 0) throw new Error("至少选择一个扩展");
+  return {
+    id: deps.createId(),
+    kind,
+    status: "prepared",
+    startedAt: deps.now(),
+    originalDisabledExtensions: uniqueSorted(inventory.disabledExtensions),
+    candidateExtensions: candidates,
+    trialDisabledExtensions: trialForCandidates(kind, candidates),
+    currentRound: 1,
+    baselineMeasurementId
+  };
+}
+async function applyDisabledSet(desiredDisabledExtensions, deps, reloadOnSuccess) {
+  const inventory = await deps.readExtensions();
+  if (inventory.status !== "ready") {
+    return { ok: false, applied: [], failed: [{ name: "SillyTavern", error: inventory.reason }], reloadRequired: false };
+  }
+  if (!inventory.governance.writable) {
+    return {
+      ok: false,
+      applied: [],
+      failed: [{ name: "SillyTavern", error: inventory.governance.reason ?? "扩展治理只读" }],
+      reloadRequired: false
+    };
+  }
+  const desired = new Set(uniqueSorted(desiredDisabledExtensions));
+  const failed = [];
+  const applied = [];
+  for (const name of desired) {
+    if (isSelf(name)) failed.push({ name, error: "管家不能禁用 st-stage 自身" });
+  }
+  if (failed.length > 0) return { ok: false, applied, failed, reloadRequired: false };
+  for (const extension of inventory.extensions) {
+    if (extension.isSelf || isSelf(extension.name)) continue;
+    const shouldEnable = !desired.has(extension.name);
+    if (extension.configuredEnabled === shouldEnable) continue;
+    const result = await deps.setExtensionEnabled(extension.name, shouldEnable);
+    if (result.ok) applied.push(extension.name);
+    else failed.push({ name: extension.name, error: result.error });
+  }
+  const ok = failed.length === 0;
+  const reloadRequired = applied.length > 0;
+  if (ok && reloadRequired && reloadOnSuccess) await deps.reloadPage();
+  return { ok, applied, failed, reloadRequired };
+}
+async function restoreEmergencyExtensionBackup(backup, deps) {
+  const batch = await applyDisabledSet(backup.disabledExtensions, deps, false);
+  if (!batch.ok) return batch;
+  deps.backupStorage.removeItem(BACKUP_STORAGE_KEY);
+  if (batch.reloadRequired) await deps.reloadPage();
+  return batch;
+}
+function desiredForTrial(experiment) {
+  return uniqueSorted([
+    ...experiment.originalDisabledExtensions,
+    ...experiment.trialDisabledExtensions ?? experiment.candidateExtensions
+  ]);
+}
+function storeEmergencyBackup(experiment, deps) {
+  const backup = buildEmergencyBackup(experiment.originalDisabledExtensions, deps.now());
+  deps.backupStorage.setItem(BACKUP_STORAGE_KEY, JSON.stringify(backup));
+  deps.warnRecovery(buildEmergencyBackup.recoveryCommand(backup));
+}
+function partialFailureNote(prefix, batch) {
+  const applied = batch.applied.length > 0 ? batch.applied.join("、") : "无";
+  const failed = batch.failed.map((item) => `${item.name}（${item.error}）`).join("、");
+  return `${prefix}；已修改：${applied}；失败：${failed}。页面未刷新，可保留当前状态或恢复原清单。`;
+}
+async function startExtensionExperiment(source, deps) {
+  if (source.status !== "prepared") throw new Error("实验尚未处于准备状态");
+  const experiment = structuredClone(source);
+  await deps.persistExperiment(experiment);
+  storeEmergencyBackup(experiment, deps);
+  const batch = await applyDisabledSet(desiredForTrial(experiment), deps, false);
+  if (!batch.ok) {
+    experiment.status = "awaitingDecision";
+    experiment.reloadRequiredAfterDecision = batch.reloadRequired;
+    experiment.notes = partialFailureNote("扩展变更未全部成功", batch);
+    await deps.persistExperiment(experiment);
+    return { experiment, batch };
+  }
+  experiment.status = batch.reloadRequired ? "awaitingReload" : "sampling";
+  await deps.persistExperiment(experiment);
+  if (batch.reloadRequired) await deps.reloadPage();
+  return { experiment, batch };
+}
+function resumeExtensionExperiment(source) {
+  if (source.status !== "awaitingReload") return structuredClone(source);
+  return { ...structuredClone(source), status: "sampling" };
+}
+function recordExperimentComparison(source, comparisonMeasurementId) {
+  if (source.status !== "sampling") throw new Error("实验未处于复测阶段");
+  return {
+    ...structuredClone(source),
+    status: "awaitingDecision",
+    comparisonMeasurementId
+  };
+}
+async function finishExtensionExperiment(source, decision, deps) {
+  if (source.status !== "awaitingDecision") throw new Error("实验尚未等待用户决定");
+  const completed = structuredClone(source);
+  if (decision === "restore") {
+    const restoring = { ...completed, status: "restoring" };
+    await deps.persistExperiment(restoring);
+    const batch = await applyDisabledSet(restoring.originalDisabledExtensions, deps, false);
+    if (!batch.ok) {
+      const retryable = {
+        ...restoring,
+        status: "awaitingDecision",
+        reloadRequiredAfterDecision: Boolean(
+          restoring.reloadRequiredAfterDecision || batch.reloadRequired
+        ),
+        notes: partialFailureNote("恢复未全部成功", batch)
+      };
+      await deps.persistExperiment(retryable);
+      return retryable;
+    }
+    completed.status = "completed";
+    completed.completedAt = deps.now();
+    await deps.persistExperiment(null);
+    deps.backupStorage.removeItem(BACKUP_STORAGE_KEY);
+    if (batch.reloadRequired) await deps.reloadPage();
+    return completed;
+  }
+  completed.status = "completed";
+  completed.completedAt = deps.now();
+  await deps.persistExperiment(null);
+  deps.backupStorage.removeItem(BACKUP_STORAGE_KEY);
+  if (completed.reloadRequiredAfterDecision) await deps.reloadPage();
+  return completed;
+}
+async function advanceBinaryIsolation(source, symptomImproved, deps) {
+  if (source.kind !== "binaryIsolation" || source.status !== "awaitingDecision") {
+    throw new Error("二分实验尚未等待本轮判断");
+  }
+  const tested = new Set(source.trialDisabledExtensions ?? []);
+  const candidates = symptomImproved ? source.candidateExtensions.filter((name) => tested.has(name)) : source.candidateExtensions.filter((name) => !tested.has(name));
+  const next = {
+    ...structuredClone(source),
+    status: "prepared",
+    candidateExtensions: candidates,
+    trialDisabledExtensions: trialForCandidates("binaryIsolation", candidates),
+    currentRound: source.currentRound + 1,
+    comparisonMeasurementId: void 0,
+    reloadRequiredAfterDecision: void 0
+  };
+  await deps.persistExperiment(next);
+  const batch = await applyDisabledSet(desiredForTrial(next), deps, false);
+  if (!batch.ok) {
+    next.status = "awaitingDecision";
+    next.reloadRequiredAfterDecision = batch.reloadRequired;
+    next.notes = partialFailureNote("本轮扩展变更未全部成功", batch);
+    await deps.persistExperiment(next);
+    return next;
+  }
+  next.status = batch.reloadRequired ? "awaitingReload" : "sampling";
+  await deps.persistExperiment(next);
+  if (batch.reloadRequired) await deps.reloadPage();
+  return next;
+}
+
+// st-extension/src/apps/butler/types.ts
+var BUTLER_DATA_VERSION = 2;
+var BUTLER_HISTORY_LIMIT = 10;
+var BUTLER_DATA_BUDGET_BYTES = 64 * 1024;
+
+// st-extension/src/apps/butler/history.ts
+function utf8JsonBytes(value) {
+  return new TextEncoder().encode(JSON.stringify(value)).byteLength;
+}
+function protectedMeasurementIds(data) {
+  return new Set([
+    data.activeTransaction?.baselineMeasurementId,
+    data.pendingExperiment?.baselineMeasurementId,
+    data.pendingExperiment?.comparisonMeasurementId
+  ].filter((id) => Boolean(id)));
+}
+function oldestRecordIndex(history, protectedIds) {
+  let oldestIndex = -1;
+  for (let index = 0; index < history.length; index += 1) {
+    const record = history[index];
+    if (record.kind === "measurement" && protectedIds.has(record.measurement.id)) continue;
+    if (oldestIndex < 0) {
+      oldestIndex = index;
+      continue;
+    }
+    const candidate = history[index];
+    const oldest = history[oldestIndex];
+    if (candidate.createdAt < oldest.createdAt || candidate.createdAt === oldest.createdAt && candidate.completedAt < oldest.completedAt) {
+      oldestIndex = index;
+    }
+  }
+  return oldestIndex;
+}
+function withoutOldest(history, evictedIds, protectedIds) {
+  const next = [...history];
+  const index = oldestRecordIndex(next, protectedIds);
+  if (index < 0) return null;
+  const [removed] = next.splice(index, 1);
+  evictedIds.push(removed.id);
+  return next;
+}
+function fitButlerDataBudget(data, budgetBytes = BUTLER_DATA_BUDGET_BYTES, candidateHistoryId) {
+  const evictedIds = [];
+  const protectedIds = protectedMeasurementIds(data);
+  let history = [...data.history];
+  while (history.length > BUTLER_HISTORY_LIMIT) {
+    const next = withoutOldest(history, evictedIds, protectedIds);
+    if (!next) break;
+    history = next;
+  }
+  let fitted = { ...data, history };
+  let bytes = utf8JsonBytes(fitted);
+  while (bytes > budgetBytes && history.length > 0) {
+    const next = withoutOldest(history, evictedIds, protectedIds);
+    if (!next) break;
+    history = next;
+    fitted = { ...data, history };
+    bytes = utf8JsonBytes(fitted);
+  }
+  if (bytes <= budgetBytes) {
+    return {
+      data: fitted,
+      bytes,
+      budgetBytes,
+      status: evictedIds.length > 0 ? "evicted" : "ok",
+      historyAccepted: candidateHistoryId === void 0 ? true : fitted.history.some((record) => record.id === candidateHistoryId),
+      evictedIds
+    };
+  }
+  const protectedStatePresent = data.activeTransaction !== null || data.pendingExperiment !== null || protectedIds.size > 0;
+  return {
+    data: fitted,
+    bytes,
+    budgetBytes,
+    status: protectedStatePresent ? "protected-over-budget" : "data-over-budget",
+    historyAccepted: false,
+    evictedIds
+  };
+}
+
+// st-extension/src/apps/butler/migrations.ts
+var INVALID = { ok: false };
+var ACTION_GROUPS = ["performanceSettings", "disabledExtensions", "gameplaySettings"];
+var ACTION_STATUSES = ["planned", "applied", "failed", "unchanged"];
+var TRANSACTION_STATUSES = ["planned", "applying", "applied", "partial", "failed", "restored"];
+var RESTORE_STATUSES = ["unavailable", "available", "restoring", "conflict", "restored"];
+var EXPERIMENT_KINDS = ["selectedExtensions", "binaryIsolation"];
+var EXPERIMENT_STATUSES = [
+  "prepared",
+  "awaitingReload",
+  "sampling",
+  "awaitingDecision",
+  "restoring",
+  "completed",
+  "failed"
+];
+var ACTIVE_TRANSACTION_STATUSES = ["planned", "applying", "applied", "partial", "failed"];
+var ACTIVE_RESTORE_STATUSES = ["available", "restoring", "conflict"];
+var COMPLETED_TRANSACTION_STATUSES = ["applied", "partial", "failed", "restored"];
+var PENDING_EXPERIMENT_STATUSES = [
+  "prepared",
+  "awaitingReload",
+  "sampling",
+  "awaitingDecision",
+  "restoring"
+];
+var COMPLETED_EXPERIMENT_STATUSES = ["completed", "failed"];
+var HISTORY_OUTCOMES = ["completed", "failed", "restored", "cancelled"];
+var PROBES = ["static", "idle", "controlledScroll"];
+var PERF_BOOLEAN_KEYS = [
+  "fast_ui_mode",
+  "reduced_motion",
+  "noShadows",
+  "smooth_streaming",
+  "stream_fade_in"
+];
+function valid(value) {
+  return { ok: true, value };
+}
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isFiniteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+function isString(value) {
+  return typeof value === "string";
+}
+function isOneOf(value, allowed) {
+  return typeof value === "string" && allowed.includes(value);
+}
+function optionalString(value) {
+  return value === void 0 || isString(value);
+}
+function optionalNumber(value) {
+  return value === void 0 || isFiniteNumber(value);
+}
+function optionalBoolean(value) {
+  return value === void 0 || typeof value === "boolean";
+}
+function normalizeJsonValue(value, ancestors = /* @__PURE__ */ new Set()) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return valid(value);
+  if (isFiniteNumber(value)) return valid(value);
+  if (typeof value !== "object" || value === null || ancestors.has(value)) return INVALID;
+  ancestors.add(value);
+  if (Array.isArray(value)) {
+    const clone2 = [];
+    for (const item of value) {
+      const normalized = normalizeJsonValue(item, ancestors);
+      if (!normalized.ok) {
+        ancestors.delete(value);
+        return INVALID;
+      }
+      clone2.push(normalized.value);
+    }
+    ancestors.delete(value);
+    return valid(clone2);
+  }
+  const entries = [];
+  for (const [key, item] of Object.entries(value)) {
+    const normalized = normalizeJsonValue(item, ancestors);
+    if (!normalized.ok) {
+      ancestors.delete(value);
+      return INVALID;
+    }
+    entries.push([key, normalized.value]);
+  }
+  ancestors.delete(value);
+  return valid(Object.fromEntries(entries));
+}
+function normalizeJsonRecord(value) {
+  if (!isRecord(value)) return INVALID;
+  const normalized = normalizeJsonValue(value);
+  return normalized.ok && isRecord(normalized.value) ? valid(normalized.value) : INVALID;
+}
+function normalizeStringArray(value) {
+  return Array.isArray(value) && value.every(isString) ? valid([...value]) : INVALID;
+}
+function normalizePerformanceSnapshot(value) {
+  if (!isRecord(value) || !PERF_BOOLEAN_KEYS.every((key) => typeof value[key] === "boolean") || !isFiniteNumber(value.streaming_fps) || !isFiniteNumber(value.chat_truncation)) return INVALID;
+  return valid({
+    fast_ui_mode: value.fast_ui_mode,
+    reduced_motion: value.reduced_motion,
+    noShadows: value.noShadows,
+    smooth_streaming: value.smooth_streaming,
+    stream_fade_in: value.stream_fade_in,
+    streaming_fps: value.streaming_fps,
+    chat_truncation: value.chat_truncation
+  });
+}
+function normalizeObserved(value, normalizeValue) {
+  if (!isRecord(value) || typeof value.available !== "boolean") return INVALID;
+  if (!value.available) {
+    return isString(value.reason) ? valid({ available: false, reason: value.reason }) : INVALID;
+  }
+  const normalized = normalizeValue(value.value);
+  return normalized.ok ? valid({ available: true, value: normalized.value }) : INVALID;
+}
+function normalizeCapability(value) {
+  if (!isRecord(value) || !isString(value.id) || typeof value.available !== "boolean") return INVALID;
+  if (value.available) return valid({ id: value.id, available: true });
+  return isString(value.reason) ? valid({ id: value.id, available: false, reason: value.reason }) : INVALID;
+}
+function normalizeEnvironment(value) {
+  if (!isRecord(value)) return INVALID;
+  const stVersion2 = normalizeObserved(value.stVersion, (input) => isString(input) ? valid(input) : INVALID);
+  const stageBuild = normalizeObserved(value.stageBuild, (input) => isString(input) ? valid(input) : INVALID);
+  const mobile = normalizeObserved(value.mobile, (input) => typeof input === "boolean" ? valid(input) : INVALID);
+  const settingsSummary = normalizeObserved(value.settingsSummary, normalizeJsonRecord);
+  const disabledExtensionsHash = normalizeObserved(
+    value.disabledExtensionsHash,
+    (input) => isString(input) ? valid(input) : INVALID
+  );
+  if (!stVersion2.ok || !stageBuild.ok || !mobile.ok || !settingsSummary.ok || !disabledExtensionsHash.ok) {
+    return INVALID;
+  }
+  return valid({
+    stVersion: stVersion2.value,
+    stageBuild: stageBuild.value,
+    mobile: mobile.value,
+    settingsSummary: settingsSummary.value,
+    disabledExtensionsHash: disabledExtensionsHash.value
+  });
+}
+function normalizeMeasurementSnapshot(value) {
+  if (!isRecord(value) || !isString(value.id) || !isFiniteNumber(value.createdAt) || !isFiniteNumber(value.durationMs) || !isOneOf(value.probe, PROBES) || typeof value.foreground !== "boolean" || !optionalString(value.chatKey) || !optionalString(value.invalidReason) || !Array.isArray(value.capabilities)) return null;
+  const environment = normalizeEnvironment(value.environment);
+  const metrics = normalizeJsonRecord(value.metrics);
+  const capabilities = [];
+  for (const candidate of value.capabilities) {
+    const normalized = normalizeCapability(candidate);
+    if (!normalized.ok) return null;
+    capabilities.push(normalized.value);
+  }
+  if (!environment.ok || !metrics.ok) return null;
+  return {
+    id: value.id,
+    createdAt: value.createdAt,
+    durationMs: value.durationMs,
+    probe: value.probe,
+    foreground: value.foreground,
+    ...value.chatKey === void 0 ? {} : { chatKey: value.chatKey },
+    environment: environment.value,
+    capabilities,
+    metrics: metrics.value,
+    ...value.invalidReason === void 0 ? {} : { invalidReason: value.invalidReason }
+  };
+}
+function normalizeButlerAction(value) {
+  if (!isRecord(value) || !isString(value.id) || !isOneOf(value.group, ACTION_GROUPS) || !isString(value.label) || !isString(value.field) || !isOneOf(value.status, ACTION_STATUSES) || typeof value.reloadRequired !== "boolean" || !optionalString(value.error)) return null;
+  const before = normalizeJsonValue(value.before);
+  const requested = normalizeJsonValue(value.requested);
+  const actual = value.actual === void 0 ? null : normalizeJsonValue(value.actual);
+  if (!before.ok || !requested.ok || actual !== null && !actual.ok) return null;
+  return {
+    id: value.id,
+    group: value.group,
+    label: value.label,
+    field: value.field,
+    before: before.value,
+    requested: requested.value,
+    ...actual === null ? {} : { actual: actual.value },
+    status: value.status,
+    reloadRequired: value.reloadRequired,
+    ...value.error === void 0 ? {} : { error: value.error }
+  };
+}
+function normalizeButlerTransaction(value) {
+  if (!isRecord(value) || !isString(value.id) || !isOneOf(value.group, ACTION_GROUPS) || !isFiniteNumber(value.createdAt) || !optionalNumber(value.completedAt) || !isOneOf(value.status, TRANSACTION_STATUSES) || !isOneOf(value.restoreStatus, RESTORE_STATUSES) || !optionalString(value.baselineMeasurementId) || !Array.isArray(value.actions) || !optionalString(value.error)) return null;
+  const before = normalizeJsonRecord(value.before);
+  const requested = normalizeJsonRecord(value.requested);
+  const actual = normalizeJsonRecord(value.actual);
+  const actions = [];
+  for (const candidate of value.actions) {
+    const normalized = normalizeButlerAction(candidate);
+    if (!normalized || normalized.group !== value.group) return null;
+    actions.push(normalized);
+  }
+  if (!before.ok || !requested.ok || !actual.ok) return null;
+  return {
+    id: value.id,
+    group: value.group,
+    createdAt: value.createdAt,
+    ...value.completedAt === void 0 ? {} : { completedAt: value.completedAt },
+    status: value.status,
+    restoreStatus: value.restoreStatus,
+    ...value.baselineMeasurementId === void 0 ? {} : { baselineMeasurementId: value.baselineMeasurementId },
+    before: before.value,
+    requested: requested.value,
+    actual: actual.value,
+    actions,
+    ...value.error === void 0 ? {} : { error: value.error }
+  };
+}
+function normalizeButlerExperiment(value) {
+  if (!isRecord(value) || !isString(value.id) || !isOneOf(value.kind, EXPERIMENT_KINDS) || !isOneOf(value.status, EXPERIMENT_STATUSES) || !isFiniteNumber(value.startedAt) || !optionalNumber(value.completedAt) || !isFiniteNumber(value.currentRound) || !Number.isInteger(value.currentRound) || value.currentRound < 0 || !optionalString(value.baselineMeasurementId) || !optionalString(value.comparisonMeasurementId) || !optionalBoolean(value.reloadRequiredAfterDecision) || !optionalString(value.notes)) return null;
+  const originalDisabledExtensions = normalizeStringArray(value.originalDisabledExtensions);
+  const candidateExtensions = normalizeStringArray(value.candidateExtensions);
+  const trialDisabledExtensions = value.trialDisabledExtensions === void 0 ? null : normalizeStringArray(value.trialDisabledExtensions);
+  if (!originalDisabledExtensions.ok || !candidateExtensions.ok || trialDisabledExtensions && !trialDisabledExtensions.ok) {
+    return null;
+  }
+  return {
+    id: value.id,
+    kind: value.kind,
+    status: value.status,
+    startedAt: value.startedAt,
+    ...value.completedAt === void 0 ? {} : { completedAt: value.completedAt },
+    originalDisabledExtensions: originalDisabledExtensions.value,
+    candidateExtensions: candidateExtensions.value,
+    ...trialDisabledExtensions === null ? {} : { trialDisabledExtensions: trialDisabledExtensions.value },
+    currentRound: value.currentRound,
+    ...value.baselineMeasurementId === void 0 ? {} : { baselineMeasurementId: value.baselineMeasurementId },
+    ...value.comparisonMeasurementId === void 0 ? {} : { comparisonMeasurementId: value.comparisonMeasurementId },
+    ...value.reloadRequiredAfterDecision === void 0 ? {} : { reloadRequiredAfterDecision: value.reloadRequiredAfterDecision },
+    ...value.notes === void 0 ? {} : { notes: value.notes }
+  };
+}
+function normalizeHistoryBase(value) {
+  if (!isString(value.id) || !isFiniteNumber(value.createdAt) || !isFiniteNumber(value.completedAt) || !isOneOf(value.outcome, HISTORY_OUTCOMES)) return INVALID;
+  const summary = normalizeJsonRecord(value.summary);
+  return summary.ok ? valid({
+    id: value.id,
+    createdAt: value.createdAt,
+    completedAt: value.completedAt,
+    outcome: value.outcome,
+    summary: summary.value
+  }) : INVALID;
+}
+function normalizeHistoryRecord(value) {
+  if (!isRecord(value)) return null;
+  const base = normalizeHistoryBase(value);
+  if (!base.ok) return null;
+  if (value.kind === "measurement") {
+    if (value.transaction !== void 0 || value.experiment !== void 0) return null;
+    const measurement = normalizeMeasurementSnapshot(value.measurement);
+    return measurement ? { ...base.value, kind: "measurement", measurement } : null;
+  }
+  if (value.kind === "transaction") {
+    if (value.measurement !== void 0 || value.experiment !== void 0) return null;
+    const transaction = normalizeButlerTransaction(value.transaction);
+    return transaction && transaction.completedAt !== void 0 && isOneOf(transaction.status, COMPLETED_TRANSACTION_STATUSES) ? { ...base.value, kind: "transaction", transaction } : null;
+  }
+  if (value.kind === "experiment") {
+    if (value.measurement !== void 0 || value.transaction !== void 0) return null;
+    const experiment = normalizeButlerExperiment(value.experiment);
+    return experiment && experiment.completedAt !== void 0 && isOneOf(experiment.status, COMPLETED_EXPERIMENT_STATUSES) ? { ...base.value, kind: "experiment", experiment } : null;
+  }
+  return null;
+}
+function normalizeV2(value) {
+  if (value.version !== BUTLER_DATA_VERSION || typeof value.performanceModeOn !== "boolean" || !Array.isArray(value.history)) return null;
+  const activeTransaction = value.activeTransaction === null ? null : normalizeButlerTransaction(value.activeTransaction);
+  const pendingExperiment = value.pendingExperiment === null ? null : normalizeButlerExperiment(value.pendingExperiment);
+  const recoverableTransaction = activeTransaction && isOneOf(activeTransaction.status, ACTIVE_TRANSACTION_STATUSES) && isOneOf(activeTransaction.restoreStatus, ACTIVE_RESTORE_STATUSES) ? activeTransaction : null;
+  const resumableExperiment = pendingExperiment && isOneOf(pendingExperiment.status, PENDING_EXPERIMENT_STATUSES) ? pendingExperiment : null;
+  const history = [];
+  for (const candidate of value.history) {
+    const normalized = normalizeHistoryRecord(candidate);
+    if (normalized) history.push(normalized);
+  }
+  return {
+    version: BUTLER_DATA_VERSION,
+    performanceModeOn: value.performanceModeOn,
+    activeTransaction: recoverableTransaction,
+    pendingExperiment: resumableExperiment,
+    history
+  };
+}
+function createEmptyButlerData() {
+  return {
+    version: BUTLER_DATA_VERSION,
+    performanceModeOn: false,
+    activeTransaction: null,
+    pendingExperiment: null,
+    history: []
+  };
+}
+function migrateButlerData(value, options = {}) {
+  if (!isRecord(value)) return createEmptyButlerData();
+  if (value.version === BUTLER_DATA_VERSION) return normalizeV2(value) ?? createEmptyButlerData();
+  const snapshot = normalizePerformanceSnapshot(value.snapshot);
+  if (!snapshot.ok || value.perfOn !== void 0 && typeof value.perfOn !== "boolean") {
+    return createEmptyButlerData();
+  }
+  const now = options.now ?? Date.now();
+  const id = options.idFactory?.() ?? `legacy-performance-${now}`;
+  return {
+    version: BUTLER_DATA_VERSION,
+    performanceModeOn: value.perfOn === true,
+    activeTransaction: {
+      id,
+      group: "performanceSettings",
+      createdAt: now,
+      status: "applied",
+      restoreStatus: "available",
+      before: { ...snapshot.value },
+      requested: {},
+      actual: {},
+      actions: []
+    },
+    pendingExperiment: null,
+    history: []
+  };
+}
+
+// st-extension/src/apps/butler/modals.ts
+var LAYER_LABELS = {
+  pageRendering: "页面与渲染",
+  mediaResourcesStorage: "媒体、资源与存储",
+  extensions: "扩展",
+  generationContext: "生成与上下文"
+};
+var EXPLANATION_LABELS = [
+  ["detected", "检测到什么"],
+  ["change", "建议修改"],
+  ["reason", "为什么可能改善"],
+  ["impact", "可能影响"],
+  ["reload", "生效与刷新"],
+  ["restore", "如何恢复"],
+  ["result", "实测结果"]
+];
+function text(parent, value, className = "so-butler-text") {
+  const node = el2("div", className);
+  node.textContent = value;
+  parent.append(node);
+  return node;
+}
+function title(parent, value) {
+  text(parent, value, "so-butler-modal-title");
+}
+function valueText(value) {
+  if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  if (typeof value === "string" || typeof value === "boolean") return String(value);
+  return JSON.stringify(value);
+}
+function renderFinding(parent, finding2) {
+  const card = document.createElement("details");
+  card.className = `so-butler-finding so-butler-severity-${finding2.severity}`;
+  const summary = document.createElement("summary");
+  const layer = el2("span", "so-butler-layer");
+  layer.textContent = LAYER_LABELS[finding2.layer];
+  const detected = document.createElement("span");
+  detected.textContent = finding2.explanation.detected;
+  summary.append(layer, detected);
+  const body = el2("div", "so-butler-finding-body");
+  for (const [key, label] of EXPLANATION_LABELS) {
+    const row = el2("div", "so-butler-explanation-row");
+    const strong = document.createElement("strong");
+    strong.textContent = label;
+    const content = document.createElement("span");
+    content.textContent = finding2.explanation[key];
+    row.append(strong, content);
+    body.append(row);
+  }
+  card.append(summary, body);
+  parent.append(card);
+  return card;
+}
+function environmentRows(parent, measurement) {
+  const entries = [
+    ["SillyTavern", measurement.environment.stVersion],
+    ["st-stage", measurement.environment.stageBuild],
+    ["设备", measurement.environment.mobile],
+    ["聊天标识", measurement.chatKey ? { available: true, value: measurement.chatKey } : { available: false, reason: "不可用" }]
+  ];
+  for (const [label, observed2] of entries) {
+    const row = el2("div", "so-butler-kv");
+    const key = document.createElement("span");
+    key.textContent = label;
+    const value = document.createElement("strong");
+    value.textContent = observed2.available ? valueText(observed2.value) : observed2.reason;
+    if (!observed2.available) value.className = "so-butler-muted";
+    row.append(key, value);
+    parent.append(row);
+  }
+}
+function buildReportModal(controller) {
+  return (body) => {
+    title(body, "完整体检报告");
+    text(body, "这里只展示可观测证据和能力缺失原因，不生成综合性能分数。", "so-butler-lead");
+    const measurement = controller.getMeasurement();
+    if (!measurement) {
+      text(body, "尚无体检结果。关闭后运行一次静态或 6 秒体检。");
+      return;
+    }
+    const environment = foldSection("环境与采样条件", true);
+    environmentRows(environment.body, measurement);
+    text(environment.body, `探针：${measurement.probe} · ${measurement.durationMs / 1e3} 秒 · ${measurement.foreground ? "前台" : "后台"}`);
+    if (measurement.invalidReason) text(environment.body, measurement.invalidReason, "so-butler-alert");
+    body.append(environment.box);
+    const metrics = foldSection("原始摘要指标", true);
+    for (const [key, value] of Object.entries(measurement.metrics)) {
+      const row = el2("div", "so-butler-metric-block");
+      const strong = document.createElement("strong");
+      strong.textContent = key;
+      const pre = document.createElement("pre");
+      pre.textContent = JSON.stringify(value, null, 2);
+      row.append(strong, pre);
+      metrics.body.append(row);
+    }
+    body.append(metrics.box);
+    const capabilities = foldSection("能力支持情况");
+    for (const capability of measurement.capabilities) {
+      text(
+        capabilities.body,
+        capability.available ? `${capability.id}：可用` : `${capability.id}：${capability.reason}`,
+        capability.available ? "so-butler-text" : "so-butler-muted"
+      );
+    }
+    body.append(capabilities.box);
+    const findings = foldSection(`全部发现（${controller.getFindings().length}）`, true);
+    for (const finding2 of controller.getFindings()) renderFinding(findings.body, finding2);
+    body.append(findings.box);
+    const comparison = controller.getComparison();
+    if (comparison) {
+      const compare = foldSection("最近一次前后对比", true);
+      text(compare.body, comparison.comparable ? "样本条件一致，可以查看原始差值。" : `样本不可直接比较：${comparison.reasons.join("；")}。这里只并列原始值。`);
+      if (comparison.comparable) {
+        for (const [key, value] of Object.entries(comparison.deltas)) {
+          text(compare.body, `${key}：${value >= 0 ? "+" : ""}${value}`);
+        }
+      }
+      body.append(compare.box);
+    }
+    const history = foldSection(`最近操作（${controller.getData().history.length}）`);
+    for (const record of [...controller.getData().history].reverse()) {
+      text(history.body, `${new Date(record.createdAt).toLocaleString()} · ${String(record.summary.label ?? record.kind)} · ${record.outcome}`);
+    }
+    if (controller.getData().history.length === 0) text(history.body, "暂无已保存操作。");
+    body.append(history.box);
+  };
+}
+function experimentStatus(experiment) {
+  const labels = {
+    prepared: "准备中",
+    awaitingReload: "等待刷新",
+    sampling: "等待扩展复测",
+    awaitingDecision: "等待结果决定",
+    restoring: "正在恢复",
+    completed: "已完成",
+    failed: "失败"
+  };
+  return labels[experiment.status];
+}
+function buildExtensionModal(services, controller) {
+  return (body) => {
+    let disposed = false;
+    let inventory = null;
+    let selected = /* @__PURE__ */ new Set();
+    let busy = false;
+    let notice = "";
+    let emergencyBackup = readEmergencyBackup(services.backupStorage);
+    const run = async (task) => {
+      if (busy) return;
+      busy = true;
+      notice = "";
+      render2();
+      try {
+        await task();
+      } catch (error) {
+        notice = error instanceof Error ? error.message : "操作失败";
+      } finally {
+        busy = false;
+        if (!disposed) render2();
+      }
+    };
+    const renderPending = (experiment) => {
+      title(body, "扩展排障");
+      text(body, `当前流程：${experiment.kind === "binaryIsolation" ? "二分隔离" : "选定扩展 A/B"} · 第 ${experiment.currentRound} 轮`);
+      text(body, `状态：${experimentStatus(experiment)}`, experiment.notes ? "so-butler-alert" : "so-butler-lead");
+      if (experiment.notes) text(body, experiment.notes, "so-butler-alert");
+      text(body, `本轮暂时禁用：${(experiment.trialDisabledExtensions ?? experiment.candidateExtensions).join("、")}`);
+      text(body, "最初禁用清单已同时保存在管家数据、localStorage 和控制台恢复命令中。");
+      if (experiment.status === "sampling") {
+        body.append(appButton(busy ? "正在复测" : "运行扩展复测", () => run(controller.sampleExperiment)));
+      }
+      if (experiment.status === "awaitingDecision") {
+        if (experiment.kind === "binaryIsolation" && experiment.candidateExtensions.length > 1 && experiment.reloadRequiredAfterDecision === void 0) {
+          const actions = el2("div", "so-butler-actions");
+          actions.append(
+            appButton("症状改善", () => run(() => controller.advanceBinary(true))),
+            appButton("症状无改善", () => run(() => controller.advanceBinary(false)))
+          );
+          body.append(actions);
+        }
+        const decisions = el2("div", "so-butler-actions");
+        decisions.append(
+          appButton("保留当前禁用", () => run(() => controller.finishExperiment("keep"))),
+          appButton("恢复原清单", () => run(() => controller.finishExperiment("restore")))
+        );
+        body.append(decisions);
+      }
+      if (notice) text(body, notice, "so-butler-alert");
+    };
+    const renderInventory = (ready) => {
+      title(body, "扩展排障");
+      text(body, "扩展脚本和样式只有刷新后才会真正停止加载。管家使用 SillyTavern 官方禁用接口，不修改内部数组。", "so-butler-lead");
+      if (!ready.governance.writable) text(body, ready.governance.reason ?? "当前版本只支持查看。", "so-butler-alert");
+      if (emergencyBackup) {
+        const backup = foldSection("检测到紧急恢复备份", true, "butler-emergency-backup");
+        text(backup.body, `保存时间：${new Date(emergencyBackup.createdAt).toLocaleString()} · 原禁用清单 ${emergencyBackup.disabledExtensions.length} 项。`);
+        backup.body.append(appButton("恢复备份中的禁用清单", () => run(async () => {
+          if (!emergencyBackup) return;
+          await controller.restoreEmergencyBackup(emergencyBackup);
+          emergencyBackup = null;
+          notice = "紧急备份已恢复。";
+        })));
+        body.append(backup.box);
+      }
+      text(body, "第三方扩展", "so-butler-section-title");
+      const list = el2("div", "so-butler-extension-list");
+      for (const extension of ready.extensions) {
+        const row = el2("label", "so-butler-extension-row");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = extension.name;
+        checkbox.checked = selected.has(extension.name);
+        checkbox.disabled = extension.isSelf || !extension.configuredEnabled || !ready.governance.writable;
+        checkbox.addEventListener("change", () => {
+          if (checkbox.checked) selected.add(extension.name);
+          else selected.delete(extension.name);
+        });
+        const label = el2("span", "so-butler-extension-name");
+        label.textContent = extension.manifest?.displayName ? `${extension.manifest.displayName} (${extension.name})` : extension.name;
+        const state = el2("small", "so-butler-muted");
+        state.textContent = extension.isSelf ? "受保护" : extension.configuredEnabled ? `${extension.type} · 当前启用` : `${extension.type} · 当前禁用`;
+        row.append(checkbox, label, state);
+        list.append(row);
+      }
+      body.append(list);
+      const start = async (kind) => {
+        const names = [...selected];
+        if (names.length === 0) throw new Error("至少选择一个启用的第三方扩展");
+        const warnings = dependencyWarnings(ready, names);
+        if (warnings.length > 0) {
+          const detail = warnings.map((item) => `${item.dependent} 依赖 ${item.dependency}`).join("\n");
+          if (!services.confirm(`所选扩展存在启用中的依赖方：
+${detail}
+
+仍要开始临时禁用实验吗？`)) return;
+        }
+        await controller.startExperiment(kind, names, ready);
+      };
+      const actions = el2("div", "so-butler-actions");
+      actions.append(
+        appButton("开始选定扩展 A/B", () => run(() => start("selectedExtensions"))),
+        appButton("开始二分隔离", () => run(() => start("binaryIsolation")))
+      );
+      body.append(actions);
+      text(body, "系统扩展默认不参与；st-stage 自身永远不可选。二分隔离只在你选定的候选集内逐轮缩小范围。");
+      if (notice) text(body, notice, "so-butler-alert");
+    };
+    const render2 = () => {
+      if (disposed) return;
+      body.textContent = "";
+      const pending = controller.getData().pendingExperiment;
+      if (pending) {
+        renderPending(pending);
+        return;
+      }
+      if (!inventory) {
+        title(body, "扩展排障");
+        text(body, "正在读取 SillyTavern 扩展清单...");
+        return;
+      }
+      if (inventory.status !== "ready") {
+        title(body, "扩展排障");
+        text(body, inventory.reason, "so-butler-alert");
+        return;
+      }
+      renderInventory(inventory);
+    };
+    render2();
+    void services.readExtensions().then((value) => {
+      if (disposed) return;
+      inventory = value;
+      if (value.status === "ready") selected = new Set(defaultExperimentCandidates(value));
+      render2();
+    });
+    return () => {
+      disposed = true;
+    };
+  };
+}
+function advisorSection(body, heading, paragraphs) {
+  const section2 = foldSection(heading, true);
+  for (const paragraph of paragraphs) text(section2.body, paragraph);
+  body.append(section2.box);
+}
+function buildAdvisorModal(services) {
+  return (body) => {
+    title(body, "玩法与服务端顾问");
+    text(body, "这部分可能影响记忆、检索和上下文语义，默认只提供建议，不进入一键安全优化。", "so-butler-lead");
+    const health = services.readHealth();
+    const extensionState = text(body, "常用扩展状态：正在读取 SillyTavern 扩展清单...", "so-butler-muted");
+    advisorSection(body, "World Info", [
+      "世界书条目越多、扫描深度越高，生成前匹配工作通常越多；它同时承载设定一致性，不应按“越少越好”处理。",
+      "优先清理重复条目、缩小不必要的扫描范围，再用相同对话做生成前后 A/B。"
+    ]);
+    advisorSection(body, "Vector Storage", [
+      "向量检索会增加索引、查询和存储工作，但能从长历史或资料库召回相关内容。",
+      "只在明确不需要语义召回的对话里临时关闭并比较；不要把 Token 减少直接等同于页面渲染变快。"
+    ]);
+    advisorSection(body, "Summarize", [
+      "总结会额外调用模型或处理历史，但可以控制长期上下文大小。频率太高会增加请求，频率太低会让上下文膨胀。",
+      "根据实际聊天长度和模型速度调整，保留角色记忆需求。"
+    ]);
+    advisorSection(body, "Regex 与 Quick Reply", [
+      "大量生成时 Regex 规则可能增加每次回复的处理工作，且角色卡和预设可能依赖它们，因此管家不会自动关闭。",
+      health.quickReplySets.available ? `当前检测到 ${health.quickReplySets.value} 个 Quick Reply 集合。集合数量只作信息展示，不代表运行时成本。` : `Quick Reply 集合数不可用：${health.quickReplySets.reason}`
+    ]);
+    advisorSection(body, "服务端 config.yaml", [
+      "requestCompression：长聊天或弱网可减少传输体积；修改后需要重启 SillyTavern。",
+      "lazyLoadCharacters：大量角色卡时应保持开启；旧配置可能沿用 false。",
+      "memoryCacheCapacity：按角色卡规模设置缓存容量，容量越高通常占用更多服务端内存。",
+      "useDiskCache：只有磁盘极慢时才考虑关闭。管家没有稳定公开接口读取或修改这些键，因此不会伪装成已检测。"
+    ]);
+    void services.readExtensions().then((inventory) => {
+      if (inventory.status !== "ready") {
+        extensionState.textContent = `常用扩展状态：不可用（${inventory.reason}）`;
+        return;
+      }
+      const status = (label, names) => {
+        const found = inventory.extensions.find((extension) => names.includes(extension.name));
+        return found ? `${label}：当前${found.configuredEnabled ? "启用" : "禁用"}` : `${label}：未检测到`;
+      };
+      extensionState.textContent = [
+        status("Vector Storage", ["vectors"]),
+        status("Summarize", ["memory"]),
+        status("Regex", ["regex"])
+      ].join("；");
+    }).catch(() => {
+      extensionState.textContent = "常用扩展状态：读取失败";
+    });
+  };
+}
+
+// st-extension/src/apps/butler/st-contract.ts
+function isRecord2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isStringArray(value) {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+function isStringRecord(value) {
+  return isRecord2(value) && Object.values(value).every((item) => typeof item === "string");
+}
+function declaration(value) {
+  if (value === void 0) return { status: "absent", names: [] };
+  if (!isStringArray(value)) return { status: "invalid", names: [] };
+  return { status: "valid", names: [...value] };
+}
+function inspectExtensionModule(value) {
+  if (!isRecord2(value)) {
+    const reason = "extensions.js 模块形状无效";
+    return { status: "unavailable", reason, governance: { writable: false, reason } };
+  }
+  const missing = [];
+  if (!isStringArray(value.extensionNames)) missing.push("extensionNames");
+  if (!isStringRecord(value.extensionTypes)) missing.push("extensionTypes");
+  const settings = value.extension_settings;
+  if (!isRecord2(settings) || !isStringArray(settings.disabledExtensions)) {
+    missing.push("extension_settings.disabledExtensions");
+  }
+  if (typeof value.findExtension !== "function") missing.push("findExtension");
+  if (typeof value.getExtensionManifest !== "function") missing.push("getExtensionManifest");
+  if (missing.length > 0) {
+    const reason = `extensions.js 缺少可读契约：${missing.join("、")}`;
+    return { status: "unavailable", reason, governance: { writable: false, reason } };
+  }
+  const writeMissing = [];
+  if (typeof value.enableExtension !== "function") writeMissing.push("enableExtension");
+  if (typeof value.disableExtension !== "function") writeMissing.push("disableExtension");
+  const governance = writeMissing.length === 0 ? { writable: true } : { writable: false, reason: `扩展治理只读：缺少 ${writeMissing.join("、")}` };
+  return {
+    status: "ready",
+    api: {
+      extensionNames: [...value.extensionNames],
+      extensionTypes: { ...value.extensionTypes },
+      // Keep the validated live object: ST replaces disabledExtensions after enableExtension().
+      extensionSettings: settings,
+      findExtension: value.findExtension,
+      getExtensionManifest: value.getExtensionManifest,
+      enableExtension: typeof value.enableExtension === "function" ? value.enableExtension : void 0,
+      disableExtension: typeof value.disableExtension === "function" ? value.disableExtension : void 0
+    },
+    governance
+  };
+}
+function inspectPowerUserModule(value) {
+  if (!isRecord2(value) || typeof value.applyPowerUserSettings !== "function") {
+    return { available: false, reason: "power-user.js 缺少 applyPowerUserSettings" };
+  }
+  return { available: true, applyPowerUserSettings: value.applyPowerUserSettings };
+}
+function summarizeExtensionManifest(value) {
+  if (!isRecord2(value)) return null;
+  const summary = {
+    dependencies: declaration(value.dependencies),
+    requiredModules: declaration(value.requires)
+  };
+  if (typeof value.display_name === "string") summary.displayName = value.display_name;
+  if (typeof value.version === "string") summary.version = value.version;
+  if (typeof value.loading_order === "string" || typeof value.loading_order === "number") {
+    summary.loadingOrder = value.loading_order;
+  }
+  if (typeof value.js === "string") summary.js = value.js;
+  if (typeof value.css === "string") summary.css = value.css;
+  return summary;
+}
+function parseFoundExtension(value) {
+  if (!isRecord2(value) || typeof value.name !== "string" || typeof value.enabled !== "boolean") return null;
+  return { name: value.name, configuredEnabled: value.enabled };
+}
+
 // st-extension/src/apps/butler/bridge.ts
 function getST() {
   try {
@@ -6618,36 +8461,64 @@ function getST() {
     return void 0;
   }
 }
-function readBool(pu, key, dflt) {
-  const v = pu[key];
-  return typeof v === "boolean" ? v : dflt;
+var PERF_FIELDS = {
+  fast_ui_mode: "boolean",
+  reduced_motion: "boolean",
+  noShadows: "boolean",
+  smooth_streaming: "boolean",
+  stream_fade_in: "boolean",
+  streaming_fps: "number",
+  chat_truncation: "number"
+};
+function unavailableCapabilities2(reason) {
+  return Object.fromEntries(
+    Object.keys(PERF_FIELDS).map((key) => [key, { available: false, reason }])
+  );
 }
-function readNum(pu, key, dflt) {
-  const v = pu[key];
-  return typeof v === "number" && Number.isFinite(v) ? v : dflt;
+function readPerfState() {
+  const pu = getST()?.powerUserSettings;
+  if (!pu) {
+    const reason = "未检测到 SillyTavern power_user 设置";
+    return { status: "unavailable", snapshot: {}, capabilities: unavailableCapabilities2(reason), reason };
+  }
+  const snapshot = {};
+  const capabilities = {};
+  for (const [rawKey, expected] of Object.entries(PERF_FIELDS)) {
+    const key = rawKey;
+    const value = pu[key];
+    const valid2 = expected === "boolean" ? typeof value === "boolean" : typeof value === "number" && Number.isFinite(value);
+    if (valid2) {
+      Object.assign(snapshot, { [key]: value });
+      capabilities[key] = { available: true };
+    } else {
+      capabilities[key] = { available: false, reason: "字段缺失或类型无效" };
+    }
+  }
+  const complete = Object.values(capabilities).every((capability) => capability.available);
+  return { status: complete ? "ready" : "partial", snapshot, capabilities };
 }
 function readPerf() {
-  const pu = getST()?.powerUserSettings;
-  if (!pu) return null;
-  return {
-    fast_ui_mode: readBool(pu, "fast_ui_mode", true),
-    reduced_motion: readBool(pu, "reduced_motion", false),
-    noShadows: readBool(pu, "noShadows", false),
-    smooth_streaming: readBool(pu, "smooth_streaming", false),
-    stream_fade_in: readBool(pu, "stream_fade_in", false),
-    streaming_fps: readNum(pu, "streaming_fps", 30),
-    chat_truncation: readNum(pu, "chat_truncation", 100)
-  };
+  const result = readPerfState();
+  return result.status === "ready" ? result.snapshot : null;
 }
-function isMobile() {
+function readMobileState() {
   const st = getST();
-  return typeof st?.isMobile === "function" && st.isMobile();
+  if (typeof st?.isMobile !== "function") {
+    return { available: false, reason: "未检测到 SillyTavern 移动端判断接口" };
+  }
+  try {
+    const value = st.isMobile();
+    return typeof value === "boolean" ? { available: true, value } : { available: false, reason: "SillyTavern 移动端判断返回格式无效" };
+  } catch {
+    return { available: false, reason: "SillyTavern 移动端判断失败" };
+  }
 }
 async function applyVisuals() {
   try {
     const modUrl = "/scripts/power-user.js";
-    const mod = await import(modUrl);
-    mod.applyPowerUserSettings?.();
+    const contract = inspectPowerUserModule(await import(modUrl));
+    if (!contract.available) throw new Error(contract.reason);
+    contract.applyPowerUserSettings();
   } catch (err) {
     console.warn("[st-stage] 管家：applyPowerUserSettings 不可用，视觉项将在刷新页面后生效", err);
   }
@@ -6667,7 +8538,7 @@ async function writePerf(fields) {
   const st = getST();
   const pu = st?.powerUserSettings;
   if (!st || !pu) return;
-  const prevTrunc = readNum(pu, "chat_truncation", 100);
+  const prevTrunc = typeof pu.chat_truncation === "number" && Number.isFinite(pu.chat_truncation) ? pu.chat_truncation : void 0;
   Object.assign(pu, fields);
   if (fields.reduced_motion !== void 0) applyReducedMotion(fields.reduced_motion);
   if (fields.fast_ui_mode !== void 0 || fields.noShadows !== void 0) await applyVisuals();
@@ -6676,179 +8547,1283 @@ async function writePerf(fields) {
     await reloadChatSafe(st);
   }
 }
-function readHealth() {
-  const ext = getST()?.extensionSettings ?? {};
+function readHealthState() {
+  const ext = getST()?.extensionSettings;
+  if (!ext) {
+    const reason = "未检测到 SillyTavern 扩展设置";
+    return {
+      disabledExtensions: { available: false, reason },
+      quickReplySets: { available: false, reason }
+    };
+  }
   const disabled = ext["disabledExtensions"];
   const qr = ext["quickReply"];
   return {
-    disabledExtensions: Array.isArray(disabled) ? disabled.length : 0,
-    quickReplySets: Array.isArray(qr?.config?.setList) ? qr.config.setList.length : null
+    disabledExtensions: Array.isArray(disabled) ? { available: true, value: disabled.length } : { available: false, reason: "禁用扩展清单缺失或格式无效" },
+    quickReplySets: Array.isArray(qr?.config?.setList) ? { available: true, value: qr.config.setList.length } : { available: false, reason: "Quick Reply 设置缺失或格式无效" }
+  };
+}
+function scalarId(value) {
+  return typeof value === "string" || typeof value === "number" ? String(value) : "unknown";
+}
+function comparisonDigest(value) {
+  let hash2 = 0xcbf29ce484222325n;
+  for (let index = 0; index < value.length; index += 1) {
+    hash2 ^= BigInt(value.charCodeAt(index));
+    hash2 = BigInt.asUintN(64, hash2 * 0x100000001b3n);
+  }
+  return hash2.toString(16).padStart(16, "0");
+}
+function chatKey(st) {
+  const conversation = scalarId(st.chatId);
+  const identity = typeof st.groupId === "string" || typeof st.groupId === "number" ? `group:${st.groupId}:${conversation}` : `character:${scalarId(st.characterId)}:${conversation}`;
+  return `chat:${comparisonDigest(identity)}`;
+}
+function readPageSummary() {
+  const st = getST();
+  const chat2 = st?.chat;
+  const chatSummary = Array.isArray(chat2) ? {
+    available: true,
+    value: {
+      chatKey: chatKey(st ?? {}),
+      messageCount: chat2.length,
+      userMessageCount: chat2.filter((message) => typeof message === "object" && message !== null && message.is_user === true).length,
+      assistantMessageCount: chat2.filter((message) => typeof message === "object" && message !== null && message.is_user === false && message.is_system !== true).length
+    }
+  } : { available: false, reason: "聊天摘要不可用" };
+  const root = typeof document === "undefined" ? null : document.querySelector("#chat");
+  const dom = root ? {
+    available: true,
+    value: {
+      renderedMessageCount: root.querySelectorAll(".mes").length,
+      chatNodeCount: root.querySelectorAll("*").length + 1
+    }
+  } : { available: false, reason: "未找到 #chat DOM" };
+  return { chat: chatSummary, dom };
+}
+function resourceGroupKey(url, initiatorType) {
+  const marker = "/scripts/extensions/";
+  const markerIndex = url.pathname.indexOf(marker);
+  if (markerIndex >= 0) {
+    const segments = url.pathname.slice(markerIndex + marker.length).split("/").filter(Boolean);
+    if (segments.length < 2) return null;
+    const extensionName = segments[0] === "third-party" && segments.length >= 3 ? `third-party/${segments[1]}` : segments[0];
+    return `extension:${extensionName}`;
+  }
+  const kinds = {
+    img: "image",
+    image: "image",
+    script: "script",
+    link: "stylesheet",
+    css: "stylesheet",
+    font: "font",
+    audio: "media",
+    video: "media",
+    iframe: "document",
+    fetch: "fetch",
+    xmlhttprequest: "fetch"
+  };
+  const kind = typeof initiatorType === "string" ? kinds[initiatorType.toLowerCase()] ?? "other" : "other";
+  return `resource:${kind}`;
+}
+function evidenceNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+function groupResourceTimings(entries) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const entry of entries) {
+    let url;
+    try {
+      url = new URL(entry.name);
+    } catch {
+      continue;
+    }
+    const key = resourceGroupKey(url, entry.initiatorType);
+    if (!key) continue;
+    const current2 = groups.get(key) ?? { key, count: 0, transferSize: 0, durationMs: 0 };
+    current2.count += 1;
+    current2.transferSize += evidenceNumber(entry.transferSize);
+    current2.durationMs += evidenceNumber(entry.duration);
+    groups.set(key, current2);
+  }
+  return [...groups.values()];
+}
+async function defaultModuleLoader(specifier) {
+  return import(specifier);
+}
+function isSelfExtension(name) {
+  return name === "st-stage" || name === "third-party/st-stage";
+}
+function createButlerBridge(deps = {}) {
+  const loadModule = deps.loadModule ?? defaultModuleLoader;
+  let extensionContractPromise;
+  const loadExtensionContract = () => {
+    extensionContractPromise ?? (extensionContractPromise = loadModule("/scripts/extensions.js").then(inspectExtensionModule).catch(() => {
+      const reason = "无法加载 SillyTavern 扩展接口";
+      return { status: "unavailable", reason, governance: { writable: false, reason } };
+    }));
+    return extensionContractPromise;
+  };
+  const findExtension = async (name) => {
+    const contract = await loadExtensionContract();
+    if (contract.status !== "ready") {
+      return { ok: false, code: "api-unavailable", error: contract.reason };
+    }
+    try {
+      const rawFound = contract.api.findExtension(name);
+      if (rawFound === null) return { ok: false, code: "not-found", error: "未找到扩展" };
+      const found = parseFoundExtension(rawFound);
+      if (!found) {
+        return { ok: false, code: "invalid-response", error: "SillyTavern findExtension 返回格式无效" };
+      }
+      return { ok: true, extension: found };
+    } catch {
+      return { ok: false, code: "api-error", error: "SillyTavern 扩展接口调用失败" };
+    }
+  };
+  return {
+    readPageSummary,
+    readMobileState,
+    readHealthState,
+    async readExtensions() {
+      const contract = await loadExtensionContract();
+      if (contract.status !== "ready") {
+        return {
+          status: "unavailable",
+          reason: contract.reason,
+          governance: contract.governance,
+          disabledExtensions: [],
+          extensions: []
+        };
+      }
+      const disabled = contract.api.extensionSettings.disabledExtensions;
+      const extensions = contract.api.extensionNames.map((name) => {
+        let rawManifest;
+        try {
+          rawManifest = contract.api.getExtensionManifest(name);
+        } catch {
+          rawManifest = null;
+        }
+        return {
+          name,
+          type: contract.api.extensionTypes[name] ?? "unknown",
+          configuredEnabled: !disabled.includes(name),
+          isSelf: isSelfExtension(name),
+          manifest: summarizeExtensionManifest(rawManifest)
+        };
+      });
+      return {
+        status: "ready",
+        governance: contract.governance,
+        disabledExtensions: [...disabled],
+        extensions
+      };
+    },
+    findExtension,
+    async setExtensionEnabled(name, enabled) {
+      const contract = await loadExtensionContract();
+      if (contract.status !== "ready") {
+        return { ok: false, code: "api-unavailable", error: contract.reason };
+      }
+      if (!contract.governance.writable || !contract.api.enableExtension || !contract.api.disableExtension) {
+        return {
+          ok: false,
+          code: "read-only",
+          error: contract.governance.reason ?? "SillyTavern 扩展治理当前只读"
+        };
+      }
+      const found = await findExtension(name);
+      if (!found.ok) {
+        return found.code === "not-found" ? { ok: false, code: "not-found", error: found.error } : { ok: false, code: "api-error", error: "SillyTavern 扩展接口调用失败" };
+      }
+      if (!enabled && isSelfExtension(found.extension.name)) {
+        return { ok: false, code: "protected", error: "管家不能禁用 st-stage 自身" };
+      }
+      try {
+        const toggle = enabled ? contract.api.enableExtension : contract.api.disableExtension;
+        await Promise.resolve(toggle(found.extension.name, false));
+        return {
+          ok: true,
+          name: found.extension.name,
+          configuredEnabled: enabled,
+          reloadRequired: true
+        };
+      } catch {
+        return { ok: false, code: "api-error", error: "SillyTavern 扩展接口调用失败" };
+      }
+    }
   };
 }
 
-// st-extension/src/apps/butler-app.ts
-function ensureSnapshot(ctx, perf) {
-  const data = ctx.getAppData() ?? {};
-  if (data.snapshot) return data;
-  const next = { ...data, snapshot: perf };
-  ctx.setAppData(next);
-  return next;
+// st-extension/src/apps/butler/metrics.ts
+var BUTLER_PROBE_DURATION_MS = 6e3;
+var TIMER_INTERVAL_MS = 100;
+function abortError() {
+  const error = new Error("Aborted");
+  error.name = "AbortError";
+  return error;
 }
-async function enablePerfMode(ctx) {
-  const perf = readPerf();
-  if (!perf) return;
-  const data = ensureSnapshot(ctx, perf);
-  ctx.setAppData({ ...data, perfOn: true });
-  const target = isMobile() ? 20 : 50;
-  const curTrunc = perf.chat_truncation;
-  const nextTrunc = curTrunc > 0 && curTrunc < target ? curTrunc : target;
-  await writePerf({
-    fast_ui_mode: true,
-    reduced_motion: true,
-    noShadows: true,
-    smooth_streaming: false,
-    stream_fade_in: false,
-    streaming_fps: 15,
-    chat_truncation: nextTrunc
+function runProbeTimeline(durationMs, signal, handlers, deps = {
+  now: () => performance.now(),
+  requestFrame: (callback) => requestAnimationFrame(callback),
+  cancelFrame: (id) => cancelAnimationFrame(id),
+  setTimer: (callback, ms) => window.setTimeout(callback, ms),
+  clearTimer: (id) => window.clearTimeout(id)
+}) {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(abortError());
+      return;
+    }
+    const startedAt = deps.now();
+    let frameId = null;
+    let timerId = null;
+    let finishId = null;
+    let settled = false;
+    let nextTimerAt = TIMER_INTERVAL_MS;
+    const cleanup = () => {
+      if (frameId !== null) deps.cancelFrame(frameId);
+      if (timerId !== null) deps.clearTimer(timerId);
+      if (finishId !== null) deps.clearTimer(finishId);
+      signal.removeEventListener("abort", onAbort);
+      frameId = timerId = finishId = null;
+    };
+    const settle = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error) reject(error);
+      else resolve();
+    };
+    const onAbort = () => settle(abortError());
+    const frame = (time) => {
+      if (settled || signal.aborted) return;
+      handlers.onFrame(time - startedAt);
+      frameId = deps.requestFrame(frame);
+    };
+    const timer = () => {
+      if (settled || signal.aborted) return;
+      const elapsed = deps.now() - startedAt;
+      handlers.onTimer(nextTimerAt, elapsed);
+      nextTimerAt += TIMER_INTERVAL_MS;
+      timerId = deps.setTimer(timer, Math.max(0, nextTimerAt - elapsed));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    frameId = deps.requestFrame(frame);
+    timerId = deps.setTimer(timer, TIMER_INTERVAL_MS);
+    finishId = deps.setTimer(() => settle(), durationMs);
   });
 }
-async function restoreSnapshot(ctx) {
-  const snap = (ctx.getAppData() ?? {}).snapshot;
-  if (!readPerf() || !snap) return;
-  await writePerf(snap);
-  ctx.setAppData({ perfOn: false });
+function available(id) {
+  return { id, available: true };
 }
-async function writeField(ctx, key, value) {
-  const perf = readPerf();
-  if (!perf) return;
-  ensureSnapshot(ctx, perf);
-  await writePerf({ [key]: value });
+function unavailable(id, reason) {
+  return { id, available: false, reason };
 }
-function descLine(parent, text) {
-  const d = el2("div", "so-app-desc");
-  d.textContent = text;
-  parent.append(d);
+function finiteNonNegative(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
 }
-function buildGuide() {
-  const { box, body } = foldSection("优化指南（需手动操作）");
-  descLine(body, "【浏览器】硬件加速是两面刃：本机同时跑本地模型（SD/本地 LLM）建议关，不跑建议开。");
-  descLine(body, "【浏览器】Android 浏览器不要手动开 GPU rasterization 类实验项（反而有害）。");
-  descLine(
-    body,
-    "【浏览器】桌面 Chrome 可试 chrome://flags 的 GPU rasterization / ANGLE D3D11（实验项名称随版本变化，搜不到说明已移除或改名）。"
-  );
-  descLine(body, "【浏览器】已知拖慢 ST 的浏览器扩展：iCloud 密码、DeepL、AI 语法纠正类、部分广告拦截器。");
-  descLine(body, "【服务端 config.yaml，前端改不了】requestCompression 开启后长聊天弱网明显省流量。");
-  descLine(body, "【服务端】lazyLoadCharacters：1.18 默认已开；老用户沿用的旧 config 可能还是 false，卡多必开。");
-  descLine(body, "【服务端】memoryCacheCapacity：约每 3000 张角色卡 +100MB。");
-  descLine(body, "【服务端】useDiskCache：仅磁盘极慢（如老 SD 卡）场景才考虑关。");
-  return box;
+function percentile95(values) {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.max(0, Math.ceil(sorted.length * 0.95) - 1)];
 }
-function butlerApp() {
+function summarizeMedia(root, viewport) {
+  const kinds = {
+    images: "img",
+    videos: "video",
+    audio: "audio",
+    canvas: "canvas",
+    iframes: "iframe"
+  };
+  const result = {};
+  let visible = 0;
+  let offscreen = 0;
+  for (const [key, selector] of Object.entries(kinds)) {
+    const nodes = [...root.querySelectorAll(selector)];
+    result[key] = nodes.length;
+    for (const node of nodes) {
+      const rect = node.getBoundingClientRect();
+      const intersects = rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < viewport.height && rect.left < viewport.width;
+      if (intersects) visible += 1;
+      else offscreen += 1;
+    }
+  }
+  return { ...result, visible, offscreen };
+}
+function sanitizeResourceGroups(groups) {
+  const aggregated = /* @__PURE__ */ new Map();
+  for (const group of groups) {
+    const key = group.key.startsWith("extension:") ? group.key : `resource:${group.key.startsWith("resource:") ? group.key.slice("resource:".length) || "other" : "other"}`;
+    const current2 = aggregated.get(key) ?? { key, count: 0, transferSize: 0, durationMs: 0 };
+    current2.count += finiteNonNegative(group.count);
+    current2.transferSize += finiteNonNegative(group.transferSize);
+    current2.durationMs += finiteNonNegative(group.durationMs);
+    aggregated.set(key, current2);
+  }
+  return [...aggregated.values()];
+}
+function combineSignals(external) {
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  if (external?.aborted) controller.abort();
+  else external?.addEventListener("abort", onAbort, { once: true });
+  return {
+    controller,
+    cleanup: () => external?.removeEventListener("abort", onAbort)
+  };
+}
+function invalidReasonFromError(error, fallback) {
+  return error instanceof Error && error.name === "AbortError" ? fallback : "采样失败，请重试";
+}
+function createMetricsSampler(deps) {
+  const collectStatic = async (probe = "static") => {
+    const page = deps.readPageSummary();
+    const perf = deps.readPerfState();
+    const capabilities = [];
+    const metrics = {};
+    if (page.chat.available && page.dom.available) {
+      capabilities.push(available("pageSummary"));
+      metrics.page = {
+        messageCount: page.chat.value.messageCount,
+        userMessageCount: page.chat.value.userMessageCount,
+        assistantMessageCount: page.chat.value.assistantMessageCount,
+        renderedMessageCount: page.dom.value.renderedMessageCount,
+        chatNodeCount: page.dom.value.chatNodeCount
+      };
+    } else {
+      capabilities.push(unavailable(
+        "pageSummary",
+        [page.chat, page.dom].filter((entry) => !entry.available).map((entry) => entry.reason).join("；")
+      ));
+    }
+    if (perf.status !== "unavailable") {
+      capabilities.push(available("performanceSettings"));
+      metrics.performanceSettings = { ...perf.snapshot };
+    } else {
+      capabilities.push(unavailable("performanceSettings", perf.reason ?? "性能设置不可用"));
+    }
+    const root = deps.getChatScroller() ?? document;
+    metrics.media = summarizeMedia(root, deps.getViewport());
+    capabilities.push(available("mediaDom"));
+    const resourceEvidence = deps.readResourceGroups();
+    if (resourceEvidence === null) {
+      capabilities.push(unavailable("resourceTiming", "当前浏览器不支持 Resource Timing"));
+    } else {
+      metrics.resources = { groups: sanitizeResourceGroups(resourceEvidence) };
+      capabilities.push(available("resourceTiming"));
+    }
+    const storage = await deps.estimateStorage();
+    if (storage) {
+      metrics.storage = {
+        usageBytes: finiteNonNegative(storage.usage),
+        quotaBytes: finiteNonNegative(storage.quota)
+      };
+      capabilities.push(available("storageEstimate"));
+    } else {
+      capabilities.push(unavailable("storageEstimate", "当前浏览器不支持站点存储估算"));
+    }
+    const heap = deps.readHeapBytes();
+    if (heap === null) capabilities.push(unavailable("jsHeap", "当前浏览器不支持 JS 堆信息"));
+    else {
+      metrics.heap = { usedBytes: finiteNonNegative(heap) };
+      capabilities.push(available("jsHeap"));
+    }
+    const animationCount2 = deps.countAnimations();
+    if (animationCount2 === null) capabilities.push(unavailable("cssAnimations", "当前浏览器不支持动画计数"));
+    else {
+      metrics.animations = { running: finiteNonNegative(animationCount2) };
+      capabilities.push(available("cssAnimations"));
+    }
+    return {
+      id: deps.createId(),
+      createdAt: deps.now(),
+      durationMs: probe === "static" ? 0 : BUTLER_PROBE_DURATION_MS,
+      probe,
+      foreground: deps.isForeground(),
+      ...page.chat.available ? { chatKey: page.chat.value.chatKey } : {},
+      environment: await deps.readEnvironment(),
+      capabilities,
+      metrics
+    };
+  };
+  const sampleDynamic = async (probe, signal, onFrameEffect) => {
+    const snapshot = await collectStatic(probe);
+    const combined = combineSignals(signal);
+    const controller = combined.controller;
+    const initialGenerating = deps.isGenerating();
+    if (initialGenerating === null) {
+      combined.cleanup();
+      snapshot.invalidReason = "无法读取生成状态，采样未开始";
+      return snapshot;
+    }
+    if (initialGenerating) {
+      combined.cleanup();
+      snapshot.invalidReason = "当前正在生成，采样未开始";
+      return snapshot;
+    }
+    const initialPage = snapshot.metrics.page;
+    const initialPageRecord = initialPage && typeof initialPage === "object" && !Array.isArray(initialPage) ? initialPage : null;
+    const frameIntervals = [];
+    const timerDelays = [];
+    const longTasks = [];
+    let previousFrame = null;
+    let cancellationReason = "";
+    let longTaskSubscription = null;
+    let userInterfered = false;
+    const userEvents = ["wheel", "pointerdown", "touchstart", "keydown", "input"];
+    const onUserInterference = () => {
+      userInterfered = true;
+    };
+    const cancel = (reason) => {
+      if (!cancellationReason) cancellationReason = reason;
+      controller.abort();
+    };
+    const onVisibility = () => {
+      if (!deps.isForeground()) cancel("页面进入后台，采样已取消，请重试");
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    for (const event of userEvents) document.addEventListener(event, onUserInterference, true);
+    try {
+      if (!deps.isForeground()) cancel("页面进入后台，采样已取消，请重试");
+      longTaskSubscription = deps.observeLongTasks((duration) => {
+        if (Number.isFinite(duration) && duration >= 0) longTasks.push(duration);
+      });
+      snapshot.capabilities.push(longTaskSubscription ? available("longTasks") : unavailable("longTasks", "当前浏览器不支持 Long Task 观察"));
+      await deps.runTimeline(BUTLER_PROBE_DURATION_MS, controller.signal, {
+        onFrame(time) {
+          if (!deps.isForeground()) {
+            cancel("页面进入后台，采样已取消，请重试");
+            return;
+          }
+          if (userInterfered) cancel("检测到用户干预，采样已取消");
+          const generating = deps.isGenerating();
+          if (generating === null) cancel("无法读取生成状态，采样已取消");
+          else if (generating !== initialGenerating) cancel("生成状态发生变化，采样已取消");
+          const currentPage = deps.readPageSummary();
+          if (snapshot.chatKey && currentPage.chat.available && currentPage.chat.value.chatKey !== snapshot.chatKey) {
+            cancel("聊天已切换，采样已取消");
+          }
+          if (initialPageRecord && currentPage.dom.available) {
+            const initialRendered = initialPageRecord.renderedMessageCount;
+            const initialNodes = initialPageRecord.chatNodeCount;
+            if (currentPage.dom.value.renderedMessageCount !== initialRendered || currentPage.dom.value.chatNodeCount !== initialNodes) {
+              cancel("聊天布局变化，采样已取消");
+            }
+          }
+          const reason = onFrameEffect?.(time);
+          if (reason) cancel(reason);
+          if (previousFrame !== null) frameIntervals.push(Math.max(0, time - previousFrame));
+          previousFrame = time;
+        },
+        onTimer(scheduled, actual) {
+          timerDelays.push(Math.max(0, actual - scheduled));
+        }
+      });
+    } catch (error) {
+      cancellationReason || (cancellationReason = invalidReasonFromError(error, signal?.aborted ? "用户取消了采样" : "采样已取消，请重试"));
+    } finally {
+      document.removeEventListener("visibilitychange", onVisibility);
+      for (const event of userEvents) document.removeEventListener(event, onUserInterference, true);
+      longTaskSubscription?.disconnect();
+      combined.cleanup();
+    }
+    const animationCount2 = deps.countAnimations();
+    snapshot.metrics.dynamic = {
+      frameSamples: frameIntervals.length,
+      frameIntervalP95Ms: percentile95(frameIntervals),
+      frameIntervalsOver50Ms: frameIntervals.filter((value) => value > 50).length,
+      timerDelayP95Ms: percentile95(timerDelays),
+      longTaskCount: longTasks.length,
+      longTaskTotalMs: longTasks.reduce((sum, value) => sum + value, 0),
+      longestTaskMs: longTasks.length > 0 ? Math.max(...longTasks) : 0,
+      ...animationCount2 === null ? {} : { cssAnimationCount: animationCount2 }
+    };
+    if (cancellationReason) snapshot.invalidReason = cancellationReason;
+    return snapshot;
+  };
+  return {
+    collectStatic: () => collectStatic("static"),
+    sampleIdle: (signal) => sampleDynamic("idle", signal),
+    async sampleControlledScroll(signal) {
+      const chat2 = deps.getChatScroller();
+      const originalTop = chat2?.scrollTop ?? 0;
+      const initialHeight = chat2?.scrollHeight ?? 0;
+      const initialClientHeight = chat2?.clientHeight ?? 0;
+      const initialGenerating = deps.isGenerating();
+      let userInterfered = false;
+      let localReason = "";
+      const userEvents = ["wheel", "pointerdown", "touchstart", "keydown", "input"];
+      const onUserInterference = () => {
+        userInterfered = true;
+      };
+      if (!chat2) {
+        const snapshot = await collectStatic("controlledScroll");
+        snapshot.invalidReason = "未找到聊天滚动区域";
+        return snapshot;
+      }
+      if (initialHeight < initialClientHeight * 3) {
+        const snapshot = await collectStatic("controlledScroll");
+        snapshot.invalidReason = "聊天区域不足三个视口高度，无法安全运行受控滚动";
+        return snapshot;
+      }
+      if (initialGenerating === null) {
+        const snapshot = await collectStatic("controlledScroll");
+        snapshot.invalidReason = "无法读取生成状态，采样未开始";
+        return snapshot;
+      }
+      if (initialGenerating) {
+        const snapshot = await collectStatic("controlledScroll");
+        snapshot.invalidReason = "生成状态发生变化或当前正在生成，采样已取消";
+        return snapshot;
+      }
+      const baseline = deps.readPageSummary();
+      const baselineChatKey = baseline.chat.available ? baseline.chat.value.chatKey : null;
+      const maxScroll = Math.max(0, initialHeight - initialClientHeight);
+      const distance = Math.min(initialClientHeight * 1.5, Math.max(0, maxScroll - initialClientHeight));
+      for (const event of userEvents) chat2.addEventListener(event, onUserInterference, { passive: true });
+      chat2.scrollTop = maxScroll;
+      try {
+        const snapshot = await sampleDynamic("controlledScroll", signal, (time) => {
+          if (userInterfered) localReason || (localReason = "检测到用户干预，采样已取消");
+          if (chat2.scrollHeight !== initialHeight || chat2.clientHeight !== initialClientHeight) {
+            localReason || (localReason = "聊天布局变化，采样已取消");
+          }
+          const generating2 = deps.isGenerating();
+          if (generating2 === null) localReason || (localReason = "无法读取生成状态，采样已取消");
+          else if (generating2 !== initialGenerating) localReason || (localReason = "生成状态发生变化，采样已取消");
+          const progress = Math.min(1, Math.max(0, time / BUTLER_PROBE_DURATION_MS));
+          chat2.scrollTop = progress <= 0.5 ? maxScroll - distance * progress * 2 : maxScroll - distance + distance * (progress - 0.5) * 2;
+          return localReason || null;
+        });
+        const after = deps.readPageSummary();
+        if (baselineChatKey && after.chat.available && after.chat.value.chatKey !== baselineChatKey) {
+          localReason || (localReason = "聊天已切换，采样已取消");
+        }
+        if (chat2.scrollHeight !== initialHeight || chat2.clientHeight !== initialClientHeight) {
+          localReason || (localReason = "聊天布局变化，采样已取消");
+        }
+        if (userInterfered) localReason || (localReason = "检测到用户干预，采样已取消");
+        const generating = deps.isGenerating();
+        if (generating === null) localReason || (localReason = "无法读取生成状态，采样已取消");
+        else if (generating !== initialGenerating) localReason || (localReason = "生成状态发生变化，采样已取消");
+        snapshot.metrics.controlledScroll = {
+          valid: !snapshot.invalidReason && !localReason,
+          originalTop,
+          distance
+        };
+        if (localReason) snapshot.invalidReason = localReason;
+        return snapshot;
+      } finally {
+        for (const event of userEvents) chat2.removeEventListener(event, onUserInterference);
+        chat2.scrollTop = originalTop;
+      }
+    }
+  };
+}
+
+// st-extension/src/apps/butler/runtime.ts
+function observed(value, reason) {
+  return value === null ? { available: false, reason } : { available: true, value };
+}
+function buildVersion() {
+  if (false) return null;
+  return `${"0.9.0"}+${"2026-08-13 20:24"}`;
+}
+function stVersion() {
+  const text3 = document.querySelector("#version_display")?.textContent?.trim();
+  return text3 || null;
+}
+function digest(values) {
+  let hash2 = 0xcbf29ce484222325n;
+  for (const value of values.sort().join("\0")) {
+    hash2 ^= BigInt(value.charCodeAt(0));
+    hash2 = BigInt.asUintN(64, hash2 * 0x100000001b3n);
+  }
+  return hash2.toString(16).padStart(16, "0");
+}
+function storageFallback() {
+  return {
+    getItem() {
+      return null;
+    },
+    setItem() {
+    },
+    removeItem() {
+    }
+  };
+}
+function recoveryStorage() {
+  let storage;
+  try {
+    storage = window.localStorage;
+  } catch {
+    return storageFallback();
+  }
+  return {
+    getItem(key) {
+      try {
+        return storage.getItem(key);
+      } catch {
+        return null;
+      }
+    },
+    setItem(key, value) {
+      try {
+        storage.setItem(key, value);
+      } catch {
+      }
+    },
+    removeItem(key) {
+      try {
+        storage.removeItem(key);
+      } catch {
+      }
+    }
+  };
+}
+function resourceGroups2() {
+  if (typeof performance?.getEntriesByType !== "function") return null;
+  try {
+    const entries = performance.getEntriesByType("resource").map((entry) => {
+      const resource = entry;
+      return {
+        name: resource.name,
+        initiatorType: resource.initiatorType,
+        transferSize: resource.transferSize,
+        duration: resource.duration
+      };
+    });
+    return groupResourceTimings(entries);
+  } catch {
+    return null;
+  }
+}
+function observeLongTasks(record) {
+  if (typeof PerformanceObserver === "undefined" || !PerformanceObserver.supportedEntryTypes?.includes("longtask")) return null;
+  try {
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) record(entry.duration);
+    });
+    observer.observe({ type: "longtask", buffered: false });
+    return { disconnect: () => observer.disconnect() };
+  } catch {
+    return null;
+  }
+}
+function animationCount() {
+  const getAnimations = document.getAnimations;
+  if (typeof getAnimations !== "function") return null;
+  try {
+    return getAnimations.call(document).filter((animation) => animation.playState === "running").length;
+  } catch {
+    return null;
+  }
+}
+function createNativeServices(deps = {}) {
+  const bridge = deps.bridge ?? createButlerBridge();
+  const loadScriptModule = deps.loadScriptModule ?? ((specifier) => import(specifier));
+  const now = deps.now ?? (() => Date.now());
+  const createId = deps.createId ?? (() => crypto.randomUUID?.() ?? `butler-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const reloadNow = deps.reloadNow ?? (() => window.location.reload());
+  const delay2 = deps.delay ?? ((ms) => new Promise((resolve) => window.setTimeout(resolve, ms)));
+  let generationReader = null;
+  let settingsWriter = null;
+  let generationContractPromise = null;
+  const loadGenerationContract = async () => {
+    if (generationReader) return true;
+    generationContractPromise ?? (generationContractPromise = (async () => {
+      try {
+        const specifier = "/script.js";
+        const module = await loadScriptModule(specifier);
+        if (typeof module.isGenerating === "function") {
+          generationReader = module.isGenerating;
+        }
+        if (typeof module.saveSettings === "function") settingsWriter = module.saveSettings;
+        return generationReader !== null;
+      } catch {
+        generationReader = null;
+      }
+      return false;
+    })().finally(() => {
+      generationContractPromise = null;
+    }));
+    return generationContractPromise;
+  };
+  const readEnvironment = async () => {
+    const perf = readPerfState();
+    const extensions = await bridge.readExtensions();
+    const mobile = readMobileState();
+    return {
+      stVersion: observed(stVersion(), "当前页面未公开 SillyTavern 版本文本"),
+      stageBuild: observed(buildVersion(), "开发源码未注入构建戳"),
+      mobile: mobile.available ? { available: true, value: mobile.value } : { available: false, reason: mobile.reason },
+      settingsSummary: perf.status === "unavailable" ? { available: false, reason: perf.reason ?? "性能设置不可用" } : { available: true, value: { ...perf.snapshot } },
+      disabledExtensionsHash: extensions.status === "ready" ? { available: true, value: digest([...extensions.disabledExtensions]) } : { available: false, reason: extensions.reason }
+    };
+  };
+  const sampler = createMetricsSampler({
+    now,
+    createId,
+    readEnvironment,
+    readPageSummary: bridge.readPageSummary,
+    readPerfState,
+    readResourceGroups: resourceGroups2,
+    async estimateStorage() {
+      try {
+        if (typeof navigator.storage?.estimate !== "function") return null;
+        const estimate = await navigator.storage.estimate();
+        return typeof estimate.usage === "number" && typeof estimate.quota === "number" ? { usage: estimate.usage, quota: estimate.quota } : null;
+      } catch {
+        return null;
+      }
+    },
+    readHeapBytes() {
+      const used = performance.memory?.usedJSHeapSize;
+      return typeof used === "number" && Number.isFinite(used) ? used : null;
+    },
+    getChatScroller: () => document.querySelector("#chat"),
+    getViewport: () => ({
+      width: window.visualViewport?.width ?? window.innerWidth,
+      height: window.visualViewport?.height ?? window.innerHeight
+    }),
+    countAnimations: animationCount,
+    isForeground: () => document.visibilityState === "visible",
+    isGenerating: () => {
+      if (!generationReader) return null;
+      try {
+        return generationReader();
+      } catch {
+        return null;
+      }
+    },
+    observeLongTasks,
+    runTimeline: deps.runTimeline ?? ((durationMs, signal, handlers) => runProbeTimeline(durationMs, signal, handlers))
+  });
+  const beforeDynamicProbe = async () => {
+    await loadGenerationContract();
+  };
+  const reloadPage = async () => {
+    await loadGenerationContract();
+    if (settingsWriter) {
+      try {
+        await settingsWriter();
+      } catch {
+        await delay2(1100);
+      }
+    } else {
+      await delay2(1100);
+    }
+    reloadNow();
+  };
+  return {
+    collectStatic: () => sampler.collectStatic(),
+    async sampleIdle(signal) {
+      await beforeDynamicProbe();
+      return sampler.sampleIdle(signal);
+    },
+    async sampleControlledScroll(signal) {
+      await beforeDynamicProbe();
+      return sampler.sampleControlledScroll(signal);
+    },
+    readPerformance: () => readPerf(),
+    writePerformance: (fields) => writePerf(fields),
+    readMobile: readMobileState,
+    readHealth: readHealthState,
+    readExtensions: bridge.readExtensions,
+    setExtensionEnabled: bridge.setExtensionEnabled,
+    reloadPage,
+    backupStorage: recoveryStorage(),
+    warnRecovery: (command) => console.warn("[st-stage] 管家扩展治理紧急恢复命令：", command),
+    now,
+    createId,
+    confirm: (message) => window.confirm(message)
+  };
+}
+function createButlerAppServices(deps = {}) {
+  return createNativeServices(deps);
+}
+
+// st-extension/src/apps/butler-app.ts
+var FIELD_LABELS = {
+  fast_ui_mode: "No Blur",
+  reduced_motion: "减少动画",
+  noShadows: "关闭阴影",
+  smooth_streaming: "平滑流式",
+  stream_fade_in: "流式淡入",
+  streaming_fps: "流式帧率",
+  chat_truncation: "消息加载数"
+};
+function valueText2(value) {
+  if (typeof value === "boolean") return value ? "开" : "关";
+  if (value === void 0) return "不可用";
+  return String(value);
+}
+function text2(parent, value, className = "so-butler-text") {
+  const node = el2("div", className);
+  node.textContent = value;
+  parent.append(node);
+  return node;
+}
+function latestMeasurement(data, id) {
+  const records = data.history.filter((record) => record.kind === "measurement");
+  const target = id ? records.find((record) => record.measurement.id === id) : records.reduce((latest, record) => !latest || record.createdAt > latest.createdAt ? record : latest, null);
+  return target?.measurement ?? null;
+}
+function measurementHistory(measurement, label, outcome = "completed") {
+  return {
+    id: `history-${measurement.id}`,
+    kind: "measurement",
+    createdAt: measurement.createdAt,
+    completedAt: measurement.createdAt + measurement.durationMs,
+    outcome,
+    summary: {
+      label,
+      probe: measurement.probe,
+      valid: !measurement.invalidReason
+    },
+    measurement
+  };
+}
+function transactionHistory(transaction) {
+  return {
+    id: `history-${transaction.id}`,
+    kind: "transaction",
+    createdAt: transaction.createdAt,
+    completedAt: transaction.completedAt ?? transaction.createdAt,
+    outcome: transaction.status === "restored" ? "restored" : transaction.status === "failed" ? "failed" : "completed",
+    summary: {
+      label: transaction.status === "restored" ? "恢复性能设置" : "安全性能优化",
+      applied: transaction.actions.filter((action) => action.status === "applied").length,
+      failed: transaction.actions.filter((action) => action.status === "failed").length
+    },
+    transaction
+  };
+}
+function experimentHistory(experiment, label) {
+  return {
+    id: `history-${experiment.id}-${experiment.completedAt ?? experiment.currentRound}`,
+    kind: "experiment",
+    createdAt: experiment.startedAt,
+    completedAt: experiment.completedAt ?? experiment.startedAt,
+    outcome: experiment.status === "failed" ? "failed" : "completed",
+    summary: { label, candidates: experiment.candidateExtensions.length },
+    experiment
+  };
+}
+function currentDevice(services) {
+  const mobile = services.readMobile();
+  return mobile.available && mobile.value ? "mobile" : "desktop";
+}
+function upsertHistory(data, record) {
+  return {
+    ...data,
+    history: [...data.history.filter((item) => item.id !== record.id), record]
+  };
+}
+function butlerApp(serviceOverrides) {
+  const services = serviceOverrides ?? createButlerAppServices();
+  let activeState = null;
   return {
     id: "butler",
     name: "管家",
     icon: "🧹",
     order: 3,
     mount(container, ctx) {
-      render(container, ctx);
+      activeState?.controller?.abort();
+      activeState = createState();
+      mountButler(container, ctx, services, activeState);
+    },
+    unmount() {
+      if (activeState) {
+        activeState.disposed = true;
+        activeState.controller?.abort();
+      }
+      activeState = null;
     }
   };
 }
-function render(container, ctx) {
-  container.textContent = "";
-  const perf = readPerf();
-  if (!perf) {
-    const section2 = el2("div", "so-app-section");
-    descLine(section2, "未检测到 SillyTavern 运行时（Web 模拟器中仅可查看优化指南）。");
-    container.append(section2, buildGuide());
-    return;
-  }
-  const data = ctx.getAppData() ?? {};
-  const rerender = () => render(container, ctx);
-  const mobile = isMobile();
-  const main = el2("div", "so-app-section");
-  const title = el2("div", "so-app-title");
-  title.textContent = data.perfOn ? "一键性能模式（已开启）" : "一键性能模式";
-  main.append(
-    hintField(
-      title,
-      "第一次开启前会把你当前的这些设置整组拍成快照存起来；“还原”就是把快照原样写回。所以放心开——不满意随时一键还原到开启前的样子，不会丢你原来的偏好。"
-    )
-  );
-  descLine(
-    main,
-    `关闭背景模糊/阴影/动画/平滑流式，流式帧率降到 15，消息加载数降到 ${mobile ? "20（移动端）" : "50"}。改动前自动保存原设置快照。`
-  );
-  main.append(
-    appButton("开启性能模式", () => {
-      void enablePerfMode(ctx).then(rerender);
-    })
-  );
-  if (data.snapshot) {
-    main.append(
-      appButton("还原到改动前快照", () => {
-        void restoreSnapshot(ctx).then(rerender);
-      })
+function createState() {
+  return {
+    measurement: null,
+    findings: [],
+    comparison: null,
+    selectedProbe: "idle",
+    sampling: false,
+    applying: false,
+    notice: "",
+    noticeKind: "info",
+    controller: null,
+    disposed: false
+  };
+}
+function mountButler(container, ctx, services, state) {
+  let data = migrateButlerData(ctx.getAppData(), {
+    now: services.now(),
+    idFactory: services.createId
+  });
+  const persistData = (next, candidateHistoryId) => {
+    const result = fitButlerDataBudget(next, void 0, candidateHistoryId);
+    data = result.data;
+    ctx.setAppData(data);
+    if (result.status === "protected-over-budget" || result.status === "data-over-budget") {
+      state.notice = "管家恢复状态已达到 64 KiB 上限；新的历史记录未保存。";
+      state.noticeKind = "error";
+    } else if (candidateHistoryId && !result.historyAccepted) {
+      state.notice = "本次结果可查看，但因 64 KiB 上限未写入历史。";
+      state.noticeKind = "info";
+    }
+    return data;
+  };
+  const setNotice = (message, kind = "info") => {
+    state.notice = message;
+    state.noticeKind = kind;
+  };
+  const safely = async (task) => {
+    try {
+      await task();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "操作失败，请重试", "error");
+    }
+    if (!state.disposed) render2();
+  };
+  const readPerformanceGroup = async () => {
+    const current2 = services.readPerformance();
+    if (!current2) throw new Error("当前 SillyTavern 性能设置不完整，无法安全写入");
+    return { ...current2 };
+  };
+  const actionBridge = {
+    readGroup: async (group) => {
+      if (group !== "performanceSettings") throw new Error("当前主屏只处理性能设置事务");
+      return readPerformanceGroup();
+    },
+    writeGroup: async (group, fields) => {
+      if (group !== "performanceSettings") throw new Error("当前主屏只处理性能设置事务");
+      await services.writePerformance(fields);
+    },
+    persistTransaction: async (transaction) => {
+      data = persistData({ ...data, activeTransaction: transaction, performanceModeOn: transaction.status !== "restored" });
+    },
+    now: services.now,
+    createId: services.createId
+  };
+  const experimentDeps = {
+    readExtensions: services.readExtensions,
+    setExtensionEnabled: services.setExtensionEnabled,
+    persistExperiment: async (experiment) => {
+      data = persistData({ ...data, pendingExperiment: experiment });
+    },
+    reloadPage: services.reloadPage,
+    now: services.now,
+    createId: services.createId,
+    backupStorage: services.backupStorage,
+    warnRecovery: services.warnRecovery
+  };
+  const runProbe = async (probe, forExperiment = false) => {
+    state.sampling = true;
+    const controller = new AbortController();
+    state.controller = controller;
+    setNotice(forExperiment ? "正在运行扩展复测，请保持页面前台。" : "正在采样，请保持页面前台且不要操作聊天。");
+    render2();
+    try {
+      const result = probe === "controlledScroll" ? await services.sampleControlledScroll(controller.signal) : await services.sampleIdle(controller.signal);
+      state.measurement = result;
+      state.findings = diagnose(result, services.readPerformance());
+      setNotice(result.invalidReason ?? "6 秒体检完成。", result.invalidReason ? "error" : "success");
+      return result;
+    } finally {
+      if (state.controller === controller) state.controller = null;
+      state.sampling = false;
+    }
+  };
+  const baselineForTransaction = () => {
+    const baselineId = data.activeTransaction?.baselineMeasurementId;
+    if (baselineId) return latestMeasurement(data, baselineId);
+    const current2 = state.measurement;
+    if (current2 && current2.probe !== "static") return current2;
+    return null;
+  };
+  const applySafePlan = async (plan) => {
+    if (state.applying || plan.actions.length === 0) return;
+    state.applying = true;
+    setNotice("正在逐项应用并回读 SillyTavern 实际值。");
+    render2();
+    try {
+      let baseline = baselineForTransaction();
+      if (!baseline || baseline.probe === "static" || baseline.invalidReason) {
+        baseline = await runProbe(state.selectedProbe);
+        const record = measurementHistory(
+          baseline,
+          "优化前基线",
+          baseline.invalidReason ? "cancelled" : "completed"
+        );
+        data = persistData(upsertHistory(data, record), record.id);
+        if (baseline.invalidReason) throw new Error(`基线样本无效：${baseline.invalidReason}`);
+      }
+      const transaction = await applyTransaction(plan.actions, actionBridge, baseline?.id);
+      data = persistData(upsertHistory(data, transactionHistory(transaction)), `history-${transaction.id}`);
+      setNotice(
+        transaction.status === "applied" ? `已应用 ${transaction.actions.filter((action) => action.status === "applied").length} 项；可复测并随时恢复。` : "部分设置未成功写入，已保留事务和每项实际结果。",
+        transaction.status === "applied" ? "success" : "error"
+      );
+      if (baseline && !data.history.some((record) => record.kind === "measurement" && record.measurement.id === baseline.id)) {
+        const record = measurementHistory(baseline, "优化前基线", baseline.invalidReason ? "cancelled" : "completed");
+        data = persistData(upsertHistory(data, record), record.id);
+      }
+    } finally {
+      state.applying = false;
+    }
+  };
+  const remeasure = async () => {
+    if (state.sampling) return;
+    const baseline = baselineForTransaction();
+    if (!baseline || baseline.probe === "static") throw new Error("请先完成一次 6 秒体检，再运行同探针复测");
+    const result = await runProbe(baseline.probe);
+    const record = measurementHistory(result, "优化后复测", result.invalidReason ? "cancelled" : "completed");
+    data = persistData(upsertHistory(data, record), record.id);
+    state.comparison = compareMeasurements(baseline, result);
+    setNotice(
+      state.comparison.comparable ? "样本条件一致，已计算原始指标差值。" : `样本不可直接比较：${state.comparison.reasons.join("；")}。`,
+      state.comparison.comparable ? "success" : "info"
     );
-    descLine(main, "已保存改动前快照，可随时一键还原。");
+  };
+  const restorePerformance = async () => {
+    const transaction = data.activeTransaction;
+    if (!transaction) return;
+    let result = await restoreTransaction(transaction, actionBridge);
+    if (result.conflicts.length > 0) {
+      const lines = result.conflicts.map((conflict) => `${FIELD_LABELS[conflict.field] ?? conflict.field}：当前 ${valueText2(conflict.current)}，优化后 ${valueText2(conflict.after)}，原值 ${valueText2(conflict.before)}`);
+      if (!services.confirm(`这些设置在优化后又被修改：
+${lines.join("\n")}
+
+仍要覆盖并恢复原值吗？`)) {
+        setNotice("检测到后续修改，未覆盖当前设置。", "info");
+        return;
+      }
+      result = await restoreTransaction(transaction, actionBridge, result.conflicts.map((item) => item.field));
+    }
+    if (result.transaction.restoreStatus === "restored") {
+      const record = transactionHistory(result.transaction);
+      data = persistData({
+        ...upsertHistory(data, record),
+        activeTransaction: null,
+        performanceModeOn: false
+      }, record.id);
+      setNotice("已恢复到优化前设置。", "success");
+    } else {
+      data = persistData({ ...data, activeTransaction: result.transaction });
+      setNotice(result.transaction.error ?? "部分设置未恢复，请查看冲突。", "error");
+    }
+  };
+  const modalController = {
+    getData: () => data,
+    getMeasurement: () => state.measurement,
+    getFindings: () => state.findings,
+    getComparison: () => state.comparison,
+    async startExperiment(kind, selected, inventory) {
+      let baseline = state.measurement;
+      if (!baseline || baseline.probe === "static" || baseline.invalidReason) {
+        baseline = await runProbe(state.selectedProbe);
+        if (baseline.invalidReason) throw new Error("基线样本无效，未开始扩展实验");
+      }
+      const record = measurementHistory(baseline, "扩展实验基线");
+      data = persistData(upsertHistory(data, record), record.id);
+      const prepared = prepareExtensionExperiment(kind, selected, inventory, baseline.id, {
+        now: services.now,
+        createId: services.createId
+      });
+      const result = await startExtensionExperiment(prepared, experimentDeps);
+      data = persistData({ ...data, pendingExperiment: result.experiment });
+      if (!result.batch.ok) throw new Error(result.experiment.notes ?? "扩展变更失败");
+    },
+    async sampleExperiment() {
+      const pending = data.pendingExperiment;
+      if (!pending || pending.status !== "sampling") throw new Error("当前没有等待复测的扩展实验");
+      const baseline = latestMeasurement(data, pending.baselineMeasurementId);
+      const probe = baseline?.probe === "controlledScroll" ? "controlledScroll" : "idle";
+      const comparison = await runProbe(probe, true);
+      const record = measurementHistory(comparison, "扩展实验复测", comparison.invalidReason ? "cancelled" : "completed");
+      data = persistData(upsertHistory(data, record), record.id);
+      if (comparison.invalidReason) throw new Error("扩展复测样本无效，请重试");
+      const next = recordExperimentComparison(pending, comparison.id);
+      data = persistData({ ...data, pendingExperiment: next });
+      if (baseline) state.comparison = compareMeasurements(baseline, comparison);
+    },
+    async finishExperiment(decision) {
+      const pending = data.pendingExperiment;
+      if (!pending) return;
+      const completed = await finishExtensionExperiment(pending, decision, experimentDeps);
+      if (completed.status !== "completed") {
+        data = persistData({ ...data, pendingExperiment: completed });
+        throw new Error(completed.notes ?? "扩展清单恢复失败");
+      }
+      const record = experimentHistory(completed, decision === "keep" ? "保留扩展 A/B 结果" : "恢复扩展禁用清单");
+      data = persistData({ ...upsertHistory(data, record), pendingExperiment: null }, record.id);
+      setNotice(decision === "keep" ? "已保留当前扩展禁用结果。" : "已恢复最初扩展禁用清单。", "success");
+    },
+    async advanceBinary(symptomImproved) {
+      const pending = data.pendingExperiment;
+      if (!pending) return;
+      if (pending.candidateExtensions.length <= 1) {
+        setNotice(`已缩小到：${pending.candidateExtensions[0] ?? "无候选"}。可保留或恢复原清单。`, "success");
+        return;
+      }
+      const next = await advanceBinaryIsolation(pending, symptomImproved, experimentDeps);
+      data = persistData({ ...data, pendingExperiment: next });
+    },
+    async restoreEmergencyBackup(backup) {
+      const result = await restoreEmergencyExtensionBackup(backup, experimentDeps);
+      if (!result.ok) {
+        throw new Error(`紧急恢复失败：${result.failed.map((item) => `${item.name}（${item.error}）`).join("、")}`);
+      }
+      setNotice("紧急扩展禁用清单已恢复。", "success");
+    }
+  };
+  const renderPlan = (parent, plan) => {
+    const changed = foldSection(`将修改（${plan.actions.length}）`, true, "butler-plan-changed");
+    if (plan.actions.length === 0) text2(changed.body, "当前性能设置已不高于安全方案。");
+    for (const action of plan.actions) {
+      text2(changed.body, `${FIELD_LABELS[action.field] ?? action.label}：${valueText2(action.before)} → ${valueText2(action.requested)}${action.reloadRequired ? "（需刷新或重载聊天）" : ""}`);
+    }
+    parent.append(changed.box);
+    const unchanged = foldSection(`保持不变（${plan.unchanged.length}）`, false, "butler-plan-unchanged");
+    for (const action of plan.unchanged) {
+      text2(unchanged.body, `${FIELD_LABELS[action.field] ?? action.label}：${valueText2(action.before)} → ${valueText2(action.requested)}`);
+    }
+    parent.append(unchanged.box);
+  };
+  const renderTransaction = (parent, transaction) => {
+    const result = foldSection("逐项实际结果", true, "butler-transaction-results");
+    for (const action of transaction.actions) {
+      const suffix = action.error ? ` · ${action.error}` : "";
+      text2(result.body, `${action.label}：请求 ${valueText2(action.requested)}，实际 ${valueText2(action.actual)} · ${action.status}${suffix}`);
+    }
+    parent.append(result.box);
+  };
+  const render2 = () => {
+    if (state.disposed) return;
+    container.textContent = "";
+    container.classList.add("so-butler-app");
+    const current2 = services.readPerformance();
+    const mobile = services.readMobile();
+    const health = services.readHealth();
+    const header = el2("div", "so-app-section so-butler-hero");
+    const heading = el2("div", "so-app-title");
+    heading.textContent = "环境体检";
+    const summary = el2("div", "so-butler-summary-grid");
+    const summaryItems = [
+      ["设备", mobile.available ? mobile.value ? "移动端" : "桌面端" : "未知"],
+      ["性能设置", current2 ? "可读写" : "不可用"],
+      ["禁用扩展", health.disabledExtensions.available ? String(health.disabledExtensions.value) : "未知"],
+      ["最近记录", String(data.history.length)]
+    ];
+    for (const [label, value] of summaryItems) {
+      const item = el2("div", "so-butler-summary-item");
+      const small = document.createElement("small");
+      small.textContent = label;
+      const strong = document.createElement("strong");
+      strong.textContent = value;
+      item.append(small, strong);
+      summary.append(item);
+    }
+    header.append(heading, summary);
+    if (!state.measurement) text2(header, "正在读取当前环境...", "so-butler-muted");
+    else {
+      text2(
+        header,
+        state.measurement.invalidReason ? `最近体检无效：${state.measurement.invalidReason}` : `最近体检：${state.measurement.probe === "static" ? "静态" : "6 秒"} · ${state.findings.length} 条可解释发现`,
+        state.measurement.invalidReason ? "so-butler-alert" : "so-butler-text"
+      );
+    }
+    container.append(header);
+    const sampling = el2("div", "so-app-section");
+    const sampleTitle = el2("div", "so-app-title");
+    sampleTitle.textContent = "短时采样";
+    sampling.append(sampleTitle);
+    text2(sampling, "静置探针观察页面自身活动；受控滚动会固定滚动一段长聊天并恢复原位置。切后台、生成、聊天变化或用户干预会取消。");
+    sampling.append(selectRow(
+      "探针",
+      state.selectedProbe,
+      [
+        { value: "idle", label: "6 秒静置" },
+        { value: "controlledScroll", label: "6 秒受控滚动" }
+      ],
+      (value) => {
+        state.selectedProbe = value;
+        render2();
+      }
+    ));
+    if (state.sampling) sampling.append(appButton("取消采样", () => state.controller?.abort()));
+    else sampling.append(appButton("开始 6 秒体检", () => void safely(async () => {
+      const result = await runProbe(state.selectedProbe);
+      const record = measurementHistory(result, result.probe === "idle" ? "静置体检" : "受控滚动体检", result.invalidReason ? "cancelled" : "completed");
+      data = persistData(upsertHistory(data, record), record.id);
+    })));
+    container.append(sampling);
+    const findingSection = foldSection(`核心发现（${state.findings.length}）`, true, "butler-findings");
+    if (state.findings.length === 0) text2(findingSection.body, state.measurement ? "当前证据没有触发建议。" : "静态体检完成后显示。");
+    for (const finding2 of state.findings.slice(0, 5)) renderFinding(findingSection.body, finding2);
+    container.append(findingSection.box);
+    const planSection = el2("div", "so-app-section");
+    const planTitle = el2("div", "so-app-title");
+    planTitle.textContent = "安全优化";
+    planSection.append(planTitle);
+    if (!current2) {
+      text2(planSection, "当前 SillyTavern 没有公开完整性能设置，管家只做只读体检。", "so-butler-alert");
+    } else {
+      const plan = buildSafePlan(current2, currentDevice(services));
+      renderPlan(planSection, plan);
+      if (data.activeTransaction) {
+        renderTransaction(planSection, data.activeTransaction);
+        const actions = el2("div", "so-butler-actions");
+        actions.append(
+          appButton(state.sampling ? "正在复测" : "用相同探针复测", () => void safely(remeasure)),
+          appButton("恢复本次性能设置", () => void safely(restorePerformance))
+        );
+        planSection.append(actions);
+      } else if (plan.actions.length > 0) {
+        planSection.append(appButton(state.applying ? "正在应用" : "应用安全优化", () => void safely(() => applySafePlan(plan))));
+      }
+    }
+    if (state.comparison) {
+      const comparison = foldSection("复测结果", true, "butler-comparison");
+      text2(comparison.body, state.comparison.comparable ? "样本条件一致，以下差值为“复测 - 基线”。负值通常表示对应耗时或数量下降。" : `样本不可直接比较：${state.comparison.reasons.join("；")}。只在完整报告并列原始值。`);
+      if (state.comparison.comparable) {
+        for (const [key, delta] of Object.entries(state.comparison.deltas)) {
+          text2(comparison.body, `${key} 差值：${delta >= 0 ? "+" : ""}${delta}`);
+        }
+      }
+      planSection.append(comparison.box);
+    }
+    container.append(planSection);
+    const modalActions = el2("div", "so-app-section so-butler-modal-actions");
+    modalActions.append(
+      appButton("完整报告", () => ctx.openModal(buildReportModal(modalController))),
+      appButton("扩展排障", () => ctx.openModal(buildExtensionModal(services, modalController))),
+      appButton("玩法与服务端顾问", () => ctx.openModal(buildAdvisorModal(services)))
+    );
+    container.append(modalActions);
+    if (data.pendingExperiment) {
+      const pending = el2("div", "so-app-section so-butler-pending");
+      text2(pending, `扩展实验进行中：${data.pendingExperiment.kind === "binaryIsolation" ? "二分隔离" : "选定扩展 A/B"} · 第 ${data.pendingExperiment.currentRound} 轮`);
+      pending.append(appButton("继续扩展排障", () => ctx.openModal(buildExtensionModal(services, modalController))));
+      container.append(pending);
+    }
+    if (state.notice) text2(container, state.notice, `so-butler-notice so-butler-notice-${state.noticeKind}`);
+  };
+  if (data.pendingExperiment?.status === "awaitingReload") {
+    data = persistData({ ...data, pendingExperiment: resumeExtensionExperiment(data.pendingExperiment) });
   }
-  container.append(main);
-  const tweak = foldSection("手动微调");
-  tweak.body.append(
-    hintField(
-      toggleRow("No Blur（关背景模糊）", perf.fast_ui_mode, (v) => {
-        void writeField(ctx, "fast_ui_mode", v);
-      }),
-      "关闭聊天框、弹窗背后的毛玻璃模糊。模糊很吃 GPU，几乎所有卡顿场景都建议开启（=关模糊）。官方公认最有效的提速项之一。"
-    ),
-    hintField(
-      toggleRow("减少动画", perf.reduced_motion, (v) => {
-        void writeField(ctx, "reduced_motion", v);
-      }),
-      "关闭界面过渡动画（展开/淡入等）。低端机、长聊天滚动卡顿时开。改此项需刷新页面才完全生效。"
-    ),
-    hintField(
-      toggleRow("关闭阴影", perf.noShadows, (v) => {
-        void writeField(ctx, "noShadows", v);
-      }),
-      "去掉界面元素投影，减少重绘。视觉略扁平，但换来更顺滑的滚动。追求性能可开。"
-    ),
-    hintField(
-      toggleRow("平滑流式", perf.smooth_streaming, (v) => {
-        void writeField(ctx, "smooth_streaming", v);
-      }),
-      "AI 回复逐字平滑吐字的动画。好看但持续占用渲染；出字卡顿、掉帧时建议关闭。"
-    ),
-    hintField(
-      toggleRow("流式淡入", perf.stream_fade_in, (v) => {
-        void writeField(ctx, "stream_fade_in", v);
-      }),
-      "新出的文字带淡入效果。同样是额外渲染开销，卡顿时关。"
-    ),
-    hintField(
-      numberRow("流式帧率 FPS", perf.streaming_fps, 5, 100, (v) => {
-        void writeField(ctx, "streaming_fps", v);
-      }),
-      "AI 回复刷新的帧率。越高越顺滑但越吃性能。默认约 30；低端机/手机官方建议降到 10–15，肉眼几乎无差却明显省电省算力。"
-    ),
-    hintField(
-      numberRow("消息加载数", perf.chat_truncation, 0, 1e5, (v) => {
-        void writeField(ctx, "chat_truncation", v);
-      }),
-      "打开对话时载入 DOM 的最近消息条数（0=全部）。长聊天最主要的卡顿来源。手机建议 15–20、桌面 50 左右；往上翻能继续加载更早的消息，不会丢。改后自动重载当前对话。"
-    )
-  );
-  container.append(tweak.box);
-  const check = foldSection("体检");
-  const health = readHealth();
-  descLine(check.body, `已禁用扩展：${health.disabledExtensions} 个。`);
-  if (health.quickReplySets !== null) {
-    descLine(check.body, `Quick Reply 集合：${health.quickReplySets} 个（社区反馈集合过多可能造成输入拖拽卡顿，卡则精简）。`);
-  }
-  descLine(check.body, "输入卡顿最常见元凶是第三方扩展：逐个禁用排查（扩展启停改动需刷新页面才真正生效）。");
-  container.append(check.box);
-  container.append(buildGuide());
+  persistData(data);
+  render2();
+  void safely(async () => {
+    const measurement = await services.collectStatic();
+    if (!state.measurement || state.measurement.probe === "static") {
+      state.measurement = measurement;
+      state.findings = diagnose(measurement, services.readPerformance());
+    }
+    if (!state.notice) setNotice("静态体检完成。需要动态证据时运行 6 秒体检。", "success");
+  });
 }
 
 // st-extension/src/apps/variable-tree.ts
@@ -6946,7 +9921,7 @@ function createVariableTreeView(container, handlers) {
   let editingPath = null;
   const groupOpen = /* @__PURE__ */ new Map();
   let addOpen = false;
-  function render3() {
+  function render2() {
     const model = handlers.getModel();
     container.textContent = "";
     const head = el2("div", "so-app-section vm-head");
@@ -6974,10 +9949,10 @@ function createVariableTreeView(container, handlers) {
     }
     if (model.allowAdd !== false) container.append(buildAddSection(model));
   }
-  function appendNotice(text) {
+  function appendNotice(text3) {
     const note = el2("div", "so-app-section");
     const d = el2("div", "so-app-desc");
-    d.textContent = text;
+    d.textContent = text3;
     note.append(d);
     container.append(note);
   }
@@ -7027,7 +10002,7 @@ function createVariableTreeView(container, handlers) {
       main.tabIndex = 0;
       const enterEdit = () => {
         editingPath = path;
-        render3();
+        render2();
       };
       main.addEventListener("click", enterEdit);
       main.addEventListener("keydown", (e) => {
@@ -7069,9 +10044,9 @@ function createVariableTreeView(container, handlers) {
     const definition = model.definitions?.find((item) => item.key === path);
     const kind = editKind(inner, definition);
     const wrap = el2("div", "vm-leaf vm-editing");
-    const title = el2("div", "so-app-title vm-edit-title");
-    title.textContent = `${key} · ${valueTypeLabel(value, tuple)}`;
-    wrap.append(title);
+    const title2 = el2("div", "so-app-title vm-edit-title");
+    title2.textContent = `${key} · ${valueTypeLabel(value, tuple)}`;
+    wrap.append(title2);
     if (tuple) {
       const desc = el2("div", "vm-desc");
       desc.textContent = `描述：${value[1]}（保留不变，仅编辑值）`;
@@ -7166,7 +10141,7 @@ function createVariableTreeView(container, handlers) {
     cancel.textContent = "取消";
     cancel.addEventListener("click", () => {
       editingPath = null;
-      render3();
+      render2();
     });
     actions.append(save, cancel);
     wrap.append(actions);
@@ -7222,7 +10197,7 @@ function createVariableTreeView(container, handlers) {
     return box;
   }
   return {
-    render: render3,
+    render: render2,
     resetEditing() {
       editingPath = null;
     },
@@ -8001,9 +10976,9 @@ function apiApp(deps) {
     order: 6,
     mount(container, ctx) {
       const state = { busy: false, message: "" };
-      void render2(container, ctx, deps, state);
+      void render(container, ctx, deps, state);
       unsubscribe = onOnlineStatusChanged(() => {
-        if (!state.busy && container.isConnected) void render2(container, ctx, deps, state);
+        if (!state.busy && container.isConnected) void render(container, ctx, deps, state);
       });
     },
     unmount() {
@@ -8012,16 +10987,16 @@ function apiApp(deps) {
     }
   };
 }
-async function render2(container, ctx, deps, state) {
+async function render(container, ctx, deps, state) {
   const data = sanitizeAppData(ctx.getAppData());
   const connection = await readConnection();
   if (!container.isConnected) return;
   const active = connection ? findActiveProfile(data.profiles, connection) : void 0;
   container.textContent = "";
   const status = el2("div", "so-app-section");
-  const title = el2("div", "so-app-title");
-  title.textContent = "当前连接";
-  status.append(title);
+  const title2 = el2("div", "so-app-title");
+  title2.textContent = "当前连接";
+  status.append(title2);
   const line = el2("div", "so-app-desc");
   if (!connection) line.textContent = "未检测到 SillyTavern 运行时（这里只展示已保存档案）。";
   else {
@@ -8058,11 +11033,11 @@ async function render2(container, ctx, deps, state) {
     if (state.busy || !connection) return;
     state.busy = true;
     state.message = `正在应用「${profile.name}」的类型、来源、密钥、URL 与模型…`;
-    await render2(container, ctx, deps, state);
+    await render(container, ctx, deps, state);
     try {
       const connected = await applyProfile(profile, (message) => {
         state.message = message;
-        if (container.isConnected) void render2(container, ctx, deps, state);
+        if (container.isConnected) void render(container, ctx, deps, state);
       });
       state.message = `「${profile.name}」已连接${connected.model ? `，实际模型：${connected.model}` : ""}`;
       toast2("success", state.message);
@@ -8072,22 +11047,22 @@ async function render2(container, ctx, deps, state) {
       console.error("[st-stage] API 切换失败", error);
     } finally {
       state.busy = false;
-      await render2(container, ctx, deps, state);
+      await render(container, ctx, deps, state);
     }
   }
 }
-function guideLine(title, text) {
+function guideLine(title2, text3) {
   const line = el2("div", "so-app-desc");
   const strong = document.createElement("strong");
-  strong.textContent = `${title}：`;
-  line.append(strong, document.createTextNode(text));
+  strong.textContent = `${title2}：`;
+  line.append(strong, document.createTextNode(text3));
   return line;
 }
 function buildApiGuide() {
   const guide = el2("div", "so-app-section");
-  const title = el2("div", "so-app-title");
-  title.textContent = "API 使用说明";
-  guide.append(title);
+  const title2 = el2("div", "so-app-title");
+  title2.textContent = "API 使用说明";
+  guide.append(title2);
   const quick = foldSection("快速开始", false);
   quick.body.append(
     guideLine("1. 建档", "在“管理连接档案”中添加档案，或先打开 SillyTavern 原生 API 面板配置好连接，再用“导入当前连接”。"),
@@ -8173,7 +11148,9 @@ function buildRendererPrompt(settings) {
   return `# ST Stage 结构化渲染协议
 
 普通回复不需要输出渲染块；仅在当前场景明显适合以下已启用模式时使用。
+用户明确要求使用某个已启用模式、演示该模式或测试该模式时，必须输出对应的结构化渲染块，不得只用普通文本说明。
 每条回复最多输出一个 STStageRender 标签块，标签内部必须是严格 JSON。
+使用时必须输出完整 <STStageRender>JSON</STStageRender> 标签，不得只输出裸 JSON。
 禁止输出 HTML、脚本或其他可执行代码，也不要增加协议未声明的字段。
 叙事正文放在块外，并保证块外内容脱离渲染器后仍然独立可读。
 所有数值使用整数，图片只使用可信的 http(s)、base64 栅格 data:image、/user/ 或扩展相对路径。
@@ -8211,10 +11188,10 @@ function normalizeRendererSettings(raw) {
 function refreshPrompt(host, settings) {
   host.injectPrompt(buildRendererPrompt(settings), settings.injectionDepth);
 }
-function section(title, ...rows) {
+function section(title2, ...rows) {
   const box = el2("section", "so-app-section renderer-settings-section");
   const heading = el2("div", "so-app-title");
-  heading.textContent = title;
+  heading.textContent = title2;
   box.append(heading, ...rows);
   return box;
 }
@@ -8236,13 +11213,13 @@ function rendererStatus(settings) {
   status.textContent = modes.length > 0 ? `已启用 · 可用模式：${modes.join("、")} · 正在注入协议说明 ${injected.length} 字符（深度 ${settings.injectionDepth}）` : "已启用，但没有启用模式——此时不注入提示词；请至少打开一个模式。";
   return status;
 }
-function quickStep(number, title, description) {
+function quickStep(number, title2, description) {
   const row = el2("div", "renderer-quick-step");
   const marker = el2("span", "renderer-quick-step-number");
   marker.textContent = number;
   const content = el2("div", "renderer-quick-step-content");
   const heading = el2("strong", "renderer-quick-step-title");
-  heading.textContent = title;
+  heading.textContent = title2;
   const detail = el2("span", "so-app-desc");
   detail.textContent = description;
   content.append(heading, detail);
@@ -8274,10 +11251,10 @@ function modeGuide() {
     ["卡片选择", "2-8 个明确选项；点击后只填入草稿，不会替你自动发送。"],
     ["战斗", "本地确定性战斗；选择攻击、技能、物品或逃跑后立即更新面板。"]
   ];
-  for (const [title, description] of modes) {
+  for (const [title2, description] of modes) {
     const row = el2("div", "renderer-mode-row");
     const name = el2("strong", "renderer-mode-name");
-    name.textContent = title;
+    name.textContent = title2;
     const detail = el2("span", "so-app-desc");
     detail.textContent = description;
     row.append(name, detail);
@@ -8310,9 +11287,9 @@ function rendererApp(deps) {
         ctx.setAppData(current2);
         refreshPrompt(ctx, current2);
         deps.runtime.reprocessAll();
-        render3();
+        render2();
       }
-      function render3() {
+      function render2() {
         container.textContent = "";
         const page = el2("div", "renderer-settings");
         page.append(
@@ -8340,7 +11317,7 @@ function rendererApp(deps) {
         );
         container.append(page);
       }
-      render3();
+      render2();
     }
   };
 }
@@ -8348,7 +11325,7 @@ function rendererApp(deps) {
 // st-extension/src/apps/index.ts
 function createBuiltinApps(deps) {
   return [
-    spriteApp(),
+    spriteApp({ previewOpacity: deps.previewSpriteOpacity }),
     galleryApp({ openManager: deps.openGalleryManager }),
     butlerApp(),
     mvuApp(),
@@ -8601,9 +11578,9 @@ function serializeExampleValue(value) {
 }
 var BLOCK_RE = /<UpdateVariable>([\s\S]*?)<\/UpdateVariable>/i;
 var ANALYSIS_RE = /<Analysis>[\s\S]*?<\/Analysis>/gi;
-function parseUpdateBlock(text, format) {
-  if (typeof text !== "string") return { found: false, ops: [] };
-  const m = BLOCK_RE.exec(text);
+function parseUpdateBlock(text3, format) {
+  if (typeof text3 !== "string") return { found: false, ops: [] };
+  const m = BLOCK_RE.exec(text3);
   if (!m) return { found: false, ops: [] };
   const inner = m[1].replace(ANALYSIS_RE, "").trim();
   if (!inner) return { found: true, ops: [] };
@@ -9491,8 +12468,8 @@ function draftToDef(draft) {
 function cloneDefs(defs) {
   return JSON.parse(JSON.stringify(defs));
 }
-function parseRange(text) {
-  const t = text.trim();
+function parseRange(text3) {
+  const t = text3.trim();
   if (!t) return null;
   const m = /^(-?\d+(?:\.\d+)?)\s*~\s*(-?\d+(?:\.\d+)?)$/.exec(t);
   if (!m) return false;
@@ -9519,7 +12496,7 @@ function createNewvarDesigner(deps) {
   }
   function open() {
     if (backdrop) {
-      render3();
+      render2();
       return;
     }
     formDraft = null;
@@ -9532,8 +12509,8 @@ function createNewvarDesigner(deps) {
     dialog.setAttribute("role", "dialog");
     dialog.setAttribute("aria-label", "变量设计");
     const header = el2("div", "so-manager-header");
-    const title = el2("div", "so-manager-title");
-    title.textContent = "变量设计";
+    const title2 = el2("div", "so-manager-title");
+    title2.textContent = "变量设计";
     const closeBtn = el2("div", "menu_button so-manager-close");
     closeBtn.textContent = "✕";
     closeBtn.title = "关闭";
@@ -9546,12 +12523,12 @@ function createNewvarDesigner(deps) {
         close();
       }
     });
-    header.append(title, closeBtn);
+    header.append(title2, closeBtn);
     body = el2("div", "so-manager-body");
     dialog.append(header, body);
     backdrop.append(dialog);
     document.body.append(backdrop);
-    render3();
+    render2();
   }
   function close() {
     if (!backdrop) return;
@@ -9566,9 +12543,9 @@ function createNewvarDesigner(deps) {
   }
   function save(next) {
     deps.setData(next);
-    render3();
+    render2();
   }
-  function render3() {
+  function render2() {
     if (!body) return;
     try {
       body.textContent = "";
@@ -9589,20 +12566,20 @@ function createNewvarDesigner(deps) {
   }
   function section2(titleText) {
     const box = el2("div", "so-section");
-    const title = el2("div", "so-section-title");
-    title.textContent = titleText;
-    box.append(title);
+    const title2 = el2("div", "so-section-title");
+    title2.textContent = titleText;
+    box.append(title2);
     return { box };
   }
-  function descLine2(parent, text) {
+  function descLine(parent, text3) {
     const d = el2("div", "so-app-desc");
-    d.textContent = text;
+    d.textContent = text3;
     parent.append(d);
   }
   function buildTemplateSection() {
     const data = deps.getData();
     const { box } = section2("模板库（一键起步）");
-    descLine2(box, "「替换」清空现有定义后导入；「追加」跳过重名路径合并。导入的规则都已写好，可再逐条微调。");
+    descLine(box, "「替换」清空现有定义后导入；「追加」跳过重名路径合并。导入的规则都已写好，可再逐条微调。");
     const grid = el2("div", "nv-tpl-grid");
     for (const tpl of NEWVAR_TEMPLATES) grid.append(buildTemplateCard(tpl, null));
     for (const tpl of data.customTemplates) grid.append(buildTemplateCard(tpl, tpl.id));
@@ -9727,7 +12704,7 @@ function createNewvarDesigner(deps) {
     const list = el2("div", "nv-defs-list");
     const editor = el2("div", "nv-defs-editor");
     if (data.schema.variables.length === 0) {
-      descLine2(list, "还没有变量。从上方模板一键导入，或点右侧「添加变量」逐条定义。");
+      descLine(list, "还没有变量。从上方模板一键导入，或点右侧「添加变量」逐条定义。");
     }
     for (let i = 0; i < data.schema.variables.length; i++) {
       list.append(buildDefRow(data.schema.variables[i], i));
@@ -9743,7 +12720,7 @@ function createNewvarDesigner(deps) {
           formDraft = emptyDraft2();
           editingIndex = null;
           scrollToEditor = true;
-          render3();
+          render2();
         })
       );
     }
@@ -9780,7 +12757,7 @@ function createNewvarDesigner(deps) {
       formDraft = draftFromDef(def);
       editingIndex = index;
       scrollToEditor = true;
-      render3();
+      render2();
     };
     main.addEventListener("click", edit);
     main.addEventListener("keydown", (e) => {
@@ -9809,9 +12786,9 @@ function createNewvarDesigner(deps) {
   function buildDefForm() {
     const draft = formDraft;
     const wrap = el2("div", "vm-leaf vm-editing");
-    const title = el2("div", "so-app-title vm-edit-title");
-    title.textContent = editingIndex === null ? "新变量定义" : `编辑：${draft.key || "（未命名）"}`;
-    wrap.append(title);
+    const title2 = el2("div", "so-app-title vm-edit-title");
+    title2.textContent = editingIndex === null ? "新变量定义" : `编辑：${draft.key || "（未命名）"}`;
+    wrap.append(title2);
     const err = el2("div", "so-app-desc vm-add-err");
     err.hidden = true;
     wrap.append(
@@ -9822,7 +12799,7 @@ function createNewvarDesigner(deps) {
         Object.keys(TYPE_LABELS).map((t) => ({ value: t, label: TYPE_LABELS[t] })),
         (v) => {
           draft.type = v;
-          render3();
+          render2();
         }
       ),
       textRow("默认值", draft.defaultText, draft.type === "boolean" ? "true / false" : "", (v) => draft.defaultText = v),
@@ -9873,7 +12850,7 @@ function createNewvarDesigner(deps) {
     cancel.addEventListener("click", () => {
       formDraft = null;
       editingIndex = null;
-      render3();
+      render2();
     });
     actions.append(saveBtn, cancel);
     wrap.append(actions);
@@ -9904,13 +12881,13 @@ function createNewvarDesigner(deps) {
   }
   function buildPreviewSection() {
     const fold = foldSection("注入预览");
-    const text = deps.buildPreview();
-    if (text) {
+    const text3 = deps.buildPreview();
+    if (text3) {
       const pre = el2("div", "nv-pre");
-      pre.textContent = text;
+      pre.textContent = text3;
       fold.body.append(pre);
     } else {
-      descLine2(fold.body, "（未启用或未定义任何变量时不注入。启用开关在手机「新变量」页。）");
+      descLine(fold.body, "（未启用或未定义任何变量时不注入。启用开关在手机「新变量」页。）");
     }
     const wrap = el2("div", "so-section");
     wrap.append(fold.box);
@@ -9920,9 +12897,9 @@ function createNewvarDesigner(deps) {
     const fold = foldSection("解析日志");
     const report = deps.getLastParse();
     if (!report) {
-      descLine2(fold.body, "尚无解析记录。AI 回复包含 <UpdateVariable> 块时，这里显示逐条接受/修正/拒绝结果。");
+      descLine(fold.body, "尚无解析记录。AI 回复包含 <UpdateVariable> 块时，这里显示逐条接受/修正/拒绝结果。");
     } else {
-      descLine2(fold.body, `楼层 #${report.messageId}${report.error ? ` · 解析出错：${report.error}` : ""}`);
+      descLine(fold.body, `楼层 #${report.messageId}${report.error ? ` · 解析出错：${report.error}` : ""}`);
       const icons = { accepted: "✅", corrected: "⚠️", rejected: "❌", removed: "🗑️" };
       for (const entry of report.log) {
         const line = el2("div", "so-app-desc nv-log-line");
@@ -9940,7 +12917,10 @@ function createNewvarDesigner(deps) {
 // st-extension/src/apps/renderer/parser.ts
 var OPEN_TAG = "<STStageRender>";
 var CLOSE_TAG = "</STStageRender>";
+var TAG_PREFIX = "<STStageRender";
+var CLOSE_TAG_PREFIX = "</STStageRender";
 var MAX_JSON_BYTES = 64 * 1024;
+var MAX_BARE_SCAN_CHARS = 1024 * 1024;
 var MAX_ARRAY_ITEMS = 12;
 var MAX_BEATS = 50;
 var MAX_CARDS = 8;
@@ -9950,7 +12930,7 @@ function firstError(...errors) {
 function fail(error) {
   return { ok: false, found: true, error };
 }
-function isRecord(value) {
+function isRecord3(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function checkKeys(value, allowed, label) {
@@ -10052,7 +13032,7 @@ function validateGal(value) {
   if (value.beats.length > MAX_BEATS) return "gal.beats 必须在 1-50 范围内";
   const beats = [];
   for (const [index, item] of value.beats.entries()) {
-    if (!isRecord(item)) return `gal.beats[${index}] 必须是对象`;
+    if (!isRecord3(item)) return `gal.beats[${index}] 必须是对象`;
     const itemError = checkKeys(item, ["speaker", "text", "portrait", "background"], `gal.beats[${index}]`);
     if (itemError) return itemError;
     const contentError = firstError(
@@ -10079,7 +13059,7 @@ function validateGal(value) {
   };
 }
 function validateCard(value, index) {
-  if (!isRecord(value)) return `cards.cards[${index}] 必须是对象`;
+  if (!isRecord3(value)) return `cards.cards[${index}] 必须是对象`;
   const label = `cards.cards[${index}]`;
   const keyError = checkKeys(value, ["id", "title", "description", "consequence", "action"], label);
   if (keyError) return keyError;
@@ -10120,7 +13100,7 @@ function validateCards(value) {
   return { version: 1, mode: "cards", title: value.title, cards };
 }
 function validateSkill(value, index) {
-  if (!isRecord(value)) return `battle.skills[${index}] 必须是对象`;
+  if (!isRecord3(value)) return `battle.skills[${index}] 必须是对象`;
   const label = `battle.skills[${index}]`;
   const keyError = checkKeys(value, ["id", "name", "description", "type", "mpCost", "power"], label);
   if (keyError) return keyError;
@@ -10139,7 +13119,7 @@ function validateSkill(value, index) {
   };
 }
 function validateItem(value, index) {
-  if (!isRecord(value)) return `battle.items[${index}] 必须是对象`;
+  if (!isRecord3(value)) return `battle.items[${index}] 必须是对象`;
   const label = `battle.items[${index}]`;
   const keyError = checkKeys(value, ["id", "name", "description", "effect", "quantity", "power"], label);
   if (keyError) return keyError;
@@ -10158,7 +13138,7 @@ function validateItem(value, index) {
   };
 }
 function validateStatus(value, index) {
-  if (!isRecord(value)) return `battle.statuses[${index}] 必须是对象`;
+  if (!isRecord3(value)) return `battle.statuses[${index}] 必须是对象`;
   const label = `battle.statuses[${index}]`;
   const keyError = checkKeys(value, ["id", "name", "duration", "attackDelta", "defenseDelta", "damagePerTurn"], label);
   if (keyError) return keyError;
@@ -10181,7 +13161,7 @@ function validateStatus(value, index) {
   };
 }
 function validateFighter(value, label) {
-  if (!isRecord(value)) return `${label} 必须是对象`;
+  if (!isRecord3(value)) return `${label} 必须是对象`;
   const keyError = checkKeys(value, ["id", "name", "hp", "maxHp", "mp", "maxMp", "attack", "defense", "speed", "crit", "dodge", "portrait", "skills", "items", "statuses"], label);
   if (keyError) return keyError;
   const identityError = firstError(getRequiredString(value, "id", label, 100), getRequiredString(value, "name", label, 100));
@@ -10271,17 +13251,70 @@ function validateBattle(value) {
   };
 }
 function validateBlock(value) {
-  if (!isRecord(value)) return "渲染块必须是 JSON 对象";
+  if (!isRecord3(value)) return "渲染块必须是 JSON 对象";
   if (value.version !== 1) return "version 只支持 1";
   if (value.mode === "gal") return validateGal(value);
   if (value.mode === "cards") return validateCards(value);
   if (value.mode === "battle") return validateBattle(value);
   return "mode 只支持 gal、cards 或 battle";
 }
+function parseBareRendererBlock(source) {
+  if (source.length > MAX_BARE_SCAN_CHARS) return { ok: false, found: false };
+  const accepted = [];
+  let objectStart = -1;
+  let objectDepth = 0;
+  let arrayDepth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (objectDepth > 0) {
+      if (char === "{") objectDepth += 1;
+      else if (char === "}") objectDepth -= 1;
+      if (objectDepth !== 0) continue;
+      const raw = source.slice(objectStart, index + 1);
+      objectStart = -1;
+      if (new TextEncoder().encode(raw).byteLength > MAX_JSON_BYTES) continue;
+      let value;
+      try {
+        value = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      const block = validateBlock(value);
+      if (typeof block === "string") continue;
+      accepted.push({ block, raw });
+      if (accepted.length > 1) return { ok: false, found: false };
+      continue;
+    }
+    if (char === "[") arrayDepth += 1;
+    else if (char === "]") arrayDepth = Math.max(0, arrayDepth - 1);
+    else if (char === "{" && arrayDepth === 0) {
+      objectStart = index;
+      objectDepth = 1;
+    }
+  }
+  return accepted.length === 1 ? { ok: true, block: accepted[0].block, raw: accepted[0].raw } : { ok: false, found: false };
+}
 function parseRendererBlock(source) {
   if (typeof source !== "string") return { ok: false, found: false };
   const firstStart = source.indexOf(OPEN_TAG);
-  if (firstStart < 0) return { ok: false, found: false };
+  if (firstStart < 0) {
+    if (source.includes(TAG_PREFIX) || source.includes(CLOSE_TAG_PREFIX)) {
+      return fail("检测到不完整的 STStageRender 标签");
+    }
+    return parseBareRendererBlock(source);
+  }
   const secondStart = source.indexOf(OPEN_TAG, firstStart + OPEN_TAG.length);
   const firstEnd = source.indexOf(CLOSE_TAG, firstStart + OPEN_TAG.length);
   if (firstEnd < 0) return fail("STStageRender 块未闭合");
@@ -10324,8 +13357,8 @@ function findTextBoundary(root, target) {
   return target === consumed && last ? { node: last, offset: last.data.length } : null;
 }
 function hideSourceBlock(root, raw) {
-  const text = root.textContent ?? "";
-  const startOffset = text.indexOf(raw);
+  const text3 = root.textContent ?? "";
+  const startOffset = text3.indexOf(raw);
   if (startOffset < 0) return null;
   const start = findTextBoundary(root, startOffset);
   const end = findTextBoundary(root, startOffset + raw.length);
@@ -10463,10 +13496,10 @@ function createRendererRuntime(deps) {
 
 // st-extension/src/apps/renderer/modes/gal.ts
 var TYPEWRITER_INTERVAL_MS = 24;
-function textElement(tag, className, text) {
+function textElement(tag, className, text3) {
   const element2 = document.createElement(tag);
   element2.className = className;
-  element2.textContent = text;
+  element2.textContent = text3;
   return element2;
 }
 function stageImage(className, src, alt) {
@@ -10545,14 +13578,14 @@ function mountGalMode(root, block, deps) {
     if (complete) dialogue.textContent = fullDialogue;
     return true;
   }
-  function renderDialogue(text, forceInstant = false) {
+  function renderDialogue(text3, forceInstant = false) {
     stopTyping(false);
-    fullDialogue = text;
-    dialogueUnits = Array.from(text);
+    fullDialogue = text3;
+    dialogueUnits = Array.from(text3);
     cursor = 0;
     const settings = deps.getSettings();
     if (forceInstant || settings.reducedMotion || !settings.typewriter) {
-      dialogue.textContent = text;
+      dialogue.textContent = text3;
       return;
     }
     dialogue.textContent = "";
@@ -10626,10 +13659,10 @@ function mountGalMode(root, block, deps) {
 }
 
 // st-extension/src/apps/renderer/modes/cards.ts
-function textElement2(tag, className, text) {
+function textElement2(tag, className, text3) {
   const element2 = document.createElement(tag);
   element2.className = className;
-  element2.textContent = text;
+  element2.textContent = text3;
   return element2;
 }
 function createCard(card) {
@@ -10653,14 +13686,14 @@ function createCard(card) {
 function mountCardsMode(root, block, deps) {
   const section2 = document.createElement("section");
   section2.className = "st-render-cards";
-  const title = textElement2("h2", "st-render-cards-title", block.title);
+  const title2 = textElement2("h2", "st-render-cards-title", block.title);
   const grid = document.createElement("div");
   grid.className = "st-render-cards-grid";
   for (const card of block.cards) grid.append(createCard(card));
   const status = textElement2("div", "st-render-cards-status", "");
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
-  section2.append(title, grid, status);
+  section2.append(title2, grid, status);
   root.replaceChildren(section2);
   const cards = new Map(block.cards.map((card) => [card.id, card]));
   let destroyed = false;
@@ -10763,8 +13796,8 @@ function createBattleEngine(config, deps = {}) {
     log: [],
     allowFlee: config.allowFlee === true
   };
-  function record(events, kind, text) {
-    const entry = { kind, text };
+  function record(events, kind, text3) {
+    const entry = { kind, text: text3 };
     events.push(entry);
     state.log.push({ ...entry });
   }
@@ -10878,10 +13911,10 @@ function createBattleEngine(config, deps = {}) {
 
 // st-extension/src/apps/renderer/modes/battle.ts
 var ACTION_DELAY_MS = 180;
-function textElement3(tag, className, text) {
+function textElement3(tag, className, text3) {
   const element2 = document.createElement(tag);
   element2.className = className;
-  element2.textContent = text;
+  element2.textContent = text3;
   return element2;
 }
 function imageElement(className, src, alt, onError) {
@@ -10961,9 +13994,9 @@ function mountBattleMode(root, block, deps) {
   content.className = "st-render-battle-content";
   const header = document.createElement("header");
   header.className = "st-render-battle-header";
-  const title = textElement3("h2", "st-render-battle-title", block.title);
+  const title2 = textElement3("h2", "st-render-battle-title", block.title);
   const turn = textElement3("span", "st-render-battle-turn", "");
-  header.append(title, turn);
+  header.append(title2, turn);
   const intent = textElement3("div", "st-render-battle-intent", block.enemyIntent ? `敌方意图：${block.enemyIntent}` : "");
   const combatants = document.createElement("div");
   combatants.className = "st-render-battle-combatants";
@@ -11009,7 +14042,7 @@ function mountBattleMode(root, block, deps) {
     if (firstAvailable) select.value = firstAvailable.id;
     return select;
   }
-  function render3() {
+  function render2() {
     const state = engine.getState();
     const ended = state.outcome !== "ongoing";
     turn.textContent = `回合 ${state.turn}`;
@@ -11071,7 +14104,7 @@ function mountBattleMode(root, block, deps) {
     const result = engine.dispatch(action);
     pending = false;
     notice.textContent = result.ok ? "" : result.error ?? "行动失败";
-    render3();
+    render2();
   }
   function schedule(action) {
     if (pending || engine.getState().outcome !== "ongoing") return;
@@ -11081,7 +14114,7 @@ function mountBattleMode(root, block, deps) {
       return;
     }
     pending = true;
-    render3();
+    render2();
     timer = setTimeout(() => execute(action), ACTION_DELAY_MS);
   }
   function onClick(event) {
@@ -11099,7 +14132,7 @@ function mountBattleMode(root, block, deps) {
       if (select?.value) schedule({ type: "item", itemId: select.value });
     } else if (action === "free") {
       freeOpen = !freeOpen;
-      render3();
+      render2();
     } else if (action === "free-submit") {
       const input = root.querySelector(".st-render-battle-free-input");
       const value = input?.value.trim() ?? "";
@@ -11117,7 +14150,7 @@ function mountBattleMode(root, block, deps) {
     }
   }
   root.addEventListener("click", onClick);
-  render3();
+  render2();
   return {
     destroy() {
       if (destroyed) return;
@@ -11133,7 +14166,7 @@ function mountBattleMode(root, block, deps) {
 function createComposerBridge(deps = {}) {
   const findInput = deps.findInput ?? (() => findComposerTextarea());
   let owned = null;
-  function insertDraft(text) {
+  function insertDraft(text3) {
     const input = findInput();
     if (!input) return { ok: false, error: "未找到 SillyTavern 输入框。" };
     if (owned?.input === input) {
@@ -11143,10 +14176,10 @@ function createComposerBridge(deps = {}) {
       owned = null;
       if (input.value !== "") return { ok: false, error: "输入框已有草稿，未覆盖你的内容。" };
     }
-    input.value = text;
+    input.value = text3;
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.focus();
-    owned = { input, value: text };
+    owned = { input, value: text3 };
     return { ok: true };
   }
   function dispose() {
@@ -11169,41 +14202,41 @@ function createApiManager(deps) {
   let draft = null;
   let editingId = null;
   let notice = "";
-  const section2 = (title) => {
+  const section2 = (title2) => {
     const box = el2("div", "so-section");
     const heading = el2("div", "so-section-title");
-    heading.textContent = title;
+    heading.textContent = title2;
     box.append(heading);
     return box;
   };
-  const desc = (box, text) => {
+  const desc = (box, text3) => {
     const line = el2("div", "so-app-desc");
-    line.textContent = text;
+    line.textContent = text3;
     box.append(line);
   };
   const save = (data) => {
     deps.setData(data);
-    render3();
+    render2();
   };
   function open() {
-    if (backdrop) return render3();
+    if (backdrop) return render2();
     backdrop = el2("div", "so-manager-backdrop");
     backdrop.style.inset = "0";
     const dialog = el2("div", "so-manager");
     dialog.setAttribute("role", "dialog");
     dialog.setAttribute("aria-label", "API 连接档案管理");
     const header = el2("div", "so-manager-header");
-    const title = el2("div", "so-manager-title");
-    title.textContent = "API 连接档案管理";
+    const title2 = el2("div", "so-manager-title");
+    title2.textContent = "API 连接档案管理";
     const closeButton = el2("button", "menu_button so-manager-close");
     closeButton.textContent = "关闭";
     closeButton.addEventListener("click", close);
-    header.append(title, closeButton);
+    header.append(title2, closeButton);
     body = el2("div", "so-manager-body");
     dialog.append(header, body);
     backdrop.append(dialog);
     document.body.append(backdrop);
-    render3();
+    render2();
   }
   function close() {
     backdrop?.remove();
@@ -11218,9 +14251,9 @@ function createApiManager(deps) {
     draft = { ...value, settings: { ...value.settings } };
     editingId = profile.id;
     notice = "";
-    render3();
+    render2();
   }
-  function render3() {
+  function render2() {
     if (!body) return;
     body.textContent = "";
     body.append(buildList(), buildEditor(), buildHelp());
@@ -11264,7 +14297,7 @@ function createApiManager(deps) {
       draft = emptyDraft();
       editingId = null;
       notice = "";
-      render3();
+      render2();
     }));
     return box;
   }
@@ -11288,7 +14321,7 @@ function createApiManager(deps) {
       d.url = "";
       d.model = "";
       d.secretId = "";
-      render3();
+      render2();
     }));
     if (d.mainApi === "openai") {
       const sources = [...COMMON_CHAT_SOURCES];
@@ -11299,7 +14332,7 @@ function createApiManager(deps) {
         d.url = "";
         d.model = "";
         d.secretId = "";
-        render3();
+        render2();
       }));
     }
     const descriptor = getSource(d.mainApi, d.source);
@@ -11336,7 +14369,7 @@ function createApiManager(deps) {
       const result = upsertProfile(deps.getData().profiles, d, editingId);
       if ("error" in result) {
         notice = result.error;
-        return render3();
+        return render2();
       }
       draft = null;
       editingId = null;
@@ -11350,7 +14383,7 @@ function createApiManager(deps) {
     cancel.addEventListener("click", () => {
       draft = null;
       editingId = null;
-      render3();
+      render2();
     });
     actions.append(saveButton, importButton, cancel);
     box.append(actions);
@@ -11360,7 +14393,7 @@ function createApiManager(deps) {
     const current2 = await readConnection();
     if (!current2 || !draft) {
       notice = "未检测到 SillyTavern 运行时。";
-      return render3();
+      return render2();
     }
     draft.mainApi = current2.mainApi;
     draft.source = current2.source;
@@ -11371,12 +14404,12 @@ function createApiManager(deps) {
     if (current2.key) draft.key = current2.key;
     draft.secretMode = current2.secretMode;
     notice = current2.secretMode === "read" ? "已完整导入当前连接和密钥。" : "已导入连接设置；当前版本无法回读密钥，已保留表单中的 Key。";
-    render3();
+    render2();
   }
   async function loadModels(value) {
     if (!normalizeUrl(value.url)) {
       notice = "请先填写接口地址。";
-      return render3();
+      return render2();
     }
     try {
       const models = await fetchModels({ ...value });
@@ -11388,7 +14421,7 @@ ${models.join("\n")}
     } catch (error) {
       notice = `获取模型失败：${error instanceof Error ? error.message : String(error)}`;
     }
-    render3();
+    render2();
   }
   function buildHelp() {
     const box = section2("兼容说明");
@@ -11475,13 +14508,13 @@ async function init(lifecycle) {
   const platformCaps = {
     onMessageReceived: (handler) => appMessageHub.subscribe(handler),
     onCharacterChanged: (handler) => appCharacterHub.subscribe(() => handler()),
-    injectPrompt: (appId, text, depth) => {
+    injectPrompt: (appId, text3, depth) => {
       const channel = `app:${appId}`;
       if (!usedAppChannels.has(channel)) {
         usedAppChannels.add(channel);
         hostTracker.track(() => adapter.injectChannel(channel, ""));
       }
-      adapter.injectChannel(channel, text, depth);
+      adapter.injectChannel(channel, text3, depth);
     },
     toast: (kind, message) => {
       const t = window.toastr;
@@ -11508,6 +14541,8 @@ async function init(lifecycle) {
     }
   });
   lifecycle.track(() => manager.destroy());
+  let openSpritesApp = () => {
+  };
   const overlay = createOverlay(
     settings.overlay,
     (layout) => {
@@ -11516,7 +14551,8 @@ async function init(lifecycle) {
     },
     () => manager.open(),
     // 悬浮窗 ✕：只隐藏窗体并记住状态，立绘功能（含楼层立绘）不受影响
-    () => updateSettings({ ...settings, overlayHidden: true })
+    () => updateSettings({ ...settings, overlayHidden: true }),
+    () => openSpritesApp()
   );
   lifecycle.track(() => overlay.destroy());
   overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds);
@@ -11543,6 +14579,7 @@ async function init(lifecycle) {
     }
   });
   lifecycle.track(() => phone.destroy());
+  openSpritesApp = () => phone.openApp("sprites");
   function collapsePhone() {
     settings = { ...settings, phone: { ...settings.phone, open: false } };
     adapter.saveSettings(settings);
@@ -11590,6 +14627,7 @@ async function init(lifecycle) {
   });
   lifecycle.track(() => apiManager.close());
   for (const app of createBuiltinApps({
+    previewSpriteOpacity: (percent) => overlay.setOpacity(percent),
     // 从手机开图库弹窗：先收起手机（避免挡在弹窗上），来源标记=手机（关闭后回图库页）
     openGalleryManager: () => {
       collapsePhone();
@@ -11669,19 +14707,19 @@ async function init(lifecycle) {
     streamedText = "";
     streamedTagCount = 0;
   }
-  const unsubscribeStream = adapter.onStreamText((text) => {
-    if (!text.startsWith(streamedText)) streamedTagCount = 0;
-    streamedText = text;
-    const addresses = extractTags(text);
+  const unsubscribeStream = adapter.onStreamText((text3) => {
+    if (!text3.startsWith(streamedText)) streamedTagCount = 0;
+    streamedText = text3;
+    const addresses = extractTags(text3);
     const added = addresses.slice(streamedTagCount);
     streamedTagCount = addresses.length;
     displaySprites(added);
   });
   lifecycle.track(unsubscribeStream);
   lifecycle.track(adapter.onGenerationEnded(resetStreamState));
-  const unsubscribeMessage = adapter.onMessageReceived((text) => {
-    appMessageHub.emit(text);
-    displaySprites(extractTags(text));
+  const unsubscribeMessage = adapter.onMessageReceived((text3) => {
+    appMessageHub.emit(text3);
+    displaySprites(extractTags(text3));
     resetStreamState();
   });
   lifecycle.track(unsubscribeMessage);
@@ -11697,6 +14735,7 @@ async function init(lifecycle) {
   });
   lifecycle.track(mountMessagePostprocess({
     getSettings: () => settings,
+    getRawMessage: (messageId) => adapter.getRawMessage(messageId),
     decorateImages: storyCapture.decorate,
     cleanupImages: storyCapture.cleanup,
     processMessage: rendererRuntime.processMessage,
@@ -11733,7 +14772,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-10 19:52"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-13 20:24"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

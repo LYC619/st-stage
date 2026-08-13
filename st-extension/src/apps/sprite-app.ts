@@ -19,10 +19,15 @@ import {
   SPRITE_OPACITY_MIN,
 } from '../../../core/types'
 import { getActivePacks } from '../../../core/sprite-store'
-import { el, appButton, foldSection, hintField, numberRow, selectRow, textareaRow, toggleRow } from './widgets'
+import { el, appButton, foldSection, hintField, numberRow, rangeRow, selectRow, textareaRow, toggleRow } from './widgets'
 import { BUILTIN_TEMPLATE } from '../../../core/prompt-builder'
 
-export function spriteApp(): PhoneApp {
+export interface SpriteAppDeps {
+  /** 拖动滑块时仅预览悬浮窗透明度；松手后仍由 updateSettings 持久化。 */
+  previewOpacity?: (percent: number) => void
+}
+
+export function spriteApp(deps: SpriteAppDeps = {}): PhoneApp {
   return {
     id: 'sprites',
     name: '立绘',
@@ -87,12 +92,14 @@ export function spriteApp(): PhoneApp {
         numberRow('最近渲染楼层数', settings.recentFloors, RECENT_FLOORS_MIN, RECENT_FLOORS_MAX, (v) =>
           ctx.updateSettings({ ...ctx.getSettings(), recentFloors: v }),
         ),
-        numberRow(
+        rangeRow(
           '悬浮窗立绘不透明度（%）',
           settings.spriteOpacity,
           SPRITE_OPACITY_MIN,
           SPRITE_OPACITY_MAX,
+          (v) => deps.previewOpacity?.(v),
           (v) => ctx.updateSettings({ ...ctx.getSettings(), spriteOpacity: v }),
+          (v) => `${v}%`,
         ),
         toggleRow('隐藏 [立绘:xxx] 标签', settings.hideTagInMessage, (v) =>
           ctx.updateSettings({ ...ctx.getSettings(), hideTagInMessage: v }),

@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   overlaySetVisible: vi.fn(),
   overlaySetSprites: vi.fn(),
   overlayDestroy: vi.fn(),
+  overlayOpenSprites: undefined as (() => void) | undefined,
+  phoneOpenApp: vi.fn(),
   managerDestroy: vi.fn(),
   phoneDestroy: vi.fn(),
   newvarRuntimeDispose: vi.fn(),
@@ -73,8 +75,9 @@ vi.mock('./st-adapter', () => ({
   },
 }))
 vi.mock('./overlay-dom', () => ({
-  createOverlay: () => {
+  createOverlay: (...args: unknown[]) => {
     mocks.overlayCreates++
+    mocks.overlayOpenSprites = args[4] as (() => void) | undefined
     return {
       setAutoSwitch: vi.fn(), setLayout: vi.fn(), setVisible: mocks.overlaySetVisible,
       setImage: vi.fn(), setSprites: mocks.overlaySetSprites, setPlaceholder: vi.fn(),
@@ -90,7 +93,7 @@ vi.mock('./sprite-manager', () => ({
 }))
 vi.mock('../../core/phone-shell', () => ({
   createPhoneShell: () => ({
-    setState: vi.fn(), openApp: vi.fn(), setVisible: vi.fn(), destroy: mocks.phoneDestroy,
+    setState: vi.fn(), openApp: mocks.phoneOpenApp, setVisible: vi.fn(), destroy: mocks.phoneDestroy,
   }),
 }))
 vi.mock('./apps', () => ({
@@ -154,6 +157,7 @@ beforeEach(() => {
     streamHandler: undefined,
     generationEndedHandler: undefined,
     overlayCreates: 0,
+    overlayOpenSprites: undefined,
     currentCharacterName: '',
     rawMessages: new Map<string, string>(),
     postprocessDeps: undefined,
@@ -174,6 +178,15 @@ afterEach(() => {
 })
 
 describe('extension entry lifecycle', () => {
+  it('悬浮窗快捷入口直接打开立绘 App', async () => {
+    await importEntry('overlay-open-sprites')
+    await flushInit()
+
+    mocks.overlayOpenSprites?.()
+
+    expect(mocks.phoneOpenApp).toHaveBeenCalledWith('sprites')
+  })
+
   it('新变量显示开关变化时立即重处理已有楼层', async () => {
     mocks.builtinApps = [{
       id: NEWVAR_CHANNEL,

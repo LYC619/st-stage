@@ -25,6 +25,7 @@ describe('buildRendererPrompt', () => {
     const prompt = buildRendererPrompt(enabledSettings())
 
     expect(prompt).toMatch(/普通回复.*不需要/)
+    expect(prompt).toMatch(/用户明确要求.*模式.*演示.*测试.*必须/)
     expect(prompt).toMatch(/最多.*一个/)
     expect(prompt).toContain('不得只输出裸 JSON')
     expect(prompt).toMatch(/完整.*<STStageRender>.*<\/STStageRender>/)
