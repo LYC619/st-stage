@@ -72,6 +72,66 @@ function hasUpdateBlock(text: string): boolean {
   return updateBlockRanges(text).length > 0
 }
 
+function stripMarkdownFence(text: string): string | null {
+  const match = /^\s*```(?:json)?\s*\r?\n?([\s\S]*?)\r?\n?```\s*$/i.exec(text)
+  return match ? match[1] : null
+}
+
+function visibleUpdateVariants(inner: string): string[] {
+  const withAnalysis = inner
+    .replace(/<Analysis(?:\s[^>]*)?>/gi, '')
+    .replace(/<\/Analysis\s*>/gi, '')
+  const withoutAnalysis = inner.replace(/<Analysis(?:\s[^>]*)?>[\s\S]*?<\/Analysis\s*>/gi, '')
+  const variants = [withAnalysis, withoutAnalysis]
+  const normalized = new Set<string>()
+  for (const variant of variants) {
+    const fenced = stripMarkdownFence(variant)
+    for (const candidate of fenced === null ? [variant] : [variant, fenced]) {
+      const value = normalizeWhitespace(candidate)
+      if (value) normalized.add(value)
+    }
+  }
+  return [...normalized]
+}
+
+function compactVisibleProjection(text: string): string {
+  return text
+    // ST removes reasoning containers before the message reaches the DOM.
+    .replace(/<(?:thinking|reasoning)(?:\s[^>]*)?>[\s\S]*?<\/(?:thinking|reasoning)\s*>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/```(?:json)?/gi, '')
+    .replace(/\s+/g, '')
+}
+
+function edgeAnchors(text: string, edge: 'start' | 'end'): string[] {
+  const lengths = [48, 24, 12, 8, 6, 4]
+  const anchors: string[] = []
+  for (const length of lengths) {
+    if (text.length < length) continue
+    const anchor = edge === 'start' ? text.slice(0, length) : text.slice(-length)
+    if (!anchors.includes(anchor)) anchors.push(anchor)
+  }
+  if (anchors.length === 0 && text) anchors.push(text)
+  return anchors
+}
+
+function rawContextMatches(
+  rawPrefix: string,
+  rawSuffix: string,
+  visibleText: string,
+  start: number,
+  end: number,
+): boolean {
+  const prefix = compactVisibleProjection(rawPrefix)
+  const suffix = compactVisibleProjection(rawSuffix)
+  const before = visibleText.slice(0, start).replace(/\s+/g, '')
+  const after = visibleText.slice(end).replace(/\s+/g, '')
+  const prefixMatches = !prefix || edgeAnchors(prefix, 'end').some((anchor) => before.endsWith(anchor))
+  const suffixMatches = !suffix || edgeAnchors(suffix, 'start').some((anchor) => after.startsWith(anchor))
+  return prefixMatches && suffixMatches
+}
+
 function sanitizedUpdateRange(rawMessage: string | null, visibleText: string): { start: number; end: number } | null {
   if (rawMessage === null) return null
 
@@ -81,36 +141,30 @@ function sanitizedUpdateRange(rawMessage: string | null, visibleText: string): {
 
   const block = /<UpdateVariable(?:\s[^>]*)?>([\s\S]*?)<\/UpdateVariable\s*>/i.exec(rawMessage)
   if (!block) return null
-  const expectedVisible = normalizeWhitespace(
-    rawMessage
-      .replace(/<\/?UpdateVariable(?:\s[^>]*)?>/gi, '')
-      .replace(/<\/?Analysis(?:\s[^>]*)?>/gi, ''),
-  )
-  if (expectedVisible !== normalizeWhitespace(visibleText)) return null
-  const candidate = normalizeWhitespace(
-    block[1]
-      .replace(/<Analysis(?:\s[^>]*)?>/gi, '')
-      .replace(/<\/Analysis\s*>/gi, ''),
-  )
-  if (!candidate) return null
-
   const visible = normalizeWhitespaceWithOffsets(visibleText)
-  const matches: number[] = []
-  let from = 0
-  while (from <= visible.text.length - candidate.length) {
-    const index = visible.text.indexOf(candidate, from)
-    if (index < 0) break
-    matches.push(index)
-    if (matches.length > 1) return null
-    from = index + 1
-  }
-  if (matches.length !== 1) return null
+  const rawStart = block.index
+  const rawEnd = rawStart + block[0].length
+  for (const candidate of visibleUpdateVariants(block[1])) {
+    const matches: number[] = []
+    let from = 0
+    while (from <= visible.text.length - candidate.length) {
+      const index = visible.text.indexOf(candidate, from)
+      if (index < 0) break
+      matches.push(index)
+      if (matches.length > 1) break
+      from = index + 1
+    }
+    if (matches.length !== 1) continue
 
-  const startIndex = matches[0]
-  return {
-    start: visible.starts[startIndex],
-    end: visible.ends[startIndex + candidate.length - 1],
+    const startIndex = matches[0]
+    const start = visible.starts[startIndex]
+    const end = visible.ends[startIndex + candidate.length - 1]
+    if (!rawContextMatches(rawMessage.slice(0, rawStart), rawMessage.slice(rawEnd), visibleText, start, end)) {
+      continue
+    }
+    return { start, end }
   }
+  return null
 }
 
 function normalizeWhitespace(text: string): string {

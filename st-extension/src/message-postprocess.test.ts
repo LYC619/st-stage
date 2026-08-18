@@ -320,6 +320,36 @@ describe('可逆楼层渲染', () => {
     cleanup()
   })
 
+  it('真实 ST 清洗其他协议标签和 Analysis 后仍只隐藏唯一变量载荷', () => {
+    const update = '[{"op":"replace","path":"/好感度","value":28}]'
+    const renderer = '{"version":1,"mode":"cards","title":"今夜安顿"}'
+    const raw = [
+      '<thinking>Identity: Alserqi</thinking>',
+      '剧情正文',
+      `<STStageRender>${renderer}</STStageRender>`,
+      '<summary><history>本轮摘要</history></summary>',
+      '<UpdateVariable>',
+      '<Analysis>好感度更新至 28。</Analysis>',
+      update,
+      '</UpdateVariable>',
+    ].join('\n')
+    buildChat([{ html: [
+      '<p>剧情正文</p>',
+      `<p>${renderer}</p>`,
+      '<details><summary>摘要</summary><p>本轮摘要</p></details>',
+      `<p>${update}</p>`,
+    ].join('') }])
+    const settings = baseSettings({ enabled: false })
+    settings.apps[NEWVAR_APP_ID] = { enabled: true, hideUpdateBlocks: true }
+
+    processMessages(settings, 0, raw)
+
+    expect(mesText(0).textContent).toContain('剧情正文')
+    expect(mesText(0).textContent).toContain(renderer)
+    expect(mesText(0).textContent).toContain('本轮摘要')
+    expect(mesText(0).textContent).not.toContain('/好感度')
+  })
+
   it('raw message getter 失败时仍处理可见的字面变量块', async () => {
     const handlers = new Map<string, (...args: unknown[]) => void>()
     buildChat([{ text: '正文\n<UpdateVariable>变更</UpdateVariable>\n结尾' }])
