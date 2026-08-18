@@ -63,7 +63,7 @@ Evidence represented by code head `d4d26a4`:
 - 固定戳根目录与 `st-distribution/` 双轮重建稳定；4 个共享文件根目录/发布目录一致：
   - `bundle.js`: `C64679D52C3DBD1C1464B71BE9ACF32656E95FE3011C336F3BA4882F266BC638`
   - `index.js`: `D0E60A1B546D223922A7FBF01231B79205874963BDFFE4C963BD081347C9B849`
-  - `style.css`: `3BEC794D0E52C439A636A0BAB8926270405B7E1284B41F2B53AB31712AB5632D`
+  - `style.css`: `0F27EE547B51D0048C54332720536A2303F8769B191A64495B8CD38492587E67`
   - `version.json`: `DD5B494839A9979F2BBF49FB69C31F3F9FADAFE7A83A350F735434A253F8EBF4`
 - `st-distribution/` 恰好 6 个文件，不含图片、`public/`、`reference/` 或预设源码。
 - 一次最终 frozen reinstall 因非 TTY 进入 CI 重建后耗时异常而中止；离线重试确认本机 store 缺 tarball，网络重试被沙箱 `EACCES`/审批限流拒绝。该过程未修改锁文件或已提交产物，但本机 `node_modules` 需要在有网络权限时重新安装。
