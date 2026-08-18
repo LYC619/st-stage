@@ -3,10 +3,10 @@ status_version: 1
 project: st-stage
 base_branch: main
 verified_code_head: 4317d0bdc5a9904bf1cf143b7d937dec46c0ea93
-remote_code_head_at_update: bf44be7e75e08806eda8064543e9118b88ab133b
+remote_code_head_at_update: 52db323e35a68963b1f94570a7c241408b834db0
 build_version: 0.9.0+202608132024
-phase: round3-and-butler-ready-awaiting-real-sillytavern
-updated_at: 2026-08-13T20:39:01+08:00
+phase: merged-pushed-awaiting-real-sillytavern
+updated_at: 2026-08-18T18:58:47+08:00
 updated_by: codex
 verification_source: codex-round3-butler-2026-08-13
 history: docs/maintenance/history/2026-08-13-acceptance-round3-butler-performance.md
@@ -16,9 +16,9 @@ history: docs/maintenance/history/2026-08-13-acceptance-round3-butler-performanc
 
 ## Snapshot
 
-- 第三轮真实 ST 实测暴露的问题与管家 2.0 已在分支 `codex/butler-performance-2-design` 完成，代码与固定构建产物提交为 `4317d0b`。
-- 当前尚未合并或推送；`origin/main` 仍为 `bf44be7`。产品版本保持 `0.9.0`，构建戳为 `0.9.0+202608132024`。
-- 自动化门禁已完成。下一步是从该分支安装到真实 SillyTavern，复验修复项并执行管家新增验收；通过后再决定 `1.0.0`。
+- 第三轮真实 ST 实测暴露的问题与管家 2.0 已从 `codex/butler-performance-2-design` 快进合并到 `main`，代码与固定构建产物提交为 `4317d0b`，维护交接提交为 `52db323`。
+- 当前 `main` 已推送到 `origin/main`，远端代码头为 `52db323`。产品版本保持 `0.9.0`，构建戳为 `0.9.0+202608132024`。
+- 自动化门禁已完成。下一步是从 `main` 安装到真实 SillyTavern，复验修复项并执行管家新增验收；通过后再决定 `1.0.0`。
 - API 管理本轮未改。维护者已确认 OpenAI 兼容快速切换基本满足需求，冷门同格式渠道不再扩充；后续只按真实用户反馈修复。
 
 ## Delivered Scope
@@ -108,6 +108,6 @@ See `docs/maintenance/DEFERRED.md` for details.
 
 ## Next Actions
 
-- 安装分支 `codex/butler-performance-2-design` 的构建，执行上方 25 项真实 SillyTavern 验收并记录失败项。
+- 从 `main` 或 `origin/main` 安装构建，执行上方 25 项真实 SillyTavern 验收并记录失败项。
 - 只修真实验收暴露的问题；API 管理不扩张渠道矩阵，除非真实用户反馈证明当前 OpenAI 兼容路径不足。
 - 全部阻断项通过后，再将 `manifest.json` 与构建产物升级为 `1.0.0`，重新跑发布门禁，然后合并并推送。
