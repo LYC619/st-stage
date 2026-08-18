@@ -14,6 +14,13 @@ These items are known and intentionally do not block the current acceptance bran
 - Impact: the structured block safely falls back to original text, but valid prose may not render through the enhanced mode.
 - Location: `st-extension/src/apps/renderer/parser.ts`.
 
+## Renderer Choice Branch Generation
+
+- Behavior: Cards mode currently inserts the selected action into the SillyTavern composer and requires the user to review and send it. It does not ask the model to pre-generate every branch or delete unselected branches before sending.
+- Impact: the current workflow is predictable and does not spend tokens on unused branches, but it does not provide an instant pre-rendered branching-story experience.
+- Why deferred: pre-generated branches require a separate protocol, token-budget policy, persisted selection state, safe pruning rules, and real-ST generation/send integration. It should not be folded into the narrow Renderer recovery fix.
+- Location: `st-extension/src/apps/renderer/modes/cards.ts` and the Renderer prompt contract.
+
 ## Product Version Decision
 
 - Behavior: the cache-busting build stamp was refreshed, while `manifest.json` remains `0.9.0`.
