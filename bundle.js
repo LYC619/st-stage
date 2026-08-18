@@ -1,5 +1,5 @@
 // core/types.ts
-var SETTINGS_VERSION = 6;
+var SETTINGS_VERSION = 7;
 var RECENT_FLOORS_DEFAULT = 6;
 var RECENT_FLOORS_MIN = 1;
 var RECENT_FLOORS_MAX = 50;
@@ -153,6 +153,19 @@ function normalizeLabels(raw) {
     if (labels.length === MAX_LABELS) break;
   }
   return labels;
+}
+function normalizePackKind(raw) {
+  return raw === "sprite" || raw === "illustration" ? raw : void 0;
+}
+function packKind(pack) {
+  return normalizePackKind(pack.kind) ?? "sprite";
+}
+function packLabels(pack) {
+  return {
+    role: (pack.roleName ?? "").trim() || "其他",
+    type: packKind(pack) === "illustration" ? "插图" : "立绘",
+    custom: normalizeLabels(pack.customTags)
+  };
 }
 function normalizeNote(raw) {
   return typeof raw === "string" ? clipCodePoints(raw.trim(), MAX_NOTE_CODE_POINTS) : "";
@@ -1002,6 +1015,42 @@ function removePacks(settings, packIds) {
   let next = settings;
   for (const id of packIds) next = removePack(next, id);
   return next;
+}
+function setPackKind(settings, packIds, kind) {
+  const selected = new Set(packIds);
+  return {
+    ...settings,
+    packs: settings.packs.map((pack) => selected.has(pack.id) ? { ...pack, kind } : pack)
+  };
+}
+function addPackCustomTag(settings, packIds, rawTag) {
+  const tag = normalizeLabels([rawTag])[0];
+  if (!tag) return settings;
+  const selected = new Set(packIds);
+  return {
+    ...settings,
+    packs: settings.packs.map((pack) => {
+      if (!selected.has(pack.id)) return pack;
+      const customTags = normalizeLabels([...pack.customTags ?? [], tag]);
+      return { ...pack, customTags };
+    })
+  };
+}
+function removePackCustomTag(settings, packIds, rawTag) {
+  const tag = normalizeLabels([rawTag])[0];
+  if (!tag) return settings;
+  const selected = new Set(packIds);
+  return {
+    ...settings,
+    packs: settings.packs.map((pack) => {
+      if (!selected.has(pack.id)) return pack;
+      const customTags = normalizeLabels(pack.customTags).filter((item) => item !== tag);
+      const next = { ...pack };
+      if (customTags.length > 0) next.customTags = customTags;
+      else delete next.customTags;
+      return next;
+    })
+  };
 }
 function isSafeLocalUserImagePath(path) {
   if (!path.startsWith("/user/images/") || /%(?:2e|2f|5c)/i.test(path) || path.includes("\0")) return false;
@@ -1904,6 +1953,12 @@ function encodeShareStringV2(pack) {
   if (entries.length === 0) return null;
   const segments = [sanitizePackName(pack.name) || "分享立绘包"];
   if (pack.author) segments.push(`@author=${sanitizePackName(pack.author)}`);
+  const kind = normalizePackKind(pack.kind);
+  if (kind) segments.push(`@kind=${kind}`);
+  const customTags = normalizeLabels(pack.customTags);
+  if (customTags.length > 0) {
+    segments.push(`@tags=${encodeURIComponent(JSON.stringify(customTags))}`);
+  }
   segments.push(...entries);
   return {
     text: SHARE_PREFIX_V2 + segments.join("|"),
@@ -1922,6 +1977,8 @@ function decodeShareStringV2(raw) {
   const segments = body.split("|");
   const name = sanitizePackName(segments[0] ?? "") || "分享立绘包";
   let author;
+  let kind;
+  let customTags = [];
   const sprites = [];
   const seen = /* @__PURE__ */ new Set();
   for (const segment of segments.slice(1)) {
@@ -1933,6 +1990,14 @@ function decodeShareStringV2(raw) {
       const key2 = part.slice(1, eq2).trim().toLowerCase();
       const value = part.slice(eq2 + 1).trim();
       if (key2 === "author") author = sanitizePackName(value) || void 0;
+      if (key2 === "kind") kind = normalizePackKind(value);
+      if (key2 === "tags") {
+        try {
+          customTags = normalizeLabels(JSON.parse(decodeURIComponent(value)));
+        } catch {
+          customTags = [];
+        }
+      }
       continue;
     }
     const eq = part.indexOf("=");
@@ -1971,6 +2036,8 @@ function decodeShareStringV2(raw) {
     id: genId(),
     name,
     author,
+    ...kind ? { kind } : {},
+    ...customTags.length > 0 ? { customTags } : {},
     ...commonRole ? { roleName: commonRole } : {},
     ...commonOutfit ? { outfit: commonOutfit } : {},
     sprites,
@@ -2193,6 +2260,16 @@ function sanitizePresetOverrides(raw, presets = getPresetPacks()) {
         const sanitized = sanitizedNullableTag(source[field]);
         if (sanitized !== void 0) metadata[field] = sanitized;
       }
+      if (source.kind === null) metadata.kind = null;
+      else {
+        const kind = normalizePackKind(source.kind);
+        if (kind) metadata.kind = kind;
+      }
+      if (source.customTags === null) metadata.customTags = null;
+      else if (Array.isArray(source.customTags)) {
+        const customTags = normalizeLabels(source.customTags);
+        metadata.customTags = customTags.length > 0 ? customTags : null;
+      }
       if (source.promptNote === null) metadata.promptNote = null;
       else if (typeof source.promptNote === "string") {
         const note = normalizeNote(source.promptNote);
@@ -2239,6 +2316,10 @@ function mergePresetPacks(overrides, presets = getPresetPacks()) {
         if (value === null) delete merged[field];
         else if (value !== void 0) merged[field] = value;
       }
+      if (metadata.kind === null) delete merged.kind;
+      else if (metadata.kind !== void 0) merged.kind = metadata.kind;
+      if (metadata.customTags === null) delete merged.customTags;
+      else if (metadata.customTags !== void 0) merged.customTags = metadata.customTags;
       if (metadata.promptNotePlacement === null) delete merged.promptNotePlacement;
       else if (metadata.promptNotePlacement !== void 0) {
         merged.promptNotePlacement = metadata.promptNotePlacement;
@@ -2402,6 +2483,8 @@ function migratePack(raw) {
   });
   const roleName = typeof p.roleName === "string" ? normalizeTag(p.roleName) : "";
   const outfit = typeof p.outfit === "string" ? normalizeTag(p.outfit) : "";
+  const kind = normalizePackKind(p.kind);
+  const customTags = normalizeLabels(p.customTags);
   const promptNote = normalizeNote(p.promptNote);
   const outfitNotes = normalizeOutfitNotes(p.outfitNotes);
   const sourceStoryKey = typeof p.sourceStoryKey === "string" ? p.sourceStoryKey.trim() : "";
@@ -2410,6 +2493,8 @@ function migratePack(raw) {
     name,
     ...typeof p.author === "string" && p.author ? { author: p.author } : {},
     ...typeof p.description === "string" && p.description ? { description: p.description } : {},
+    ...kind ? { kind } : {},
+    ...customTags.length > 0 ? { customTags } : {},
     ...roleName ? { roleName } : {},
     ...outfit ? { outfit } : {},
     ...promptNote ? { promptNote } : {},
@@ -2423,6 +2508,31 @@ function migratePack(raw) {
 }
 
 // core/image-compress.ts
+function analyzeImagePixels(data) {
+  if (data.length < 4) return "opaque";
+  const luminanceBins = /* @__PURE__ */ new Map();
+  let grayscalePixels = 0;
+  const totalPixels = Math.floor(data.length / 4);
+  for (let offset = 0; offset + 3 < data.length; offset += 4) {
+    const red = data[offset];
+    const green = data[offset + 1];
+    const blue = data[offset + 2];
+    const alpha = data[offset + 3];
+    if (alpha < 250) return "transparent";
+    if (Math.max(red, green, blue) - Math.min(red, green, blue) > 5) continue;
+    grayscalePixels += 1;
+    const bin = Math.round((red + green + blue) / 3 / 8) * 8;
+    luminanceBins.set(bin, (luminanceBins.get(bin) ?? 0) + 1);
+  }
+  const dominant = [...luminanceBins.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2);
+  if (dominant.length === 2) {
+    const [[firstValue, firstCount], [secondValue, secondCount]] = dominant;
+    const difference = Math.abs(firstValue - secondValue);
+    const dominantCount = firstCount + secondCount;
+    if (grayscalePixels / totalPixels >= 0.5 && firstCount / totalPixels >= 0.1 && secondCount / totalPixels >= 0.1 && dominantCount / totalPixels >= 0.5 && Math.min(firstValue, secondValue) >= 160 && difference >= 8 && difference <= 64) return "opaque-checkerboard";
+  }
+  return "opaque";
+}
 function blobToDataUri(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -2464,14 +2574,20 @@ async function compressImage(file, options = {}) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return original;
     ctx.drawImage(img, 0, 0, width, height);
+    let transparency;
+    try {
+      transparency = analyzeImagePixels(ctx.getImageData(0, 0, width, height).data);
+    } catch {
+    }
     const compressedUri = canvas.toDataURL("image/webp", quality);
     if (!compressedUri.startsWith("data:image/webp") || compressedUri.length >= originalUri.length) {
-      return original;
+      return { ...original, ...transparency ? { transparency } : {} };
     }
     return {
       dataUri: compressedUri,
       compressed: true,
-      bytes: estimateDataUriBytes(compressedUri)
+      bytes: estimateDataUriBytes(compressedUri),
+      ...transparency ? { transparency } : {}
     };
   } catch {
     return original;
@@ -2534,6 +2650,7 @@ function createStoryPack(story) {
   return {
     id: `story_${hash(story.key)}`,
     name: sanitizePackName(`Story - ${title2}`) || "Story",
+    kind: "illustration",
     roleName: normalizeTag(story.characterName) || void 0,
     sourceStoryKey: story.key,
     sprites: []
@@ -3078,12 +3195,15 @@ function applyPackMerge(packs, choices, result) {
     return sprite;
   });
   const first = packs[0];
+  const customTags = normalizeLabels(packs.flatMap((pack) => pack.customTags ?? []));
   const coverTag = first?.coverTag && sprites.some((sprite) => sprite.tag === first.coverTag) ? first.coverTag : sprites[0]?.tag;
   return {
     id: result.id,
     name: result.name,
     ...first?.author ? { author: first.author } : {},
     ...first?.description ? { description: first.description } : {},
+    ...first?.kind ? { kind: first.kind } : {},
+    ...customTags.length > 0 ? { customTags } : {},
     ...commonRole ? { roleName: commonRole } : {},
     ...commonOutfit ? { outfit: commonOutfit } : {},
     ...coverTag ? { coverTag } : {},
@@ -3120,11 +3240,15 @@ async function exportPack(pack, embedHosted = false) {
   const promptNote = normalizeNote(pack.promptNote);
   const outfitNotes = normalizeOutfitNotes(pack.outfitNotes);
   const sourceStoryKey = typeof pack.sourceStoryKey === "string" ? pack.sourceStoryKey.trim() : "";
+  const kind = normalizePackKind(pack.kind);
+  const customTags = normalizeLabels(pack.customTags);
   return {
     format: "sprite-pack@3",
     name: pack.name,
     author: pack.author,
     description: pack.description,
+    ...kind ? { kind } : {},
+    ...customTags.length > 0 ? { customTags } : {},
     ...pack.roleName ? { roleName: pack.roleName } : {},
     ...pack.outfit ? { outfit: pack.outfit } : {},
     ...promptNote ? { promptNote } : {},
@@ -3191,6 +3315,8 @@ function importPack(jsonText) {
   const coverTag = sprites.some((s) => s.tag === normalizedCover) ? normalizedCover : void 0;
   const roleName = typeof file.roleName === "string" ? normalizeTag(file.roleName) : "";
   const outfit = typeof file.outfit === "string" ? normalizeTag(file.outfit) : "";
+  const kind = normalizePackKind(file.kind);
+  const customTags = normalizeLabels(file.customTags);
   const promptNote = normalizeNote(file.promptNote);
   const outfitNotes = normalizeOutfitNotes(file.outfitNotes);
   const sourceStoryKey = typeof file.sourceStoryKey === "string" ? file.sourceStoryKey.trim() : "";
@@ -3201,6 +3327,8 @@ function importPack(jsonText) {
     description: typeof file.description === "string" ? sanitizeDescription(file.description) || void 0 : void 0,
     ...roleName ? { roleName } : {},
     ...outfit ? { outfit } : {},
+    ...kind ? { kind } : {},
+    ...customTags.length > 0 ? { customTags } : {},
     ...promptNote ? { promptNote } : {},
     ...file.promptNotePlacement === "before-list" || file.promptNotePlacement === "after-list" ? { promptNotePlacement: file.promptNotePlacement } : {},
     ...Object.keys(outfitNotes).length > 0 ? { outfitNotes } : {},
@@ -3254,6 +3382,8 @@ function splitPackByGroup(pack) {
       id: genId(),
       name: item.packName,
       author: pack.author,
+      ...pack.kind ? { kind: pack.kind } : {},
+      ...pack.customTags?.length ? { customTags: [...pack.customTags] } : {},
       roleName: item.roleName,
       ...pack.outfit ? { outfit: pack.outfit } : {},
       sprites,
@@ -4429,18 +4559,17 @@ ${options}`,
     body.append(strip);
     if (batchMode) {
       const tip = el("div", "so-status so-batch-tip");
-      tip.textContent = "批量管理：点卡片勾选资源操作；拖拽卡片或用 ◀ ▶ 调整顺序。预设包可保存本地或分享，但不可删除。";
+      tip.textContent = "批量管理：先勾选图包，再统一设置类型或标签；资源操作和排序仍可在上方完成。预设包可保存本地或分享，但不可删除。";
       body.append(tip);
+      body.append(renderBatchClassificationTools(body));
     }
     const useFold = settings.galleryFoldByRole && !batchMode;
     const grid = el("div", useFold ? "so-pack-list-folded" : "so-pack-grid");
     const boundState = (pack) => boundIds.includes(pack.id) ? binding?.enabled ? "active" : "off" : null;
     if (useFold) {
       for (const group of groupPacksByRole(settings.packs)) {
-        if (!group.role) {
-          const standalone = el("div", "so-pack-grid so-role-pack-grid so-role-pack-standalone");
-          standalone.append(renderPackCard(group.packs[0], boundState(group.packs[0])));
-          grid.append(standalone);
+        if (group.packCount === 1) {
+          grid.append(renderPackCard(group.packs[0], boundState(group.packs[0])));
           continue;
         }
         const section2 = el("div", "so-role-pack-group");
@@ -4480,6 +4609,113 @@ ${options}`,
   }
   function selectedPacks() {
     return deps.getSettings().packs.filter((pack) => selectedPackIds.has(pack.id));
+  }
+  function persistSelectedPresetMetadata(settings, packIds) {
+    let next = settings;
+    for (const packId of packIds) {
+      if (!isPresetPack(packId)) continue;
+      const pack = next.packs.find((candidate) => candidate.id === packId);
+      if (!pack) continue;
+      const customTags = normalizeLabels(pack.customTags);
+      next = setPresetMetadata(next, packId, {
+        name: pack.name,
+        author: pack.author ?? null,
+        description: pack.description ?? null,
+        roleName: pack.roleName ?? null,
+        outfit: pack.outfit ?? null,
+        promptNote: pack.promptNote ?? null,
+        promptNotePlacement: pack.promptNotePlacement ?? null,
+        outfitNotes: pack.outfitNotes ?? null,
+        kind: pack.kind ?? null,
+        customTags: customTags.length > 0 ? customTags : null
+      });
+    }
+    return next;
+  }
+  function renderBatchClassificationTools(body) {
+    const panel = el("div", "so-batch-classification");
+    const ids = [...selectedPackIds];
+    const kindSelect = document.createElement("select");
+    kindSelect.className = "text_pole so-batch-kind-select";
+    for (const [value, label] of [["sprite", "立绘"], ["illustration", "插图"]]) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      kindSelect.append(option);
+    }
+    const kindRow = el("div", "so-row");
+    kindRow.append(
+      labeled("类型", kindSelect),
+      button("设置类型", () => {
+        if (selectedPackIds.size === 0) {
+          toast(body, "请先勾选要设置的图包");
+          return;
+        }
+        const selected = [...selectedPackIds];
+        const changed = setPackKind(
+          deps.getSettings(),
+          selected,
+          kindSelect.value === "illustration" ? "illustration" : "sprite"
+        );
+        commit(persistSelectedPresetMetadata(changed, selected));
+        toast(body, `已设置 ${selected.length} 个图包的类型`);
+      })
+    );
+    const tagInput = textInput("输入自定义标签");
+    tagInput.classList.add("so-batch-tag-input");
+    tagInput.maxLength = 32;
+    const addRow = el("div", "so-row");
+    addRow.append(
+      labeled("自定义标签", tagInput),
+      button("添加标签", () => {
+        const tag = normalizeLabels([tagInput.value])[0];
+        if (selectedPackIds.size === 0) {
+          toast(body, "请先勾选要设置的图包");
+          return;
+        }
+        if (!tag) {
+          toast(body, "请输入标签");
+          return;
+        }
+        const selected = [...selectedPackIds];
+        const changed = addPackCustomTag(deps.getSettings(), selected, tag);
+        commit(persistSelectedPresetMetadata(changed, selected));
+        toast(body, `已为 ${selected.length} 个图包添加「${tag}」`);
+      })
+    );
+    const removeSelect = document.createElement("select");
+    removeSelect.className = "text_pole so-batch-tag-remove-select";
+    const emptyOption = document.createElement("option");
+    emptyOption.value = "";
+    emptyOption.textContent = ids.length === 0 ? "先勾选图包" : "选择要移除的标签";
+    removeSelect.append(emptyOption);
+    const selectedTags = normalizeLabels(selectedPacks().flatMap((pack) => pack.customTags ?? []));
+    for (const tag of selectedTags) {
+      const option = document.createElement("option");
+      option.value = tag;
+      option.textContent = tag;
+      removeSelect.append(option);
+    }
+    const removeRow = el("div", "so-row");
+    removeRow.append(
+      labeled("移除标签", removeSelect),
+      button("移除标签", () => {
+        if (selectedPackIds.size === 0) {
+          toast(body, "请先勾选要设置的图包");
+          return;
+        }
+        if (!removeSelect.value) {
+          toast(body, "请选择要移除的标签");
+          return;
+        }
+        const selected = [...selectedPackIds];
+        const changed = removePackCustomTag(deps.getSettings(), selected, removeSelect.value);
+        commit(persistSelectedPresetMetadata(changed, selected));
+        toast(body, `已从 ${selected.length} 个图包移除「${removeSelect.value}」`);
+      })
+    );
+    panel.append(kindRow, addRow, removeRow);
+    return panel;
   }
   function sameSprite(pack, source) {
     return pack.sprites.find(
@@ -4688,8 +4924,10 @@ ${preview}
     title2.textContent = role;
     const detail = el("small");
     detail.textContent = `${packs.length} 个图包 · ${spriteCount} 张`;
+    const count = el("span", "so-role-stack-count");
+    count.textContent = `${packs.length} 个图包`;
     info.append(title2, detail);
-    face.append(coverBox, info);
+    face.append(coverBox, count, info);
     stack.append(face);
     stack.addEventListener("click", expand);
     return stack;
@@ -4743,7 +4981,14 @@ ${preview}
     nameEl.textContent = pack.name;
     const metaEl = el("small");
     metaEl.textContent = `${pack.sprites.length} 张 · ${pack.author ?? "未知作者"}`;
-    info.append(nameEl, metaEl);
+    const labels = packLabels(pack);
+    const labelRow = el("div", "so-pack-labels");
+    for (const text3 of [`角色：${labels.role}`, `类型：${labels.type}`, ...labels.custom]) {
+      const chip = el("span");
+      chip.textContent = text3;
+      labelRow.append(chip);
+    }
+    info.append(nameEl, metaEl, labelRow);
     card.append(coverBox, info);
     if (batchMode) {
       const preset = isPresetPack(pack.id);
@@ -5595,6 +5840,8 @@ ${preview}
     let unprocessed = 0;
     let hosted = 0;
     let hostFailed = 0;
+    let opaqueImages = 0;
+    let checkerboardImages = 0;
     const newPackIds = /* @__PURE__ */ new Map();
     function persisted(targetId, sprite) {
       return Boolean(
@@ -5633,6 +5880,8 @@ ${preview}
         }
         try {
           const result = await compressImage(file);
+          if (result.transparency === "opaque-checkerboard") checkerboardImages += 1;
+          else if (result.transparency === "opaque") opaqueImages += 1;
           const url = await deps.adapter.saveImage(
             file.name,
             result.dataUri,
@@ -5729,6 +5978,12 @@ ${preview}
       ];
       if (skipped > 0) parts.push(`跳过 ${skipped} 张（重名/无效）`);
       if (useImgbb) parts.push(`imgbb 成功 ${hosted}${hostFailed > 0 ? `、失败 ${hostFailed}` : ""}`);
+      if (checkerboardImages > 0) {
+        parts.push(`警告：${checkerboardImages} 张疑似把棋盘格烤进图片，插件无法安全自动去除`);
+      }
+      if (opaqueImages > 0) {
+        parts.push(`提示：${opaqueImages} 张没有透明像素，作为立绘时会显示完整背景`);
+      }
       try {
         toast(backdrop?.querySelector(".so-manager-body"), parts.join("，"));
       } catch (error) {
@@ -5748,7 +6003,7 @@ ${preview}
       (s) => getSpriteSource(s) !== "hosted" && !(s.remoteUrl && /^https?:\/\//.test(s.remoteUrl))
     );
     let ok = 0;
-    let fail2 = 0;
+    let fail = 0;
     for (let i = 0; i < pending.length; i++) {
       const sprite = pending[i];
       toast(body, `补传中 ${i + 1}/${pending.length}：${sprite.tag}`);
@@ -5756,7 +6011,7 @@ ${preview}
         const dataUri = sprite.url.startsWith("data:") ? sprite.url : await urlToDataUri(sprite.url);
         const up = await uploadToImgbb(imgbbApiKey, dataUri);
         if (!isValidImgbbResult(up)) {
-          fail2++;
+          fail++;
           continue;
         }
         const latest = deps.getSettings().packs.find((p) => p.id === packId);
@@ -5764,7 +6019,7 @@ ${preview}
           (s) => s.tag === sprite.tag && (s.group ?? "") === (sprite.group ?? "") && (s.outfit ?? "") === (sprite.outfit ?? "")
         );
         if (!latest || !target) {
-          fail2++;
+          fail++;
           continue;
         }
         if (!updateChecked(
@@ -5776,13 +6031,13 @@ ${preview}
         ok++;
       } catch (err) {
         console.warn("[sprite-overlay] 补传失败", err);
-        fail2++;
+        fail++;
       }
     }
     render2();
     toast(
       backdrop?.querySelector(".so-manager-body"),
-      `补传完成：成功 ${ok} 张${fail2 > 0 ? `，失败 ${fail2} 张（可再次点击重试）` : ""}`
+      `补传完成：成功 ${ok} 张${fail > 0 ? `，失败 ${fail} 张（可再次点击重试）` : ""}`
     );
   }
   function destroy() {
@@ -5938,7 +6193,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-13 20:24"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-18 23:07"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
   return () => wrapper.remove();
@@ -6139,6 +6394,47 @@ function updateBlockRanges(text3) {
 function hasUpdateBlock(text3) {
   return updateBlockRanges(text3).length > 0;
 }
+function stripMarkdownFence(text3) {
+  const match = /^\s*```(?:json)?\s*\r?\n?([\s\S]*?)\r?\n?```\s*$/i.exec(text3);
+  return match ? match[1] : null;
+}
+function visibleUpdateVariants(inner) {
+  const withAnalysis = inner.replace(/<Analysis(?:\s[^>]*)?>/gi, "").replace(/<\/Analysis\s*>/gi, "");
+  const withoutAnalysis = inner.replace(/<Analysis(?:\s[^>]*)?>[\s\S]*?<\/Analysis\s*>/gi, "");
+  const variants = [withAnalysis, withoutAnalysis];
+  const normalized = /* @__PURE__ */ new Set();
+  for (const variant of variants) {
+    const fenced = stripMarkdownFence(variant);
+    for (const candidate of fenced === null ? [variant] : [variant, fenced]) {
+      const value = normalizeWhitespace(candidate);
+      if (value) normalized.add(value);
+    }
+  }
+  return [...normalized];
+}
+function compactVisibleProjection(text3) {
+  return text3.replace(/<(?:thinking|reasoning)(?:\s[^>]*)?>[\s\S]*?<\/(?:thinking|reasoning)\s*>/gi, "").replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]*>/g, "").replace(/```(?:json)?/gi, "").replace(/\s+/g, "");
+}
+function edgeAnchors(text3, edge) {
+  const lengths = [48, 24, 12, 8, 6, 4];
+  const anchors = [];
+  for (const length of lengths) {
+    if (text3.length < length) continue;
+    const anchor = edge === "start" ? text3.slice(0, length) : text3.slice(-length);
+    if (!anchors.includes(anchor)) anchors.push(anchor);
+  }
+  if (anchors.length === 0 && text3) anchors.push(text3);
+  return anchors;
+}
+function rawContextMatches(rawPrefix, rawSuffix, visibleText, start, end) {
+  const prefix = compactVisibleProjection(rawPrefix);
+  const suffix = compactVisibleProjection(rawSuffix);
+  const before = visibleText.slice(0, start).replace(/\s+/g, "");
+  const after = visibleText.slice(end).replace(/\s+/g, "");
+  const prefixMatches = !prefix || edgeAnchors(prefix, "end").some((anchor) => before.endsWith(anchor));
+  const suffixMatches = !suffix || edgeAnchors(suffix, "start").some((anchor) => after.startsWith(anchor));
+  return prefixMatches && suffixMatches;
+}
 function sanitizedUpdateRange(rawMessage, visibleText) {
   if (rawMessage === null) return null;
   const openings = rawMessage.match(/<UpdateVariable(?:\s[^>]*)?>/gi) ?? [];
@@ -6146,30 +6442,29 @@ function sanitizedUpdateRange(rawMessage, visibleText) {
   if (openings.length !== 1 || closings.length !== 1) return null;
   const block = /<UpdateVariable(?:\s[^>]*)?>([\s\S]*?)<\/UpdateVariable\s*>/i.exec(rawMessage);
   if (!block) return null;
-  const expectedVisible = normalizeWhitespace(
-    rawMessage.replace(/<\/?UpdateVariable(?:\s[^>]*)?>/gi, "").replace(/<\/?Analysis(?:\s[^>]*)?>/gi, "")
-  );
-  if (expectedVisible !== normalizeWhitespace(visibleText)) return null;
-  const candidate = normalizeWhitespace(
-    block[1].replace(/<Analysis(?:\s[^>]*)?>/gi, "").replace(/<\/Analysis\s*>/gi, "")
-  );
-  if (!candidate) return null;
   const visible = normalizeWhitespaceWithOffsets(visibleText);
-  const matches = [];
-  let from = 0;
-  while (from <= visible.text.length - candidate.length) {
-    const index = visible.text.indexOf(candidate, from);
-    if (index < 0) break;
-    matches.push(index);
-    if (matches.length > 1) return null;
-    from = index + 1;
+  const rawStart = block.index;
+  const rawEnd = rawStart + block[0].length;
+  for (const candidate of visibleUpdateVariants(block[1])) {
+    const matches = [];
+    let from = 0;
+    while (from <= visible.text.length - candidate.length) {
+      const index = visible.text.indexOf(candidate, from);
+      if (index < 0) break;
+      matches.push(index);
+      if (matches.length > 1) break;
+      from = index + 1;
+    }
+    if (matches.length !== 1) continue;
+    const startIndex = matches[0];
+    const start = visible.starts[startIndex];
+    const end = visible.ends[startIndex + candidate.length - 1];
+    if (!rawContextMatches(rawMessage.slice(0, rawStart), rawMessage.slice(rawEnd), visibleText, start, end)) {
+      continue;
+    }
+    return { start, end };
   }
-  if (matches.length !== 1) return null;
-  const startIndex = matches[0];
-  return {
-    start: visible.starts[startIndex],
-    end: visible.ends[startIndex + candidate.length - 1]
-  };
+  return null;
 }
 function normalizeWhitespace(text3) {
   return text3.replace(/\s+/g, " ").trim();
@@ -7140,12 +7435,12 @@ function flattenNumbers(value, prefix = "", output = {}) {
 }
 function compareMeasurements(before, after) {
   const reasons = [];
-  if (before.invalidReason || after.invalidReason) reasons.push("样本无效");
+  if (before.invalidReason || after.invalidReason) reasons.push("检查无效");
   if (!before.chatKey || !after.chatKey || before.chatKey !== after.chatKey) reasons.push("聊天不同");
-  if (before.probe !== after.probe) reasons.push("探针不同");
-  if (!before.foreground || !after.foreground || before.foreground !== after.foreground) reasons.push("前台状态不同");
-  if (before.durationMs !== after.durationMs || before.durationMs !== 6e3) reasons.push("采样时长不同");
-  if (capabilitySignature(before) !== capabilitySignature(after)) reasons.push("能力集合不同");
+  if (before.probe !== after.probe) reasons.push("检查方式不同");
+  if (!before.foreground || !after.foreground || before.foreground !== after.foreground) reasons.push("页面状态不同");
+  if (before.durationMs !== after.durationMs || before.durationMs !== 6e3) reasons.push("检查时长不同");
+  if (capabilitySignature(before) !== capabilitySignature(after)) reasons.push("可读取的数据不同");
   const deltas = {};
   if (reasons.length === 0) {
     const beforeNumbers = flattenNumbers(before.metrics);
@@ -7175,7 +7470,7 @@ function finding(input) {
     ...input.actionId ? { actionId: input.actionId } : {},
     explanation: {
       ...input.explanation,
-      result: input.explanation.result ?? "尚未应用 / 待复测。"
+      result: input.explanation.result ?? "尚未应用，等待再次检查。"
     }
   };
 }
@@ -7195,21 +7490,21 @@ function buildSafePlan(current2, deviceClass) {
   const messageLimit = deviceClass === "mobile" ? 20 : 50;
   const nextMessages = current2.chat_truncation === 0 ? messageLimit : Math.min(current2.chat_truncation, messageLimit);
   const candidates = [
-    planAction("perf-fast-ui", "开启 No Blur", "fast_ui_mode", current2.fast_ui_mode, true),
+    planAction("perf-fast-ui", "关闭背景模糊", "fast_ui_mode", current2.fast_ui_mode, true),
     planAction("perf-reduced-motion", "开启减少动画", "reduced_motion", current2.reduced_motion, true, true),
     planAction("perf-no-shadows", "关闭阴影", "noShadows", current2.noShadows, true),
-    planAction("perf-smooth-streaming", "关闭平滑流式", "smooth_streaming", current2.smooth_streaming, false),
-    planAction("perf-stream-fade", "关闭流式淡入", "stream_fade_in", current2.stream_fade_in, false),
+    planAction("perf-smooth-streaming", "关闭平滑文字更新", "smooth_streaming", current2.smooth_streaming, false),
+    planAction("perf-stream-fade", "关闭文字淡入", "stream_fade_in", current2.stream_fade_in, false),
     planAction(
       "perf-streaming-fps",
-      "降低流式帧率",
+      "降低流式更新频率",
       "streaming_fps",
       current2.streaming_fps,
       Math.min(current2.streaming_fps, 15)
     ),
     planAction(
       "perf-chat-truncation",
-      "限制消息 DOM 数量",
+      "减少同时显示的消息",
       "chat_truncation",
       current2.chat_truncation,
       nextMessages,
@@ -7236,7 +7531,7 @@ function settingFinding(id, actionId, detected, change, reason, impact, reload) 
       reason,
       impact,
       reload,
-      restore: "可以从本次性能设置事务恢复到修改前的原值。"
+      restore: "可以点“恢复本次性能设置”回到修改前。"
     }
   });
 }
@@ -7262,35 +7557,35 @@ function diagnose(snapshot, current2) {
     if (!current2.fast_ui_mode) findings.push(settingFinding(
       "setting-no-blur",
       "perf-fast-ui",
-      "No Blur 当前未开启，界面仍可能使用背景模糊。",
-      "开启 No Blur。",
-      "背景模糊会增加合成与 GPU 工作。",
-      "界面毛玻璃效果会减少，功能与生成语义不变。",
+      "背景模糊当前开启。",
+      "关闭背景模糊。",
+      "背景模糊会增加页面绘制工作。",
+      "界面毛玻璃效果会减少，不改变模型回复内容。",
       "通常立即生效；部分界面在刷新后完全更新。"
     ));
     if (!current2.reduced_motion) findings.push(settingFinding(
       "setting-reduced-motion",
       "perf-reduced-motion",
-      "减少动画当前未开启。",
-      "开启减少动画。",
+      "动画效果当前较多。",
+      "减少动画效果。",
       "减少持续过渡和动画更新可降低主线程与合成工作。",
-      "界面过渡会更直接，功能与生成语义不变。",
+      "界面过渡会更直接，不改变模型回复内容。",
       "刷新页面后完全生效。"
     ));
     if (!current2.noShadows) findings.push(settingFinding(
       "setting-no-shadows",
       "perf-no-shadows",
-      "关闭阴影当前未开启。",
-      "开启关闭阴影。",
+      "阴影效果当前开启。",
+      "关闭阴影效果。",
       "减少阴影绘制可降低重绘成本。",
-      "界面层次感会减弱，功能与生成语义不变。",
+      "界面层次感会减弱，不改变模型回复内容。",
       "通常立即生效。"
     ));
     if (current2.smooth_streaming) findings.push(settingFinding(
       "setting-smooth-streaming",
       "perf-smooth-streaming",
-      "平滑流式当前开启。",
-      "关闭平滑流式。",
+      "平滑文字更新当前开启。",
+      "关闭平滑文字更新。",
       "减少生成期间持续的文字动画与重绘。",
       "文字会更直接地更新，不改变模型输出内容。",
       "立即影响后续流式回复。"
@@ -7298,8 +7593,8 @@ function diagnose(snapshot, current2) {
     if (current2.stream_fade_in) findings.push(settingFinding(
       "setting-stream-fade",
       "perf-stream-fade",
-      "流式淡入当前开启。",
-      "关闭流式淡入。",
+      "文字淡入当前开启。",
+      "关闭文字淡入。",
       "减少每批新文字的视觉动画。",
       "新文字不再淡入，不改变模型输出内容。",
       "立即影响后续流式回复。"
@@ -7307,8 +7602,8 @@ function diagnose(snapshot, current2) {
     if (current2.streaming_fps > 15) findings.push(settingFinding(
       "setting-streaming-fps",
       "perf-streaming-fps",
-      `流式帧率为 ${current2.streaming_fps} FPS，高于安全方案上限 15 FPS。`,
-      "降低到 15 FPS；已有更低值不会调高。",
+      `流式更新频率为 ${current2.streaming_fps}，高于安全建议上限 15。`,
+      "降低到 15；已有更低值不会调高。",
       "减少生成期间 UI 更新频率。",
       "流式动画细腻度会降低，不改变回复内容。",
       "立即影响后续流式回复。"
@@ -7317,9 +7612,9 @@ function diagnose(snapshot, current2) {
     if (limit !== null && (current2.chat_truncation === 0 || current2.chat_truncation > limit)) findings.push(settingFinding(
       "setting-chat-truncation",
       "perf-chat-truncation",
-      current2.chat_truncation === 0 ? "消息加载数为 0，会把当前聊天全部放入 DOM。" : `消息加载数为 ${current2.chat_truncation}，高于当前设备建议上限 ${limit}。`,
+      current2.chat_truncation === 0 ? "同时显示的消息数为 0，会把当前聊天全部放入页面。" : `同时显示的消息数为 ${current2.chat_truncation}，高于当前设备建议上限 ${limit}。`,
       `限制到 ${limit}；已有更低的非零值不会调高。`,
-      "减少同时渲染的历史消息与 DOM 节点。",
+      "减少同时渲染的历史消息与页面节点。",
       "上翻时仍可继续加载历史消息，不会删除聊天数据。",
       "需要重载当前聊天。"
     ));
@@ -7334,12 +7629,12 @@ function diagnose(snapshot, current2) {
     severity: longestTask >= 100 ? "risk" : "suggestion",
     confidence: "measurement",
     explanation: {
-      detected: `6 秒样本中观察到 ${longTaskCount} 次 Long Task，最长 ${longestTask}ms。`,
-      change: "先应用安全渲染方案并用相同探针复测；若仍存在，再做扩展 A/B。",
-      reason: "Long Task 表示主线程连续占用至少 50ms，会阻塞输入和绘制。",
+      detected: `6 秒检查中发现 ${longTaskCount} 次页面长时间占用，最长 ${longestTask}ms。`,
+      change: "先应用安全显示建议，再次检查；若仍存在，再临时关闭扩展做对比。",
+      reason: "页面连续忙碌超过 50ms，可能让点击和绘制变慢。",
       impact: "该指标属于整个页面，不能单独归因到某个扩展。",
-      reload: "安全渲染项按各字段要求生效；扩展 A/B 需要刷新。",
-      restore: "安全设置和扩展实验分别保存恢复状态。"
+      reload: "显示设置按各项说明生效；临时关闭扩展需要刷新。",
+      restore: "显示设置和扩展排查都保留独立的恢复入口。"
     }
   }));
   const extensionResources = resourceGroups(snapshot).filter((group) => typeof group.key === "string" && group.key.startsWith("extension:"));
@@ -7350,12 +7645,12 @@ function diagnose(snapshot, current2) {
     severity: "info",
     confidence: "correlation",
     explanation: {
-      detected: `Resource Timing 记录到 ${extensionResources.length} 个扩展资源分组。`,
-      change: "只把这些扩展作为刷新后 A/B 的候选，不自动禁用。",
-      reason: "下载或加载记录仅提供相关线索，不能归因持续 CPU 或内存成本。",
-      impact: "A/B 暂时禁用扩展可能影响对应功能，必须由用户选择。",
+      detected: `记录到 ${extensionResources.length} 个扩展的加载资源。`,
+      change: "只把这些扩展列为“临时关闭扩展找卡顿”的对比对象，不会自动关闭。",
+      reason: "下载或加载记录只能提供线索，不能据此判断某个扩展持续占用处理器或内存。",
+      impact: "临时关闭扩展可能影响对应功能，必须由用户自己选择。",
       reload: "扩展启停需要刷新后才真正改变加载状态。",
-      restore: "A/B 流程保留最初禁用清单，可全部恢复。"
+      restore: "扩展排查会保留最初的禁用清单，可以全部恢复。"
     }
   }));
   const page = numberRecord(snapshot.metrics.page);
@@ -7915,7 +8210,7 @@ function normalizeButlerTransaction(value) {
     if (!normalized || normalized.group !== value.group) return null;
     actions.push(normalized);
   }
-  if (!before.ok || !requested.ok || !actual.ok) return null;
+  if (!before.ok || !requested.ok || !actual.ok || actions.length === 0) return null;
   return {
     id: value.id,
     group: value.group,
@@ -8015,29 +8310,19 @@ function createEmptyButlerData() {
     history: []
   };
 }
-function migrateButlerData(value, options = {}) {
+function migrateButlerData(value, _options = {}) {
   if (!isRecord(value)) return createEmptyButlerData();
   if (value.version === BUTLER_DATA_VERSION) return normalizeV2(value) ?? createEmptyButlerData();
   const snapshot = normalizePerformanceSnapshot(value.snapshot);
   if (!snapshot.ok || value.perfOn !== void 0 && typeof value.perfOn !== "boolean") {
     return createEmptyButlerData();
   }
-  const now = options.now ?? Date.now();
-  const id = options.idFactory?.() ?? `legacy-performance-${now}`;
   return {
     version: BUTLER_DATA_VERSION,
-    performanceModeOn: value.perfOn === true,
-    activeTransaction: {
-      id,
-      group: "performanceSettings",
-      createdAt: now,
-      status: "applied",
-      restoreStatus: "available",
-      before: { ...snapshot.value },
-      requested: {},
-      actual: {},
-      actions: []
-    },
+    performanceModeOn: false,
+    // 旧版只保存整组快照，没有每个字段的实际回读结果，无法安全生成可恢复事务。
+    // 清空保护槽，让用户重新体检并生成有逐项证据的新事务。
+    activeTransaction: null,
     pendingExperiment: null,
     history: []
   };
@@ -8059,6 +8344,16 @@ var EXPLANATION_LABELS = [
   ["restore", "如何恢复"],
   ["result", "实测结果"]
 ];
+var CAPABILITY_LABELS = {
+  pageSummary: "聊天与页面结构",
+  performanceSettings: "性能设置",
+  mediaDom: "图片与媒体",
+  resourceTiming: "资源加载记录",
+  storageEstimate: "站点存储空间",
+  jsHeap: "网页内存信息",
+  cssAnimations: "动画数量统计",
+  longTasks: "页面卡顿记录"
+};
 function text(parent, value, className = "so-butler-text") {
   const node = el2("div", className);
   node.textContent = value;
@@ -8116,19 +8411,20 @@ function environmentRows(parent, measurement) {
 }
 function buildReportModal(controller) {
   return (body) => {
-    title(body, "完整体检报告");
+    title(body, "详细检查结果");
     text(body, "这里只展示可观测证据和能力缺失原因，不生成综合性能分数。", "so-butler-lead");
     const measurement = controller.getMeasurement();
     if (!measurement) {
-      text(body, "尚无体检结果。关闭后运行一次静态或 6 秒体检。");
+      text(body, "尚无检查结果。关闭后运行一次基础检查或 6 秒检查。");
       return;
     }
-    const environment = foldSection("环境与采样条件", true);
+    const environment = foldSection("检查环境", true);
     environmentRows(environment.body, measurement);
-    text(environment.body, `探针：${measurement.probe} · ${measurement.durationMs / 1e3} 秒 · ${measurement.foreground ? "前台" : "后台"}`);
+    const probeLabel = measurement.probe === "controlledScroll" ? "滚动长聊天检查" : measurement.probe === "idle" ? "不操作时检查" : "基础信息检查";
+    text(environment.body, `检查方式：${probeLabel} · ${measurement.durationMs / 1e3} 秒 · ${measurement.foreground ? "页面在前台" : "页面在后台"}`);
     if (measurement.invalidReason) text(environment.body, measurement.invalidReason, "so-butler-alert");
     body.append(environment.box);
-    const metrics = foldSection("原始摘要指标", true);
+    const metrics = foldSection("原始数据", true);
     for (const [key, value] of Object.entries(measurement.metrics)) {
       const row = el2("div", "so-butler-metric-block");
       const strong = document.createElement("strong");
@@ -8139,11 +8435,11 @@ function buildReportModal(controller) {
       metrics.body.append(row);
     }
     body.append(metrics.box);
-    const capabilities = foldSection("能力支持情况");
+    const capabilities = foldSection("哪些数据可以读取");
     for (const capability of measurement.capabilities) {
       text(
         capabilities.body,
-        capability.available ? `${capability.id}：可用` : `${capability.id}：${capability.reason}`,
+        capability.available ? `${CAPABILITY_LABELS[capability.id] ?? capability.id}：可用` : `${CAPABILITY_LABELS[capability.id] ?? capability.id}：${capability.reason}`,
         capability.available ? "so-butler-text" : "so-butler-muted"
       );
     }
@@ -8154,7 +8450,7 @@ function buildReportModal(controller) {
     const comparison = controller.getComparison();
     if (comparison) {
       const compare = foldSection("最近一次前后对比", true);
-      text(compare.body, comparison.comparable ? "样本条件一致，可以查看原始差值。" : `样本不可直接比较：${comparison.reasons.join("；")}。这里只并列原始值。`);
+      text(compare.body, comparison.comparable ? "两次检查条件一致，可以查看前后差值。" : `两次检查条件不同，暂不计算差值：${comparison.reasons.join("；")}。这里只并列原始数据。`);
       if (comparison.comparable) {
         for (const [key, value] of Object.entries(comparison.deltas)) {
           text(compare.body, `${key}：${value >= 0 ? "+" : ""}${value}`);
@@ -8174,7 +8470,7 @@ function experimentStatus(experiment) {
   const labels = {
     prepared: "准备中",
     awaitingReload: "等待刷新",
-    sampling: "等待扩展复测",
+    sampling: "等待关闭后检查",
     awaitingDecision: "等待结果决定",
     restoring: "正在恢复",
     completed: "已完成",
@@ -8205,36 +8501,38 @@ function buildExtensionModal(services, controller) {
       }
     };
     const renderPending = (experiment) => {
-      title(body, "扩展排障");
-      text(body, `当前流程：${experiment.kind === "binaryIsolation" ? "二分隔离" : "选定扩展 A/B"} · 第 ${experiment.currentRound} 轮`);
+      title(body, "临时关闭扩展找卡顿");
+      text(body, `当前排查方式：${experiment.kind === "binaryIsolation" ? "分批缩小范围" : "对比所选扩展"} · 第 ${experiment.currentRound} 轮`);
       text(body, `状态：${experimentStatus(experiment)}`, experiment.notes ? "so-butler-alert" : "so-butler-lead");
       if (experiment.notes) text(body, experiment.notes, "so-butler-alert");
       text(body, `本轮暂时禁用：${(experiment.trialDisabledExtensions ?? experiment.candidateExtensions).join("、")}`);
       text(body, "最初禁用清单已同时保存在管家数据、localStorage 和控制台恢复命令中。");
       if (experiment.status === "sampling") {
-        body.append(appButton(busy ? "正在复测" : "运行扩展复测", () => run(controller.sampleExperiment)));
+        body.append(appButton(busy ? "正在检查" : "检查关闭后的表现", () => run(controller.sampleExperiment)));
       }
       if (experiment.status === "awaitingDecision") {
         if (experiment.kind === "binaryIsolation" && experiment.candidateExtensions.length > 1 && experiment.reloadRequiredAfterDecision === void 0) {
           const actions = el2("div", "so-butler-actions");
           actions.append(
-            appButton("症状改善", () => run(() => controller.advanceBinary(true))),
-            appButton("症状无改善", () => run(() => controller.advanceBinary(false)))
+            appButton("变流畅了", () => run(() => controller.advanceBinary(true))),
+            appButton("没有变流畅", () => run(() => controller.advanceBinary(false)))
           );
           body.append(actions);
         }
         const decisions = el2("div", "so-butler-actions");
         decisions.append(
-          appButton("保留当前禁用", () => run(() => controller.finishExperiment("keep"))),
-          appButton("恢复原清单", () => run(() => controller.finishExperiment("restore")))
+          appButton("保持这些扩展关闭", () => run(() => controller.finishExperiment("keep"))),
+          appButton("恢复原来的扩展状态", () => run(() => controller.finishExperiment("restore")))
         );
         body.append(decisions);
       }
       if (notice) text(body, notice, "so-butler-alert");
     };
     const renderInventory = (ready) => {
-      title(body, "扩展排障");
-      text(body, "扩展脚本和样式只有刷新后才会真正停止加载。管家使用 SillyTavern 官方禁用接口，不修改内部数组。", "so-butler-lead");
+      title(body, "临时关闭扩展找卡顿");
+      text(body, "用途：暂时关闭可疑的第三方扩展，刷新 SillyTavern 后重复刚才的操作。如果变流畅了，就恢复扩展并决定是否保留排查结果。", "so-butler-lead");
+      text(body, "使用顺序：1. 勾选可疑扩展 → 2. 开始排查 → 3. 刷新页面并重复同一操作 → 4. 保留结果或恢复原清单。", "so-butler-text");
+      text(body, "扩展脚本和样式只有刷新后才会真正停止加载；管家使用 SillyTavern 官方禁用接口，不修改内部数组。", "so-butler-muted");
       if (!ready.governance.writable) text(body, ready.governance.reason ?? "当前版本只支持查看。", "so-butler-alert");
       if (emergencyBackup) {
         const backup = foldSection("检测到紧急恢复备份", true, "butler-emergency-backup");
@@ -8277,17 +8575,17 @@ function buildExtensionModal(services, controller) {
           if (!services.confirm(`所选扩展存在启用中的依赖方：
 ${detail}
 
-仍要开始临时禁用实验吗？`)) return;
+仍要开始临时关闭排查吗？`)) return;
         }
         await controller.startExperiment(kind, names, ready);
       };
       const actions = el2("div", "so-butler-actions");
       actions.append(
-        appButton("开始选定扩展 A/B", () => run(() => start("selectedExtensions"))),
-        appButton("开始二分隔离", () => run(() => start("binaryIsolation")))
+        appButton("开始对比所选扩展", () => run(() => start("selectedExtensions"))),
+        appButton("逐轮缩小可疑扩展", () => run(() => start("binaryIsolation")))
       );
       body.append(actions);
-      text(body, "系统扩展默认不参与；st-stage 自身永远不可选。二分隔离只在你选定的候选集内逐轮缩小范围。");
+      text(body, "系统扩展默认不参与；st-stage 自身永远不可选。“逐轮缩小可疑扩展”只会在你勾选的范围里分批排查。");
       if (notice) text(body, notice, "so-butler-alert");
     };
     const render2 = () => {
@@ -8299,12 +8597,12 @@ ${detail}
         return;
       }
       if (!inventory) {
-        title(body, "扩展排障");
+        title(body, "临时关闭扩展找卡顿");
         text(body, "正在读取 SillyTavern 扩展清单...");
         return;
       }
       if (inventory.status !== "ready") {
-        title(body, "扩展排障");
+        title(body, "临时关闭扩展找卡顿");
         text(body, inventory.reason, "so-butler-alert");
         return;
       }
@@ -8329,27 +8627,27 @@ function advisorSection(body, heading, paragraphs) {
 }
 function buildAdvisorModal(services) {
   return (body) => {
-    title(body, "玩法与服务端顾问");
-    text(body, "这部分可能影响记忆、检索和上下文语义，默认只提供建议，不进入一键安全优化。", "so-butler-lead");
+    title(body, "记忆与服务器设置建议");
+    text(body, "这里解释会影响记忆、检索、总结和服务器资源的设置。管家只读查看，不会自动修改，也不会加入一键性能优化。", "so-butler-lead");
     const health = services.readHealth();
     const extensionState = text(body, "常用扩展状态：正在读取 SillyTavern 扩展清单...", "so-butler-muted");
-    advisorSection(body, "World Info", [
+    advisorSection(body, "世界书（World Info）", [
       "世界书条目越多、扫描深度越高，生成前匹配工作通常越多；它同时承载设定一致性，不应按“越少越好”处理。",
-      "优先清理重复条目、缩小不必要的扫描范围，再用相同对话做生成前后 A/B。"
+      "优先清理重复条目、缩小不必要的扫描范围，再用相同对话比较调整前后的生成时间。"
     ]);
-    advisorSection(body, "Vector Storage", [
+    advisorSection(body, "向量检索（Vector Storage）", [
       "向量检索会增加索引、查询和存储工作，但能从长历史或资料库召回相关内容。",
       "只在明确不需要语义召回的对话里临时关闭并比较；不要把 Token 减少直接等同于页面渲染变快。"
     ]);
-    advisorSection(body, "Summarize", [
+    advisorSection(body, "自动总结（Summarize）", [
       "总结会额外调用模型或处理历史，但可以控制长期上下文大小。频率太高会增加请求，频率太低会让上下文膨胀。",
       "根据实际聊天长度和模型速度调整，保留角色记忆需求。"
     ]);
-    advisorSection(body, "Regex 与 Quick Reply", [
+    advisorSection(body, "自动化规则（Regex / Quick Reply）", [
       "大量生成时 Regex 规则可能增加每次回复的处理工作，且角色卡和预设可能依赖它们，因此管家不会自动关闭。",
       health.quickReplySets.available ? `当前检测到 ${health.quickReplySets.value} 个 Quick Reply 集合。集合数量只作信息展示，不代表运行时成本。` : `Quick Reply 集合数不可用：${health.quickReplySets.reason}`
     ]);
-    advisorSection(body, "服务端 config.yaml", [
+    advisorSection(body, "服务器设置（config.yaml）", [
       "requestCompression：长聊天或弱网可减少传输体积；修改后需要重启 SillyTavern。",
       "lazyLoadCharacters：大量角色卡时应保持开启；旧配置可能沿用 false。",
       "memoryCacheCapacity：按角色卡规模设置缓存容量，容量越高通常占用更多服务端内存。",
@@ -8908,7 +9206,7 @@ function createMetricsSampler(deps) {
     capabilities.push(available("mediaDom"));
     const resourceEvidence = deps.readResourceGroups();
     if (resourceEvidence === null) {
-      capabilities.push(unavailable("resourceTiming", "当前浏览器不支持 Resource Timing"));
+      capabilities.push(unavailable("resourceTiming", "当前浏览器不支持资源加载记录"));
     } else {
       metrics.resources = { groups: sanitizeResourceGroups(resourceEvidence) };
       capabilities.push(available("resourceTiming"));
@@ -8921,16 +9219,16 @@ function createMetricsSampler(deps) {
       };
       capabilities.push(available("storageEstimate"));
     } else {
-      capabilities.push(unavailable("storageEstimate", "当前浏览器不支持站点存储估算"));
+      capabilities.push(unavailable("storageEstimate", "当前浏览器不支持站点存储检查"));
     }
     const heap = deps.readHeapBytes();
-    if (heap === null) capabilities.push(unavailable("jsHeap", "当前浏览器不支持 JS 堆信息"));
+    if (heap === null) capabilities.push(unavailable("jsHeap", "当前浏览器不支持网页内存信息"));
     else {
       metrics.heap = { usedBytes: finiteNonNegative(heap) };
       capabilities.push(available("jsHeap"));
     }
     const animationCount2 = deps.countAnimations();
-    if (animationCount2 === null) capabilities.push(unavailable("cssAnimations", "当前浏览器不支持动画计数"));
+    if (animationCount2 === null) capabilities.push(unavailable("cssAnimations", "当前浏览器不支持动画数量统计"));
     else {
       metrics.animations = { running: finiteNonNegative(animationCount2) };
       capabilities.push(available("cssAnimations"));
@@ -8989,7 +9287,7 @@ function createMetricsSampler(deps) {
       longTaskSubscription = deps.observeLongTasks((duration) => {
         if (Number.isFinite(duration) && duration >= 0) longTasks.push(duration);
       });
-      snapshot.capabilities.push(longTaskSubscription ? available("longTasks") : unavailable("longTasks", "当前浏览器不支持 Long Task 观察"));
+      snapshot.capabilities.push(longTaskSubscription ? available("longTasks") : unavailable("longTasks", "当前浏览器不支持页面卡顿记录"));
       await deps.runTimeline(BUTLER_PROBE_DURATION_MS, controller.signal, {
         onFrame(time) {
           if (!deps.isForeground()) {
@@ -9128,7 +9426,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-08-13 20:24"}`;
+  return `${"0.9.0"}+${"2026-08-18 23:07"}`;
 }
 function stVersion() {
   const text3 = document.querySelector("#version_display")?.textContent?.trim();
@@ -9346,13 +9644,13 @@ function createButlerAppServices(deps = {}) {
 
 // st-extension/src/apps/butler-app.ts
 var FIELD_LABELS = {
-  fast_ui_mode: "No Blur",
-  reduced_motion: "减少动画",
+  fast_ui_mode: "关闭背景模糊",
+  reduced_motion: "减少动画效果",
   noShadows: "关闭阴影",
-  smooth_streaming: "平滑流式",
-  stream_fade_in: "流式淡入",
-  streaming_fps: "流式帧率",
-  chat_truncation: "消息加载数"
+  smooth_streaming: "平滑文字更新",
+  stream_fade_in: "文字淡入",
+  streaming_fps: "流式更新频率",
+  chat_truncation: "同时显示的消息数"
 };
 function valueText2(value) {
   if (typeof value === "boolean") return value ? "开" : "关";
@@ -9494,11 +9792,11 @@ function mountButler(container, ctx, services, state) {
   };
   const actionBridge = {
     readGroup: async (group) => {
-      if (group !== "performanceSettings") throw new Error("当前主屏只处理性能设置事务");
+      if (group !== "performanceSettings") throw new Error("当前主屏只能修改性能设置");
       return readPerformanceGroup();
     },
     writeGroup: async (group, fields) => {
-      if (group !== "performanceSettings") throw new Error("当前主屏只处理性能设置事务");
+      if (group !== "performanceSettings") throw new Error("当前主屏只能修改性能设置");
       await services.writePerformance(fields);
     },
     persistTransaction: async (transaction) => {
@@ -9523,7 +9821,7 @@ function mountButler(container, ctx, services, state) {
     state.sampling = true;
     const controller = new AbortController();
     state.controller = controller;
-    setNotice(forExperiment ? "正在运行扩展复测，请保持页面前台。" : "正在采样，请保持页面前台且不要操作聊天。");
+    setNotice(forExperiment ? "正在检查扩展关闭后的表现，请保持页面前台。" : "正在检查，请保持页面前台且不要操作聊天。");
     render2();
     try {
       const result = probe === "controlledScroll" ? await services.sampleControlledScroll(controller.signal) : await services.sampleIdle(controller.signal);
@@ -9558,12 +9856,12 @@ function mountButler(container, ctx, services, state) {
           baseline.invalidReason ? "cancelled" : "completed"
         );
         data = persistData(upsertHistory(data, record), record.id);
-        if (baseline.invalidReason) throw new Error(`基线样本无效：${baseline.invalidReason}`);
+        if (baseline.invalidReason) throw new Error(`优化前检查未完成：${baseline.invalidReason}`);
       }
       const transaction = await applyTransaction(plan.actions, actionBridge, baseline?.id);
       data = persistData(upsertHistory(data, transactionHistory(transaction)), `history-${transaction.id}`);
       setNotice(
-        transaction.status === "applied" ? `已应用 ${transaction.actions.filter((action) => action.status === "applied").length} 项；可复测并随时恢复。` : "部分设置未成功写入，已保留事务和每项实际结果。",
+        transaction.status === "applied" ? `已应用 ${transaction.actions.filter((action) => action.status === "applied").length} 项；可以再测一次，也可以随时恢复。` : "部分设置未成功写入，已保留事务和每项实际结果。",
         transaction.status === "applied" ? "success" : "error"
       );
       if (baseline && !data.history.some((record) => record.kind === "measurement" && record.measurement.id === baseline.id)) {
@@ -9577,13 +9875,13 @@ function mountButler(container, ctx, services, state) {
   const remeasure = async () => {
     if (state.sampling) return;
     const baseline = baselineForTransaction();
-    if (!baseline || baseline.probe === "static") throw new Error("请先完成一次 6 秒体检，再运行同探针复测");
+    if (!baseline || baseline.probe === "static") throw new Error("请先完成一次检查，再点“再测一次，比较优化前后”。");
     const result = await runProbe(baseline.probe);
-    const record = measurementHistory(result, "优化后复测", result.invalidReason ? "cancelled" : "completed");
+    const record = measurementHistory(result, "优化后再次检查", result.invalidReason ? "cancelled" : "completed");
     data = persistData(upsertHistory(data, record), record.id);
     state.comparison = compareMeasurements(baseline, result);
     setNotice(
-      state.comparison.comparable ? "样本条件一致，已计算原始指标差值。" : `样本不可直接比较：${state.comparison.reasons.join("；")}。`,
+      state.comparison.comparable ? "两次检查条件一致，已显示优化前后的变化。" : `两次检查条件不同，暂时不能直接比较：${state.comparison.reasons.join("；")}。`,
       state.comparison.comparable ? "success" : "info"
     );
   };
@@ -9624,9 +9922,9 @@ ${lines.join("\n")}
       let baseline = state.measurement;
       if (!baseline || baseline.probe === "static" || baseline.invalidReason) {
         baseline = await runProbe(state.selectedProbe);
-        if (baseline.invalidReason) throw new Error("基线样本无效，未开始扩展实验");
+        if (baseline.invalidReason) throw new Error("排查前检查未完成，暂时不能关闭扩展");
       }
-      const record = measurementHistory(baseline, "扩展实验基线");
+      const record = measurementHistory(baseline, "扩展排查前检查");
       data = persistData(upsertHistory(data, record), record.id);
       const prepared = prepareExtensionExperiment(kind, selected, inventory, baseline.id, {
         now: services.now,
@@ -9638,13 +9936,13 @@ ${lines.join("\n")}
     },
     async sampleExperiment() {
       const pending = data.pendingExperiment;
-      if (!pending || pending.status !== "sampling") throw new Error("当前没有等待复测的扩展实验");
+      if (!pending || pending.status !== "sampling") throw new Error("当前没有等待检查的扩展排查");
       const baseline = latestMeasurement(data, pending.baselineMeasurementId);
       const probe = baseline?.probe === "controlledScroll" ? "controlledScroll" : "idle";
       const comparison = await runProbe(probe, true);
-      const record = measurementHistory(comparison, "扩展实验复测", comparison.invalidReason ? "cancelled" : "completed");
+      const record = measurementHistory(comparison, "关闭扩展后检查", comparison.invalidReason ? "cancelled" : "completed");
       data = persistData(upsertHistory(data, record), record.id);
-      if (comparison.invalidReason) throw new Error("扩展复测样本无效，请重试");
+      if (comparison.invalidReason) throw new Error("关闭扩展后的检查未完成，请重试");
       const next = recordExperimentComparison(pending, comparison.id);
       data = persistData({ ...data, pendingExperiment: next });
       if (baseline) state.comparison = compareMeasurements(baseline, comparison);
@@ -9657,7 +9955,7 @@ ${lines.join("\n")}
         data = persistData({ ...data, pendingExperiment: completed });
         throw new Error(completed.notes ?? "扩展清单恢复失败");
       }
-      const record = experimentHistory(completed, decision === "keep" ? "保留扩展 A/B 结果" : "恢复扩展禁用清单");
+      const record = experimentHistory(completed, decision === "keep" ? "保留扩展排查结果" : "恢复扩展状态");
       data = persistData({ ...upsertHistory(data, record), pendingExperiment: null }, record.id);
       setNotice(decision === "keep" ? "已保留当前扩展禁用结果。" : "已恢复最初扩展禁用清单。", "success");
     },
@@ -9680,8 +9978,8 @@ ${lines.join("\n")}
     }
   };
   const renderPlan = (parent, plan) => {
-    const changed = foldSection(`将修改（${plan.actions.length}）`, true, "butler-plan-changed");
-    if (plan.actions.length === 0) text2(changed.body, "当前性能设置已不高于安全方案。");
+    const changed = foldSection(`建议调整（${plan.actions.length}）`, true, "butler-plan-changed");
+    if (plan.actions.length === 0) text2(changed.body, "当前设置已经不高于安全建议，不需要继续调整。");
     for (const action of plan.actions) {
       text2(changed.body, `${FIELD_LABELS[action.field] ?? action.label}：${valueText2(action.before)} → ${valueText2(action.requested)}${action.reloadRequired ? "（需刷新或重载聊天）" : ""}`);
     }
@@ -9693,10 +9991,16 @@ ${lines.join("\n")}
     parent.append(unchanged.box);
   };
   const renderTransaction = (parent, transaction) => {
-    const result = foldSection("逐项实际结果", true, "butler-transaction-results");
+    const result = foldSection("本次实际修改", true, "butler-transaction-results");
+    const statusLabels = {
+      planned: "等待修改",
+      applied: "已修改",
+      failed: "修改失败",
+      unchanged: "无需修改"
+    };
     for (const action of transaction.actions) {
       const suffix = action.error ? ` · ${action.error}` : "";
-      text2(result.body, `${action.label}：请求 ${valueText2(action.requested)}，实际 ${valueText2(action.actual)} · ${action.status}${suffix}`);
+      text2(result.body, `${action.label}：原来 ${valueText2(action.before)}，现在 ${valueText2(action.actual)} · ${statusLabels[action.status]}${action.reloadRequired ? " · 需要刷新或重载聊天" : ""}${suffix}`);
     }
     parent.append(result.box);
   };
@@ -9731,42 +10035,49 @@ ${lines.join("\n")}
     else {
       text2(
         header,
-        state.measurement.invalidReason ? `最近体检无效：${state.measurement.invalidReason}` : `最近体检：${state.measurement.probe === "static" ? "静态" : "6 秒"} · ${state.findings.length} 条可解释发现`,
+        state.measurement.invalidReason ? `最近体检无效：${state.measurement.invalidReason}` : `最近检查：${state.measurement.probe === "static" ? "基础检查" : "6 秒检查"} · ${state.findings.length} 条发现`,
         state.measurement.invalidReason ? "so-butler-alert" : "so-butler-text"
       );
     }
     container.append(header);
+    const guide = el2("div", "so-app-section so-butler-guide");
+    const guideTitle = el2("div", "so-app-title");
+    guideTitle.textContent = "使用步骤";
+    guide.append(guideTitle);
+    text2(guide, "1. 开始检查 → 2. 查看发现 → 3. 应用建议 → 4. 再测一次或恢复。", "so-butler-guide-steps");
+    text2(guide, "管家只会调整可读写的性能设置，不会修改模型、提示词或聊天内容。每次修改都保留恢复入口。", "so-butler-muted");
+    container.append(guide);
     const sampling = el2("div", "so-app-section");
     const sampleTitle = el2("div", "so-app-title");
-    sampleTitle.textContent = "短时采样";
+    sampleTitle.textContent = "开始检查";
     sampling.append(sampleTitle);
-    text2(sampling, "静置探针观察页面自身活动；受控滚动会固定滚动一段长聊天并恢复原位置。切后台、生成、聊天变化或用户干预会取消。");
+    text2(sampling, "“不操作时检查”观察页面自己是否持续占用资源；“滚动长聊天检查”会自动滚动一小段并恢复原位置。切后台、生成回复、切换聊天或手动操作时，本次检查会取消。");
     sampling.append(selectRow(
-      "探针",
+      "检查方式",
       state.selectedProbe,
       [
-        { value: "idle", label: "6 秒静置" },
-        { value: "controlledScroll", label: "6 秒受控滚动" }
+        { value: "idle", label: "不操作时检查（6 秒）" },
+        { value: "controlledScroll", label: "滚动长聊天检查（6 秒）" }
       ],
       (value) => {
         state.selectedProbe = value;
         render2();
       }
     ));
-    if (state.sampling) sampling.append(appButton("取消采样", () => state.controller?.abort()));
+    if (state.sampling) sampling.append(appButton("取消本次检查", () => state.controller?.abort()));
     else sampling.append(appButton("开始 6 秒体检", () => void safely(async () => {
       const result = await runProbe(state.selectedProbe);
       const record = measurementHistory(result, result.probe === "idle" ? "静置体检" : "受控滚动体检", result.invalidReason ? "cancelled" : "completed");
       data = persistData(upsertHistory(data, record), record.id);
     })));
     container.append(sampling);
-    const findingSection = foldSection(`核心发现（${state.findings.length}）`, true, "butler-findings");
+    const findingSection = foldSection(`检查发现（${state.findings.length}）`, true, "butler-findings");
     if (state.findings.length === 0) text2(findingSection.body, state.measurement ? "当前证据没有触发建议。" : "静态体检完成后显示。");
     for (const finding2 of state.findings.slice(0, 5)) renderFinding(findingSection.body, finding2);
     container.append(findingSection.box);
     const planSection = el2("div", "so-app-section");
     const planTitle = el2("div", "so-app-title");
-    planTitle.textContent = "安全优化";
+    planTitle.textContent = "可以立即应用的建议";
     planSection.append(planTitle);
     if (!current2) {
       text2(planSection, "当前 SillyTavern 没有公开完整性能设置，管家只做只读体检。", "so-butler-alert");
@@ -9777,17 +10088,24 @@ ${lines.join("\n")}
         renderTransaction(planSection, data.activeTransaction);
         const actions = el2("div", "so-butler-actions");
         actions.append(
-          appButton(state.sampling ? "正在复测" : "用相同探针复测", () => void safely(remeasure)),
+          appButton(state.sampling ? "正在再次检查" : "再测一次，比较优化前后", () => void safely(remeasure)),
           appButton("恢复本次性能设置", () => void safely(restorePerformance))
         );
         planSection.append(actions);
       } else if (plan.actions.length > 0) {
-        planSection.append(appButton(state.applying ? "正在应用" : "应用安全优化", () => void safely(() => applySafePlan(plan))));
+        const apply = appButton(
+          state.applying ? "正在应用建议" : `立即应用 ${plan.actions.length} 项建议`,
+          () => void safely(() => applySafePlan(plan))
+        );
+        apply.classList.add("so-butler-primary-action");
+        planSection.append(apply);
+      } else {
+        text2(planSection, "这里没有需要应用的设置。如果仍然卡顿，可以打开“临时关闭扩展找卡顿”逐个排查。", "so-butler-muted");
       }
     }
     if (state.comparison) {
-      const comparison = foldSection("复测结果", true, "butler-comparison");
-      text2(comparison.body, state.comparison.comparable ? "样本条件一致，以下差值为“复测 - 基线”。负值通常表示对应耗时或数量下降。" : `样本不可直接比较：${state.comparison.reasons.join("；")}。只在完整报告并列原始值。`);
+      const comparison = foldSection("优化前后对比", true, "butler-comparison");
+      text2(comparison.body, state.comparison.comparable ? "两次检查条件一致。下面的负数通常表示对应耗时或数量减少。" : `两次检查条件不同，暂不计算差值：${state.comparison.reasons.join("；")}。可在详细结果中查看两次原始数据。`);
       if (state.comparison.comparable) {
         for (const [key, delta] of Object.entries(state.comparison.deltas)) {
           text2(comparison.body, `${key} 差值：${delta >= 0 ? "+" : ""}${delta}`);
@@ -9798,15 +10116,15 @@ ${lines.join("\n")}
     container.append(planSection);
     const modalActions = el2("div", "so-app-section so-butler-modal-actions");
     modalActions.append(
-      appButton("完整报告", () => ctx.openModal(buildReportModal(modalController))),
-      appButton("扩展排障", () => ctx.openModal(buildExtensionModal(services, modalController))),
-      appButton("玩法与服务端顾问", () => ctx.openModal(buildAdvisorModal(services)))
+      appButton("查看详细结果", () => ctx.openModal(buildReportModal(modalController))),
+      appButton("临时关闭扩展找卡顿", () => ctx.openModal(buildExtensionModal(services, modalController))),
+      appButton("记忆与服务器设置建议", () => ctx.openModal(buildAdvisorModal(services)))
     );
     container.append(modalActions);
     if (data.pendingExperiment) {
       const pending = el2("div", "so-app-section so-butler-pending");
-      text2(pending, `扩展实验进行中：${data.pendingExperiment.kind === "binaryIsolation" ? "二分隔离" : "选定扩展 A/B"} · 第 ${data.pendingExperiment.currentRound} 轮`);
-      pending.append(appButton("继续扩展排障", () => ctx.openModal(buildExtensionModal(services, modalController))));
+      text2(pending, `扩展排查进行中：${data.pendingExperiment.kind === "binaryIsolation" ? "分批缩小范围" : "对比所选扩展"} · 第 ${data.pendingExperiment.currentRound} 轮`);
+      pending.append(appButton("继续排查扩展", () => ctx.openModal(buildExtensionModal(services, modalController))));
       container.append(pending);
     }
     if (state.notice) text2(container, state.notice, `so-butler-notice so-butler-notice-${state.noticeKind}`);
@@ -9822,7 +10140,7 @@ ${lines.join("\n")}
       state.measurement = measurement;
       state.findings = diagnose(measurement, services.readPerformance());
     }
-    if (!state.notice) setNotice("静态体检完成。需要动态证据时运行 6 秒体检。", "success");
+    if (!state.notice) setNotice("基础检查完成。需要观察页面运行时表现时，再运行 6 秒检查。", "success");
   });
 }
 
@@ -12924,11 +13242,9 @@ var MAX_BARE_SCAN_CHARS = 1024 * 1024;
 var MAX_ARRAY_ITEMS = 12;
 var MAX_BEATS = 50;
 var MAX_CARDS = 8;
+var MAX_RENDERER_BLOCKS = 3;
 function firstError(...errors) {
   return errors.find((error) => error !== null) ?? null;
-}
-function fail(error) {
-  return { ok: false, found: true, error };
 }
 function isRecord3(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -13258,8 +13574,8 @@ function validateBlock(value) {
   if (value.mode === "battle") return validateBattle(value);
   return "mode 只支持 gal、cards 或 battle";
 }
-function parseBareRendererBlock(source) {
-  if (source.length > MAX_BARE_SCAN_CHARS) return { ok: false, found: false };
+function parseBareRendererBlocks(source) {
+  if (source.length > MAX_BARE_SCAN_CHARS) return [];
   const accepted = [];
   let objectStart = -1;
   let objectDepth = 0;
@@ -13282,7 +13598,8 @@ function parseBareRendererBlock(source) {
       if (char === "{") objectDepth += 1;
       else if (char === "}") objectDepth -= 1;
       if (objectDepth !== 0) continue;
-      const raw = source.slice(objectStart, index + 1);
+      const start = objectStart;
+      const raw = source.slice(start, index + 1);
       objectStart = -1;
       if (new TextEncoder().encode(raw).byteLength > MAX_JSON_BYTES) continue;
       let value;
@@ -13293,8 +13610,8 @@ function parseBareRendererBlock(source) {
       }
       const block = validateBlock(value);
       if (typeof block === "string") continue;
-      accepted.push({ block, raw });
-      if (accepted.length > 1) return { ok: false, found: false };
+      accepted.push({ block, raw, start, end: index + 1 });
+      if (accepted.length >= MAX_RENDERER_BLOCKS) return accepted;
       continue;
     }
     if (char === "[") arrayDepth += 1;
@@ -13304,33 +13621,38 @@ function parseBareRendererBlock(source) {
       objectDepth = 1;
     }
   }
-  return accepted.length === 1 ? { ok: true, block: accepted[0].block, raw: accepted[0].raw } : { ok: false, found: false };
+  return accepted;
 }
-function parseRendererBlock(source) {
-  if (typeof source !== "string") return { ok: false, found: false };
-  const firstStart = source.indexOf(OPEN_TAG);
-  if (firstStart < 0) {
-    if (source.includes(TAG_PREFIX) || source.includes(CLOSE_TAG_PREFIX)) {
-      return fail("检测到不完整的 STStageRender 标签");
+function parseWrappedRendererBlocks(source) {
+  const accepted = [];
+  let cursor = 0;
+  while (true) {
+    const start = source.indexOf(OPEN_TAG, cursor);
+    if (start < 0) break;
+    const close = source.indexOf(CLOSE_TAG, start + OPEN_TAG.length);
+    if (close < 0) break;
+    const end = close + CLOSE_TAG.length;
+    const json = source.slice(start + OPEN_TAG.length, close);
+    cursor = end;
+    if (new TextEncoder().encode(json).byteLength > MAX_JSON_BYTES) continue;
+    let value;
+    try {
+      value = JSON.parse(json);
+    } catch {
+      continue;
     }
-    return parseBareRendererBlock(source);
+    const block = validateBlock(value);
+    if (typeof block === "string") continue;
+    accepted.push({ block, raw: source.slice(start, end), start, end });
+    if (accepted.length >= MAX_RENDERER_BLOCKS) break;
   }
-  const secondStart = source.indexOf(OPEN_TAG, firstStart + OPEN_TAG.length);
-  const firstEnd = source.indexOf(CLOSE_TAG, firstStart + OPEN_TAG.length);
-  if (firstEnd < 0) return fail("STStageRender 块未闭合");
-  if (secondStart >= 0 || source.indexOf(CLOSE_TAG, firstEnd + CLOSE_TAG.length) >= 0) return fail("只允许一个 STStageRender 块");
-  const json = source.slice(firstStart + OPEN_TAG.length, firstEnd);
-  if (new TextEncoder().encode(json).byteLength > MAX_JSON_BYTES) return fail("渲染 JSON 不能超过 64 KiB");
-  let value;
-  try {
-    value = JSON.parse(json);
-  } catch {
-    return fail("渲染块 JSON 格式无效");
-  }
-  const block = validateBlock(value);
-  if (typeof block === "string") return fail(block);
-  const raw = source.slice(firstStart, firstEnd + CLOSE_TAG.length);
-  return { ok: true, block, raw };
+  return accepted;
+}
+function parseRendererBlocks(source) {
+  if (typeof source !== "string") return [];
+  if (source.includes(OPEN_TAG)) return parseWrappedRendererBlocks(source);
+  if (source.includes(TAG_PREFIX) || source.includes(CLOSE_TAG_PREFIX)) return [];
+  return parseBareRendererBlocks(source);
 }
 
 // st-extension/src/apps/renderer/runtime.ts
@@ -13356,12 +13678,11 @@ function findTextBoundary(root, target) {
   }
   return target === consumed && last ? { node: last, offset: last.data.length } : null;
 }
-function hideSourceBlock(root, raw) {
+function hideSourceBlock(root, parsed) {
   const text3 = root.textContent ?? "";
-  const startOffset = text3.indexOf(raw);
-  if (startOffset < 0) return null;
-  const start = findTextBoundary(root, startOffset);
-  const end = findTextBoundary(root, startOffset + raw.length);
+  if (text3.slice(parsed.start, parsed.end) !== parsed.raw) return null;
+  const start = findTextBoundary(root, parsed.start);
+  const end = findTextBoundary(root, parsed.end);
   if (!start || !end) return null;
   const range = document.createRange();
   range.setStart(start.node, start.offset);
@@ -13373,15 +13694,16 @@ function hideSourceBlock(root, raw) {
   range.insertNode(source);
   return source;
 }
-function outsideSignature(root, marker, container) {
+function outsideSignature(root, mounts) {
   const holder = document.createElement("div");
+  const owned = new Set(mounts.flatMap((state) => [state.marker, state.container]));
   for (const node of Array.from(root.childNodes)) {
-    if (node !== marker && node !== container) holder.append(node.cloneNode(true));
+    if (!owned.has(node)) holder.append(node.cloneNode(true));
   }
   return holder.innerHTML;
 }
 function stillOwnsDom(root, state) {
-  return state.marker.parentNode === root && state.container.parentNode === root && outsideSignature(root, state.marker, state.container) === state.outsideSignature;
+  return state.mounts.every((mount) => mount.marker.parentNode === root && mount.container.parentNode === root) && outsideSignature(root, state.mounts) === state.outsideSignature;
 }
 function destroyMount(state) {
   if (state.destroyed) return;
@@ -13399,13 +13721,15 @@ function createRendererRuntime(deps) {
   function cleanupRoot(root) {
     const state = states.get(root);
     if (!state) return;
-    destroyMount(state);
+    for (const mount of state.mounts) destroyMount(mount);
     if (stillOwnsDom(root, state)) {
       root.replaceChildren(...state.snapshot);
     } else {
-      state.marker.remove();
-      state.container.remove();
-      if (root.contains(state.source)) state.source.replaceWith(...Array.from(state.source.childNodes));
+      for (const mount of state.mounts) {
+        mount.marker.remove();
+        mount.container.remove();
+        if (root.contains(mount.source)) mount.source.replaceWith(...Array.from(mount.source.childNodes));
+      }
     }
     states.delete(root);
     mountedRoots.delete(root);
@@ -13421,61 +13745,59 @@ function createRendererRuntime(deps) {
     if (!root.isConnected) return;
     const settings = deps.getSettings();
     const current2 = states.get(root);
-    if (current2 && stillOwnsDom(root, current2) && settings.enabled && isModeEnabled(settings, current2.mode)) return;
+    if (current2 && stillOwnsDom(root, current2) && settings.enabled && current2.mounts.every((mount) => isModeEnabled(settings, mount.mode))) return;
     if (current2) cleanupRoot(root);
     const message = root.closest(".mes");
     if (message?.getAttribute("is_user") === "true" || message?.getAttribute("is_system") === "true") return;
     if (!settings.enabled) return;
-    const parsed = parseRendererBlock(root.textContent ?? "");
-    if (!parsed.ok || !isModeEnabled(settings, parsed.block.mode)) return;
-    const factory = deps.factories[parsed.block.mode];
-    if (!factory) return;
-    const container = document.createElement("section");
-    container.className = RENDERER_CLASS;
-    let mount;
-    try {
-      mount = factory(container, parsed.block, modeDeps);
-      if (!mount || typeof mount.destroy !== "function") return;
-    } catch {
-      return;
-    }
     const snapshot = Array.from(root.childNodes).map((node) => node.cloneNode(true));
-    const source = (() => {
+    const prepared = [];
+    for (const parsed of parseRendererBlocks(root.textContent ?? "")) {
+      if (!isModeEnabled(settings, parsed.block.mode)) continue;
+      const factory = deps.factories[parsed.block.mode];
+      if (!factory) continue;
+      const container = document.createElement("section");
+      container.className = RENDERER_CLASS;
       try {
-        return hideSourceBlock(root, parsed.raw);
+        const mount = factory(container, parsed.block, modeDeps);
+        if (!mount || typeof mount.destroy !== "function") continue;
+        prepared.push({ parsed, container, mount });
       } catch {
-        return null;
+        continue;
       }
-    })();
-    if (!source) {
-      const failedState = {
-        mount,
-        snapshot,
-        marker: container,
-        source: container,
-        container,
-        mode: parsed.block.mode,
-        outsideSignature: "",
-        destroyed: false
-      };
-      destroyMount(failedState);
-      root.replaceChildren(...snapshot);
-      return;
     }
-    const marker = document.createElement("span");
-    marker.className = MARKER_CLASS2;
-    marker.hidden = true;
-    root.append(marker, container);
-    states.set(root, {
-      mount,
-      snapshot,
-      marker,
-      source,
-      container,
-      mode: parsed.block.mode,
-      outsideSignature: outsideSignature(root, marker, container),
-      destroyed: false
-    });
+    if (prepared.length === 0) return;
+    const mounts = [];
+    for (const item of [...prepared].reverse()) {
+      const source = (() => {
+        try {
+          return hideSourceBlock(root, item.parsed);
+        } catch {
+          return null;
+        }
+      })();
+      if (!source) {
+        try {
+          item.mount.destroy();
+        } catch {
+        }
+        continue;
+      }
+      const marker = document.createElement("span");
+      marker.className = MARKER_CLASS2;
+      marker.hidden = true;
+      mounts.unshift({
+        mount: item.mount,
+        marker,
+        source,
+        container: item.container,
+        mode: item.parsed.block.mode,
+        destroyed: false
+      });
+    }
+    if (mounts.length === 0) return;
+    for (const mount of mounts) root.append(mount.marker, mount.container);
+    states.set(root, { mounts, snapshot, outsideSignature: outsideSignature(root, mounts) });
     mountedRoots.add(root);
   }
   function reprocessAll(scope = document) {
@@ -13518,6 +13840,14 @@ function resolvePortrait(value, deps) {
   if (!value.startsWith("sprite:")) return value;
   try {
     return deps.resolvePortrait?.(value.slice("sprite:".length)) ?? null;
+  } catch {
+    return null;
+  }
+}
+function resolveBeatPortrait(portrait, speaker, deps) {
+  if (portrait !== void 0) return resolvePortrait(portrait, deps);
+  try {
+    return deps.resolveSpeakerPortrait?.(speaker) ?? null;
   } catch {
     return null;
   }
@@ -13604,7 +13934,7 @@ function mountGalMode(root, block, deps) {
     const background = beat.background ?? block.background;
     if (background) backgroundLayer.append(stageImage("st-render-gal-background", background, ""));
     portraitLayer.replaceChildren();
-    const portrait = resolvePortrait(beat.portrait, deps);
+    const portrait = resolveBeatPortrait(beat.portrait, beat.speaker, deps);
     if (portrait) portraitLayer.append(stageImage("st-render-gal-portrait", portrait, beat.speaker));
     previous.disabled = index === 0;
     next.disabled = index === block.beats.length - 1;
@@ -13679,7 +14009,7 @@ function createCard(card) {
   button2.className = "st-render-card-select";
   button2.dataset.cardId = card.id;
   button2.setAttribute("aria-pressed", "false");
-  button2.textContent = "✓ 选择";
+  button2.textContent = "✓ 填入输入框";
   article.append(button2);
   return article;
 }
@@ -13719,7 +14049,7 @@ function mountCardsMode(root, block, deps) {
     }
     setSelected(card.id);
     status.className = "st-render-cards-status st-render-cards-status-success";
-    status.textContent = `已填入：${card.title}`;
+    status.textContent = `已填入，请检查后发送：${card.title}`;
   }
   root.addEventListener("click", onClick);
   return {
@@ -14603,6 +14933,13 @@ async function init(lifecycle) {
         const packs = getActivePacks(settings, adapter.getCurrentCharacterName());
         return resolveSprite(packs, address)?.url ?? null;
       },
+      resolveSpeakerPortrait: (speaker) => {
+        const normalizedSpeaker = speaker.trim();
+        if (!normalizedSpeaker) return null;
+        const packs = getActivePacks(settings, adapter.getCurrentCharacterName());
+        const pack = packs.find((candidate) => candidate.roleName?.trim() === normalizedSpeaker);
+        return pack ? getPackCover(pack)?.url ?? null : null;
+      },
       insertDraft: composerBridge.insertDraft
     }
   });
@@ -14772,7 +15109,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-13 20:24"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-18 23:07"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

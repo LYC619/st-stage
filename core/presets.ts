@@ -3,7 +3,12 @@
 import type { PresetPackOverride, Sprite, SpritePack } from './types'
 import { normalizeTag, sanitizePackName } from './naming'
 import { isSafeLocalUserImagePath } from './sprite-store'
-import { normalizeNote, normalizeOutfitNotes } from './sprite-metadata'
+import {
+  normalizeLabels,
+  normalizeNote,
+  normalizeOutfitNotes,
+  normalizePackKind,
+} from './sprite-metadata'
 
 type RemoteSpriteDef = readonly [tag: string, url: string]
 
@@ -249,6 +254,16 @@ export function sanitizePresetOverrides(
         const sanitized = sanitizedNullableTag(source[field])
         if (sanitized !== undefined) metadata[field] = sanitized
       }
+      if (source.kind === null) metadata.kind = null
+      else {
+        const kind = normalizePackKind(source.kind)
+        if (kind) metadata.kind = kind
+      }
+      if (source.customTags === null) metadata.customTags = null
+      else if (Array.isArray(source.customTags)) {
+        const customTags = normalizeLabels(source.customTags)
+        metadata.customTags = customTags.length > 0 ? customTags : null
+      }
       if (source.promptNote === null) metadata.promptNote = null
       else if (typeof source.promptNote === 'string') {
         const note = normalizeNote(source.promptNote)
@@ -301,6 +316,10 @@ export function mergePresetPacks(
         if (value === null) delete merged[field]
         else if (value !== undefined) merged[field] = value
       }
+      if (metadata.kind === null) delete merged.kind
+      else if (metadata.kind !== undefined) merged.kind = metadata.kind
+      if (metadata.customTags === null) delete merged.customTags
+      else if (metadata.customTags !== undefined) merged.customTags = metadata.customTags
       if (metadata.promptNotePlacement === null) delete merged.promptNotePlacement
       else if (metadata.promptNotePlacement !== undefined) {
         merged.promptNotePlacement = metadata.promptNotePlacement

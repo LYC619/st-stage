@@ -627,7 +627,6 @@
   box-shadow: 0 0 0 1px rgba(74, 189, 126, 0.35);
 }
 
-.so-manager .so-pack-list-folded,
 .so-manager .so-role-pack-group {
   display: flex;
   flex-direction: column;
@@ -635,7 +634,15 @@
 }
 
 .so-manager .so-pack-list-folded {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  align-items: start;
+  gap: 12px;
   margin: 12px 0;
+}
+
+.so-manager .so-pack-list-folded > .so-role-pack-group {
+  grid-column: 1 / -1;
 }
 
 .so-manager .so-role-pack-row {
@@ -670,8 +677,8 @@
 
 .so-manager .so-role-pack-stack {
   position: relative;
-  width: min(220px, calc(100% - 18px));
-  margin: 4px 0 14px;
+  width: calc(100% - 14px);
+  margin: 0 0 14px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -679,6 +686,21 @@
   text-align: left;
   cursor: pointer;
   isolation: isolate;
+}
+
+.so-manager .so-role-stack-count {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 6px;
+  background: rgba(18, 18, 22, 0.9);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .so-manager .so-role-stack-layer,
@@ -878,6 +900,27 @@
   white-space: nowrap;
 }
 
+.so-manager .so-pack-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 18px;
+  margin-top: 3px;
+}
+
+.so-manager .so-pack-labels span {
+  max-width: 100%;
+  padding: 2px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 10px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* 封面角标：使用中（左下）/ 预设（右上）；实底保证压在图上仍可读 */
 .so-manager .so-card-badge {
   position: absolute;
@@ -982,6 +1025,28 @@
 /* ---- 列表页批量管理（实测反馈批次）：勾选删除 + 拖拽/按钮排序 ---- */
 .so-manager .so-batch-tip {
   margin-top: 8px;
+}
+
+.so-manager .so-batch-classification {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 8px 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.so-manager .so-batch-classification > .so-row {
+  align-items: end;
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .so-manager .so-batch-classification {
+    grid-template-columns: 1fr;
+  }
 }
 
 .so-manager .so-pack-card.so-card-selected {

@@ -10,6 +10,7 @@ import {
 } from './address-policy'
 import type { Sprite, SpriteAddress, SpritePack } from './types'
 import { spriteOutfit } from './types'
+import { normalizeLabels } from './sprite-metadata'
 
 export interface MergeCandidate {
   sourcePackId: string
@@ -182,6 +183,7 @@ export function applyPackMerge(
   })
 
   const first = packs[0]
+  const customTags = normalizeLabels(packs.flatMap((pack) => pack.customTags ?? []))
   const coverTag = first?.coverTag && sprites.some((sprite) => sprite.tag === first.coverTag)
     ? first.coverTag
     : sprites[0]?.tag
@@ -190,6 +192,8 @@ export function applyPackMerge(
     name: result.name,
     ...(first?.author ? { author: first.author } : {}),
     ...(first?.description ? { description: first.description } : {}),
+    ...(first?.kind ? { kind: first.kind } : {}),
+    ...(customTags.length > 0 ? { customTags } : {}),
     ...(commonRole ? { roleName: commonRole } : {}),
     ...(commonOutfit ? { outfit: commonOutfit } : {}),
     ...(coverTag ? { coverTag } : {}),

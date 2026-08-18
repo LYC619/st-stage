@@ -35,6 +35,7 @@ describe('upsertStorySprite', () => {
     expect(second.packs[0]).toMatchObject({
       name: 'Story - 第一章',
       roleName: '小雪',
+      kind: 'illustration',
       sourceStoryKey: story.key,
     })
     expect(second.packs[0].sprites.map((sprite) => sprite.tag)).toEqual(['场景图', '第二张'])

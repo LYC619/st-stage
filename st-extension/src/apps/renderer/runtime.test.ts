@@ -17,6 +17,34 @@ function galJson(text = '你好'): string {
   })
 }
 
+function cardsJson(): string {
+  return JSON.stringify({
+    version: 1,
+    mode: 'cards',
+    title: '下一步行动',
+    cards: [
+      { id: 'advance', title: '继续前进', description: '沿山路调查灯光', action: '我选择继续前进。' },
+      { id: 'rest', title: '原地休整', description: '恢复体力', action: '我选择原地休整。' },
+    ],
+  })
+}
+
+function battleJson(): string {
+  return JSON.stringify({
+    version: 1,
+    mode: 'battle',
+    title: '遗迹守卫战',
+    player: {
+      id: 'hero', name: '旅行者', hp: 80, maxHp: 100, mp: 30, maxMp: 50,
+      attack: 18, defense: 8, speed: 12, crit: 10, dodge: 5,
+    },
+    enemy: {
+      id: 'guard', name: '遗迹守卫', hp: 120, maxHp: 120, mp: 20, maxMp: 20,
+      attack: 16, defense: 10, speed: 8, crit: 5, dodge: 2,
+    },
+  })
+}
+
 function buildMessage(text: string, isUser = false): HTMLElement {
   const message = document.createElement('div')
   message.className = 'mes'
@@ -77,6 +105,56 @@ describe('createRendererRuntime', () => {
     expect(source?.textContent).toBe(raw)
     expect(body.textContent).toContain('前文')
     expect(body.textContent).toContain('后文')
+  })
+
+  it('同一条真实失败消息独立挂载 Cards 与 Battle 裸块', () => {
+    const factory = vi.fn<RendererModeFactory>((root, block) => {
+      root.textContent = block.mode
+      return { destroy: vi.fn() }
+    })
+    const runtime = createRendererRuntime({
+      getSettings: () => enabledSettings(),
+      factories: { cards: factory, battle: factory },
+    })
+    const cards = cardsJson()
+    const battle = battleJson()
+    const body = buildMessage(`前文\n${cards}\n战斗开始\n${battle}\n后文`)
+
+    runtime.processMessage(body)
+
+    expect(factory.mock.calls.map((call) => call[1].mode)).toEqual(['cards', 'battle'])
+    expect(body.querySelectorAll('.st-stage-renderer')).toHaveLength(2)
+    expect(Array.from(body.querySelectorAll('.st-stage-render-source')).map((source) => source.textContent)).toEqual([
+      cards,
+      battle,
+    ])
+    expect(body.textContent).toContain('前文')
+    expect(body.textContent).toContain('后文')
+  })
+
+  it('Cards 工厂失败只保留该块原文且 Battle 兄弟仍挂载', () => {
+    const cardsFactory = vi.fn<RendererModeFactory>(() => {
+      throw new Error('cards mount failed')
+    })
+    const battleFactory = vi.fn<RendererModeFactory>((root, block) => {
+      root.textContent = block.mode
+      return { destroy: vi.fn() }
+    })
+    const runtime = createRendererRuntime({
+      getSettings: () => enabledSettings(),
+      factories: { cards: cardsFactory, battle: battleFactory },
+    })
+    const cards = cardsJson()
+    const battle = battleJson()
+    const body = buildMessage(`${cards}\n${battle}`)
+
+    runtime.processMessage(body)
+
+    expect(cardsFactory).toHaveBeenCalledTimes(1)
+    expect(battleFactory).toHaveBeenCalledTimes(1)
+    expect(body.querySelectorAll('.st-stage-renderer')).toHaveLength(1)
+    expect(body.querySelector('.st-stage-render-source')?.textContent).toBe(battle)
+    expect(body.textContent).toContain(cards)
   })
 
   it('重复事件保持当前实例，ST 重渲染才销毁并重新挂载', () => {

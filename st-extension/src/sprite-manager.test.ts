@@ -674,7 +674,7 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
     manager.close()
   })
 
-  it('folds each role into a first-cover card stack and expands one horizontal row at a time', () => {
+  it('只折叠同角色多图包，单图包按顺序平铺，并一次展开一条横向列表', () => {
     let settings: PluginSettings = {
       ...createDefaultSettings(),
       galleryFoldByRole: true,
@@ -683,6 +683,7 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
         { id: 'b', name: '小雅外出', roleName: '小雅', sprites: [{ tag: '二', url: 'b' }] },
         { id: 'c', name: '小雪居家', roleName: '小雪', sprites: [{ tag: '四', url: 'd' }] },
         { id: 'd', name: '小雪礼服', roleName: '小雪', sprites: [{ tag: '五', url: 'e' }] },
+        { id: 'single', name: '小夜单包', roleName: '小夜', sprites: [{ tag: '六', url: 'f' }] },
         { id: 'free', name: '独立包', sprites: [{ tag: '三', url: 'c' }] },
       ],
     }
@@ -697,10 +698,12 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
     expect(stacks).toHaveLength(2)
     expect(stacks[0].textContent).toContain('小雅')
     expect(stacks[0].textContent).toContain('2 个图包')
+    expect(stacks[0].querySelector('.so-role-stack-count')?.textContent).toBe('2 个图包')
     expect(stacks[0].querySelector<HTMLImageElement>('.so-role-stack-cover img')?.getAttribute('src')).toBe('a')
     expect(stacks[0].querySelectorAll('[aria-hidden="true"].so-role-stack-layer')).toHaveLength(2)
-    expect(document.querySelectorAll('.so-pack-card')).toHaveLength(1)
-    expect(document.querySelector('.so-role-pack-standalone')).not.toBeNull()
+    expect(document.querySelectorAll('.so-pack-list-folded > .so-pack-card')).toHaveLength(2)
+    expect(document.querySelector('.so-pack-list-folded')?.textContent).toContain('小夜单包')
+    expect(document.querySelector('.so-pack-list-folded')?.textContent).toContain('独立包')
 
     stacks[0].click()
     let strip = document.querySelector<HTMLElement>('.so-role-pack-strip')!
@@ -1439,6 +1442,82 @@ describe('createSpriteManager selected-pack resource actions', () => {
 
     findButton(document, '完成').click()
     expect(root.classList.contains('so-manager-batch-mode')).toBe(false)
+    manager.close()
+  })
+
+  it('上传立绘疑似烤入棋盘格时给出明确且不修改图片的提示', async () => {
+    let settings = uploadSettings()
+    imageMocks.compressImage.mockResolvedValue({
+      dataUri: 'data:image/png;base64,AA==',
+      compressed: false,
+      bytes: 1,
+      transparency: 'opaque-checkerboard',
+    })
+    const manager = createSpriteManager({
+      adapter: {
+        getCurrentCharacterName: () => '阿珍',
+        saveImage: async () => 'saved-url',
+      } as unknown as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    const modal = openUploadPreview(manager, '当前包', [new File(['a'], '棋盘格.png')])
+    findButton(modal, '开始上传').click()
+
+    await vi.waitFor(() => expect(document.querySelector('.so-upload-modal')).toBeNull())
+    expect(document.querySelector('.so-toast')?.textContent).toContain(
+      '疑似把棋盘格烤进图片，插件无法安全自动去除',
+    )
+    expect(settings.packs[0].sprites[0].url).toBe('saved-url')
+    manager.close()
+  })
+
+  it('显示角色、类型和自定义标签，并在批量管理中修改选中图包', () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      galleryFoldByRole: false,
+      packs: [
+        {
+          id: 'a',
+          name: '剧情包',
+          roleName: '小雪',
+          kind: 'illustration',
+          customTags: ['主线'],
+          sprites: [{ tag: '一', url: 'a' }],
+        },
+        { id: 'b', name: '通用包', sprites: [{ tag: '二', url: 'b' }] },
+      ],
+    }
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+
+    const labels = document.querySelectorAll<HTMLElement>('.so-pack-labels')
+    expect(labels[0].textContent).toContain('角色：小雪')
+    expect(labels[0].textContent).toContain('类型：插图')
+    expect(labels[0].textContent).toContain('主线')
+    expect(labels[1].textContent).toContain('角色：其他')
+    expect(labels[1].textContent).toContain('类型：立绘')
+
+    findButton(document, '批量管理').click()
+    document.querySelectorAll<HTMLElement>('.so-pack-card')[1].click()
+    const kind = document.querySelector<HTMLSelectElement>('.so-batch-kind-select')!
+    kind.value = 'illustration'
+    findButton(document, '设置类型').click()
+    const tag = document.querySelector<HTMLInputElement>('.so-batch-tag-input')!
+    tag.value = ' 支线 '
+    findButton(document, '添加标签').click()
+
+    expect(settings.packs[1].kind).toBe('illustration')
+    expect(settings.packs[1].customTags).toEqual(['支线'])
+
+    const remove = document.querySelector<HTMLSelectElement>('.so-batch-tag-remove-select')!
+    remove.value = '支线'
+    findButton(document, '移除标签').click()
+    expect(settings.packs[1].customTags).toBeUndefined()
     manager.close()
   })
 

@@ -1,6 +1,6 @@
 import type { RendererSettings } from './config'
 import type { ComposerInsertResult } from './composer'
-import { parseRendererBlock } from './parser'
+import { parseRendererBlocks, type ParsedRendererBlock } from './parser'
 import type { RendererBlock, RendererMode } from './types'
 
 export interface RendererMount {
@@ -11,6 +11,8 @@ export interface RendererModeDeps {
   getSettings: () => RendererSettings
   /** 把 sprite 地址解析为当前图库中可显示的图片 URL。 */
   resolvePortrait?: (address: string) => string | null
+  /** 按 Gal 对话 speaker 解析第一个精确匹配角色图包的封面。 */
+  resolveSpeakerPortrait?: (speaker: string) => string | null
   /** 把结构化行动填入 ST 草稿；成功也不自动发送。 */
   insertDraft?: (text: string) => ComposerInsertResult
   /** 战斗模式可注入 RNG，生产环境缺省使用 Math.random。 */
@@ -39,15 +41,19 @@ export interface RendererRuntime {
   dispose(): void
 }
 
-interface MountedState {
+interface MountedBlockState {
   mount: RendererMount
-  snapshot: Node[]
   marker: HTMLElement
   source: HTMLElement
   container: HTMLElement
   mode: RendererMode
-  outsideSignature: string
   destroyed: boolean
+}
+
+interface MountedState {
+  mounts: MountedBlockState[]
+  snapshot: Node[]
+  outsideSignature: string
 }
 
 interface TextBoundary {
@@ -82,13 +88,12 @@ function findTextBoundary(root: HTMLElement, target: number): TextBoundary | nul
   return target === consumed && last ? { node: last, offset: last.data.length } : null
 }
 
-/** 把原始协议块包进 hidden 元素；找不到精确文本时不改 DOM。 */
-function hideSourceBlock(root: HTMLElement, raw: string): HTMLElement | null {
+/** 按原始消息偏移把协议块包进 hidden 元素；找不到精确文本时不改 DOM。 */
+function hideSourceBlock(root: HTMLElement, parsed: ParsedRendererBlock): HTMLElement | null {
   const text = root.textContent ?? ''
-  const startOffset = text.indexOf(raw)
-  if (startOffset < 0) return null
-  const start = findTextBoundary(root, startOffset)
-  const end = findTextBoundary(root, startOffset + raw.length)
+  if (text.slice(parsed.start, parsed.end) !== parsed.raw) return null
+  const start = findTextBoundary(root, parsed.start)
+  const end = findTextBoundary(root, parsed.end)
   if (!start || !end) return null
   const range = document.createRange()
   range.setStart(start.node, start.offset)
@@ -102,23 +107,23 @@ function hideSourceBlock(root: HTMLElement, raw: string): HTMLElement | null {
 }
 
 /** 序列化 renderer 容器之外的 DOM，用于识别 ST 的迟到增量更新。 */
-function outsideSignature(root: HTMLElement, marker: HTMLElement, container: HTMLElement): string {
+function outsideSignature(root: HTMLElement, mounts: MountedBlockState[]): string {
   const holder = document.createElement('div')
+  const owned = new Set<Node>(mounts.flatMap((state) => [state.marker, state.container]))
   for (const node of Array.from(root.childNodes)) {
-    if (node !== marker && node !== container) holder.append(node.cloneNode(true))
+    if (!owned.has(node)) holder.append(node.cloneNode(true))
   }
   return holder.innerHTML
 }
 
 /** 判断消息外部 DOM 自挂载后是否仍未被 ST 改写。 */
 function stillOwnsDom(root: HTMLElement, state: MountedState): boolean {
-  return state.marker.parentNode === root
-    && state.container.parentNode === root
-    && outsideSignature(root, state.marker, state.container) === state.outsideSignature
+  return state.mounts.every((mount) => mount.marker.parentNode === root && mount.container.parentNode === root)
+    && outsideSignature(root, state.mounts) === state.outsideSignature
 }
 
 /** 安全调用模式清理，单个模式异常不能阻断其他楼层恢复。 */
-function destroyMount(state: MountedState): void {
+function destroyMount(state: MountedBlockState): void {
   if (state.destroyed) return
   state.destroyed = true
   try {
@@ -139,13 +144,15 @@ export function createRendererRuntime(deps: RendererRuntimeDeps): RendererRuntim
   function cleanupRoot(root: HTMLElement): void {
     const state = states.get(root)
     if (!state) return
-    destroyMount(state)
+    for (const mount of state.mounts) destroyMount(mount)
     if (stillOwnsDom(root, state)) {
       root.replaceChildren(...state.snapshot)
     } else {
-      state.marker.remove()
-      state.container.remove()
-      if (root.contains(state.source)) state.source.replaceWith(...Array.from(state.source.childNodes))
+      for (const mount of state.mounts) {
+        mount.marker.remove()
+        mount.container.remove()
+        if (root.contains(mount.source)) mount.source.replaceWith(...Array.from(mount.source.childNodes))
+      }
     }
     states.delete(root)
     mountedRoots.delete(root)
@@ -165,64 +172,67 @@ export function createRendererRuntime(deps: RendererRuntimeDeps): RendererRuntim
     if (!root.isConnected) return
     const settings = deps.getSettings()
     const current = states.get(root)
-    if (current && stillOwnsDom(root, current) && settings.enabled && isModeEnabled(settings, current.mode)) return
+    if (
+      current
+      && stillOwnsDom(root, current)
+      && settings.enabled
+      && current.mounts.every((mount) => isModeEnabled(settings, mount.mode))
+    ) return
     if (current) cleanupRoot(root)
     const message = root.closest('.mes')
     if (message?.getAttribute('is_user') === 'true' || message?.getAttribute('is_system') === 'true') return
     if (!settings.enabled) return
-    const parsed = parseRendererBlock(root.textContent ?? '')
-    if (!parsed.ok || !isModeEnabled(settings, parsed.block.mode)) return
-    const factory = deps.factories[parsed.block.mode] as RendererModeFactory | undefined
-    if (!factory) return
-
-    const container = document.createElement('section')
-    container.className = RENDERER_CLASS
-    let mount: RendererMount
-    try {
-      mount = factory(container, parsed.block, modeDeps)
-      if (!mount || typeof mount.destroy !== 'function') return
-    } catch {
-      return
-    }
-
     const snapshot = Array.from(root.childNodes).map((node) => node.cloneNode(true))
-    const source = (() => {
+    const prepared: Array<{
+      parsed: ParsedRendererBlock
+      container: HTMLElement
+      mount: RendererMount
+    }> = []
+    for (const parsed of parseRendererBlocks(root.textContent ?? '')) {
+      if (!isModeEnabled(settings, parsed.block.mode)) continue
+      const factory = deps.factories[parsed.block.mode] as RendererModeFactory | undefined
+      if (!factory) continue
+      const container = document.createElement('section')
+      container.className = RENDERER_CLASS
       try {
-        return hideSourceBlock(root, parsed.raw)
+        const mount = factory(container, parsed.block, modeDeps)
+        if (!mount || typeof mount.destroy !== 'function') continue
+        prepared.push({ parsed, container, mount })
       } catch {
-        return null
+        // 单个模式工厂失败时只保留该块原文，继续处理合法兄弟块。
+        continue
       }
-    })()
-    if (!source) {
-      const failedState: MountedState = {
-        mount,
-        snapshot,
-        marker: container,
-        source: container,
-        container,
-        mode: parsed.block.mode,
-        outsideSignature: '',
-        destroyed: false,
-      }
-      destroyMount(failedState)
-      root.replaceChildren(...snapshot)
-      return
     }
+    if (prepared.length === 0) return
 
-    const marker = document.createElement('span')
-    marker.className = MARKER_CLASS
-    marker.hidden = true
-    root.append(marker, container)
-    states.set(root, {
-      mount,
-      snapshot,
-      marker,
-      source,
-      container,
-      mode: parsed.block.mode,
-      outsideSignature: outsideSignature(root, marker, container),
-      destroyed: false,
-    })
+    const mounts: MountedBlockState[] = []
+    for (const item of [...prepared].reverse()) {
+      const source = (() => {
+        try {
+          return hideSourceBlock(root, item.parsed)
+        } catch {
+          return null
+        }
+      })()
+      if (!source) {
+        try { item.mount.destroy() } catch { /* 清理异常不阻断兄弟块挂载。 */ }
+        continue
+      }
+      const marker = document.createElement('span')
+      marker.className = MARKER_CLASS
+      marker.hidden = true
+      mounts.unshift({
+        mount: item.mount,
+        marker,
+        source,
+        container: item.container,
+        mode: item.parsed.block.mode,
+        destroyed: false,
+      })
+    }
+    if (mounts.length === 0) return
+    for (const mount of mounts) root.append(mount.marker, mount.container)
+    states.set(root, { mounts, snapshot, outsideSignature: outsideSignature(root, mounts) })
     mountedRoots.add(root)
   }
 

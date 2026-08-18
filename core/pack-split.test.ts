@@ -15,6 +15,8 @@ function multiGroupPack(): SpritePack {
     id: 'old',
     name: '合集',
     author: '我',
+    kind: 'illustration',
+    customTags: ['剧情'],
     sprites: [
       { tag: '微笑', url: 'n1', group: '鸣人' },
       { tag: '生气', url: 'n2', group: '鸣人' },
@@ -48,6 +50,8 @@ describe('splitPackByGroup', () => {
     expect(naruto.sprites.map((s) => s.tag)).toEqual(['微笑', '生气'])
     expect(naruto.sprites.every((s) => s.group === undefined)).toBe(true)
     expect(naruto.author).toBe('我')
+    expect(naruto.kind).toBe('illustration')
+    expect(naruto.customTags).toEqual(['剧情'])
   })
   it('原包对象不被修改（可逆前提：先建新包再决定是否删原）', () => {
     const original = multiGroupPack()

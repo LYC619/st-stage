@@ -11,7 +11,12 @@ import { genId } from './sprite-store'
 import { normalizeTag, sanitizeDescription, sanitizePackName } from './naming'
 import { extractImageCode } from './share-code'
 import { recompressDataUri } from './image-compress'
-import { normalizeLabels, normalizeNote, normalizeOutfitNotes } from './sprite-metadata'
+import {
+  normalizeLabels,
+  normalizeNote,
+  normalizeOutfitNotes,
+  normalizePackKind,
+} from './sprite-metadata'
 
 /**
  * 将 SpritePack 序列化为导出文件对象。
@@ -48,11 +53,15 @@ export async function exportPack(pack: SpritePack, embedHosted = false): Promise
   const promptNote = normalizeNote(pack.promptNote)
   const outfitNotes = normalizeOutfitNotes(pack.outfitNotes)
   const sourceStoryKey = typeof pack.sourceStoryKey === 'string' ? pack.sourceStoryKey.trim() : ''
+  const kind = normalizePackKind(pack.kind)
+  const customTags = normalizeLabels(pack.customTags)
   return {
     format: 'sprite-pack@3',
     name: pack.name,
     author: pack.author,
     description: pack.description,
+    ...(kind ? { kind } : {}),
+    ...(customTags.length > 0 ? { customTags } : {}),
     ...(pack.roleName ? { roleName: pack.roleName } : {}),
     ...(pack.outfit ? { outfit: pack.outfit } : {}),
     ...(promptNote ? { promptNote } : {}),
@@ -92,6 +101,8 @@ export function importPack(jsonText: string): SpritePack {
     name?: unknown
     author?: unknown
     description?: unknown
+    kind?: unknown
+    customTags?: unknown
     roleName?: unknown
     outfit?: unknown
     promptNote?: unknown
@@ -157,6 +168,8 @@ export function importPack(jsonText: string): SpritePack {
   const coverTag = sprites.some((s) => s.tag === normalizedCover) ? normalizedCover : undefined
   const roleName = typeof file.roleName === 'string' ? normalizeTag(file.roleName) : ''
   const outfit = typeof file.outfit === 'string' ? normalizeTag(file.outfit) : ''
+  const kind = normalizePackKind(file.kind)
+  const customTags = normalizeLabels(file.customTags)
   const promptNote = normalizeNote(file.promptNote)
   const outfitNotes = normalizeOutfitNotes(file.outfitNotes)
   const sourceStoryKey = typeof file.sourceStoryKey === 'string' ? file.sourceStoryKey.trim() : ''
@@ -172,6 +185,8 @@ export function importPack(jsonText: string): SpritePack {
         : undefined,
     ...(roleName ? { roleName } : {}),
     ...(outfit ? { outfit } : {}),
+    ...(kind ? { kind } : {}),
+    ...(customTags.length > 0 ? { customTags } : {}),
     ...(promptNote ? { promptNote } : {}),
     ...(file.promptNotePlacement === 'before-list' || file.promptNotePlacement === 'after-list'
       ? { promptNotePlacement: file.promptNotePlacement }

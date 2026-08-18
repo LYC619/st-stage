@@ -39,7 +39,7 @@ function finding(input: FindingInput): Finding {
     ...(input.actionId ? { actionId: input.actionId } : {}),
     explanation: {
       ...input.explanation,
-      result: input.explanation.result ?? '尚未应用 / 待复测。',
+      result: input.explanation.result ?? '尚未应用，等待再次检查。',
     },
   }
 }
@@ -74,21 +74,21 @@ export function buildSafePlan(
     ? messageLimit
     : Math.min(current.chat_truncation, messageLimit)
   const candidates = [
-    planAction('perf-fast-ui', '开启 No Blur', 'fast_ui_mode', current.fast_ui_mode, true),
+    planAction('perf-fast-ui', '关闭背景模糊', 'fast_ui_mode', current.fast_ui_mode, true),
     planAction('perf-reduced-motion', '开启减少动画', 'reduced_motion', current.reduced_motion, true, true),
     planAction('perf-no-shadows', '关闭阴影', 'noShadows', current.noShadows, true),
-    planAction('perf-smooth-streaming', '关闭平滑流式', 'smooth_streaming', current.smooth_streaming, false),
-    planAction('perf-stream-fade', '关闭流式淡入', 'stream_fade_in', current.stream_fade_in, false),
+    planAction('perf-smooth-streaming', '关闭平滑文字更新', 'smooth_streaming', current.smooth_streaming, false),
+    planAction('perf-stream-fade', '关闭文字淡入', 'stream_fade_in', current.stream_fade_in, false),
     planAction(
       'perf-streaming-fps',
-      '降低流式帧率',
+      '降低流式更新频率',
       'streaming_fps',
       current.streaming_fps,
       Math.min(current.streaming_fps, 15),
     ),
     planAction(
       'perf-chat-truncation',
-      '限制消息 DOM 数量',
+      '减少同时显示的消息',
       'chat_truncation',
       current.chat_truncation,
       nextMessages,
@@ -124,7 +124,7 @@ function settingFinding(
       reason,
       impact,
       reload,
-      restore: '可以从本次性能设置事务恢复到修改前的原值。',
+      restore: '可以点“恢复本次性能设置”回到修改前。',
     },
   })
 }
@@ -165,35 +165,35 @@ export function diagnose(
     if (!current.fast_ui_mode) findings.push(settingFinding(
       'setting-no-blur',
       'perf-fast-ui',
-      'No Blur 当前未开启，界面仍可能使用背景模糊。',
-      '开启 No Blur。',
-      '背景模糊会增加合成与 GPU 工作。',
-      '界面毛玻璃效果会减少，功能与生成语义不变。',
+      '背景模糊当前开启。',
+      '关闭背景模糊。',
+      '背景模糊会增加页面绘制工作。',
+      '界面毛玻璃效果会减少，不改变模型回复内容。',
       '通常立即生效；部分界面在刷新后完全更新。',
     ))
     if (!current.reduced_motion) findings.push(settingFinding(
       'setting-reduced-motion',
       'perf-reduced-motion',
-      '减少动画当前未开启。',
-      '开启减少动画。',
+      '动画效果当前较多。',
+      '减少动画效果。',
       '减少持续过渡和动画更新可降低主线程与合成工作。',
-      '界面过渡会更直接，功能与生成语义不变。',
+      '界面过渡会更直接，不改变模型回复内容。',
       '刷新页面后完全生效。',
     ))
     if (!current.noShadows) findings.push(settingFinding(
       'setting-no-shadows',
       'perf-no-shadows',
-      '关闭阴影当前未开启。',
-      '开启关闭阴影。',
+      '阴影效果当前开启。',
+      '关闭阴影效果。',
       '减少阴影绘制可降低重绘成本。',
-      '界面层次感会减弱，功能与生成语义不变。',
+      '界面层次感会减弱，不改变模型回复内容。',
       '通常立即生效。',
     ))
     if (current.smooth_streaming) findings.push(settingFinding(
       'setting-smooth-streaming',
       'perf-smooth-streaming',
-      '平滑流式当前开启。',
-      '关闭平滑流式。',
+      '平滑文字更新当前开启。',
+      '关闭平滑文字更新。',
       '减少生成期间持续的文字动画与重绘。',
       '文字会更直接地更新，不改变模型输出内容。',
       '立即影响后续流式回复。',
@@ -201,8 +201,8 @@ export function diagnose(
     if (current.stream_fade_in) findings.push(settingFinding(
       'setting-stream-fade',
       'perf-stream-fade',
-      '流式淡入当前开启。',
-      '关闭流式淡入。',
+      '文字淡入当前开启。',
+      '关闭文字淡入。',
       '减少每批新文字的视觉动画。',
       '新文字不再淡入，不改变模型输出内容。',
       '立即影响后续流式回复。',
@@ -210,8 +210,8 @@ export function diagnose(
     if (current.streaming_fps > 15) findings.push(settingFinding(
       'setting-streaming-fps',
       'perf-streaming-fps',
-      `流式帧率为 ${current.streaming_fps} FPS，高于安全方案上限 15 FPS。`,
-      '降低到 15 FPS；已有更低值不会调高。',
+      `流式更新频率为 ${current.streaming_fps}，高于安全建议上限 15。`,
+      '降低到 15；已有更低值不会调高。',
       '减少生成期间 UI 更新频率。',
       '流式动画细腻度会降低，不改变回复内容。',
       '立即影响后续流式回复。',
@@ -223,10 +223,10 @@ export function diagnose(
       'setting-chat-truncation',
       'perf-chat-truncation',
       current.chat_truncation === 0
-        ? '消息加载数为 0，会把当前聊天全部放入 DOM。'
-        : `消息加载数为 ${current.chat_truncation}，高于当前设备建议上限 ${limit}。`,
+        ? '同时显示的消息数为 0，会把当前聊天全部放入页面。'
+        : `同时显示的消息数为 ${current.chat_truncation}，高于当前设备建议上限 ${limit}。`,
       `限制到 ${limit}；已有更低的非零值不会调高。`,
-      '减少同时渲染的历史消息与 DOM 节点。',
+      '减少同时渲染的历史消息与页面节点。',
       '上翻时仍可继续加载历史消息，不会删除聊天数据。',
       '需要重载当前聊天。',
     ))
@@ -242,12 +242,12 @@ export function diagnose(
     severity: longestTask >= 100 ? 'risk' : 'suggestion',
     confidence: 'measurement',
     explanation: {
-      detected: `6 秒样本中观察到 ${longTaskCount} 次 Long Task，最长 ${longestTask}ms。`,
-      change: '先应用安全渲染方案并用相同探针复测；若仍存在，再做扩展 A/B。',
-      reason: 'Long Task 表示主线程连续占用至少 50ms，会阻塞输入和绘制。',
+      detected: `6 秒检查中发现 ${longTaskCount} 次页面长时间占用，最长 ${longestTask}ms。`,
+      change: '先应用安全显示建议，再次检查；若仍存在，再临时关闭扩展做对比。',
+      reason: '页面连续忙碌超过 50ms，可能让点击和绘制变慢。',
       impact: '该指标属于整个页面，不能单独归因到某个扩展。',
-      reload: '安全渲染项按各字段要求生效；扩展 A/B 需要刷新。',
-      restore: '安全设置和扩展实验分别保存恢复状态。',
+      reload: '显示设置按各项说明生效；临时关闭扩展需要刷新。',
+      restore: '显示设置和扩展排查都保留独立的恢复入口。',
     },
   }))
 
@@ -261,12 +261,12 @@ export function diagnose(
     severity: 'info',
     confidence: 'correlation',
     explanation: {
-      detected: `Resource Timing 记录到 ${extensionResources.length} 个扩展资源分组。`,
-      change: '只把这些扩展作为刷新后 A/B 的候选，不自动禁用。',
-      reason: '下载或加载记录仅提供相关线索，不能归因持续 CPU 或内存成本。',
-      impact: 'A/B 暂时禁用扩展可能影响对应功能，必须由用户选择。',
+      detected: `记录到 ${extensionResources.length} 个扩展的加载资源。`,
+      change: '只把这些扩展列为“临时关闭扩展找卡顿”的对比对象，不会自动关闭。',
+      reason: '下载或加载记录只能提供线索，不能据此判断某个扩展持续占用处理器或内存。',
+      impact: '临时关闭扩展可能影响对应功能，必须由用户自己选择。',
       reload: '扩展启停需要刷新后才真正改变加载状态。',
-      restore: 'A/B 流程保留最初禁用清单，可全部恢复。',
+      restore: '扩展排查会保留最初的禁用清单，可以全部恢复。',
     },
   }))
 

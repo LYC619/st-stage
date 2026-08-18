@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseRendererBlock } from './parser'
+import { parseRendererBlock, parseRendererBlocks } from './parser'
 
 function wrap(value: unknown): string {
   return `<STStageRender>${JSON.stringify(value)}</STStageRender>`
@@ -146,6 +146,40 @@ describe('parseRendererBlock', () => {
     const second = JSON.stringify(bareBlocks[1].value)
 
     expect(parseRendererBlock(`${first}\n${second}`)).toEqual({ ok: false, found: false })
+  })
+
+  it('按消息顺序恢复 DOMPurify 剥掉包装后的 Cards 与 Battle 裸对象', () => {
+    const cards = JSON.stringify(bareBlocks[1].value)
+    const battle = JSON.stringify(bareBlocks[2].value)
+
+    expect(parseRendererBlocks(`可选行动：\n${cards}\n战斗开始：\n${battle}`)).toMatchObject([
+      { raw: cards, block: { mode: 'cards', title: '选择' } },
+      { raw: battle, block: { mode: 'battle', title: '遗迹守卫战' } },
+    ])
+  })
+
+  it('包装块存在时优先解析合法邻居并保留非法块原文', () => {
+    const cards = wrap(bareBlocks[1].value)
+    const invalid = '<STStageRender>{"version":1,"mode":"cards","cards":[]}</STStageRender>'
+    const battle = wrap(bareBlocks[2].value)
+
+    expect(parseRendererBlocks(`${cards}\n${invalid}\n${battle}`)).toMatchObject([
+      { raw: cards, block: { mode: 'cards' } },
+      { raw: battle, block: { mode: 'battle' } },
+    ])
+  })
+
+  it('最多返回前三个合法 Renderer 块并让第四块保留原文', () => {
+    const raws = [
+      wrap(bareBlocks[0].value),
+      wrap(bareBlocks[1].value),
+      wrap(bareBlocks[2].value),
+      wrap({ ...bareBlocks[1].value, title: '第四块' }),
+    ]
+
+    const results = parseRendererBlocks(raws.join('\n'))
+
+    expect(results.map((result) => result.raw)).toEqual(raws.slice(0, 3))
   })
 
   it('合法裸对象与无关对象并存时只接受合法候选', () => {

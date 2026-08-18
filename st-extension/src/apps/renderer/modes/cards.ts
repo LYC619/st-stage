@@ -24,7 +24,7 @@ function createCard(card: ChoiceCard): HTMLElement {
   button.className = 'st-render-card-select'
   button.dataset.cardId = card.id
   button.setAttribute('aria-pressed', 'false')
-  button.textContent = '✓ 选择'
+  button.textContent = '✓ 填入输入框'
   article.append(button)
   return article
 }
@@ -71,7 +71,7 @@ export function mountCardsMode(root: HTMLElement, block: CardsRenderBlock, deps:
     }
     setSelected(card.id)
     status.className = 'st-render-cards-status st-render-cards-status-success'
-    status.textContent = `已填入：${card.title}`
+    status.textContent = `已填入，请检查后发送：${card.title}`
   }
 
   root.addEventListener('click', onClick)

@@ -3,9 +3,10 @@
  * 纯函数式，状态由调用方（适配器）持有并持久化。
  */
 
-import type { PluginSettings, Sprite, SpriteAddress, SpritePack } from './types'
+import type { PluginSettings, Sprite, SpriteAddress, SpritePack, SpritePackKind } from './types'
 import { formatAddress, parseAddress } from './types'
 import { normalizeTag } from './naming'
+import { normalizeLabels } from './sprite-metadata'
 import {
   type AddressConflict,
   addressConflictKey,
@@ -443,6 +444,60 @@ export function removePacks(settings: PluginSettings, packIds: string[]): Plugin
   let next = settings
   for (const id of packIds) next = removePack(next, id)
   return next
+}
+
+/** 为选中的图包统一设置用途；未知 id 忽略。 */
+export function setPackKind(
+  settings: PluginSettings,
+  packIds: string[],
+  kind: SpritePackKind,
+): PluginSettings {
+  const selected = new Set(packIds)
+  return {
+    ...settings,
+    packs: settings.packs.map((pack) => selected.has(pack.id) ? { ...pack, kind } : pack),
+  }
+}
+
+/** 为选中的图包追加一个规范化自定义标签；空标签不产生改动。 */
+export function addPackCustomTag(
+  settings: PluginSettings,
+  packIds: string[],
+  rawTag: string,
+): PluginSettings {
+  const tag = normalizeLabels([rawTag])[0]
+  if (!tag) return settings
+  const selected = new Set(packIds)
+  return {
+    ...settings,
+    packs: settings.packs.map((pack) => {
+      if (!selected.has(pack.id)) return pack
+      const customTags = normalizeLabels([...(pack.customTags ?? []), tag])
+      return { ...pack, customTags }
+    }),
+  }
+}
+
+/** 从选中的图包移除一个规范化自定义标签；清空后删除字段。 */
+export function removePackCustomTag(
+  settings: PluginSettings,
+  packIds: string[],
+  rawTag: string,
+): PluginSettings {
+  const tag = normalizeLabels([rawTag])[0]
+  if (!tag) return settings
+  const selected = new Set(packIds)
+  return {
+    ...settings,
+    packs: settings.packs.map((pack) => {
+      if (!selected.has(pack.id)) return pack
+      const customTags = normalizeLabels(pack.customTags).filter((item) => item !== tag)
+      const next = { ...pack }
+      if (customTags.length > 0) next.customTags = customTags
+      else delete next.customTags
+      return next
+    }),
+  }
 }
 
 /** 验证已经完成 URI 解码的 ST 用户图片路径；调用方不得再次解码。 */

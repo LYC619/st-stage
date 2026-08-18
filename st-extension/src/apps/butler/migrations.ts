@@ -273,7 +273,7 @@ export function normalizeButlerTransaction(value: unknown): ButlerTransaction | 
     if (!normalized || normalized.group !== value.group) return null
     actions.push(normalized)
   }
-  if (!before.ok || !requested.ok || !actual.ok) return null
+  if (!before.ok || !requested.ok || !actual.ok || actions.length === 0) return null
   return {
     id: value.id,
     group: value.group,
@@ -427,7 +427,7 @@ export function createEmptyButlerData(): ButlerDataV2 {
   }
 }
 
-export function migrateButlerData(value: unknown, options: MigrationOptions = {}): ButlerDataV2 {
+export function migrateButlerData(value: unknown, _options: MigrationOptions = {}): ButlerDataV2 {
   if (!isRecord(value)) return createEmptyButlerData()
   if (value.version === BUTLER_DATA_VERSION) return normalizeV2(value) ?? createEmptyButlerData()
   const snapshot = normalizePerformanceSnapshot(value.snapshot)
@@ -435,22 +435,12 @@ export function migrateButlerData(value: unknown, options: MigrationOptions = {}
     return createEmptyButlerData()
   }
 
-  const now = options.now ?? Date.now()
-  const id = options.idFactory?.() ?? `legacy-performance-${now}`
   return {
     version: BUTLER_DATA_VERSION,
-    performanceModeOn: value.perfOn === true,
-    activeTransaction: {
-      id,
-      group: 'performanceSettings',
-      createdAt: now,
-      status: 'applied',
-      restoreStatus: 'available',
-      before: { ...snapshot.value },
-      requested: {},
-      actual: {},
-      actions: [],
-    },
+    performanceModeOn: false,
+    // 旧版只保存整组快照，没有每个字段的实际回读结果，无法安全生成可恢复事务。
+    // 清空保护槽，让用户重新体检并生成有逐项证据的新事务。
+    activeTransaction: null,
     pendingExperiment: null,
     history: [],
   }

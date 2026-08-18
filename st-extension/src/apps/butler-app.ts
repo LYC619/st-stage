@@ -52,13 +52,13 @@ interface ButlerViewState {
 }
 
 const FIELD_LABELS: Record<keyof PerformanceSettingsSnapshot, string> = {
-  fast_ui_mode: 'No Blur',
-  reduced_motion: '减少动画',
+  fast_ui_mode: '关闭背景模糊',
+  reduced_motion: '减少动画效果',
   noShadows: '关闭阴影',
-  smooth_streaming: '平滑流式',
-  stream_fade_in: '流式淡入',
-  streaming_fps: '流式帧率',
-  chat_truncation: '消息加载数',
+  smooth_streaming: '平滑文字更新',
+  stream_fade_in: '文字淡入',
+  streaming_fps: '流式更新频率',
+  chat_truncation: '同时显示的消息数',
 }
 
 function valueText(value: JsonValue | undefined): string {
@@ -231,11 +231,11 @@ function mountButler(
 
   const actionBridge: ButlerActionBridge = {
     readGroup: async (group) => {
-      if (group !== 'performanceSettings') throw new Error('当前主屏只处理性能设置事务')
+      if (group !== 'performanceSettings') throw new Error('当前主屏只能修改性能设置')
       return readPerformanceGroup()
     },
     writeGroup: async (group, fields) => {
-      if (group !== 'performanceSettings') throw new Error('当前主屏只处理性能设置事务')
+      if (group !== 'performanceSettings') throw new Error('当前主屏只能修改性能设置')
       await services.writePerformance(fields as Partial<PerformanceSettingsSnapshot>)
     },
     persistTransaction: async (transaction) => {
@@ -262,7 +262,7 @@ function mountButler(
     state.sampling = true
     const controller = new AbortController()
     state.controller = controller
-    setNotice(forExperiment ? '正在运行扩展复测，请保持页面前台。' : '正在采样，请保持页面前台且不要操作聊天。')
+    setNotice(forExperiment ? '正在检查扩展关闭后的表现，请保持页面前台。' : '正在检查，请保持页面前台且不要操作聊天。')
     render()
     try {
       const result = probe === 'controlledScroll'
@@ -301,13 +301,13 @@ function mountButler(
           baseline.invalidReason ? 'cancelled' : 'completed',
         )
         data = persistData(upsertHistory(data, record), record.id)
-        if (baseline.invalidReason) throw new Error(`基线样本无效：${baseline.invalidReason}`)
+        if (baseline.invalidReason) throw new Error(`优化前检查未完成：${baseline.invalidReason}`)
       }
       const transaction = await applyTransaction(plan.actions, actionBridge, baseline?.id)
       data = persistData(upsertHistory(data, transactionHistory(transaction)), `history-${transaction.id}`)
       setNotice(
         transaction.status === 'applied'
-          ? `已应用 ${transaction.actions.filter((action) => action.status === 'applied').length} 项；可复测并随时恢复。`
+          ? `已应用 ${transaction.actions.filter((action) => action.status === 'applied').length} 项；可以再测一次，也可以随时恢复。`
           : '部分设置未成功写入，已保留事务和每项实际结果。',
         transaction.status === 'applied' ? 'success' : 'error',
       )
@@ -323,15 +323,15 @@ function mountButler(
   const remeasure = async () => {
     if (state.sampling) return
     const baseline = baselineForTransaction()
-    if (!baseline || baseline.probe === 'static') throw new Error('请先完成一次 6 秒体检，再运行同探针复测')
+    if (!baseline || baseline.probe === 'static') throw new Error('请先完成一次检查，再点“再测一次，比较优化前后”。')
     const result = await runProbe(baseline.probe)
-    const record = measurementHistory(result, '优化后复测', result.invalidReason ? 'cancelled' : 'completed')
+    const record = measurementHistory(result, '优化后再次检查', result.invalidReason ? 'cancelled' : 'completed')
     data = persistData(upsertHistory(data, record), record.id)
     state.comparison = compareMeasurements(baseline, result)
     setNotice(
       state.comparison.comparable
-        ? '样本条件一致，已计算原始指标差值。'
-        : `样本不可直接比较：${state.comparison.reasons.join('；')}。`,
+        ? '两次检查条件一致，已显示优化前后的变化。'
+        : `两次检查条件不同，暂时不能直接比较：${state.comparison.reasons.join('；')}。`,
       state.comparison.comparable ? 'success' : 'info',
     )
   }
@@ -373,9 +373,9 @@ function mountButler(
       let baseline = state.measurement
       if (!baseline || baseline.probe === 'static' || baseline.invalidReason) {
         baseline = await runProbe(state.selectedProbe)
-        if (baseline.invalidReason) throw new Error('基线样本无效，未开始扩展实验')
+        if (baseline.invalidReason) throw new Error('排查前检查未完成，暂时不能关闭扩展')
       }
-      const record = measurementHistory(baseline, '扩展实验基线')
+      const record = measurementHistory(baseline, '扩展排查前检查')
       data = persistData(upsertHistory(data, record), record.id)
       const prepared = prepareExtensionExperiment(kind, selected, inventory, baseline.id, {
         now: services.now,
@@ -387,13 +387,13 @@ function mountButler(
     },
     async sampleExperiment() {
       const pending = data.pendingExperiment
-      if (!pending || pending.status !== 'sampling') throw new Error('当前没有等待复测的扩展实验')
+      if (!pending || pending.status !== 'sampling') throw new Error('当前没有等待检查的扩展排查')
       const baseline = latestMeasurement(data, pending.baselineMeasurementId)
       const probe = baseline?.probe === 'controlledScroll' ? 'controlledScroll' : 'idle'
       const comparison = await runProbe(probe, true)
-      const record = measurementHistory(comparison, '扩展实验复测', comparison.invalidReason ? 'cancelled' : 'completed')
+      const record = measurementHistory(comparison, '关闭扩展后检查', comparison.invalidReason ? 'cancelled' : 'completed')
       data = persistData(upsertHistory(data, record), record.id)
-      if (comparison.invalidReason) throw new Error('扩展复测样本无效，请重试')
+      if (comparison.invalidReason) throw new Error('关闭扩展后的检查未完成，请重试')
       const next = recordExperimentComparison(pending, comparison.id)
       data = persistData({ ...data, pendingExperiment: next })
       if (baseline) state.comparison = compareMeasurements(baseline, comparison)
@@ -406,7 +406,7 @@ function mountButler(
         data = persistData({ ...data, pendingExperiment: completed })
         throw new Error(completed.notes ?? '扩展清单恢复失败')
       }
-      const record = experimentHistory(completed, decision === 'keep' ? '保留扩展 A/B 结果' : '恢复扩展禁用清单')
+      const record = experimentHistory(completed, decision === 'keep' ? '保留扩展排查结果' : '恢复扩展状态')
       data = persistData({ ...upsertHistory(data, record), pendingExperiment: null }, record.id)
       setNotice(decision === 'keep' ? '已保留当前扩展禁用结果。' : '已恢复最初扩展禁用清单。', 'success')
     },
@@ -430,8 +430,8 @@ function mountButler(
   }
 
   const renderPlan = (parent: HTMLElement, plan: SafePlan) => {
-    const changed = foldSection(`将修改（${plan.actions.length}）`, true, 'butler-plan-changed')
-    if (plan.actions.length === 0) text(changed.body, '当前性能设置已不高于安全方案。')
+    const changed = foldSection(`建议调整（${plan.actions.length}）`, true, 'butler-plan-changed')
+    if (plan.actions.length === 0) text(changed.body, '当前设置已经不高于安全建议，不需要继续调整。')
     for (const action of plan.actions) {
       text(changed.body, `${FIELD_LABELS[action.field as keyof PerformanceSettingsSnapshot] ?? action.label}：${valueText(action.before)} → ${valueText(action.requested)}${action.reloadRequired ? '（需刷新或重载聊天）' : ''}`)
     }
@@ -445,10 +445,16 @@ function mountButler(
   }
 
   const renderTransaction = (parent: HTMLElement, transaction: ButlerTransaction) => {
-    const result = foldSection('逐项实际结果', true, 'butler-transaction-results')
+    const result = foldSection('本次实际修改', true, 'butler-transaction-results')
+    const statusLabels: Record<ButlerTransaction['actions'][number]['status'], string> = {
+      planned: '等待修改',
+      applied: '已修改',
+      failed: '修改失败',
+      unchanged: '无需修改',
+    }
     for (const action of transaction.actions) {
       const suffix = action.error ? ` · ${action.error}` : ''
-      text(result.body, `${action.label}：请求 ${valueText(action.requested)}，实际 ${valueText(action.actual)} · ${action.status}${suffix}`)
+      text(result.body, `${action.label}：原来 ${valueText(action.before)}，现在 ${valueText(action.actual)} · ${statusLabels[action.status]}${action.reloadRequired ? ' · 需要刷新或重载聊天' : ''}${suffix}`)
     }
     parent.append(result.box)
   }
@@ -485,29 +491,37 @@ function mountButler(
     else {
       text(header, state.measurement.invalidReason
         ? `最近体检无效：${state.measurement.invalidReason}`
-        : `最近体检：${state.measurement.probe === 'static' ? '静态' : '6 秒'} · ${state.findings.length} 条可解释发现`,
+        : `最近检查：${state.measurement.probe === 'static' ? '基础检查' : '6 秒检查'} · ${state.findings.length} 条发现`,
       state.measurement.invalidReason ? 'so-butler-alert' : 'so-butler-text')
     }
     container.append(header)
 
+    const guide = el('div', 'so-app-section so-butler-guide')
+    const guideTitle = el('div', 'so-app-title')
+    guideTitle.textContent = '使用步骤'
+    guide.append(guideTitle)
+    text(guide, '1. 开始检查 → 2. 查看发现 → 3. 应用建议 → 4. 再测一次或恢复。', 'so-butler-guide-steps')
+    text(guide, '管家只会调整可读写的性能设置，不会修改模型、提示词或聊天内容。每次修改都保留恢复入口。', 'so-butler-muted')
+    container.append(guide)
+
     const sampling = el('div', 'so-app-section')
     const sampleTitle = el('div', 'so-app-title')
-    sampleTitle.textContent = '短时采样'
+    sampleTitle.textContent = '开始检查'
     sampling.append(sampleTitle)
-    text(sampling, '静置探针观察页面自身活动；受控滚动会固定滚动一段长聊天并恢复原位置。切后台、生成、聊天变化或用户干预会取消。')
+    text(sampling, '“不操作时检查”观察页面自己是否持续占用资源；“滚动长聊天检查”会自动滚动一小段并恢复原位置。切后台、生成回复、切换聊天或手动操作时，本次检查会取消。')
     sampling.append(selectRow(
-      '探针',
+      '检查方式',
       state.selectedProbe,
       [
-        { value: 'idle', label: '6 秒静置' },
-        { value: 'controlledScroll', label: '6 秒受控滚动' },
+        { value: 'idle', label: '不操作时检查（6 秒）' },
+        { value: 'controlledScroll', label: '滚动长聊天检查（6 秒）' },
       ],
       (value) => {
         state.selectedProbe = value as DynamicProbe
         render()
       },
     ))
-    if (state.sampling) sampling.append(appButton('取消采样', () => state.controller?.abort()))
+    if (state.sampling) sampling.append(appButton('取消本次检查', () => state.controller?.abort()))
     else sampling.append(appButton('开始 6 秒体检', () => void safely(async () => {
       const result = await runProbe(state.selectedProbe)
       const record = measurementHistory(result, result.probe === 'idle' ? '静置体检' : '受控滚动体检', result.invalidReason ? 'cancelled' : 'completed')
@@ -515,14 +529,14 @@ function mountButler(
     })))
     container.append(sampling)
 
-    const findingSection = foldSection(`核心发现（${state.findings.length}）`, true, 'butler-findings')
+    const findingSection = foldSection(`检查发现（${state.findings.length}）`, true, 'butler-findings')
     if (state.findings.length === 0) text(findingSection.body, state.measurement ? '当前证据没有触发建议。' : '静态体检完成后显示。')
     for (const finding of state.findings.slice(0, 5)) renderFinding(findingSection.body, finding)
     container.append(findingSection.box)
 
     const planSection = el('div', 'so-app-section')
     const planTitle = el('div', 'so-app-title')
-    planTitle.textContent = '安全优化'
+    planTitle.textContent = '可以立即应用的建议'
     planSection.append(planTitle)
     if (!current) {
       text(planSection, '当前 SillyTavern 没有公开完整性能设置，管家只做只读体检。', 'so-butler-alert')
@@ -533,19 +547,26 @@ function mountButler(
         renderTransaction(planSection, data.activeTransaction)
         const actions = el('div', 'so-butler-actions')
         actions.append(
-          appButton(state.sampling ? '正在复测' : '用相同探针复测', () => void safely(remeasure)),
+          appButton(state.sampling ? '正在再次检查' : '再测一次，比较优化前后', () => void safely(remeasure)),
           appButton('恢复本次性能设置', () => void safely(restorePerformance)),
         )
         planSection.append(actions)
       } else if (plan.actions.length > 0) {
-        planSection.append(appButton(state.applying ? '正在应用' : '应用安全优化', () => void safely(() => applySafePlan(plan))))
+        const apply = appButton(
+          state.applying ? '正在应用建议' : `立即应用 ${plan.actions.length} 项建议`,
+          () => void safely(() => applySafePlan(plan)),
+        )
+        apply.classList.add('so-butler-primary-action')
+        planSection.append(apply)
+      } else {
+        text(planSection, '这里没有需要应用的设置。如果仍然卡顿，可以打开“临时关闭扩展找卡顿”逐个排查。', 'so-butler-muted')
       }
     }
     if (state.comparison) {
-      const comparison = foldSection('复测结果', true, 'butler-comparison')
+      const comparison = foldSection('优化前后对比', true, 'butler-comparison')
       text(comparison.body, state.comparison.comparable
-        ? '样本条件一致，以下差值为“复测 - 基线”。负值通常表示对应耗时或数量下降。'
-        : `样本不可直接比较：${state.comparison.reasons.join('；')}。只在完整报告并列原始值。`)
+        ? '两次检查条件一致。下面的负数通常表示对应耗时或数量减少。'
+        : `两次检查条件不同，暂不计算差值：${state.comparison.reasons.join('；')}。可在详细结果中查看两次原始数据。`)
       if (state.comparison.comparable) {
         for (const [key, delta] of Object.entries(state.comparison.deltas)) {
           text(comparison.body, `${key} 差值：${delta >= 0 ? '+' : ''}${delta}`)
@@ -557,16 +578,16 @@ function mountButler(
 
     const modalActions = el('div', 'so-app-section so-butler-modal-actions')
     modalActions.append(
-      appButton('完整报告', () => ctx.openModal(buildReportModal(modalController))),
-      appButton('扩展排障', () => ctx.openModal(buildExtensionModal(services, modalController))),
-      appButton('玩法与服务端顾问', () => ctx.openModal(buildAdvisorModal(services))),
+      appButton('查看详细结果', () => ctx.openModal(buildReportModal(modalController))),
+      appButton('临时关闭扩展找卡顿', () => ctx.openModal(buildExtensionModal(services, modalController))),
+      appButton('记忆与服务器设置建议', () => ctx.openModal(buildAdvisorModal(services))),
     )
     container.append(modalActions)
 
     if (data.pendingExperiment) {
       const pending = el('div', 'so-app-section so-butler-pending')
-      text(pending, `扩展实验进行中：${data.pendingExperiment.kind === 'binaryIsolation' ? '二分隔离' : '选定扩展 A/B'} · 第 ${data.pendingExperiment.currentRound} 轮`)
-      pending.append(appButton('继续扩展排障', () => ctx.openModal(buildExtensionModal(services, modalController))))
+      text(pending, `扩展排查进行中：${data.pendingExperiment.kind === 'binaryIsolation' ? '分批缩小范围' : '对比所选扩展'} · 第 ${data.pendingExperiment.currentRound} 轮`)
+      pending.append(appButton('继续排查扩展', () => ctx.openModal(buildExtensionModal(services, modalController))))
       container.append(pending)
     }
 
@@ -584,6 +605,6 @@ function mountButler(
       state.measurement = measurement
       state.findings = diagnose(measurement, services.readPerformance())
     }
-    if (!state.notice) setNotice('静态体检完成。需要动态证据时运行 6 秒体检。', 'success')
+    if (!state.notice) setNotice('基础检查完成。需要观察页面运行时表现时，再运行 6 秒检查。', 'success')
   })
 }

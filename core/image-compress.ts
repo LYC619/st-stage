@@ -18,6 +18,47 @@ export interface CompressResult {
   compressed: boolean
   /** 输出体积（字节，由 base64 长度估算） */
   bytes: number
+  /** 解码后像素证据；环境无法读取 canvas 时缺省。 */
+  transparency?: ImageTransparencyEvidence
+}
+
+export type ImageTransparencyEvidence = 'transparent' | 'opaque' | 'opaque-checkerboard'
+
+/** 从 RGBA 像素判断透明度，并保守识别常见浅灰棋盘格背景。 */
+export function analyzeImagePixels(data: Uint8ClampedArray): ImageTransparencyEvidence {
+  if (data.length < 4) return 'opaque'
+  const luminanceBins = new Map<number, number>()
+  let grayscalePixels = 0
+  const totalPixels = Math.floor(data.length / 4)
+
+  for (let offset = 0; offset + 3 < data.length; offset += 4) {
+    const red = data[offset]
+    const green = data[offset + 1]
+    const blue = data[offset + 2]
+    const alpha = data[offset + 3]
+    if (alpha < 250) return 'transparent'
+    if (Math.max(red, green, blue) - Math.min(red, green, blue) > 5) continue
+    grayscalePixels += 1
+    const bin = Math.round(((red + green + blue) / 3) / 8) * 8
+    luminanceBins.set(bin, (luminanceBins.get(bin) ?? 0) + 1)
+  }
+
+  const dominant = [...luminanceBins.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2)
+  if (dominant.length === 2) {
+    const [[firstValue, firstCount], [secondValue, secondCount]] = dominant
+    const difference = Math.abs(firstValue - secondValue)
+    const dominantCount = firstCount + secondCount
+    if (
+      grayscalePixels / totalPixels >= 0.5 &&
+      firstCount / totalPixels >= 0.1 &&
+      secondCount / totalPixels >= 0.1 &&
+      dominantCount / totalPixels >= 0.5 &&
+      Math.min(firstValue, secondValue) >= 160 &&
+      difference >= 8 &&
+      difference <= 64
+    ) return 'opaque-checkerboard'
+  }
+  return 'opaque'
 }
 
 /** Blob/File → data URI */
@@ -75,16 +116,23 @@ export async function compressImage(
     const ctx = canvas.getContext('2d')
     if (!ctx) return original
     ctx.drawImage(img, 0, 0, width, height)
+    let transparency: ImageTransparencyEvidence | undefined
+    try {
+      transparency = analyzeImagePixels(ctx.getImageData(0, 0, width, height).data)
+    } catch {
+      // 某些浏览器或受限 canvas 不允许读取像素；压缩流程仍可继续。
+    }
 
     const compressedUri = canvas.toDataURL('image/webp', quality)
     // 浏览器不支持 WebP 编码时 toDataURL 静默回退 PNG；压缩后更大也不采用
     if (!compressedUri.startsWith('data:image/webp') || compressedUri.length >= originalUri.length) {
-      return original
+      return { ...original, ...(transparency ? { transparency } : {}) }
     }
     return {
       dataUri: compressedUri,
       compressed: true,
       bytes: estimateDataUriBytes(compressedUri),
+      ...(transparency ? { transparency } : {}),
     }
   } catch {
     return original

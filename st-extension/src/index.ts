@@ -5,7 +5,7 @@
  * 手机框架：悬浮 📱 图标 → Home 屏 → 内置 App（立绘/图库/设置）；见 docs/APP-SPEC.md。
  */
 
-import type { PluginSettings } from '../../core/types'
+import { getPackCover, type PluginSettings } from '../../core/types'
 import { buildActiveSpritePrompt } from '../../core/active-prompt'
 import { extractTags } from '../../core/tag-parser'
 import {
@@ -226,6 +226,13 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
       resolvePortrait: (address) => {
         const packs = getActivePacks(settings, adapter.getCurrentCharacterName())
         return resolveSprite(packs, address)?.url ?? null
+      },
+      resolveSpeakerPortrait: (speaker) => {
+        const normalizedSpeaker = speaker.trim()
+        if (!normalizedSpeaker) return null
+        const packs = getActivePacks(settings, adapter.getCurrentCharacterName())
+        const pack = packs.find((candidate) => candidate.roleName?.trim() === normalizedSpeaker)
+        return pack ? getPackCover(pack)?.url ?? null : null
       },
       insertDraft: composerBridge.insertDraft,
     },

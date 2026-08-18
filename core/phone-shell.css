@@ -404,6 +404,17 @@
   border-left: 3px solid rgba(93, 197, 143, 0.72);
 }
 
+.so-butler-guide {
+  border-left: 3px solid rgba(105, 166, 255, 0.68);
+}
+
+.so-butler-guide-steps {
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1.7;
+}
+
 .so-butler-summary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -568,6 +579,16 @@
   min-width: 0;
   margin: 0;
   white-space: normal;
+}
+
+.so-butler-primary-action {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 10px;
+  border-color: rgba(74, 189, 126, 0.72);
+  background: rgba(74, 189, 126, 0.2);
+  color: #e8fff2;
+  font-weight: 700;
 }
 
 .so-butler-notice {

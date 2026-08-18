@@ -1,6 +1,36 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { estimateDataUriBytes, recompressDataUri } from './image-compress'
+import {
+  analyzeImagePixels,
+  estimateDataUriBytes,
+  recompressDataUri,
+} from './image-compress'
+
+describe('analyzeImagePixels', () => {
+  it('检测到任意有效透明像素时判为透明图片', () => {
+    expect(analyzeImagePixels(new Uint8ClampedArray([
+      255, 255, 255, 255,
+      0, 0, 0, 80,
+    ]))).toBe('transparent')
+  })
+
+  it('识别由两种浅灰主色组成的全不透明棋盘背景', () => {
+    const pixels: number[] = []
+    for (let index = 0; index < 100; index += 1) {
+      const value = index % 2 === 0 ? 248 : 224
+      pixels.push(value, value, value, 255)
+    }
+    expect(analyzeImagePixels(new Uint8ClampedArray(pixels))).toBe('opaque-checkerboard')
+  })
+
+  it('普通全不透明彩色图片只报告无透明通道', () => {
+    expect(analyzeImagePixels(new Uint8ClampedArray([
+      220, 40, 70, 255,
+      30, 90, 210, 255,
+      180, 120, 50, 255,
+    ]))).toBe('opaque')
+  })
+})
 
 describe('recompressDataUri — 跳过分支', () => {
   it('已是 webp 原样返回（防代际画质损失）', async () => {

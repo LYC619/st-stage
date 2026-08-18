@@ -200,11 +200,11 @@ describe('compareMeasurements', () => {
 
   it.each([
     ['chat', { chatKey: 'other' }, '聊天不同'],
-    ['probe', { probe: 'controlledScroll' as const }, '探针不同'],
-    ['visibility', { foreground: false }, '前台状态不同'],
-    ['duration', { durationMs: 5000 }, '采样时长不同'],
-    ['invalid', { invalidReason: 'cancelled' }, '样本无效'],
-    ['capability', { capabilities: [{ id: 'longTasks', available: false as const, reason: 'unsupported' }] }, '能力集合不同'],
+    ['probe', { probe: 'controlledScroll' as const }, '检查方式不同'],
+    ['visibility', { foreground: false }, '页面状态不同'],
+    ['duration', { durationMs: 5000 }, '检查时长不同'],
+    ['invalid', { invalidReason: 'cancelled' }, '检查无效'],
+    ['capability', { capabilities: [{ id: 'longTasks', available: false as const, reason: 'unsupported' }] }, '可读取的数据不同'],
   ])('falls back to raw values when %s differs', (_name, overrides, reason) => {
     const before = measurement()
     const after = measurement(overrides)

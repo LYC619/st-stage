@@ -287,6 +287,37 @@ describe('extension entry lifecycle', () => {
     expect((mocks.rendererCreateDeps?.modeDeps as Record<string, unknown>)?.insertDraft).toEqual(expect.any(Function))
   })
 
+  it('按绑定顺序从首个 roleName 精确匹配 speaker 的启用图包解析封面', async () => {
+    const settings = createDefaultSettings()
+    settings.packs = [
+      { id: 'other', name: '其他', roleName: '其他角色', sprites: [{ tag: '封面', url: '/other.png' }] },
+      {
+        id: 'xiaoxue-first',
+        name: '小雪一号包',
+        roleName: '小雪',
+        coverTag: '封面',
+        sprites: [{ tag: '普通', url: '/first-normal.png' }, { tag: '封面', url: '/first-cover.png' }],
+      },
+      { id: 'xiaoxue-second', name: '小雪二号包', roleName: '小雪', sprites: [{ tag: '封面', url: '/second.png' }] },
+    ]
+    settings.bindings = [{
+      characterName: '当前聊天',
+      packIds: ['other', 'xiaoxue-first', 'xiaoxue-second'],
+      enabled: true,
+    }]
+    mocks.currentCharacterName = '当前聊天'
+    mocks.loadSettings.mockResolvedValueOnce(settings)
+    await importEntry('renderer-speaker-cover')
+    await flushInit()
+
+    const resolver = (mocks.rendererCreateDeps?.modeDeps as {
+      resolveSpeakerPortrait?: (speaker: string) => string | null
+    })?.resolveSpeakerPortrait
+
+    expect(resolver?.('小雪')).toBe('/first-cover.png')
+    expect(resolver?.('雪')).toBeNull()
+  })
+
   it('injects effective-scene notes from active packs in binding order only', async () => {
     const settings = createDefaultSettings()
     settings.packs = [

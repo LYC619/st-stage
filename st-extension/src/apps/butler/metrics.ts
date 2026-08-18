@@ -233,7 +233,7 @@ export function createMetricsSampler(deps: ButlerMetricsDependencies) {
 
     const resourceEvidence = deps.readResourceGroups()
     if (resourceEvidence === null) {
-      capabilities.push(unavailable('resourceTiming', '当前浏览器不支持 Resource Timing'))
+      capabilities.push(unavailable('resourceTiming', '当前浏览器不支持资源加载记录'))
     } else {
       metrics.resources = { groups: sanitizeResourceGroups(resourceEvidence) }
       capabilities.push(available('resourceTiming'))
@@ -247,18 +247,18 @@ export function createMetricsSampler(deps: ButlerMetricsDependencies) {
       }
       capabilities.push(available('storageEstimate'))
     } else {
-      capabilities.push(unavailable('storageEstimate', '当前浏览器不支持站点存储估算'))
+      capabilities.push(unavailable('storageEstimate', '当前浏览器不支持站点存储检查'))
     }
 
     const heap = deps.readHeapBytes()
-    if (heap === null) capabilities.push(unavailable('jsHeap', '当前浏览器不支持 JS 堆信息'))
+    if (heap === null) capabilities.push(unavailable('jsHeap', '当前浏览器不支持网页内存信息'))
     else {
       metrics.heap = { usedBytes: finiteNonNegative(heap) }
       capabilities.push(available('jsHeap'))
     }
 
     const animationCount = deps.countAnimations()
-    if (animationCount === null) capabilities.push(unavailable('cssAnimations', '当前浏览器不支持动画计数'))
+    if (animationCount === null) capabilities.push(unavailable('cssAnimations', '当前浏览器不支持动画数量统计'))
     else {
       metrics.animations = { running: finiteNonNegative(animationCount) }
       capabilities.push(available('cssAnimations'))
@@ -327,7 +327,7 @@ export function createMetricsSampler(deps: ButlerMetricsDependencies) {
       })
       snapshot.capabilities.push(longTaskSubscription
         ? available('longTasks')
-        : unavailable('longTasks', '当前浏览器不支持 Long Task 观察'))
+        : unavailable('longTasks', '当前浏览器不支持页面卡顿记录'))
 
       await deps.runTimeline(BUTLER_PROBE_DURATION_MS, controller.signal, {
         onFrame(time) {

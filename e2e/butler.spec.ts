@@ -105,7 +105,7 @@ async function loadButler(page: Page): Promise<void> {
   await page.locator('.so-phone-fab').click()
   await page.locator('.so-phone-app-icon', { hasText: '管家' }).click()
   await expect(page.locator('.so-butler-app')).toContainText('环境体检')
-  await expect(page.locator('.so-butler-app')).toContainText('静态体检完成')
+  await expect(page.locator('.so-butler-app')).toContainText('基础检查完成')
 }
 
 async function expectNoOverflowOrOverlap(page: Page, rootSelector: string): Promise<void> {
@@ -164,9 +164,9 @@ test('管家主屏和三个全屏弹窗在桌面与移动视口均可读可操�
   expect(shellShot.byteLength).toBeGreaterThan(8_000)
 
   const modals = [
-    ['完整报告', '完整体检报告'],
-    ['扩展排障', '第三方扩展'],
-    ['玩法与服务端顾问', 'Vector Storage：当前启用'],
+    ['查看详细结果', '详细检查结果'],
+    ['临时关闭扩展找卡顿', '第三方扩展'],
+    ['记忆与服务器设置建议', 'Vector Storage：当前启用'],
   ] as const
   for (const [button, expected] of modals) {
     await page.getByRole('button', { name: button, exact: true }).click()
@@ -179,13 +179,13 @@ test('管家主屏和三个全屏弹窗在桌面与移动视口均可读可操�
     await expect(page.locator('.so-butler-app')).toBeVisible()
   }
 
-  await expect(page.getByRole('button', { name: '应用安全优化', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: /立即应用 \d+ 项建议/, exact: true })).toBeVisible()
   await page.getByRole('button', { name: '开始 6 秒体检', exact: true }).click()
-  await expect(page.getByRole('button', { name: '取消采样', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '取消采样', exact: true }).click()
+  await expect(page.getByRole('button', { name: '取消本次检查', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '取消本次检查', exact: true }).click()
   await expect(page.getByRole('button', { name: '开始 6 秒体检', exact: true })).toBeVisible()
 
-  await page.getByRole('button', { name: '应用安全优化', exact: true }).click()
+  await page.getByRole('button', { name: /立即应用 \d+ 项建议/, exact: true }).click()
   await expect(page.getByRole('button', { name: '恢复本次性能设置', exact: true })).toBeVisible({ timeout: 12_000 })
   await expect(page.locator('.so-butler-app')).toContainText('已应用 7 项')
   const optimized = await page.evaluate(() => {

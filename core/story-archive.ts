@@ -59,6 +59,7 @@ function createStoryPack(story: StoryContext): SpritePack {
   return {
     id: `story_${hash(story.key)}`,
     name: sanitizePackName(`Story - ${title}`) || 'Story',
+    kind: 'illustration',
     roleName: normalizeTag(story.characterName) || undefined,
     sourceStoryKey: story.key,
     sprites: [],

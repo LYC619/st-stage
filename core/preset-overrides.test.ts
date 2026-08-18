@@ -84,6 +84,8 @@ describe('preset override state transitions', () => {
       outfit: null,
       promptNote: '  用户备注  ',
       promptNotePlacement: 'before-list' as const,
+      kind: 'illustration' as const,
+      customTags: [' 剧情 ', '剧情', 'CG'],
       ignored: 'drop me',
     }
     const metadataBefore = structuredClone(metadata)
@@ -98,6 +100,8 @@ describe('preset override state transitions', () => {
         outfit: null,
         promptNote: '用户备注',
         promptNotePlacement: 'before-list',
+        kind: 'illustration',
+        customTags: ['剧情', 'CG'],
       },
       localSprites: {
         [presetSpriteKey(sourceSprite)]: '/user/images/sprite-overlay/local.webp',
@@ -110,6 +114,8 @@ describe('preset override state transitions', () => {
       roleName: '新角色',
       promptNote: '用户备注',
       promptNotePlacement: 'before-list',
+      kind: 'illustration',
+      customTags: ['剧情', 'CG'],
     })
     expect(next.packs[0].author).toBeUndefined()
     expect(next.packs[0].outfit).toBeUndefined()

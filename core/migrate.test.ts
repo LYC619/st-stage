@@ -439,6 +439,33 @@ describe('migrateSettings', () => {
     expect(m.packs[0].sprites[0].outfit).toBe('战斗服')
   })
 
+  it('迁移并规范化图包类型与自定义标签（七期）', () => {
+    const migrated = migrateSettings({
+      settingsVersion: 6,
+      packs: [
+        {
+          id: 'illustration',
+          name: '剧情插图',
+          kind: 'illustration',
+          customTags: [' 剧情 ', '剧情', '', 7],
+          sprites: [],
+        },
+        {
+          id: 'legacy',
+          name: '旧图包',
+          kind: 'unknown',
+          customTags: 'not-an-array',
+          sprites: [],
+        },
+      ],
+    })
+
+    expect(migrated.settingsVersion).toBe(7)
+    expect(migrated.packs[0]).toMatchObject({ kind: 'illustration', customTags: ['剧情'] })
+    expect(migrated.packs[1].kind).toBeUndefined()
+    expect(migrated.packs[1].customTags).toBeUndefined()
+  })
+
   it('当前版本数据迁移后语义不变', () => {
     const current = createDefaultSettings()
     current.packs = [

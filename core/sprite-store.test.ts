@@ -4,6 +4,7 @@ import { createDefaultSettings, formatAddress, getPackCover, getSpriteSource } f
 import {
   bindCharacter,
   bindPack,
+  addPackCustomTag,
   deletableLocalSpritePaths,
   getActiveAddresses,
   getActivePacks,
@@ -16,10 +17,12 @@ import {
   moveSprite,
   previewBindingAddressChanges,
   removePacks,
+  removePackCustomTag,
   removeSprite,
   renameSprite,
   resolveSprite,
   setBinding,
+  setPackKind,
   setSpriteGroup,
   toggleBinding,
   unbindPack,
@@ -39,6 +42,35 @@ function pack(): SpritePack {
     ],
   }
 }
+
+describe('图包类型与自定义标签批量管理', () => {
+  function classifiedSettings(): PluginSettings {
+    return {
+      ...createDefaultSettings(),
+      packs: [
+        { id: 'a', name: '甲', sprites: [] },
+        { id: 'b', name: '乙', kind: 'illustration', customTags: ['剧情'], sprites: [] },
+        { id: 'c', name: '丙', customTags: ['保留'], sprites: [] },
+      ],
+    }
+  }
+
+  it('只为选中图包设置立绘或插图类型', () => {
+    const next = setPackKind(classifiedSettings(), ['a', 'b'], 'illustration')
+    expect(next.packs.map((item) => item.kind)).toEqual(['illustration', 'illustration', undefined])
+  })
+
+  it('添加标签时清洗、去重，并保留未选中图包', () => {
+    let next = addPackCustomTag(classifiedSettings(), ['a', 'b'], '  剧情  ')
+    next = addPackCustomTag(next, ['a', 'b'], '剧情')
+    expect(next.packs.map((item) => item.customTags)).toEqual([['剧情'], ['剧情'], ['保留']])
+  })
+
+  it('从选中图包移除指定标签', () => {
+    const next = removePackCustomTag(classifiedSettings(), ['b', 'c'], '剧情')
+    expect(next.packs.map((item) => item.customTags)).toEqual([undefined, undefined, ['保留']])
+  })
+})
 
 describe('getSpriteSource / getPackCover', () => {
   it('按 url 推导图源', () => {

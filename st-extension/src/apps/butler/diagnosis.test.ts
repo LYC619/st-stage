@@ -105,7 +105,7 @@ describe('diagnose', () => {
     expect(Object.keys(blur.explanation).sort()).toEqual([
       'change', 'detected', 'impact', 'reason', 'reload', 'restore', 'result',
     ])
-    expect(blur.explanation.result).toContain('待复测')
+    expect(blur.explanation.result).toContain('等待再次检查')
     expect(findings).not.toHaveProperty('score')
     expect(JSON.stringify(findings)).not.toMatch(/综合分|评分/)
   })
@@ -160,7 +160,7 @@ describe('diagnose', () => {
     expect(findings.some((finding) => finding.id === 'measured-long-tasks')).toBe(hit)
   })
 
-  it('reports resource evidence only as correlation and asks for A/B verification', () => {
+  it('reports resource evidence only as correlation and asks for comparison', () => {
     const findings = diagnose(snapshot({
       resources: { groups: [{ key: 'extension:third-party/demo', count: 3, transferSize: 1000, durationMs: 80 }] },
     }), null)
@@ -168,7 +168,8 @@ describe('diagnose', () => {
 
     expect(resource.confidence).toBe('correlation')
     expect(resource.actionId).toBeUndefined()
-    expect(JSON.stringify(resource.explanation)).toContain('A/B')
+    expect(JSON.stringify(resource.explanation)).toContain('对比')
+    expect(JSON.stringify(resource.explanation)).not.toContain('A/B')
     expect(JSON.stringify(resource.explanation)).not.toMatch(/就是|导致卡顿|元凶|证明/)
   })
 

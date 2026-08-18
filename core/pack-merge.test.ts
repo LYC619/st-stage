@@ -110,6 +110,9 @@ describe('applyPackMerge', () => {
 
   it('按候选序号选择冲突图片', () => {
     const packs = conflicting()
+    packs[0].kind = 'illustration'
+    packs[0].customTags = ['剧情']
+    packs[1].customTags = ['战斗']
     const key = previewPackMerge(packs).conflicts[0].key
     const merged = applyPackMerge(
       packs,
@@ -120,6 +123,8 @@ describe('applyPackMerge', () => {
     expect(merged.sprites[0].url).toBe('b-smile')
     expect(merged.roleName).toBe('鸣人')
     expect(merged.sprites[0].group).toBeUndefined()
+    expect(merged.kind).toBe('illustration')
+    expect(merged.customTags).toEqual(['剧情', '战斗'])
   })
 
   it('即使必需选择齐全，也拒绝未知冲突 key', () => {

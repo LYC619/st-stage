@@ -20,6 +20,8 @@
  * v5 → v6：
  * - galleryFoldByRole 的旧默认 false 一次性迁为 true
  * - 增加同 ID 预设覆盖层，并精确迁移旧“（本地）”副本
+ * v6 → v7：
+ * - 增加图包用途与包级自定义标签，旧包缺省按立绘处理
  */
 
 import type {
@@ -44,7 +46,12 @@ import {
 } from './types'
 import { normalizeTag, sanitizePackName } from './naming'
 import { extractImageCode } from './share-code'
-import { normalizeLabels, normalizeNote, normalizeOutfitNotes } from './sprite-metadata'
+import {
+  normalizeLabels,
+  normalizeNote,
+  normalizeOutfitNotes,
+  normalizePackKind,
+} from './sprite-metadata'
 import {
   getPresetPacks,
   presetSpriteKey,
@@ -319,6 +326,8 @@ function migratePack(raw: unknown): SpritePack | null {
 
   const roleName = typeof p.roleName === 'string' ? normalizeTag(p.roleName) : ''
   const outfit = typeof p.outfit === 'string' ? normalizeTag(p.outfit) : ''
+  const kind = normalizePackKind(p.kind)
+  const customTags = normalizeLabels(p.customTags)
   const promptNote = normalizeNote(p.promptNote)
   const outfitNotes = normalizeOutfitNotes(p.outfitNotes)
   const sourceStoryKey = typeof p.sourceStoryKey === 'string' ? p.sourceStoryKey.trim() : ''
@@ -327,6 +336,8 @@ function migratePack(raw: unknown): SpritePack | null {
     name,
     ...(typeof p.author === 'string' && p.author ? { author: p.author } : {}),
     ...(typeof p.description === 'string' && p.description ? { description: p.description } : {}),
+    ...(kind ? { kind } : {}),
+    ...(customTags.length > 0 ? { customTags } : {}),
     ...(roleName ? { roleName } : {}),
     ...(outfit ? { outfit } : {}),
     ...(promptNote ? { promptNote } : {}),

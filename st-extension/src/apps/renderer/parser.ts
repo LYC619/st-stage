@@ -21,8 +21,16 @@ const MAX_BARE_SCAN_CHARS = 1024 * 1024
 const MAX_ARRAY_ITEMS = 12
 const MAX_BEATS = 50
 const MAX_CARDS = 8
+const MAX_RENDERER_BLOCKS = 3
 
 type RecordValue = Record<string, unknown>
+
+export interface ParsedRendererBlock {
+  block: RendererBlock
+  raw: string
+  start: number
+  end: number
+}
 
 /** 返回一组校验结果中的首个错误。 */
 function firstError(...errors: Array<string | null>): string | null {
@@ -402,10 +410,10 @@ function validateBlock(value: unknown): RendererBlock | string {
   return 'mode 只支持 gal、cards 或 battle'
 }
 
-/** 在无标签回复中寻找数组外的平衡 JSON 对象，只接受唯一合法协议候选。 */
-function parseBareRendererBlock(source: string): RendererParseResult {
-  if (source.length > MAX_BARE_SCAN_CHARS) return { ok: false, found: false }
-  const accepted: Array<{ block: RendererBlock; raw: string }> = []
+/** 在无标签回复中寻找数组外的平衡 JSON 对象，按顺序接受至多三个合法协议候选。 */
+function parseBareRendererBlocks(source: string): ParsedRendererBlock[] {
+  if (source.length > MAX_BARE_SCAN_CHARS) return []
+  const accepted: ParsedRendererBlock[] = []
   let objectStart = -1
   let objectDepth = 0
   let arrayDepth = 0
@@ -429,7 +437,8 @@ function parseBareRendererBlock(source: string): RendererParseResult {
       else if (char === '}') objectDepth -= 1
       if (objectDepth !== 0) continue
 
-      const raw = source.slice(objectStart, index + 1)
+      const start = objectStart
+      const raw = source.slice(start, index + 1)
       objectStart = -1
       if (new TextEncoder().encode(raw).byteLength > MAX_JSON_BYTES) continue
       let value: unknown
@@ -440,8 +449,8 @@ function parseBareRendererBlock(source: string): RendererParseResult {
       }
       const block = validateBlock(value)
       if (typeof block === 'string') continue
-      accepted.push({ block, raw })
-      if (accepted.length > 1) return { ok: false, found: false }
+      accepted.push({ block, raw, start, end: index + 1 })
+      if (accepted.length >= MAX_RENDERER_BLOCKS) return accepted
       continue
     }
     if (char === '[') arrayDepth += 1
@@ -452,9 +461,50 @@ function parseBareRendererBlock(source: string): RendererParseResult {
     }
   }
 
+  return accepted
+}
+
+/** 在无标签回复中寻找数组外的平衡 JSON 对象，只接受唯一合法协议候选。 */
+function parseBareRendererBlock(source: string): RendererParseResult {
+  const accepted = parseBareRendererBlocks(source)
   return accepted.length === 1
     ? { ok: true, block: accepted[0].block, raw: accepted[0].raw }
     : { ok: false, found: false }
+}
+
+/** 扫描完整包装块；每个候选独立校验，非法块不影响合法邻居。 */
+function parseWrappedRendererBlocks(source: string): ParsedRendererBlock[] {
+  const accepted: ParsedRendererBlock[] = []
+  let cursor = 0
+  while (true) {
+    const start = source.indexOf(OPEN_TAG, cursor)
+    if (start < 0) break
+    const close = source.indexOf(CLOSE_TAG, start + OPEN_TAG.length)
+    if (close < 0) break
+    const end = close + CLOSE_TAG.length
+    const json = source.slice(start + OPEN_TAG.length, close)
+    cursor = end
+    if (new TextEncoder().encode(json).byteLength > MAX_JSON_BYTES) continue
+    let value: unknown
+    try {
+      value = JSON.parse(json)
+    } catch {
+      continue
+    }
+    const block = validateBlock(value)
+    if (typeof block === 'string') continue
+    accepted.push({ block, raw: source.slice(start, end), start, end })
+    if (accepted.length >= MAX_RENDERER_BLOCKS) break
+  }
+  return accepted
+}
+
+/** 从 AI 回复中按消息顺序提取最多三个合法渲染块。 */
+export function parseRendererBlocks(source: string): ParsedRendererBlock[] {
+  if (typeof source !== 'string') return []
+  if (source.includes(OPEN_TAG)) return parseWrappedRendererBlocks(source)
+  if (source.includes(TAG_PREFIX) || source.includes(CLOSE_TAG_PREFIX)) return []
+  return parseBareRendererBlocks(source)
 }
 
 /** 从 AI 回复中提取并校验唯一的完整渲染块，失败时保留原文由上层回退显示。 */

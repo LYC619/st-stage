@@ -21,6 +21,7 @@ import {
 import {
   type BindingConflict,
   type ConflictCheckedSettingsResult,
+  addPackCustomTag,
   bindPack,
   deletableLocalSpritePaths,
   genId,
@@ -29,9 +30,11 @@ import {
   moveSprite,
   previewBindingAddressChanges,
   removePack,
+  removePackCustomTag,
   removePacks,
   reorderBinding,
   setBinding,
+  setPackKind,
   spriteGroup,
   toggleBinding,
   unbindPack,
@@ -74,8 +77,10 @@ import {
   filterSprites,
   groupPacksByRole,
   MAX_NOTE_CODE_POINTS,
+  normalizeLabels,
   normalizeNote,
   normalizeOutfitNotes,
+  packLabels,
 } from '../../core/sprite-metadata'
 import type { STAdapter } from './st-adapter'
 import { createSpriteActions, type SpriteAction, type SpriteActionContext } from './sprite-actions'
@@ -796,8 +801,9 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     // 批量管理模式强制平铺网格：拖拽排序调整的是包列表的整体顺序，折叠分组下无法直观呈现
     if (batchMode) {
       const tip = el('div', 'so-status so-batch-tip')
-      tip.textContent = '批量管理：点卡片勾选资源操作；拖拽卡片或用 ◀ ▶ 调整顺序。预设包可保存本地或分享，但不可删除。'
+      tip.textContent = '批量管理：先勾选图包，再统一设置类型或标签；资源操作和排序仍可在上方完成。预设包可保存本地或分享，但不可删除。'
       body.append(tip)
+      body.append(renderBatchClassificationTools(body))
     }
     const useFold = settings.galleryFoldByRole && !batchMode
     const grid = el('div', useFold ? 'so-pack-list-folded' : 'so-pack-grid')
@@ -805,10 +811,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       boundIds.includes(pack.id) ? (binding?.enabled ? 'active' : 'off') : null
     if (useFold) {
       for (const group of groupPacksByRole(settings.packs)) {
-        if (!group.role) {
-          const standalone = el('div', 'so-pack-grid so-role-pack-grid so-role-pack-standalone')
-          standalone.append(renderPackCard(group.packs[0], boundState(group.packs[0])))
-          grid.append(standalone)
+        if (group.packCount === 1) {
+          grid.append(renderPackCard(group.packs[0], boundState(group.packs[0])))
           continue
         }
         const section = el('div', 'so-role-pack-group')
@@ -850,6 +854,122 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
   function selectedPacks(): SpritePack[] {
     return deps.getSettings().packs.filter((pack) => selectedPackIds.has(pack.id))
+  }
+
+  function persistSelectedPresetMetadata(
+    settings: PluginSettings,
+    packIds: string[],
+  ): PluginSettings {
+    let next = settings
+    for (const packId of packIds) {
+      if (!isPresetPack(packId)) continue
+      const pack = next.packs.find((candidate) => candidate.id === packId)
+      if (!pack) continue
+      const customTags = normalizeLabels(pack.customTags)
+      next = setPresetMetadata(next, packId, {
+        name: pack.name,
+        author: pack.author ?? null,
+        description: pack.description ?? null,
+        roleName: pack.roleName ?? null,
+        outfit: pack.outfit ?? null,
+        promptNote: pack.promptNote ?? null,
+        promptNotePlacement: pack.promptNotePlacement ?? null,
+        outfitNotes: pack.outfitNotes ?? null,
+        kind: pack.kind ?? null,
+        customTags: customTags.length > 0 ? customTags : null,
+      })
+    }
+    return next
+  }
+
+  function renderBatchClassificationTools(body: HTMLElement): HTMLElement {
+    const panel = el('div', 'so-batch-classification')
+    const ids = [...selectedPackIds]
+
+    const kindSelect = document.createElement('select')
+    kindSelect.className = 'text_pole so-batch-kind-select'
+    for (const [value, label] of [['sprite', '立绘'], ['illustration', '插图']] as const) {
+      const option = document.createElement('option')
+      option.value = value
+      option.textContent = label
+      kindSelect.append(option)
+    }
+    const kindRow = el('div', 'so-row')
+    kindRow.append(
+      labeled('类型', kindSelect),
+      button('设置类型', () => {
+        if (selectedPackIds.size === 0) {
+          toast(body, '请先勾选要设置的图包')
+          return
+        }
+        const selected = [...selectedPackIds]
+        const changed = setPackKind(
+          deps.getSettings(),
+          selected,
+          kindSelect.value === 'illustration' ? 'illustration' : 'sprite',
+        )
+        commit(persistSelectedPresetMetadata(changed, selected))
+        toast(body, `已设置 ${selected.length} 个图包的类型`)
+      }),
+    )
+
+    const tagInput = textInput('输入自定义标签')
+    tagInput.classList.add('so-batch-tag-input')
+    tagInput.maxLength = 32
+    const addRow = el('div', 'so-row')
+    addRow.append(
+      labeled('自定义标签', tagInput),
+      button('添加标签', () => {
+        const tag = normalizeLabels([tagInput.value])[0]
+        if (selectedPackIds.size === 0) {
+          toast(body, '请先勾选要设置的图包')
+          return
+        }
+        if (!tag) {
+          toast(body, '请输入标签')
+          return
+        }
+        const selected = [...selectedPackIds]
+        const changed = addPackCustomTag(deps.getSettings(), selected, tag)
+        commit(persistSelectedPresetMetadata(changed, selected))
+        toast(body, `已为 ${selected.length} 个图包添加「${tag}」`)
+      }),
+    )
+
+    const removeSelect = document.createElement('select')
+    removeSelect.className = 'text_pole so-batch-tag-remove-select'
+    const emptyOption = document.createElement('option')
+    emptyOption.value = ''
+    emptyOption.textContent = ids.length === 0 ? '先勾选图包' : '选择要移除的标签'
+    removeSelect.append(emptyOption)
+    const selectedTags = normalizeLabels(selectedPacks().flatMap((pack) => pack.customTags ?? []))
+    for (const tag of selectedTags) {
+      const option = document.createElement('option')
+      option.value = tag
+      option.textContent = tag
+      removeSelect.append(option)
+    }
+    const removeRow = el('div', 'so-row')
+    removeRow.append(
+      labeled('移除标签', removeSelect),
+      button('移除标签', () => {
+        if (selectedPackIds.size === 0) {
+          toast(body, '请先勾选要设置的图包')
+          return
+        }
+        if (!removeSelect.value) {
+          toast(body, '请选择要移除的标签')
+          return
+        }
+        const selected = [...selectedPackIds]
+        const changed = removePackCustomTag(deps.getSettings(), selected, removeSelect.value)
+        commit(persistSelectedPresetMetadata(changed, selected))
+        toast(body, `已从 ${selected.length} 个图包移除「${removeSelect.value}」`)
+      }),
+    )
+
+    panel.append(kindRow, addRow, removeRow)
+    return panel
   }
 
   function sameSprite(pack: SpritePack, source: Sprite): Sprite | null {
@@ -1077,8 +1197,10 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     title.textContent = role
     const detail = el('small')
     detail.textContent = `${packs.length} 个图包 · ${spriteCount} 张`
+    const count = el('span', 'so-role-stack-count')
+    count.textContent = `${packs.length} 个图包`
     info.append(title, detail)
-    face.append(coverBox, info)
+    face.append(coverBox, count, info)
     stack.append(face)
     stack.addEventListener('click', expand)
     return stack
@@ -1137,7 +1259,14 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     nameEl.textContent = pack.name
     const metaEl = el('small')
     metaEl.textContent = `${pack.sprites.length} 张 · ${pack.author ?? '未知作者'}`
-    info.append(nameEl, metaEl)
+    const labels = packLabels(pack)
+    const labelRow = el('div', 'so-pack-labels')
+    for (const text of [`角色：${labels.role}`, `类型：${labels.type}`, ...labels.custom]) {
+      const chip = el('span')
+      chip.textContent = text
+      labelRow.append(chip)
+    }
+    info.append(nameEl, metaEl, labelRow)
 
     card.append(coverBox, info)
 
@@ -2106,6 +2235,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     let unprocessed = 0
     let hosted = 0
     let hostFailed = 0
+    let opaqueImages = 0
+    let checkerboardImages = 0
     // 本批新建的包：同 (role|outfit|packName) 复用同一个新 id
     const newPackIds = new Map<string, string>()
 
@@ -2159,6 +2290,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         }
         try {
           const result = await compressImage(file)
+          if (result.transparency === 'opaque-checkerboard') checkerboardImages += 1
+          else if (result.transparency === 'opaque') opaqueImages += 1
           const url = await deps.adapter.saveImage(
             file.name,
             result.dataUri,
@@ -2258,6 +2391,12 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       ]
       if (skipped > 0) parts.push(`跳过 ${skipped} 张（重名/无效）`)
       if (useImgbb) parts.push(`imgbb 成功 ${hosted}${hostFailed > 0 ? `、失败 ${hostFailed}` : ''}`)
+      if (checkerboardImages > 0) {
+        parts.push(`警告：${checkerboardImages} 张疑似把棋盘格烤进图片，插件无法安全自动去除`)
+      }
+      if (opaqueImages > 0) {
+        parts.push(`提示：${opaqueImages} 张没有透明像素，作为立绘时会显示完整背景`)
+      }
       try {
         toast(backdrop?.querySelector('.so-manager-body') as HTMLElement, parts.join('，'))
       } catch (error) {

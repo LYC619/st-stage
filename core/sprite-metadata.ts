@@ -1,7 +1,7 @@
-import type { Sprite, SpritePack } from './types'
+import type { Sprite, SpritePack, SpritePackKind } from './types'
 import { spriteOutfit, spriteRole } from './types'
 
-const MAX_LABELS = 24
+export const MAX_LABELS = 24
 const MAX_LABEL_CODE_POINTS = 32
 /** 备注上限（码点）：编辑框用它设 maxlength，避免保存时才静默截断 */
 export const MAX_NOTE_CODE_POINTS = 500
@@ -95,6 +95,29 @@ export function normalizeLabels(raw: unknown): string[] {
     if (labels.length === MAX_LABELS) break
   }
   return labels
+}
+
+export function normalizePackKind(raw: unknown): SpritePackKind | undefined {
+  return raw === 'sprite' || raw === 'illustration' ? raw : undefined
+}
+
+export function packKind(pack: SpritePack): SpritePackKind {
+  return normalizePackKind(pack.kind) ?? 'sprite'
+}
+
+export interface PackLabels {
+  role: string
+  type: '立绘' | '插图'
+  custom: string[]
+}
+
+/** 包卡片的派生标签；角色与类型不重复存储，始终反映当前包信息。 */
+export function packLabels(pack: SpritePack): PackLabels {
+  return {
+    role: (pack.roleName ?? '').trim() || '其他',
+    type: packKind(pack) === 'illustration' ? '插图' : '立绘',
+    custom: normalizeLabels(pack.customTags),
+  }
 }
 
 export function normalizeNote(raw: unknown): string {

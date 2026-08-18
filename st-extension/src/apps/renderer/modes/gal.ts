@@ -33,6 +33,16 @@ function resolvePortrait(value: string | undefined, deps: RendererModeDeps): str
   }
 }
 
+/** 显式 portrait 优先；仅在字段缺失时按 speaker 请求图包封面。 */
+function resolveBeatPortrait(portrait: string | undefined, speaker: string, deps: RendererModeDeps): string | null {
+  if (portrait !== undefined) return resolvePortrait(portrait, deps)
+  try {
+    return deps.resolveSpeakerPortrait?.(speaker) ?? null
+  } catch {
+    return null
+  }
+}
+
 /** 挂载消息内 Galgame 舞台，并返回定时器/键盘监听清理器。 */
 export function mountGalMode(root: HTMLElement, block: GalRenderBlock, deps: RendererModeDeps): RendererMount {
   const stage = document.createElement('div')
@@ -128,7 +138,7 @@ export function mountGalMode(root: HTMLElement, block: GalRenderBlock, deps: Ren
     if (background) backgroundLayer.append(stageImage('st-render-gal-background', background, ''))
 
     portraitLayer.replaceChildren()
-    const portrait = resolvePortrait(beat.portrait, deps)
+    const portrait = resolveBeatPortrait(beat.portrait, beat.speaker, deps)
     if (portrait) portraitLayer.append(stageImage('st-render-gal-portrait', portrait, beat.speaker))
 
     previous.disabled = index === 0

@@ -115,6 +115,8 @@ describe('exportPack', () => {
       promptNotePlacement: 'after-list',
       outfitNotes: { 居家服: '居家提示' },
       sourceStoryKey: 'story-gallery-001',
+      kind: 'illustration',
+      customTags: ['剧情', 'CG'],
       sprites: [
         { tag: '微笑', url: 'https://x.com/a.png', labels: ['动作', '近景'] },
       ],
@@ -127,6 +129,8 @@ describe('exportPack', () => {
     expect(reimported.promptNotePlacement).toBe('after-list')
     expect(reimported.outfitNotes).toEqual({ 居家服: '居家提示' })
     expect(reimported.sourceStoryKey).toBe('story-gallery-001')
+    expect(reimported.kind).toBe('illustration')
+    expect(reimported.customTags).toEqual(['剧情', 'CG'])
     expect(reimported.sprites[0].labels).toEqual(['动作', '近景'])
   })
 

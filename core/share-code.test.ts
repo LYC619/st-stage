@@ -149,6 +149,8 @@ function v2Pack(): SpritePack {
     id: 'p1',
     name: '多角色包',
     author: '作者A',
+    kind: 'illustration',
+    customTags: ['剧情', '重要 CG'],
     sprites: [
       { tag: '微笑', url: 'https://i.ibb.co/aa1/smile.png', remoteUrl: 'https://i.ibb.co/aa1/smile.png', group: '鸣人', outfit: '居家服' },
       { tag: '生气', url: '/user/local/angry.png', remoteUrl: 'https://i.ibb.co/bb2/angry.png', group: '鸣人' },
@@ -161,6 +163,8 @@ describe('encodeShareStringV2', () => {
   it('每图独立完整 URL，含三级地址', () => {
     const r = encodeShareStringV2(v2Pack())!
     expect(r.text.startsWith(SHARE_PREFIX_V2)).toBe(true)
+    expect(r.text).toContain('@kind=illustration')
+    expect(r.text).toContain('@tags=')
     expect(r.text).toContain('鸣人/居家服/微笑=https://i.ibb.co/aa1/smile.png')
     expect(r.text).toContain('鸣人/生气=https://i.ibb.co/bb2/angry.png') // remoteUrl 优先于本地 url
     expect(r.text).toContain('冷漠=https://i.ibb.co/cc3/cold.png')
@@ -192,6 +196,8 @@ describe('decodeShareStringV2 roundtrip', () => {
     const decoded = decodeShareStringV2(encoded.text)
     expect(decoded.name).toBe('多角色包')
     expect(decoded.author).toBe('作者A')
+    expect(decoded.kind).toBe('illustration')
+    expect(decoded.customTags).toEqual(['剧情', '重要 CG'])
     expect(decoded.id).not.toBe('p1')
     // 鸣人/居家服/微笑
     const smile = decoded.sprites.find((s) => s.tag === '微笑')!

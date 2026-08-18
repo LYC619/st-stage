@@ -128,6 +128,21 @@ describe('mountGalMode', () => {
     expect(root.querySelector('.st-render-gal-portrait')).toBeNull()
   })
 
+  it('缺少显式 portrait 时按 beat speaker 解析图库封面', () => {
+    const root = document.createElement('div')
+    document.body.append(root)
+    const resolveSpeakerPortrait = vi.fn(() => '/user/resolved/xiaoxue-cover.webp')
+    const data = block()
+    data.beats = [{ speaker: '小雪', text: '你好' }]
+
+    mountGalMode(root, data, { getSettings: () => settings(), resolveSpeakerPortrait })
+
+    expect(resolveSpeakerPortrait).toHaveBeenCalledWith('小雪')
+    expect(root.querySelector<HTMLImageElement>('.st-render-gal-portrait')?.src).toContain(
+      '/user/resolved/xiaoxue-cover.webp',
+    )
+  })
+
   it('destroy 会移除键盘监听并停止后续状态变化', () => {
     const root = document.createElement('div')
     document.body.append(root)

@@ -26,7 +26,7 @@ beforeEach(() => {
 })
 
 describe('mountCardsMode', () => {
-  it('以文本节点渲染 2-8 张卡片及图标加文字选择命令', () => {
+  it('以文本节点渲染 2-8 张卡片并明确按钮只填入输入框', () => {
     const root = document.createElement('div')
     document.body.append(root)
     mountCardsMode(root, block(), { getSettings: () => defaultRendererSettings() })
@@ -35,7 +35,7 @@ describe('mountCardsMode', () => {
     expect(root.querySelectorAll('.st-render-card')).toHaveLength(2)
     expect(root.textContent).toContain('沿山路调查灯光')
     expect(root.textContent).toContain('可能遭遇守卫')
-    expect(selectButtons(root).every((button) => button.textContent?.includes('选择'))).toBe(true)
+    expect(selectButtons(root).every((button) => button.textContent?.includes('填入输入框'))).toBe(true)
     expect(root.querySelector('script, style')).toBeNull()
   })
 
@@ -48,7 +48,7 @@ describe('mountCardsMode', () => {
     selectButtons(root)[0].click()
     expect(insertDraft).toHaveBeenLastCalledWith('我选择沿山路继续前进。')
     expect(root.querySelectorAll('.st-render-card-selected')).toHaveLength(1)
-    expect(root.querySelector('.st-render-cards-status')?.textContent).toMatch(/已填入.*继续前进/)
+    expect(root.querySelector('.st-render-cards-status')?.textContent).toBe('已填入，请检查后发送：继续前进')
 
     selectButtons(root)[1].click()
     expect(insertDraft).toHaveBeenLastCalledWith('我选择原地休整。')

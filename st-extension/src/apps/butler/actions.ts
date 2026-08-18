@@ -209,12 +209,12 @@ export function compareMeasurements(
   after: MeasurementSnapshot,
 ): MeasurementComparison {
   const reasons: string[] = []
-  if (before.invalidReason || after.invalidReason) reasons.push('样本无效')
+  if (before.invalidReason || after.invalidReason) reasons.push('检查无效')
   if (!before.chatKey || !after.chatKey || before.chatKey !== after.chatKey) reasons.push('聊天不同')
-  if (before.probe !== after.probe) reasons.push('探针不同')
-  if (!before.foreground || !after.foreground || before.foreground !== after.foreground) reasons.push('前台状态不同')
-  if (before.durationMs !== after.durationMs || before.durationMs !== 6000) reasons.push('采样时长不同')
-  if (capabilitySignature(before) !== capabilitySignature(after)) reasons.push('能力集合不同')
+  if (before.probe !== after.probe) reasons.push('检查方式不同')
+  if (!before.foreground || !after.foreground || before.foreground !== after.foreground) reasons.push('页面状态不同')
+  if (before.durationMs !== after.durationMs || before.durationMs !== 6000) reasons.push('检查时长不同')
+  if (capabilitySignature(before) !== capabilitySignature(after)) reasons.push('可读取的数据不同')
 
   const deltas: Record<string, number> = {}
   if (reasons.length === 0) {

@@ -175,8 +175,18 @@ function mountButler(
 }
 
 function button(container: ParentNode, label: string): HTMLElement {
+  const aliases: Record<string, string> = {
+    '应用安全优化': '立即应用',
+    '完整报告': '查看详细结果',
+    '扩展排障': '临时关闭扩展找卡顿',
+    '玩法与服务端顾问': '记忆与服务器设置建议',
+    '用相同探针复测': '再测一次，比较优化前后',
+    '正在复测': '正在再次检查',
+    '开始选定扩展 A/B': '开始对比所选扩展',
+  }
+  const target = aliases[label] ?? label
   const found = [...container.querySelectorAll<HTMLElement>('[role="button"], button')]
-    .find((node) => node.textContent?.trim() === label)
+    .find((node) => node.textContent?.trim() === target || node.textContent?.includes(target))
   expect(found, `找不到按钮：${label}`).toBeDefined()
   return found!
 }
@@ -187,17 +197,43 @@ beforeEach(() => {
 })
 
 describe('管家 2.0 主屏', () => {
+  it('发现旧版空事务时清理它，并仍显示明确的应用建议入口', async () => {
+    const mounted = mountButler({}, {
+      version: 2,
+      performanceModeOn: true,
+      activeTransaction: {
+        id: 'empty',
+        group: 'performanceSettings',
+        createdAt: 1,
+        status: 'applied',
+        restoreStatus: 'available',
+        before: { streaming_fps: 30 },
+        requested: { streaming_fps: 15 },
+        actual: { streaming_fps: 15 },
+        actions: [],
+      },
+      pendingExperiment: null,
+      history: [],
+    })
+
+    await vi.waitFor(() => expect(mounted.container.textContent).toContain('立即应用'))
+    expect(mounted.getData().activeTransaction).toBeNull()
+    expect(mounted.container.textContent).toContain('1. 开始检查')
+    expect(mounted.container.textContent).toContain('4. 再测一次或恢复')
+  })
+
   it('首次进入运行静态体检并显示可解释发现，不显示综合分', async () => {
     const mounted = mountButler()
 
     expect(mounted.container.textContent).toContain('环境体检')
     expect(mounted.container.textContent).toContain('正在读取当前环境')
     await vi.waitFor(() => expect(mounted.service.collectStatic).toHaveBeenCalledOnce())
-    await vi.waitFor(() => expect(mounted.container.textContent).toContain('No Blur 当前未开启'))
+    await vi.waitFor(() => expect(mounted.container.textContent).toContain('背景模糊当前开启'))
 
     expect(mounted.container.textContent).toContain('检测到什么')
     expect(mounted.container.textContent).toContain('建议修改')
     expect(mounted.container.textContent).toContain('如何恢复')
+    expect(mounted.container.textContent).not.toMatch(/No Blur|A\/B|性能设置事务|待复测/)
     expect(mounted.container.textContent).not.toMatch(/综合分|性能分数/)
   })
 
@@ -212,8 +248,8 @@ describe('管家 2.0 主屏', () => {
     await vi.waitFor(() => expect(mounted.service.collectStatic).toHaveBeenCalledOnce())
 
     button(mounted.container, '开始 6 秒体检').click()
-    expect(mounted.container.textContent).toContain('正在采样')
-    button(mounted.container, '取消采样').click()
+    expect(mounted.container.textContent).toContain('正在检查')
+    button(mounted.container, '取消本次检查').click()
     expect(seenSignal?.aborted).toBe(true)
 
     resolveSample(snapshot({ invalidReason: '用户取消了采样' }))
@@ -242,18 +278,18 @@ describe('管家 2.0 主屏', () => {
     const mounted = mountButler({ collectStatic, sampleIdle: vi.fn().mockResolvedValue(snapshot({ id: 'dynamic' })) })
 
     button(mounted.container, '开始 6 秒体检').click()
-    await vi.waitFor(() => expect(mounted.container.textContent).toContain('最近体检：6 秒'))
+    await vi.waitFor(() => expect(mounted.container.textContent).toContain('最近检查：6 秒检查'))
     resolveStatic(snapshot({ id: 'late-static', probe: 'static', durationMs: 0 }))
     await vi.waitFor(() => expect(collectStatic).toHaveBeenCalledOnce())
 
-    expect(mounted.container.textContent).toContain('最近体检：6 秒')
-    expect(mounted.container.textContent).not.toContain('最近体检：静态')
+    expect(mounted.container.textContent).toContain('最近检查：6 秒检查')
+    expect(mounted.container.textContent).not.toContain('最近检查：基础检查')
   })
 
   it('预览将修改与保持不变，应用时持久化可恢复事务且不调高更低 FPS', async () => {
     const current = perf({ streaming_fps: 10, reduced_motion: true })
     const mounted = mountButler({ readPerformance: vi.fn(() => current) })
-    await vi.waitFor(() => expect(mounted.container.textContent).toContain('将修改'))
+    await vi.waitFor(() => expect(mounted.container.textContent).toContain('建议调整'))
 
     expect(mounted.container.textContent).toContain('保持不变')
     expect(mounted.container.textContent).toContain('10 → 10')
@@ -265,14 +301,14 @@ describe('管家 2.0 主屏', () => {
       group: 'performanceSettings',
       restoreStatus: 'available',
     })
-    expect(mounted.container.textContent).toContain('逐项实际结果')
-    expect(mounted.container.textContent).toContain('用相同探针复测')
+    expect(mounted.container.textContent).toContain('本次实际修改')
+    expect(mounted.container.textContent).toContain('再测一次，比较优化前后')
   })
 
   it('没有动态样本时先自动采样并固定事务前基线，再应用安全优化', async () => {
     const baseline = snapshot({ id: 'auto-baseline' })
     const mounted = mountButler({ sampleIdle: vi.fn().mockResolvedValue(baseline) })
-    await vi.waitFor(() => expect(mounted.container.textContent).toContain('应用安全优化'))
+    await vi.waitFor(() => expect(mounted.container.textContent).toContain('立即应用'))
 
     button(mounted.container, '应用安全优化').click()
 
@@ -298,7 +334,7 @@ describe('管家 2.0 主屏', () => {
       measurement: stale,
     })
     const mounted = mountButler({ sampleIdle: vi.fn().mockResolvedValue(fresh) }, initial)
-    await vi.waitFor(() => expect(mounted.container.textContent).toContain('应用安全优化'))
+    await vi.waitFor(() => expect(mounted.container.textContent).toContain('立即应用'))
 
     button(mounted.container, '应用安全优化').click()
 
@@ -310,11 +346,11 @@ describe('管家 2.0 主屏', () => {
   it('自动基线无效时不应用任何设置', async () => {
     const invalid = snapshot({ id: 'invalid-baseline', invalidReason: '页面进入后台' })
     const mounted = mountButler({ sampleIdle: vi.fn().mockResolvedValue(invalid) })
-    await vi.waitFor(() => expect(mounted.container.textContent).toContain('应用安全优化'))
+    await vi.waitFor(() => expect(mounted.container.textContent).toContain('立即应用'))
 
     button(mounted.container, '应用安全优化').click()
 
-    await vi.waitFor(() => expect(mounted.container.textContent).toContain('基线样本无效'))
+    await vi.waitFor(() => expect(mounted.container.textContent).toContain('优化前检查未完成'))
     expect(mounted.service.writePerformance).not.toHaveBeenCalled()
     expect(mounted.getData().activeTransaction).toBeNull()
   })
@@ -327,7 +363,7 @@ describe('管家 2.0 主屏', () => {
       return perf()
     })
     const mounted = mountButler({ readPerformance })
-    await vi.waitFor(() => expect(mounted.container.textContent).toContain('应用安全优化'))
+    await vi.waitFor(() => expect(mounted.container.textContent).toContain('立即应用'))
     button(mounted.container, '开始 6 秒体检').click()
     await vi.waitFor(() => expect(mounted.container.textContent).toContain('6 秒体检完成'))
 
@@ -337,7 +373,7 @@ describe('管家 2.0 主屏', () => {
 
     await vi.waitFor(() => expect(mounted.container.textContent).toContain('当前 SillyTavern 性能设置不完整'))
     expect(mounted.getData().activeTransaction).toBeNull()
-    expect(mounted.container.textContent).toContain('应用安全优化')
+    expect(mounted.container.textContent).toContain('立即应用')
   })
 
   it('复测后只在条件可比时显示差值，并可恢复原设置', async () => {
@@ -351,13 +387,13 @@ describe('管家 2.0 主屏', () => {
         .mockResolvedValueOnce(baseline)
         .mockResolvedValueOnce(after),
     })
-    await vi.waitFor(() => expect(mounted.container.textContent).toContain('应用安全优化'))
+    await vi.waitFor(() => expect(mounted.container.textContent).toContain('立即应用'))
     button(mounted.container, '应用安全优化').click()
     await vi.waitFor(() => expect(mounted.getData().activeTransaction).not.toBeNull())
     expect(mounted.getData().activeTransaction?.baselineMeasurementId).toBe('baseline')
 
     button(mounted.container, '用相同探针复测').click()
-    await vi.waitFor(() => expect(mounted.container.textContent).toContain('样本条件一致'))
+    await vi.waitFor(() => expect(mounted.container.textContent).toContain('两次检查条件一致'))
     expect(mounted.container.textContent).toContain('差值')
 
     button(mounted.container, '恢复本次性能设置').click()
@@ -383,7 +419,7 @@ describe('管家 2.0 主屏', () => {
       .mockResolvedValueOnce(first)
       .mockResolvedValueOnce(second)
     const mounted = mountButler({ sampleIdle })
-    await vi.waitFor(() => expect(mounted.container.textContent).toContain('应用安全优化'))
+    await vi.waitFor(() => expect(mounted.container.textContent).toContain('立即应用'))
     button(mounted.container, '应用安全优化').click()
     await vi.waitFor(() => expect(mounted.getData().activeTransaction).not.toBeNull())
 
@@ -401,7 +437,7 @@ describe('管家 2.0 主屏', () => {
       .mockResolvedValueOnce(snapshot({ id: 'baseline' }))
       .mockImplementationOnce(() => new Promise<MeasurementSnapshot>((resolve) => { resolveRemeasure = resolve }))
     const mounted = mountButler({ sampleIdle })
-    await vi.waitFor(() => expect(mounted.container.textContent).toContain('应用安全优化'))
+    await vi.waitFor(() => expect(mounted.container.textContent).toContain('立即应用'))
     button(mounted.container, '开始 6 秒体检').click()
     await vi.waitFor(() => expect(mounted.container.textContent).toContain('6 秒体检完成'))
     button(mounted.container, '应用安全优化').click()
@@ -412,21 +448,21 @@ describe('管家 2.0 主屏', () => {
     expect(sampleIdle).toHaveBeenCalledTimes(2)
 
     resolveRemeasure(snapshot({ id: 'after' }))
-    await vi.waitFor(() => expect(mounted.container.textContent).toContain('样本条件一致'))
+    await vi.waitFor(() => expect(mounted.container.textContent).toContain('两次检查条件一致'))
   })
 
   it('打开完整报告、扩展排障和玩法顾问三个全屏弹窗', async () => {
     const mounted = mountButler()
     await vi.waitFor(() => expect(mounted.service.collectStatic).toHaveBeenCalledOnce())
 
-    for (const label of ['完整报告', '扩展排障', '玩法与服务端顾问']) {
+    for (const label of ['查看详细结果', '临时关闭扩展找卡顿', '记忆与服务器设置建议']) {
       button(mounted.container, label).click()
     }
     expect(mounted.openedModals).toHaveLength(3)
-    expect(mounted.openedModals[0].textContent).toContain('完整体检报告')
+    expect(mounted.openedModals[0].textContent).toContain('详细检查结果')
     await vi.waitFor(() => expect(mounted.openedModals[1].textContent).toContain('第三方扩展'))
     expect(mounted.openedModals[2].textContent).toContain('World Info')
-    expect(mounted.openedModals[2].textContent).toContain('默认只提供建议')
+    expect(mounted.openedModals[2].textContent).toContain('只读查看')
     await vi.waitFor(() => expect(mounted.openedModals[2].textContent).toContain('Vector Storage：当前启用'))
     expect(mounted.openedModals[2].textContent).toContain('Summarize：当前禁用')
     expect(mounted.openedModals[2].textContent).toContain('Regex：当前启用')
@@ -437,7 +473,7 @@ describe('扩展治理与跨刷新实验', () => {
   it('默认只勾选启用的第三方扩展，保护 st-stage，并在依赖确认后开始 A/B', async () => {
     const mounted = mountButler()
     await vi.waitFor(() => expect(mounted.service.collectStatic).toHaveBeenCalledOnce())
-    button(mounted.container, '扩展排障').click()
+    button(mounted.container, '临时关闭扩展找卡顿').click()
     const modal = mounted.openedModals[0]
     await vi.waitFor(() => expect(modal.textContent).toContain('third-party/example'))
 
@@ -480,13 +516,13 @@ describe('扩展治理与跨刷新实验', () => {
     })
     const mounted = mountButler({}, data)
     await vi.waitFor(() => expect(mounted.getData().pendingExperiment?.status).toBe('sampling'))
-    button(mounted.container, '扩展排障').click()
+    button(mounted.container, '临时关闭扩展找卡顿').click()
     const modal = mounted.openedModals[0]
-    await vi.waitFor(() => expect(modal.textContent).toContain('等待扩展复测'))
-    button(modal, '运行扩展复测').click()
+    await vi.waitFor(() => expect(modal.textContent).toContain('等待关闭后检查'))
+    button(modal, '检查关闭后的表现').click()
     await vi.waitFor(() => expect(mounted.getData().pendingExperiment?.status).toBe('awaitingDecision'))
-    expect(modal.textContent).toContain('保留当前禁用')
-    expect(modal.textContent).toContain('恢复原清单')
+    expect(modal.textContent).toContain('保持这些扩展关闭')
+    expect(modal.textContent).toContain('恢复原来的扩展状态')
   })
 
   it('部分变更失败时不允许把未生效的一轮用于二分判断', async () => {
@@ -507,13 +543,13 @@ describe('扩展治理与跨刷新实验', () => {
     data.pendingExperiment = pending
     const mounted = mountButler({}, data)
 
-    button(mounted.container, '扩展排障').click()
+    button(mounted.container, '临时关闭扩展找卡顿').click()
     const modal = mounted.openedModals[0]
 
-    expect(modal.textContent).not.toContain('症状改善')
-    expect(modal.textContent).not.toContain('症状无改善')
-    expect(modal.textContent).toContain('保留当前禁用')
-    expect(modal.textContent).toContain('恢复原清单')
+    expect(modal.textContent).not.toContain('变流畅了')
+    expect(modal.textContent).not.toContain('没有变流畅')
+    expect(modal.textContent).toContain('保持这些扩展关闭')
+    expect(modal.textContent).toContain('恢复原来的扩展状态')
   })
 
   it('appData 丢失时在扩展页显示 localStorage 紧急恢复入口', async () => {
@@ -529,7 +565,7 @@ describe('扩展治理与跨刷新实验', () => {
       },
     })
 
-    button(mounted.container, '扩展排障').click()
+    button(mounted.container, '临时关闭扩展找卡顿').click()
     const modal = mounted.openedModals[0]
     await vi.waitFor(() => expect(modal.textContent).toContain('检测到紧急恢复备份'))
 

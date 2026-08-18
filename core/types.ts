@@ -3,12 +3,12 @@
  * 纯 TS，零框架依赖，Web 测试环境与 SillyTavern 扩展共用。
  *
  * 数据格式版本：
- * - 存储 settingsVersion = 6（旧版本由 core/migrate.ts 自动升级）
+ * - 存储 settingsVersion = 7（旧版本由 core/migrate.ts 自动升级）
  * - 立绘包文件 sprite-pack@3（导入兼容 @1 / @2）
  */
 
 /** 当前设置存储版本 */
-export const SETTINGS_VERSION = 6
+export const SETTINGS_VERSION = 7
 
 /** 楼层模式补渲染的最近 AI 楼层数：默认与上下限 */
 export const RECENT_FLOORS_DEFAULT = 6
@@ -71,6 +71,9 @@ export interface Sprite {
 /** 立绘的图源类型（由 url/code 推导，不单独存储） */
 export type SpriteSource = 'embedded' | 'local' | 'hosted'
 
+/** 图包用途；缺省按立绘处理，兼容旧包与外部调用方。 */
+export type SpritePackKind = 'sprite' | 'illustration'
+
 /** 推导立绘图源：embedded = data URI；local = ST/扩展本地路径；hosted = 图床 URL */
 export function getSpriteSource(sprite: Sprite): SpriteSource {
   if (sprite.url.startsWith('data:')) return 'embedded'
@@ -99,6 +102,10 @@ export interface SpritePack {
   author?: string
   /** 描述（可选） */
   description?: string
+  /** 图包用途：sprite=立绘，illustration=剧情/玩法插图；缺省等同 sprite。 */
+  kind?: SpritePackKind
+  /** 用户自定义的包级筛选标签（最多 24 个，每个最多 32 字符）。 */
+  customTags?: string[]
   /**
    * 包级人名（六期·三级寻址）：整包属于同一角色时填此，包内立绘用纯图名即可。
    * 批量上传「鸣人/居家服/xxx」会自动建/匹配到 roleName=鸣人 的包。缺省=无包级人名。
@@ -128,6 +135,8 @@ export interface PresetPackOverride {
     name: string
     author: string | null
     description: string | null
+    kind: SpritePackKind | null
+    customTags: string[] | null
     roleName: string | null
     outfit: string | null
     promptNote: string | null
@@ -339,6 +348,8 @@ export interface SpritePackFile {
 /** 当前导出格式（sprite-pack@3），增加图库提示与标签元数据 */
 export interface SpritePackFileV3 extends Omit<SpritePackFile, 'format' | 'sprites'> {
   format: 'sprite-pack@3'
+  kind?: SpritePackKind
+  customTags?: string[]
   promptNote?: string
   promptNotePlacement?: PromptNotePlacement
   outfitNotes?: Record<string, string>

@@ -186,7 +186,7 @@ describe('Butler six-second probes', () => {
     const deps = baseDeps()
     const removeSpy = vi.spyOn(document, 'removeEventListener')
     deps.runTimeline = vi.fn(async (_duration, _signal, handlers) => {
-      document.dispatchEvent(new PointerEvent('pointerdown'))
+      document.dispatchEvent(new Event('pointerdown'))
       handlers.onFrame(16)
     })
 

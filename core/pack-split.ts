@@ -65,6 +65,8 @@ export function splitPackByGroup(pack: SpritePack): SpritePack[] {
       id: genId(),
       name: item.packName,
       author: pack.author,
+      ...(pack.kind ? { kind: pack.kind } : {}),
+      ...(pack.customTags?.length ? { customTags: [...pack.customTags] } : {}),
       roleName: item.roleName,
       ...(pack.outfit ? { outfit: pack.outfit } : {}),
       sprites,

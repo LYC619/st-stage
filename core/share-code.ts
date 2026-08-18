@@ -12,6 +12,7 @@ import type { Sprite, SpritePack } from './types'
 import { DEFAULT_IMAGE_HOST, formatAddress, parseAddress, spriteAddress } from './types'
 import { genId } from './sprite-store'
 import { normalizeTag, sanitizePackName } from './naming'
+import { normalizeLabels, normalizePackKind } from './sprite-metadata'
 
 export const SHARE_PREFIX = 'stpack1:'
 export const SHARE_PREFIX_V2 = 'stpack2:'
@@ -187,6 +188,12 @@ export function encodeShareStringV2(pack: SpritePack): ShareEncodeResultV2 | nul
 
   const segments: string[] = [sanitizePackName(pack.name) || '分享立绘包']
   if (pack.author) segments.push(`@author=${sanitizePackName(pack.author)}`)
+  const kind = normalizePackKind(pack.kind)
+  if (kind) segments.push(`@kind=${kind}`)
+  const customTags = normalizeLabels(pack.customTags)
+  if (customTags.length > 0) {
+    segments.push(`@tags=${encodeURIComponent(JSON.stringify(customTags))}`)
+  }
   segments.push(...entries)
 
   return {
@@ -209,6 +216,8 @@ export function decodeShareStringV2(raw: string): SpritePack {
 
   const name = sanitizePackName(segments[0] ?? '') || '分享立绘包'
   let author: string | undefined
+  let kind: SpritePack['kind']
+  let customTags: string[] = []
   const sprites: Sprite[] = []
   const seen = new Set<string>()
 
@@ -221,6 +230,14 @@ export function decodeShareStringV2(raw: string): SpritePack {
       const key = part.slice(1, eq).trim().toLowerCase()
       const value = part.slice(eq + 1).trim()
       if (key === 'author') author = sanitizePackName(value) || undefined
+      if (key === 'kind') kind = normalizePackKind(value)
+      if (key === 'tags') {
+        try {
+          customTags = normalizeLabels(JSON.parse(decodeURIComponent(value)))
+        } catch {
+          customTags = []
+        }
+      }
       continue
     }
     const eq = part.indexOf('=')
@@ -266,6 +283,8 @@ export function decodeShareStringV2(raw: string): SpritePack {
     id: genId(),
     name,
     author,
+    ...(kind ? { kind } : {}),
+    ...(customTags.length > 0 ? { customTags } : {}),
     ...(commonRole ? { roleName: commonRole } : {}),
     ...(commonOutfit ? { outfit: commonOutfit } : {}),
     sprites,

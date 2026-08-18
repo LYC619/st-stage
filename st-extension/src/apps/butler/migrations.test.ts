@@ -129,7 +129,7 @@ function validV2(): ButlerDataV2 {
 }
 
 describe('migrateButlerData', () => {
-  it('把旧 snapshot/perfOn 迁移成可恢复的 performanceSettings 分组事务', () => {
+  it('旧 snapshot/perfOn 不伪造空事务，迁移后要求重新体检', () => {
     const data = migrateButlerData(
       { snapshot: legacySnapshot, perfOn: true },
       { now: 1_723_456_789_000, idFactory: () => 'legacy-transaction' },
@@ -137,17 +137,8 @@ describe('migrateButlerData', () => {
 
     expect(data).toMatchObject({
       version: 2,
-      performanceModeOn: true,
-      activeTransaction: {
-        id: 'legacy-transaction',
-        group: 'performanceSettings',
-        createdAt: 1_723_456_789_000,
-        status: 'applied',
-        restoreStatus: 'available',
-        before: legacySnapshot,
-        requested: {},
-        actual: {},
-      },
+      performanceModeOn: false,
+      activeTransaction: null,
       pendingExperiment: null,
       history: [],
     })
@@ -176,6 +167,14 @@ describe('migrateButlerData', () => {
     expect(normalized.activeTransaction).toBeNull()
     expect(normalized.pendingExperiment).toEqual(experiment())
     expect(normalized.history).toEqual(history())
+  })
+
+  it('丢弃没有任何动作的活动事务，避免主界面被空事务锁死', () => {
+    const input = validV2() as unknown as Record<string, unknown>
+    const active = input.activeTransaction as Record<string, unknown>
+    active.actions = []
+
+    expect(migrateButlerData(input).activeTransaction).toBeNull()
   })
 
   it('丢弃单条 malformed history 并保留恢复状态与其他有效历史', () => {
