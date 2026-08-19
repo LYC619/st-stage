@@ -96,8 +96,9 @@ function visibleUpdateVariants(inner: string): string[] {
 
 function compactVisibleProjection(text: string): string {
   return text
-    // ST removes reasoning containers before the message reaches the DOM.
-    .replace(/<(?:thinking|reasoning)(?:\s[^>]*)?>[\s\S]*?<\/(?:thinking|reasoning)\s*>/gi, '')
+    // ST removes reasoning containers and turns summary/history into a collapsed UI
+    // before the message reaches the DOM. Their source text is not a reliable boundary.
+    .replace(/<(?:thinking|reasoning|summary|history)(?:\s[^>]*)?>[\s\S]*?<\/(?:thinking|reasoning|summary|history)\s*>/gi, '')
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/<[^>]*>/g, '')
     .replace(/```(?:json)?/gi, '')
@@ -127,8 +128,11 @@ function rawContextMatches(
   const suffix = compactVisibleProjection(rawSuffix)
   const before = visibleText.slice(0, start).replace(/\s+/g, '')
   const after = visibleText.slice(end).replace(/\s+/g, '')
-  const prefixMatches = !prefix || edgeAnchors(prefix, 'end').some((anchor) => before.endsWith(anchor))
-  const suffixMatches = !suffix || edgeAnchors(suffix, 'start').some((anchor) => after.startsWith(anchor))
+  // ST may insert a visible summary title next to the payload, or omit a source
+  // fragment while transforming structured blocks. Require a surviving anchor,
+  // but do not require that anchor to touch the payload boundary.
+  const prefixMatches = !prefix || edgeAnchors(prefix, 'end').some((anchor) => before.includes(anchor))
+  const suffixMatches = !suffix || edgeAnchors(suffix, 'start').some((anchor) => after.includes(anchor))
   return prefixMatches && suffixMatches
 }
 

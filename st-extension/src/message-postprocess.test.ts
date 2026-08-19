@@ -350,6 +350,31 @@ describe('可逆楼层渲染', () => {
     expect(mesText(0).textContent).not.toContain('/好感度')
   })
 
+  it('ST 折叠 summary/history 正文后仍隐藏唯一变量载荷', () => {
+    const update = '[{"op":"replace","path":"/好感度","value":28}]'
+    const raw = [
+      '剧情正文',
+      '<summary>',
+      '<history id="E003">完整历史摘要正文不会出现在当前折叠内容中</history>',
+      '</summary>',
+      '<UpdateVariable>',
+      '<Analysis>好感度更新至 28。</Analysis>',
+      update,
+      '</UpdateVariable>',
+    ].join('\n')
+    buildChat([{ html: [
+      '<p>剧情正文</p>',
+      '<details><summary>摘要</summary></details>',
+      `<p>${update}</p>`,
+    ].join('') }])
+    const settings = baseSettings({ enabled: false })
+    settings.apps[NEWVAR_APP_ID] = { enabled: true, hideUpdateBlocks: true }
+
+    processMessages(settings, 0, raw)
+
+    expect(mesText(0).textContent).not.toContain('/好感度')
+  })
+
   it('raw message getter 失败时仍处理可见的字面变量块', async () => {
     const handlers = new Map<string, (...args: unknown[]) => void>()
     buildChat([{ text: '正文\n<UpdateVariable>变更</UpdateVariable>\n结尾' }])
