@@ -9,6 +9,7 @@ export interface SpriteActionContext {
   commit(pack: SpritePack): void
   pickReplacement(): void
   localize(sprite: Sprite): Promise<void>
+  cleanCheckerboard(sprite: Sprite): Promise<void>
   refresh(): void
   close(): void
 }
@@ -19,6 +20,7 @@ export interface SpriteAction {
   icon?: string
   destructive?: boolean
   disabled?: boolean
+  allowedInReadonly?: boolean
   run(): void | Promise<void>
 }
 
@@ -33,6 +35,21 @@ function commitAndRefresh(context: SpriteActionContext, pack: SpritePack): void 
     context.commit(pack)
   } finally {
     context.refresh()
+  }
+}
+
+export function createCheckerboardAction(context: SpriteActionContext): SpriteAction {
+  return {
+    id: 'checkerboard',
+    label: '检测并去除棋盘格',
+    icon: '▦',
+    destructive: false,
+    allowedInReadonly: true,
+    async run() {
+      const state = current(context)
+      if (!state) return
+      await context.cleanCheckerboard(state.sprite)
+    },
   }
 }
 
@@ -104,6 +121,7 @@ export function createSpriteActions(context: SpriteActionContext): SpriteAction[
         context.pickReplacement()
       },
     },
+    createCheckerboardAction(context),
     {
       id: 'localize',
       label: '保存到本地',

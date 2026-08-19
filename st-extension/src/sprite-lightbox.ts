@@ -54,11 +54,13 @@ export function openSpriteLightbox(options: {
 
   const renderActions = (): void => {
     actionRail.replaceChildren()
-    const hidden = options.readonly || currentActions.length === 0
+    const visibleActions = options.readonly
+      ? currentActions.filter((action) => action.allowedInReadonly)
+      : currentActions
+    const hidden = visibleActions.length === 0
     actionRail.hidden = hidden
     layer.classList.toggle('so-lightbox-no-actions', hidden)
-    if (options.readonly) return
-    for (const action of currentActions) {
+    for (const action of visibleActions) {
       const button = document.createElement('button')
       button.type = 'button'
       button.className = 'so-lightbox-action'

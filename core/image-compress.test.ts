@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   analyzeImagePixels,
+  cleanCheckerboardImage,
   estimateDataUriBytes,
   recompressDataUri,
 } from './image-compress'
@@ -54,5 +55,48 @@ describe('recompressDataUri — 跳过分支', () => {
 describe('estimateDataUriBytes', () => {
   it('按 base64 编码率 4/3 估算', () => {
     expect(estimateDataUriBytes('data:image/png;base64,QUJD')).toBe(3)
+  })
+})
+
+describe('cleanCheckerboardImage', () => {
+  it('通过可替换编解码器输出透明 PNG Blob', async () => {
+    const width = 4
+    const height = 4
+    const data = new Uint8ClampedArray(width * height * 4)
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const value = (x + y) % 2 === 0 ? 248 : 224
+        data.set([value, value, value, 255], (y * width + x) * 4)
+      }
+    }
+    const encoded = new Blob(['png'], { type: 'image/png' })
+    const encodePng = vi.fn(async (cleaned: Uint8ClampedArray, encodedWidth: number, encodedHeight: number) => {
+      expect(encodedWidth).toBe(width)
+      expect(encodedHeight).toBe(height)
+      expect(cleaned[3]).toBe(0)
+      return encoded
+    })
+
+    const result = await cleanCheckerboardImage(new Blob(['source'], { type: 'image/png' }), {
+      decode: vi.fn(async () => ({ data, width, height })),
+      encodePng,
+    })
+
+    expect(result.blob).toBe(encoded)
+    expect(result.removedPixels).toBe(16)
+    expect(encodePng).toHaveBeenCalledTimes(1)
+  })
+
+  it('像素证据不足时拒绝输出清理文件', async () => {
+    const data = new Uint8ClampedArray([
+      220, 40, 70, 255,
+      30, 90, 210, 255,
+      180, 120, 50, 255,
+      20, 30, 40, 255,
+    ])
+    await expect(cleanCheckerboardImage(new Blob(['source'], { type: 'image/png' }), {
+      decode: async () => ({ data, width: 2, height: 2 }),
+      encodePng: vi.fn(),
+    })).rejects.toThrow('没有确认到可安全去除的棋盘格背景')
   })
 })

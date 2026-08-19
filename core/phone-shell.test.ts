@@ -60,6 +60,38 @@ beforeEach(() => {
 })
 
 describe('手机壳交互', () => {
+  it('手机内交互不会冒泡到后方聊天控件', () => {
+    const app: PhoneApp = {
+      id: 'settings',
+      name: '设置',
+      icon: 'S',
+      mount(container) {
+        const input = document.createElement('input')
+        input.type = 'checkbox'
+        container.append(input)
+      },
+    }
+    const outsidePointer = vi.fn()
+    const outsideTouch = vi.fn()
+    const outsideClick = vi.fn()
+    document.body.addEventListener('pointerdown', outsidePointer)
+    document.body.addEventListener('touchstart', outsideTouch)
+    document.body.addEventListener('click', outsideClick)
+    const { shell } = setup([app], { open: true })
+    shell.openApp('settings')
+    const input = document.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+
+    input.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    input.dispatchEvent(new Event('touchstart', { bubbles: true }))
+    input.click()
+
+    expect(outsidePointer).not.toHaveBeenCalled()
+    expect(outsideTouch).not.toHaveBeenCalled()
+    expect(outsideClick).not.toHaveBeenCalled()
+    expect(input.checked).toBe(true)
+    shell.destroy()
+  })
+
   it('关闭按钮收起手机壳并恢复图标，不销毁 DOM', () => {
     const { shell } = setup([makeApp('gallery')], { open: true })
     const fab = document.querySelector('.so-phone-fab') as HTMLElement

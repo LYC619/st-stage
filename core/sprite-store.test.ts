@@ -5,7 +5,9 @@ import {
   bindCharacter,
   bindPack,
   addPackCustomTag,
+  deletePackCustomTag,
   deletableLocalSpritePaths,
+  filterSpritePacks,
   getActiveAddresses,
   getActivePacks,
   getGroups,
@@ -19,6 +21,7 @@ import {
   removePacks,
   removePackCustomTag,
   removeSprite,
+  renamePackCustomTag,
   renameSprite,
   resolveSprite,
   setBinding,
@@ -69,6 +72,55 @@ describe('图包类型与自定义标签批量管理', () => {
   it('从选中图包移除指定标签', () => {
     const next = removePackCustomTag(classifiedSettings(), ['b', 'c'], '剧情')
     expect(next.packs.map((item) => item.customTags)).toEqual([undefined, undefined, ['保留']])
+  })
+
+  it('按搜索、角色、类型和自定义标签组合筛选并保留原顺序', () => {
+    const packs: SpritePack[] = [
+      {
+        id: 'a',
+        name: '小雪主线',
+        roleName: '小雪',
+        outfit: '校服',
+        kind: 'illustration',
+        customTags: ['主线'],
+        sprites: [],
+      },
+      {
+        id: 'b',
+        name: '小雪支线',
+        roleName: '小雪',
+        outfit: '礼服',
+        kind: 'illustration',
+        customTags: ['支线'],
+        sprites: [],
+      },
+      { id: 'c', name: '通用玩法', kind: 'sprite', customTags: ['主线'], sprites: [] },
+    ]
+
+    expect(filterSpritePacks(packs, {
+      query: '小雪',
+      roles: ['小雪'],
+      kinds: ['illustration'],
+      customTags: ['主线', '不存在'],
+    }).map((item) => item.id)).toEqual(['a'])
+    expect(filterSpritePacks(packs, { roles: ['其他'] }).map((item) => item.id)).toEqual(['c'])
+    expect(filterSpritePacks(packs, {})).toEqual(packs)
+  })
+
+  it('全局重命名和删除自定义标签会规范化并合并重复项', () => {
+    const settings = classifiedSettings()
+    settings.packs[0].customTags = ['旧标签', '目标标签']
+    settings.packs[1].customTags = ['旧标签']
+
+    const renamed = renamePackCustomTag(settings, ' 旧标签 ', ' 目标标签 ')
+    expect(renamed.packs.map((item) => item.customTags)).toEqual([
+      ['目标标签'],
+      ['目标标签'],
+      ['保留'],
+    ])
+
+    const deleted = deletePackCustomTag(renamed, '目标标签')
+    expect(deleted.packs.map((item) => item.customTags)).toEqual([undefined, undefined, ['保留']])
   })
 })
 

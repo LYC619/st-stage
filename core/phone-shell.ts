@@ -55,6 +55,10 @@ export function createPhoneShell(
   const shell = document.createElement('div')
   shell.className = 'so-phone-shell'
   shell.style.display = 'none'
+  const stopShellEvent = (event: Event) => event.stopPropagation()
+  for (const type of ['pointerdown', 'touchstart', 'click']) {
+    shell.addEventListener(type, stopShellEvent)
+  }
 
   const statusBar = document.createElement('div')
   statusBar.className = 'so-phone-status'
@@ -364,6 +368,9 @@ export function createPhoneShell(
       window.visualViewport?.removeEventListener('resize', applyLayout)
       unsubscribe()
       leaveApp()
+      for (const type of ['pointerdown', 'touchstart', 'click']) {
+        shell.removeEventListener(type, stopShellEvent)
+      }
       fab.remove()
       shell.remove()
     },

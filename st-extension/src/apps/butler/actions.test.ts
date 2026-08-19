@@ -4,6 +4,7 @@ import {
   applyTransaction,
   compareMeasurements,
   restoreTransaction,
+  summarizeMeasurementComparison,
   type ButlerActionBridge,
 } from './actions'
 
@@ -215,5 +216,66 @@ describe('compareMeasurements', () => {
     expect(result.deltas).toEqual({})
     expect(result.before).toBe(before.metrics)
     expect(result.after).toBe(after.metrics)
+  })
+})
+
+describe('summarizeMeasurementComparison', () => {
+  it('formats the eight user-facing metrics in a fixed Chinese order', () => {
+    const before = measurement({
+      metrics: {
+        heap: { usedBytes: 120 * 1024 * 1024 },
+        page: { chatNodeCount: 900, messageCount: 80 },
+        media: { images: 6, videos: 1, audio: 1, canvas: 1, iframes: 1 },
+        dynamic: {
+          longTaskCount: 3,
+          longestTaskMs: 90,
+          frameIntervalP95Ms: 28,
+          timerDelayP95Ms: 12,
+        },
+      },
+    })
+    const after = measurement({
+      id: 'after',
+      metrics: {
+        heap: { usedBytes: 100 * 1024 * 1024 },
+        page: { chatNodeCount: 750, messageCount: 80 },
+        media: { images: 5, videos: 1, audio: 1, canvas: 1, iframes: 1 },
+        dynamic: {
+          longTaskCount: 1,
+          longestTaskMs: 55,
+          frameIntervalP95Ms: 20,
+          timerDelayP95Ms: 8,
+        },
+      },
+    })
+
+    const rows = summarizeMeasurementComparison(compareMeasurements(before, after))
+
+    expect(rows.map((row) => row.label)).toEqual([
+      '网页内存',
+      '页面节点',
+      '消息数',
+      '图片 / 媒体数',
+      '6 秒长任务',
+      '最长卡顿',
+      '95% 帧间隔',
+      '定时器延迟',
+    ])
+    expect(rows[0]).toMatchObject({ before: '120.0 MB', after: '100.0 MB', change: '减少 20.0 MB' })
+    expect(rows[3]).toMatchObject({ before: '10 项', after: '9 项', change: '减少 1 项' })
+    expect(rows[5]).toMatchObject({ before: '90 ms', after: '55 ms', change: '减少 35 ms' })
+    expect(rows[0].explanation).toContain('垃圾回收')
+  })
+
+  it('shows missing values and withholds changes when checks are not comparable', () => {
+    const comparison = compareMeasurements(
+      measurement({ metrics: {} }),
+      measurement({ id: 'after', chatKey: 'other', metrics: { heap: { usedBytes: 1024 } } }),
+    )
+
+    const rows = summarizeMeasurementComparison(comparison)
+
+    expect(rows[0]).toMatchObject({ before: '未读取到', after: '0.0 MB', change: '不计算' })
+    expect(rows.every((row) => row.change === '不计算')).toBe(true)
   })
 })

@@ -500,6 +500,74 @@ export function removePackCustomTag(
   }
 }
 
+export interface SpritePackFilter {
+  query?: string
+  roles?: string[]
+  kinds?: SpritePackKind[]
+  customTags?: string[]
+}
+
+/** 图包列表筛选：不同维度取交集，同一维度多选取并集。 */
+export function filterSpritePacks(packs: SpritePack[], filter: SpritePackFilter): SpritePack[] {
+  const query = filter.query?.trim().toLocaleLowerCase() ?? ''
+  const roles = new Set(normalizeLabels(filter.roles))
+  const kinds = new Set(filter.kinds ?? [])
+  const customTags = new Set(normalizeLabels(filter.customTags))
+  if (!query && roles.size === 0 && kinds.size === 0 && customTags.size === 0) return packs
+
+  return packs.filter((pack) => {
+    const role = pack.roleName?.trim() || '其他'
+    const kind = pack.kind ?? 'sprite'
+    const tags = normalizeLabels(pack.customTags)
+    const searchable = [pack.name, role, pack.outfit ?? '', ...tags]
+      .join('\n')
+      .toLocaleLowerCase()
+    return (
+      (!query || searchable.includes(query)) &&
+      (roles.size === 0 || roles.has(role)) &&
+      (kinds.size === 0 || kinds.has(kind)) &&
+      (customTags.size === 0 || tags.some((tag) => customTags.has(tag)))
+    )
+  })
+}
+
+/** 全局重命名自定义标签；目标标签已存在时自动合并去重。 */
+export function renamePackCustomTag(
+  settings: PluginSettings,
+  rawFrom: string,
+  rawTo: string,
+): PluginSettings {
+  const from = normalizeLabels([rawFrom])[0]
+  const to = normalizeLabels([rawTo])[0]
+  if (!from || !to || from === to) return settings
+  return {
+    ...settings,
+    packs: settings.packs.map((pack) => {
+      const tags = normalizeLabels(pack.customTags)
+      if (!tags.includes(from)) return pack
+      return { ...pack, customTags: normalizeLabels(tags.map((tag) => tag === from ? to : tag)) }
+    }),
+  }
+}
+
+/** 全局删除自定义标签；图包不再有标签时移除字段。 */
+export function deletePackCustomTag(settings: PluginSettings, rawTag: string): PluginSettings {
+  const tag = normalizeLabels([rawTag])[0]
+  if (!tag) return settings
+  return {
+    ...settings,
+    packs: settings.packs.map((pack) => {
+      const tags = normalizeLabels(pack.customTags)
+      if (!tags.includes(tag)) return pack
+      const customTags = tags.filter((item) => item !== tag)
+      const next = { ...pack }
+      if (customTags.length > 0) next.customTags = customTags
+      else delete next.customTags
+      return next
+    }),
+  }
+}
+
 /** 验证已经完成 URI 解码的 ST 用户图片路径；调用方不得再次解码。 */
 export function isSafeLocalUserImagePath(path: string): boolean {
   if (

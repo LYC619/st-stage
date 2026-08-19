@@ -3,6 +3,7 @@ import type {
   ButlerActionGroup,
   ButlerTransaction,
   JsonValue,
+  MeasurementSummaryRow,
   MeasurementSnapshot,
 } from './types'
 
@@ -232,4 +233,125 @@ export function compareMeasurements(
     after: after.metrics,
     deltas,
   }
+}
+
+type SummaryUnit = 'bytes' | 'count' | 'milliseconds'
+
+interface SummaryMetric {
+  id: string
+  label: string
+  unit: SummaryUnit
+  read(metrics: Record<string, JsonValue>): number | null
+  explanation: string
+}
+
+function metricNumber(metrics: Record<string, JsonValue>, path: string[]): number | null {
+  let current: JsonValue = metrics
+  for (const segment of path) {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) return null
+    current = current[segment]
+  }
+  return typeof current === 'number' && Number.isFinite(current) ? current : null
+}
+
+function mediaCount(metrics: Record<string, JsonValue>): number | null {
+  const values = ['images', 'videos', 'audio', 'canvas', 'iframes']
+    .map((key) => metricNumber(metrics, ['media', key]))
+  const available = values.filter((value): value is number => value !== null)
+  return available.length > 0 ? available.reduce((sum, value) => sum + value, 0) : null
+}
+
+const SUMMARY_METRICS: SummaryMetric[] = [
+  {
+    id: 'heap.usedBytes',
+    label: '网页内存',
+    unit: 'bytes',
+    read: (metrics) => metricNumber(metrics, ['heap', 'usedBytes']),
+    explanation: '受浏览器垃圾回收和缓存影响，单次升降不能单独证明优化有效。',
+  },
+  {
+    id: 'page.chatNodeCount',
+    label: '页面节点',
+    unit: 'count',
+    read: (metrics) => metricNumber(metrics, ['page', 'chatNodeCount']),
+    explanation: '用于观察聊天页面规模；聊天内容不同会直接改变数量。',
+  },
+  {
+    id: 'page.messageCount',
+    label: '消息数',
+    unit: 'count',
+    read: (metrics) => metricNumber(metrics, ['page', 'messageCount']),
+    explanation: '用于确认两次检查的聊天规模是否接近，本身不代表快慢。',
+  },
+  {
+    id: 'media.total',
+    label: '图片 / 媒体数',
+    unit: 'count',
+    read: mediaCount,
+    explanation: '汇总图片、视频、音频、画布和内嵌页面，只作为资源规模参照。',
+  },
+  {
+    id: 'dynamic.longTaskCount',
+    label: '6 秒长任务',
+    unit: 'count',
+    read: (metrics) => metricNumber(metrics, ['dynamic', 'longTaskCount']),
+    explanation: '主线程连续占用 50 ms 以上的次数；同条件下越少通常越流畅。',
+  },
+  {
+    id: 'dynamic.longestTaskMs',
+    label: '最长卡顿',
+    unit: 'milliseconds',
+    read: (metrics) => metricNumber(metrics, ['dynamic', 'longestTaskMs']),
+    explanation: '6 秒检查中最长一次主线程占用；同条件下越短越好。',
+  },
+  {
+    id: 'dynamic.frameIntervalP95Ms',
+    label: '95% 帧间隔',
+    unit: 'milliseconds',
+    read: (metrics) => metricNumber(metrics, ['dynamic', 'frameIntervalP95Ms']),
+    explanation: '大多数画面更新之间的间隔；同条件下越低通常越顺滑。',
+  },
+  {
+    id: 'dynamic.timerDelayP95Ms',
+    label: '定时器延迟',
+    unit: 'milliseconds',
+    read: (metrics) => metricNumber(metrics, ['dynamic', 'timerDelayP95Ms']),
+    explanation: '大多数定时任务额外等待的时间；同条件下越低越好。',
+  },
+]
+
+function formatSummaryValue(value: number | null, unit: SummaryUnit): string {
+  if (value === null) return '未读取到'
+  if (unit === 'bytes') return `${(value / 1024 / 1024).toFixed(1)} MB`
+  if (unit === 'count') return `${Number.isInteger(value) ? value : value.toFixed(1)} 项`
+  return `${Number.isInteger(value) ? value : value.toFixed(1)} ms`
+}
+
+function formatSummaryChange(
+  before: number | null,
+  after: number | null,
+  unit: SummaryUnit,
+  comparable: boolean,
+): string {
+  if (!comparable || before === null || after === null) return '不计算'
+  const delta = after - before
+  if (delta === 0) return '无变化'
+  return `${delta < 0 ? '减少' : '增加'} ${formatSummaryValue(Math.abs(delta), unit)}`
+}
+
+export function summarizeMeasurementComparison(
+  comparison: MeasurementComparison,
+): MeasurementSummaryRow[] {
+  return SUMMARY_METRICS.map((metric) => {
+    const before = metric.read(comparison.before)
+    const after = metric.read(comparison.after)
+    return {
+      id: metric.id,
+      label: metric.label,
+      before: formatSummaryValue(before, metric.unit),
+      after: formatSummaryValue(after, metric.unit),
+      change: formatSummaryChange(before, after, metric.unit, comparison.comparable),
+      explanation: metric.explanation,
+    }
+  })
 }

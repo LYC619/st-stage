@@ -394,7 +394,16 @@ describe('管家 2.0 主屏', () => {
 
     button(mounted.container, '用相同探针复测').click()
     await vi.waitFor(() => expect(mounted.container.textContent).toContain('两次检查条件一致'))
-    expect(mounted.container.textContent).toContain('差值')
+    expect(mounted.container.textContent).toContain('网页内存')
+    expect(mounted.container.textContent).toContain('95% 帧间隔')
+    expect(mounted.container.textContent).toContain('未读取到')
+
+    button(mounted.container, '查看详细结果').click()
+    const report = mounted.openedModals[0]
+    expect(report.textContent).toContain('网页内存受浏览器垃圾回收和缓存影响')
+    const raw = [...report.querySelectorAll<HTMLDetailsElement>('details')]
+      .find((details) => details.querySelector('summary')?.textContent === '高级：原始数据')
+    expect(raw?.open).toBe(false)
 
     button(mounted.container, '恢复本次性能设置').click()
     await vi.waitFor(() => expect(mounted.getData().activeTransaction).toBeNull())
@@ -424,11 +433,11 @@ describe('管家 2.0 主屏', () => {
     await vi.waitFor(() => expect(mounted.getData().activeTransaction).not.toBeNull())
 
     button(mounted.container, '用相同探针复测').click()
-    await vi.waitFor(() => expect(mounted.container.textContent).toContain('-10'))
+    await vi.waitFor(() => expect(mounted.container.textContent).toContain('减少 10 ms'))
     button(mounted.container, '用相同探针复测').click()
-    await vi.waitFor(() => expect(mounted.container.textContent).toContain('-12'))
+    await vi.waitFor(() => expect(mounted.container.textContent).toContain('减少 12 ms'))
 
-    expect(mounted.container.textContent).not.toContain('-2')
+    expect(mounted.container.textContent).not.toContain('减少 2 ms')
   })
 
   it('复测进行中忽略重复触发，避免并发采样', async () => {
@@ -461,6 +470,10 @@ describe('管家 2.0 主屏', () => {
     expect(mounted.openedModals).toHaveLength(3)
     expect(mounted.openedModals[0].textContent).toContain('详细检查结果')
     await vi.waitFor(() => expect(mounted.openedModals[1].textContent).toContain('第三方扩展'))
+    expect(mounted.openedModals[1].textContent).toContain('内置扩展用途与关闭建议')
+    expect(mounted.openedModals[1].textContent).toContain('向量检索')
+    expect(mounted.openedModals[1].textContent).toContain('语义召回')
+    expect(mounted.openedModals[1].querySelector('input[value="vectors"]')).toBeNull()
     expect(mounted.openedModals[2].textContent).toContain('World Info')
     expect(mounted.openedModals[2].textContent).toContain('只读查看')
     await vi.waitFor(() => expect(mounted.openedModals[2].textContent).toContain('Vector Storage：当前启用'))
@@ -479,8 +492,10 @@ describe('扩展治理与跨刷新实验', () => {
 
     const candidate = modal.querySelector<HTMLInputElement>('input[value="third-party/example"]')
     const self = modal.querySelector<HTMLInputElement>('input[value="third-party/st-stage"]')
+    const system = modal.querySelector<HTMLInputElement>('input[value="vectors"]')
     expect(candidate?.checked).toBe(true)
     expect(self?.disabled).toBe(true)
+    expect(system).toBeNull()
     button(modal, '开始选定扩展 A/B').click()
 
     await vi.waitFor(() => expect(mounted.service.setExtensionEnabled).toHaveBeenCalledWith('third-party/example', false))

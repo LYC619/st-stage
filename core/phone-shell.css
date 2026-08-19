@@ -630,6 +630,32 @@
   text-align: right;
 }
 
+.so-butler-comparison-table {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.so-butler-comparison-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.4fr) minmax(0, 1fr);
+  gap: 3px 10px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 12px;
+}
+
+.so-butler-comparison-values {
+  overflow-wrap: anywhere;
+}
+
+.so-butler-comparison-row small {
+  grid-column: 1 / -1;
+  line-height: 1.45;
+}
+
 .so-butler-metric-block pre {
   max-height: 220px;
   margin: 5px 0 10px;
@@ -642,6 +668,30 @@
   font: 11px/1.45 var(--monoFontFamily, ui-monospace, monospace);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.so-butler-system-advice-list {
+  display: grid;
+  gap: 6px;
+  margin: 7px 0 14px;
+}
+
+.so-butler-system-advice {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.so-butler-system-advice > summary {
+  padding: 8px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.so-butler-system-advice-body {
+  padding: 0 8px 8px;
 }
 
 .so-butler-extension-list {
@@ -682,9 +732,14 @@
 
 @media (max-width: 520px) {
   .so-butler-explanation-row,
-  .so-butler-kv {
+  .so-butler-kv,
+  .so-butler-comparison-row {
     grid-template-columns: 1fr;
     gap: 2px;
+  }
+
+  .so-butler-comparison-row small {
+    grid-column: 1;
   }
 
   .so-butler-kv strong {

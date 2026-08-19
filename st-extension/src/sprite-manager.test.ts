@@ -11,12 +11,19 @@ import { getPresetPacks, presetSpriteKey } from '../../core/presets'
 import { setPresetLocalSprite, setPresetMetadata } from '../../core/preset-overrides'
 import { MAX_NOTE_CODE_POINTS } from '../../core/sprite-metadata'
 
-const imageMocks = vi.hoisted(() => ({ compressImage: vi.fn() }))
+const imageMocks = vi.hoisted(() => ({
+  compressImage: vi.fn(),
+  cleanCheckerboardImage: vi.fn(),
+}))
 const imgbbMocks = vi.hoisted(() => ({ uploadToImgbb: vi.fn() }))
 
 vi.mock('../../core/image-compress', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../core/image-compress')>()
-  return { ...actual, compressImage: imageMocks.compressImage }
+  return {
+    ...actual,
+    compressImage: imageMocks.compressImage,
+    cleanCheckerboardImage: imageMocks.cleanCheckerboardImage,
+  }
 })
 
 import { createSpriteManager } from './sprite-manager'
@@ -250,6 +257,7 @@ describe('createSpriteManager binding conflict UI', () => {
       '#标签',
       '🏷设分组',
       '🖼重新上传 / 替换图片',
+      '▦检测并去除棋盘格',
       '↓保存到本地',
       '🔗远程地址',
       '★设为封面',
@@ -472,12 +480,97 @@ describe('createSpriteManager binding conflict UI', () => {
     manager.close()
   })
 
-  it('exposes no edit actions for readonly packs', () => {
+  it('exposes only checkerboard cleanup for readonly packs', () => {
     const { manager } = openActionGallery(['只读'], 'preset_silver_loli')
     document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
 
     expect(document.querySelectorAll('.so-sprite-actions')).toHaveLength(0)
-    expect(document.querySelectorAll('.so-lightbox [data-action-id]')).toHaveLength(0)
+    expect([...document.querySelectorAll<HTMLElement>('.so-lightbox [data-action-id]')]
+      .map((item) => item.dataset.actionId)).toEqual(['checkerboard'])
+    manager.close()
+  })
+
+  it('cleans a preset sprite only after confirmation and persists a same-id local override', async () => {
+    const builtIn = getPresetPacks()[0]
+    const source = builtIn.sprites[0]
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{ ...builtIn, sprites: [source] }],
+    }
+    const fetchImage = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      blob: async () => new Blob(['checkerboard'], { type: 'image/png' }),
+    })
+    vi.stubGlobal('fetch', fetchImage)
+    imageMocks.cleanCheckerboardImage.mockResolvedValue({
+      blob: new Blob(['transparent'], { type: 'image/png' }),
+      removedPixels: 321,
+    })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const saveImageFile = vi.fn().mockResolvedValue('/user/images/seraphina/clean.png')
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '塞拉菲娜', saveImageFile } as unknown as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    document.querySelector<HTMLElement>('.so-pack-card')!.click()
+    document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
+
+    expect(fetchImage).not.toHaveBeenCalled()
+    document.querySelector<HTMLElement>('[data-action-id="checkerboard"]')!.click()
+    await vi.waitFor(() => expect(saveImageFile).toHaveBeenCalledOnce())
+
+    expect(fetchImage).toHaveBeenCalledWith(source.url, expect.anything())
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('检测到 321 个可安全去除的背景像素'))
+    expect(settings.packs).toHaveLength(1)
+    expect(settings.packs[0].id).toBe(builtIn.id)
+    expect(settings.packs[0].sprites[0]).toMatchObject({
+      tag: source.tag,
+      url: '/user/images/seraphina/clean.png',
+      remoteUrl: source.url,
+    })
+    expect(settings.presetOverrides[builtIn.id]?.localSprites?.[presetSpriteKey(source)])
+      .toBe('/user/images/seraphina/clean.png')
+    expect(document.querySelector('.so-toast')?.textContent).toContain('已去除 321 个背景像素')
+    manager.close()
+  })
+
+  it('keeps preset settings unchanged when checkerboard cleanup fails', async () => {
+    const builtIn = getPresetPacks()[0]
+    const source = builtIn.sprites[0]
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{ ...builtIn, sprites: [source] }],
+    }
+    const before = structuredClone(settings)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      blob: async () => new Blob(['opaque'], { type: 'image/png' }),
+    }))
+    imageMocks.cleanCheckerboardImage.mockRejectedValue(new Error('没有确认到可安全去除的棋盘格背景'))
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const saveImageFile = vi.fn()
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '塞拉菲娜', saveImageFile } as unknown as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    document.querySelector<HTMLElement>('.so-pack-card')!.click()
+    document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
+
+    document.querySelector<HTMLElement>('[data-action-id="checkerboard"]')!.click()
+    await vi.waitFor(() => expect(document.querySelector('.so-toast')?.textContent)
+      .toContain('没有确认到可安全去除的棋盘格背景'))
+
+    expect(saveImageFile).not.toHaveBeenCalled()
+    expect(confirm).not.toHaveBeenCalled()
+    expect(settings).toEqual(before)
     manager.close()
   })
 
@@ -701,6 +794,7 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
     expect(stacks[0].querySelector('.so-role-stack-count')?.textContent).toBe('2 个图包')
     expect(stacks[0].querySelector<HTMLImageElement>('.so-role-stack-cover img')?.getAttribute('src')).toBe('a')
     expect(stacks[0].querySelectorAll('[aria-hidden="true"].so-role-stack-layer')).toHaveLength(2)
+    expect(stacks[0].closest('.so-role-pack-group')?.classList.contains('so-role-pack-group-expanded')).toBe(false)
     expect(document.querySelectorAll('.so-pack-list-folded > .so-pack-card')).toHaveLength(2)
     expect(document.querySelector('.so-pack-list-folded')?.textContent).toContain('小夜单包')
     expect(document.querySelector('.so-pack-list-folded')?.textContent).toContain('独立包')
@@ -709,6 +803,7 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
     let strip = document.querySelector<HTMLElement>('.so-role-pack-strip')!
     expect(strip).not.toBeNull()
     expect(strip.querySelectorAll('.so-pack-card')).toHaveLength(2)
+    expect(strip.closest('.so-role-pack-group')?.classList.contains('so-role-pack-group-expanded')).toBe(true)
     expect(strip.scrollWidth).toBeGreaterThanOrEqual(strip.clientWidth)
     expect(document.querySelectorAll('.so-role-pack-stack')).toHaveLength(1)
 
@@ -1521,6 +1616,80 @@ describe('createSpriteManager selected-pack resource actions', () => {
     manager.close()
   })
 
+  it('按图包信息筛选并通过标签管理新增、重命名和删除自定义标签', () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      galleryFoldByRole: false,
+      packs: [
+        {
+          id: 'main',
+          name: '小雪主线',
+          roleName: '小雪',
+          outfit: '校服',
+          kind: 'illustration',
+          customTags: ['主线'],
+          sprites: [{ tag: '一', url: 'a' }],
+        },
+        {
+          id: 'side',
+          name: '小雪支线',
+          roleName: '小雪',
+          outfit: '礼服',
+          customTags: ['支线'],
+          sprites: [{ tag: '二', url: 'b' }],
+        },
+        { id: 'other', name: '通用玩法', sprites: [{ tag: '三', url: 'c' }] },
+      ],
+    }
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+
+    const search = document.querySelector<HTMLInputElement>('.so-pack-filter-search')!
+    const role = document.querySelector<HTMLSelectElement>('.so-pack-filter-role')!
+    const kind = document.querySelector<HTMLSelectElement>('.so-pack-filter-kind')!
+    const tag = document.querySelector<HTMLSelectElement>('.so-pack-filter-tag')!
+    expect(search).not.toBeNull()
+    expect([...role.options].map((option) => option.textContent)).toEqual(['全部角色', '小雪', '其他'])
+    expect([...kind.options].map((option) => option.textContent)).toEqual(['全部类型', '立绘', '插图'])
+    expect([...tag.options].map((option) => option.textContent)).toEqual(['全部标签', '主线', '支线'])
+
+    search.value = '小雪'
+    search.dispatchEvent(new Event('change', { bubbles: true }))
+    kind.value = 'illustration'
+    kind.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(document.querySelectorAll('.so-pack-card')).toHaveLength(1)
+    expect(document.querySelector('.so-pack-card')?.textContent).toContain('小雪主线')
+
+    findButton(document, '标签管理').click()
+    let modal = document.querySelector<HTMLElement>('.so-tag-manager')!
+    expect(modal.textContent).toContain('角色和类型由图包信息自动生成')
+    modal.querySelector<HTMLSelectElement>('.so-tag-manager-pack')!.value = 'other'
+    modal.querySelector<HTMLInputElement>('.so-tag-manager-new')!.value = '玩法'
+    findButton(modal, '添加到图包').click()
+    expect(settings.packs[2].customTags).toEqual(['玩法'])
+
+    findButton(document, '标签管理').click()
+    modal = document.querySelector<HTMLElement>('.so-tag-manager')!
+    const mainRow = [...modal.querySelectorAll<HTMLElement>('.so-tag-manager-row')]
+      .find((row) => row.dataset.tag === '主线')!
+    mainRow.querySelector('input')!.value = '剧情'
+    findButton(mainRow, '重命名').click()
+    expect(settings.packs[0].customTags).toEqual(['剧情'])
+
+    findButton(document, '标签管理').click()
+    modal = document.querySelector<HTMLElement>('.so-tag-manager')!
+    const sideRow = [...modal.querySelectorAll<HTMLElement>('.so-tag-manager-row')]
+      .find((row) => row.dataset.tag === '支线')!
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    findButton(sideRow, '删除').click()
+    expect(settings.packs[1].customTags).toBeUndefined()
+    manager.close()
+  })
+
   it('edits preset package metadata in place without enabling destructive sprite actions', () => {
     const builtIn = getPresetPacks()[0]
     let settings: PluginSettings = {
@@ -1577,7 +1746,8 @@ describe('createSpriteManager selected-pack resource actions', () => {
 
     document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
     expect(document.querySelectorAll('.so-sprite-actions')).toHaveLength(0)
-    expect(document.querySelectorAll('.so-lightbox [data-action-id]')).toHaveLength(0)
+    expect([...document.querySelectorAll<HTMLElement>('.so-lightbox [data-action-id]')]
+      .map((item) => item.dataset.actionId)).toEqual(['checkerboard'])
     manager.close()
   })
 

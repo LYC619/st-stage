@@ -23,7 +23,9 @@ import {
   type ConflictCheckedSettingsResult,
   addPackCustomTag,
   bindPack,
+  deletePackCustomTag,
   deletableLocalSpritePaths,
+  filterSpritePacks,
   genId,
   movePack,
   movePackBefore,
@@ -32,6 +34,7 @@ import {
   removePack,
   removePackCustomTag,
   removePacks,
+  renamePackCustomTag,
   reorderBinding,
   setBinding,
   setPackKind,
@@ -83,9 +86,14 @@ import {
   packLabels,
 } from '../../core/sprite-metadata'
 import type { STAdapter } from './st-adapter'
-import { createSpriteActions, type SpriteAction, type SpriteActionContext } from './sprite-actions'
+import {
+  createCheckerboardAction,
+  createSpriteActions,
+  type SpriteAction,
+  type SpriteActionContext,
+} from './sprite-actions'
 import { openSpriteLightbox, type SpriteLightboxController } from './sprite-lightbox'
-import { localizeSprite } from './sprite-localize'
+import { cleanAndLocalizeSprite, localizeSprite } from './sprite-localize'
 
 export interface ManagerDeps {
   adapter: STAdapter
@@ -122,6 +130,10 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   let spriteVisibleCount = SPRITE_PAGE_SIZE
   let spriteFilterQuery = ''
   let spriteFilterLabels: string[] = []
+  let packFilterQuery = ''
+  let packFilterRole = ''
+  let packFilterKind = ''
+  let packFilterTag = ''
   /** 同一时间只展开一个角色组，避免多组图包同时把列表撑得过长。 */
   let expandedRoleGroupKey = ''
   /** 折叠面板展开态（key → open）：commit 触发整体重渲染时保持用户手动展开的面板不收起 */
@@ -158,6 +170,10 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     spriteVisibleCount = SPRITE_PAGE_SIZE
     spriteFilterQuery = ''
     spriteFilterLabels = []
+    packFilterQuery = ''
+    packFilterRole = ''
+    packFilterKind = ''
+    packFilterTag = ''
     expandedRoleGroupKey = ''
     openSections.clear()
     enableListOpen = false
@@ -602,6 +618,12 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
   function renderList(body: HTMLElement, actions: HTMLElement): void {
     const settings = deps.getSettings()
+    const filteredPacks = filterSpritePacks(settings.packs, {
+      query: packFilterQuery,
+      roles: packFilterRole ? [packFilterRole] : [],
+      kinds: packFilterKind === 'sprite' || packFilterKind === 'illustration' ? [packFilterKind] : [],
+      customTags: packFilterTag ? [packFilterTag] : [],
+    })
     const characterName = deps.adapter.getCurrentCharacterName()
     const binding = settings.bindings.find((b) => b.characterName === characterName)
     const boundIds = binding?.packIds ?? []
@@ -614,7 +636,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       )
       actions.append(
         button('全选', () => {
-          const all = settings.packs
+          const all = filteredPacks
           if (all.length > 0 && all.every((p) => selectedPackIds.has(p.id))) {
             selectedPackIds.clear()
           } else {
@@ -738,6 +760,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       )
       if (settings.packs.length > 0) {
         actions.append(
+          button('标签管理', () => openTagManager()),
           button('批量管理', () => {
             closeEnableList()
             batchMode = true
@@ -796,6 +819,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       strip.append(tip)
     }
     body.append(strip)
+    body.append(renderPackFilters(settings, filteredPacks.length))
 
     // 包封面图墙：立绘包是图片集合，用卡片网格浏览（同 ST 角色列表的卡片墙模式）
     // 批量管理模式强制平铺网格：拖拽排序调整的是包列表的整体顺序，折叠分组下无法直观呈现
@@ -810,7 +834,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     const boundState = (pack: SpritePack): 'active' | 'off' | null =>
       boundIds.includes(pack.id) ? (binding?.enabled ? 'active' : 'off') : null
     if (useFold) {
-      for (const group of groupPacksByRole(settings.packs)) {
+      for (const group of groupPacksByRole(filteredPacks)) {
         if (group.packCount === 1) {
           grid.append(renderPackCard(group.packs[0], boundState(group.packs[0])))
           continue
@@ -823,6 +847,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           render()
         }
         if (expanded) {
+          section.classList.add('so-role-pack-group-expanded')
           const row = el('button', 'so-role-pack-row') as HTMLButtonElement
           row.type = 'button'
           row.setAttribute('aria-expanded', 'true')
@@ -844,12 +869,168 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         grid.append(section)
       }
     } else {
-      for (const pack of settings.packs) grid.append(renderPackCard(pack, boundState(pack)))
+      for (const pack of filteredPacks) grid.append(renderPackCard(pack, boundState(pack)))
     }
     body.append(grid)
+    if (filteredPacks.length === 0) {
+      const empty = el('div', 'so-status so-pack-filter-empty')
+      empty.textContent = '没有符合当前筛选条件的图包'
+      body.append(empty)
+    }
 
     body.append(statusBar())
     renderEnableList()
+  }
+
+  function renderPackFilters(settings: PluginSettings, visibleCount: number): HTMLElement {
+    const panel = el('div', 'so-pack-filters')
+    const search = textInput('搜索包名、角色、服装或标签')
+    search.classList.add('so-pack-filter-search')
+    search.value = packFilterQuery
+    const applySearch = () => {
+      packFilterQuery = search.value.trim()
+      expandedRoleGroupKey = ''
+      render()
+    }
+    search.addEventListener('change', applySearch)
+    search.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' || event.isComposing) return
+      event.preventDefault()
+      applySearch()
+    })
+
+    const selectFilter = (
+      className: string,
+      options: Array<[string, string]>,
+      current: string,
+      apply: (value: string) => void,
+    ) => {
+      const select = document.createElement('select')
+      select.className = `text_pole ${className}`
+      for (const [value, label] of options) {
+        const option = document.createElement('option')
+        option.value = value
+        option.textContent = label
+        select.append(option)
+      }
+      select.value = current
+      select.addEventListener('change', () => {
+        apply(select.value)
+        expandedRoleGroupKey = ''
+        render()
+      })
+      return select
+    }
+    const roles = normalizeLabels(settings.packs.map((pack) => pack.roleName?.trim() || '其他'))
+    const tags = normalizeLabels(settings.packs.flatMap((pack) => pack.customTags ?? []))
+    const role = selectFilter(
+      'so-pack-filter-role',
+      [['', '全部角色'], ...roles.map((item): [string, string] => [item, item])],
+      packFilterRole,
+      (value) => { packFilterRole = value },
+    )
+    const kind = selectFilter(
+      'so-pack-filter-kind',
+      [['', '全部类型'], ['sprite', '立绘'], ['illustration', '插图']],
+      packFilterKind,
+      (value) => { packFilterKind = value },
+    )
+    const tag = selectFilter(
+      'so-pack-filter-tag',
+      [['', '全部标签'], ...tags.map((item): [string, string] => [item, item])],
+      packFilterTag,
+      (value) => { packFilterTag = value },
+    )
+    const status = el('span', 'so-pack-filter-count')
+    status.textContent = `${visibleCount}/${settings.packs.length} 个图包`
+    panel.append(search, role, kind, tag, status)
+    if (packFilterQuery || packFilterRole || packFilterKind || packFilterTag) {
+      panel.append(button('清除筛选', () => {
+        packFilterQuery = packFilterRole = packFilterKind = packFilterTag = ''
+        expandedRoleGroupKey = ''
+        render()
+      }))
+    }
+    return panel
+  }
+
+  function openTagManager(): void {
+    const modal = el('div', 'so-upload-modal so-tag-manager')
+    modal.setAttribute('role', 'dialog')
+    modal.setAttribute('aria-label', '图包标签管理')
+    const panel = el('div', 'so-upload-panel so-tag-manager-panel')
+    const heading = el('div', 'so-tag-manager-heading')
+    const title = el('b')
+    title.textContent = '标签管理'
+    heading.append(title, button('关闭', () => modal.remove()))
+    const help = el('div', 'so-status')
+    help.textContent = '角色和类型由图包信息自动生成，只能在包信息或批量管理中修改。这里管理自定义标签。'
+
+    const settings = deps.getSettings()
+    const addRow = el('div', 'so-row so-tag-manager-add')
+    const packSelect = document.createElement('select')
+    packSelect.className = 'text_pole so-tag-manager-pack'
+    for (const pack of settings.packs) {
+      const option = document.createElement('option')
+      option.value = pack.id
+      option.textContent = pack.name
+      packSelect.append(option)
+    }
+    const newTag = textInput('输入新标签')
+    newTag.classList.add('so-tag-manager-new')
+    const commitTags = (next: PluginSettings) => {
+      modal.remove()
+      commit(persistSelectedPresetMetadata(next, next.packs.map((pack) => pack.id)))
+    }
+    addRow.append(
+      labeled('添加到图包', packSelect),
+      labeled('新标签', newTag),
+      button('添加到图包', () => {
+        const tag = normalizeLabels([newTag.value])[0]
+        if (!packSelect.value || !tag) {
+          toast(currentManagerBody(), '请选择图包并输入标签')
+          return
+        }
+        commitTags(addPackCustomTag(deps.getSettings(), [packSelect.value], tag))
+      }),
+    )
+
+    const list = el('div', 'so-tag-manager-list')
+    const tags = normalizeLabels(settings.packs.flatMap((pack) => pack.customTags ?? []))
+    if (tags.length === 0) {
+      const empty = el('div', 'so-status')
+      empty.textContent = '还没有自定义标签'
+      list.append(empty)
+    }
+    for (const tag of tags) {
+      const row = el('div', 'so-tag-manager-row')
+      row.dataset.tag = tag
+      const input = textInput('标签名称')
+      input.value = tag
+      const count = settings.packs.filter((pack) => normalizeLabels(pack.customTags).includes(tag)).length
+      const usage = el('span', 'so-status')
+      usage.textContent = `${count} 个图包`
+      row.append(
+        input,
+        usage,
+        button('重命名', () => {
+          const renamed = normalizeLabels([input.value])[0]
+          if (!renamed) {
+            toast(currentManagerBody(), '标签名称不能为空')
+            return
+          }
+          commitTags(renamePackCustomTag(deps.getSettings(), tag, renamed))
+        }),
+        button('删除', () => {
+          if (!window.confirm(`从 ${count} 个图包删除标签「${tag}」吗？`)) return
+          commitTags(deletePackCustomTag(deps.getSettings(), tag))
+        }, 'so-btn-danger'),
+      )
+      list.append(row)
+    }
+    panel.append(heading, help, addRow, list)
+    modal.append(panel)
+    ;(backdrop ?? document.body).append(modal)
   }
 
   function selectedPacks(): SpritePack[] {
@@ -1832,7 +2013,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       pack,
       index: startIndex,
       readonly: isPresetPack(pack.id),
-      actions: isPresetPack(pack.id) ? [] : lightboxActions(state),
+      actions: isPresetPack(pack.id) ? presetLightboxActions(state) : lightboxActions(state),
       onNavigate: (index) => {
         state.index = index
         refreshLightbox()
@@ -1854,7 +2035,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       return
     }
     state.index = Math.max(0, Math.min(state.index, pack.sprites.length - 1))
-    const actions = isPresetPack(pack.id) ? [] : lightboxActions(state)
+    const actions = isPresetPack(pack.id) ? presetLightboxActions(state) : lightboxActions(state)
     state.controller.update(pack, state.index, actions)
   }
 
@@ -2000,6 +2181,50 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         context.refresh()
         toast(currentManagerBody(), `已将「${source.tag}」保存到本地`)
       },
+      cleanCheckerboard: async (source) => {
+        const identity = {
+          tag: source.tag,
+          group: spriteGroup(source),
+          outfit: source.outfit ?? '',
+        }
+        const cleaned = await cleanAndLocalizeSprite(source, `${source.tag}-transparent.png`, {
+          fetch: window.fetch.bind(window),
+          confirmSave: (removedPixels) => window.confirm(
+            `检测到 ${removedPixels} 个可安全去除的背景像素。\n\n要保存为新的透明 PNG 吗？原远程地址仍会保留。`,
+          ),
+          saveImage: (file, fileName) => deps.adapter.saveImageFile(
+            file,
+            fileName,
+            deps.adapter.getCurrentCharacterName() || getPack()?.name || 'shared',
+          ),
+        })
+        const latestSettings = deps.getSettings()
+        const latestPack = latestSettings.packs.find((candidate) => candidate.id === packId)
+        const latest = latestPack?.sprites.find((candidate) =>
+          candidate.tag === identity.tag &&
+          spriteGroup(candidate) === identity.group &&
+          (candidate.outfit ?? '') === identity.outfit,
+        )
+        if (!latestPack || !latest || latest.url !== source.url) {
+          throw new Error('立绘在清理期间已发生变化，请重试')
+        }
+        if (isPresetPack(packId)) {
+          deps.updateSettings(setPresetLocalSprite(
+            latestSettings,
+            packId,
+            latest,
+            cleaned.sprite.url,
+          ))
+        } else {
+          commitActionPack(upsertSprite(latestPack, {
+            ...latest,
+            url: cleaned.sprite.url,
+            ...(cleaned.sprite.remoteUrl ? { remoteUrl: cleaned.sprite.remoteUrl } : {}),
+          }))
+        }
+        context.refresh()
+        toast(currentManagerBody(), `已去除 ${cleaned.removedPixels} 个背景像素，并保存为透明 PNG`)
+      },
       refresh: () => {
         render()
         refreshLightbox()
@@ -2022,6 +2247,19 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       ...action,
       run: () => runSpriteAction(action),
     }))
+  }
+
+  function presetLightboxActions(state: ActiveLightbox): SpriteAction[] {
+    const context = actionContext(
+      state.packId,
+      (pack) => pack.sprites[state.index] ?? null,
+      () => state.controller?.close(),
+    )
+    const action = createCheckerboardAction(context)
+    return [{
+      ...action,
+      run: () => runSpriteAction(action),
+    }]
   }
 
   function renderSpriteCell(

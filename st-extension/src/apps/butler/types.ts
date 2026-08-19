@@ -50,6 +50,15 @@ export interface MeasurementSnapshot {
   invalidReason?: string
 }
 
+export interface MeasurementSummaryRow {
+  id: string
+  label: string
+  before: string
+  after: string
+  change: string
+  explanation: string
+}
+
 export interface FindingExplanation {
   detected: string
   change: string

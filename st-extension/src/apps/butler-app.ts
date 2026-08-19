@@ -19,6 +19,7 @@ import {
   buildExtensionModal,
   buildReportModal,
   renderFinding,
+  renderMeasurementComparison,
   type ButlerModalController,
 } from './butler/modals'
 import { createButlerAppServices, type ButlerAppServices } from './butler/runtime'
@@ -565,13 +566,9 @@ function mountButler(
     if (state.comparison) {
       const comparison = foldSection('优化前后对比', true, 'butler-comparison')
       text(comparison.body, state.comparison.comparable
-        ? '两次检查条件一致。下面的负数通常表示对应耗时或数量减少。'
+        ? '两次检查条件一致。下面按普通用户能理解的指标展示前后变化。'
         : `两次检查条件不同，暂不计算差值：${state.comparison.reasons.join('；')}。可在详细结果中查看两次原始数据。`)
-      if (state.comparison.comparable) {
-        for (const [key, delta] of Object.entries(state.comparison.deltas)) {
-          text(comparison.body, `${key} 差值：${delta >= 0 ? '+' : ''}${delta}`)
-        }
-      }
+      renderMeasurementComparison(comparison.body, state.comparison)
       planSection.append(comparison.box)
     }
     container.append(planSection)

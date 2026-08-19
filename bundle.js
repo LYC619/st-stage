@@ -1052,6 +1052,49 @@ function removePackCustomTag(settings, packIds, rawTag) {
     })
   };
 }
+function filterSpritePacks(packs, filter) {
+  const query = filter.query?.trim().toLocaleLowerCase() ?? "";
+  const roles = new Set(normalizeLabels(filter.roles));
+  const kinds = new Set(filter.kinds ?? []);
+  const customTags = new Set(normalizeLabels(filter.customTags));
+  if (!query && roles.size === 0 && kinds.size === 0 && customTags.size === 0) return packs;
+  return packs.filter((pack) => {
+    const role = pack.roleName?.trim() || "其他";
+    const kind = pack.kind ?? "sprite";
+    const tags = normalizeLabels(pack.customTags);
+    const searchable = [pack.name, role, pack.outfit ?? "", ...tags].join("\n").toLocaleLowerCase();
+    return (!query || searchable.includes(query)) && (roles.size === 0 || roles.has(role)) && (kinds.size === 0 || kinds.has(kind)) && (customTags.size === 0 || tags.some((tag) => customTags.has(tag)));
+  });
+}
+function renamePackCustomTag(settings, rawFrom, rawTo) {
+  const from = normalizeLabels([rawFrom])[0];
+  const to = normalizeLabels([rawTo])[0];
+  if (!from || !to || from === to) return settings;
+  return {
+    ...settings,
+    packs: settings.packs.map((pack) => {
+      const tags = normalizeLabels(pack.customTags);
+      if (!tags.includes(from)) return pack;
+      return { ...pack, customTags: normalizeLabels(tags.map((tag) => tag === from ? to : tag)) };
+    })
+  };
+}
+function deletePackCustomTag(settings, rawTag) {
+  const tag = normalizeLabels([rawTag])[0];
+  if (!tag) return settings;
+  return {
+    ...settings,
+    packs: settings.packs.map((pack) => {
+      const tags = normalizeLabels(pack.customTags);
+      if (!tags.includes(tag)) return pack;
+      const customTags = tags.filter((item) => item !== tag);
+      const next = { ...pack };
+      if (customTags.length > 0) next.customTags = customTags;
+      else delete next.customTags;
+      return next;
+    })
+  };
+}
 function isSafeLocalUserImagePath(path) {
   if (!path.startsWith("/user/images/") || /%(?:2e|2f|5c)/i.test(path) || path.includes("\0")) return false;
   return !path.split("/").some((segment) => segment === "." || segment === "..");
@@ -1598,6 +1641,10 @@ function createPhoneShell(initialState, deps) {
   const shell = document.createElement("div");
   shell.className = "so-phone-shell";
   shell.style.display = "none";
+  const stopShellEvent = (event) => event.stopPropagation();
+  for (const type of ["pointerdown", "touchstart", "click"]) {
+    shell.addEventListener(type, stopShellEvent);
+  }
   const statusBar2 = document.createElement("div");
   statusBar2.className = "so-phone-status";
   const backBtn = document.createElement("div");
@@ -1867,6 +1914,9 @@ function createPhoneShell(initialState, deps) {
       window.visualViewport?.removeEventListener("resize", applyLayout);
       unsubscribe();
       leaveApp();
+      for (const type of ["pointerdown", "touchstart", "click"]) {
+        shell.removeEventListener(type, stopShellEvent);
+      }
       fab.remove();
       shell.remove();
     }
@@ -2507,6 +2557,84 @@ function migratePack(raw) {
   };
 }
 
+// core/checkerboard-cleanup.ts
+function pixelOffset(index) {
+  return index * 4;
+}
+function grayscaleValue(data, index) {
+  const offset = pixelOffset(index);
+  const red = data[offset];
+  const green = data[offset + 1];
+  const blue = data[offset + 2];
+  if (Math.max(red, green, blue) - Math.min(red, green, blue) > 6) return null;
+  return Math.round((red + green + blue) / 3);
+}
+function edgeIndices(width, height) {
+  const indices = [];
+  for (let x = 0; x < width; x += 1) indices.push(x);
+  for (let y = 1; y < height - 1; y += 1) indices.push(y * width + width - 1);
+  if (height > 1) {
+    for (let x = width - 1; x >= 0; x -= 1) indices.push((height - 1) * width + x);
+  }
+  for (let y = height - 2; y >= 1; y -= 1) indices.push(y * width);
+  return indices;
+}
+function detectPalette(data, width, height) {
+  const edges = edgeIndices(width, height);
+  const bins = /* @__PURE__ */ new Map();
+  for (const index of edges) {
+    const value = grayscaleValue(data, index);
+    if (value === null || value < 160) continue;
+    const bin = Math.round(value / 4) * 4;
+    bins.set(bin, (bins.get(bin) ?? 0) + 1);
+  }
+  const dominant = [...bins.entries()].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count).slice(0, 2);
+  if (dominant.length !== 2) return null;
+  const difference = Math.abs(dominant[0].value - dominant[1].value);
+  const combined = dominant[0].count + dominant[1].count;
+  if (dominant[0].count / edges.length < 0.1 || dominant[1].count / edges.length < 0.1 || combined / edges.length < 0.6 || difference < 8 || difference > 64) return null;
+  return dominant[0].value < dominant[1].value ? [dominant[0].value, dominant[1].value] : [dominant[1].value, dominant[0].value];
+}
+function matchesPalette(data, index, palette) {
+  const value = grayscaleValue(data, index);
+  return value !== null && Math.min(Math.abs(value - palette[0]), Math.abs(value - palette[1])) <= 6;
+}
+function removeBakedCheckerboard(image) {
+  const { data, width, height } = image;
+  const total = width * height;
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 2 || height < 2 || data.length !== total * 4) return null;
+  for (let offset = 3; offset < data.length; offset += 4) {
+    if (data[offset] < 250) return null;
+  }
+  const palette = detectPalette(data, width, height);
+  if (!palette) return null;
+  const visited = new Uint8Array(total);
+  const queue = new Int32Array(total);
+  let head = 0;
+  let tail = 0;
+  const enqueue = (index) => {
+    if (visited[index] || !matchesPalette(data, index, palette)) return;
+    visited[index] = 1;
+    queue[tail++] = index;
+  };
+  for (const index of edgeIndices(width, height)) enqueue(index);
+  while (head < tail) {
+    const index = queue[head++];
+    const x = index % width;
+    const y = Math.floor(index / width);
+    if (x > 0) enqueue(index - 1);
+    if (x + 1 < width) enqueue(index + 1);
+    if (y > 0) enqueue(index - width);
+    if (y + 1 < height) enqueue(index + width);
+  }
+  if (tail < Math.max(4, Math.ceil(total * 0.15))) return null;
+  const output = new Uint8ClampedArray(data);
+  for (let index = 0; index < total; index += 1) {
+    if (visited[index]) output[pixelOffset(index) + 3] = 0;
+  }
+  return { data: output, removedPixels: tail, palette };
+}
+
 // core/image-compress.ts
 function analyzeImagePixels(data) {
   if (data.length < 4) return "opaque";
@@ -2545,6 +2673,49 @@ function estimateDataUriBytes(dataUri) {
   const comma = dataUri.indexOf(",");
   const payload = comma >= 0 ? dataUri.length - comma - 1 : dataUri.length;
   return Math.round(payload * 0.75);
+}
+async function decodeImagePixels(blob) {
+  const img = await loadImage(await blobToDataUri(blob));
+  const width = img.naturalWidth;
+  const height = img.naturalHeight;
+  if (width < 1 || height < 1) throw new Error("图片尺寸无效");
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("当前浏览器无法读取图片像素");
+  ctx.drawImage(img, 0, 0);
+  return { data: ctx.getImageData(0, 0, width, height).data, width, height };
+}
+async function encodePng(data, width, height) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("当前浏览器无法写入透明图片");
+  const imageData = ctx.createImageData(width, height);
+  imageData.data.set(data);
+  ctx.putImageData(imageData, 0, 0);
+  return await new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("透明 PNG 编码失败"));
+    }, "image/png");
+  });
+}
+var browserCheckerboardCodec = {
+  decode: decodeImagePixels,
+  encodePng
+};
+async function cleanCheckerboardImage(blob, codec = browserCheckerboardCodec) {
+  if (!blob.type.startsWith("image/")) throw new Error("所选内容不是图片");
+  const decoded = await codec.decode(blob);
+  const cleaned = removeBakedCheckerboard(decoded);
+  if (!cleaned) throw new Error("没有确认到可安全去除的棋盘格背景");
+  return {
+    blob: await codec.encodePng(cleaned.data, decoded.width, decoded.height),
+    removedPixels: cleaned.removedPixels
+  };
 }
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -3571,6 +3742,20 @@ function commitAndRefresh(context, pack) {
     context.refresh();
   }
 }
+function createCheckerboardAction(context) {
+  return {
+    id: "checkerboard",
+    label: "检测并去除棋盘格",
+    icon: "▦",
+    destructive: false,
+    allowedInReadonly: true,
+    async run() {
+      const state = current(context);
+      if (!state) return;
+      await context.cleanCheckerboard(state.sprite);
+    }
+  };
+}
 function createSpriteActions(context) {
   const source = context.getSprite();
   return [
@@ -3639,6 +3824,7 @@ function createSpriteActions(context) {
         context.pickReplacement();
       }
     },
+    createCheckerboardAction(context),
     {
       id: "localize",
       label: "保存到本地",
@@ -3736,11 +3922,11 @@ function openSpriteLightbox(options) {
   };
   const renderActions = () => {
     actionRail.replaceChildren();
-    const hidden = options.readonly || currentActions.length === 0;
+    const visibleActions = options.readonly ? currentActions.filter((action) => action.allowedInReadonly) : currentActions;
+    const hidden = visibleActions.length === 0;
     actionRail.hidden = hidden;
     layer.classList.toggle("so-lightbox-no-actions", hidden);
-    if (options.readonly) return;
-    for (const action of currentActions) {
+    for (const action of visibleActions) {
       const button2 = document.createElement("button");
       button2.type = "button";
       button2.className = "so-lightbox-action";
@@ -3930,6 +4116,44 @@ async function localizeSprite(sprite, fileName, deps) {
   }
   return { ...sprite, url: localUrl, remoteUrl: sprite.url };
 }
+async function cleanAndLocalizeSprite(sprite, fileName, deps) {
+  let response;
+  try {
+    response = await deps.fetch(sprite.url, requestInit());
+  } catch (error) {
+    throw new Error(`读取图片失败：${downloadFailure(error)}`, { cause: error });
+  }
+  if (!response.ok) throw new Error(`读取图片失败：HTTP ${response.status}`);
+  const declaredBytes = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredBytes) && declaredBytes > LOCALIZE_MAX_BYTES) {
+    throw new Error(`图片过大，不能超过 ${formatLimit()}`);
+  }
+  let blob;
+  try {
+    blob = await response.blob();
+  } catch (error) {
+    throw new Error(`读取图片失败：${downloadFailure(error)}`, { cause: error });
+  }
+  if (blob.size > LOCALIZE_MAX_BYTES) throw new Error(`图片过大，不能超过 ${formatLimit()}`);
+  if (!blob.type.startsWith("image/")) throw new Error("图片地址没有返回图片");
+  const cleaned = await (deps.clean ?? cleanCheckerboardImage)(blob);
+  if (deps.confirmSave && !await deps.confirmSave(cleaned.removedPixels)) {
+    throw new Error("已取消保存透明图片");
+  }
+  let localUrl;
+  try {
+    const file = new File([cleaned.blob], fileName, { type: cleaned.blob.type || "image/png" });
+    localUrl = await deps.saveImage(file, fileName);
+  } catch (error) {
+    throw new Error(`保存本地图片失败：${errorMessage(error)}`, { cause: error });
+  }
+  if (!localUrl || getSpriteSource({ ...sprite, url: localUrl }) === "hosted") {
+    throw new Error("保存本地图片失败：平台未返回本地地址");
+  }
+  const localized = { ...sprite, url: localUrl };
+  if (getSpriteSource(sprite) === "hosted") localized.remoteUrl = sprite.remoteUrl ?? sprite.url;
+  return { sprite: localized, removedPixels: cleaned.removedPixels };
+}
 function dataUriToFile(dataUri, fileName) {
   const match = /^data:(image\/[^;,]+);base64,([A-Za-z0-9+/]*={0,2})$/.exec(dataUri);
   if (!match) throw new Error("压缩后的图片数据格式不正确");
@@ -3961,6 +4185,10 @@ function createSpriteManager(deps) {
   let spriteVisibleCount = SPRITE_PAGE_SIZE;
   let spriteFilterQuery = "";
   let spriteFilterLabels = [];
+  let packFilterQuery = "";
+  let packFilterRole = "";
+  let packFilterKind = "";
+  let packFilterTag = "";
   let expandedRoleGroupKey = "";
   const openSections = /* @__PURE__ */ new Map();
   let enableListOpen = false;
@@ -3988,6 +4216,10 @@ function createSpriteManager(deps) {
     spriteVisibleCount = SPRITE_PAGE_SIZE;
     spriteFilterQuery = "";
     spriteFilterLabels = [];
+    packFilterQuery = "";
+    packFilterRole = "";
+    packFilterKind = "";
+    packFilterTag = "";
     expandedRoleGroupKey = "";
     openSections.clear();
     enableListOpen = false;
@@ -4376,6 +4608,12 @@ ${options}`,
   }
   function renderList(body, actions) {
     const settings = deps.getSettings();
+    const filteredPacks = filterSpritePacks(settings.packs, {
+      query: packFilterQuery,
+      roles: packFilterRole ? [packFilterRole] : [],
+      kinds: packFilterKind === "sprite" || packFilterKind === "illustration" ? [packFilterKind] : [],
+      customTags: packFilterTag ? [packFilterTag] : []
+    });
     const characterName = deps.adapter.getCurrentCharacterName();
     const binding = settings.bindings.find((b) => b.characterName === characterName);
     const boundIds = binding?.packIds ?? [];
@@ -4386,7 +4624,7 @@ ${options}`,
       );
       actions.append(
         button("全选", () => {
-          const all = settings.packs;
+          const all = filteredPacks;
           if (all.length > 0 && all.every((p) => selectedPackIds.has(p.id))) {
             selectedPackIds.clear();
           } else {
@@ -4504,6 +4742,7 @@ ${options}`,
       );
       if (settings.packs.length > 0) {
         actions.append(
+          button("标签管理", () => openTagManager()),
           button("批量管理", () => {
             closeEnableList();
             batchMode = true;
@@ -4557,6 +4796,7 @@ ${options}`,
       strip.append(tip);
     }
     body.append(strip);
+    body.append(renderPackFilters(settings, filteredPacks.length));
     if (batchMode) {
       const tip = el("div", "so-status so-batch-tip");
       tip.textContent = "批量管理：先勾选图包，再统一设置类型或标签；资源操作和排序仍可在上方完成。预设包可保存本地或分享，但不可删除。";
@@ -4567,7 +4807,7 @@ ${options}`,
     const grid = el("div", useFold ? "so-pack-list-folded" : "so-pack-grid");
     const boundState = (pack) => boundIds.includes(pack.id) ? binding?.enabled ? "active" : "off" : null;
     if (useFold) {
-      for (const group of groupPacksByRole(settings.packs)) {
+      for (const group of groupPacksByRole(filteredPacks)) {
         if (group.packCount === 1) {
           grid.append(renderPackCard(group.packs[0], boundState(group.packs[0])));
           continue;
@@ -4580,6 +4820,7 @@ ${options}`,
           render2();
         };
         if (expanded) {
+          section2.classList.add("so-role-pack-group-expanded");
           const row = el("button", "so-role-pack-row");
           row.type = "button";
           row.setAttribute("aria-expanded", "true");
@@ -4601,11 +4842,163 @@ ${options}`,
         grid.append(section2);
       }
     } else {
-      for (const pack of settings.packs) grid.append(renderPackCard(pack, boundState(pack)));
+      for (const pack of filteredPacks) grid.append(renderPackCard(pack, boundState(pack)));
     }
     body.append(grid);
+    if (filteredPacks.length === 0) {
+      const empty = el("div", "so-status so-pack-filter-empty");
+      empty.textContent = "没有符合当前筛选条件的图包";
+      body.append(empty);
+    }
     body.append(statusBar());
     renderEnableList();
+  }
+  function renderPackFilters(settings, visibleCount) {
+    const panel = el("div", "so-pack-filters");
+    const search = textInput("搜索包名、角色、服装或标签");
+    search.classList.add("so-pack-filter-search");
+    search.value = packFilterQuery;
+    const applySearch = () => {
+      packFilterQuery = search.value.trim();
+      expandedRoleGroupKey = "";
+      render2();
+    };
+    search.addEventListener("change", applySearch);
+    search.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.isComposing) return;
+      event.preventDefault();
+      applySearch();
+    });
+    const selectFilter = (className, options, current2, apply) => {
+      const select = document.createElement("select");
+      select.className = `text_pole ${className}`;
+      for (const [value, label] of options) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        select.append(option);
+      }
+      select.value = current2;
+      select.addEventListener("change", () => {
+        apply(select.value);
+        expandedRoleGroupKey = "";
+        render2();
+      });
+      return select;
+    };
+    const roles = normalizeLabels(settings.packs.map((pack) => pack.roleName?.trim() || "其他"));
+    const tags = normalizeLabels(settings.packs.flatMap((pack) => pack.customTags ?? []));
+    const role = selectFilter(
+      "so-pack-filter-role",
+      [["", "全部角色"], ...roles.map((item) => [item, item])],
+      packFilterRole,
+      (value) => {
+        packFilterRole = value;
+      }
+    );
+    const kind = selectFilter(
+      "so-pack-filter-kind",
+      [["", "全部类型"], ["sprite", "立绘"], ["illustration", "插图"]],
+      packFilterKind,
+      (value) => {
+        packFilterKind = value;
+      }
+    );
+    const tag = selectFilter(
+      "so-pack-filter-tag",
+      [["", "全部标签"], ...tags.map((item) => [item, item])],
+      packFilterTag,
+      (value) => {
+        packFilterTag = value;
+      }
+    );
+    const status = el("span", "so-pack-filter-count");
+    status.textContent = `${visibleCount}/${settings.packs.length} 个图包`;
+    panel.append(search, role, kind, tag, status);
+    if (packFilterQuery || packFilterRole || packFilterKind || packFilterTag) {
+      panel.append(button("清除筛选", () => {
+        packFilterQuery = packFilterRole = packFilterKind = packFilterTag = "";
+        expandedRoleGroupKey = "";
+        render2();
+      }));
+    }
+    return panel;
+  }
+  function openTagManager() {
+    const modal = el("div", "so-upload-modal so-tag-manager");
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-label", "图包标签管理");
+    const panel = el("div", "so-upload-panel so-tag-manager-panel");
+    const heading = el("div", "so-tag-manager-heading");
+    const title2 = el("b");
+    title2.textContent = "标签管理";
+    heading.append(title2, button("关闭", () => modal.remove()));
+    const help = el("div", "so-status");
+    help.textContent = "角色和类型由图包信息自动生成，只能在包信息或批量管理中修改。这里管理自定义标签。";
+    const settings = deps.getSettings();
+    const addRow = el("div", "so-row so-tag-manager-add");
+    const packSelect = document.createElement("select");
+    packSelect.className = "text_pole so-tag-manager-pack";
+    for (const pack of settings.packs) {
+      const option = document.createElement("option");
+      option.value = pack.id;
+      option.textContent = pack.name;
+      packSelect.append(option);
+    }
+    const newTag = textInput("输入新标签");
+    newTag.classList.add("so-tag-manager-new");
+    const commitTags = (next) => {
+      modal.remove();
+      commit(persistSelectedPresetMetadata(next, next.packs.map((pack) => pack.id)));
+    };
+    addRow.append(
+      labeled("添加到图包", packSelect),
+      labeled("新标签", newTag),
+      button("添加到图包", () => {
+        const tag = normalizeLabels([newTag.value])[0];
+        if (!packSelect.value || !tag) {
+          toast(currentManagerBody(), "请选择图包并输入标签");
+          return;
+        }
+        commitTags(addPackCustomTag(deps.getSettings(), [packSelect.value], tag));
+      })
+    );
+    const list = el("div", "so-tag-manager-list");
+    const tags = normalizeLabels(settings.packs.flatMap((pack) => pack.customTags ?? []));
+    if (tags.length === 0) {
+      const empty = el("div", "so-status");
+      empty.textContent = "还没有自定义标签";
+      list.append(empty);
+    }
+    for (const tag of tags) {
+      const row = el("div", "so-tag-manager-row");
+      row.dataset.tag = tag;
+      const input = textInput("标签名称");
+      input.value = tag;
+      const count = settings.packs.filter((pack) => normalizeLabels(pack.customTags).includes(tag)).length;
+      const usage = el("span", "so-status");
+      usage.textContent = `${count} 个图包`;
+      row.append(
+        input,
+        usage,
+        button("重命名", () => {
+          const renamed = normalizeLabels([input.value])[0];
+          if (!renamed) {
+            toast(currentManagerBody(), "标签名称不能为空");
+            return;
+          }
+          commitTags(renamePackCustomTag(deps.getSettings(), tag, renamed));
+        }),
+        button("删除", () => {
+          if (!window.confirm(`从 ${count} 个图包删除标签「${tag}」吗？`)) return;
+          commitTags(deletePackCustomTag(deps.getSettings(), tag));
+        }, "so-btn-danger")
+      );
+      list.append(row);
+    }
+    panel.append(heading, help, addRow, list);
+    modal.append(panel);
+    (backdrop ?? document.body).append(modal);
   }
   function selectedPacks() {
     return deps.getSettings().packs.filter((pack) => selectedPackIds.has(pack.id));
@@ -5496,7 +5889,7 @@ ${preview}
       pack,
       index: startIndex,
       readonly: isPresetPack(pack.id),
-      actions: isPresetPack(pack.id) ? [] : lightboxActions(state),
+      actions: isPresetPack(pack.id) ? presetLightboxActions(state) : lightboxActions(state),
       onNavigate: (index) => {
         state.index = index;
         refreshLightbox();
@@ -5517,7 +5910,7 @@ ${preview}
       return;
     }
     state.index = Math.max(0, Math.min(state.index, pack.sprites.length - 1));
-    const actions = isPresetPack(pack.id) ? [] : lightboxActions(state);
+    const actions = isPresetPack(pack.id) ? presetLightboxActions(state) : lightboxActions(state);
     state.controller.update(pack, state.index, actions);
   }
   function commitActionPack(pack) {
@@ -5645,6 +6038,50 @@ ${preview}
         context.refresh();
         toast(currentManagerBody(), `已将「${source.tag}」保存到本地`);
       },
+      cleanCheckerboard: async (source) => {
+        const identity = {
+          tag: source.tag,
+          group: spriteGroup(source),
+          outfit: source.outfit ?? ""
+        };
+        const cleaned = await cleanAndLocalizeSprite(source, `${source.tag}-transparent.png`, {
+          fetch: window.fetch.bind(window),
+          confirmSave: (removedPixels) => window.confirm(
+            `检测到 ${removedPixels} 个可安全去除的背景像素。
+
+要保存为新的透明 PNG 吗？原远程地址仍会保留。`
+          ),
+          saveImage: (file, fileName) => deps.adapter.saveImageFile(
+            file,
+            fileName,
+            deps.adapter.getCurrentCharacterName() || getPack()?.name || "shared"
+          )
+        });
+        const latestSettings = deps.getSettings();
+        const latestPack = latestSettings.packs.find((candidate) => candidate.id === packId);
+        const latest = latestPack?.sprites.find(
+          (candidate) => candidate.tag === identity.tag && spriteGroup(candidate) === identity.group && (candidate.outfit ?? "") === identity.outfit
+        );
+        if (!latestPack || !latest || latest.url !== source.url) {
+          throw new Error("立绘在清理期间已发生变化，请重试");
+        }
+        if (isPresetPack(packId)) {
+          deps.updateSettings(setPresetLocalSprite(
+            latestSettings,
+            packId,
+            latest,
+            cleaned.sprite.url
+          ));
+        } else {
+          commitActionPack(upsertSprite(latestPack, {
+            ...latest,
+            url: cleaned.sprite.url,
+            ...cleaned.sprite.remoteUrl ? { remoteUrl: cleaned.sprite.remoteUrl } : {}
+          }));
+        }
+        context.refresh();
+        toast(currentManagerBody(), `已去除 ${cleaned.removedPixels} 个背景像素，并保存为透明 PNG`);
+      },
       refresh: () => {
         render2();
         refreshLightbox();
@@ -5666,6 +6103,18 @@ ${preview}
       ...action,
       run: () => runSpriteAction(action)
     }));
+  }
+  function presetLightboxActions(state) {
+    const context = actionContext(
+      state.packId,
+      (pack) => pack.sprites[state.index] ?? null,
+      () => state.controller?.close()
+    );
+    const action = createCheckerboardAction(context);
+    return [{
+      ...action,
+      run: () => runSpriteAction(action)
+    }];
   }
   function renderSpriteCell(body, pack, sprite, index, readonly) {
     const cell = el("div", "so-sprite-cell");
@@ -6193,7 +6642,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-18 23:07"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-19 15:45"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
   return () => wrapper.remove();
@@ -7458,6 +7907,103 @@ function compareMeasurements(before, after) {
     deltas
   };
 }
+function metricNumber(metrics, path) {
+  let current2 = metrics;
+  for (const segment of path) {
+    if (!current2 || typeof current2 !== "object" || Array.isArray(current2)) return null;
+    current2 = current2[segment];
+  }
+  return typeof current2 === "number" && Number.isFinite(current2) ? current2 : null;
+}
+function mediaCount(metrics) {
+  const values = ["images", "videos", "audio", "canvas", "iframes"].map((key) => metricNumber(metrics, ["media", key]));
+  const available2 = values.filter((value) => value !== null);
+  return available2.length > 0 ? available2.reduce((sum, value) => sum + value, 0) : null;
+}
+var SUMMARY_METRICS = [
+  {
+    id: "heap.usedBytes",
+    label: "网页内存",
+    unit: "bytes",
+    read: (metrics) => metricNumber(metrics, ["heap", "usedBytes"]),
+    explanation: "受浏览器垃圾回收和缓存影响，单次升降不能单独证明优化有效。"
+  },
+  {
+    id: "page.chatNodeCount",
+    label: "页面节点",
+    unit: "count",
+    read: (metrics) => metricNumber(metrics, ["page", "chatNodeCount"]),
+    explanation: "用于观察聊天页面规模；聊天内容不同会直接改变数量。"
+  },
+  {
+    id: "page.messageCount",
+    label: "消息数",
+    unit: "count",
+    read: (metrics) => metricNumber(metrics, ["page", "messageCount"]),
+    explanation: "用于确认两次检查的聊天规模是否接近，本身不代表快慢。"
+  },
+  {
+    id: "media.total",
+    label: "图片 / 媒体数",
+    unit: "count",
+    read: mediaCount,
+    explanation: "汇总图片、视频、音频、画布和内嵌页面，只作为资源规模参照。"
+  },
+  {
+    id: "dynamic.longTaskCount",
+    label: "6 秒长任务",
+    unit: "count",
+    read: (metrics) => metricNumber(metrics, ["dynamic", "longTaskCount"]),
+    explanation: "主线程连续占用 50 ms 以上的次数；同条件下越少通常越流畅。"
+  },
+  {
+    id: "dynamic.longestTaskMs",
+    label: "最长卡顿",
+    unit: "milliseconds",
+    read: (metrics) => metricNumber(metrics, ["dynamic", "longestTaskMs"]),
+    explanation: "6 秒检查中最长一次主线程占用；同条件下越短越好。"
+  },
+  {
+    id: "dynamic.frameIntervalP95Ms",
+    label: "95% 帧间隔",
+    unit: "milliseconds",
+    read: (metrics) => metricNumber(metrics, ["dynamic", "frameIntervalP95Ms"]),
+    explanation: "大多数画面更新之间的间隔；同条件下越低通常越顺滑。"
+  },
+  {
+    id: "dynamic.timerDelayP95Ms",
+    label: "定时器延迟",
+    unit: "milliseconds",
+    read: (metrics) => metricNumber(metrics, ["dynamic", "timerDelayP95Ms"]),
+    explanation: "大多数定时任务额外等待的时间；同条件下越低越好。"
+  }
+];
+function formatSummaryValue(value, unit) {
+  if (value === null) return "未读取到";
+  if (unit === "bytes") return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  if (unit === "count") return `${Number.isInteger(value) ? value : value.toFixed(1)} 项`;
+  return `${Number.isInteger(value) ? value : value.toFixed(1)} ms`;
+}
+function formatSummaryChange(before, after, unit, comparable) {
+  if (!comparable || before === null || after === null) return "不计算";
+  const delta = after - before;
+  if (delta === 0) return "无变化";
+  return `${delta < 0 ? "减少" : "增加"} ${formatSummaryValue(Math.abs(delta), unit)}`;
+}
+function summarizeMeasurementComparison(comparison) {
+  return SUMMARY_METRICS.map((metric) => {
+    const before = metric.read(comparison.before);
+    const after = metric.read(comparison.after);
+    return {
+      id: metric.id,
+      label: metric.label,
+      before: formatSummaryValue(before, metric.unit),
+      after: formatSummaryValue(after, metric.unit),
+      change: formatSummaryChange(before, after, metric.unit, comparison.comparable),
+      explanation: metric.explanation
+    };
+  });
+}
 
 // st-extension/src/apps/butler/diagnosis.ts
 function finding(input) {
@@ -8328,6 +8874,77 @@ function migrateButlerData(value, _options = {}) {
   };
 }
 
+// st-extension/src/apps/butler/extension-advisor.ts
+var SYSTEM_EXTENSION_ADVICE = {
+  expressions: {
+    displayName: "角色表情图片",
+    purpose: "根据对话内容选择并显示角色表情图片，用于增强聊天中的视觉反馈。",
+    whenNeeded: "角色卡配置了表情图片，或正在使用依赖表情分类和切换的视觉玩法时需要。",
+    disabledImpact: "角色表情图片不会再自动切换，依赖该功能的视觉表现会消失。",
+    recommendation: "不用时可临时关闭"
+  },
+  gallery: {
+    displayName: "图片画廊",
+    purpose: "集中浏览聊天或图像生成流程产生的图片，方便回看和管理视觉内容。",
+    whenNeeded: "经常生成图片、查看消息图片，或需要从聊天外集中浏览图片时需要。",
+    disabledImpact: "画廊入口和集中浏览功能不可用，但聊天中的普通图片不一定受影响。",
+    recommendation: "不用时可临时关闭"
+  },
+  memory: {
+    displayName: "聊天总结",
+    purpose: "定期总结较长的聊天历史，用较短的记忆内容帮助模型延续长期对话。",
+    whenNeeded: "长篇对话需要持续记住前情，且当前预设确实使用自动总结时需要。",
+    disabledImpact: "不再自动生成或更新总结，长聊天可能更依赖原始上下文或其他记忆方案。",
+    recommendation: "排障时可临时关闭观察"
+  },
+  "quick-reply": {
+    displayName: "快捷回复与自动化",
+    purpose: "提供快捷按钮、命令组合和自动化流程，可快速执行常用操作。",
+    whenNeeded: "使用快捷回复按钮、自动执行规则或依赖 Quick Reply 脚本的玩法时需要。",
+    disabledImpact: "快捷按钮和相关自动化停止工作，依赖它们的操作流程需要手动完成。",
+    recommendation: "排障时可临时关闭观察"
+  },
+  regex: {
+    displayName: "正则处理",
+    purpose: "按用户规则修改提示词、模型回复或消息显示内容，常用于格式清理和玩法协议。",
+    whenNeeded: "角色卡、预设或当前玩法依赖 Regex 规则处理内容时需要，关闭前应先检查规则清单。",
+    disabledImpact: "所有依赖规则的替换、隐藏和格式转换都会停止，部分角色卡或玩法可能异常。",
+    recommendation: "保留"
+  },
+  "stable-diffusion": {
+    displayName: "AI 图片生成",
+    purpose: "连接图片生成服务，并从 SillyTavern 内发起角色、场景或其他图片生成。",
+    whenNeeded: "正在使用 Stable Diffusion 或兼容图像服务生成图片时需要。",
+    disabledImpact: "SillyTavern 内的图片生成入口和自动生成流程不可用。",
+    recommendation: "不用时可临时关闭"
+  },
+  translate: {
+    displayName: "消息翻译",
+    purpose: "调用翻译服务处理输入或回复，帮助跨语言阅读和对话。",
+    whenNeeded: "需要自动翻译消息，或当前角色和预设依赖翻译流程时需要。",
+    disabledImpact: "自动翻译与翻译按钮不可用，消息会保留原始语言。",
+    recommendation: "不用时可临时关闭"
+  },
+  tts: {
+    displayName: "语音朗读",
+    purpose: "把角色回复转换成语音并播放，可连接浏览器或外部语音服务。",
+    whenNeeded: "需要角色语音、自动朗读或无障碍听读时需要。",
+    disabledImpact: "回复不再自动或手动朗读，已配置的语音服务不会从该扩展调用。",
+    recommendation: "不用时可临时关闭"
+  },
+  vectors: {
+    displayName: "向量检索",
+    purpose: "为聊天历史或资料建立语义索引，并按内容相关性召回片段。",
+    whenNeeded: "长聊天、资料库或记忆流程需要语义召回，而不是只依赖关键词时需要。",
+    disabledImpact: "语义召回和相关索引流程停止，模型可能失去由向量检索补入的相关内容。",
+    recommendation: "排障时可临时关闭观察"
+  }
+};
+function getSystemExtensionAdvice(name) {
+  const normalized = name.trim().toLowerCase().split("/").pop() ?? "";
+  return SYSTEM_EXTENSION_ADVICE[normalized] ?? null;
+}
+
 // st-extension/src/apps/butler/modals.ts
 var LAYER_LABELS = {
   pageRendering: "页面与渲染",
@@ -8409,6 +9026,27 @@ function environmentRows(parent, measurement) {
     parent.append(row);
   }
 }
+function renderMeasurementComparison(parent, comparison) {
+  const table = el2("div", "so-butler-comparison-table");
+  for (const row of summarizeMeasurementComparison(comparison)) {
+    const item = el2("div", "so-butler-comparison-row");
+    item.dataset.metricId = row.id;
+    const heading = document.createElement("strong");
+    heading.textContent = row.label;
+    const values = el2("div", "so-butler-comparison-values");
+    values.textContent = `优化前 ${row.before} → 优化后 ${row.after} · ${row.change}`;
+    const explanation = el2("small", "so-butler-muted");
+    explanation.textContent = row.explanation;
+    item.append(heading, values, explanation);
+    table.append(item);
+  }
+  parent.append(table);
+  text(
+    parent,
+    "网页内存受浏览器垃圾回收和缓存影响，单次升降不能证明设置有效；请结合长任务、帧间隔和相同条件下的多次检查判断。",
+    "so-butler-muted"
+  );
+}
 function buildReportModal(controller) {
   return (body) => {
     title(body, "详细检查结果");
@@ -8424,7 +9062,7 @@ function buildReportModal(controller) {
     text(environment.body, `检查方式：${probeLabel} · ${measurement.durationMs / 1e3} 秒 · ${measurement.foreground ? "页面在前台" : "页面在后台"}`);
     if (measurement.invalidReason) text(environment.body, measurement.invalidReason, "so-butler-alert");
     body.append(environment.box);
-    const metrics = foldSection("原始数据", true);
+    const metrics = foldSection("高级：原始数据", false);
     for (const [key, value] of Object.entries(measurement.metrics)) {
       const row = el2("div", "so-butler-metric-block");
       const strong = document.createElement("strong");
@@ -8450,12 +9088,8 @@ function buildReportModal(controller) {
     const comparison = controller.getComparison();
     if (comparison) {
       const compare = foldSection("最近一次前后对比", true);
-      text(compare.body, comparison.comparable ? "两次检查条件一致，可以查看前后差值。" : `两次检查条件不同，暂不计算差值：${comparison.reasons.join("；")}。这里只并列原始数据。`);
-      if (comparison.comparable) {
-        for (const [key, value] of Object.entries(comparison.deltas)) {
-          text(compare.body, `${key}：${value >= 0 ? "+" : ""}${value}`);
-        }
-      }
+      text(compare.body, comparison.comparable ? "两次检查条件一致，可以查看前后变化。" : `两次检查条件不同，暂不计算差值：${comparison.reasons.join("；")}。这里只并列原始数据。`);
+      renderMeasurementComparison(compare.body, comparison);
       body.append(compare.box);
     }
     const history = foldSection(`最近操作（${controller.getData().history.length}）`);
@@ -8545,9 +9179,35 @@ function buildExtensionModal(services, controller) {
         })));
         body.append(backup.box);
       }
-      text(body, "第三方扩展", "so-butler-section-title");
+      text(body, "内置扩展用途与关闭建议", "so-butler-section-title");
+      text(body, "这里根据功能用途给出保守建议，不代表已经测出某个扩展耗时。内置扩展只读展示，不会被下方排障操作自动关闭。", "so-butler-muted");
+      const systemList = el2("div", "so-butler-system-advice-list");
+      const systemExtensions = ready.extensions.filter((extension) => extension.type.toLowerCase() === "system");
+      for (const extension of systemExtensions) {
+        const advice = getSystemExtensionAdvice(extension.name);
+        const card = document.createElement("details");
+        card.className = "so-butler-system-advice";
+        const summary = document.createElement("summary");
+        const displayName = advice?.displayName || extension.manifest?.displayName || extension.name;
+        summary.textContent = advice ? `${displayName} · 当前${extension.configuredEnabled ? "启用" : "禁用"} · ${advice.recommendation}` : `${displayName} · 当前${extension.configuredEnabled ? "启用" : "禁用"} · 用途未收录`;
+        const content = el2("div", "so-butler-system-advice-body");
+        if (advice) {
+          text(content, `用途：${advice.purpose}`);
+          text(content, `什么时候需要：${advice.whenNeeded}`);
+          text(content, `关闭会失去：${advice.disabledImpact}`);
+          text(content, `建议：${advice.recommendation}。这是用途判断，不是实际耗时结论。`, "so-butler-muted");
+        } else {
+          text(content, `扩展标识：${extension.name}。当前目录没有足够资料说明用途，因此不提供关闭或性能结论。`, "so-butler-muted");
+        }
+        card.append(summary, content);
+        systemList.append(card);
+      }
+      if (systemExtensions.length === 0) text(systemList, "当前没有读取到内置扩展。", "so-butler-muted");
+      body.append(systemList);
+      text(body, "第三方扩展排查", "so-butler-section-title");
       const list = el2("div", "so-butler-extension-list");
-      for (const extension of ready.extensions) {
+      const thirdPartyExtensions = ready.extensions.filter((extension) => extension.type.toLowerCase() !== "system");
+      for (const extension of thirdPartyExtensions) {
         const row = el2("label", "so-butler-extension-row");
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
@@ -8565,6 +9225,7 @@ function buildExtensionModal(services, controller) {
         row.append(checkbox, label, state);
         list.append(row);
       }
+      if (thirdPartyExtensions.length === 0) text(list, "当前没有读取到第三方扩展。", "so-butler-muted");
       body.append(list);
       const start = async (kind) => {
         const names = [...selected];
@@ -9426,7 +10087,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-08-18 23:07"}`;
+  return `${"0.9.0"}+${"2026-08-19 15:45"}`;
 }
 function stVersion() {
   const text3 = document.querySelector("#version_display")?.textContent?.trim();
@@ -10105,12 +10766,8 @@ ${lines.join("\n")}
     }
     if (state.comparison) {
       const comparison = foldSection("优化前后对比", true, "butler-comparison");
-      text2(comparison.body, state.comparison.comparable ? "两次检查条件一致。下面的负数通常表示对应耗时或数量减少。" : `两次检查条件不同，暂不计算差值：${state.comparison.reasons.join("；")}。可在详细结果中查看两次原始数据。`);
-      if (state.comparison.comparable) {
-        for (const [key, delta] of Object.entries(state.comparison.deltas)) {
-          text2(comparison.body, `${key} 差值：${delta >= 0 ? "+" : ""}${delta}`);
-        }
-      }
+      text2(comparison.body, state.comparison.comparable ? "两次检查条件一致。下面按普通用户能理解的指标展示前后变化。" : `两次检查条件不同，暂不计算差值：${state.comparison.reasons.join("；")}。可在详细结果中查看两次原始数据。`);
+      renderMeasurementComparison(comparison.body, state.comparison);
       planSection.append(comparison.box);
     }
     container.append(planSection);
@@ -10902,9 +11559,13 @@ function newvarApp(deps) {
           hintField(
             toggleRow("隐藏正文中的变量更新记录", d.hideUpdateBlocks, (v) => {
               ctx.setAppData({ ...runtime.getData(), hideUpdateBlocks: v });
+              ctx.toast(
+                "success",
+                v ? "已隐藏变量更新记录；原始回复和变量快照保持不变。" : "已恢复 st-stage 隐藏的变量更新记录。若仍不可见，请检查 ST Regex 中删除 UpdateVariable 的规则。"
+              );
               renderCfg();
             }),
-            "只隐藏消息气泡里完整的 <UpdateVariable>...</UpdateVariable> 区块，不修改 SillyTavern 保存的原始回复，也不影响变量解析和楼层快照。"
+            "只隐藏消息气泡里完整的 <UpdateVariable>...</UpdateVariable> 区块，不修改 SillyTavern 保存的原始回复，也不影响变量解析和楼层快照。关闭后会恢复 st-stage 自己隐藏的内容；ST Regex 等外部规则仍会独立生效。"
           ),
           appButton("打开变量设计", openDesigner)
         );
@@ -15109,7 +15770,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-18 23:07"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-19 15:45"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

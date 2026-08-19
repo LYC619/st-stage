@@ -2,7 +2,12 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import type { Sprite } from '../../core/types'
-import { LOCALIZE_MAX_BYTES, LOCALIZE_TIMEOUT_MS, localizeSprite } from './sprite-localize'
+import {
+  LOCALIZE_MAX_BYTES,
+  LOCALIZE_TIMEOUT_MS,
+  cleanAndLocalizeSprite,
+  localizeSprite,
+} from './sprite-localize'
 
 const remote: Sprite = {
   tag: '微笑',
@@ -170,4 +175,95 @@ describe('localizeSprite', () => {
       expect(original).toEqual(remote)
     },
   )
+})
+
+describe('cleanAndLocalizeSprite', () => {
+  it('远程图片按下载、清理、保存顺序处理并保留远程回退地址', async () => {
+    const order: string[] = []
+    const cleaned = new Blob(['cleaned'], { type: 'image/png' })
+    const result = await cleanAndLocalizeSprite(remote, '微笑-clean.png', {
+      fetch: vi.fn(async () => {
+        order.push('fetch')
+        return response(new Blob(['remote'], { type: 'image/png' }))
+      }) as typeof fetch,
+      clean: vi.fn(async () => {
+        order.push('clean')
+        return { blob: cleaned, removedPixels: 12 }
+      }),
+      saveImage: vi.fn(async (file, fileName) => {
+        order.push('save')
+        expect(file.type).toBe('image/png')
+        expect(fileName).toBe('微笑-clean.png')
+        return '/user/images/smile-clean.png'
+      }),
+    })
+
+    expect(order).toEqual(['fetch', 'clean', 'save'])
+    expect(result.sprite).toEqual({
+      ...remote,
+      url: '/user/images/smile-clean.png',
+      remoteUrl: remote.url,
+    })
+    expect(result.removedPixels).toBe(12)
+  })
+
+  it('本地图片可清理为新的本地文件且保留既有远程地址', async () => {
+    const local: Sprite = {
+      tag: '本地',
+      url: '/user/images/original.png',
+      remoteUrl: 'https://img.test/backup.png',
+    }
+    const result = await cleanAndLocalizeSprite(local, '本地-clean.png', {
+      fetch: vi.fn(async () => response(new Blob(['local'], { type: 'image/png' }))) as typeof fetch,
+      clean: vi.fn(async () => ({
+        blob: new Blob(['cleaned'], { type: 'image/png' }),
+        removedPixels: 8,
+      })),
+      saveImage: vi.fn(async () => '/user/images/local-clean.png'),
+    })
+
+    expect(result.sprite).toEqual({
+      ...local,
+      url: '/user/images/local-clean.png',
+    })
+  })
+
+  it('清理失败时不保存文件也不修改输入对象', async () => {
+    const original = structuredClone(remote)
+    const saveImage = vi.fn()
+    await expect(cleanAndLocalizeSprite(original, 'clean.png', {
+      fetch: vi.fn(async () => response(new Blob(['remote'], { type: 'image/png' }))) as typeof fetch,
+      clean: vi.fn(async () => { throw new Error('没有确认到可安全去除的棋盘格背景') }),
+      saveImage,
+    })).rejects.toThrow('没有确认到可安全去除的棋盘格背景')
+    expect(saveImage).not.toHaveBeenCalled()
+    expect(original).toEqual(remote)
+  })
+
+  it('确认棋盘格后才询问是否保存，用户取消时不写文件', async () => {
+    const order: string[] = []
+    const saveImage = vi.fn()
+
+    await expect(cleanAndLocalizeSprite(remote, 'clean.png', {
+      fetch: vi.fn(async () => {
+        order.push('fetch')
+        return response(new Blob(['remote'], { type: 'image/png' }))
+      }) as typeof fetch,
+      clean: vi.fn(async () => {
+        order.push('clean')
+        return {
+          blob: new Blob(['cleaned'], { type: 'image/png' }),
+          removedPixels: 24,
+        }
+      }),
+      confirmSave: vi.fn((removedPixels) => {
+        order.push(`confirm:${removedPixels}`)
+        return false
+      }),
+      saveImage,
+    })).rejects.toThrow('已取消保存透明图片')
+
+    expect(order).toEqual(['fetch', 'clean', 'confirm:24'])
+    expect(saveImage).not.toHaveBeenCalled()
+  })
 })

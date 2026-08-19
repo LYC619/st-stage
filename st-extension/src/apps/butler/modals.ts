@@ -1,5 +1,8 @@
 import { appButton, el, foldSection } from '../widgets'
-import type { MeasurementComparison } from './actions'
+import {
+  summarizeMeasurementComparison,
+  type MeasurementComparison,
+} from './actions'
 import type { ExtensionInventoryResult } from './bridge'
 import {
   defaultExperimentCandidates,
@@ -7,6 +10,7 @@ import {
   readEmergencyBackup,
   type EmergencyExtensionBackup,
 } from './experiments'
+import { getSystemExtensionAdvice } from './extension-advisor'
 import type { ButlerAppServices } from './runtime'
 import type {
   ButlerDataV2,
@@ -119,6 +123,31 @@ function environmentRows(parent: HTMLElement, measurement: MeasurementSnapshot):
   }
 }
 
+export function renderMeasurementComparison(
+  parent: HTMLElement,
+  comparison: MeasurementComparison,
+): void {
+  const table = el('div', 'so-butler-comparison-table')
+  for (const row of summarizeMeasurementComparison(comparison)) {
+    const item = el('div', 'so-butler-comparison-row')
+    item.dataset.metricId = row.id
+    const heading = document.createElement('strong')
+    heading.textContent = row.label
+    const values = el('div', 'so-butler-comparison-values')
+    values.textContent = `优化前 ${row.before} → 优化后 ${row.after} · ${row.change}`
+    const explanation = el('small', 'so-butler-muted')
+    explanation.textContent = row.explanation
+    item.append(heading, values, explanation)
+    table.append(item)
+  }
+  parent.append(table)
+  text(
+    parent,
+    '网页内存受浏览器垃圾回收和缓存影响，单次升降不能证明设置有效；请结合长任务、帧间隔和相同条件下的多次检查判断。',
+    'so-butler-muted',
+  )
+}
+
 export function buildReportModal(controller: ButlerModalController) {
   return (body: HTMLElement) => {
     title(body, '详细检查结果')
@@ -138,7 +167,7 @@ export function buildReportModal(controller: ButlerModalController) {
     if (measurement.invalidReason) text(environment.body, measurement.invalidReason, 'so-butler-alert')
     body.append(environment.box)
 
-    const metrics = foldSection('原始数据', true)
+    const metrics = foldSection('高级：原始数据', false)
     for (const [key, value] of Object.entries(measurement.metrics)) {
       const row = el('div', 'so-butler-metric-block')
       const strong = document.createElement('strong')
@@ -170,13 +199,9 @@ export function buildReportModal(controller: ButlerModalController) {
     if (comparison) {
       const compare = foldSection('最近一次前后对比', true)
       text(compare.body, comparison.comparable
-        ? '两次检查条件一致，可以查看前后差值。'
+        ? '两次检查条件一致，可以查看前后变化。'
         : `两次检查条件不同，暂不计算差值：${comparison.reasons.join('；')}。这里只并列原始数据。`)
-      if (comparison.comparable) {
-        for (const [key, value] of Object.entries(comparison.deltas)) {
-          text(compare.body, `${key}：${value >= 0 ? '+' : ''}${value}`)
-        }
-      }
+      renderMeasurementComparison(compare.body, comparison)
       body.append(compare.box)
     }
 
@@ -281,9 +306,38 @@ export function buildExtensionModal(
         body.append(backup.box)
       }
 
-      text(body, '第三方扩展', 'so-butler-section-title')
+      text(body, '内置扩展用途与关闭建议', 'so-butler-section-title')
+      text(body, '这里根据功能用途给出保守建议，不代表已经测出某个扩展耗时。内置扩展只读展示，不会被下方排障操作自动关闭。', 'so-butler-muted')
+      const systemList = el('div', 'so-butler-system-advice-list')
+      const systemExtensions = ready.extensions.filter((extension) => extension.type.toLowerCase() === 'system')
+      for (const extension of systemExtensions) {
+        const advice = getSystemExtensionAdvice(extension.name)
+        const card = document.createElement('details')
+        card.className = 'so-butler-system-advice'
+        const summary = document.createElement('summary')
+        const displayName = advice?.displayName || extension.manifest?.displayName || extension.name
+        summary.textContent = advice
+          ? `${displayName} · 当前${extension.configuredEnabled ? '启用' : '禁用'} · ${advice.recommendation}`
+          : `${displayName} · 当前${extension.configuredEnabled ? '启用' : '禁用'} · 用途未收录`
+        const content = el('div', 'so-butler-system-advice-body')
+        if (advice) {
+          text(content, `用途：${advice.purpose}`)
+          text(content, `什么时候需要：${advice.whenNeeded}`)
+          text(content, `关闭会失去：${advice.disabledImpact}`)
+          text(content, `建议：${advice.recommendation}。这是用途判断，不是实际耗时结论。`, 'so-butler-muted')
+        } else {
+          text(content, `扩展标识：${extension.name}。当前目录没有足够资料说明用途，因此不提供关闭或性能结论。`, 'so-butler-muted')
+        }
+        card.append(summary, content)
+        systemList.append(card)
+      }
+      if (systemExtensions.length === 0) text(systemList, '当前没有读取到内置扩展。', 'so-butler-muted')
+      body.append(systemList)
+
+      text(body, '第三方扩展排查', 'so-butler-section-title')
       const list = el('div', 'so-butler-extension-list')
-      for (const extension of ready.extensions) {
+      const thirdPartyExtensions = ready.extensions.filter((extension) => extension.type.toLowerCase() !== 'system')
+      for (const extension of thirdPartyExtensions) {
         const row = el('label', 'so-butler-extension-row')
         const checkbox = document.createElement('input')
         checkbox.type = 'checkbox'
@@ -305,6 +359,7 @@ export function buildExtensionModal(
         row.append(checkbox, label, state)
         list.append(row)
       }
+      if (thirdPartyExtensions.length === 0) text(list, '当前没有读取到第三方扩展。', 'so-butler-muted')
       body.append(list)
 
       const start = async (kind: ButlerExperiment['kind']) => {
