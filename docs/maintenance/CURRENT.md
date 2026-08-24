@@ -2,14 +2,14 @@
 status_version: 1
 project: st-stage
 base_branch: main
-verified_code_head: 69066357f025b56ebac482384b592802ddd156e8
-remote_code_head_at_update: 69066357f025b56ebac482384b592802ddd156e8
-build_version: 0.9.0+202608191545
-phase: merged-pushed-awaiting-real-sillytavern-round5
-updated_at: 2026-08-19T15:56:42+08:00
+verified_code_head: 11dccc3
+remote_code_head_at_update: 7206017
+build_version: 0.9.0+202608250025
+phase: standalone-cloud-export-awaiting-real-st-integration
+updated_at: 2026-08-25T00:32:00+08:00
 updated_by: codex
-verification_source: codex-acceptance-round5-2026-08-19
-history: docs/maintenance/history/2026-08-19-acceptance-round5.md
+verification_source: codex-ste-st-zip-import-2026-08-25
+history: docs/maintenance/history/2026-08-25-ste-zip-import.md
 ---
 
 # Current Project Status
@@ -17,6 +17,8 @@ history: docs/maintenance/history/2026-08-19-acceptance-round5.md
 ## Snapshot
 
 - Fifth-round fixes are represented by code/build commit `69066357f025b56ebac482384b592802ddd156e8`, fast-forwarded to `main` and pushed to `origin/main` after the maintenance handoff.
+- The standalone ST cloud-export handoff is represented by `11dccc3`; it is deliberately not registered in `createBuiltinApps` and is ready for later integration into the maintainer's extension project.
+- The paired STE ZIP input implementation is tracked in the sibling repository at `f874b55`; it extracts into a temporary authorized root and reuses the existing ST scan/selection/import flow without persisting `stRoot`.
 - Product version remains `0.9.0`; the cache-busting build stamp is `0.9.0+202608191545`.
 - This round addresses phone click-through, variable-toggle feedback, gallery stack/filter/tag management, opt-in baked-checkerboard cleanup, readable Butler comparisons, and system-extension guidance.
 - Automated gates are complete. The 16 real SillyTavern checks below remain manual and are not claimed as passed.
@@ -69,6 +71,14 @@ Evidence represented by code head `69066357f025b56ebac482384b592802ddd156e8`:
 
 These are automated and source-review results only. The real-ST items below remain manual evidence.
 
+## Standalone Cloud Export Handoff
+
+- The unregistered `st-extension/src/apps/cloud-export/` App exports PNG character cards, per-character chats, worlds, OpenAI Settings presets, and the global regex set into `default-user`-compatible ZIP paths.
+- It supports type tabs, search, current-filter select-all, nested chat selection, counters, progress, and browser download. It excludes groups/group chats, Persona, attachments, other backend presets, themes, quick replies, and vector indexes in v1.
+- The bridge was checked against SillyTavern `release`: `/api/characters/all`, `/api/characters/chats`, `/api/chats/get`, `/api/worldinfo/list`, `/api/worldinfo/get`, `/api/settings/get`, and `/api/characters/export`.
+- Automated evidence for this batch: st-stage Vitest `75 files / 918 tests`, TypeScript, full ESLint, focused bridge/manifest/ZIP tests, and extension build all pass. STE evidence is recorded in the paired repository handoff.
+- This does not claim real SillyTavern integration until the App is registered in the target extension project and a generated ZIP is imported through the STE client.
+
 ## Next Real SillyTavern Acceptance
 
 ### Runtime And Renderer
@@ -95,6 +105,9 @@ These are automated and source-review results only. The real-ST items below rema
 14. Run the same check again and open the before/after report. Confirm all eight Chinese metrics show before/after values and explanations, non-comparable data says "not calculated", and raw JSON is collapsed under the advanced section.
 15. Open system-extension guidance and verify the nine common built-ins show understandable purpose, need conditions, disable impact, and conservative advice; unknown built-ins must not receive a fabricated performance conclusion.
 16. Open third-party extension troubleshooting, temporarily disable a disposable third-party extension, refresh, repeat the slow action, then restore it. Confirm system extensions are not selectable and st-stage cannot select itself.
+
+17. Copy/register `cloudExportApp()` in the target extension project, open it in a real SillyTavern release build, export one package containing a PNG card, JSONL chat, worldbook, OpenAI preset, and regex set, and confirm the ZIP contains the documented paths without `secrets.json`.
+18. In the STE client, choose the generated ZIP, confirm it reaches the normal selection dialog without changing the saved ST directory, complete the import into the user-selected Vault, and confirm cancel/failure/success all remove the temporary source directory.
 
 ## Deferred
 
