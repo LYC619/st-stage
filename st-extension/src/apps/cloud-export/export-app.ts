@@ -21,14 +21,16 @@ function formatDate(value?: number): string {
 }
 
 function checkbox(label: string, checked: boolean, onChange: (value: boolean) => void): HTMLElement {
-  const row = el('label', 'so-app-toggle')
+  const row = el('div', 'so-app-toggle')
+  const control = document.createElement('label')
   const input = document.createElement('input')
   input.type = 'checkbox'
   input.checked = checked
   input.addEventListener('change', () => onChange(input.checked))
   const text = el('span', '')
   text.textContent = label
-  row.append(input, text)
+  control.append(input, text)
+  row.append(control)
   return row
 }
 
