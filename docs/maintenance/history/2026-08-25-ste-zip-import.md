@@ -2,7 +2,7 @@
 
 ## Boundary
 
-- st-stage code commit: `11dccc3`.
+- st-stage code commits: `11dccc3`, followed by `741a6f3` for the nested-label click safety fix.
 - Paired STE code commit: `f874b55` in `silly-tavern-explorer-main`.
 - Neither repository was pushed in this handoff. Existing st-stage `bundle.js`, `style.css`, `version.json`, and `pre-release-cargo-target/` remain local and were not included in the cloud-export commit.
 - The export App remains unregistered by design; the maintainer will copy/register it later.

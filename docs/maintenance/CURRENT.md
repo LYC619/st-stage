@@ -2,7 +2,7 @@
 status_version: 1
 project: st-stage
 base_branch: main
-verified_code_head: 11dccc3
+verified_code_head: 741a6f3
 remote_code_head_at_update: 7206017
 build_version: 0.9.0+202608250025
 phase: standalone-cloud-export-awaiting-real-st-integration
@@ -17,7 +17,7 @@ history: docs/maintenance/history/2026-08-25-ste-zip-import.md
 ## Snapshot
 
 - Fifth-round fixes are represented by code/build commit `69066357f025b56ebac482384b592802ddd156e8`, fast-forwarded to `main` and pushed to `origin/main` after the maintenance handoff.
-- The standalone ST cloud-export handoff is represented by `11dccc3`; it is deliberately not registered in `createBuiltinApps` and is ready for later integration into the maintainer's extension project.
+- The standalone ST cloud-export handoff is represented by `11dccc3` plus the follow-up UI safety fix `741a6f3`; it is deliberately not registered in `createBuiltinApps` and is ready for later integration into the maintainer's extension project.
 - The paired STE ZIP input implementation is tracked in the sibling repository at `f874b55`; it extracts into a temporary authorized root and reuses the existing ST scan/selection/import flow without persisting `stRoot`.
 - Product version remains `0.9.0`; the cache-busting build stamp is `0.9.0+202608191545`.
 - This round addresses phone click-through, variable-toggle feedback, gallery stack/filter/tag management, opt-in baked-checkerboard cleanup, readable Butler comparisons, and system-extension guidance.
