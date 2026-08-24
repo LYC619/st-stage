@@ -18,6 +18,7 @@
 ## Verification
 
 - st-stage: Vitest `75 files / 918 tests`, TypeScript, full ESLint, focused bridge/manifest/ZIP tests, and `node st-extension/build.mjs` passed. The first sandboxed build-test run hit an esbuild `C:\Users\yicha` access denial; the same build suite passed in the approved project environment (`15/15`).
+- A final extension build after the selection-label safety follow-up produced local stamp `0.9.0+202608250043`; generated root artifacts remain local and are not part of the standalone App commit.
 - STE: Vitest `135 files / 1108 tests`, `tsc -p tsconfig.app.json --noEmit`, changed-file ESLint, and `cargo test --offline` (`27 passed`) passed.
 - Automated tests use representative `default-user` paths. Real SillyTavern registration and client ZIP import remain manual acceptance items 17–18 in `CURRENT.md`.
 

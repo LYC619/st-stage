@@ -4,7 +4,7 @@ project: st-stage
 base_branch: main
 verified_code_head: 741a6f3
 remote_code_head_at_update: 7206017
-build_version: 0.9.0+202608250025
+build_version: 0.9.0+202608250043
 phase: standalone-cloud-export-awaiting-real-st-integration
 updated_at: 2026-08-25T00:32:00+08:00
 updated_by: codex
