@@ -3,7 +3,7 @@
 ## Boundary
 
 - Code/build commit: `f1d037b` (`feat: register cloud export app`).
-- The commit is local only; `origin/main` remains at `7206017` and was not pushed.
+- The commits were pushed to `origin/main`; the remote code head is now `1bb7133`.
 - Existing unrelated local `style.css` state and `pre-release-cargo-target/` cache were left untouched.
 
 ## Delivered
@@ -25,5 +25,5 @@
 
 ## Next
 
-- Push or transfer `f1d037b` and install the generated artifacts in SillyTavern.
+- Install the pushed `1bb7133` build artifacts in SillyTavern.
 - Complete CURRENT.md acceptance items 17–18 with an actual exported ZIP and STE import result.

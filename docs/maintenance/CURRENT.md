@@ -3,7 +3,7 @@ status_version: 1
 project: st-stage
 base_branch: main
 verified_code_head: f1d037b
-remote_code_head_at_update: 7206017
+remote_code_head_at_update: 1bb7133
 build_version: 0.9.0+202608251309
 phase: cloud-export-awaiting-real-st-integration
 updated_at: 2026-08-25T13:12:00+08:00
@@ -123,7 +123,7 @@ See `docs/maintenance/DEFERRED.md` for details.
 
 ## Next Actions
 
-- Push or otherwise install code/build commit `f1d037b` in real SillyTavern and execute the 16 existing checks plus Cloud Export checks 17–18, recording only observed results and failures.
+- Install the pushed code/build commit `1bb7133` in real SillyTavern and execute the 16 existing checks plus Cloud Export checks 17–18, recording only observed results and failures.
 - Keep the deferred Renderer branching protocol out of acceptance fixes; scope it as a separate design task.
 - Fix only failures observed in real ST. Do not expand the API channel matrix unless OpenAI-compatible usage produces concrete gaps.
 - After blockers pass, decide whether `manifest.json` should move from `0.9.0` to `1.0.0`, then rerun the complete release gates.
