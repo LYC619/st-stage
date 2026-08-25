@@ -13,6 +13,7 @@ import { mvuApp } from './mvu-app'
 import { newvarApp } from './newvar-app'
 import { apiApp } from './api-app'
 import { rendererApp } from './renderer-app'
+import { cloudExportApp } from './cloud-export/export-app'
 import type { NewvarRuntime } from './newvar/runtime'
 import type { RendererRuntime } from './renderer/runtime'
 
@@ -40,5 +41,6 @@ export function createBuiltinApps(deps: BuiltinAppDeps): PhoneApp[] {
     newvarApp({ runtime: deps.newvarRuntime, openDesigner: deps.openNewvarDesigner }),
     apiApp({ openManager: deps.openApiManager }),
     rendererApp({ runtime: deps.rendererRuntime }),
+    cloudExportApp(),
   ]
 }

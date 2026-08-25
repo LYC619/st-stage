@@ -11,7 +11,7 @@ import {
   buildVersion,
   resolveBuildTime,
 } from './build-time.mjs'
-import { buildExtension } from './build.mjs'
+import { buildExtension, normalizeBundleWhitespace } from './build.mjs'
 
 const artifactNames = ['index.js', 'bundle.js', 'style.css', 'version.json'] as const
 const distributionNames = ['README.md', 'bundle.js', 'index.js', 'manifest.json', 'style.css', 'version.json'] as const
@@ -105,6 +105,12 @@ describe('extension build timestamp', () => {
     expect(parseAt).toBeGreaterThanOrEqual(0)
     expect(buildAt).toBeGreaterThan(parseAt)
     expect(writeAt).toBeGreaterThan(parseAt)
+  })
+})
+
+describe('extension bundle formatting', () => {
+  it('removes trailing whitespace without changing bundle content', () => {
+    expect(normalizeBundleWhitespace('license\n  \ncode  \n')).toBe('license\n\ncode\n')
   })
 })
 

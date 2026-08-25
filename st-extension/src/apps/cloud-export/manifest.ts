@@ -14,7 +14,7 @@ export function buildMinimalSettings(snapshot: ExportSnapshot, selection: Export
     .map((worldbook) => worldbook.name)
   const regex = selection.regex ? snapshot.regex?.rules ?? [] : []
   return JSON.stringify({
-    extensions: { regex },
+    extension_settings: { regex },
     world_info_settings: {
       world_info: { globalSelect: selectedWorldNames },
     },

@@ -27,7 +27,7 @@ describe('cloud export ST bridge', () => {
       }
       if (url === '/api/settings/get') {
         return new Response(JSON.stringify({
-          settings: JSON.stringify({ extensions: { regex: [{ find: 'secret?' }] } }),
+          settings: JSON.stringify({ extension_settings: { regex: [{ find: 'secret?' }] } }),
           openai_setting_names: ['creative'],
           openai_settings: [JSON.stringify({ temperature: 0.7 })],
         }), { status: 200 })
@@ -71,7 +71,7 @@ describe('cloud export ST bridge', () => {
     expect(await bridge.readChat(character, chat)).toBe('{"mes":"one"}\n{"mes":"two"}\n')
     expect(calls).toEqual([
       { url: '/api/characters/export', body: '{"format":"png","avatar_url":"Alice.png"}' },
-      { url: '/api/chats/get', body: '{"avatar_url":"Alice.png","file_name":"first-chat"}' },
+      { url: '/api/chats/get', body: '{"ch_name":"Alice","avatar_url":"Alice.png","file_name":"first-chat"}' },
     ])
   })
 })

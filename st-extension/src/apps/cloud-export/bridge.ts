@@ -154,8 +154,8 @@ function loadRegex(raw: RawRecord): ExportRegexSet | null {
   if (typeof raw.settings === 'string') {
     try { settings = asRecord(JSON.parse(raw.settings)) } catch { settings = {} }
   }
-  const extensions = asRecord(settings.extensions)
-  const rules = Array.isArray(extensions.regex) ? extensions.regex : []
+  const extensionSettings = asRecord(settings.extension_settings ?? settings.extensions)
+  const rules = Array.isArray(extensionSettings.regex) ? extensionSettings.regex : []
   return rules.length ? { rules } : null
 }
 
@@ -180,7 +180,7 @@ export function createSTCloudExportBridge(): CloudExportBridge {
       const fileName = (chat.path || chat.name).replace(/\.jsonl$/i, '')
       const raw = await requestJson<unknown>('/api/chats/get', {
         method: 'POST',
-        body: JSON.stringify({ avatar_url: character.avatar, file_name: fileName }),
+        body: JSON.stringify({ ch_name: character.name, avatar_url: character.avatar, file_name: fileName }),
       })
       if (!Array.isArray(raw)) throw new Error(`聊天 ${chat.name} 返回了无法导出的数据`)
       return raw.map((line) => JSON.stringify(line)).join('\n') + (raw.length ? '\n' : '')

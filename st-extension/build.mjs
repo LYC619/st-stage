@@ -27,6 +27,10 @@ const moduleFile = fileURLToPath(import.meta.url)
 const defaultExtensionDir = path.dirname(moduleFile)
 const defaultSourceRoot = path.join(defaultExtensionDir, '..')
 
+export function normalizeBundleWhitespace(bundle) {
+  return bundle.replace(/[ \t]+$/gm, '')
+}
+
 export async function buildExtension({
   sourceRoot = defaultSourceRoot,
   outputRoot = sourceRoot,
@@ -43,9 +47,10 @@ export async function buildExtension({
   const manifest = JSON.parse(readFileSync(path.join(sourceRoot, 'manifest.json'), 'utf8'))
   const version = buildVersion(manifest.version ?? '0.0.0', buildTime)
 
+  const bundlePath = path.join(outputRoot, 'bundle.js')
   await build({
     entryPoints: [path.join(extensionDir, 'src/index.ts')],
-    outfile: path.join(outputRoot, 'bundle.js'),
+    outfile: bundlePath,
     bundle: true,
     format: 'esm',
     target: 'es2020',
@@ -58,6 +63,7 @@ export async function buildExtension({
       __BUILD_TIME__: JSON.stringify(buildTime),
     },
   })
+  writeFileSync(bundlePath, normalizeBundleWhitespace(readFileSync(bundlePath, 'utf8')))
 
   // 版本探针：stub 以 cache:no-store 读取，作为 bundle/css 的缓存破坏参数
   writeFileSync(path.join(outputRoot, 'version.json'), `${JSON.stringify({ v: version })}\n`)

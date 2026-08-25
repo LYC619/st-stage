@@ -34,7 +34,8 @@ describe('cloud export manifest', () => {
     const files = buildExportFiles(snapshot, selection({ worldbookIds: new Set(['world.json']), regex: true }))
     expect(files.map((file) => file.path)).toEqual(['settings.json', 'worlds/world.json'])
     const settings = JSON.parse(String(files[0].data))
-    expect(settings.extensions.regex).toHaveLength(1)
+    expect(settings.extension_settings.regex).toHaveLength(1)
+    expect(settings.extensions).toBeUndefined()
     expect(settings.world_info_settings.world_info.globalSelect).toEqual(['世界'])
     expect(JSON.stringify(settings)).not.toContain('secret')
   })
@@ -60,6 +61,6 @@ describe('cloud export manifest', () => {
 
   it('can build settings independently for the selected regex set', () => {
     const settings = JSON.parse(buildMinimalSettings(snapshot, selection({ regex: true })))
-    expect(settings.extensions.regex).toEqual([{ find: 'a' }])
+    expect(settings.extension_settings.regex).toEqual([{ find: 'a' }])
   })
 })
