@@ -2,14 +2,14 @@
 status_version: 1
 project: st-stage
 base_branch: main
-verified_code_head: 741a6f3
+verified_code_head: f1d037b
 remote_code_head_at_update: 7206017
-build_version: 0.9.0+202608250043
-phase: standalone-cloud-export-awaiting-real-st-integration
-updated_at: 2026-08-25T00:32:00+08:00
+build_version: 0.9.0+202608251309
+phase: cloud-export-awaiting-real-st-integration
+updated_at: 2026-08-25T13:12:00+08:00
 updated_by: codex
-verification_source: codex-ste-st-zip-import-2026-08-25
-history: docs/maintenance/history/2026-08-25-ste-zip-import.md
+verification_source: codex-cloud-export-registration-2026-08-25
+history: docs/maintenance/history/2026-08-25-cloud-export-registration.md
 ---
 
 # Current Project Status
@@ -17,9 +17,9 @@ history: docs/maintenance/history/2026-08-25-ste-zip-import.md
 ## Snapshot
 
 - Fifth-round fixes are represented by code/build commit `69066357f025b56ebac482384b592802ddd156e8`, fast-forwarded to `main` and pushed to `origin/main` after the maintenance handoff.
-- The standalone ST cloud-export handoff is represented by `11dccc3` plus the follow-up UI safety fix `741a6f3`; it is deliberately not registered in `createBuiltinApps` and is ready for later integration into the maintainer's extension project.
+- Cloud Export registration and ST bridge corrections are represented by code/build commit `f1d037b`; `cloudExportApp()` is now part of `createBuiltinApps()` and awaits real ST/STE acceptance.
 - The paired STE ZIP input implementation is tracked in the sibling repository at `f874b55`; it extracts into a temporary authorized root and reuses the existing ST scan/selection/import flow without persisting `stRoot`.
-- Product version remains `0.9.0`; the cache-busting build stamp is `0.9.0+202608191545`.
+- Product version remains `0.9.0`; the cache-busting build stamp is `0.9.0+202608251309`.
 - This round addresses phone click-through, variable-toggle feedback, gallery stack/filter/tag management, opt-in baked-checkerboard cleanup, readable Butler comparisons, and system-extension guidance.
 - Automated gates are complete. The 16 real SillyTavern checks below remain manual and are not claimed as passed.
 - API management was not changed. OpenAI-compatible quick switching remains the supported common-channel baseline.
@@ -71,13 +71,14 @@ Evidence represented by code head `69066357f025b56ebac482384b592802ddd156e8`:
 
 These are automated and source-review results only. The real-ST items below remain manual evidence.
 
-## Standalone Cloud Export Handoff
+## Cloud Export Integration
 
-- The unregistered `st-extension/src/apps/cloud-export/` App exports PNG character cards, per-character chats, worlds, OpenAI Settings presets, and the global regex set into `default-user`-compatible ZIP paths.
+- `st-extension/src/apps/cloud-export/` is registered as the built-in `导出` App and exports PNG character cards, per-character chats, worlds, OpenAI Settings presets, and the global regex set into `default-user`-compatible ZIP paths.
 - It supports type tabs, search, current-filter select-all, nested chat selection, counters, progress, and browser download. It excludes groups/group chats, Persona, attachments, other backend presets, themes, quick replies, and vector indexes in v1.
-- The bridge was checked against SillyTavern `release`: `/api/characters/all`, `/api/characters/chats`, `/api/chats/get`, `/api/worldinfo/list`, `/api/worldinfo/get`, `/api/settings/get`, and `/api/characters/export`.
-- Automated evidence for this batch: st-stage Vitest `75 files / 918 tests`, TypeScript, full ESLint, focused bridge/manifest/ZIP tests, and extension build all pass. STE evidence is recorded in the paired repository handoff.
-- This does not claim real SillyTavern integration until the App is registered in the target extension project and a generated ZIP is imported through the STE client.
+- The bridge was checked against the local SillyTavern 1.18.0 source for `/api/characters/all`, `/api/characters/chats`, `/api/chats/get`, `/api/worldinfo/list`, `/api/worldinfo/get`, `/api/settings/get`, and `/api/characters/export`.
+- `settings.json` now uses ST's `extension_settings.regex` field, and chat reads include the official `ch_name` request field.
+- Focused automated evidence for code head `f1d037b`: Vitest 4 files / 24 tests, TypeScript, changed-source ESLint, extension build, and `git diff --check` passed. The build fixture tests passed outside the sandbox because they use a `C:\Users` temporary directory.
+- Real SillyTavern registration and ZIP import through the STE client remain manual acceptance items.
 
 ## Next Real SillyTavern Acceptance
 
@@ -106,7 +107,7 @@ These are automated and source-review results only. The real-ST items below rema
 15. Open system-extension guidance and verify the nine common built-ins show understandable purpose, need conditions, disable impact, and conservative advice; unknown built-ins must not receive a fabricated performance conclusion.
 16. Open third-party extension troubleshooting, temporarily disable a disposable third-party extension, refresh, repeat the slow action, then restore it. Confirm system extensions are not selectable and st-stage cannot select itself.
 
-17. Copy/register `cloudExportApp()` in the target extension project, open it in a real SillyTavern release build, export one package containing a PNG card, JSONL chat, worldbook, OpenAI preset, and regex set, and confirm the ZIP contains the documented paths without `secrets.json`.
+17. Update SillyTavern with the built `f1d037b` artifacts, open the built-in `导出` App, export one package containing a PNG card, JSONL chat, worldbook, OpenAI preset, and regex set, and confirm the ZIP contains the documented paths without `secrets.json`; verify the imported settings use `extension_settings.regex`.
 18. In the STE client, choose the generated ZIP, confirm it reaches the normal selection dialog without changing the saved ST directory, complete the import into the user-selected Vault, and confirm cancel/failure/success all remove the temporary source directory.
 
 ## Deferred
@@ -122,7 +123,7 @@ See `docs/maintenance/DEFERRED.md` for details.
 
 ## Next Actions
 
-- Install/update `origin/main` in real SillyTavern and execute the 16 checks above, recording only observed results and failures.
+- Push or otherwise install code/build commit `f1d037b` in real SillyTavern and execute the 16 existing checks plus Cloud Export checks 17–18, recording only observed results and failures.
 - Keep the deferred Renderer branching protocol out of acceptance fixes; scope it as a separate design task.
 - Fix only failures observed in real ST. Do not expand the API channel matrix unless OpenAI-compatible usage produces concrete gaps.
 - After blockers pass, decide whether `manifest.json` should move from `0.9.0` to `1.0.0`, then rerun the complete release gates.
