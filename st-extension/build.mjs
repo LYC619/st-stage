@@ -31,6 +31,18 @@ export function normalizeBundleWhitespace(bundle) {
   return bundle.replace(/[ \t]+$/gm, '')
 }
 
+/**
+ * 产物行尾统一成 LF。
+ *
+ * 源 CSS 在 core.autocrlf=true 的机器上会以 CRLF 签出，而脚本拼接用的是 '\n'，
+ * 直接写出会得到 CRLF+裸 LF 混合的文件：git 入库归一成 LF、签出又还原成 CRLF，
+ * 那个裸 LF 位置永远差 1 字节，于是 style.css 永久显示 M，且记录的 SHA-256
+ * 在不同签出方式下不可复现。统一成 LF 后产物字节与签出设置无关。
+ */
+export function normalizeArtifactNewlines(text) {
+  return text.replace(/\r\n/g, '\n')
+}
+
 export async function buildExtension({
   sourceRoot = defaultSourceRoot,
   outputRoot = sourceRoot,
@@ -63,7 +75,10 @@ export async function buildExtension({
       __BUILD_TIME__: JSON.stringify(buildTime),
     },
   })
-  writeFileSync(bundlePath, normalizeBundleWhitespace(readFileSync(bundlePath, 'utf8')))
+  writeFileSync(
+    bundlePath,
+    normalizeArtifactNewlines(normalizeBundleWhitespace(readFileSync(bundlePath, 'utf8'))),
+  )
 
   // 版本探针：stub 以 cache:no-store 读取，作为 bundle/css 的缓存破坏参数
   writeFileSync(path.join(outputRoot, 'version.json'), `${JSON.stringify({ v: version })}\n`)
@@ -111,7 +126,10 @@ export async function buildExtension({
   // style.css = 扩展基础样式 + 双端共用的手机框架样式
   const baseCss = readFileSync(path.join(extensionDir, 'style.css'), 'utf8')
   const phoneCss = readFileSync(path.join(sourceRoot, 'core/phone-shell.css'), 'utf8')
-  writeFileSync(path.join(outputRoot, 'style.css'), `${baseCss}\n${phoneCss}`)
+  writeFileSync(
+    path.join(outputRoot, 'style.css'),
+    normalizeArtifactNewlines(`${baseCss}\n${phoneCss}`),
+  )
 
   if (path.resolve(outputRoot) !== path.resolve(sourceRoot)) {
     copyFileSync(path.join(sourceRoot, 'manifest.json'), path.join(outputRoot, 'manifest.json'))

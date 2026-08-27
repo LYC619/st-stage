@@ -33,6 +33,25 @@ async function loadWithLimit<T>(items: T[], limit: number, task: (item: T) => Pr
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()))
 }
 
+/**
+ * 取消选择角色时连它的聊天一起取消。
+ *
+ * 勾选聊天会自动补上角色（否则导出的聊天没有对应角色卡），所以反方向也必须成立：
+ * 只删角色会留下孤立的 `chats/<角色>/*.jsonl` 而没有 `characters/<avatar>.png`，
+ * 且计数器会读成「已选 0 个角色、N 段聊天」。
+ *
+ * 聊天 ID 由桥接层构造为 `<角色 id>:<路径或名称>`，但这里不依赖该格式：以已加载的
+ * 聊天清单为准，清单未加载过就不可能有该角色的聊天被选中。
+ */
+function deselectCharacter(
+  characterId: string,
+  selection: ExportSelection,
+  chats: Map<string, { data: ExportChat[] }>,
+): void {
+  selection.characterIds.delete(characterId)
+  for (const chat of chats.get(characterId)?.data ?? []) selection.chatIds.delete(chat.id)
+}
+
 export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBridge(), download: Downloader = downloadSTBackup): PhoneApp {
   let disposeMount: (() => void) | undefined
   return {
@@ -91,7 +110,12 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
         const toggleSet = (items: Array<{ id: string }>, set: Set<string>) => items.forEach((item) => set.has(item.id) ? set.delete(item.id) : set.add(item.id))
         if (activeTab === 'characters' && characters.status === 'ready' && visibleCharacters.length) {
           addAction('全选当前结果', () => { visibleCharacters.forEach((item) => selection.characterIds.add(item.id)); render() })
-          addAction('反选当前结果', () => { toggleSet(visibleCharacters, selection.characterIds); render() })
+          addAction('反选当前结果', () => {
+            visibleCharacters.forEach((item) => selection.characterIds.has(item.id)
+              ? deselectCharacter(item.id, selection, chats)
+              : selection.characterIds.add(item.id))
+            render()
+          })
           addAction('清空当前分类', () => { selection.characterIds.clear(); selection.chatIds.clear(); render() })
           addAction('全选角色及聊天', async () => { busy = true; progressText = '正在读取聊天清单…'; render(); try { await loadWithLimit(visibleCharacters, 4, async (character) => { const items = await ensureChats(character, false); selection.characterIds.add(character.id); items.forEach((chat) => selection.chatIds.add(chat.id)) }) } catch (error) { ctx.toast('error', `批量选择失败：${String(error)}`) } finally { busy = false; progressText = ''; render() } })
         } else if (activeTab === 'worldbooks' && worldbooks.status === 'ready' && visibleWorldbooks.length) {
@@ -105,7 +129,7 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
         else if (state.status === 'error') { list.textContent = `读取失败：${state.error ?? '未知错误'}`; list.append(appButton('重试', () => { void ensureActiveTab(true) })) }
         else if (activeTab === 'characters') {
           for (const character of visibleCharacters) {
-            const row = el('div', 'cloud-export-character'); row.append(checkbox(`${character.name} · ${formatDate(character.updatedAt)}`, selection.characterIds.has(character.id), (checked) => { if (checked) selection.characterIds.add(character.id); else selection.characterIds.delete(character.id); render() }))
+            const row = el('div', 'cloud-export-character'); row.append(checkbox(`${character.name} · ${formatDate(character.updatedAt)}`, selection.characterIds.has(character.id), (checked) => { if (checked) selection.characterIds.add(character.id); else deselectCharacter(character.id, selection, chats); render() }))
             row.append(appButton('选择角色及全部聊天', async () => { if (busy) return; busy = true; progressText = `正在读取 ${character.name} 的聊天清单…`; render(); try { const items = await ensureChats(character, false); selection.characterIds.add(character.id); items.forEach((chat) => selection.chatIds.add(chat.id)) } catch (error) { ctx.toast('error', `读取聊天清单失败：${String(error)}`) } finally { busy = false; progressText = ''; render() } }))
             const details = document.createElement('details'); details.open = expandedCharacters.has(character.id); const summary = document.createElement('summary'); const chatState = chats.get(character.id); summary.textContent = chatState?.status === 'ready' ? `聊天记录（${chatState.data.length}）` : '聊天记录（展开后读取）'; details.append(summary)
             if (chatState?.status === 'loading') details.append('正在读取聊天清单…')

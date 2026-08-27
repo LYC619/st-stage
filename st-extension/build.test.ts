@@ -11,7 +11,7 @@ import {
   buildVersion,
   resolveBuildTime,
 } from './build-time.mjs'
-import { buildExtension, normalizeBundleWhitespace } from './build.mjs'
+import { buildExtension, normalizeArtifactNewlines, normalizeBundleWhitespace } from './build.mjs'
 
 const artifactNames = ['index.js', 'bundle.js', 'style.css', 'version.json'] as const
 const distributionNames = ['README.md', 'bundle.js', 'index.js', 'manifest.json', 'style.css', 'version.json'] as const
@@ -105,6 +105,32 @@ describe('extension build timestamp', () => {
     expect(parseAt).toBeGreaterThanOrEqual(0)
     expect(buildAt).toBeGreaterThan(parseAt)
     expect(writeAt).toBeGreaterThan(parseAt)
+  })
+})
+
+describe('extension artifact newlines', () => {
+  it('collapses CRLF so artifact bytes do not depend on checkout settings', () => {
+    expect(normalizeArtifactNewlines('a\r\nb\r\n')).toBe('a\nb\n')
+    expect(normalizeArtifactNewlines('a\nb\n')).toBe('a\nb\n')
+  })
+
+  it('writes LF-only style.css even when the source CSS is checked out as CRLF', async () => {
+    const root = createBuildFixture()
+    // core.autocrlf=true 的机器上源 CSS 就是这个样子
+    writeFileSync(join(root, 'st-extension', 'style.css'), '.fixture {\r\n  color: red;\r\n}\r\n')
+    writeFileSync(join(root, 'core', 'phone-shell.css'), '.phone {\r\n  color: blue;\r\n}\r\n')
+
+    await buildExtension({
+      sourceRoot: root,
+      env: { ...process.env, ST_STAGE_BUILD_TIME: '2026-01-02 03:04' },
+      logLevel: 'silent',
+      log: () => {},
+    })
+
+    for (const name of artifactNames) {
+      const bytes = readFileSync(join(root, name))
+      expect(bytes.includes(Buffer.from('\r\n')), `${name} must not contain CRLF`).toBe(false)
+    }
   })
 })
 

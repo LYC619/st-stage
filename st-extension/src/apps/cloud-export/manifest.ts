@@ -8,17 +8,25 @@ function safeSegment(value: string, fallback: string): string {
   return (clean || fallback).slice(0, 180)
 }
 
-export function buildMinimalSettings(snapshot: ExportSnapshot, selection: ExportSelection): string {
+/**
+ * 只写用户真正选中的设置分区。
+ *
+ * 空数组不是「没选」，导入端会把它当成「选中的值是空」。若无选中正则就写
+ * `regex: []`，把包解压回 data/default-user/ 会清空用户的全局正则；世界书
+ * globalSelect 同理。因此没有对应选择时整个键都不出现，返回 null 表示这次
+ * 导出不需要 settings.json。
+ */
+export function buildMinimalSettings(snapshot: ExportSnapshot, selection: ExportSelection): string | null {
   const selectedWorldNames = snapshot.worldbooks
     .filter((worldbook) => selection.worldbookIds.has(worldbook.id))
     .map((worldbook) => worldbook.name)
   const regex = selection.regex ? snapshot.regex?.rules ?? [] : []
-  return JSON.stringify({
-    extension_settings: { regex },
-    world_info_settings: {
-      world_info: { globalSelect: selectedWorldNames },
-    },
-  }, null, 2)
+  const settings: Record<string, unknown> = {}
+  if (regex.length > 0) settings.extension_settings = { regex }
+  if (selectedWorldNames.length > 0) {
+    settings.world_info_settings = { world_info: { globalSelect: selectedWorldNames } }
+  }
+  return Object.keys(settings).length > 0 ? JSON.stringify(settings, null, 2) : null
 }
 
 export function buildExportFiles(snapshot: ExportSnapshot, selection: ExportSelection): ExportFile[] {
@@ -29,7 +37,8 @@ export function buildExportFiles(snapshot: ExportSnapshot, selection: ExportSele
     || selection.presetIds.size > 0
     || selection.regex
   if (!hasSelection) return files
-  files.push({ path: 'settings.json', data: buildMinimalSettings(snapshot, selection) })
+  const settings = buildMinimalSettings(snapshot, selection)
+  if (settings !== null) files.push({ path: 'settings.json', data: settings })
   for (const worldbook of snapshot.worldbooks) {
     if (selection.worldbookIds.has(worldbook.id)) {
       if (worldbook.content !== undefined) {

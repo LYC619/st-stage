@@ -120,6 +120,61 @@ describe('cloud export app', () => {
     expect(container.textContent).toContain('已选 1 个角色、1 段聊天')
   })
 
+  it('clears a character\'s chats when the character itself is deselected', async () => {
+    const bridge = fakeBridge()
+    const container = document.createElement('div')
+    cloudExportApp(bridge).mount(container, context())
+    await settle()
+
+    clickText(container, '选择角色及全部聊天')
+    await settle()
+    expect(container.textContent).toContain('已选 1 个角色、1 段聊天')
+
+    const box = container.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    expect(box?.checked).toBe(true)
+    box!.checked = false
+    box!.dispatchEvent(new Event('change'))
+    await settle()
+
+    // 不能留下没有角色卡的孤立聊天
+    expect(container.textContent).toContain('已选 0 个角色、0 段聊天')
+  })
+
+  it('does not strand chats when inverting a selected character', async () => {
+    const bridge = fakeBridge()
+    const container = document.createElement('div')
+    cloudExportApp(bridge).mount(container, context())
+    await settle()
+
+    clickText(container, '选择角色及全部聊天')
+    await settle()
+    expect(container.textContent).toContain('已选 1 个角色、1 段聊天')
+
+    clickText(container, '反选当前结果')
+    await settle()
+    expect(container.textContent).toContain('已选 0 个角色、0 段聊天')
+  })
+
+  it('still auto-selects the character when a single chat is checked', async () => {
+    const bridge = fakeBridge()
+    const container = document.createElement('div')
+    cloudExportApp(bridge).mount(container, context())
+    await settle()
+
+    const details = container.querySelector('details') as HTMLDetailsElement
+    details.open = true
+    details.dispatchEvent(new Event('toggle'))
+    await settle()
+
+    const boxes = [...container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+    const chatBox = boxes[boxes.length - 1]
+    chatBox.checked = true
+    chatBox.dispatchEvent(new Event('change'))
+    await settle()
+
+    expect(container.textContent).toContain('已选 1 个角色、1 段聊天')
+  })
+
   it('does not download an empty package', async () => {
     const bridge = fakeBridge()
     const download = vi.fn()
