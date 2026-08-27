@@ -2,14 +2,14 @@
 status_version: 1
 project: st-stage
 base_branch: main
-verified_code_head: f1d037b
-remote_code_head_at_update: 1bb7133
-build_version: 0.9.0+202608251309
-phase: cloud-export-awaiting-real-st-integration
-updated_at: 2026-08-25T13:12:00+08:00
+verified_code_head: 116103a
+remote_code_head_at_update: af1fa37
+build_version: 0.9.0+202608271324
+phase: cloud-export-standard-backup-awaiting-real-st-integration
+updated_at: 2026-08-27T13:40:00+08:00
 updated_by: codex
-verification_source: codex-cloud-export-registration-2026-08-25
-history: docs/maintenance/history/2026-08-25-cloud-export-registration.md
+verification_source: codex-cloud-export-standard-backup-2026-08-27
+history: docs/maintenance/history/2026-08-27-cloud-export-standard-backup.md
 ---
 
 # Current Project Status
@@ -17,9 +17,9 @@ history: docs/maintenance/history/2026-08-25-cloud-export-registration.md
 ## Snapshot
 
 - Fifth-round fixes are represented by code/build commit `69066357f025b56ebac482384b592802ddd156e8`, fast-forwarded to `main` and pushed to `origin/main` after the maintenance handoff.
-- Cloud Export registration and ST bridge corrections are represented by code/build commit `f1d037b`; `cloudExportApp()` is now part of `createBuiltinApps()` and awaits real ST/STE acceptance.
+- Cloud Export registration, lazy loading, batch selection, bounded-concurrency export, and standard backup artifacts are represented by code/build commit `116103a`; real ST/STE acceptance remains pending.
 - The paired STE ZIP input implementation is tracked in the sibling repository at `f874b55`; it extracts into a temporary authorized root and reuses the existing ST scan/selection/import flow without persisting `stRoot`.
-- Product version remains `0.9.0`; the cache-busting build stamp is `0.9.0+202608251309`.
+- Product version remains `0.9.0`; the cache-busting build stamp is `0.9.0+202608271324`.
 - This round addresses phone click-through, variable-toggle feedback, gallery stack/filter/tag management, opt-in baked-checkerboard cleanup, readable Butler comparisons, and system-extension guidance.
 - Automated gates are complete. The 16 real SillyTavern checks below remain manual and are not claimed as passed.
 - API management was not changed. OpenAI-compatible quick switching remains the supported common-channel baseline.
@@ -80,11 +80,19 @@ These are automated and source-review results only. The real-ST items below rema
 - Focused automated evidence for code head `f1d037b`: Vitest 4 files / 24 tests, TypeScript, changed-source ESLint, extension build, and `git diff --check` passed. The build fixture tests passed outside the sandbox because they use a `C:\Users` temporary directory.
 - Real SillyTavern registration and ZIP import through the STE client remain manual acceptance items.
 
+## Cloud Export Standard Backup Follow-up
+
+- App startup now loads only the character list. Chats, worldbooks, settings assets, and export bodies are requested only when their category or selected asset requires them.
+- Batch actions include current-filter select all, invert, clear, per-character character-with-all-chats, and all-visible-characters-with-chats.
+- Selected bodies load with at most four concurrent requests. Any failed asset aborts the export before browser download and reports the asset name.
+- The one downloaded archive is named `default-user-YYYYMMDD-HHmmss.zip`; standard paths live directly at the ZIP root without an extra wrapper directory.
+- Current automated evidence: Cloud Export 5 files / 17 tests, full Vitest 78 files / 928 tests, TypeScript, ESLint, fixed-stamp root/distribution build, matching shared artifact hashes, and six-file distribution boundary passed.
+
 ## Next Real SillyTavern Acceptance
 
 ### Runtime And Renderer
 
-1. Update the extension from `origin/main` and confirm the settings page shows `0.9.0+202608191545`; switch chat/character once and confirm prompt injection still self-heals.
+1. After this local batch is pushed, update the extension and confirm the settings page shows `0.9.0+202608271324`; switch chat/character once and confirm prompt injection still self-heals.
 2. Open the phone over a clickable Gal panel or chat control, tap phone checkboxes/buttons, and confirm only the phone control activates.
 3. With a real reply containing `<UpdateVariable>`, enable hiding and confirm the payload disappears; disable it and confirm st-stage restores the payload immediately or after the scheduled reprocess without requiring message edit mode.
 4. Separately enable a SillyTavern Regex rule that deletes the same block. Confirm the st-stage notice explains why disabling its own hide setting cannot restore content already removed by Regex; disable the external rule and reprocess to recover it.
@@ -107,8 +115,10 @@ These are automated and source-review results only. The real-ST items below rema
 15. Open system-extension guidance and verify the nine common built-ins show understandable purpose, need conditions, disable impact, and conservative advice; unknown built-ins must not receive a fabricated performance conclusion.
 16. Open third-party extension troubleshooting, temporarily disable a disposable third-party extension, refresh, repeat the slow action, then restore it. Confirm system extensions are not selectable and st-stage cannot select itself.
 
-17. Update SillyTavern with the built `f1d037b` artifacts, open the built-in `导出` App, export one package containing a PNG card, JSONL chat, worldbook, OpenAI preset, and regex set, and confirm the ZIP contains the documented paths without `secrets.json`; verify the imported settings use `extension_settings.regex`.
-18. In the STE client, choose the generated ZIP, confirm it reaches the normal selection dialog without changing the saved ST directory, complete the import into the user-selected Vault, and confirm cancel/failure/success all remove the temporary source directory.
+17. Update SillyTavern with the `0.9.0+202608271324` artifacts. Open `导出` with an account containing many roles/chats/worldbooks and confirm the role list appears before chat lists, worldbook bodies, or settings assets are requested.
+18. Expand one role and confirm only that role's chat list loads once. Use “选择角色及全部聊天” and “全选角色及聊天”, then combine selected worldbooks, OpenAI presets, and global regex.
+19. Export and confirm exactly one `default-user-YYYYMMDD-HHmmss.zip` downloads. Verify `settings.json`, `characters/`, `chats/`, `worlds/`, and `OpenAI Settings/` are directly at the archive root, no extra `default-user/` wrapper or `secrets.json` exists, and settings use `extension_settings.regex`.
+20. In the STE client, choose the generated ZIP, confirm it reaches the normal selection dialog without changing the saved ST directory, complete the import into the user-selected Vault, and confirm cancel/failure/success all remove the temporary source directory.
 
 ## Deferred
 
@@ -123,7 +133,7 @@ See `docs/maintenance/DEFERRED.md` for details.
 
 ## Next Actions
 
-- Install the pushed code/build commit `1bb7133` in real SillyTavern and execute the 16 existing checks plus Cloud Export checks 17–18, recording only observed results and failures.
+- Push the local code/build commit `116103a` and its maintenance handoff, then install it in real SillyTavern and execute the existing checks plus Cloud Export checks 17–20, recording only observed results and failures.
 - Keep the deferred Renderer branching protocol out of acceptance fixes; scope it as a separate design task.
 - Fix only failures observed in real ST. Do not expand the API channel matrix unless OpenAI-compatible usage produces concrete gaps.
 - After blockers pass, decide whether `manifest.json` should move from `0.9.0` to `1.0.0`, then rerun the complete release gates.
