@@ -24,3 +24,5 @@ playwright-report/
 .superpowers/
 _analysis/
 reference/
+# 兄弟仓库 STE 的 Rust 构建缓存，曾误落在本仓库工作区（约 7 GB）
+pre-release-cargo-target/

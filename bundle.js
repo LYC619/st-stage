@@ -9044,7 +9044,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-27 13:24"}）`;
+  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-27 22:59"}）`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
   return () => wrapper.remove();
@@ -12489,7 +12489,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-08-27 13:24"}`;
+  return `${"0.9.0"}+${"2026-08-27 22:59"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -14874,18 +14874,19 @@ function safeSegment(value, fallback) {
 function buildMinimalSettings(snapshot, selection) {
   const selectedWorldNames = snapshot.worldbooks.filter((worldbook) => selection.worldbookIds.has(worldbook.id)).map((worldbook) => worldbook.name);
   const regex = selection.regex ? snapshot.regex?.rules ?? [] : [];
-  return JSON.stringify({
-    extension_settings: { regex },
-    world_info_settings: {
-      world_info: { globalSelect: selectedWorldNames }
-    }
-  }, null, 2);
+  const settings = {};
+  if (regex.length > 0) settings.extension_settings = { regex };
+  if (selectedWorldNames.length > 0) {
+    settings.world_info_settings = { world_info: { globalSelect: selectedWorldNames } };
+  }
+  return Object.keys(settings).length > 0 ? JSON.stringify(settings, null, 2) : null;
 }
 function buildExportFiles(snapshot, selection) {
   const files = [];
   const hasSelection2 = selection.characterIds.size > 0 || selection.chatIds.size > 0 || selection.worldbookIds.size > 0 || selection.presetIds.size > 0 || selection.regex;
   if (!hasSelection2) return files;
-  files.push({ path: "settings.json", data: buildMinimalSettings(snapshot, selection) });
+  const settings = buildMinimalSettings(snapshot, selection);
+  if (settings !== null) files.push({ path: "settings.json", data: settings });
   for (const worldbook of snapshot.worldbooks) {
     if (selection.worldbookIds.has(worldbook.id)) {
       if (worldbook.content !== void 0) {
@@ -14998,7 +14999,8 @@ async function loadSelectedExportFiles({
 
 // st-extension/src/apps/cloud-export/zip.ts
 var import_jszip = __toESM(require_jszip_min());
-async function downloadSTBackup(files, filename, onProgress) {
+var REVOKE_DELAY_MS = 6e4;
+async function downloadSTBackup(files, filename, onProgress, schedulers = {}) {
   if (!files.length) throw new Error("没有选择任何可导出的资产");
   const zip = new import_jszip.default();
   for (const file of files) {
@@ -15008,14 +15010,20 @@ async function downloadSTBackup(files, filename, onProgress) {
     { type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } },
     (metadata) => onProgress({ percent: metadata.percent })
   );
+  const scheduleRevoke = schedulers.scheduleRevoke ?? ((revoke, delayMs) => {
+    setTimeout(revoke, delayMs);
+  });
   const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename.endsWith(".zip") ? filename : `${filename}.zip`;
+  anchor.style.display = "none";
+  document.body.append(anchor);
   try {
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = filename.endsWith(".zip") ? filename : `${filename}.zip`;
     anchor.click();
   } finally {
-    URL.revokeObjectURL(url);
+    anchor.remove();
+    scheduleRevoke(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
   }
 }
 
@@ -15062,6 +15070,10 @@ async function loadWithLimit(items, limit, task) {
     }
   };
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+}
+function deselectCharacter(characterId, selection, chats) {
+  selection.characterIds.delete(characterId);
+  for (const chat2 of chats.get(characterId)?.data ?? []) selection.chatIds.delete(chat2.id);
 }
 function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloadSTBackup) {
   let disposeMount;
@@ -15232,7 +15244,7 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
             render2();
           });
           addAction("反选当前结果", () => {
-            toggleSet(visibleCharacters, selection.characterIds);
+            visibleCharacters.forEach((item) => selection.characterIds.has(item.id) ? deselectCharacter(item.id, selection, chats) : selection.characterIds.add(item.id));
             render2();
           });
           addAction("清空当前分类", () => {
@@ -15299,7 +15311,7 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
             const row = el2("div", "cloud-export-character");
             row.append(checkbox(`${character.name} · ${formatDate(character.updatedAt)}`, selection.characterIds.has(character.id), (checked) => {
               if (checked) selection.characterIds.add(character.id);
-              else selection.characterIds.delete(character.id);
+              else deselectCharacter(character.id, selection, chats);
               render2();
             }));
             row.append(appButton("选择角色及全部聊天", async () => {
@@ -18885,7 +18897,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-27 13:24"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-27 22:59"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

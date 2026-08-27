@@ -1,0 +1,17 @@
+# 发布产物行尾锁定为 LF。
+#
+# 这些文件由 st-extension/build.mjs 生成、提交进仓库，并通过 GitHub 直接分发给
+# ST 安装/auto_update。维护记录里会登记它们的 SHA-256 作为构建确定性证据，因此
+# 工作副本必须与入库字节一致：若交给 core.autocrlf 处理，签出会改写行尾，导致
+# 工作区永久显示已修改，且照记录复算哈希永远对不上。
+#
+# 有意只约束产物，不写 `* text=auto`：那会重规范化整个仓库的既有文件。
+/index.js       text eol=lf
+/bundle.js      text eol=lf
+/style.css      text eol=lf
+/version.json   text eol=lf
+/manifest.json  text eol=lf
+st-distribution/*.js    text eol=lf
+st-distribution/*.css   text eol=lf
+st-distribution/*.json  text eol=lf
+st-distribution/*.md    text eol=lf
