@@ -32,7 +32,9 @@ export function buildExportFiles(snapshot: ExportSnapshot, selection: ExportSele
   files.push({ path: 'settings.json', data: buildMinimalSettings(snapshot, selection) })
   for (const worldbook of snapshot.worldbooks) {
     if (selection.worldbookIds.has(worldbook.id)) {
-      files.push({ path: `worlds/${safeSegment(worldbook.fileName, 'world.json')}`, data: JSON.stringify(worldbook.content, null, 2), updatedAt: worldbook.updatedAt })
+      if (worldbook.content !== undefined) {
+        files.push({ path: `worlds/${safeSegment(worldbook.fileName, 'world.json')}`, data: JSON.stringify(worldbook.content, null, 2), updatedAt: worldbook.updatedAt })
+      }
     }
   }
   for (const preset of snapshot.presets) {
@@ -45,16 +47,18 @@ export function buildExportFiles(snapshot: ExportSnapshot, selection: ExportSele
 
 export function buildCharacterFiles(
   character: ExportSnapshot['characters'][number],
-  cardData: ExportFile['data'],
+  cardData: ExportFile['data'] | undefined,
   chats: Map<string, string>,
   selection: ExportSelection,
 ): ExportFile[] {
-  if (!selection.characterIds.has(character.id)) return []
-  const files: ExportFile[] = [{
-    path: `characters/${safeSegment(character.avatar, 'character.png')}`,
-    data: cardData,
-    updatedAt: character.updatedAt,
-  }]
+  const files: ExportFile[] = []
+  if (selection.characterIds.has(character.id) && cardData !== undefined) {
+    files.push({
+      path: `characters/${safeSegment(character.avatar, 'character.png')}`,
+      data: cardData,
+      updatedAt: character.updatedAt,
+    })
+  }
   for (const chat of character.chats) {
     const data = chats.get(chat.id)
     if (!selection.chatIds.has(chat.id) || data === undefined) continue

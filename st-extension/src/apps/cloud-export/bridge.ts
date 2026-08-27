@@ -2,8 +2,8 @@ import type {
   ExportCharacter,
   ExportChat,
   ExportPreset,
+  ExportSettingsAssets,
   ExportRegexSet,
-  ExportSnapshot,
   ExportWorldbook,
 } from './types'
 
@@ -16,7 +16,11 @@ interface RawRecord {
 }
 
 export interface CloudExportBridge {
-  loadSnapshot(): Promise<ExportSnapshot>
+  listCharacters(): Promise<ExportCharacter[]>
+  listChats(character: ExportCharacter): Promise<ExportChat[]>
+  listWorldbooks(): Promise<ExportWorldbook[]>
+  loadSettingsAssets(): Promise<ExportSettingsAssets>
+  readWorldbook(worldbook: ExportWorldbook): Promise<unknown>
   readCharacterCard(character: ExportCharacter): Promise<ArrayBuffer>
   readChat(character: ExportCharacter, chat: ExportChat): Promise<string>
 }
@@ -84,7 +88,7 @@ function timestamp(record: RawRecord): number | undefined {
   return undefined
 }
 
-async function loadCharacters(): Promise<ExportCharacter[]> {
+async function listCharacters(): Promise<ExportCharacter[]> {
   const raw = await requestJson<unknown>('/api/characters/all', {
     method: 'POST',
     body: JSON.stringify({}),
@@ -102,7 +106,7 @@ async function loadCharacters(): Promise<ExportCharacter[]> {
   })
 }
 
-async function loadChats(character: ExportCharacter): Promise<ExportChat[]> {
+async function listChats(character: ExportCharacter): Promise<ExportChat[]> {
   const raw = await requestJson<unknown>('/api/characters/chats', {
     method: 'POST',
     body: JSON.stringify({ avatar_url: character.avatar, metadata: true }),
@@ -110,28 +114,30 @@ async function loadChats(character: ExportCharacter): Promise<ExportChat[]> {
   return asArray(raw, ['chats', 'data']).map((item, index) => {
     const path = text(item, ['path', 'file', 'file_name', 'name'])
     const name = text(item, ['name', 'chat_name'], path.replace(/^.*[\\/]/, '').replace(/\.jsonl$/i, '')) || `聊天 ${index + 1}`
-    return { id: path || `${character.id}:${name}`, name, path, updatedAt: timestamp(item) }
+    return { id: `${character.id}:${path || name}`, name, path, updatedAt: timestamp(item) }
   })
 }
 
-async function loadWorldbooks(): Promise<ExportWorldbook[]> {
+async function listWorldbooks(): Promise<ExportWorldbook[]> {
   const listing = await requestJson<unknown>('/api/worldinfo/list', { method: 'POST', body: JSON.stringify({}) })
   const items = asArray(listing, ['worlds', 'worldbooks', 'data'])
-  return Promise.all(items.map(async (item, index) => {
+  return items.map((item, index) => {
     const id = text(item, ['file_id', 'file_name', 'filename', 'name'], `world-${index + 1}`)
     const name = text(item, ['name'], id).replace(/\.json$/i, '')
-    const content = await requestJson<unknown>('/api/worldinfo/get', {
-      method: 'POST',
-      body: JSON.stringify({ name: id.replace(/\.json$/i, '') }),
-    })
     return {
       id,
       name,
       fileName: id.endsWith('.json') ? id : `${id}.json`,
       updatedAt: timestamp(item),
-      content,
     }
-  }))
+  })
+}
+
+async function readWorldbook(worldbook: ExportWorldbook): Promise<unknown> {
+  return requestJson<unknown>('/api/worldinfo/get', {
+    method: 'POST',
+    body: JSON.stringify({ name: worldbook.id.replace(/\.json$/i, '') }),
+  })
 }
 
 function loadPresets(raw: RawRecord): ExportPreset[] {
@@ -161,17 +167,16 @@ function loadRegex(raw: RawRecord): ExportRegexSet | null {
 
 export function createSTCloudExportBridge(): CloudExportBridge {
   return {
-    async loadSnapshot() {
-      const characters = await loadCharacters()
-      for (const character of characters) character.chats = await loadChats(character)
-      const [worldbooks, settings] = await Promise.all([
-        loadWorldbooks(),
-        requestJson<unknown>('/api/settings/get', { method: 'POST', body: JSON.stringify({}) }).then(asRecord),
-      ])
+    listCharacters,
+    listChats,
+    listWorldbooks,
+    async loadSettingsAssets() {
+      const settings = await requestJson<unknown>('/api/settings/get', { method: 'POST', body: JSON.stringify({}) }).then(asRecord)
       const presets = loadPresets(settings)
       const regex = loadRegex(settings)
-      return { characters, worldbooks, presets, regex }
+      return { presets, regex }
     },
+    readWorldbook,
     readCharacterCard: (character) => requestBinary('/api/characters/export', {
       method: 'POST',
       body: JSON.stringify({ format: 'png', avatar_url: character.avatar }),

@@ -20,7 +20,7 @@ export interface ExportWorldbook {
   name: string
   fileName: string
   updatedAt?: number
-  content: unknown
+  content?: unknown
 }
 
 export interface ExportPreset {
@@ -39,6 +39,11 @@ export interface ExportRegexSet {
 export interface ExportSnapshot {
   characters: ExportCharacter[]
   worldbooks: ExportWorldbook[]
+  presets: ExportPreset[]
+  regex: ExportRegexSet | null
+}
+
+export interface ExportSettingsAssets {
   presets: ExportPreset[]
   regex: ExportRegexSet | null
 }

@@ -8,7 +8,7 @@ afterEach(() => {
 })
 
 describe('cloud export ST bridge', () => {
-  it('reads the release endpoints and preserves selected asset content', async () => {
+  it('loads lightweight lists first and defers expensive asset content', async () => {
     const calls: Array<{ url: string; method: string; body?: string }> = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -36,20 +36,23 @@ describe('cloud export ST bridge', () => {
     }))
 
     const bridge = createSTCloudExportBridge()
-    const snapshot = await bridge.loadSnapshot()
+    const characters = await bridge.listCharacters()
+    expect(characters[0]).toMatchObject({ name: 'Alice', avatar: 'Alice.png', chats: [] })
+    expect(calls.map((call) => call.url)).toEqual(['/api/characters/all'])
 
-    expect(snapshot.characters[0]).toMatchObject({ name: 'Alice', avatar: 'Alice.png' })
-    expect(snapshot.characters[0].chats[0]).toMatchObject({ name: 'first-chat', path: 'first-chat.jsonl', updatedAt: 1234 })
-    expect(snapshot.worldbooks[0]).toMatchObject({ name: '世界', fileName: 'World.json', content: { entries: { '1': { content: 'hello' } } } })
-    expect(snapshot.presets[0]).toMatchObject({ name: 'creative', fileName: 'creative.json', content: { temperature: 0.7 } })
-    expect(snapshot.regex?.rules).toEqual([{ find: 'secret?' }])
-    expect(calls.map((call) => call.url)).toEqual(expect.arrayContaining([
-      '/api/characters/all',
-      '/api/characters/chats',
-      '/api/worldinfo/list',
-      '/api/worldinfo/get',
-      '/api/settings/get',
-    ]))
+    const chats = await bridge.listChats(characters[0])
+    expect(chats[0]).toMatchObject({ name: 'first-chat', path: 'first-chat.jsonl', updatedAt: 1234 })
+    expect(calls.map((call) => call.url)).toEqual(['/api/characters/all', '/api/characters/chats'])
+
+    const worldbooks = await bridge.listWorldbooks()
+    expect(worldbooks[0]).toMatchObject({ name: '世界', fileName: 'World.json' })
+    expect(worldbooks[0]).not.toHaveProperty('content')
+    expect(calls.map((call) => call.url)).not.toContain('/api/worldinfo/get')
+
+    expect(await bridge.readWorldbook(worldbooks[0])).toEqual({ entries: { '1': { content: 'hello' } } })
+    const settings = await bridge.loadSettingsAssets()
+    expect(settings.presets[0]).toMatchObject({ name: 'creative', fileName: 'creative.json', content: { temperature: 0.7 } })
+    expect(settings.regex?.rules).toEqual([{ find: 'secret?' }])
   })
 
   it('uses the release export and chat endpoints for binary and JSONL content', async () => {
