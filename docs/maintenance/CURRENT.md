@@ -2,14 +2,14 @@
 status_version: 1
 project: st-stage
 base_branch: main
-verified_code_head: 116103a
+verified_code_head: d9852e9
 remote_code_head_at_update: af1fa37
-build_version: 0.9.0+202608271324
-phase: cloud-export-standard-backup-awaiting-real-st-integration
-updated_at: 2026-08-27T13:40:00+08:00
-updated_by: codex
-verification_source: codex-cloud-export-standard-backup-2026-08-27
-history: docs/maintenance/history/2026-08-27-cloud-export-standard-backup.md
+build_version: 0.9.0+202608272259
+phase: cloud-export-review-fixes-awaiting-real-st-integration
+updated_at: 2026-08-27T21:50:00+08:00
+updated_by: claude-code
+verification_source: claude-code-cloud-export-review-2026-08-27
+history: docs/maintenance/history/2026-08-27-cloud-export-review-fixes.md
 ---
 
 # Current Project Status
@@ -54,20 +54,24 @@ history: docs/maintenance/history/2026-08-27-cloud-export-standard-backup.md
 
 ## Recorded Verification
 
-Evidence represented by code head `69066357f025b56ebac482384b592802ddd156e8`:
+Current artifact hashes belong to the review-fix batch described under "Review Fixes" below. Earlier rounds' hashes stay in their dated `history/` records rather than here, so this section always matches the artifacts currently in the worktree.
 
-- pnpm `10.32.1` frozen install passed and did not modify `pnpm-lock.yaml`.
-- Vitest `4.1.10`: 72 files, 908/908 passed.
+Evidence for the current build stamp `0.9.0+202608272259`:
+
+- Vitest `4.1.10`: 78 files, 937/937 passed.
 - TypeScript typecheck and full ESLint: passed.
-- Next.js `16.2.6` production build: passed.
-- Playwright `1.62.0`: 25/25 across desktop Chromium, Pixel 7, and Galaxy S8. Chromium launch initially hit sandbox `spawn EPERM`; the same project-scoped suite passed outside the sandbox.
+- Next.js `16.2.6` production build: compiled successfully.
 - `git diff --check`: passed.
-- Root artifacts and `st-distribution/` were rebuilt twice with the fixed build stamp and remained deterministic. Shared SHA-256 hashes:
+- Note: `st-extension/build.test.ts > makes the artifact diff fail after a source change and rebuild` failed once when the full suite ran concurrently with the Next build, and passed both in isolation and on a clean full re-run. That test spawns `git` subprocesses and is sensitive to machine load; the failure was contention, not a regression. It is pre-existing behaviour, not introduced by this batch.
+- Root artifacts and `st-distribution/` were rebuilt twice with the fixed build stamp and remained byte-identical. Shared SHA-256 hashes:
   - `index.js`: `D0E60A1B546D223922A7FBF01231B79205874963BDFFE4C963BD081347C9B849`
-  - `bundle.js`: `E6DBB7839E0B98CEDDC8A60F4A5FCC915571E9E765AB23B1F737740C016755BB`
-  - `style.css`: `5194DE8924006792A52B0D800A233CBDEF889094CBA9B399659C6547BA5F1ADA`
-  - `version.json`: `C52328130CF5A53267E8C20CE81B2F6577505ED548510C3948842227336E3113`
+  - `bundle.js`: `BC8EB12700350EFA692525622C2EFE4F7B6BB9E0A24791E455FB612B2B61A363`
+  - `style.css`: `D80B3E4E6FF1F34B014746A7E5311B7E3AAF3B36DE1A1C58EA06073CA7E76971`
+  - `version.json`: `7D0BF16FC852F72C9C9E0662B6E4F212C8BCEC92DC7B2972D4287FFD6733C457`
+- Artifact hashes are now reproducible on any checkout: the build normalizes generated files to LF and `.gitattributes` pins the release artifacts to `eol=lf`. Re-hashing a fresh checkout reproduces the values above.
 - `st-distribution/` contains exactly `bundle.js`, `index.js`, `manifest.json`, `README.md`, `style.css`, and `version.json`; it contains no images, `public/`, `reference/`, or preset source.
+
+Prior round-five evidence (Playwright `25/25`, frozen pnpm install, Next.js production build) is recorded in `docs/maintenance/history/` and was not re-run for this review batch.
 
 These are automated and source-review results only. The real-ST items below remain manual evidence.
 
@@ -87,6 +91,17 @@ These are automated and source-review results only. The real-ST items below rema
 - Selected bodies load with at most four concurrent requests. Any failed asset aborts the export before browser download and reports the asset name.
 - The one downloaded archive is named `default-user-YYYYMMDD-HHmmss.zip`; standard paths live directly at the ZIP root without an extra wrapper directory.
 - Current automated evidence: Cloud Export 5 files / 17 tests, full Vitest 78 files / 928 tests, TypeScript, ESLint, fixed-stamp root/distribution build, matching shared artifact hashes, and six-file distribution boundary passed.
+
+## Review Fixes
+
+A code review of the Butler 2.0 and Cloud Export batches produced four fixes. They are source changes only; the review's remaining findings are recorded in `DEFERRED.md`.
+
+- `settings.json` is now written only when regex rules or worldbooks are actually selected, and empty keys are omitted entirely. Previously any selection emitted `settings.json` carrying `extension_settings.regex: []` and an empty `globalSelect`; because the archive is named `default-user-*.zip` and uses `default-user` root paths, a user unpacking it straight into `data/default-user/` would have cleared their real global regex and world selection. STE's own import path was never affected.
+- The download blob URL is released on a delay instead of synchronously after `anchor.click()`, and the anchor is attached to the document before the click. The previous synchronous `revokeObjectURL` could abort a large archive download before the browser took over the blob. The delay is injectable so the regression test does not have to fake global timers, which would deadlock JSZip.
+- The build normalizes generated artifacts to LF. Concatenated CSS previously inherited CRLF from an `autocrlf` checkout while the join used `\n`, producing a mixed-ending file whose bytes — and therefore recorded SHA-256 — depended on how the repository was cloned. `style.css` also showed as permanently modified, so the protocol's clean-worktree requirement could not be met.
+- `.gitattributes` pins the release artifacts to `eol=lf`. It intentionally scopes to generated files rather than declaring `* text=auto`, which would renormalize the whole repository.
+- Deselecting a character now also clears that character's selected chats, in both the checkbox and the invert action. Previously only the character ID was removed, so the archive could contain `chats/<name>/*.jsonl` with no matching `characters/<avatar>.png` while the counter read "0 characters, N chats". Selecting a chat still auto-adds its character, so the two directions are now symmetric.
+- `pre-release-cargo-target/` was deleted and added to `.gitignore`. It was STE Rust build output, roughly 7 GB, that did not belong to this repository.
 
 ## Next Real SillyTavern Acceptance
 
