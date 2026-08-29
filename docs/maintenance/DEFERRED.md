@@ -28,6 +28,7 @@ Raised by the 2026-08-27 review of the Cloud Export batch. The four higher-sever
 - Character identity falls back to `avatar || name`. Two characters sharing an avatar filename, or both missing one, collapse into a single ID, so selection state and the card buffer silently overwrite each other. Real SillyTavern avatar filenames are unique, so this is a latent risk rather than an observed failure. Location: `st-extension/src/apps/cloud-export/bridge.ts` character mapping.
 - A failed export leaves already-issued asset reads running: no `AbortSignal` reaches the bridge, and their progress callbacks keep firing after the error toast. The export result is still correct — no partial archive is produced. Location: `st-extension/src/apps/cloud-export/export-loader.ts` task runner.
 - The `world_info_settings.world_info.globalSelect` shape has not been checked against SillyTavern source in this repository; the design records it as verified against 1.18.0, but that source is not vendored here. An incorrect shape would be ignored by the importer rather than corrupt data.
+- Raised 2026-08-30 while bundling the linked worldbook: `findLinkedWorldbook` matches case-insensitively after stripping `.json`, and returns the first hit. A SillyTavern host on a case-sensitive filesystem can hold `World.json` and `world.json` as two distinct worldbooks, in which case the wrong book can be bundled. Case-insensitive matching is the right default for the common Windows host, so this is a latent cross-platform risk rather than an observed failure, and it mis-selects rather than loses data. Location: `st-extension/src/apps/cloud-export/export-app.ts` linked-worldbook lookup.
 
 ## Butler Recovery State Edges
 
@@ -35,6 +36,7 @@ Raised by the same review.
 
 - A malformed `activeTransaction` is silently discarded during migration, so the user loses the "restore this batch of performance settings" safety net without any notice. History records are skipped individually in the same file, making the top-level all-or-nothing behavior inconsistent. Location: `st-extension/src/apps/butler/migrations.ts` v2 normalization.
 - Binary isolation can narrow its candidate list to empty and then run further rounds that disable nothing, leaving the user cycling through no-change rounds. `prepareExtensionExperiment` rejects an empty candidate list, but the advance path does not reach that guard. Location: `st-extension/src/apps/butler/experiments.ts` binary isolation advance.
+  - Update 2026-08-30: no longer reachable from the UI. Acceptance round one replaced the troubleshooting flow with a read-only guide, so nothing calls `advanceBinaryIsolation` any more. The defect is unchanged in source and would return with the entry point, so the entry stays. `experiments.ts` was deliberately kept: it still provides the one-time stranded-run recovery and `isSelf`, which is one of the three hardcoded install-directory-name sites.
 
 ## Product Version Decision
 
