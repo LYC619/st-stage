@@ -3,13 +3,13 @@ status_version: 1
 project: st-stage
 base_branch: main
 verified_code_head: d9852e9
-remote_code_head_at_update: af1fa37
+remote_code_head_at_update: d9852e9
 build_version: 0.9.0+202608272259
-phase: cloud-export-review-fixes-awaiting-real-st-integration
-updated_at: 2026-08-27T21:50:00+08:00
+phase: pushed-awaiting-real-st-acceptance
+updated_at: 2026-08-29T00:00:00+08:00
 updated_by: claude-code
 verification_source: claude-code-cloud-export-review-2026-08-27
-history: docs/maintenance/history/2026-08-27-cloud-export-review-fixes.md
+history: docs/maintenance/history/2026-08-29-push-and-distribution-split-decision.md
 ---
 
 # Current Project Status
@@ -17,11 +17,11 @@ history: docs/maintenance/history/2026-08-27-cloud-export-review-fixes.md
 ## Snapshot
 
 - Fifth-round fixes are represented by code/build commit `69066357f025b56ebac482384b592802ddd156e8`, fast-forwarded to `main` and pushed to `origin/main` after the maintenance handoff.
-- Cloud Export registration, lazy loading, batch selection, bounded-concurrency export, and standard backup artifacts are represented by code/build commit `116103a`; real ST/STE acceptance remains pending.
+- Cloud Export registration, lazy loading, batch selection, bounded-concurrency export, and standard backup are represented by code/build commit `116103a`; the review fixes and the current artifacts are represented by `d9852e9`. Both are now on `origin/main`; real ST/STE acceptance remains pending.
 - The paired STE ZIP input implementation is tracked in the sibling repository at `f874b55`; it extracts into a temporary authorized root and reuses the existing ST scan/selection/import flow without persisting `stRoot`.
-- Product version remains `0.9.0`; the cache-busting build stamp is `0.9.0+202608271324`.
+- Product version remains `0.9.0`; the cache-busting build stamp is `0.9.0+202608272259`.
 - This round addresses phone click-through, variable-toggle feedback, gallery stack/filter/tag management, opt-in baked-checkerboard cleanup, readable Butler comparisons, and system-extension guidance.
-- Automated gates are complete. The 16 real SillyTavern checks below remain manual and are not claimed as passed.
+- Automated gates are complete. The 20 real SillyTavern checks below remain manual and are not claimed as passed.
 - API management was not changed. OpenAI-compatible quick switching remains the supported common-channel baseline.
 
 ## Delivered Scope
@@ -107,7 +107,7 @@ A code review of the Butler 2.0 and Cloud Export batches produced four fixes. Th
 
 ### Runtime And Renderer
 
-1. After this local batch is pushed, update the extension and confirm the settings page shows `0.9.0+202608271324`; switch chat/character once and confirm prompt injection still self-heals.
+1. Update the extension and confirm the settings page shows `v0.9.0（构建 2026-08-27 22:59）`. The panel renders the dashed build time; the compact `202608272259` appears only in `version.json` and the `bundle.js?v=` parameter, so check the stamp there or in DevTools rather than expecting it in the panel. Then switch chat/character once and confirm prompt injection still self-heals.
 2. Open the phone over a clickable Gal panel or chat control, tap phone checkboxes/buttons, and confirm only the phone control activates.
 3. With a real reply containing `<UpdateVariable>`, enable hiding and confirm the payload disappears; disable it and confirm st-stage restores the payload immediately or after the scheduled reprocess without requiring message edit mode.
 4. Separately enable a SillyTavern Regex rule that deletes the same block. Confirm the st-stage notice explains why disabling its own hide setting cannot restore content already removed by Regex; disable the external rule and reprocess to recover it.
@@ -130,7 +130,7 @@ A code review of the Butler 2.0 and Cloud Export batches produced four fixes. Th
 15. Open system-extension guidance and verify the nine common built-ins show understandable purpose, need conditions, disable impact, and conservative advice; unknown built-ins must not receive a fabricated performance conclusion.
 16. Open third-party extension troubleshooting, temporarily disable a disposable third-party extension, refresh, repeat the slow action, then restore it. Confirm system extensions are not selectable and st-stage cannot select itself.
 
-17. Update SillyTavern with the `0.9.0+202608271324` artifacts. Open `导出` with an account containing many roles/chats/worldbooks and confirm the role list appears before chat lists, worldbook bodies, or settings assets are requested.
+17. Update SillyTavern with the `0.9.0+202608272259` artifacts. Open `导出` with an account containing many roles/chats/worldbooks and confirm the role list appears before chat lists, worldbook bodies, or settings assets are requested.
 18. Expand one role and confirm only that role's chat list loads once. Use “选择角色及全部聊天” and “全选角色及聊天”, then combine selected worldbooks, OpenAI presets, and global regex.
 19. Export and confirm exactly one `default-user-YYYYMMDD-HHmmss.zip` downloads. Verify `settings.json`, `characters/`, `chats/`, `worlds/`, and `OpenAI Settings/` are directly at the archive root, no extra `default-user/` wrapper or `secrets.json` exists, and settings use `extension_settings.regex`.
 20. In the STE client, choose the generated ZIP, confirm it reaches the normal selection dialog without changing the saved ST directory, complete the import into the user-selected Vault, and confirm cancel/failure/success all remove the temporary source directory.
@@ -141,14 +141,16 @@ A code review of the Butler 2.0 and Cloud Export batches produced four fixes. Th
 - Conservative Renderer HTML detection.
 - Renderer Cards pre-generated branch/pruning workflow.
 - Batch cleanup/catalog expansion for the 143-file reference source set and owned long-term hosting/CDN selection.
-- Extraction and publishing automation for the generated standalone ST distribution repository.
+- Extraction and publishing automation for the generated standalone ST distribution repository. The split is now decided (separate distribution repository under a new name) and blocked on the hardcoded-directory-name fix below.
+- Runtime self-identification instead of the hardcoded `st-stage` install-directory name, required before the distribution repository can be published under any other name.
 - Product semantic version decision after real-ST acceptance.
 
 See `docs/maintenance/DEFERRED.md` for details.
 
 ## Next Actions
 
-- Push the local code/build commit `116103a` and its maintenance handoff, then install it in real SillyTavern and execute the existing checks plus Cloud Export checks 17–20, recording only observed results and failures.
+- Install `d9852e9` from `origin/main` in real SillyTavern and execute checks 1–20 below, recording only observed results and failures.
 - Keep the deferred Renderer branching protocol out of acceptance fixes; scope it as a separate design task.
 - Fix only failures observed in real ST. Do not expand the API channel matrix unless OpenAI-compatible usage produces concrete gaps.
+- After acceptance passes, execute the distribution split in this order: replace the hardcoded install-directory name with runtime self-identification, then create the distribution repository, then decide the semantic version. The split must not precede the directory-name fix, because publishing under a different name is what breaks Butler self-protection.
 - After blockers pass, decide whether `manifest.json` should move from `0.9.0` to `1.0.0`, then rerun the complete release gates.
