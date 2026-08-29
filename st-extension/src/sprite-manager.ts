@@ -2309,7 +2309,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     for (const action of sharedActions) {
       bar.append(iconButton(
         action.icon ?? action.label,
-        action.label,
+        action.hint ?? action.label,
         () => runSpriteAction(action),
         'so-icon-btn',
         Boolean(action.disabled),

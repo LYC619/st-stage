@@ -160,17 +160,23 @@ describe('diagnose', () => {
     expect(findings.some((finding) => finding.id === 'measured-long-tasks')).toBe(hit)
   })
 
-  it('reports resource evidence only as correlation and asks for comparison', () => {
+  it('reports resource evidence only as correlation and never acts on it', () => {
     const findings = diagnose(snapshot({
       resources: { groups: [{ key: 'extension:third-party/demo', count: 3, transferSize: 1000, durationMs: 80 }] },
     }), null)
     const resource = findings.find((finding) => finding.id === 'extension-resource-evidence')!
+    const explanation = JSON.stringify(resource.explanation)
 
     expect(resource.confidence).toBe('correlation')
     expect(resource.actionId).toBeUndefined()
-    expect(JSON.stringify(resource.explanation)).toContain('对比')
-    expect(JSON.stringify(resource.explanation)).not.toContain('A/B')
-    expect(JSON.stringify(resource.explanation)).not.toMatch(/就是|导致卡顿|元凶|证明/)
+    // 加载记录只是线索。这条断言守的是"不下因果结论"，是这个 finding 的核心分寸。
+    expect(explanation).not.toMatch(/就是|导致卡顿|元凶|证明/)
+    // 排查流程已下线：不再邀请用户做 A/B 对比，也不再承诺替他还原禁用清单
+    expect(explanation).not.toContain('A/B')
+    expect(explanation).not.toContain('临时关闭')
+    // 开关去 SillyTavern 自己的扩展管理里做，本工具不碰用户的禁用清单
+    expect(explanation).toContain('SillyTavern')
+    expect(explanation).toContain('不会自动关闭')
   })
 
   it('does not treat ordinary resource groups as extension evidence', () => {

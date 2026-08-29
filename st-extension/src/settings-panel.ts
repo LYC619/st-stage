@@ -51,9 +51,10 @@ export function mountSettingsPanel(deps: PanelDeps): () => void {
 
   const hint = document.createElement('div')
   hint.className = 'so-status'
-  // 版本/构建时间可见：排查"更新后没生效"时区分 没构建/没提交/浏览器缓存
-  const version =
-    typeof __EXT_VERSION__ === 'undefined' ? '' : ` v${__EXT_VERSION__}（构建 ${__BUILD_TIME__}）`
+  // 面板只显示产品版本号。构建时间不在这里露出——排查"更新后没生效"仍可用：
+  // 控制台加载日志（index.ts）打印 版本·构建时间，管家报告也带完整戳，
+  // 另有 version.json 与 bundle.js?v= 参数。
+  const version = typeof __EXT_VERSION__ === 'undefined' ? '' : ` v${__EXT_VERSION__}`
   hint.textContent =
     `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`
   content.append(hint)

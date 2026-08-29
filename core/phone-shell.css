@@ -1266,3 +1266,78 @@
     border-radius: 0;
   }
 }
+
+/* ── 云导出（选择式备份） ─────────────────────────────────────────────── */
+
+/*
+ * 分类切换：四个按钮横排一行。
+ *
+ * .so-app-section 是 flex-direction: column，.so-app-btn 又是 width: 100%，
+ * 两者叠加会让四个分类各占一整行、竖着堆四层。这里两个都要覆盖：只改方向的话
+ * 按钮仍会各自撑满宽度。
+ */
+.cloud-export-tabs {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+.cloud-export-tabs > .so-app-btn {
+  /* flex-basis: 0 + min-width: 0 = 四等分，不受各自文字长度影响 */
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  padding-left: 4px;
+  padding-right: 4px;
+  font-size: 12px;
+}
+
+/* 当前分类：此前这个类名只挂在 DOM 上，没有任何样式，选中态看不出来 */
+.cloud-export-tabs > .so-app-btn.cloud-export-active {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.4);
+  font-weight: 600;
+}
+
+/*
+ * 角色行的层级：角色卡是一个整体，它的聊天是下一级。
+ *
+ * 角色名与聊天名此前用的是同一个 .so-app-toggle，字号、缩进、字重全一样，
+ * 展开聊天后一眼看不出哪个是角色、哪些是它的聊天。分三层拉开：
+ * 卡片框（一个角色一张）→ 角色名（加粗）→ 聊天（缩进 + 左竖线 + 小字号）。
+ */
+.cloud-export-character {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.cloud-export-character-name {
+  font-weight: 600;
+}
+
+/* 与角色名的复选框文字左对齐（缩进量 = 复选框宽度 + 间距） */
+.cloud-export-bundle-note {
+  margin-left: 24px;
+  font-size: 11px;
+  opacity: 0.65;
+  line-height: 1.5;
+}
+
+/* 左竖线承担"这些属于上面那个角色"的视觉归属 */
+.cloud-export-chats {
+  margin-left: 10px;
+  padding-left: 10px;
+  border-left: 2px solid rgba(255, 255, 255, 0.12);
+}
+.cloud-export-chats > summary {
+  font-size: 12px;
+  opacity: 0.8;
+}
+.cloud-export-chat {
+  font-size: 12px;
+  padding-top: 2px;
+}

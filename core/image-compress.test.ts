@@ -87,16 +87,39 @@ describe('cleanCheckerboardImage', () => {
     expect(encodePng).toHaveBeenCalledTimes(1)
   })
 
-  it('像素证据不足时拒绝输出清理文件', async () => {
+  it('像素证据不足时拒绝输出清理文件，并说明需要什么样的图', async () => {
     const data = new Uint8ClampedArray([
       220, 40, 70, 255,
       30, 90, 210, 255,
       180, 120, 50, 255,
       20, 30, 40, 255,
     ])
+    const encodePng = vi.fn()
     await expect(cleanCheckerboardImage(new Blob(['source'], { type: 'image/png' }), {
       decode: async () => ({ data, width: 2, height: 2 }),
-      encodePng: vi.fn(),
-    })).rejects.toThrow('没有确认到可安全去除的棋盘格背景')
+      encodePng,
+    })).rejects.toThrow(/没有在这张图里确认到可安全去除的棋盘格背景.*两级浅灰/s)
+    expect(encodePng).not.toHaveBeenCalled()
+  })
+
+  // 真机实测的困惑点：拿一张真正的透明 PNG 去试，看到「没有确认到棋盘格」会以为功能坏了。
+  // 这两种拒绝必须分开报——前者是「不需要处理」，后者是「不敢处理」。
+  it('已带透明通道的图单独报「不需要处理」，不与证据不足混为一谈', async () => {
+    const width = 4
+    const height = 4
+    const data = new Uint8ClampedArray(width * height * 4)
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const value = (x + y) % 2 === 0 ? 248 : 224
+        // 除棋盘格图案外，把一个像素设成半透明：这就是真透明 PNG 的特征
+        data.set([value, value, value, y === 0 && x === 0 ? 0 : 255], (y * width + x) * 4)
+      }
+    }
+    const encodePng = vi.fn()
+    await expect(cleanCheckerboardImage(new Blob(['source'], { type: 'image/png' }), {
+      decode: async () => ({ data, width, height }),
+      encodePng,
+    })).rejects.toThrow(/已经带透明通道，不需要去棋盘格/)
+    expect(encodePng).not.toHaveBeenCalled()
   })
 })

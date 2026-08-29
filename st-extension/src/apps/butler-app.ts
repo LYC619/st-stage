@@ -2,14 +2,13 @@ import type { PhoneApp, PhoneAppContext } from '../../../core/phone-registry'
 import { appButton, el, foldSection, selectRow } from './widgets'
 import { applyTransaction, compareMeasurements, restoreTransaction, type ButlerActionBridge, type MeasurementComparison } from './butler/actions'
 import { buildSafePlan, diagnose, type SafePlan } from './butler/diagnosis'
+// 排查流程（临时关闭扩展找卡顿）已下线，改成只读的扩展指南。
+// 这里只保留"把卡在中途的旧实验恢复回去"所需的三个：
+// resume 读回未完成的实验、finish 收尾还原、restoreEmergency 兜底。
 import {
-  advanceBinaryIsolation,
   finishExtensionExperiment,
-  prepareExtensionExperiment,
-  recordExperimentComparison,
   restoreEmergencyExtensionBackup,
   resumeExtensionExperiment,
-  startExtensionExperiment,
   type ExtensionExperimentDependencies,
 } from './butler/experiments'
 import { fitButlerDataBudget } from './butler/history'
@@ -370,56 +369,25 @@ function mountButler(
     getMeasurement: () => state.measurement,
     getFindings: () => state.findings,
     getComparison: () => state.comparison,
-    async startExperiment(kind, selected, inventory) {
-      let baseline = state.measurement
-      if (!baseline || baseline.probe === 'static' || baseline.invalidReason) {
-        baseline = await runProbe(state.selectedProbe)
-        if (baseline.invalidReason) throw new Error('排查前检查未完成，暂时不能关闭扩展')
-      }
-      const record = measurementHistory(baseline, '扩展排查前检查')
-      data = persistData(upsertHistory(data, record), record.id)
-      const prepared = prepareExtensionExperiment(kind, selected, inventory, baseline.id, {
-        now: services.now,
-        createId: services.createId,
-      })
-      const result = await startExtensionExperiment(prepared, experimentDeps)
-      data = persistData({ ...data, pendingExperiment: result.experiment })
-      if (!result.batch.ok) throw new Error(result.experiment.notes ?? '扩展变更失败')
-    },
-    async sampleExperiment() {
-      const pending = data.pendingExperiment
-      if (!pending || pending.status !== 'sampling') throw new Error('当前没有等待检查的扩展排查')
-      const baseline = latestMeasurement(data, pending.baselineMeasurementId)
-      const probe = baseline?.probe === 'controlledScroll' ? 'controlledScroll' : 'idle'
-      const comparison = await runProbe(probe, true)
-      const record = measurementHistory(comparison, '关闭扩展后检查', comparison.invalidReason ? 'cancelled' : 'completed')
-      data = persistData(upsertHistory(data, record), record.id)
-      if (comparison.invalidReason) throw new Error('关闭扩展后的检查未完成，请重试')
-      const next = recordExperimentComparison(pending, comparison.id)
-      data = persistData({ ...data, pendingExperiment: next })
-      if (baseline) state.comparison = compareMeasurements(baseline, comparison)
-    },
-    async finishExperiment(decision) {
+    /**
+     * 升级搁浅救援：把扩展还原到排查前的原始禁用清单，然后清空待处理排查。
+     *
+     * "临时关闭扩展找卡顿"流程已移除，但升级前停在流程中间的用户，扩展还处于被禁用
+     * 的状态。这里复用 finishExtensionExperiment 的 restore 分支——它就是原本"恢复
+     * 原来的扩展状态"按钮走的路径，已经有测试覆盖，不另写一套还原逻辑。
+     */
+    async discardStrandedExperiment() {
       const pending = data.pendingExperiment
       if (!pending) return
-      const completed = await finishExtensionExperiment(pending, decision, experimentDeps)
+      const completed = await finishExtensionExperiment(pending, 'restore', experimentDeps)
       if (completed.status !== 'completed') {
+        // 还原失败时保留待处理状态：否则用户既丢了入口又没恢复成功
         data = persistData({ ...data, pendingExperiment: completed })
         throw new Error(completed.notes ?? '扩展清单恢复失败')
       }
-      const record = experimentHistory(completed, decision === 'keep' ? '保留扩展排查结果' : '恢复扩展状态')
+      const record = experimentHistory(completed, '恢复扩展状态（排查流程已下线）')
       data = persistData({ ...upsertHistory(data, record), pendingExperiment: null }, record.id)
-      setNotice(decision === 'keep' ? '已保留当前扩展禁用结果。' : '已恢复最初扩展禁用清单。', 'success')
-    },
-    async advanceBinary(symptomImproved) {
-      const pending = data.pendingExperiment
-      if (!pending) return
-      if (pending.candidateExtensions.length <= 1) {
-        setNotice(`已缩小到：${pending.candidateExtensions[0] ?? '无候选'}。可保留或恢复原清单。`, 'success')
-        return
-      }
-      const next = await advanceBinaryIsolation(pending, symptomImproved, experimentDeps)
-      data = persistData({ ...data, pendingExperiment: next })
+      setNotice('已恢复最初扩展禁用清单。', 'success')
     },
     async restoreEmergencyBackup(backup) {
       const result = await restoreEmergencyExtensionBackup(backup, experimentDeps)
@@ -560,7 +528,7 @@ function mountButler(
         apply.classList.add('so-butler-primary-action')
         planSection.append(apply)
       } else {
-        text(planSection, '这里没有需要应用的设置。如果仍然卡顿，可以打开“临时关闭扩展找卡顿”逐个排查。', 'so-butler-muted')
+        text(planSection, '这里没有需要应用的设置。如果仍然卡顿，可以打开“扩展指南”看看哪些扩展代价较大、能否安全关掉。', 'so-butler-muted')
       }
     }
     if (state.comparison) {
@@ -576,15 +544,17 @@ function mountButler(
     const modalActions = el('div', 'so-app-section so-butler-modal-actions')
     modalActions.append(
       appButton('查看详细结果', () => ctx.openModal(buildReportModal(modalController))),
-      appButton('临时关闭扩展找卡顿', () => ctx.openModal(buildExtensionModal(services, modalController))),
+      appButton('扩展指南', () => ctx.openModal(buildExtensionModal(services, modalController))),
       appButton('记忆与服务器设置建议', () => ctx.openModal(buildAdvisorModal(services))),
     )
     container.append(modalActions)
 
+    // 升级搁浅提示：旧排查流程已下线，但升级前停在流程中间的用户扩展仍被禁用着，
+    // 首屏必须给出恢复入口，否则他们只会觉得"有些扩展莫名失效了"。
     if (data.pendingExperiment) {
       const pending = el('div', 'so-app-section so-butler-pending')
-      text(pending, `扩展排查进行中：${data.pendingExperiment.kind === 'binaryIsolation' ? '分批缩小范围' : '对比所选扩展'} · 第 ${data.pendingExperiment.currentRound} 轮`)
-      pending.append(appButton('继续排查扩展', () => ctx.openModal(buildExtensionModal(services, modalController))))
+      text(pending, '上次的扩展排查没有结束，部分扩展可能仍处于被临时禁用的状态。')
+      pending.append(appButton('恢复排查前的扩展状态', () => ctx.openModal(buildExtensionModal(services, modalController))))
       container.append(pending)
     }
 

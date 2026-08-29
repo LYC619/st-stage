@@ -554,12 +554,27 @@
   background: rgba(255, 255, 255, 0.14);
 }
 
-/* 修复按钮文字竖排：强制不换行、宽度自适应 */
-.so-manager .menu_button.so-btn,
-.so-manager .menu_button {
+/* 修复按钮文字竖排：强制不换行、宽度自适应。
+ *
+ * 作用域挂在 backdrop 而不是 .so-manager：标签管理和批量上传预览两个弹窗
+ * 是 append 到 backdrop 的，也就是 .so-manager 的兄弟节点而非后代，
+ * 用 `.so-manager 后代` 选择器够不到它们。CJK 的 min-content 宽度是「一个字」
+ * （中文可在任意字符间断行），所以 grid 的 auto 轨道会把「重命名」压成三行竖排。
+ * 光有 nowrap 不够：还要 flex-shrink:0 挡住 flex 容器的收缩，
+ * 以及下面的 min-width:auto 挡住 grid 轨道的收缩。 */
+.so-manager-backdrop .menu_button.so-btn,
+.so-manager-backdrop .menu_button {
   white-space: nowrap;
   width: max-content;
   flex-shrink: 0;
+}
+
+/* grid 的 auto/1fr 轨道默认可缩到 min-content 以下；按钮所在轨道必须拒绝收缩，
+ * 否则 nowrap 只会让文字溢出按钮而不是把轨道撑开。 */
+.so-manager-backdrop .so-tag-manager-row > .menu_button,
+.so-manager-backdrop .so-tag-manager-add > .menu_button,
+.so-manager-backdrop .so-tag-manager-heading > .menu_button {
+  min-width: max-content;
 }
 
 .so-manager .so-status {
@@ -1093,27 +1108,34 @@
   white-space: nowrap;
 }
 
-.so-manager .so-tag-manager-panel {
+/* 以下标签管理规则一律挂 .so-manager-backdrop：弹窗 append 到 backdrop，
+ * 是 .so-manager 的兄弟节点，`.so-manager 后代` 选择器够不到（见上方按钮注释）。 */
+.so-manager-backdrop .so-tag-manager-panel {
   width: min(640px, 96vw);
 }
 
-.so-manager .so-tag-manager-heading,
-.so-manager .so-tag-manager-row {
+.so-manager-backdrop .so-tag-manager-heading,
+.so-manager-backdrop .so-tag-manager-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 8px;
 }
 
-.so-manager .so-tag-manager-heading {
+.so-manager-backdrop .so-tag-manager-heading {
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
-.so-manager .so-tag-manager-add {
-  align-items: end;
+/* 添加行三个子项：两个 labeled 输入平分剩余宽度，按钮保持自身宽度。
+ * 不能继承上面的 1fr/auto/auto/auto——那会让「新标签」输入框缩到 min-content。 */
+.so-manager-backdrop .so-tag-manager-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
 }
 
-.so-manager .so-tag-manager-list {
+.so-manager-backdrop .so-tag-manager-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1121,10 +1143,36 @@
   overflow-y: auto;
 }
 
-.so-manager .so-tag-manager-row {
+.so-manager-backdrop .so-tag-manager-row {
   padding: 8px;
   border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
   border-radius: 6px;
+}
+
+/* 共用的 .so-labeled / .so-status 也是 .so-manager 作用域，同样够不到弹窗。
+ * 这里按弹窗需要的最小集合重新声明，不动主面板那份。 */
+.so-manager-backdrop .so-upload-modal .so-labeled {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.so-manager-backdrop .so-upload-modal .so-labeled-text {
+  font-size: 12px;
+  opacity: 0.75;
+  flex-shrink: 0;
+}
+
+.so-manager-backdrop .so-upload-modal .so-labeled .text_pole {
+  min-width: 0;
+  flex: 1;
+}
+
+.so-manager-backdrop .so-upload-modal .so-status {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 4px;
 }
 
 @media (max-width: 720px) {
@@ -1137,8 +1185,18 @@
     grid-column: 1 / -1;
   }
 
-  .so-manager .so-tag-manager-row {
-    grid-template-columns: minmax(0, 1fr) auto;
+  /* 窄屏两行式：输入框独占首行，用量与两个按钮排第二行。
+   * 不要只写 `1fr auto`——四个子项会流进隐式行，两个按钮落到不同宽度的轨道上。 */
+  .so-manager-backdrop .so-tag-manager-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .so-manager-backdrop .so-tag-manager-row > .text_pole {
+    grid-column: 1 / -1;
+  }
+
+  .so-manager-backdrop .so-tag-manager-add {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -3645,4 +3703,79 @@
     border: none;
     border-radius: 0;
   }
+}
+
+/* ── 云导出（选择式备份） ─────────────────────────────────────────────── */
+
+/*
+ * 分类切换：四个按钮横排一行。
+ *
+ * .so-app-section 是 flex-direction: column，.so-app-btn 又是 width: 100%，
+ * 两者叠加会让四个分类各占一整行、竖着堆四层。这里两个都要覆盖：只改方向的话
+ * 按钮仍会各自撑满宽度。
+ */
+.cloud-export-tabs {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+.cloud-export-tabs > .so-app-btn {
+  /* flex-basis: 0 + min-width: 0 = 四等分，不受各自文字长度影响 */
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  padding-left: 4px;
+  padding-right: 4px;
+  font-size: 12px;
+}
+
+/* 当前分类：此前这个类名只挂在 DOM 上，没有任何样式，选中态看不出来 */
+.cloud-export-tabs > .so-app-btn.cloud-export-active {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.4);
+  font-weight: 600;
+}
+
+/*
+ * 角色行的层级：角色卡是一个整体，它的聊天是下一级。
+ *
+ * 角色名与聊天名此前用的是同一个 .so-app-toggle，字号、缩进、字重全一样，
+ * 展开聊天后一眼看不出哪个是角色、哪些是它的聊天。分三层拉开：
+ * 卡片框（一个角色一张）→ 角色名（加粗）→ 聊天（缩进 + 左竖线 + 小字号）。
+ */
+.cloud-export-character {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.cloud-export-character-name {
+  font-weight: 600;
+}
+
+/* 与角色名的复选框文字左对齐（缩进量 = 复选框宽度 + 间距） */
+.cloud-export-bundle-note {
+  margin-left: 24px;
+  font-size: 11px;
+  opacity: 0.65;
+  line-height: 1.5;
+}
+
+/* 左竖线承担"这些属于上面那个角色"的视觉归属 */
+.cloud-export-chats {
+  margin-left: 10px;
+  padding-left: 10px;
+  border-left: 2px solid rgba(255, 255, 255, 0.12);
+}
+.cloud-export-chats > summary {
+  font-size: 12px;
+  opacity: 0.8;
+}
+.cloud-export-chat {
+  font-size: 12px;
+  padding-top: 2px;
 }

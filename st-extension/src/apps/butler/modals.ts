@@ -3,10 +3,8 @@ import {
   summarizeMeasurementComparison,
   type MeasurementComparison,
 } from './actions'
-import type { ExtensionInventoryResult } from './bridge'
+import type { ExtensionInventoryItem, ExtensionInventoryResult } from './bridge'
 import {
-  defaultExperimentCandidates,
-  dependencyWarnings,
   readEmergencyBackup,
   type EmergencyExtensionBackup,
 } from './experiments'
@@ -24,14 +22,8 @@ export interface ButlerModalController {
   getMeasurement(): MeasurementSnapshot | null
   getFindings(): Finding[]
   getComparison(): MeasurementComparison | null
-  startExperiment(
-    kind: ButlerExperiment['kind'],
-    selected: string[],
-    inventory: Extract<ExtensionInventoryResult, { status: 'ready' }>,
-  ): Promise<void>
-  sampleExperiment(): Promise<void>
-  finishExperiment(decision: 'keep' | 'restore'): Promise<void>
-  advanceBinary(symptomImproved: boolean): Promise<void>
+  /** 恢复升级前搁浅的排查：还原原始禁用清单并清空待处理状态。 */
+  discardStrandedExperiment(): Promise<void>
   restoreEmergencyBackup(backup: EmergencyExtensionBackup): Promise<void>
 }
 
@@ -214,17 +206,90 @@ export function buildReportModal(controller: ButlerModalController) {
   }
 }
 
-function experimentStatus(experiment: ButlerExperiment): string {
-  const labels: Record<ButlerExperiment['status'], string> = {
-    prepared: '准备中',
-    awaitingReload: '等待刷新',
-    sampling: '等待关闭后检查',
-    awaitingDecision: '等待结果决定',
-    restoring: '正在恢复',
-    completed: '已完成',
-    failed: '失败',
+/**
+ * 通用判断经验，不针对具体扩展。
+ *
+ * 刻意只讲能从 manifest 观察到的结构性事实与公认代价，不编造某个扩展的耗时数字：
+ * 管家不读第三方扩展源码，任何"这个扩展耗时 X ms"的说法都会是猜的。
+ */
+const EXTENSION_COST_PRINCIPLES = [
+  '按代价从大到小看：每条消息都要处理的（改写、翻译、朗读、表情切换）＞ 每次生成都要请求外部服务的 ＞ 只在你点按钮时才干活的 ＞ 只加了几个按钮或设置项的。',
+  '声明了样式表的扩展会参与每次重绘。楼层多、开了动画或模糊效果时，这部分更明显。',
+  '需要后端模块的扩展（向量、语音、图片生成）会等服务器响应。服务不通时，卡的可能是等待超时，不是浏览器算不过来。',
+  '有依赖方的扩展不能单独关：先关依赖它的那个，否则被依赖方一起失效，你会看到一片功能同时坏掉而误判。',
+  '长聊天里最先该怀疑的不是扩展数量，而是"每楼都跑一遍"的处理。楼层数翻倍，这类代价就翻倍。',
+  '关之前先想清楚失去什么：正则和记忆类扩展常被角色卡或预设依赖，关掉会让玩法直接不对，代价通常大于省下的性能。',
+]
+
+/** 反查谁依赖它：关闭前必须知道会不会连带弄坏别的扩展。 */
+function dependentsOf(
+  extension: ExtensionInventoryItem,
+  all: ExtensionInventoryItem[],
+): string[] {
+  const target = extension.name.trim().toLowerCase().split('/').pop() ?? ''
+  if (!target) return []
+  return all
+    .filter((candidate) => {
+      if (candidate.name === extension.name) return false
+      const declared = candidate.manifest?.dependencies
+      if (!declared || declared.status !== 'valid') return false
+      return declared.names.some(
+        (name: string) => (name.trim().toLowerCase().split('/').pop() ?? '') === target,
+      )
+    })
+    .map((candidate) => candidate.manifest?.displayName || candidate.name)
+}
+
+function thirdPartyCard(
+  extension: ExtensionInventoryItem,
+  all: ExtensionInventoryItem[],
+): HTMLElement {
+  const card = document.createElement('details')
+  card.className = 'so-butler-system-advice'
+  card.dataset.extension = extension.name
+  const summary = document.createElement('summary')
+  const displayName = extension.manifest?.displayName || extension.name
+  const stateLabel = extension.isSelf
+    ? '受保护，不建议关闭'
+    : extension.configuredEnabled ? '当前启用' : '当前禁用'
+  summary.textContent = `${displayName} · ${stateLabel}`
+  const content = el('div', 'so-butler-system-advice-body')
+
+  text(content, `扩展标识：${extension.name}${extension.manifest?.version ? ` · 版本 ${extension.manifest.version}` : ''}`)
+
+  if (extension.isSelf) {
+    text(content, '这是 st-stage 自己。关掉它会同时失去手机、立绘、图库、变量、导出和管家本身，请到 SillyTavern 扩展管理里操作，管家不提供自我关闭入口。', 'so-butler-alert')
   }
-  return labels[experiment.status]
+
+  // 只陈述 manifest 声明了什么，以及由此可推断的代价方向；不给耗时数字
+  const declares: string[] = []
+  if (extension.manifest?.css) declares.push('样式表（参与每次重绘）')
+  if (extension.manifest?.js) declares.push('脚本')
+  const modules = extension.manifest?.requiredModules
+  if (modules?.status === 'valid' && modules.names.length > 0) {
+    declares.push(`后端模块：${modules.names.join('、')}（需要服务器响应）`)
+  }
+  text(content, declares.length > 0 ? `声明了：${declares.join('；')}` : '清单里没有声明样式表或后端模块。')
+
+  const dependencies = extension.manifest?.dependencies
+  if (dependencies?.status === 'valid' && dependencies.names.length > 0) {
+    text(content, `它依赖：${dependencies.names.join('、')}。这些先关掉的话，本扩展也会失效。`)
+  }
+  const dependents = dependentsOf(extension, all)
+  if (dependents.length > 0) {
+    text(content, `依赖它的扩展：${dependents.join('、')}。要关它请先关这些，否则会连带失效。`, 'so-butler-alert')
+  }
+
+  if (extension.manifest?.loadingOrder !== undefined) {
+    text(content, `加载顺序：${valueText(extension.manifest.loadingOrder)}`, 'so-butler-muted')
+  }
+  if (!extension.manifest) {
+    text(content, '读不到这个扩展的清单，因此无法说明它声明了什么。不提供关闭或性能结论。', 'so-butler-muted')
+  }
+
+  text(content, '关闭方法：SillyTavern「扩展」管理里停用，然后刷新页面。刷新前脚本和样式仍在运行。', 'so-butler-muted')
+  card.append(summary, content)
+  return card
 }
 
 export function buildExtensionModal(
@@ -234,7 +299,6 @@ export function buildExtensionModal(
   return (body: HTMLElement) => {
     let disposed = false
     let inventory: ExtensionInventoryResult | null = null
-    let selected = new Set<string>()
     let busy = false
     let notice = ''
     let emergencyBackup = readEmergencyBackup(services.backupStorage)
@@ -254,46 +318,31 @@ export function buildExtensionModal(
       }
     }
 
-    const renderPending = (experiment: ButlerExperiment) => {
-      title(body, '临时关闭扩展找卡顿')
-      text(body, `当前排查方式：${experiment.kind === 'binaryIsolation' ? '分批缩小范围' : '对比所选扩展'} · 第 ${experiment.currentRound} 轮`)
-      text(body, `状态：${experimentStatus(experiment)}`, experiment.notes ? 'so-butler-alert' : 'so-butler-lead')
-      if (experiment.notes) text(body, experiment.notes, 'so-butler-alert')
-      text(body, `本轮暂时禁用：${(experiment.trialDisabledExtensions ?? experiment.candidateExtensions).join('、')}`)
-      text(body, '最初禁用清单已同时保存在管家数据、localStorage 和控制台恢复命令中。')
-
-      if (experiment.status === 'sampling') {
-        body.append(appButton(busy ? '正在检查' : '检查关闭后的表现', () => run(controller.sampleExperiment)))
-      }
-      if (experiment.status === 'awaitingDecision') {
-        if (
-          experiment.kind === 'binaryIsolation' &&
-          experiment.candidateExtensions.length > 1 &&
-          experiment.reloadRequiredAfterDecision === undefined
-        ) {
-          const actions = el('div', 'so-butler-actions')
-          actions.append(
-            appButton('变流畅了', () => run(() => controller.advanceBinary(true))),
-            appButton('没有变流畅', () => run(() => controller.advanceBinary(false))),
-          )
-          body.append(actions)
-        }
-        const decisions = el('div', 'so-butler-actions')
-        decisions.append(
-          appButton('保持这些扩展关闭', () => run(() => controller.finishExperiment('keep'))),
-          appButton('恢复原来的扩展状态', () => run(() => controller.finishExperiment('restore'))),
-        )
-        body.append(decisions)
-      }
+    /**
+     * 升级搁浅救援：旧版本的"临时关闭扩展找卡顿"流程已移除，但升级前正处在流程中间的
+     * 用户，扩展还停在被禁用的状态。直接删掉待处理流程会让他们既看不到自己关了什么、
+     * 也没有一键恢复的入口，只能去 localStorage 里翻。
+     *
+     * 所以保留一张一次性恢复卡：显示原始禁用清单 + 恢复按钮。恢复后清空待处理状态，
+     * 卡片不再出现。这里不复现任何采样/二分步骤——那套流程不再存在。
+     */
+    const renderStrandedExperiment = (experiment: ButlerExperiment) => {
+      title(body, '恢复上次排查前的扩展状态')
+      text(body, '「临时关闭扩展找卡顿」流程已改为只读的扩展指南。你上次的排查还没结束，下面是它当时暂时禁用的扩展。', 'so-butler-lead')
+      text(body, `上次暂时禁用：${(experiment.trialDisabledExtensions ?? experiment.candidateExtensions).join('、') || '（清单为空）'}`)
+      text(body, `排查前的原始禁用清单：${experiment.originalDisabledExtensions.join('、') || '（原本没有禁用任何扩展）'}`)
+      body.append(appButton(busy ? '正在恢复…' : '恢复排查前的扩展状态', () => run(async () => {
+        await controller.discardStrandedExperiment()
+        notice = '已恢复排查前的扩展状态。刷新 SillyTavern 后生效。'
+      })))
+      text(body, '恢复后请刷新页面：扩展的脚本与样式只有刷新才真正停止或重新加载。', 'so-butler-muted')
       if (notice) text(body, notice, 'so-butler-alert')
     }
 
     const renderInventory = (ready: Extract<ExtensionInventoryResult, { status: 'ready' }>) => {
-      title(body, '临时关闭扩展找卡顿')
-      text(body, '用途：暂时关闭可疑的第三方扩展，刷新 SillyTavern 后重复刚才的操作。如果变流畅了，就恢复扩展并决定是否保留排查结果。', 'so-butler-lead')
-      text(body, '使用顺序：1. 勾选可疑扩展 → 2. 开始排查 → 3. 刷新页面并重复同一操作 → 4. 保留结果或恢复原清单。', 'so-butler-text')
-      text(body, '扩展脚本和样式只有刷新后才会真正停止加载；管家使用 SillyTavern 官方禁用接口，不修改内部数组。', 'so-butler-muted')
-      if (!ready.governance.writable) text(body, ready.governance.reason ?? '当前版本只支持查看。', 'so-butler-alert')
+      title(body, '扩展指南')
+      text(body, '用途：看懂每个扩展做什么、大致的性能代价、什么情况下可以放心关掉。开关一律由你在 SillyTavern 自己的「扩展」管理里操作，管家不代你改第三方扩展的启停。', 'so-butler-lead')
+      text(body, '扩展脚本和样式只有刷新后才会真正停止或重新加载，所以改完记得刷新页面再看效果。', 'so-butler-muted')
       if (emergencyBackup) {
         const backup = foldSection('检测到紧急恢复备份', true, 'butler-emergency-backup')
         text(backup.body, `保存时间：${new Date(emergencyBackup.createdAt).toLocaleString()} · 原禁用清单 ${emergencyBackup.disabledExtensions.length} 项。`)
@@ -334,51 +383,21 @@ export function buildExtensionModal(
       if (systemExtensions.length === 0) text(systemList, '当前没有读取到内置扩展。', 'so-butler-muted')
       body.append(systemList)
 
-      text(body, '第三方扩展排查', 'so-butler-section-title')
-      const list = el('div', 'so-butler-extension-list')
+      text(body, '第三方扩展指南', 'so-butler-section-title')
+      text(body, '这里只读列出每个第三方扩展声明了什么、谁依赖它、关闭前要注意什么。管家不代你开关任何第三方扩展——要停用请到 SillyTavern 自己的「扩展」管理里操作，改完刷新页面才真正生效。', 'so-butler-lead')
       const thirdPartyExtensions = ready.extensions.filter((extension) => extension.type.toLowerCase() !== 'system')
+      const list = el('div', 'so-butler-extension-list')
       for (const extension of thirdPartyExtensions) {
-        const row = el('label', 'so-butler-extension-row')
-        const checkbox = document.createElement('input')
-        checkbox.type = 'checkbox'
-        checkbox.value = extension.name
-        checkbox.checked = selected.has(extension.name)
-        checkbox.disabled = extension.isSelf || !extension.configuredEnabled || !ready.governance.writable
-        checkbox.addEventListener('change', () => {
-          if (checkbox.checked) selected.add(extension.name)
-          else selected.delete(extension.name)
-        })
-        const label = el('span', 'so-butler-extension-name')
-        label.textContent = extension.manifest?.displayName
-          ? `${extension.manifest.displayName} (${extension.name})`
-          : extension.name
-        const state = el('small', 'so-butler-muted')
-        state.textContent = extension.isSelf
-          ? '受保护'
-          : extension.configuredEnabled ? `${extension.type} · 当前启用` : `${extension.type} · 当前禁用`
-        row.append(checkbox, label, state)
-        list.append(row)
+        list.append(thirdPartyCard(extension, thirdPartyExtensions))
       }
       if (thirdPartyExtensions.length === 0) text(list, '当前没有读取到第三方扩展。', 'so-butler-muted')
       body.append(list)
 
-      const start = async (kind: ButlerExperiment['kind']) => {
-        const names = [...selected]
-        if (names.length === 0) throw new Error('至少选择一个启用的第三方扩展')
-        const warnings = dependencyWarnings(ready, names)
-        if (warnings.length > 0) {
-          const detail = warnings.map((item) => `${item.dependent} 依赖 ${item.dependency}`).join('\n')
-          if (!services.confirm(`所选扩展存在启用中的依赖方：\n${detail}\n\n仍要开始临时关闭排查吗？`)) return
-        }
-        await controller.startExperiment(kind, names, ready)
-      }
-      const actions = el('div', 'so-butler-actions')
-      actions.append(
-        appButton('开始对比所选扩展', () => run(() => start('selectedExtensions'))),
-        appButton('逐轮缩小可疑扩展', () => run(() => start('binaryIsolation'))),
-      )
-      body.append(actions)
-      text(body, '系统扩展默认不参与；st-stage 自身永远不可选。“逐轮缩小可疑扩展”只会在你勾选的范围里分批排查。')
+      const principles = foldSection('怎么判断一个扩展值不值得关', false, 'butler-extension-principles')
+      for (const line of EXTENSION_COST_PRINCIPLES) text(principles.body, line)
+      body.append(principles.box)
+
+      text(body, '管家不会读取第三方扩展的代码，也测不出单个扩展占了多少帧。上面写的是它自己声明的信息加通用经验，不是对某个扩展的实测结论。要确认到底是谁拖慢的，只能在扩展管理里关掉一个、刷新、重复同一个操作再看整体检查结果。', 'so-butler-muted')
       if (notice) text(body, notice, 'so-butler-alert')
     }
 
@@ -387,16 +406,16 @@ export function buildExtensionModal(
       body.textContent = ''
       const pending = controller.getData().pendingExperiment
       if (pending) {
-        renderPending(pending)
+        renderStrandedExperiment(pending)
         return
       }
       if (!inventory) {
-      title(body, '临时关闭扩展找卡顿')
+        title(body, '扩展指南')
         text(body, '正在读取 SillyTavern 扩展清单...')
         return
       }
       if (inventory.status !== 'ready') {
-        title(body, '临时关闭扩展找卡顿')
+        title(body, '扩展指南')
         text(body, inventory.reason, 'so-butler-alert')
         return
       }
@@ -407,7 +426,6 @@ export function buildExtensionModal(
     void services.readExtensions().then((value) => {
       if (disposed) return
       inventory = value
-      if (value.status === 'ready') selected = new Set(defaultExperimentCandidates(value))
       render()
     })
     return () => { disposed = true }

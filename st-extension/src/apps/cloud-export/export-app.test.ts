@@ -41,6 +41,19 @@ function clickText(container: HTMLElement, text: string): void {
   target.click()
 }
 
+/**
+ * 勾选第一个角色的复选框。
+ *
+ * 角色卡按整体选中：勾选即带上全部聊天与关联世界书，所以不再有
+ * 「选择角色及全部聊天」这个单独按钮。
+ */
+function checkCharacter(container: HTMLElement): void {
+  const box = container.querySelector<HTMLInputElement>('input[type="checkbox"]')
+  if (!box) throw new Error('character checkbox not found')
+  box.checked = true
+  box.dispatchEvent(new Event('change'))
+}
+
 describe('cloud export app', () => {
   it('loads only the character list on mount and lazily loads chats once', async () => {
     const bridge = fakeBridge()
@@ -88,13 +101,13 @@ describe('cloud export app', () => {
     expect(bridge.loadSettingsAssets).toHaveBeenCalledOnce()
   })
 
-  it('selects a character and all of its chats as one batch action', async () => {
+  it('selects a character together with all of its chats', async () => {
     const bridge = fakeBridge()
     const container = document.createElement('div')
     cloudExportApp(bridge).mount(container, context())
     await settle()
 
-    clickText(container, '选择角色及全部聊天')
+    checkCharacter(container)
     await settle()
     expect(container.textContent).toContain('已选 1 个角色、1 段聊天')
   })
@@ -112,7 +125,7 @@ describe('cloud export app', () => {
     details.open = true
     details.dispatchEvent(new Event('toggle'))
     await settle()
-    clickText(container, '选择角色及全部聊天')
+    checkCharacter(container)
     resolveChats([{ id: 'Alice.png:first', name: 'first', path: 'first.jsonl' }])
     await settle()
 
@@ -126,7 +139,7 @@ describe('cloud export app', () => {
     cloudExportApp(bridge).mount(container, context())
     await settle()
 
-    clickText(container, '选择角色及全部聊天')
+    checkCharacter(container)
     await settle()
     expect(container.textContent).toContain('已选 1 个角色、1 段聊天')
 
@@ -146,7 +159,7 @@ describe('cloud export app', () => {
     cloudExportApp(bridge).mount(container, context())
     await settle()
 
-    clickText(container, '选择角色及全部聊天')
+    checkCharacter(container)
     await settle()
     expect(container.textContent).toContain('已选 1 个角色、1 段聊天')
 
@@ -173,6 +186,215 @@ describe('cloud export app', () => {
     await settle()
 
     expect(container.textContent).toContain('已选 1 个角色、1 段聊天')
+  })
+
+  // 真机反馈的 bug：角色卡与它的聊天、关联世界书是一体的，只导出 PNG 会缺件。
+  // 内嵌世界书（data.character_book）和局部正则（data.extensions.regex_scripts）
+  // 写在卡里，PNG 导出自带；但 data.extensions.world 只是个指向独立文件的名字。
+  it('bundles the linked worldbook when a character is selected', async () => {
+    const bridge = fakeBridge()
+    vi.mocked(bridge.listCharacters).mockResolvedValue([
+      { ...alice, linkedWorldName: 'World' },
+    ])
+    const container = document.createElement('div')
+    cloudExportApp(bridge).mount(container, context())
+    await settle()
+
+    // 角色分类挂载时不该预读世界书清单
+    expect(bridge.listWorldbooks).not.toHaveBeenCalled()
+    // 清单未读时只说会一起导出，不能说"没找到"——那是冤枉
+    expect(container.textContent).toContain('关联世界书「World」按酒馆里的当前内容导出')
+    expect(container.textContent).not.toContain('没找到')
+
+    checkCharacter(container)
+    await settle()
+
+    expect(bridge.listWorldbooks).toHaveBeenCalledOnce()
+    expect(container.textContent).toContain('已选 1 个角色、1 段聊天、1 本世界书')
+  })
+
+  it('matches the linked worldbook regardless of the .json suffix', async () => {
+    const bridge = fakeBridge()
+    vi.mocked(bridge.listCharacters).mockResolvedValue([
+      { ...alice, linkedWorldName: 'World.json' },
+    ])
+    const container = document.createElement('div')
+    cloudExportApp(bridge).mount(container, context())
+    await settle()
+
+    checkCharacter(container)
+    await settle()
+    expect(container.textContent).toContain('1 本世界书')
+  })
+
+  it('still selects the character but warns when the linked worldbook is missing', async () => {
+    const bridge = fakeBridge()
+    vi.mocked(bridge.listCharacters).mockResolvedValue([
+      { ...alice, linkedWorldName: 'Vanished' },
+    ])
+    const ctx = context()
+    const container = document.createElement('div')
+    cloudExportApp(bridge).mount(container, ctx)
+    await settle()
+
+    checkCharacter(container)
+    await settle()
+
+    // 角色卡本身一定导得出，缺件必须明说而不是静默
+    expect(container.textContent).toContain('已选 1 个角色')
+    expect(container.textContent).toContain('0 本世界书')
+    expect(ctx.toast).toHaveBeenCalledWith(
+      'warning',
+      expect.stringContaining('Vanished'),
+    )
+  })
+
+  it('reads the worldbook list once for a batch of characters', async () => {
+    const bridge = fakeBridge()
+    vi.mocked(bridge.listCharacters).mockResolvedValue([
+      { ...alice, linkedWorldName: 'World' },
+      { id: 'Bob.png', name: 'Bob', avatar: 'Bob.png', chats: [], linkedWorldName: 'World' },
+    ])
+    vi.mocked(bridge.listChats).mockImplementation(async (character) => [
+      { id: `${character.id}:first`, name: 'first', path: 'first.jsonl' },
+    ])
+    const container = document.createElement('div')
+    cloudExportApp(bridge).mount(container, context())
+    await settle()
+
+    clickText(container, '全选当前结果')
+    await settle()
+
+    expect(bridge.listWorldbooks).toHaveBeenCalledOnce()
+    expect(container.textContent).toContain('已选 2 个角色、2 段聊天、1 本世界书')
+  })
+
+  // 计数器涨了不等于文件进了包，这里验证到实际产出的文件路径
+  it('writes the linked worldbook into the exported archive', async () => {
+    const bridge = fakeBridge()
+    vi.mocked(bridge.listCharacters).mockResolvedValue([
+      { ...alice, linkedWorldName: 'World' },
+    ])
+    const download = vi.fn()
+    const container = document.createElement('div')
+    cloudExportApp(bridge, download).mount(container, context())
+    await settle()
+
+    checkCharacter(container)
+    await settle()
+    clickText(container, '导出所选备份')
+    await settle()
+
+    expect(bridge.readWorldbook).toHaveBeenCalledOnce()
+    expect(download).toHaveBeenCalledOnce()
+    const paths = (download.mock.calls[0][0] as Array<{ path: string }>).map((file) => file.path)
+    expect(paths).toContain('characters/Alice.png')
+    expect(paths).toContain('worlds/World.json')
+    expect(paths.some((path) => path.startsWith('chats/'))).toBe(true)
+  })
+
+  /**
+   * 导出的必须是酒馆里那本实时世界书，不是卡内嵌的快照。
+   *
+   * 用户在玩的过程中改世界书，改动只落在 worlds/<名称>.json 上；卡里的
+   * character_book 还是做卡时的旧内容。拿快照导出等于丢掉用户的修改。
+   */
+  it('exports the live worldbook content rather than the card snapshot', async () => {
+    const bridge = fakeBridge()
+    vi.mocked(bridge.listCharacters).mockResolvedValue([
+      { ...alice, linkedWorldName: 'World' },
+    ])
+    // 磁盘上的实时内容：用户后来加过条目
+    vi.mocked(bridge.readWorldbook).mockResolvedValue({
+      entries: { '1': { content: '用户后来改过的条目' } },
+    })
+    const download = vi.fn()
+    const container = document.createElement('div')
+    cloudExportApp(bridge, download).mount(container, context())
+    await settle()
+
+    checkCharacter(container)
+    await settle()
+    clickText(container, '导出所选备份')
+    await settle()
+
+    // 内容取自 /api/worldinfo/get，而不是角色卡里的 character_book
+    expect(bridge.readWorldbook).toHaveBeenCalledOnce()
+    const files = download.mock.calls[0][0] as Array<{ path: string; data: string }>
+    const world = files.find((file) => file.path === 'worlds/World.json')
+    expect(world).toBeDefined()
+    expect(String(world!.data)).toContain('用户后来改过的条目')
+  })
+
+  it('keeps the scroll position when a checkbox triggers a re-render', async () => {
+    // jsdom 没有布局，scrollHeight/clientHeight 默认都是 0，滚动容器探测会一个都找不到。
+    // 这里手动搭出一个"真的在滚"的祖先：手机外壳 .so-phone-screen 就是这个角色。
+    const screen = document.createElement('div')
+    screen.style.overflowY = 'auto'
+    Object.defineProperty(screen, 'scrollHeight', { value: 2000, configurable: true })
+    Object.defineProperty(screen, 'clientHeight', { value: 400, configurable: true })
+    let scrollTop = 0
+    Object.defineProperty(screen, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => { scrollTop = value },
+    })
+    const container = document.createElement('div')
+    screen.append(container)
+    document.body.append(screen)
+
+    try {
+      cloudExportApp(fakeBridge()).mount(container, context())
+      await settle()
+
+      screen.scrollTop = 640
+      checkCharacter(container)
+      await settle()
+
+      // 勾选会重渲染（计数器、进度、勾选态同在一棵树里）。回到顶部就没法连续勾选了。
+      expect(screen.scrollTop).toBe(640)
+    } finally {
+      screen.remove()
+    }
+  })
+
+  /**
+   * 样式靠选择器匹配 DOM 才生效，改结构时很容易把选择器甩掉（标签管理弹窗就是
+   * 这么失效的：弹窗挂到了 backdrop 上，`.so-manager` 后代选择器全部落空）。
+   * 这里直接用 phone-shell.css 里写的那几个选择器去 matches()，结构一改就红。
+   */
+  it('keeps the cloud-export style hooks matching the rendered structure', async () => {
+    const container = document.createElement('div')
+    cloudExportApp(fakeBridge()).mount(container, context())
+    await settle()
+
+    // 四个分类横排依赖 `.cloud-export-tabs > .so-app-btn`：必须是直接子元素
+    const tabs = container.querySelector('.cloud-export-tabs')
+    expect(tabs).not.toBeNull()
+    const tabButtons = [...tabs!.querySelectorAll<HTMLElement>('[role="button"]')]
+    expect(tabButtons).toHaveLength(4)
+    for (const button of tabButtons) {
+      expect(button.matches('.cloud-export-tabs > .so-app-btn')).toBe(true)
+    }
+    // 选中态此前只有类名没有样式，现在有了，别再把类名丢掉
+    expect(tabs!.querySelectorAll('.cloud-export-active')).toHaveLength(1)
+
+    // 层级三层：卡片 → 角色名（加粗）→ 聊天（缩进 + 左竖线）
+    const row = container.querySelector('.cloud-export-character')
+    expect(row).not.toBeNull()
+    expect(row!.querySelector('.cloud-export-character-name')).not.toBeNull()
+    expect(row!.querySelector('.cloud-export-bundle-note')).not.toBeNull()
+
+    const chats = row!.querySelector('details')
+    expect(chats!.matches('.cloud-export-chats')).toBe(true)
+
+    chats!.open = true
+    chats!.dispatchEvent(new Event('toggle'))
+    await settle()
+    const chatRow = container.querySelector('.cloud-export-chat')
+    expect(chatRow).not.toBeNull()
+    // 聊天行必须在 details 内部，缩进与左竖线是靠 .cloud-export-chats 提供的
+    expect(container.querySelector('.cloud-export-chats .cloud-export-chat')).not.toBeNull()
   })
 
   it('does not download an empty package', async () => {

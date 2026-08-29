@@ -5112,12 +5112,25 @@ var browserCheckerboardCodec = {
 async function cleanCheckerboardImage(blob, codec = browserCheckerboardCodec) {
   if (!blob.type.startsWith("image/")) throw new Error("所选内容不是图片");
   const decoded = await codec.decode(blob);
+  if (hasTransparentPixels(decoded.data)) {
+    throw new Error("这张图已经带透明通道，不需要去棋盘格。此功能只处理「棋盘格被烤成不透明像素」的图片");
+  }
   const cleaned = removeBakedCheckerboard(decoded);
-  if (!cleaned) throw new Error("没有确认到可安全去除的棋盘格背景");
+  if (!cleaned) {
+    throw new Error(
+      "没有在这张图里确认到可安全去除的棋盘格背景：需要图片四边连通、且是两级浅灰交替的方格。纯色背景、深色或彩色格子、以及已被压缩糊掉边界的格子都会被拒绝，以免误删画面内容"
+    );
+  }
   return {
     blob: await codec.encodePng(cleaned.data, decoded.width, decoded.height),
     removedPixels: cleaned.removedPixels
   };
+}
+function hasTransparentPixels(data) {
+  for (let offset = 3; offset < data.length; offset += 4) {
+    if (data[offset] < 250) return true;
+  }
+  return false;
 }
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -6144,10 +6157,12 @@ function commitAndRefresh(context, pack) {
     context.refresh();
   }
 }
+var CHECKERBOARD_HINT = "检测并去除棋盘格：只适用于「棋盘格被烤成不透明像素」的图片，要求四边连通且是两级浅灰交替的方格。已带透明通道的图不需要处理，纯色/深色/彩色背景会被拒绝，以免误删画面内容。";
 function createCheckerboardAction(context) {
   return {
     id: "checkerboard",
     label: "检测并去除棋盘格",
+    hint: CHECKERBOARD_HINT,
     icon: "▦",
     destructive: false,
     allowedInReadonly: true,
@@ -6344,6 +6359,7 @@ function openSpriteLightbox(options) {
       const label = element("span", "so-lightbox-action-label");
       label.textContent = action.label;
       button2.append(label);
+      if (action.hint) button2.title = action.hint;
       button2.addEventListener("click", (event) => {
         event.stopPropagation();
         if (button2.disabled) return;
@@ -8552,7 +8568,7 @@ ${preview}
     for (const action of sharedActions) {
       bar.append(iconButton(
         action.icon ?? action.label,
-        action.label,
+        action.hint ?? action.label,
         () => runSpriteAction(action),
         "so-icon-btn",
         Boolean(action.disabled)
@@ -9044,7 +9060,7 @@ function mountSettingsPanel(deps) {
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
-  const version = false ? "" : ` v${"0.9.0"}（构建 ${"2026-08-27 22:59"}）`;
+  const version = false ? "" : ` v${"0.9.0"}`;
   hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
   return () => wrapper.remove();
@@ -10594,11 +10610,11 @@ function diagnose(snapshot, current2) {
     confidence: "correlation",
     explanation: {
       detected: `记录到 ${extensionResources.length} 个扩展的加载资源。`,
-      change: "只把这些扩展列为“临时关闭扩展找卡顿”的对比对象，不会自动关闭。",
+      change: "只在扩展指南里列出这些扩展供你参考，不会自动关闭任何一个。",
       reason: "下载或加载记录只能提供线索，不能据此判断某个扩展持续占用处理器或内存。",
-      impact: "临时关闭扩展可能影响对应功能，必须由用户自己选择。",
+      impact: "关闭扩展会影响对应功能，要不要关由你自己决定。",
       reload: "扩展启停需要刷新后才真正改变加载状态。",
-      restore: "扩展排查会保留最初的禁用清单，可以全部恢复。"
+      restore: "启停都在 SillyTavern 自己的扩展管理里操作，本工具不改动你的扩展禁用清单。"
     }
   }));
   const page = numberRecord(snapshot.metrics.page);
@@ -10660,28 +10676,6 @@ function uniqueSorted(values) {
 function isSelf(name) {
   return name === "st-stage" || name === "third-party/st-stage";
 }
-function isSystem(item) {
-  return item.type.toLowerCase() === "system";
-}
-function trialForCandidates(kind, candidates) {
-  if (kind === "selectedExtensions") return [...candidates];
-  return candidates.slice(0, Math.max(1, Math.ceil(candidates.length / 2)));
-}
-function defaultExperimentCandidates(inventory) {
-  return inventory.extensions.filter((item) => item.configuredEnabled && !item.isSelf && !isSelf(item.name) && !isSystem(item)).map((item) => item.name);
-}
-function dependencyWarnings(inventory, selectedNames) {
-  const selected = new Set(selectedNames);
-  const warnings = [];
-  for (const dependent of inventory.extensions) {
-    if (!dependent.configuredEnabled || selected.has(dependent.name)) continue;
-    if (dependent.manifest?.dependencies.status !== "valid") continue;
-    for (const dependency of dependent.manifest.dependencies.names) {
-      if (selected.has(dependency)) warnings.push({ dependency, dependent: dependent.name });
-    }
-  }
-  return warnings;
-}
 function recoveryCommand(backup) {
   const disabled = JSON.stringify(uniqueSorted(backup.disabledExtensions));
   return `(async()=>{const m=await import('/scripts/extensions.js');const d=new Set(${disabled});for(const n of m.extensionNames){await (d.has(n)?m.disableExtension(n,false):m.enableExtension(n,false));}location.reload();})()`;
@@ -10711,25 +10705,6 @@ function readEmergencyBackup(storage) {
   } catch {
     return null;
   }
-}
-function prepareExtensionExperiment(kind, candidateNames, inventory, baselineMeasurementId, deps) {
-  const known = new Set(inventory.extensions.map((item) => item.name));
-  const candidates = uniqueSorted(candidateNames);
-  if (candidates.some(isSelf)) throw new Error("st-stage 自身不能进入扩展实验");
-  const unknown = candidates.filter((name) => !known.has(name));
-  if (unknown.length > 0) throw new Error(`未找到扩展：${unknown.join("、")}`);
-  if (candidates.length === 0) throw new Error("至少选择一个扩展");
-  return {
-    id: deps.createId(),
-    kind,
-    status: "prepared",
-    startedAt: deps.now(),
-    originalDisabledExtensions: uniqueSorted(inventory.disabledExtensions),
-    candidateExtensions: candidates,
-    trialDisabledExtensions: trialForCandidates(kind, candidates),
-    currentRound: 1,
-    baselineMeasurementId
-  };
 }
 async function applyDisabledSet(desiredDisabledExtensions, deps, reloadOnSuccess) {
   const inventory = await deps.readExtensions();
@@ -10771,51 +10746,14 @@ async function restoreEmergencyExtensionBackup(backup, deps) {
   if (batch.reloadRequired) await deps.reloadPage();
   return batch;
 }
-function desiredForTrial(experiment) {
-  return uniqueSorted([
-    ...experiment.originalDisabledExtensions,
-    ...experiment.trialDisabledExtensions ?? experiment.candidateExtensions
-  ]);
-}
-function storeEmergencyBackup(experiment, deps) {
-  const backup = buildEmergencyBackup(experiment.originalDisabledExtensions, deps.now());
-  deps.backupStorage.setItem(BACKUP_STORAGE_KEY, JSON.stringify(backup));
-  deps.warnRecovery(buildEmergencyBackup.recoveryCommand(backup));
-}
 function partialFailureNote(prefix, batch) {
   const applied = batch.applied.length > 0 ? batch.applied.join("、") : "无";
   const failed = batch.failed.map((item) => `${item.name}（${item.error}）`).join("、");
   return `${prefix}；已修改：${applied}；失败：${failed}。页面未刷新，可保留当前状态或恢复原清单。`;
 }
-async function startExtensionExperiment(source, deps) {
-  if (source.status !== "prepared") throw new Error("实验尚未处于准备状态");
-  const experiment = structuredClone(source);
-  await deps.persistExperiment(experiment);
-  storeEmergencyBackup(experiment, deps);
-  const batch = await applyDisabledSet(desiredForTrial(experiment), deps, false);
-  if (!batch.ok) {
-    experiment.status = "awaitingDecision";
-    experiment.reloadRequiredAfterDecision = batch.reloadRequired;
-    experiment.notes = partialFailureNote("扩展变更未全部成功", batch);
-    await deps.persistExperiment(experiment);
-    return { experiment, batch };
-  }
-  experiment.status = batch.reloadRequired ? "awaitingReload" : "sampling";
-  await deps.persistExperiment(experiment);
-  if (batch.reloadRequired) await deps.reloadPage();
-  return { experiment, batch };
-}
 function resumeExtensionExperiment(source) {
   if (source.status !== "awaitingReload") return structuredClone(source);
   return { ...structuredClone(source), status: "sampling" };
-}
-function recordExperimentComparison(source, comparisonMeasurementId) {
-  if (source.status !== "sampling") throw new Error("实验未处于复测阶段");
-  return {
-    ...structuredClone(source),
-    status: "awaitingDecision",
-    comparisonMeasurementId
-  };
 }
 async function finishExtensionExperiment(source, decision, deps) {
   if (source.status !== "awaitingDecision") throw new Error("实验尚未等待用户决定");
@@ -10849,35 +10787,6 @@ async function finishExtensionExperiment(source, decision, deps) {
   deps.backupStorage.removeItem(BACKUP_STORAGE_KEY);
   if (completed.reloadRequiredAfterDecision) await deps.reloadPage();
   return completed;
-}
-async function advanceBinaryIsolation(source, symptomImproved, deps) {
-  if (source.kind !== "binaryIsolation" || source.status !== "awaitingDecision") {
-    throw new Error("二分实验尚未等待本轮判断");
-  }
-  const tested = new Set(source.trialDisabledExtensions ?? []);
-  const candidates = symptomImproved ? source.candidateExtensions.filter((name) => tested.has(name)) : source.candidateExtensions.filter((name) => !tested.has(name));
-  const next = {
-    ...structuredClone(source),
-    status: "prepared",
-    candidateExtensions: candidates,
-    trialDisabledExtensions: trialForCandidates("binaryIsolation", candidates),
-    currentRound: source.currentRound + 1,
-    comparisonMeasurementId: void 0,
-    reloadRequiredAfterDecision: void 0
-  };
-  await deps.persistExperiment(next);
-  const batch = await applyDisabledSet(desiredForTrial(next), deps, false);
-  if (!batch.ok) {
-    next.status = "awaitingDecision";
-    next.reloadRequiredAfterDecision = batch.reloadRequired;
-    next.notes = partialFailureNote("本轮扩展变更未全部成功", batch);
-    await deps.persistExperiment(next);
-    return next;
-  }
-  next.status = batch.reloadRequired ? "awaitingReload" : "sampling";
-  await deps.persistExperiment(next);
-  if (batch.reloadRequired) await deps.reloadPage();
-  return next;
 }
 
 // st-extension/src/apps/butler/types.ts
@@ -11502,23 +11411,69 @@ function buildReportModal(controller) {
     body.append(history.box);
   };
 }
-function experimentStatus(experiment) {
-  const labels = {
-    prepared: "准备中",
-    awaitingReload: "等待刷新",
-    sampling: "等待关闭后检查",
-    awaitingDecision: "等待结果决定",
-    restoring: "正在恢复",
-    completed: "已完成",
-    failed: "失败"
-  };
-  return labels[experiment.status];
+var EXTENSION_COST_PRINCIPLES = [
+  "按代价从大到小看：每条消息都要处理的（改写、翻译、朗读、表情切换）＞ 每次生成都要请求外部服务的 ＞ 只在你点按钮时才干活的 ＞ 只加了几个按钮或设置项的。",
+  "声明了样式表的扩展会参与每次重绘。楼层多、开了动画或模糊效果时，这部分更明显。",
+  "需要后端模块的扩展（向量、语音、图片生成）会等服务器响应。服务不通时，卡的可能是等待超时，不是浏览器算不过来。",
+  "有依赖方的扩展不能单独关：先关依赖它的那个，否则被依赖方一起失效，你会看到一片功能同时坏掉而误判。",
+  '长聊天里最先该怀疑的不是扩展数量，而是"每楼都跑一遍"的处理。楼层数翻倍，这类代价就翻倍。',
+  "关之前先想清楚失去什么：正则和记忆类扩展常被角色卡或预设依赖，关掉会让玩法直接不对，代价通常大于省下的性能。"
+];
+function dependentsOf(extension, all) {
+  const target = extension.name.trim().toLowerCase().split("/").pop() ?? "";
+  if (!target) return [];
+  return all.filter((candidate) => {
+    if (candidate.name === extension.name) return false;
+    const declared = candidate.manifest?.dependencies;
+    if (!declared || declared.status !== "valid") return false;
+    return declared.names.some(
+      (name) => (name.trim().toLowerCase().split("/").pop() ?? "") === target
+    );
+  }).map((candidate) => candidate.manifest?.displayName || candidate.name);
+}
+function thirdPartyCard(extension, all) {
+  const card = document.createElement("details");
+  card.className = "so-butler-system-advice";
+  card.dataset.extension = extension.name;
+  const summary = document.createElement("summary");
+  const displayName = extension.manifest?.displayName || extension.name;
+  const stateLabel = extension.isSelf ? "受保护，不建议关闭" : extension.configuredEnabled ? "当前启用" : "当前禁用";
+  summary.textContent = `${displayName} · ${stateLabel}`;
+  const content = el2("div", "so-butler-system-advice-body");
+  text(content, `扩展标识：${extension.name}${extension.manifest?.version ? ` · 版本 ${extension.manifest.version}` : ""}`);
+  if (extension.isSelf) {
+    text(content, "这是 st-stage 自己。关掉它会同时失去手机、立绘、图库、变量、导出和管家本身，请到 SillyTavern 扩展管理里操作，管家不提供自我关闭入口。", "so-butler-alert");
+  }
+  const declares = [];
+  if (extension.manifest?.css) declares.push("样式表（参与每次重绘）");
+  if (extension.manifest?.js) declares.push("脚本");
+  const modules = extension.manifest?.requiredModules;
+  if (modules?.status === "valid" && modules.names.length > 0) {
+    declares.push(`后端模块：${modules.names.join("、")}（需要服务器响应）`);
+  }
+  text(content, declares.length > 0 ? `声明了：${declares.join("；")}` : "清单里没有声明样式表或后端模块。");
+  const dependencies = extension.manifest?.dependencies;
+  if (dependencies?.status === "valid" && dependencies.names.length > 0) {
+    text(content, `它依赖：${dependencies.names.join("、")}。这些先关掉的话，本扩展也会失效。`);
+  }
+  const dependents = dependentsOf(extension, all);
+  if (dependents.length > 0) {
+    text(content, `依赖它的扩展：${dependents.join("、")}。要关它请先关这些，否则会连带失效。`, "so-butler-alert");
+  }
+  if (extension.manifest?.loadingOrder !== void 0) {
+    text(content, `加载顺序：${valueText(extension.manifest.loadingOrder)}`, "so-butler-muted");
+  }
+  if (!extension.manifest) {
+    text(content, "读不到这个扩展的清单，因此无法说明它声明了什么。不提供关闭或性能结论。", "so-butler-muted");
+  }
+  text(content, "关闭方法：SillyTavern「扩展」管理里停用，然后刷新页面。刷新前脚本和样式仍在运行。", "so-butler-muted");
+  card.append(summary, content);
+  return card;
 }
 function buildExtensionModal(services, controller) {
   return (body) => {
     let disposed = false;
     let inventory = null;
-    let selected = /* @__PURE__ */ new Set();
     let busy = false;
     let notice = "";
     let emergencyBackup = readEmergencyBackup(services.backupStorage);
@@ -11536,40 +11491,22 @@ function buildExtensionModal(services, controller) {
         if (!disposed) render2();
       }
     };
-    const renderPending = (experiment) => {
-      title(body, "临时关闭扩展找卡顿");
-      text(body, `当前排查方式：${experiment.kind === "binaryIsolation" ? "分批缩小范围" : "对比所选扩展"} · 第 ${experiment.currentRound} 轮`);
-      text(body, `状态：${experimentStatus(experiment)}`, experiment.notes ? "so-butler-alert" : "so-butler-lead");
-      if (experiment.notes) text(body, experiment.notes, "so-butler-alert");
-      text(body, `本轮暂时禁用：${(experiment.trialDisabledExtensions ?? experiment.candidateExtensions).join("、")}`);
-      text(body, "最初禁用清单已同时保存在管家数据、localStorage 和控制台恢复命令中。");
-      if (experiment.status === "sampling") {
-        body.append(appButton(busy ? "正在检查" : "检查关闭后的表现", () => run(controller.sampleExperiment)));
-      }
-      if (experiment.status === "awaitingDecision") {
-        if (experiment.kind === "binaryIsolation" && experiment.candidateExtensions.length > 1 && experiment.reloadRequiredAfterDecision === void 0) {
-          const actions = el2("div", "so-butler-actions");
-          actions.append(
-            appButton("变流畅了", () => run(() => controller.advanceBinary(true))),
-            appButton("没有变流畅", () => run(() => controller.advanceBinary(false)))
-          );
-          body.append(actions);
-        }
-        const decisions = el2("div", "so-butler-actions");
-        decisions.append(
-          appButton("保持这些扩展关闭", () => run(() => controller.finishExperiment("keep"))),
-          appButton("恢复原来的扩展状态", () => run(() => controller.finishExperiment("restore")))
-        );
-        body.append(decisions);
-      }
+    const renderStrandedExperiment = (experiment) => {
+      title(body, "恢复上次排查前的扩展状态");
+      text(body, "「临时关闭扩展找卡顿」流程已改为只读的扩展指南。你上次的排查还没结束，下面是它当时暂时禁用的扩展。", "so-butler-lead");
+      text(body, `上次暂时禁用：${(experiment.trialDisabledExtensions ?? experiment.candidateExtensions).join("、") || "（清单为空）"}`);
+      text(body, `排查前的原始禁用清单：${experiment.originalDisabledExtensions.join("、") || "（原本没有禁用任何扩展）"}`);
+      body.append(appButton(busy ? "正在恢复…" : "恢复排查前的扩展状态", () => run(async () => {
+        await controller.discardStrandedExperiment();
+        notice = "已恢复排查前的扩展状态。刷新 SillyTavern 后生效。";
+      })));
+      text(body, "恢复后请刷新页面：扩展的脚本与样式只有刷新才真正停止或重新加载。", "so-butler-muted");
       if (notice) text(body, notice, "so-butler-alert");
     };
     const renderInventory = (ready) => {
-      title(body, "临时关闭扩展找卡顿");
-      text(body, "用途：暂时关闭可疑的第三方扩展，刷新 SillyTavern 后重复刚才的操作。如果变流畅了，就恢复扩展并决定是否保留排查结果。", "so-butler-lead");
-      text(body, "使用顺序：1. 勾选可疑扩展 → 2. 开始排查 → 3. 刷新页面并重复同一操作 → 4. 保留结果或恢复原清单。", "so-butler-text");
-      text(body, "扩展脚本和样式只有刷新后才会真正停止加载；管家使用 SillyTavern 官方禁用接口，不修改内部数组。", "so-butler-muted");
-      if (!ready.governance.writable) text(body, ready.governance.reason ?? "当前版本只支持查看。", "so-butler-alert");
+      title(body, "扩展指南");
+      text(body, "用途：看懂每个扩展做什么、大致的性能代价、什么情况下可以放心关掉。开关一律由你在 SillyTavern 自己的「扩展」管理里操作，管家不代你改第三方扩展的启停。", "so-butler-lead");
+      text(body, "扩展脚本和样式只有刷新后才会真正停止或重新加载，所以改完记得刷新页面再看效果。", "so-butler-muted");
       if (emergencyBackup) {
         const backup = foldSection("检测到紧急恢复备份", true, "butler-emergency-backup");
         text(backup.body, `保存时间：${new Date(emergencyBackup.createdAt).toLocaleString()} · 原禁用清单 ${emergencyBackup.disabledExtensions.length} 项。`);
@@ -11606,49 +11543,19 @@ function buildExtensionModal(services, controller) {
       }
       if (systemExtensions.length === 0) text(systemList, "当前没有读取到内置扩展。", "so-butler-muted");
       body.append(systemList);
-      text(body, "第三方扩展排查", "so-butler-section-title");
-      const list = el2("div", "so-butler-extension-list");
+      text(body, "第三方扩展指南", "so-butler-section-title");
+      text(body, "这里只读列出每个第三方扩展声明了什么、谁依赖它、关闭前要注意什么。管家不代你开关任何第三方扩展——要停用请到 SillyTavern 自己的「扩展」管理里操作，改完刷新页面才真正生效。", "so-butler-lead");
       const thirdPartyExtensions = ready.extensions.filter((extension) => extension.type.toLowerCase() !== "system");
+      const list = el2("div", "so-butler-extension-list");
       for (const extension of thirdPartyExtensions) {
-        const row = el2("label", "so-butler-extension-row");
-        const checkbox2 = document.createElement("input");
-        checkbox2.type = "checkbox";
-        checkbox2.value = extension.name;
-        checkbox2.checked = selected.has(extension.name);
-        checkbox2.disabled = extension.isSelf || !extension.configuredEnabled || !ready.governance.writable;
-        checkbox2.addEventListener("change", () => {
-          if (checkbox2.checked) selected.add(extension.name);
-          else selected.delete(extension.name);
-        });
-        const label = el2("span", "so-butler-extension-name");
-        label.textContent = extension.manifest?.displayName ? `${extension.manifest.displayName} (${extension.name})` : extension.name;
-        const state = el2("small", "so-butler-muted");
-        state.textContent = extension.isSelf ? "受保护" : extension.configuredEnabled ? `${extension.type} · 当前启用` : `${extension.type} · 当前禁用`;
-        row.append(checkbox2, label, state);
-        list.append(row);
+        list.append(thirdPartyCard(extension, thirdPartyExtensions));
       }
       if (thirdPartyExtensions.length === 0) text(list, "当前没有读取到第三方扩展。", "so-butler-muted");
       body.append(list);
-      const start = async (kind) => {
-        const names = [...selected];
-        if (names.length === 0) throw new Error("至少选择一个启用的第三方扩展");
-        const warnings = dependencyWarnings(ready, names);
-        if (warnings.length > 0) {
-          const detail = warnings.map((item) => `${item.dependent} 依赖 ${item.dependency}`).join("\n");
-          if (!services.confirm(`所选扩展存在启用中的依赖方：
-${detail}
-
-仍要开始临时关闭排查吗？`)) return;
-        }
-        await controller.startExperiment(kind, names, ready);
-      };
-      const actions = el2("div", "so-butler-actions");
-      actions.append(
-        appButton("开始对比所选扩展", () => run(() => start("selectedExtensions"))),
-        appButton("逐轮缩小可疑扩展", () => run(() => start("binaryIsolation")))
-      );
-      body.append(actions);
-      text(body, "系统扩展默认不参与；st-stage 自身永远不可选。“逐轮缩小可疑扩展”只会在你勾选的范围里分批排查。");
+      const principles = foldSection("怎么判断一个扩展值不值得关", false, "butler-extension-principles");
+      for (const line of EXTENSION_COST_PRINCIPLES) text(principles.body, line);
+      body.append(principles.box);
+      text(body, "管家不会读取第三方扩展的代码，也测不出单个扩展占了多少帧。上面写的是它自己声明的信息加通用经验，不是对某个扩展的实测结论。要确认到底是谁拖慢的，只能在扩展管理里关掉一个、刷新、重复同一个操作再看整体检查结果。", "so-butler-muted");
       if (notice) text(body, notice, "so-butler-alert");
     };
     const render2 = () => {
@@ -11656,16 +11563,16 @@ ${detail}
       body.textContent = "";
       const pending = controller.getData().pendingExperiment;
       if (pending) {
-        renderPending(pending);
+        renderStrandedExperiment(pending);
         return;
       }
       if (!inventory) {
-        title(body, "临时关闭扩展找卡顿");
+        title(body, "扩展指南");
         text(body, "正在读取 SillyTavern 扩展清单...");
         return;
       }
       if (inventory.status !== "ready") {
-        title(body, "临时关闭扩展找卡顿");
+        title(body, "扩展指南");
         text(body, inventory.reason, "so-butler-alert");
         return;
       }
@@ -11675,7 +11582,6 @@ ${detail}
     void services.readExtensions().then((value) => {
       if (disposed) return;
       inventory = value;
-      if (value.status === "ready") selected = new Set(defaultExperimentCandidates(value));
       render2();
     });
     return () => {
@@ -12489,7 +12395,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-08-27 22:59"}`;
+  return `${"0.9.0"}+${"2026-08-30 01:22"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -12981,56 +12887,24 @@ ${lines.join("\n")}
     getMeasurement: () => state.measurement,
     getFindings: () => state.findings,
     getComparison: () => state.comparison,
-    async startExperiment(kind, selected, inventory) {
-      let baseline = state.measurement;
-      if (!baseline || baseline.probe === "static" || baseline.invalidReason) {
-        baseline = await runProbe(state.selectedProbe);
-        if (baseline.invalidReason) throw new Error("排查前检查未完成，暂时不能关闭扩展");
-      }
-      const record = measurementHistory(baseline, "扩展排查前检查");
-      data = persistData(upsertHistory(data, record), record.id);
-      const prepared = prepareExtensionExperiment(kind, selected, inventory, baseline.id, {
-        now: services.now,
-        createId: services.createId
-      });
-      const result = await startExtensionExperiment(prepared, experimentDeps);
-      data = persistData({ ...data, pendingExperiment: result.experiment });
-      if (!result.batch.ok) throw new Error(result.experiment.notes ?? "扩展变更失败");
-    },
-    async sampleExperiment() {
-      const pending = data.pendingExperiment;
-      if (!pending || pending.status !== "sampling") throw new Error("当前没有等待检查的扩展排查");
-      const baseline = latestMeasurement(data, pending.baselineMeasurementId);
-      const probe = baseline?.probe === "controlledScroll" ? "controlledScroll" : "idle";
-      const comparison = await runProbe(probe, true);
-      const record = measurementHistory(comparison, "关闭扩展后检查", comparison.invalidReason ? "cancelled" : "completed");
-      data = persistData(upsertHistory(data, record), record.id);
-      if (comparison.invalidReason) throw new Error("关闭扩展后的检查未完成，请重试");
-      const next = recordExperimentComparison(pending, comparison.id);
-      data = persistData({ ...data, pendingExperiment: next });
-      if (baseline) state.comparison = compareMeasurements(baseline, comparison);
-    },
-    async finishExperiment(decision) {
+    /**
+     * 升级搁浅救援：把扩展还原到排查前的原始禁用清单，然后清空待处理排查。
+     *
+     * "临时关闭扩展找卡顿"流程已移除，但升级前停在流程中间的用户，扩展还处于被禁用
+     * 的状态。这里复用 finishExtensionExperiment 的 restore 分支——它就是原本"恢复
+     * 原来的扩展状态"按钮走的路径，已经有测试覆盖，不另写一套还原逻辑。
+     */
+    async discardStrandedExperiment() {
       const pending = data.pendingExperiment;
       if (!pending) return;
-      const completed = await finishExtensionExperiment(pending, decision, experimentDeps);
+      const completed = await finishExtensionExperiment(pending, "restore", experimentDeps);
       if (completed.status !== "completed") {
         data = persistData({ ...data, pendingExperiment: completed });
         throw new Error(completed.notes ?? "扩展清单恢复失败");
       }
-      const record = experimentHistory(completed, decision === "keep" ? "保留扩展排查结果" : "恢复扩展状态");
+      const record = experimentHistory(completed, "恢复扩展状态（排查流程已下线）");
       data = persistData({ ...upsertHistory(data, record), pendingExperiment: null }, record.id);
-      setNotice(decision === "keep" ? "已保留当前扩展禁用结果。" : "已恢复最初扩展禁用清单。", "success");
-    },
-    async advanceBinary(symptomImproved) {
-      const pending = data.pendingExperiment;
-      if (!pending) return;
-      if (pending.candidateExtensions.length <= 1) {
-        setNotice(`已缩小到：${pending.candidateExtensions[0] ?? "无候选"}。可保留或恢复原清单。`, "success");
-        return;
-      }
-      const next = await advanceBinaryIsolation(pending, symptomImproved, experimentDeps);
-      data = persistData({ ...data, pendingExperiment: next });
+      setNotice("已恢复最初扩展禁用清单。", "success");
     },
     async restoreEmergencyBackup(backup) {
       const result = await restoreEmergencyExtensionBackup(backup, experimentDeps);
@@ -13163,7 +13037,7 @@ ${lines.join("\n")}
         apply.classList.add("so-butler-primary-action");
         planSection.append(apply);
       } else {
-        text2(planSection, "这里没有需要应用的设置。如果仍然卡顿，可以打开“临时关闭扩展找卡顿”逐个排查。", "so-butler-muted");
+        text2(planSection, "这里没有需要应用的设置。如果仍然卡顿，可以打开“扩展指南”看看哪些扩展代价较大、能否安全关掉。", "so-butler-muted");
       }
     }
     if (state.comparison) {
@@ -13176,14 +13050,14 @@ ${lines.join("\n")}
     const modalActions = el2("div", "so-app-section so-butler-modal-actions");
     modalActions.append(
       appButton("查看详细结果", () => ctx.openModal(buildReportModal(modalController))),
-      appButton("临时关闭扩展找卡顿", () => ctx.openModal(buildExtensionModal(services, modalController))),
+      appButton("扩展指南", () => ctx.openModal(buildExtensionModal(services, modalController))),
       appButton("记忆与服务器设置建议", () => ctx.openModal(buildAdvisorModal(services)))
     );
     container.append(modalActions);
     if (data.pendingExperiment) {
       const pending = el2("div", "so-app-section so-butler-pending");
-      text2(pending, `扩展排查进行中：${data.pendingExperiment.kind === "binaryIsolation" ? "分批缩小范围" : "对比所选扩展"} · 第 ${data.pendingExperiment.currentRound} 轮`);
-      pending.append(appButton("继续排查扩展", () => ctx.openModal(buildExtensionModal(services, modalController))));
+      text2(pending, "上次的扩展排查没有结束，部分扩展可能仍处于被临时禁用的状态。");
+      pending.append(appButton("恢复排查前的扩展状态", () => ctx.openModal(buildExtensionModal(services, modalController))));
       container.append(pending);
     }
     if (state.notice) text2(container, state.notice, `so-butler-notice so-butler-notice-${state.noticeKind}`);
@@ -14759,6 +14633,14 @@ function timestamp(record) {
   }
   return void 0;
 }
+function linkedWorldName(item) {
+  const nested = asRecord(item.data);
+  for (const source of [asRecord(nested.extensions), asRecord(item.extensions), nested, item]) {
+    const value = source.world;
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return void 0;
+}
 async function listCharacters() {
   const raw = await requestJson("/api/characters/all", {
     method: "POST",
@@ -14772,7 +14654,8 @@ async function listCharacters() {
       name,
       avatar: avatar || `${name}.png`,
       updatedAt: timestamp(item),
-      chats: []
+      chats: [],
+      linkedWorldName: linkedWorldName(item)
     };
   });
 }
@@ -15047,8 +14930,8 @@ function backupFilename(now = /* @__PURE__ */ new Date()) {
 function hasSelection(selection) {
   return selection.characterIds.size > 0 || selection.chatIds.size > 0 || selection.worldbookIds.size > 0 || selection.presetIds.size > 0 || selection.regex;
 }
-function checkbox(label, checked, onChange) {
-  const row = el2("div", "so-app-toggle");
+function checkbox(label, checked, onChange, extraClass = "") {
+  const row = el2("div", `so-app-toggle${extraClass ? ` ${extraClass}` : ""}`);
   const control2 = document.createElement("label");
   const input = document.createElement("input");
   input.type = "checkbox";
@@ -15074,6 +14957,15 @@ async function loadWithLimit(items, limit, task) {
 function deselectCharacter(characterId, selection, chats) {
   selection.characterIds.delete(characterId);
   for (const chat2 of chats.get(characterId)?.data ?? []) selection.chatIds.delete(chat2.id);
+}
+function findLinkedWorldbook(character, worldbooks) {
+  const target = character.linkedWorldName?.trim().toLowerCase().replace(/\.json$/i, "");
+  if (!target) return void 0;
+  return worldbooks.find((book) => {
+    const byId = book.id.trim().toLowerCase().replace(/\.json$/i, "");
+    const byName = book.name.trim().toLowerCase().replace(/\.json$/i, "");
+    return byId === target || byName === target;
+  });
 }
 function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloadSTBackup) {
   let disposeMount;
@@ -15199,15 +15091,99 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
         } catch {
         }
       };
+      const selectCharacterBundle = async (character) => {
+        if (busy) return;
+        busy = true;
+        progressText = `正在收集 ${character.name} 的关联数据…`;
+        render2();
+        selection.characterIds.add(character.id);
+        const missing = [];
+        try {
+          try {
+            const items = await ensureChats(character, false);
+            items.forEach((chat2) => selection.chatIds.add(chat2.id));
+          } catch {
+            missing.push("聊天清单");
+          }
+          if (character.linkedWorldName) {
+            try {
+              const books = await ensureWorldbooks();
+              const linked = findLinkedWorldbook(character, books);
+              if (linked) selection.worldbookIds.add(linked.id);
+              else missing.push(`关联世界书「${character.linkedWorldName}」在清单里没找到`);
+            } catch {
+              missing.push("世界书清单");
+            }
+          }
+        } finally {
+          busy = false;
+          progressText = "";
+          render2();
+        }
+        if (missing.length > 0) {
+          ctx.toast("warning", `${character.name} 已选中，但这些没能带上：${missing.join("、")}`);
+        }
+      };
+      const selectVisibleBundles = async (targets) => {
+        if (busy) return;
+        busy = true;
+        progressText = "正在收集角色的关联数据…";
+        render2();
+        const unresolved = [];
+        try {
+          let books = worldbooks.data;
+          if (targets.some((item) => item.linkedWorldName)) {
+            try {
+              books = await ensureWorldbooks();
+            } catch {
+              unresolved.push("世界书清单读取失败");
+            }
+          }
+          await loadWithLimit(targets, 4, async (character) => {
+            selection.characterIds.add(character.id);
+            try {
+              const items = await ensureChats(character, false);
+              items.forEach((chat2) => selection.chatIds.add(chat2.id));
+            } catch {
+              unresolved.push(`${character.name} 的聊天清单`);
+            }
+            if (!character.linkedWorldName) return;
+            const linked = findLinkedWorldbook(character, books);
+            if (linked) selection.worldbookIds.add(linked.id);
+            else unresolved.push(`${character.name} 的关联世界书「${character.linkedWorldName}」`);
+          });
+        } catch (error) {
+          ctx.toast("error", `批量选择失败：${String(error)}`);
+        } finally {
+          busy = false;
+          progressText = "";
+          render2();
+        }
+        if (unresolved.length > 0) {
+          ctx.toast("warning", `已选中，但这些没能带上：${unresolved.join("、")}`);
+        }
+      };
+      const scrollParent = () => {
+        let node = container;
+        while (node) {
+          const style = node.ownerDocument.defaultView?.getComputedStyle(node);
+          const overflowY = style?.overflowY;
+          if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight) return node;
+          node = node.parentElement;
+        }
+        return null;
+      };
       const render2 = () => {
         if (disposed) return;
+        const scroller = scrollParent();
+        const previousScrollTop = scroller?.scrollTop ?? 0;
         container.replaceChildren();
         const title2 = el2("div", "so-app-title");
         title2.textContent = "SillyTavern 选择式备份";
         const desc = el2("div", "so-app-desc");
         desc.textContent = "选择需要的数据，统一导出为 SillyTavern 标准 default-user ZIP。";
         container.append(title2, desc);
-        const tabs = el2("div", "so-app-section");
+        const tabs = el2("div", "so-app-section cloud-export-tabs");
         for (const tab of TABS) {
           const button2 = appButton(tab.label, () => {
             if (busy || activeTab === tab.id) return;
@@ -15240,35 +15216,21 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
         const toggleSet = (items, set) => items.forEach((item) => set.has(item.id) ? set.delete(item.id) : set.add(item.id));
         if (activeTab === "characters" && characters.status === "ready" && visibleCharacters.length) {
           addAction("全选当前结果", () => {
-            visibleCharacters.forEach((item) => selection.characterIds.add(item.id));
-            render2();
+            void selectVisibleBundles(visibleCharacters);
           });
           addAction("反选当前结果", () => {
-            visibleCharacters.forEach((item) => selection.characterIds.has(item.id) ? deselectCharacter(item.id, selection, chats) : selection.characterIds.add(item.id));
-            render2();
+            const toAdd = visibleCharacters.filter((item) => !selection.characterIds.has(item.id));
+            visibleCharacters.filter((item) => selection.characterIds.has(item.id)).forEach((item) => deselectCharacter(item.id, selection, chats));
+            if (toAdd.length === 0) {
+              render2();
+              return;
+            }
+            void selectVisibleBundles(toAdd);
           });
           addAction("清空当前分类", () => {
             selection.characterIds.clear();
             selection.chatIds.clear();
             render2();
-          });
-          addAction("全选角色及聊天", async () => {
-            busy = true;
-            progressText = "正在读取聊天清单…";
-            render2();
-            try {
-              await loadWithLimit(visibleCharacters, 4, async (character) => {
-                const items = await ensureChats(character, false);
-                selection.characterIds.add(character.id);
-                items.forEach((chat2) => selection.chatIds.add(chat2.id));
-              });
-            } catch (error) {
-              ctx.toast("error", `批量选择失败：${String(error)}`);
-            } finally {
-              busy = false;
-              progressText = "";
-              render2();
-            }
           });
         } else if (activeTab === "worldbooks" && worldbooks.status === "ready" && visibleWorldbooks.length) {
           addAction("全选当前结果", () => {
@@ -15310,28 +15272,19 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
           for (const character of visibleCharacters) {
             const row = el2("div", "cloud-export-character");
             row.append(checkbox(`${character.name} · ${formatDate(character.updatedAt)}`, selection.characterIds.has(character.id), (checked) => {
-              if (checked) selection.characterIds.add(character.id);
-              else deselectCharacter(character.id, selection, chats);
-              render2();
-            }));
-            row.append(appButton("选择角色及全部聊天", async () => {
-              if (busy) return;
-              busy = true;
-              progressText = `正在读取 ${character.name} 的聊天清单…`;
-              render2();
-              try {
-                const items = await ensureChats(character, false);
-                selection.characterIds.add(character.id);
-                items.forEach((chat2) => selection.chatIds.add(chat2.id));
-              } catch (error) {
-                ctx.toast("error", `读取聊天清单失败：${String(error)}`);
-              } finally {
-                busy = false;
-                progressText = "";
+              if (!checked) {
+                deselectCharacter(character.id, selection, chats);
                 render2();
+                return;
               }
-            }));
+              void selectCharacterBundle(character);
+            }, "cloud-export-character-name"));
+            const bundleNote = el2("div", "cloud-export-bundle-note");
+            const linkedLabel = !character.linkedWorldName ? "没有关联独立世界书" : worldbooks.status !== "ready" ? `关联世界书「${character.linkedWorldName}」按酒馆里的当前内容导出` : findLinkedWorldbook(character, worldbooks.data) ? `关联世界书「${character.linkedWorldName}」按酒馆里的当前内容导出` : `关联世界书「${character.linkedWorldName}」在酒馆世界书清单里没找到`;
+            bundleNote.textContent = `勾选即整体导出：角色卡 + 全部聊天 + ${linkedLabel}`;
+            row.append(bundleNote);
             const details = document.createElement("details");
+            details.className = "so-app-fold cloud-export-chats";
             details.open = expandedCharacters.has(character.id);
             const summary = document.createElement("summary");
             const chatState = chats.get(character.id);
@@ -15346,7 +15299,7 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
                   selection.characterIds.add(character.id);
                 } else selection.chatIds.delete(chat2.id);
                 render2();
-              }));
+              }, "cloud-export-chat"));
             }
             details.addEventListener("toggle", () => {
               if (details.open) {
@@ -15416,6 +15369,7 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
           }
         }));
         container.append(footer);
+        if (scroller && previousScrollTop > 0) scroller.scrollTop = previousScrollTop;
       };
       render2();
       void ensureActiveTab();
@@ -18897,7 +18851,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-27 22:59"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-30 01:22"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

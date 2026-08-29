@@ -76,6 +76,8 @@ export function openSpriteLightbox(options: {
       const label = element('span', 'so-lightbox-action-label')
       label.textContent = action.label
       button.append(label)
+      // 适用条件走 title：按钮文字保持短，条件说明鼠标悬浮/读屏可得
+      if (action.hint) button.title = action.hint
       button.addEventListener('click', (event) => {
         event.stopPropagation()
         if (button.disabled) return

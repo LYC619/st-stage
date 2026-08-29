@@ -18,6 +18,8 @@ export interface SpriteAction {
   id: string
   label: string
   icon?: string
+  /** 悬浮提示；缺省时用 label。用来说明适用条件，避免用户只能靠「点了被拒」来学。 */
+  hint?: string
   destructive?: boolean
   disabled?: boolean
   allowedInReadonly?: boolean
@@ -38,10 +40,16 @@ function commitAndRefresh(context: SpriteActionContext, pack: SpritePack): void 
   }
 }
 
+export const CHECKERBOARD_HINT =
+  '检测并去除棋盘格：只适用于「棋盘格被烤成不透明像素」的图片，' +
+  '要求四边连通且是两级浅灰交替的方格。已带透明通道的图不需要处理，' +
+  '纯色/深色/彩色背景会被拒绝，以免误删画面内容。'
+
 export function createCheckerboardAction(context: SpriteActionContext): SpriteAction {
   return {
     id: 'checkerboard',
     label: '检测并去除棋盘格',
+    hint: CHECKERBOARD_HINT,
     icon: '▦',
     destructive: false,
     allowedInReadonly: true,

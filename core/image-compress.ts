@@ -126,19 +126,42 @@ const browserCheckerboardCodec: CheckerboardImageCodec = {
   encodePng,
 }
 
-/** 检测并清除烤入像素的棋盘格；证据不足时拒绝生成新文件。 */
+/**
+ * 检测并清除烤入像素的棋盘格；证据不足时拒绝生成新文件。
+ *
+ * 拒绝原因分开报：本来就带透明通道的图（含真正的透明 PNG）永远不可能通过
+ * `removeBakedCheckerboard` 的全不透明前置检查，这跟「是不透明图但没找到棋盘格证据」
+ * 是两件完全不同的事。合成一句「没有确认到…」会让人以为功能坏了——
+ * 实测就踩过：拿透明 PNG 去试，看到的提示读起来像 bug。
+ */
 export async function cleanCheckerboardImage(
   blob: Blob,
   codec: CheckerboardImageCodec = browserCheckerboardCodec,
 ): Promise<CleanCheckerboardResult> {
   if (!blob.type.startsWith('image/')) throw new Error('所选内容不是图片')
   const decoded = await codec.decode(blob)
+  if (hasTransparentPixels(decoded.data)) {
+    throw new Error('这张图已经带透明通道，不需要去棋盘格。此功能只处理「棋盘格被烤成不透明像素」的图片')
+  }
   const cleaned = removeBakedCheckerboard(decoded)
-  if (!cleaned) throw new Error('没有确认到可安全去除的棋盘格背景')
+  if (!cleaned) {
+    throw new Error(
+      '没有在这张图里确认到可安全去除的棋盘格背景：需要图片四边连通、且是两级浅灰交替的方格。' +
+      '纯色背景、深色或彩色格子、以及已被压缩糊掉边界的格子都会被拒绝，以免误删画面内容',
+    )
+  }
   return {
     blob: await codec.encodePng(cleaned.data, decoded.width, decoded.height),
     removedPixels: cleaned.removedPixels,
   }
+}
+
+/** 与 removeBakedCheckerboard 的前置检查同阈值：alpha < 250 即视为已带透明通道。 */
+function hasTransparentPixels(data: Uint8ClampedArray): boolean {
+  for (let offset = 3; offset < data.length; offset += 4) {
+    if (data[offset] < 250) return true
+  }
+  return false
 }
 
 /** 人类可读体积，如 "384 KB" */

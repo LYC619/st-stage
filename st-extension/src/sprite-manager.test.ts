@@ -1690,6 +1690,46 @@ describe('createSpriteManager selected-pack resource actions', () => {
     manager.close()
   })
 
+  // 排版回归：标签管理弹窗 append 到 backdrop，是 .so-manager 的兄弟节点而非后代，
+  // 所以任何 `.so-manager 后代` 选择器都够不到它——曾导致整个面板没样式、
+  // 按钮被 grid 的 auto 轨道压成竖排（CJK 的 min-content 宽度是一个字）。
+  // jsdom 不做布局，这里只能锁 DOM 关系与选择器可达性；实际宽度由 Playwright 双视口覆盖。
+  it('keeps the tag manager modal reachable by backdrop-scoped styles, not .so-manager descendants', () => {
+    let settings: PluginSettings = {
+      ...createDefaultSettings(),
+      packs: [{ id: 'p1', name: '甲包', sprites: [{ tag: '微笑', url: 'https://img.test/a.png' }], customTags: ['主线'] }],
+    }
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    findButton(document, '标签管理').click()
+
+    const modal = document.querySelector<HTMLElement>('.so-tag-manager')!
+    const backdrop = document.querySelector<HTMLElement>('.so-manager-backdrop')!
+    const dialog = document.querySelector<HTMLElement>('.so-manager')!
+
+    // 弹窗在 backdrop 内，但不在 .so-manager 内 —— 这就是作用域逃逸的成因
+    expect(backdrop.contains(modal)).toBe(true)
+    expect(dialog.contains(modal)).toBe(false)
+
+    // 因此 `.so-manager 后代` 选择器对弹窗内容全部失效
+    expect(document.querySelector('.so-manager .so-tag-manager-row')).toBeNull()
+    // 而挂 backdrop 的选择器能命中
+    expect(document.querySelector('.so-manager-backdrop .so-tag-manager-row')).not.toBeNull()
+
+    const row = modal.querySelector<HTMLElement>('.so-tag-manager-row')!
+    for (const label of ['重命名', '删除']) {
+      const btn = findButton(row, label)
+      expect(btn.matches('.so-manager-backdrop .menu_button')).toBe(true)
+      expect(btn.matches('.so-manager .menu_button')).toBe(false)
+    }
+
+    manager.close()
+  })
+
   it('edits preset package metadata in place without enabling destructive sprite actions', () => {
     const builtIn = getPresetPacks()[0]
     let settings: PluginSettings = {

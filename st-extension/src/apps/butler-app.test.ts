@@ -178,11 +178,9 @@ function button(container: ParentNode, label: string): HTMLElement {
   const aliases: Record<string, string> = {
     '应用安全优化': '立即应用',
     '完整报告': '查看详细结果',
-    '扩展排障': '临时关闭扩展找卡顿',
     '玩法与服务端顾问': '记忆与服务器设置建议',
     '用相同探针复测': '再测一次，比较优化前后',
     '正在复测': '正在再次检查',
-    '开始选定扩展 A/B': '开始对比所选扩展',
   }
   const target = aliases[label] ?? label
   const found = [...container.querySelectorAll<HTMLElement>('[role="button"], button')]
@@ -464,12 +462,12 @@ describe('管家 2.0 主屏', () => {
     const mounted = mountButler()
     await vi.waitFor(() => expect(mounted.service.collectStatic).toHaveBeenCalledOnce())
 
-    for (const label of ['查看详细结果', '临时关闭扩展找卡顿', '记忆与服务器设置建议']) {
+    for (const label of ['查看详细结果', '扩展指南', '记忆与服务器设置建议']) {
       button(mounted.container, label).click()
     }
     expect(mounted.openedModals).toHaveLength(3)
     expect(mounted.openedModals[0].textContent).toContain('详细检查结果')
-    await vi.waitFor(() => expect(mounted.openedModals[1].textContent).toContain('第三方扩展'))
+    await vi.waitFor(() => expect(mounted.openedModals[1].textContent).toContain('第三方扩展指南'))
     expect(mounted.openedModals[1].textContent).toContain('内置扩展用途与关闭建议')
     expect(mounted.openedModals[1].textContent).toContain('向量检索')
     expect(mounted.openedModals[1].textContent).toContain('语义召回')
@@ -482,35 +480,46 @@ describe('管家 2.0 主屏', () => {
   })
 })
 
-describe('扩展治理与跨刷新实验', () => {
-  it('默认只勾选启用的第三方扩展，保护 st-stage，并在依赖确认后开始 A/B', async () => {
+describe('扩展指南', () => {
+  // 指南是只读的：不提供勾选、不代用户开关第三方扩展
+  it('只读列出第三方扩展及其声明，不提供任何勾选或开关入口', async () => {
     const mounted = mountButler()
     await vi.waitFor(() => expect(mounted.service.collectStatic).toHaveBeenCalledOnce())
-    button(mounted.container, '临时关闭扩展找卡顿').click()
+    button(mounted.container, '扩展指南').click()
     const modal = mounted.openedModals[0]
     await vi.waitFor(() => expect(modal.textContent).toContain('third-party/example'))
 
-    const candidate = modal.querySelector<HTMLInputElement>('input[value="third-party/example"]')
-    const self = modal.querySelector<HTMLInputElement>('input[value="third-party/st-stage"]')
-    const system = modal.querySelector<HTMLInputElement>('input[value="vectors"]')
-    expect(candidate?.checked).toBe(true)
-    expect(self?.disabled).toBe(true)
-    expect(system).toBeNull()
-    button(modal, '开始选定扩展 A/B').click()
-
-    await vi.waitFor(() => expect(mounted.service.setExtensionEnabled).toHaveBeenCalledWith('third-party/example', false))
-    expect(mounted.getData().pendingExperiment).toMatchObject({
-      kind: 'selectedExtensions',
-      status: 'awaitingReload',
-    })
-    expect(mounted.service.reloadPage).toHaveBeenCalledOnce()
+    // 没有复选框：开关一律去 SillyTavern 自己的扩展管理里做
+    expect(modal.querySelectorAll('input[type="checkbox"]').length).toBe(0)
+    // 用当初真正渲染出来的按钮文案断言。写成"开始选定扩展 A/B"（测试里的别名）
+    // 是空断言：DOM 里从来没有这个字符串，按钮还在也照样通过。
+    expect(modal.textContent).not.toContain('开始对比所选扩展')
+    expect(modal.textContent).not.toContain('逐轮缩小可疑扩展')
+    expect(modal.textContent).toContain('SillyTavern')
+    expect(mounted.service.setExtensionEnabled).not.toHaveBeenCalled()
   })
 
-  it('刷新后恢复实验状态，允许复测并保留或完整恢复原禁用清单', async () => {
+  it('把 st-stage 自身标成受保护并说明关闭后失去什么', async () => {
+    const mounted = mountButler()
+    await vi.waitFor(() => expect(mounted.service.collectStatic).toHaveBeenCalledOnce())
+    button(mounted.container, '扩展指南').click()
+    const modal = mounted.openedModals[0]
+    await vi.waitFor(() => expect(modal.textContent).toContain('third-party/st-stage'))
+
+    const selfCard = modal.querySelector<HTMLElement>('[data-extension="third-party/st-stage"]')
+    expect(selfCard?.textContent).toContain('受保护')
+    expect(selfCard?.textContent).toContain('管家不提供自我关闭入口')
+  })
+
+  /**
+   * 升级搁浅救援：旧排查流程下线前正处在流程中间的用户，扩展还停在被禁用的状态。
+   * 必须给出恢复入口并真的还原原始禁用清单，否则他们只会觉得"扩展莫名失效了"。
+   */
+  it('升级后为搁浅的排查提供一次性恢复，并还原排查前的禁用清单', async () => {
     const pending: ButlerExperiment = {
-      id: 'experiment-1',
+      id: 'experiment-stranded',
       kind: 'selectedExtensions',
-      status: 'awaitingReload',
+      status: 'awaitingDecision',
       startedAt: 100,
       originalDisabledExtensions: ['third-party/disabled'],
       candidateExtensions: ['third-party/example'],
@@ -520,51 +529,27 @@ describe('扩展治理与跨刷新实验', () => {
     }
     const data = createEmptyButlerData()
     data.pendingExperiment = pending
-    data.history.push({
-      id: 'history-baseline',
-      kind: 'measurement',
-      createdAt: 10,
-      completedAt: 20,
-      outcome: 'completed',
-      summary: { label: '扩展实验基线' },
-      measurement: snapshot({ id: 'baseline' }),
-    })
-    const mounted = mountButler({}, data)
-    await vi.waitFor(() => expect(mounted.getData().pendingExperiment?.status).toBe('sampling'))
-    button(mounted.container, '临时关闭扩展找卡顿').click()
-    const modal = mounted.openedModals[0]
-    await vi.waitFor(() => expect(modal.textContent).toContain('等待关闭后检查'))
-    button(modal, '检查关闭后的表现').click()
-    await vi.waitFor(() => expect(mounted.getData().pendingExperiment?.status).toBe('awaitingDecision'))
-    expect(modal.textContent).toContain('保持这些扩展关闭')
-    expect(modal.textContent).toContain('恢复原来的扩展状态')
-  })
-
-  it('部分变更失败时不允许把未生效的一轮用于二分判断', async () => {
-    const pending: ButlerExperiment = {
-      id: 'experiment-partial',
-      kind: 'binaryIsolation',
-      status: 'awaitingDecision',
-      startedAt: 100,
-      originalDisabledExtensions: [],
-      candidateExtensions: ['third-party/a', 'third-party/b'],
-      trialDisabledExtensions: ['third-party/a'],
-      currentRound: 1,
-      baselineMeasurementId: 'baseline',
-      reloadRequiredAfterDecision: true,
-      notes: '扩展变更未全部成功',
-    }
-    const data = createEmptyButlerData()
-    data.pendingExperiment = pending
     const mounted = mountButler({}, data)
 
-    button(mounted.container, '临时关闭扩展找卡顿').click()
+    // 首屏就要有恢复入口，不能只藏在弹窗里
+    await vi.waitFor(() => expect(mounted.container.textContent).toContain('上次的扩展排查没有结束'))
+    button(mounted.container, '恢复排查前的扩展状态').click()
     const modal = mounted.openedModals[0]
-
+    await vi.waitFor(() => expect(modal.textContent).toContain('恢复上次排查前的扩展状态'))
+    expect(modal.textContent).toContain('third-party/example')
+    expect(modal.textContent).toContain('third-party/disabled')
+    // 不复现任何采样/二分步骤
+    expect(modal.textContent).not.toContain('检查关闭后的表现')
     expect(modal.textContent).not.toContain('变流畅了')
-    expect(modal.textContent).not.toContain('没有变流畅')
-    expect(modal.textContent).toContain('保持这些扩展关闭')
-    expect(modal.textContent).toContain('恢复原来的扩展状态')
+
+    button(modal, '恢复排查前的扩展状态').click()
+    await vi.waitFor(() => expect(mounted.getData().pendingExperiment).toBeNull())
+
+    // 恢复按"原始禁用清单"整体收敛，而不是逐个回滚试验项：
+    // fixture 里 memory 当前被禁用但不在 originalDisabledExtensions 中，所以要放回启用；
+    // third-party/disabled 在清单里，保持禁用（不产生调用）。
+    expect(mounted.service.setExtensionEnabled).toHaveBeenCalledWith('memory', true)
+    expect(mounted.service.setExtensionEnabled).not.toHaveBeenCalledWith('third-party/disabled', true)
   })
 
   it('appData 丢失时在扩展页显示 localStorage 紧急恢复入口', async () => {
@@ -580,7 +565,7 @@ describe('扩展治理与跨刷新实验', () => {
       },
     })
 
-    button(mounted.container, '临时关闭扩展找卡顿').click()
+    button(mounted.container, '扩展指南').click()
     const modal = mounted.openedModals[0]
     await vi.waitFor(() => expect(modal.textContent).toContain('检测到紧急恢复备份'))
 

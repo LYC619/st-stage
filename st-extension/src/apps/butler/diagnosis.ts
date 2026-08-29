@@ -262,11 +262,11 @@ export function diagnose(
     confidence: 'correlation',
     explanation: {
       detected: `记录到 ${extensionResources.length} 个扩展的加载资源。`,
-      change: '只把这些扩展列为“临时关闭扩展找卡顿”的对比对象，不会自动关闭。',
+      change: '只在扩展指南里列出这些扩展供你参考，不会自动关闭任何一个。',
       reason: '下载或加载记录只能提供线索，不能据此判断某个扩展持续占用处理器或内存。',
-      impact: '临时关闭扩展可能影响对应功能，必须由用户自己选择。',
+      impact: '关闭扩展会影响对应功能，要不要关由你自己决定。',
       reload: '扩展启停需要刷新后才真正改变加载状态。',
-      restore: '扩展排查会保留最初的禁用清单，可以全部恢复。',
+      restore: '启停都在 SillyTavern 自己的扩展管理里操作，本工具不改动你的扩展禁用清单。',
     },
   }))
 

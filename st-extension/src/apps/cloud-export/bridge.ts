@@ -88,6 +88,22 @@ function timestamp(record: RawRecord): number | undefined {
   return undefined
 }
 
+/**
+ * 读取角色卡声明的关联世界书名。
+ *
+ * 字段位置按 SillyTavern 的 v2 角色卡规范：`data.extensions.world`。兼容两种形态——
+ * `/api/characters/all` 可能直接返回展平后的记录，也可能保留 `data` 嵌套。
+ * 只认非空字符串；`world` 为空串表示"没关联"，不是"关联了一本叫空的书"。
+ */
+function linkedWorldName(item: RawRecord): string | undefined {
+  const nested = asRecord(item.data)
+  for (const source of [asRecord(nested.extensions), asRecord(item.extensions), nested, item]) {
+    const value = source.world
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return undefined
+}
+
 async function listCharacters(): Promise<ExportCharacter[]> {
   const raw = await requestJson<unknown>('/api/characters/all', {
     method: 'POST',
@@ -102,6 +118,7 @@ async function listCharacters(): Promise<ExportCharacter[]> {
       avatar: avatar || `${name}.png`,
       updatedAt: timestamp(item),
       chats: [],
+      linkedWorldName: linkedWorldName(item),
     }
   })
 }
