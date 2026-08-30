@@ -30,7 +30,20 @@ function hasCoherentSuffixFormatting(tags: NumberedTag[]): boolean {
   return canonical || fixedWidth
 }
 
-/** 按输入顺序压缩同前缀、连续递增的数字后缀；短段与断段保持真实图名原样。 */
+/**
+ * 范围标签写成 `前缀(起-止)`：括号把「这里要填一个数字」和图名本身分开，
+ * 机械替换括号即得真实图名。前缀保留它自己的分隔符（`horse_(1-2)`），
+ * 不假定分隔符一定是 `_`——前缀是数字前的任意内容。
+ */
+function rangeLabel(prefix: string, from: string, to: string): string {
+  return `${prefix}(${from}-${to})`
+}
+
+/**
+ * 按输入顺序压缩同前缀、连续递增的数字后缀；断段保持真实图名原样。
+ * 阈值是 2：两连号压缩省的字符不多，但让整张清单格式统一，
+ * 模型不必在「照抄图名」和「填范围」两种读法之间切换。
+ */
 export function compactNumberedTags(
   tags: string[],
   reservedTags: Iterable<string> = tags,
@@ -60,8 +73,8 @@ export function compactNumberedTags(
     const values = uniqueTags.slice(index, end)
     const numbered = values.map((tag) => parseNumberedTag(tag)!)
     const last = numbered[numbered.length - 1]
-    const label = `${first.prefix}${first.suffix}-${last.suffix}`
-    if (values.length >= 3 && hasCoherentSuffixFormatting(numbered) && !reserved.has(label)) {
+    const label = rangeLabel(first.prefix, first.suffix, last.suffix)
+    if (values.length >= 2 && hasCoherentSuffixFormatting(numbered) && !reserved.has(label)) {
       entries.push({
         kind: 'range',
         label,

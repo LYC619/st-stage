@@ -136,21 +136,53 @@ function buildScenes(addresses: SpriteAddress[]): PromptScene[] {
   return [...scenes.values()].map(({ seen: _seen, ...scene }) => scene)
 }
 
+/**
+ * 范围标签自解释，不再给每条挂「输出时从X至Y中随机选择」——那句话按场景重复几十遍，
+ * 是整段提示词最大的 token 开销，而它说的事一条通用规则就能覆盖。
+ */
 function renderTags(tags: string[], reservedTags: ReadonlySet<string>): RenderedTags {
   const entries = compactNumberedTags(tags, reservedTags)
   return {
-    text: entries.map((entry) => entry.kind === 'range'
-      ? `${entry.label}（输出时从${entry.values[0]}至${entry.values[entry.values.length - 1]}中随机选择一个完整图名）`
-      : entry.label).join('、'),
+    text: entries.map((entry) => entry.label).join('、'),
     ranges: entries.filter((entry) => entry.kind === 'range').map((entry) => entry.label),
   }
 }
 
-function rangeInstruction(ranges: string[]): string[] {
+/**
+ * 正误对照的分隔符：中文行里全角空格比半角清楚。
+ * 提到常量是因为 no-irregular-whitespace 只放过普通字符串里的 U+3000，模板串里的会被拦下。
+ */
+const FULL_WIDTH_SPACE = '　'
+
+/**
+ * 范围规则给一次，用一组正误对照代替把所有范围标签再抄一遍：
+ * 重抄清单的长度随图包线性增长，而对照示例是常数开销且更好懂。
+ * 示例取真实存在的范围标签，不虚构。
+ */
+function rangeInstruction(ranges: string[], example?: RangeExample): string[] {
   if (ranges.length === 0) return []
-  return [
-    `编号范围仅用于压缩展示；必须输出范围内一个实际存在的完整图名，严禁直接输出范围标签（${ranges.join('、')}）。`,
-  ]
+  const lines = ['编号范围仅用于压缩展示。必须把括号换成范围内的一个具体整数，禁止原样输出范围标签。']
+  if (example) lines.push(`正确：[立绘:${example.correct}]${FULL_WIDTH_SPACE}错误：[立绘:${example.wrong}]`)
+  return lines
+}
+
+interface RangeExample {
+  correct: string
+  wrong: string
+}
+
+/** 从已渲染的场景里取第一个范围条目做正误示例，附上它所在场景的地址前缀。 */
+function findRangeExample(
+  scenes: PromptScene[],
+  reservedTags: ReadonlySet<string>,
+): RangeExample | undefined {
+  for (const scene of scenes) {
+    const entry = compactNumberedTags(scene.tags, reservedTags).find((item) => item.kind === 'range')
+    if (!entry) continue
+    const addr = (tag: string) => (scene.prefix ? `${scene.prefix}/${tag}` : tag)
+    return { correct: addr(entry.values[0]), wrong: addr(entry.label) }
+  }
+  return undefined
 }
 
 function indexSceneNotes(notes: PromptSceneNote[]): PromptSceneNoteIndex {
@@ -268,7 +300,7 @@ function buildGroupedFull(
     '[角色立绘系统]',
     '可用立绘（按场景）：',
     ...rendered.lines,
-    ...rangeInstruction(rendered.ranges),
+    ...rangeInstruction(rendered.ranges, findRangeExample(scenes, reservedTags)),
     formatInstruction(scenes),
     countInstruction(count),
     ...fewShotExample(scenes, count),
@@ -369,7 +401,7 @@ function buildShared(
     }
   }
   lines.push(`场景行写「${SHARED_LIST_LABEL}」表示最上方共有清单里的图名整组可用；「另有」及直接列出的图名只属于所在场景。`)
-  lines.push(...rangeInstruction(ranges))
+  lines.push(...rangeInstruction(ranges, findRangeExample(scenes, reservedTags)))
   lines.push(formatInstruction(scenes))
   lines.push(countInstruction(count))
   lines.push(...fewShotExample(scenes, count))
@@ -492,7 +524,7 @@ function buildRoleCompact(
   }
 
   lines.push(`服装行写“${ROLE_BASE_LIST_LABEL}”表示该服装可用上方整组图名；“另有”和“仅限”只属于所在服装。`)
-  lines.push(...rangeInstruction(ranges))
+  lines.push(...rangeInstruction(ranges, findRangeExample(scenes, reservedTags)))
   lines.push('输出格式：[立绘:图名]（默认服装）或 [立绘:服装/图名]（其他服装）；完整 [立绘:角色/服装/图名] 仍兼容。')
   lines.push(countInstruction(count))
   lines.push(...relativeFewShotExample(scenes, count))
@@ -617,8 +649,9 @@ export function buildPrompt(
   const custom = template.trim()
   if (custom && !isKnownBuiltinTemplate(template)) {
     return fitToBudget(addresses, b, (addrs) => {
-      const rendered = renderGroupedSceneList(buildScenes(addrs), noteIndex, reservedTags)
-      const list = [...rendered.lines, ...rangeInstruction(rendered.ranges)].join('\n')
+      const scenes = buildScenes(addrs)
+      const rendered = renderGroupedSceneList(scenes, noteIndex, reservedTags)
+      const list = [...rendered.lines, ...rangeInstruction(rendered.ranges, findRangeExample(scenes, reservedTags))].join('\n')
       return custom.replace(/\{清单\}/g, list).replace(/\{数量\}/g, String(n))
     })
   }

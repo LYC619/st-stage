@@ -452,18 +452,30 @@ describe('buildPrompt — Gallery 场景备注与编号范围', () => {
       2,
     )
 
-    expect(prompt).toContain('挥手1-4（输出时从挥手1至挥手4中随机选择一个完整图名）')
-    expect(prompt).toContain('一个实际存在的完整图名')
-    expect(prompt).toMatch(/(?:禁止|严禁).*挥手1-4/)
-    expect(prompt).toContain('[立绘:鸣人/挥手1]')
-    expect(prompt).not.toContain('[立绘:鸣人/挥手1-4]')
+    // 范围规则只出现一次，不再按条挂说明；正误示例用清单里真实存在的图名。
+    expect(prompt).toContain('挥手(1-4)')
+    expect(prompt).toContain('必须把括号换成范围内的一个具体整数')
+    expect(prompt).toContain('正确：[立绘:鸣人/挥手1]　错误：[立绘:鸣人/挥手(1-4)]')
+    expect(prompt).not.toMatch(/输出时从.*中随机选择/)
+  })
+
+  it('范围说明与示例各出现一次，不随范围条数重复', () => {
+    const prompt = buildPrompt(
+      ['挥手1', '挥手2', '点头1', '点头2', '跳跃1', '跳跃2'].map((tag) => addr('鸣人', '', tag)),
+      'full',
+      2,
+    )
+
+    expect(prompt.match(/必须把括号换成范围内的一个具体整数/g)).toHaveLength(1)
+    expect(prompt.match(/正确：\[立绘:/g)).toHaveLength(1)
+    expect(prompt).toContain('挥手(1-2)、点头(1-2)、跳跃(1-2)')
   })
 
   it('在预算拟合前压缩编号范围，能保留本可整体放入预算的完整范围', () => {
     const addresses = Array.from({ length: 40 }, (_, index) => addr('鸣人', '', `挥手${index + 1}`))
     const compact = buildPrompt(addresses, 'full', 1)
 
-    expect(compact).toContain('挥手1-40')
+    expect(compact).toContain('挥手(1-40)')
     expect(buildPrompt(addresses, 'full', 1, '', compact.length)).toBe(compact)
   })
 
@@ -475,8 +487,9 @@ describe('buildPrompt — Gallery 场景备注与编号范围', () => {
       '自定义清单：\n{清单}',
     )
 
-    expect(prompt).toContain('动作01-03（输出时从动作01至动作03中随机选择一个完整图名）')
-    expect(prompt).toMatch(/(?:禁止|严禁).*动作01-03/)
+    expect(prompt).toContain('动作(01-03)')
+    expect(prompt).toContain('必须把括号换成范围内的一个具体整数')
+    expect(prompt).toContain('正确：[立绘:动作01]　错误：[立绘:动作(01-03)]')
   })
 
   it('跨场景存在真实同名标签时不生成碰撞的范围标签', () => {
@@ -485,15 +498,16 @@ describe('buildPrompt — Gallery 场景备注与编号范围', () => {
         addr('角色A', '', 'act1'),
         addr('角色A', '', 'act2'),
         addr('角色A', '', 'act3'),
-        addr('角色B', '', 'act1-3'),
+        addr('角色B', '', 'act(1-3)'),
       ],
       'full',
       1,
     )
 
     expect(prompt).toContain('- 角色A：act1、act2、act3')
-    expect(prompt).toContain('- 角色B：act1-3')
-    expect(prompt).not.toContain('act1-3（输出时')
+    expect(prompt).toContain('- 角色B：act(1-3)')
+    // 没有任何范围条目，那条通用范围规则也不该出现。
+    expect(prompt).not.toContain('必须把括号换成范围内的一个具体整数')
   })
 })
 

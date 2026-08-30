@@ -62,18 +62,33 @@ describe('groupPacksByRole', () => {
 describe('compactNumberedTags', () => {
   it('compacts an adjacent ascending run and preserves ordinary tags in source order', () => {
     expect(compactNumberedTags(['挥手1', '挥手2', '挥手3', '微笑'])).toEqual([
-      { kind: 'range', label: '挥手1-3', values: ['挥手1', '挥手2', '挥手3'] },
+      { kind: 'range', label: '挥手(1-3)', values: ['挥手1', '挥手2', '挥手3'] },
       { kind: 'tag', label: '微笑', values: ['微笑'] },
     ])
   })
 
-  it('keeps gapped and shorter-than-three runs uncompressed', () => {
-    expect(compactNumberedTags(['挥手1', '挥手2', '挥手4', '点头8', '点头9'])).toEqual([
-      { kind: 'tag', label: '挥手1', values: ['挥手1'] },
-      { kind: 'tag', label: '挥手2', values: ['挥手2'] },
+  it('breaks a run at a numbering gap and leaves lone tags as complete names', () => {
+    expect(compactNumberedTags(['挥手1', '挥手2', '挥手4', '点头8'])).toEqual([
+      { kind: 'range', label: '挥手(1-2)', values: ['挥手1', '挥手2'] },
       { kind: 'tag', label: '挥手4', values: ['挥手4'] },
       { kind: 'tag', label: '点头8', values: ['点头8'] },
-      { kind: 'tag', label: '点头9', values: ['点头9'] },
+    ])
+  })
+
+  it('compacts a two-number run so the whole list reads in one format', () => {
+    expect(compactNumberedTags(['hug_1', 'hug_2'])).toEqual([
+      { kind: 'range', label: 'hug_(1-2)', values: ['hug_1', 'hug_2'] },
+    ])
+  })
+
+  it('keeps the whole pre-digit prefix, separator included, inside the label', () => {
+    // 括号机械替换即得真实图名，前提是前缀原样保留——分隔符不一定是 `_`。
+    expect(compactNumberedTags(['walk_slow_1', 'walk_slow_2', 'walk_slow_3'])).toEqual([
+      {
+        kind: 'range',
+        label: 'walk_slow_(1-3)',
+        values: ['walk_slow_1', 'walk_slow_2', 'walk_slow_3'],
+      },
     ])
   })
 
@@ -92,24 +107,24 @@ describe('compactNumberedTags', () => {
     ])).toEqual([
       {
         kind: 'range',
-        label: '挥手😀001-003',
+        label: '挥手😀(001-003)',
         values: ['挥手😀001', '挥手😀002', '挥手😀003'],
       },
-      { kind: 'range', label: '点头7-9', values: ['点头7', '点头8', '点头9'] },
+      { kind: 'range', label: '点头(7-9)', values: ['点头7', '点头8', '点头9'] },
     ])
   })
 
   it('does not compact when the generated range label is itself a real tag', () => {
-    expect(compactNumberedTags(['act1', 'act2', 'act3', 'act1-3'])).toEqual([
+    expect(compactNumberedTags(['act1', 'act2', 'act3', 'act(1-3)'])).toEqual([
       { kind: 'tag', label: 'act1', values: ['act1'] },
       { kind: 'tag', label: 'act2', values: ['act2'] },
       { kind: 'tag', label: 'act3', values: ['act3'] },
-      { kind: 'tag', label: 'act1-3', values: ['act1-3'] },
+      { kind: 'tag', label: 'act(1-3)', values: ['act(1-3)'] },
     ])
   })
 
   it('honors range labels reserved by another collection', () => {
-    expect(compactNumberedTags(['act1', 'act2', 'act3'], new Set(['act1-3']))).toEqual([
+    expect(compactNumberedTags(['act1', 'act2', 'act3'], new Set(['act(1-3)']))).toEqual([
       { kind: 'tag', label: 'act1', values: ['act1'] },
       { kind: 'tag', label: 'act2', values: ['act2'] },
       { kind: 'tag', label: 'act3', values: ['act3'] },
@@ -126,7 +141,7 @@ describe('compactNumberedTags', () => {
 
   it('compacts canonical decimals across a digit-width boundary', () => {
     expect(compactNumberedTags(['act8', 'act9', 'act10'])).toEqual([
-      { kind: 'range', label: 'act8-10', values: ['act8', 'act9', 'act10'] },
+      { kind: 'range', label: 'act(8-10)', values: ['act8', 'act9', 'act10'] },
     ])
   })
 
@@ -137,7 +152,7 @@ describe('compactNumberedTags', () => {
       'act9007199254740994',
     ])).toEqual([{
       kind: 'range',
-      label: 'act9007199254740992-9007199254740994',
+      label: 'act(9007199254740992-9007199254740994)',
       values: ['act9007199254740992', 'act9007199254740993', 'act9007199254740994'],
     }])
   })
@@ -148,7 +163,7 @@ describe('compactNumberedTags', () => {
       '点头1', '挥手4',
       '跳跃3', '跳跃2', '跳跃1',
     ])).toEqual([
-      { kind: 'range', label: '挥手1-3', values: ['挥手1', '挥手2', '挥手3'] },
+      { kind: 'range', label: '挥手(1-3)', values: ['挥手1', '挥手2', '挥手3'] },
       { kind: 'tag', label: '点头1', values: ['点头1'] },
       { kind: 'tag', label: '挥手4', values: ['挥手4'] },
       { kind: 'tag', label: '跳跃3', values: ['跳跃3'] },

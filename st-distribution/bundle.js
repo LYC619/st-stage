@@ -2501,6 +2501,9 @@ function hasCoherentSuffixFormatting(tags) {
   const fixedWidth = width !== void 0 && tags.every((tag) => tag.suffix.length === width);
   return canonical || fixedWidth;
 }
+function rangeLabel(prefix, from, to) {
+  return `${prefix}(${from}-${to})`;
+}
 function compactNumberedTags(tags, reservedTags = tags) {
   const uniqueTags = [...new Set(tags)];
   const reserved = new Set(tags);
@@ -2525,8 +2528,8 @@ function compactNumberedTags(tags, reservedTags = tags) {
     const values = uniqueTags.slice(index, end);
     const numbered = values.map((tag) => parseNumberedTag(tag));
     const last = numbered[numbered.length - 1];
-    const label = `${first.prefix}${first.suffix}-${last.suffix}`;
-    if (values.length >= 3 && hasCoherentSuffixFormatting(numbered) && !reserved.has(label)) {
+    const label = rangeLabel(first.prefix, first.suffix, last.suffix);
+    if (values.length >= 2 && hasCoherentSuffixFormatting(numbered) && !reserved.has(label)) {
       entries.push({
         kind: "range",
         label,
@@ -2813,15 +2816,25 @@ function buildScenes(addresses) {
 function renderTags(tags, reservedTags) {
   const entries = compactNumberedTags(tags, reservedTags);
   return {
-    text: entries.map((entry) => entry.kind === "range" ? `${entry.label}（输出时从${entry.values[0]}至${entry.values[entry.values.length - 1]}中随机选择一个完整图名）` : entry.label).join("、"),
+    text: entries.map((entry) => entry.label).join("、"),
     ranges: entries.filter((entry) => entry.kind === "range").map((entry) => entry.label)
   };
 }
-function rangeInstruction(ranges) {
+var FULL_WIDTH_SPACE = "　";
+function rangeInstruction(ranges, example) {
   if (ranges.length === 0) return [];
-  return [
-    `编号范围仅用于压缩展示；必须输出范围内一个实际存在的完整图名，严禁直接输出范围标签（${ranges.join("、")}）。`
-  ];
+  const lines = ["编号范围仅用于压缩展示。必须把括号换成范围内的一个具体整数，禁止原样输出范围标签。"];
+  if (example) lines.push(`正确：[立绘:${example.correct}]${FULL_WIDTH_SPACE}错误：[立绘:${example.wrong}]`);
+  return lines;
+}
+function findRangeExample(scenes, reservedTags) {
+  for (const scene of scenes) {
+    const entry = compactNumberedTags(scene.tags, reservedTags).find((item) => item.kind === "range");
+    if (!entry) continue;
+    const addr = (tag) => scene.prefix ? `${scene.prefix}/${tag}` : tag;
+    return { correct: addr(entry.values[0]), wrong: addr(entry.label) };
+  }
+  return void 0;
 }
 function indexSceneNotes(notes) {
   const index = /* @__PURE__ */ new Map();
@@ -2901,7 +2914,7 @@ function buildGroupedFull(addresses, count, noteIndex, reservedTags) {
     "[角色立绘系统]",
     "可用立绘（按场景）：",
     ...rendered.lines,
-    ...rangeInstruction(rendered.ranges),
+    ...rangeInstruction(rendered.ranges, findRangeExample(scenes, reservedTags)),
     formatInstruction(scenes),
     countInstruction(count),
     ...fewShotExample(scenes, count),
@@ -2974,7 +2987,7 @@ function buildShared(addresses, count, noteIndex, reservedTags) {
     }
   }
   lines.push(`场景行写「${SHARED_LIST_LABEL}」表示最上方共有清单里的图名整组可用；「另有」及直接列出的图名只属于所在场景。`);
-  lines.push(...rangeInstruction(ranges));
+  lines.push(...rangeInstruction(ranges, findRangeExample(scenes, reservedTags)));
   lines.push(formatInstruction(scenes));
   lines.push(countInstruction(count));
   lines.push(...fewShotExample(scenes, count));
@@ -3071,7 +3084,7 @@ function buildRoleCompact(addresses, count, noteIndex, reservedTags) {
     }
   }
   lines.push(`服装行写“${ROLE_BASE_LIST_LABEL}”表示该服装可用上方整组图名；“另有”和“仅限”只属于所在服装。`);
-  lines.push(...rangeInstruction(ranges));
+  lines.push(...rangeInstruction(ranges, findRangeExample(scenes, reservedTags)));
   lines.push("输出格式：[立绘:图名]（默认服装）或 [立绘:服装/图名]（其他服装）；完整 [立绘:角色/服装/图名] 仍兼容。");
   lines.push(countInstruction(count));
   lines.push(...relativeFewShotExample(scenes, count));
@@ -3151,8 +3164,9 @@ function buildPrompt(addresses, mode, count, template = "", budget = 0, notes = 
   const custom = template.trim();
   if (custom && !isKnownBuiltinTemplate(template)) {
     return fitToBudget(addresses, b, (addrs) => {
-      const rendered = renderGroupedSceneList(buildScenes(addrs), noteIndex, reservedTags);
-      const list = [...rendered.lines, ...rangeInstruction(rendered.ranges)].join("\n");
+      const scenes = buildScenes(addrs);
+      const rendered = renderGroupedSceneList(scenes, noteIndex, reservedTags);
+      const list = [...rendered.lines, ...rangeInstruction(rendered.ranges, findRangeExample(scenes, reservedTags))].join("\n");
       return custom.replace(/\{清单\}/g, list).replace(/\{数量\}/g, String(n));
     });
   }
@@ -12426,7 +12440,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-08-30 17:32"}`;
+  return `${"0.9.0"}+${"2026-08-30 21:13"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -14092,7 +14106,7 @@ async function readSecret(st, secretKey, secretId = "") {
     return { key: "", mode: "unavailable" };
   }
 }
-async function readConnection() {
+async function readConnection(options = {}) {
   const st = getST3();
   if (!st) return null;
   const mainApi = st.mainApi ?? (document.querySelector("#main_api")?.value || "openai");
@@ -14100,7 +14114,7 @@ async function readConnection() {
   const source = mainApi === "openai" ? readString(settings, "chat_completion_source") || document.querySelector("#chat_completion_source")?.value || "openai" : mainApi;
   const descriptor = getSource(mainApi, source);
   const secretId = readString(settings, `${descriptor.secretKey}_id`) || readString(settings, "secret_id");
-  const secret = await readSecret(st, descriptor.secretKey, secretId);
+  const secret = options.withSecret === false ? { key: "", mode: "unavailable" } : await readSecret(st, descriptor.secretKey, secretId);
   const snapshot = {};
   for (const key of SOURCE_SETTING_KEYS) {
     const value = settings[key];
@@ -14156,7 +14170,7 @@ async function waitForConnection(profile, timeout = 8e3) {
   const start = Date.now();
   let latest = null;
   while (Date.now() - start < timeout) {
-    latest = await readConnection();
+    latest = await readConnection({ withSecret: false });
     const sourceMatches = latest?.mainApi === profile.mainApi && (profile.mainApi !== "openai" || latest.source === profile.source);
     const modelMatches = !profile.model || latest?.model === profile.model;
     if (latest?.online && sourceMatches && modelMatches) return latest;
@@ -14261,10 +14275,11 @@ function apiApp(deps) {
     icon: "📡",
     order: 6,
     mount(container, ctx) {
-      const state = { busy: false, message: "" };
-      void render(container, ctx, deps, state);
+      const state = { busy: false, message: "", connection: null, connectionLoaded: false };
+      render(container, ctx, deps, state);
+      void refreshConnection(container, ctx, deps, state);
       unsubscribe = onOnlineStatusChanged(() => {
-        if (!state.busy && container.isConnected) void render(container, ctx, deps, state);
+        if (!state.busy && container.isConnected) void refreshConnection(container, ctx, deps, state);
       });
     },
     unmount() {
@@ -14273,9 +14288,16 @@ function apiApp(deps) {
     }
   };
 }
-async function render(container, ctx, deps, state) {
+async function refreshConnection(container, ctx, deps, state) {
+  const connection = await readConnection({ withSecret: false });
+  if (!container.isConnected) return;
+  state.connection = connection;
+  state.connectionLoaded = true;
+  render(container, ctx, deps, state);
+}
+function render(container, ctx, deps, state) {
   const data = sanitizeAppData(ctx.getAppData());
-  const connection = await readConnection();
+  const connection = state.connection;
   if (!container.isConnected) return;
   const active = connection ? findActiveProfile(data.profiles, connection) : void 0;
   container.textContent = "";
@@ -14284,7 +14306,8 @@ async function render(container, ctx, deps, state) {
   title2.textContent = "当前连接";
   status.append(title2);
   const line = el2("div", "so-app-desc");
-  if (!connection) line.textContent = "未检测到 SillyTavern 运行时（这里只展示已保存档案）。";
+  if (!state.connectionLoaded) line.textContent = "正在读取当前连接…";
+  else if (!connection) line.textContent = "未检测到 SillyTavern 运行时（这里只展示已保存档案）。";
   else {
     const source = getSource(connection.mainApi, connection.source);
     line.textContent = `${connection.online ? "已连接" : "未连接"} · ${source.label}${active ? ` · ${active.name}` : ""}`;
@@ -14316,15 +14339,17 @@ async function render(container, ctx, deps, state) {
   manage.append(description, appButton("管理连接档案", deps.openManager));
   container.append(manage, buildApiGuide());
   async function switchProfile(profile) {
-    if (state.busy || !connection) return;
+    if (state.busy) return;
     state.busy = true;
     state.message = `正在应用「${profile.name}」的类型、来源、密钥、URL 与模型…`;
-    await render(container, ctx, deps, state);
+    render(container, ctx, deps, state);
     try {
       const connected = await applyProfile(profile, (message) => {
         state.message = message;
-        if (container.isConnected) void render(container, ctx, deps, state);
+        if (container.isConnected) render(container, ctx, deps, state);
       });
+      state.connection = connected;
+      state.connectionLoaded = true;
       state.message = `「${profile.name}」已连接${connected.model ? `，实际模型：${connected.model}` : ""}`;
       toast2("success", state.message);
     } catch (error) {
@@ -14333,7 +14358,8 @@ async function render(container, ctx, deps, state) {
       console.error("[st-stage] API 切换失败", error);
     } finally {
       state.busy = false;
-      await render(container, ctx, deps, state);
+      render(container, ctx, deps, state);
+      void refreshConnection(container, ctx, deps, state);
     }
   }
 }
@@ -18365,7 +18391,7 @@ function createApiManager(deps) {
     const data = deps.getData();
     const box = section2(`连接档案（${data.profiles.length}）`);
     if (!data.profiles.length) desc(box, "还没有档案。可新建，或导入 SillyTavern 当前连接。");
-    void readConnection().then((connection) => {
+    void readConnection({ withSecret: false }).then((connection) => {
       if (!connection || !body) return;
       const active = findActiveProfile(data.profiles, connection);
       body.querySelector(`[data-profile-id="${active?.id ?? ""}"]`)?.classList.add("stapi-row-on");
@@ -18882,7 +18908,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-30 17:32"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-30 21:13"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);
