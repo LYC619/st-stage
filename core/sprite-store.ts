@@ -57,12 +57,6 @@ export function getActiveAddresses(
   return out
 }
 
-/** 获取某角色可用的标签列表（单包纯图名场景的便捷入口） */
-export function getAvailableTags(settings: PluginSettings, characterName: string): string[] {
-  const pack = getActivePack(settings, characterName)
-  return pack ? pack.sprites.map((s) => s.tag) : []
-}
-
 /** 立绘的分组标签（功能②），缺省为空串 */
 export function spriteGroup(sprite: Sprite): string {
   return sprite.group ?? ''

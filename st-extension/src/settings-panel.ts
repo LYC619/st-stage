@@ -45,7 +45,7 @@ export function mountSettingsPanel(deps: PanelDeps): () => void {
       '显示手机',
       settings.showPhone,
       (v) => deps.updateSettings({ ...deps.getSettings(), showPhone: v }),
-      '屏幕上显示可拖动的 📱 图标，点击展开小手机（st-stage 各功能的统一入口）。',
+      '屏幕上显示可拖动的 📱 图标，点击展开小手机——所有功能 App 的统一入口。',
     ),
   )
 

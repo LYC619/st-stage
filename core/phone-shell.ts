@@ -29,6 +29,12 @@ export interface PhoneShellController {
 
 const DRAG_THRESHOLD = 6
 
+/**
+ * Home 屏状态栏标题：面向用户的产品名，不是仓库名/安装目录名。
+ * 安装目录叫 st-stage-ext、开发仓库叫 st-stage，两者都不该出现在界面上。
+ */
+const HOME_TITLE = '掌柜的'
+
 export function createPhoneShell(
   initialState: PhoneState,
   deps: PhoneShellDeps,
@@ -79,7 +85,7 @@ export function createPhoneShell(
   })
   const statusTitle = document.createElement('span')
   statusTitle.className = 'so-phone-status-title'
-  statusTitle.textContent = 'st-stage'
+  statusTitle.textContent = HOME_TITLE
   const clock = document.createElement('span')
   clock.className = 'so-phone-clock'
   // 右上角固定关闭键：收起手机壳，恢复为可拖动图标（App 会先 unmount）
@@ -289,7 +295,7 @@ export function createPhoneShell(
     }
 
     screenScrollAppId = null
-    statusTitle.textContent = 'st-stage'
+    statusTitle.textContent = HOME_TITLE
     const grid = document.createElement('div')
     grid.className = 'so-phone-home-grid'
     for (const app of deps.registry.list()) {

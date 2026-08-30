@@ -9,6 +9,7 @@ import {
   type EmergencyExtensionBackup,
 } from './experiments'
 import { getSystemExtensionAdvice } from './extension-advisor'
+import { SELF_DIRECTORY_NAME } from './self-identity'
 import type { ButlerAppServices } from './runtime'
 import type {
   ButlerDataV2,
@@ -258,7 +259,8 @@ function thirdPartyCard(
   text(content, `扩展标识：${extension.name}${extension.manifest?.version ? ` · 版本 ${extension.manifest.version}` : ''}`)
 
   if (extension.isSelf) {
-    text(content, '这是 st-stage 自己。关掉它会同时失去手机、立绘、图库、变量、导出和管家本身，请到 SillyTavern 扩展管理里操作，管家不提供自我关闭入口。', 'so-butler-alert')
+    // 目录名按运行时推导，不写死：真实安装目录是 st-stage-ext，写死会报错名
+    text(content, `这是 ${SELF_DIRECTORY_NAME} 自己。关掉它会同时失去手机、立绘、图库、变量、导出和管家本身，请到 SillyTavern 扩展管理里操作，管家不提供自我关闭入口。`, 'so-butler-alert')
   }
 
   // 只陈述 manifest 声明了什么，以及由此可推断的代价方向；不给耗时数字

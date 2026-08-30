@@ -136,7 +136,7 @@ export function prepareExtensionExperiment(
 ): ButlerExperiment {
   const known = new Set(inventory.extensions.map((item) => item.name))
   const candidates = uniqueSorted(candidateNames)
-  if (candidates.some(isSelf)) throw new Error('st-stage 自身不能进入扩展实验')
+  if (candidates.some(isSelf)) throw new Error(`${SELF_DIRECTORY_NAME} 自身不能进入扩展实验`)
   const unknown = candidates.filter((name) => !known.has(name))
   if (unknown.length > 0) throw new Error(`未找到扩展：${unknown.join('、')}`)
   if (candidates.length === 0) throw new Error('至少选择一个扩展')

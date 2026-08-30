@@ -119,6 +119,23 @@ describe('手机壳交互', () => {
     expect(document.querySelector('.so-phone-home-grid')).not.toBeNull()
     shell.destroy()
   })
+
+  // 状态栏是用户可见文案：Home 屏必须是产品名，不能漏出仓库名/安装目录名
+  it('状态栏标题用产品名，不出现仓库名 st-stage', () => {
+    const { shell } = setup([makeApp('gallery')], { open: true })
+    const title = () => document.querySelector('.so-phone-status-title')?.textContent
+
+    expect(title()).toBe('掌柜的')
+
+    shell.openApp('gallery')
+    expect(title()).toBe('gallery')
+
+    ;(document.querySelector('.so-phone-homebtn') as HTMLElement).click()
+    expect(title()).toBe('掌柜的')
+
+    expect(document.querySelector('.so-phone-status')?.textContent).not.toContain('st-stage')
+    shell.destroy()
+  })
 })
 
 describe('App 生命周期', () => {

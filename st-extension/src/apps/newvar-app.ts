@@ -53,11 +53,11 @@ export function newvarApp(deps: NewvarAppDeps): PhoneApp {
                 'success',
                 v
                   ? '已隐藏变量更新记录；原始回复和变量快照保持不变。'
-                  : '已恢复 st-stage 隐藏的变量更新记录。若仍不可见，请检查 ST Regex 中删除 UpdateVariable 的规则。',
+                  : '变量更新记录已恢复（此前由掌柜的隐藏）。若仍不可见，请检查 ST Regex 中删除 UpdateVariable 的规则。',
               )
               renderCfg()
             }),
-            '只隐藏消息气泡里完整的 <UpdateVariable>...</UpdateVariable> 区块，不修改 SillyTavern 保存的原始回复，也不影响变量解析和楼层快照。关闭后会恢复 st-stage 自己隐藏的内容；ST Regex 等外部规则仍会独立生效。',
+            '只隐藏消息气泡里完整的 <UpdateVariable>...</UpdateVariable> 区块，不修改 SillyTavern 保存的原始回复，也不影响变量解析和楼层快照。关闭后只能恢复本扩展隐藏的内容；ST Regex 等外部规则仍会独立生效。',
           ),
           appButton('打开变量设计', openDesigner),
         )

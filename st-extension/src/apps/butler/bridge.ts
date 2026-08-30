@@ -178,13 +178,6 @@ export async function writePerf(fields: Partial<PerfSnapshot>): Promise<void> {
   }
 }
 
-/** 体检读数（无 ST 时 quickReplySets 为 null、禁用数为 0） */
-export interface PerfHealth {
-  disabledExtensions: number
-  /** Quick Reply 集合数；QR 扩展数据缺失时为 null（不展示该行） */
-  quickReplySets: number | null
-}
-
 export interface PerfHealthState {
   disabledExtensions: CapabilityValue<number>
   quickReplySets: CapabilityValue<number>
@@ -208,15 +201,6 @@ export function readHealthState(): PerfHealthState {
     quickReplySets: Array.isArray(qr?.config?.setList)
       ? { available: true, value: qr.config.setList.length }
       : { available: false, reason: 'Quick Reply 设置缺失或格式无效' },
-  }
-}
-
-/** Compatibility wrapper for the pre-Task-8 UI. */
-export function readHealth(): PerfHealth {
-  const result = readHealthState()
-  return {
-    disabledExtensions: result.disabledExtensions.available ? result.disabledExtensions.value : 0,
-    quickReplySets: result.quickReplySets.available ? result.quickReplySets.value : null,
   }
 }
 
