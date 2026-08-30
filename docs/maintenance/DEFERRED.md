@@ -52,14 +52,22 @@ Raised by the same review.
 - Risk: sampled source files contain baked checkerboard pixels and cannot be published as transparent sprites without cleanup and quality review. Current imgbb links also need a separately owned long-term hosting decision before a larger public catalog is promised.
 - Next scoped task: clean/export transparent assets, normalize stable manifest IDs, select an owned HTTPS host/CDN, then expand or migrate the catalog without bundling image data into the extension.
 
-## Generated ST Distribution
+## Generated ST Distribution — Split Done 2026-08-30, Automation Still Deferred
 
-- Behavior: `st-distribution/` is generated and intentionally contains only install artifacts; root artifacts remain the current compatibility path.
-- Impact: a future standalone repository can be extracted from a reproducible output, but publishing/repository split and release automation remain separate work.
-- Decision 2026-08-29: the split will publish a separate distribution repository under a **new** name, keeping this development repository at `st-stage`. Reusing the `st-stage` name for the distribution repository would require renaming this one, and creating a new repository at the freed name breaks GitHub's rename redirect: existing installs would then point at a repository with unrelated history, so `auto_update` would fail and every current user would have to reinstall. A new distribution name leaves installed instances untouched, and this repository's root artifacts continue to serve them.
+The repository split itself is closed. `https://github.com/LYC619/st-stage-ext` is published, first
+release commit `25809d9` at stamp `0.9.0+202608301732`, built from development commit `838c2af`, with
+a fresh single-commit history and a local clone at `D:\8.Project\0_0_维护\st-stage-ext`. What stays
+deferred is the **publishing automation**: the copy-and-push release loop is documented in
+`CURRENT.md` and run by hand every release. The reasoning below is retained because the constraints
+it records still bind every future release.
+
+- Behavior: `st-distribution/` is generated and intentionally contains only install artifacts; root artifacts remain the current compatibility path for installs made before the split.
+- Impact: the standalone repository now exists, so new installs are ~881 KB instead of 66 MB. Release automation remains separate work, and each hand-run release is a chance to publish a stale or partial copy — which is why the loop's hash check is not optional.
+- Decision 2026-08-29, executed 2026-08-30 as `st-stage-ext`: the split publishes a separate distribution repository under a **new** name, keeping this development repository at `st-stage`. Reusing the `st-stage` name for the distribution repository would require renaming this one, and creating a new repository at the freed name breaks GitHub's rename redirect: existing installs would then point at a repository with unrelated history, so `auto_update` would fail and every current user would have to reinstall. A new distribution name leaves installed instances untouched, and this repository's root artifacts continue to serve them.
 - Measured motivation (2026-08-29, at `d9852e9`): a clone is 66 MB and 284 files to deliver 5 runtime files totalling roughly 895 KB. History weight is `bundle.js` 20.7 MB accumulated across rebuilds and 19.7 MB of deleted `public/` preset PNGs that remain reachable. Because `manifest.json` sets `auto_update: true`, every SillyTavern start performs a git update against that history. Runtime cost inside the browser is unaffected: SillyTavern reads `manifest.json` and injects only the declared `index.js` and `style.css`, so the other tracked files and all ignored local directories are never read.
-- Sequencing: the distribution repository should start a fresh history rather than filtering this one, which returns `.git` to the scale of the artifacts themselves. Since `auto_update` performs a git update, that history must stay linear afterward — no force push.
-- Blocked on: "Hardcoded Install Directory Name" below.
+- Sequencing: the distribution repository started a fresh history rather than filtering this one, which returns `.git` to the scale of the artifacts themselves. Since `auto_update` performs a git update, that history must stay linear from here on — no force push, no history rewrite, no grafting development history in later.
+- Standing invariant: do not rename `st-stage`, and do not create anything else under that name. The redirect a rename leaves behind is overridden by a new repository at the freed name, at which point installed copies `auto_update` against unrelated history.
+- Was blocked on "Hardcoded Install Directory Name" below, which is now resolved. The runtime derivation has not yet been exercised against a real install under the new directory name — that is acceptance re-check 29.
 
 ## Hardcoded Install Directory Name — Resolved 2026-08-30
 
