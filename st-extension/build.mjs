@@ -136,9 +136,12 @@ export async function buildExtension({
 
   if (path.resolve(outputRoot) !== path.resolve(sourceRoot)) {
     copyFileSync(path.join(sourceRoot, 'manifest.json'), path.join(outputRoot, 'manifest.json'))
-    copyFileSync(
-      path.join(extensionDir, 'distribution-readme.md'),
+    // README 是唯一未被 .gitattributes 钉住行尾的产物，必须显式归一，否则签出方式会改变它的字节。
+    writeFileSync(
       path.join(outputRoot, 'README.md'),
+      normalizeArtifactNewlines(
+        readFileSync(path.join(extensionDir, 'distribution-readme.md'), 'utf8'),
+      ),
     )
   }
 
