@@ -4,6 +4,7 @@ import type {
   ExtensionWriteResult,
 } from './bridge'
 import type { ButlerExperiment } from './types'
+import { SELF_DIRECTORY_NAME, isSelfExtensionName } from './self-identity'
 
 const BACKUP_STORAGE_KEY = 'st-stage:butler:extension-recovery:v1'
 
@@ -45,8 +46,9 @@ function uniqueSorted(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))].sort()
 }
 
+// 目录名在运行时算，不写死：改过名或换名分发后仍然认得自己。见 self-identity.ts
 function isSelf(name: string): boolean {
-  return name === 'st-stage' || name === 'third-party/st-stage'
+  return isSelfExtensionName(name)
 }
 
 function isSystem(item: ExtensionInventoryItem): boolean {
@@ -173,7 +175,7 @@ async function applyDisabledSet(
   const failed: ExtensionBatchResult['failed'] = []
   const applied: string[] = []
   for (const name of desired) {
-    if (isSelf(name)) failed.push({ name, error: '管家不能禁用 st-stage 自身' })
+    if (isSelf(name)) failed.push({ name, error: `管家不能禁用 ${SELF_DIRECTORY_NAME} 自身` })
   }
   if (failed.length > 0) return { ok: false, applied, failed, reloadRequired: false }
 

@@ -8,6 +8,7 @@ import {
   type ExtensionContractResult,
   type ExtensionManifestSummary,
 } from './st-contract'
+import { SELF_DIRECTORY_NAME, isSelfExtensionName } from './self-identity'
 
 /** 管家所需的 ST context 最小切面（字段可能随版本缺失，全部可选） */
 interface ButlerSTContext {
@@ -403,8 +404,9 @@ async function defaultModuleLoader(specifier: string): Promise<unknown> {
   return import(specifier)
 }
 
+// 目录名在运行时算，不写死：改过名或换名分发后仍然认得自己。见 self-identity.ts
 function isSelfExtension(name: string): boolean {
-  return name === 'st-stage' || name === 'third-party/st-stage'
+  return isSelfExtensionName(name)
 }
 
 export function createButlerBridge(deps: ButlerBridgeDependencies = {}) {
@@ -497,7 +499,8 @@ export function createButlerBridge(deps: ButlerBridgeDependencies = {}) {
           : { ok: false, code: 'api-error', error: 'SillyTavern 扩展接口调用失败' }
       }
       if (!enabled && isSelfExtension(found.extension.name)) {
-        return { ok: false, code: 'protected', error: '管家不能禁用 st-stage 自身' }
+        // 报实际目录名而不是写死 st-stage：改名安装时才说得准是谁
+        return { ok: false, code: 'protected', error: `管家不能禁用 ${SELF_DIRECTORY_NAME} 自身` }
       }
       try {
         const toggle = enabled ? contract.api.enableExtension : contract.api.disableExtension

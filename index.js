@@ -7,6 +7,9 @@
       var m = (new Error().stack || '').match(/(https?:\/\/[^\s)]+?)\/index\.js/)
       if (m) return m[1]
     } catch (e) { /* 老内核 stack 格式异常时走回退 */ }
+    // 最后兜底。正常路径永远走上面的 stack 推导，所以这里写死目录名不影响改名后的
+    // 加载；只有 stack 格式异常且目录名恰好不是 st-stage 时才会失效。
+    // 身份判断不依赖这个值：bundle 用自己的 import.meta.url 算（见 self-identity.ts）。
     return '/scripts/extensions/third-party/st-stage'
   }
   var base = baseUrl()

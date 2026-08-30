@@ -10668,13 +10668,44 @@ function diagnose(snapshot, current2) {
   return findings;
 }
 
+// st-extension/src/apps/butler/self-identity.ts
+var FALLBACK_DIRECTORY_NAME = "st-stage";
+var RESERVED_SEGMENTS = /* @__PURE__ */ new Set(["extensions", "third-party", "scripts", ""]);
+var PARENT_SEGMENTS = /* @__PURE__ */ new Set(["third-party", "extensions"]);
+function installDirectoryName(moduleUrl) {
+  if (typeof moduleUrl !== "string" || !moduleUrl) return FALLBACK_DIRECTORY_NAME;
+  const withoutQuery = moduleUrl.split(/[?#]/)[0];
+  const segments = withoutQuery.split("/").filter(Boolean);
+  const directory = segments[segments.length - 2];
+  const parent = segments[segments.length - 3];
+  if (!directory || RESERVED_SEGMENTS.has(directory.toLowerCase())) return FALLBACK_DIRECTORY_NAME;
+  if (!parent || !PARENT_SEGMENTS.has(parent.toLowerCase())) return FALLBACK_DIRECTORY_NAME;
+  return directory;
+}
+function selfExtensionNames(directory) {
+  const name = directory.trim();
+  if (!name) return [];
+  return name.includes("/") ? [name] : [name, `third-party/${name}`];
+}
+function matchesSelf(name, directory) {
+  const target = name?.trim().toLowerCase();
+  if (!target) return false;
+  return selfExtensionNames(directory).some((candidate) => candidate.toLowerCase() === target);
+}
+var SELF_DIRECTORY_NAME = installDirectoryName(
+  typeof import.meta === "undefined" ? "" : import.meta.url
+);
+function isSelfExtensionName(name) {
+  return matchesSelf(name, SELF_DIRECTORY_NAME);
+}
+
 // st-extension/src/apps/butler/experiments.ts
 var BACKUP_STORAGE_KEY = "st-stage:butler:extension-recovery:v1";
 function uniqueSorted(values) {
   return [...new Set(values.filter(Boolean))].sort();
 }
 function isSelf(name) {
-  return name === "st-stage" || name === "third-party/st-stage";
+  return isSelfExtensionName(name);
 }
 function recoveryCommand(backup) {
   const disabled = JSON.stringify(uniqueSorted(backup.disabledExtensions));
@@ -10723,7 +10754,7 @@ async function applyDisabledSet(desiredDisabledExtensions, deps, reloadOnSuccess
   const failed = [];
   const applied = [];
   for (const name of desired) {
-    if (isSelf(name)) failed.push({ name, error: "管家不能禁用 st-stage 自身" });
+    if (isSelf(name)) failed.push({ name, error: `管家不能禁用 ${SELF_DIRECTORY_NAME} 自身` });
   }
   if (failed.length > 0) return { ok: false, applied, failed, reloadRequired: false };
   for (const extension of inventory.extensions) {
@@ -11919,7 +11950,7 @@ async function defaultModuleLoader(specifier) {
   return import(specifier);
 }
 function isSelfExtension(name) {
-  return name === "st-stage" || name === "third-party/st-stage";
+  return isSelfExtensionName(name);
 }
 function createButlerBridge(deps = {}) {
   const loadModule = deps.loadModule ?? defaultModuleLoader;
@@ -12004,7 +12035,7 @@ function createButlerBridge(deps = {}) {
         return found.code === "not-found" ? { ok: false, code: "not-found", error: found.error } : { ok: false, code: "api-error", error: "SillyTavern 扩展接口调用失败" };
       }
       if (!enabled && isSelfExtension(found.extension.name)) {
-        return { ok: false, code: "protected", error: "管家不能禁用 st-stage 自身" };
+        return { ok: false, code: "protected", error: `管家不能禁用 ${SELF_DIRECTORY_NAME} 自身` };
       }
       try {
         const toggle = enabled ? contract.api.enableExtension : contract.api.disableExtension;
@@ -12395,7 +12426,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-08-30 01:22"}`;
+  return `${"0.9.0"}+${"2026-08-30 04:40"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -18851,7 +18882,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-30 01:22"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-30 04:40"}`;
   console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);
