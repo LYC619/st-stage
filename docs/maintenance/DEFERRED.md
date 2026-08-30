@@ -44,6 +44,14 @@ Raised by the same review.
 - Impact: updates load correctly, but the product-facing semantic version does not communicate the size of this release.
 - Decision owner: project maintainer.
 
+## Share Strings Do Not Carry `coverTag`
+
+- Behavior: `coverTag` exists in `core/types.ts` and `getPackCover` gives it priority over array order, but `encodeShareStringV2` emits only `@author`, `@kind`, `@tags`, and `@host`. `decodeShareStringV2` therefore has nothing to restore, and every imported pack falls back to its first sprite for a cover.
+- Impact: pack ordering has to double as cover selection. Someone who wants a specific cover in a shared pack must make it the first segment, which then also makes it the first entry in the injected prompt list and the gallery wall.
+- Found: 2026-08-30, while establishing that pack ordering is data rather than code. Not a regression; the field has never travelled.
+- Scope: add `@cover=` to the v2 encoder, restore it in the decoder behind the existing "does this tag exist" guard that `pack-io.ts` already applies, and leave v1 alone.
+- Deferred because: outside the request that surfaced it. Small and self-contained, no known blocker.
+
 ## Reference Sprite Cleanup and Catalog Expansion
 
 - Delivered baseline: five Seraphina outfit presets now use 102 hosted HTTPS WebP links; each preset can be localized in place through a same-ID override without placing image bytes in settings or `st-distribution/`.
@@ -62,7 +70,7 @@ deferred is the **publishing automation**: the copy-and-push release loop is doc
 it records still bind every future release.
 
 - Behavior: `st-distribution/` is generated and intentionally contains only install artifacts; root artifacts remain the current compatibility path for installs made before the split.
-- Impact: the standalone repository now exists, so new installs are ~881 KB instead of 66 MB. Release automation remains separate work, and each hand-run release is a chance to publish a stale or partial copy — which is why the loop's hash check is not optional.
+- Impact: the standalone repository now exists, so new installs are ~882 KB instead of 66 MB. Release automation remains separate work, and each hand-run release is a chance to publish a stale or partial copy — which is why the loop's hash check is not optional. The first release after publication demonstrated the cost concretely: the stamp advanced to `202608302113` on 2026-08-30 with two user-visible fixes, and installed copies had them only once a human ran the copy-and-push by hand.
 - Decision 2026-08-29, executed 2026-08-30 as `st-stage-ext`: the split publishes a separate distribution repository under a **new** name, keeping this development repository at `st-stage`. Reusing the `st-stage` name for the distribution repository would require renaming this one, and creating a new repository at the freed name breaks GitHub's rename redirect: existing installs would then point at a repository with unrelated history, so `auto_update` would fail and every current user would have to reinstall. A new distribution name leaves installed instances untouched, and this repository's root artifacts continue to serve them.
 - Measured motivation (2026-08-29, at `d9852e9`): a clone is 66 MB and 284 files to deliver 5 runtime files totalling roughly 895 KB. History weight is `bundle.js` 20.7 MB accumulated across rebuilds and 19.7 MB of deleted `public/` preset PNGs that remain reachable. Because `manifest.json` sets `auto_update: true`, every SillyTavern start performs a git update against that history. Runtime cost inside the browser is unaffected: SillyTavern reads `manifest.json` and injects only the declared `index.js` and `style.css`, so the other tracked files and all ignored local directories are never read.
 - Sequencing: the distribution repository started a fresh history rather than filtering this one, which returns `.git` to the scale of the artifacts themselves. Since `auto_update` performs a git update, that history must stay linear from here on — no force push, no history rewrite, no grafting development history in later.

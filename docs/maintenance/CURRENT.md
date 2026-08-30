@@ -2,14 +2,14 @@
 status_version: 1
 project: st-stage
 base_branch: main
-verified_code_head: 0e6352c
+verified_code_head: ffdb5ca
 remote_code_head_at_update: bf58bd8
-build_version: 0.9.0+202608301732
+build_version: 0.9.0+202608302113
 phase: distribution-repo-published-awaiting-real-st-acceptance
-updated_at: 2026-08-30T19:55:00+08:00
+updated_at: 2026-08-30T22:40:00+08:00
 updated_by: claude-code
-verification_source: claude-code-distribution-repo-published-2026-08-30
-history: docs/maintenance/history/2026-08-30-distribution-repo-published.md
+verification_source: claude-code-api-first-paint-and-prompt-compaction-2026-08-30
+history: docs/maintenance/history/2026-08-30-api-first-paint-and-prompt-compaction.md
 ---
 
 # Current Project Status
@@ -17,10 +17,11 @@ history: docs/maintenance/history/2026-08-30-distribution-repo-published.md
 ## Snapshot
 
 - Fifth-round fixes are represented by code/build commit `69066357f025b56ebac482384b592802ddd156e8`, fast-forwarded to `main` and pushed to `origin/main` after the maintenance handoff.
-- Cloud Export registration, lazy loading, batch selection, bounded-concurrency export, and standard backup are represented by code/build commit `116103a`; the review fixes by `d9852e9`, which is what real-ST acceptance round one was run against. The round-one fixes are represented by `62d0135`, the runtime self-identification change by `a164acb`, the `homePage` retarget plus the current artifacts by `838c2af`, and the install-URL and distribution-README rewrite by `0e6352c`. Everything through `bf58bd8` is on `origin/main`; `838c2af` onward is committed locally and not yet pushed.
+- Cloud Export registration, lazy loading, batch selection, bounded-concurrency export, and standard backup are represented by code/build commit `116103a`; the review fixes by `d9852e9`, which is what real-ST acceptance round one was run against. The round-one fixes are represented by `62d0135`, the runtime self-identification change by `a164acb`, the `homePage` retarget plus the artifacts of that round by `838c2af`, and the install-URL and distribution-README rewrite by `0e6352c`. The first real-ST feedback after publication produced `8a5bb3e` (API app first paint) and `cfa7f48` (sprite prompt compaction, which carries the current artifacts), and `ffdb5ca` corrected the README's install section and App inventory. Everything through `bf58bd8` is on `origin/main`; `838c2af` onward — six commits — is committed locally and not yet pushed.
 - The paired STE ZIP input implementation is tracked in the sibling repository at `f874b55`; it extracts into a temporary authorized root and reuses the existing ST scan/selection/import flow without persisting `stRoot`.
-- Product version remains `0.9.0`; the cache-busting build stamp is `0.9.0+202608301732`. The version decision is still open and deliberately untouched.
+- Product version remains `0.9.0`; the cache-busting build stamp advanced to `0.9.0+202608302113`. The version decision is still open and deliberately untouched.
 - **The distribution split is done.** The distribution repository is published at `https://github.com/LYC619/st-stage-ext`, first release commit `25809d9`, carrying build stamp `0.9.0+202608301732`. It holds the six generated files with fresh history and a local clone sits at `D:\8.Project\0_0_维护\st-stage-ext`. The development repository stays at `st-stage`, which is what keeps the freed-name hazard from ever arising.
+- **The published repository is now behind by three files, not one.** Comparing against the hashes published at `202608301732`: `bundle.js` and `version.json` changed with this round, `README.md` was already behind from `0e6352c`, and `manifest.json`, `index.js`, and `style.css` still match byte-for-byte — this round touched no CSS and the stub stayed stable. Until the next copy-and-push, installed copies do not have the API first-paint fix or the shorter sprite prompt. This is the release loop's normal state between builds, not a defect.
 - Install directory names are derived at runtime, so the extension recognizes itself as `st-stage-ext`. That guarantee has not been exercised against a real install yet; it is re-check 29.
 - This round addresses phone click-through, variable-toggle feedback, gallery stack/filter/tag management, opt-in baked-checkerboard cleanup, readable Butler comparisons, and system-extension guidance.
 - The first real-ST acceptance round passed all 20 checks with no blocking defects. The six fixes it raised are described under "Acceptance Round One Fixes" below and are represented by the current artifacts.
@@ -56,31 +57,47 @@ history: docs/maintenance/history/2026-08-30-distribution-repo-published.md
 - The extension identifies itself by the directory it is actually installed in. `st-extension/src/apps/butler/self-identity.ts` derives that name from the bundle's own `import.meta.url` at load time, and both self-protection sites consult it instead of comparing the literal `st-stage`. Derivation is anchored to the SillyTavern layout `…/extensions[/third-party]/<dir>/bundle.js`; anything else falls back to `st-stage` rather than returning a plausible wrong value. The user-facing "cannot disable itself" message now names the real directory.
 - Third-party extensions are presented as a read-only guide. The staged "temporarily disable to find the stall" flow was removed in acceptance round one; the user operates SillyTavern's own extension manager. st-stage still cannot select itself, and a troubleshooting run stranded by the removal can still be restored once.
 
+### Post-Publication Feedback Fixes
+
+The first real-ST session after publication raised two items. Both are fixed here; two further items were answered without code changes and are recorded under "Answered Without Code Changes".
+
+- **The API app was the only one that did not paint instantly.** Its `mount` awaited `readConnection()`, and `readConnection` unconditionally issued `POST /api/secrets/find`. The profile list depends only on local settings, so the whole first frame was gated behind a network round trip that fetched a key the app never used. `readConnection` now takes `withSecret`, and the three call sites that only display connection state skip the secret: first paint, the manager's active-row highlight, and the `waitForConnection` re-verification poll. The app paints synchronously and fills connection state in afterwards, matching `butler-app` and `mvu-app`. `fetchModelsTransaction` deliberately keeps reading the secret — it needs the original value to restore afterwards.
+- **The poll was also wasting requests.** `waitForConnection` re-reads every 120 ms for up to 8 s, and each read was firing another secret POST — up to 66 redundant requests per profile switch. A test asserts zero `find` calls against exactly one `write` call across a full apply.
+- **The sprite prompt was three times longer than it needed to be.** Two constructs both grew linearly with pack size while saying the same thing: every numbered range carried its own "输出时从X至Y中随机选择一个完整图名", and then every range label was listed a second time as a prohibition. The rule is now stated once with a correct/incorrect pair drawn from the pack's own tags, which is constant cost. Range labels changed from `prefix1-3` to `prefix(1-3)`; the parentheses separate "put a number here" from the image name, so substituting an integer mechanically yields a real name. The prefix keeps its own separator (`horse_(1-2)`) because the prefix is whatever precedes the digits and is not guaranteed to be `_`. The compaction threshold dropped from 3 to 2 so the list has one reading throughout rather than mixing verbatim names with ranges. Measured on a real 271-image pack: 2327 → 856 characters.
+
+### Answered Without Code Changes
+
+- **Pack ordering is data, not code.** `buildScenes` in `core/prompt-builder.ts` preserves first-appearance order and there is no sort anywhere in the path, so the prompt list and the gallery wall both follow the order of segments in the share string. Reordering a pack means reordering its share string.
+- **`coverTag` does not survive a share string.** The field exists in `core/types.ts` and `getPackCover` gives it priority over array order, but `encodeShareStringV2` emits only `@author`, `@kind`, `@tags`, and `@host`. An imported pack therefore always falls back to its first sprite for a cover. Adding `@cover=` would be a small neutral change; it was not made this round because it was outside the request.
+- **A numbered-tag glossary was considered and declined.** Mapping numbers to names in a pack's notes field would put a per-pack constant into every injection, undoing the compaction above, and the reporter had already confirmed numbers alone generate correctly. Notes remain the right home for anything genuinely needed at generation time, since they flow into the prompt only when set.
+
 ## Recorded Verification
 
-Current artifact hashes belong to the review-fix batch described under "Review Fixes" below. Earlier rounds' hashes stay in their dated `history/` records rather than here, so this section always matches the artifacts currently in the worktree.
+Current artifact hashes belong to the post-publication feedback fixes described above. Earlier rounds' hashes stay in their dated `history/` records rather than here, so this section always matches the artifacts currently in the worktree.
 
-Evidence for the current build stamp `0.9.0+202608301732`:
+Evidence for the current build stamp `0.9.0+202608302113`:
 
-- Vitest `4.1.10`: 80 files, 964/964 passed.
+- Vitest `4.1.10`: 80 files, 969/969 passed. The full run needs `NODE_OPTIONS=--max-old-space-size=6144` on this machine; the default heap aborts with a V8 out-of-memory (exit 134) partway through, which is an environment limit and not a test failure. Per-file runs are unaffected.
 - TypeScript typecheck and full ESLint: passed.
 - Next.js `16.2.6` production build: compiled successfully.
 - `git diff --check`: passed.
+- Five new tests, all mutation-checked. The two API tests assert the absence of network calls — zero `secrets/find` requests on a `withSecret: false` read, and zero across a full profile apply against exactly one `write` — so they fail if the skip regresses. The prompt tests pin that the range rule and its example each appear exactly once regardless of how many ranges exist.
+- ESLint caught a real portability issue rather than a style preference: the ideographic space separating the correct/incorrect example is fine in a plain string but not in a template literal, since `no-irregular-whitespace` only exempts the former. It is now a named constant.
 - The `homePage` retarget was verified to be exactly that: the whole-worktree diff for this stamp is six files, and the only non-stamp change is the one `homePage` line in the root and distribution `manifest.json`. `bundle.js` differs in two lines, both stamp interpolations.
-- Root artifacts were rebuilt twice at the fixed stamp `2026-08-30 17:32` and stayed byte-identical across all five files.
-- Three-way hash identity confirmed across the development root, `st-distribution/`, and the published `st-stage-ext` working tree — all five functional files match, so what is published is what this repository builds. `README.md` is deliberately the one exception and is described below. SHA-256:
+- The development root and `st-distribution/` hash-identically across all five functional files at this stamp. The published `st-stage-ext` tree is **not** part of this match any more — see the snapshot note above; re-establishing the three-way identity is part of the next copy-and-push, not something this record can claim. SHA-256 as built:
   - `manifest.json`: `FF64862A61B75564D86990E6C710E8394E3FAB4694F29209A222D23119B87BE3`
   - `index.js`: `27DB248504A6EE1FEC948C3C6135F93732C0B075A0803317B82C972BCFCF457D`
-  - `bundle.js`: `CA2A209C2C0F6100F3FC3469CC7D991BCC877709A4E0EC764B859AC86A017487`
+  - `bundle.js`: `E19FFAB36B1D02E6DB8C266DDB99D53074ADEF925276DF249505F8B1D22876B6`
   - `style.css`: `AF026AFAB5DB7AA36290BB622E9E61E7F178240CEFFC72063866B697A3DEE4A1`
-  - `version.json`: `DD6C2B6CE97F0C187B7EA21093F7620C6B6A80A3C778820E89E4BD563AEF4B7E`
-- `index.js` and `style.css` are byte-identical to the previous round, as expected: this round touched no CSS, and the stub's cross-version byte stability resumed after its one-round comment change.
+  - `version.json`: `5A4F4C2DDAF73F7A66DD2ED76B02DBA7EFB30FE600CDF28F15AC1B5AB52C6255`
+- `manifest.json`, `index.js`, and `style.css` are byte-identical to the previous round, as expected: this round touched no CSS and no manifest field, and the stub's cross-version byte stability continues to hold. Only `bundle.js` and `version.json` moved.
 - The published repository was inspected directly rather than assumed: one commit, fresh history with no development ancestry, clean worktree, in sync with its `origin/main`, `.gitattributes` present pinning `*.js`/`*.css`/`*.json` to `eol=lf`, and exactly the six files plus that `.gitattributes` at the root.
 - The runtime identity derivation was verified against the **built artifact**, not only the source: `import.meta.url` survives esbuild verbatim into `bundle.js`, and the shipped derivation returns the correct directory for renamed installs, non-default ports, and mixed-case names, while falling back for a non-ST layout. The throwaway checker was deleted afterwards.
 - Both rename regression tests were mutation-checked: restoring the old `name === 'st-stage'` literal makes both fail. One of them was vacuous on first write — the fake's `findExtension` did not know the name under test, so the call returned `not-found` and never reached the self-check. It now asserts the disable actually goes through.
-- Distribution boundary re-checked: `st-distribution/` contains exactly `bundle.js`, `index.js`, `manifest.json`, `README.md`, `style.css`, `version.json` — six files, 881 KB, with no images, `public/`, `reference/`, or preset source.
+- Distribution boundary re-checked: `st-distribution/` contains exactly `bundle.js`, `index.js`, `manifest.json`, `README.md`, `style.css`, `version.json` — six files, 882 KB (903,499 bytes), with no images, `public/`, `reference/`, or preset source.
 - Artifact hashes are reproducible on any checkout: the build normalizes generated files to LF and `.gitattributes` pins the release artifacts to `eol=lf`. Re-hashing a fresh checkout reproduces the values above.
-- The install-URL and distribution-README rewrite (`0e6352c`) was gated on its own: Vitest 964/964, typecheck, ESLint, Next build, and `git diff --check` all passed again, and a rebuild at the same fixed stamp left the five functional artifacts byte-identical to `838c2af`. `st-distribution/README.md` is the only artifact that changed, hash `F32B5F76084D…`; the published repository still carries the previous text at `D8FA59C2058E…`, so the distribution repository is one file behind by design until the next copy-and-push.
+- The install-URL and distribution-README rewrite (`0e6352c`) was gated on its own: Vitest 964/964, typecheck, ESLint, Next build, and `git diff --check` all passed, and a rebuild at the same fixed stamp left the five functional artifacts byte-identical to `838c2af`. `st-distribution/README.md` was the only artifact that changed, hash `F32B5F76084D…` against the published `D8FA59C2058E…`.
+- The reordered action pack the reporter is preparing for community sharing was verified through the real decoder rather than by inspection: `decodeShareString` returns 271 sprites, the segment multiset is unchanged from the original, every group prefix resolved against the intensity order table with none left unranked, and the cover tag now sorts first. That file lives in `reference/`, which is git-ignored and never copied into the distribution repository — the verification was run from a throwaway test that was deleted afterwards.
 - `st-distribution/README.md` is generated, not hand-written: `st-extension/build.mjs` writes it from `st-extension/distribution-readme.md`, so editing the output directly would be overwritten by the next build. That copy used to be a verbatim `copyFileSync`, which made `README.md` the only artifact whose bytes depended on checkout mode — the exact hazard `normalizeArtifactNewlines` exists for, and one the `.gitattributes` pinning does not cover because it lists only `*.js`, `*.css`, and `*.json`. It is now normalized like the other generated files, verified as zero CRLF pairs after a rebuild.
 
 Prior round-five evidence (Playwright `25/25`, frozen pnpm install, Next.js production build) is recorded in `docs/maintenance/history/` and was not re-run for this review batch.
@@ -189,9 +206,10 @@ See `docs/maintenance/DEFERRED.md` for details.
 
 - **Install from `st-stage-ext` in real SillyTavern and run re-check 29 first.** The extension is now published under a directory name it has never actually run under, and self-protection is derived at runtime. Everything else in this round is byte-verified; this is the only claim resting on untested behavior.
 - Then execute re-checks 21–28, starting with 21 and 22, and re-run any of 1–20 whose surface the round-one fixes touched. Round one of 1–20 passed on `d9852e9` with no blocking defects.
-- Push `838c2af`, `0e6352c`, and the accompanying record commit to `origin/main`. Pushing from the agent session fails on credentials, not network, so this is a maintainer action.
-- Copy the new `st-distribution/README.md` into the `st-stage-ext` clone and push it. It is the only file the distribution repository is behind on, and it is not urgent: the five functional artifacts already match, so nothing installed is wrong — the published front page just still reads as a generated-output note. Bundling it with the next functional release is fine.
+- Push the six local commits `838c2af`, `0e6352c`, `fa834ce`, `8a5bb3e`, `cfa7f48`, `ffdb5ca` and the accompanying record commit to `origin/main`. Pushing from the agent session fails on credentials, not network, so this is a maintainer action.
+- Copy the six files from `st-distribution/` into the `st-stage-ext` clone and push. This is now worth doing rather than deferring: `bundle.js` and `version.json` carry the API first-paint fix and the shorter sprite prompt, so installed copies stay slow until it lands. `README.md` rides along, clearing the one file that was already behind.
 - After re-check 29 passes, decide whether `manifest.json` moves from `0.9.0` to `1.0.0`, then rerun the complete release gates. Recommended sequence is to hold `0.9.0` until acceptance closes, since the version travels to every installed copy through `auto_update` and is awkward to walk back.
+- Decide whether to add `@cover=` to the stpack2 share format. Without it every imported pack falls back to its first sprite as the cover, which is why pack ordering currently has to double as cover selection. Small and self-contained; deferred only because it was outside this round's request.
 - Keep the deferred Renderer branching protocol out of acceptance fixes; scope it as a separate design task.
 - Fix only failures observed in real ST. Do not expand the API channel matrix unless OpenAI-compatible usage produces concrete gaps.
 
@@ -204,6 +222,7 @@ Published 2026-08-30. Creation is done; what remains below is the release loop f
 | Repository | `https://github.com/LYC619/st-stage-ext` |
 | First release commit | `25809d9` — `initial release: 0.9.0+202608301732` |
 | Build stamp published | `0.9.0+202608301732` |
+| Build stamp pending release | `0.9.0+202608302113` — built from `cfa7f48`, not yet copied or pushed |
 | Built from | development commit `838c2af` |
 | Local clone | `D:\8.Project\0_0_维护\st-stage-ext` |
 | Install directory name | `st-stage-ext` |
@@ -220,12 +239,12 @@ Exactly the six files generated in `st-distribution/`, at the repository **root*
 | --- | --- | --- |
 | `manifest.json` | 259 B | What ST reads first; declares `index.js` and `style.css` |
 | `index.js` | 1.9 KB | Byte-stable loader stub; resolves its own base URL, then version-busts the rest |
-| `bundle.js` | 800 KB | All extension code, single ESM file |
+| `bundle.js` | 801 KB | All extension code, single ESM file |
 | `style.css` | 78 KB | Extension styles plus the shared phone shell |
 | `version.json` | 27 B | Read with `cache: no-store`; supplies the `?v=` cache-busting parameter |
 | `README.md` | 1.2 KB | The distribution repository's front page: what the extension is, how to install it, and where the source lives. Generated from `st-extension/distribution-readme.md` — edit that, not the output |
 
-Total 881 KB (902,182 bytes). Regenerate with a fixed stamp so the bytes are reproducible:
+Total 882 KB (903,499 bytes). Regenerate with a fixed stamp so the bytes are reproducible:
 
 ```
 ST_STAGE_BUILD_TIME="YYYY-MM-DD HH:MM" pnpm build:st
