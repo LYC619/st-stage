@@ -55,14 +55,20 @@ async function readSecret(st: BridgeContext, secretKey?: string, secretId = ''):
   } catch { return { key: '', mode: 'unavailable' } }
 }
 
-export async function readConnection(): Promise<ConnectionInfo | null> {
+/**
+ * 读取 ST 当前连接。`withSecret: false` 跳过 `/api/secrets/find` 那次网络往返——
+ * 只想显示「当前连接」时不需要密钥，而那次请求是 API App 首屏唯一的网络阻塞点。
+ */
+export async function readConnection(options: { withSecret?: boolean } = {}): Promise<ConnectionInfo | null> {
   const st = getST(); if (!st) return null
   const mainApi = st.mainApi ?? (document.querySelector<HTMLSelectElement>('#main_api')?.value || 'openai')
   const settings = settingsFor(st, mainApi)
   const source = mainApi === 'openai' ? readString(settings, 'chat_completion_source') || document.querySelector<HTMLSelectElement>('#chat_completion_source')?.value || 'openai' : mainApi
   const descriptor = getSource(mainApi, source)
   const secretId = readString(settings, `${descriptor.secretKey}_id`) || readString(settings, 'secret_id')
-  const secret = await readSecret(st, descriptor.secretKey, secretId)
+  const secret = options.withSecret === false
+    ? { key: '', mode: 'unavailable' as SecretMode }
+    : await readSecret(st, descriptor.secretKey, secretId)
   const snapshot: Record<string, string | number | boolean> = {}
   for (const key of SOURCE_SETTING_KEYS) {
     const value = settings[key]
@@ -114,7 +120,8 @@ async function waitForValue(element: HTMLInputElement | HTMLSelectElement, value
 async function waitForConnection(profile: ApiProfile, timeout = 8000): Promise<ConnectionInfo> {
   const start = Date.now(); let latest: ConnectionInfo | null = null
   while (Date.now() - start < timeout) {
-    latest = await readConnection()
+    // 回验只比对类型/来源/模型/在线，不需要密钥；带上就是每 120ms 一次多余的 secrets/find。
+    latest = await readConnection({ withSecret: false })
     const sourceMatches = latest?.mainApi === profile.mainApi && (profile.mainApi !== 'openai' || latest.source === profile.source)
     const modelMatches = !profile.model || latest?.model === profile.model
     if (latest?.online && sourceMatches && modelMatches) return latest

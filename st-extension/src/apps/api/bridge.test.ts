@@ -23,6 +23,24 @@ describe('SillyTavern bridge', () => {
     await expect(readConnection()).resolves.toMatchObject({ mainApi: 'openai', source: 'custom', url: 'https://old/v1', model: 'old', key: 'readable-key', secretMode: 'read' })
   })
 
+  it('skips the secrets round trip when the caller does not need the key', async () => {
+    installST(); const fetchMock = vi.fn(async () => response(true, { value: 'readable-key' })); vi.stubGlobal('fetch', fetchMock)
+    // 首屏只显示「当前连接」，不需要密钥。带上就是一次网络往返挡住整个 API App 的第一帧。
+    await expect(readConnection({ withSecret: false })).resolves.toMatchObject({ mainApi: 'openai', url: 'https://old/v1', model: 'old', key: '', secretMode: 'unavailable' })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('does not re-read the secret on every connection re-verification poll', async () => {
+    const settings = installST({ custom_model: '' })
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => { calls.push(String(input)); return response(true) }))
+    document.querySelector('#api_button_openai')?.addEventListener('click', () => { settings.custom_model = 'model-a' })
+    await applyProfile(profile())
+    // 一次 write（应用档案），回验轮询不得再打 find：8 秒 / 120ms 最多 66 次多余请求。
+    expect(calls.filter((url) => url.includes('/api/secrets/find'))).toHaveLength(0)
+    expect(calls.filter((url) => url.includes('/api/secrets/write'))).toHaveLength(1)
+  })
+
   it('writes key, URL, model and settings before connecting', async () => {
     const settings = installST(); const clicked = vi.fn(); document.querySelector('#api_button_openai')?.addEventListener('click', clicked)
     const calls: string[] = []

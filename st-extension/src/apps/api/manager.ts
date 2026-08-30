@@ -39,7 +39,7 @@ export function createApiManager(deps: ApiManagerDeps): ApiManager {
   function buildList(): HTMLElement {
     const data = deps.getData(); const box = section(`连接档案（${data.profiles.length}）`)
     if (!data.profiles.length) desc(box, '还没有档案。可新建，或导入 SillyTavern 当前连接。')
-    void readConnection().then((connection) => {
+    void readConnection({ withSecret: false }).then((connection) => {
       if (!connection || !body) return
       const active = findActiveProfile(data.profiles, connection)
       body.querySelector(`[data-profile-id="${active?.id ?? ''}"]`)?.classList.add('stapi-row-on')

@@ -1,32 +1,49 @@
 import type { PhoneApp, PhoneAppContext } from '../../../core/phone-registry'
 import { el, appButton, foldSection } from './widgets'
 import { API_APP_ID, findActiveProfile, getSource, profileSummary, sanitizeAppData, type ApiProfile } from './api/core'
-import { applyProfile, onOnlineStatusChanged, readConnection, toast } from './api/bridge'
+import { applyProfile, onOnlineStatusChanged, readConnection, toast, type ConnectionInfo } from './api/bridge'
 
 export interface ApiAppDeps { openManager: () => void }
+
+interface ApiAppState {
+  busy: boolean
+  message: string
+  connection: ConnectionInfo | null
+  connectionLoaded: boolean
+}
 
 export function apiApp(deps: ApiAppDeps): PhoneApp {
   let unsubscribe: (() => void) | null = null
   return {
     id: API_APP_ID, name: 'API', icon: '📡', order: 6,
     mount(container, ctx) {
-      const state = { busy: false, message: '' }
-      void render(container, ctx, deps, state)
-      unsubscribe = onOnlineStatusChanged(() => { if (!state.busy && container.isConnected) void render(container, ctx, deps, state) })
+      const state: ApiAppState = { busy: false, message: '', connection: null, connectionLoaded: false }
+      // 首屏同步画出来：档案列表只依赖本地设置，不该等网络。连接状态随后补。
+      render(container, ctx, deps, state)
+      void refreshConnection(container, ctx, deps, state)
+      unsubscribe = onOnlineStatusChanged(() => { if (!state.busy && container.isConnected) void refreshConnection(container, ctx, deps, state) })
     },
     unmount() { unsubscribe?.(); unsubscribe = null },
   }
 }
 
-async function render(container: HTMLElement, ctx: PhoneAppContext, deps: ApiAppDeps, state: { busy: boolean; message: string }): Promise<void> {
-  const data = sanitizeAppData(ctx.getAppData()); const connection = await readConnection()
+async function refreshConnection(container: HTMLElement, ctx: PhoneAppContext, deps: ApiAppDeps, state: ApiAppState): Promise<void> {
+  const connection = await readConnection({ withSecret: false })
+  if (!container.isConnected) return
+  state.connection = connection; state.connectionLoaded = true
+  render(container, ctx, deps, state)
+}
+
+function render(container: HTMLElement, ctx: PhoneAppContext, deps: ApiAppDeps, state: ApiAppState): void {
+  const data = sanitizeAppData(ctx.getAppData()); const connection = state.connection
   if (!container.isConnected) return
   const active = connection ? findActiveProfile(data.profiles, connection) : undefined
   container.textContent = ''
 
   const status = el('div', 'so-app-section'); const title = el('div', 'so-app-title'); title.textContent = '当前连接'; status.append(title)
   const line = el('div', 'so-app-desc')
-  if (!connection) line.textContent = '未检测到 SillyTavern 运行时（这里只展示已保存档案）。'
+  if (!state.connectionLoaded) line.textContent = '正在读取当前连接…'
+  else if (!connection) line.textContent = '未检测到 SillyTavern 运行时（这里只展示已保存档案）。'
   else {
     const source = getSource(connection.mainApi, connection.source)
     line.textContent = `${connection.online ? '已连接' : '未连接'} · ${source.label}${active ? ` · ${active.name}` : ''}`
@@ -43,18 +60,20 @@ async function render(container: HTMLElement, ctx: PhoneAppContext, deps: ApiApp
   const manage = el('div', 'so-app-section'); const description = el('div', 'so-app-desc'); description.textContent = '管理全部 Chat Completion、Text Completion 与其他 SillyTavern API 档案。'; manage.append(description, appButton('管理连接档案', deps.openManager)); container.append(manage, buildApiGuide())
 
   async function switchProfile(profile: ApiProfile): Promise<void> {
-    if (state.busy || !connection) return
-    state.busy = true; state.message = `正在应用「${profile.name}」的类型、来源、密钥、URL 与模型…`; await render(container, ctx, deps, state)
+    if (state.busy) return
+    state.busy = true; state.message = `正在应用「${profile.name}」的类型、来源、密钥、URL 与模型…`; render(container, ctx, deps, state)
     try {
       const connected = await applyProfile(profile, (message) => {
         state.message = message
-        if (container.isConnected) void render(container, ctx, deps, state)
+        if (container.isConnected) render(container, ctx, deps, state)
       })
+      state.connection = connected; state.connectionLoaded = true
       state.message = `「${profile.name}」已连接${connected.model ? `，实际模型：${connected.model}` : ''}`; toast('success', state.message)
     } catch (error) {
       state.message = `切换失败：${error instanceof Error ? error.message : String(error)}`; toast('error', state.message); console.error('[st-stage] API 切换失败', error)
     } finally {
-      state.busy = false; await render(container, ctx, deps, state)
+      state.busy = false; render(container, ctx, deps, state)
+      void refreshConnection(container, ctx, deps, state)
     }
   }
 }
