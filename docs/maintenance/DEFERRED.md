@@ -61,9 +61,27 @@ Raised by the same review.
 - Sequencing: the distribution repository should start a fresh history rather than filtering this one, which returns `.git` to the scale of the artifacts themselves. Since `auto_update` performs a git update, that history must stay linear afterward — no force push.
 - Blocked on: "Hardcoded Install Directory Name" below.
 
-## Hardcoded Install Directory Name
+## Hardcoded Install Directory Name — Resolved 2026-08-30
 
-- Behavior: the SillyTavern install directory name equals the repository name, and that name is hardcoded in three places: the loader stub's fallback base path in `st-extension/build.mjs`, `isSelfExtension` in `st-extension/src/apps/butler/bridge.ts`, and `isSelf` in `st-extension/src/apps/butler/experiments.ts`. The latter two match only `st-stage` and `third-party/st-stage`.
-- Impact: under any other directory name, Butler stops recognizing itself, so the guarantee that st-stage cannot be selected for extension-isolation experiments silently fails and a user can disable Butler through Butler. The stub also loses its fallback path. This is already reachable today, because renaming an extension directory by hand is permitted; the distribution split only makes it the default.
-- Direction: derive identity at runtime rather than comparing a literal. The stub already resolves its own base path from the loading stack; that resolved directory name is the value Butler should compare against, with the current literal kept only as a last-resort fallback.
-- Location: `st-extension/build.mjs` stub, `st-extension/src/apps/butler/bridge.ts`, `st-extension/src/apps/butler/experiments.ts`, plus the tests asserting the literal.
+Closed by the runtime self-identification change. Kept here as the record of what
+the defect was and what the fix does not cover.
+
+- Was: the install directory name equals the repository name and was hardcoded in
+  `isSelfExtension` (`butler/bridge.ts`), `isSelf` (`butler/experiments.ts`), and
+  the loader stub's fallback base path (`build.mjs`). Under any other directory
+  name Butler stopped recognizing itself, so the guarantee that it cannot be
+  selected for extension isolation silently failed and a user could disable
+  Butler through Butler.
+- Now: `butler/self-identity.ts` derives the directory name at runtime from the
+  bundle's own `import.meta.url` and both call sites consult it. Two additional
+  literals were found during the fix that this entry had not listed — the
+  user-facing `管家不能禁用 st-stage 自身` message in each of those two files —
+  and both now interpolate the runtime name.
+- Deliberately not covered: the stub's last-resort fallback in `build.mjs` still
+  contains the literal. It is only reached when `Error().stack` parsing fails,
+  and identity no longer depends on it, so a renamed install with a working stack
+  is unaffected. Removing it entirely would leave no fallback at all.
+- Residual risk: derivation requires the ST layout `…/extensions[/third-party]/<dir>/bundle.js`.
+  Anything else falls back to `st-stage` rather than guessing, which fails
+  closed — protection may attach to the wrong name only if someone installs
+  under a non-ST layout *and* renames the directory.

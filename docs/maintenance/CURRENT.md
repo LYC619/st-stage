@@ -2,14 +2,14 @@
 status_version: 1
 project: st-stage
 base_branch: main
-verified_code_head: 62d0135
-remote_code_head_at_update: d9852e9
-build_version: 0.9.0+202608300122
-phase: acceptance-round1-fixes-applied
-updated_at: 2026-08-30T01:22:00+08:00
+verified_code_head: a164acb
+remote_code_head_at_update: e1fb2b2
+build_version: 0.9.0+202608300440
+phase: split-prerequisite-done-awaiting-distribution-repo
+updated_at: 2026-08-30T04:40:00+08:00
 updated_by: claude-code
-verification_source: claude-code-acceptance-round1-fixes-2026-08-30
-history: docs/maintenance/history/2026-08-30-acceptance-round1-fixes.md
+verification_source: claude-code-runtime-self-identification-2026-08-30
+history: docs/maintenance/history/2026-08-30-runtime-self-identification.md
 ---
 
 # Current Project Status
@@ -17,9 +17,10 @@ history: docs/maintenance/history/2026-08-30-acceptance-round1-fixes.md
 ## Snapshot
 
 - Fifth-round fixes are represented by code/build commit `69066357f025b56ebac482384b592802ddd156e8`, fast-forwarded to `main` and pushed to `origin/main` after the maintenance handoff.
-- Cloud Export registration, lazy loading, batch selection, bounded-concurrency export, and standard backup are represented by code/build commit `116103a`; the review fixes by `d9852e9`, which is what real-ST acceptance round one was run against. The round-one fixes and the current artifacts are represented by `62d0135`.
+- Cloud Export registration, lazy loading, batch selection, bounded-concurrency export, and standard backup are represented by code/build commit `116103a`; the review fixes by `d9852e9`, which is what real-ST acceptance round one was run against. The round-one fixes are represented by `62d0135`, and the runtime self-identification change plus the current artifacts by `a164acb`. Everything through `e1fb2b2` is on `origin/main`; `a164acb` onward is committed locally and not yet pushed.
 - The paired STE ZIP input implementation is tracked in the sibling repository at `f874b55`; it extracts into a temporary authorized root and reuses the existing ST scan/selection/import flow without persisting `stRoot`.
-- Product version remains `0.9.0`; the cache-busting build stamp is `0.9.0+202608300122`.
+- Product version remains `0.9.0`; the cache-busting build stamp is `0.9.0+202608300440`. The version decision is still open and deliberately untouched.
+- The distribution split's one code prerequisite is done: the install directory name is now derived at runtime, so the extension recognizes itself under any directory name. Creating the distribution repository is the remaining step and is a manual operation for the maintainer.
 - This round addresses phone click-through, variable-toggle feedback, gallery stack/filter/tag management, opt-in baked-checkerboard cleanup, readable Butler comparisons, and system-extension guidance.
 - The first real-ST acceptance round passed all 20 checks with no blocking defects. The six fixes it raised are described under "Acceptance Round One Fixes" below and are represented by the current artifacts.
 - Automated gates are complete for those fixes. The re-check items below remain manual and are not claimed as passed.
@@ -51,25 +52,30 @@ history: docs/maintenance/history/2026-08-30-acceptance-round1-fixes.md
 - The report states that browser garbage collection and caches can move memory in either direction, so memory alone does not prove that an optimization worked.
 - The system-extension advisor covers Expressions, Gallery, Memory, Quick Reply, Regex, Stable Diffusion, Translate, TTS, and Vectors with purpose, when needed, loss when disabled, and a conservative recommendation.
 - System extensions are advisory and read-only. Unknown system extensions receive no invented performance claim.
+- The extension identifies itself by the directory it is actually installed in. `st-extension/src/apps/butler/self-identity.ts` derives that name from the bundle's own `import.meta.url` at load time, and both self-protection sites consult it instead of comparing the literal `st-stage`. Derivation is anchored to the SillyTavern layout `…/extensions[/third-party]/<dir>/bundle.js`; anything else falls back to `st-stage` rather than returning a plausible wrong value. The user-facing "cannot disable itself" message now names the real directory.
 - Third-party extensions are presented as a read-only guide. The staged "temporarily disable to find the stall" flow was removed in acceptance round one; the user operates SillyTavern's own extension manager. st-stage still cannot select itself, and a troubleshooting run stranded by the removal can still be restored once.
 
 ## Recorded Verification
 
 Current artifact hashes belong to the review-fix batch described under "Review Fixes" below. Earlier rounds' hashes stay in their dated `history/` records rather than here, so this section always matches the artifacts currently in the worktree.
 
-Evidence for the current build stamp `0.9.0+202608300122`:
+Evidence for the current build stamp `0.9.0+202608300440`:
 
-- Vitest `4.1.10`: 78 files, 948/948 passed.
-- TypeScript typecheck and full ESLint: passed. ESLint initially reported six errors — four dead `experiments.ts` imports in `butler-app.ts` and an unused `selected` set in `modals.ts`, all left behind by removing the troubleshooting flow — which were removed rather than suppressed.
+- Vitest `4.1.10`: 80 files, 964/964 passed.
+- TypeScript typecheck and full ESLint: passed.
 - Next.js `16.2.6` production build: compiled successfully.
 - `git diff --check`: passed.
-- The nine new `cloud-export` CSS rules were parsed through a real CSSOM to confirm none were silently dropped for bad syntax, then the throwaway checker was deleted. Balanced-brace counting alone does not prove a selector is valid.
-- Root artifacts were rebuilt twice with the fixed build stamp `2026-08-30 01:22` and remained byte-identical. SHA-256:
-  - `index.js`: `D0E60A1B546D223922A7FBF01231B79205874963BDFFE4C963BD081347C9B849`
-  - `bundle.js`: `E1D3B0042A6E19FBCAE6E20747D04ACF9CCAC391831292381B8FE985FC11ADAA`
+- The runtime identity derivation was verified against the **built artifact**, not only the source: `import.meta.url` survives esbuild verbatim into `bundle.js`, and the shipped derivation returns the correct directory for renamed installs, non-default ports, and mixed-case names, while falling back for a non-ST layout. The throwaway checker was deleted afterwards.
+- Both rename regression tests were mutation-checked: restoring the old `name === 'st-stage'` literal makes both fail. One of them was vacuous on first write — the fake's `findExtension` did not know the name under test, so the call returned `not-found` and never reached the self-check. It now asserts the disable actually goes through.
+- Root artifacts were rebuilt twice with the fixed build stamp `2026-08-30 04:40` and remained byte-identical. SHA-256:
+  - `index.js`: `27DB248504A6EE1FEC948C3C6135F93732C0B075A0803317B82C972BCFCF457D`
+  - `bundle.js`: `53D8F17E31139E96D067F4F9FD4CCEEA41F7772B05B7D0383CE5B71EDB518AA1`
   - `style.css`: `AF026AFAB5DB7AA36290BB622E9E61E7F178240CEFFC72063866B697A3DEE4A1`
-  - `version.json`: `8F023298CE821E9B0862EFB96B8ADD404BD7F0187C72DD382564EF8167CF36D9`
-- `index.js` is byte-identical to the previous round, as intended: the stub is version-agnostic and only the `bundle.js?v=` parameter it reads changes.
+  - `version.json`: `AFA694C29B3BB490787A635A5C9B220A50CF90010F629C6DB34B96EE16547B11`
+- `index.js` changed this round, unlike previous rounds where it stayed byte-identical. The diff is three comment lines in the stub's fallback branch and no executable change; verified by inspecting the artifact diff directly. The stub's cross-version byte stability resumes from here.
+- `style.css` is unchanged from the previous round, as expected: this round touched no CSS.
+- `st-distribution/` was stale and is now regenerated. The previous round's commit refreshed only the root artifacts, so the tracked distribution copy still carried the pre-cloud-export CSS — `st-distribution/style.css` was 159 lines behind. All four generated files in `st-distribution/` now hash-identically to their root counterparts, verified pairwise. Anyone who had copied that directory as the distribution source would have shipped a build without the round-one UI fixes.
+- Distribution boundary re-checked: `st-distribution/` contains exactly `bundle.js`, `index.js`, `manifest.json`, `README.md`, `style.css`, `version.json` — six files, 887 KB, with no images, `public/`, `reference/`, or preset source.
 - Artifact hashes are now reproducible on any checkout: the build normalizes generated files to LF and `.gitattributes` pins the release artifacts to `eol=lf`. Re-hashing a fresh checkout reproduces the values above.
 - `st-distribution/` contains exactly `bundle.js`, `index.js`, `manifest.json`, `README.md`, `style.css`, and `version.json`; it contains no images, `public/`, `reference/`, or preset source.
 
@@ -122,7 +128,7 @@ The first real-ST acceptance round passed all 20 checks with no blocking defects
 
 ### Runtime And Renderer
 
-1. Update the extension and confirm the settings page shows exactly `v0.9.0` with no build time. The stamp `202608300122` now lives only in `version.json`, the `bundle.js?v=` parameter, the console load line, and Butler reports — confirm it there or in DevTools to prove the update landed. Then switch chat/character once and confirm prompt injection still self-heals.
+1. Update the extension and confirm the settings page shows exactly `v0.9.0` with no build time. The stamp `202608300440` now lives only in `version.json`, the `bundle.js?v=` parameter, the console load line, and Butler reports — confirm it there or in DevTools to prove the update landed. Then switch chat/character once and confirm prompt injection still self-heals.
 2. Open the phone over a clickable Gal panel or chat control, tap phone checkboxes/buttons, and confirm only the phone control activates.
 3. With a real reply containing `<UpdateVariable>`, enable hiding and confirm the payload disappears; disable it and confirm st-stage restores the payload immediately or after the scheduled reprocess without requiring message edit mode.
 4. Separately enable a SillyTavern Regex rule that deletes the same block. Confirm the st-stage notice explains why disabling its own hide setting cannot restore content already removed by Regex; disable the external rule and reprocess to recover it.
@@ -145,7 +151,7 @@ The first real-ST acceptance round passed all 20 checks with no blocking defects
 15. Open system-extension guidance and verify the nine common built-ins show understandable purpose, need conditions, disable impact, and conservative advice; unknown built-ins must not receive a fabricated performance conclusion.
 16. Open the third-party extension guide. Confirm it is read-only — no checkboxes and no disable buttons — and that each installed extension shows its id, version, declared CSS/JS, dependencies, reverse dependents, and load order, with the general cost principles rather than an invented per-extension millisecond figure. Confirm st-stage shows its self-protection notice and that the guide points to SillyTavern's own extension manager.
 
-17. Update SillyTavern with the `0.9.0+202608300122` artifacts. Open `导出` with an account containing many roles/chats/worldbooks and confirm the role list appears before chat lists, worldbook bodies, or settings assets are requested.
+17. Update SillyTavern with the `0.9.0+202608300440` artifacts. Open `导出` with an account containing many roles/chats/worldbooks and confirm the role list appears before chat lists, worldbook bodies, or settings assets are requested.
 18. Expand one role and confirm only that role's chat list loads once. Use 全选/反选/清空 on the filtered result, then combine selected worldbooks, OpenAI presets, and global regex.
 19. Export and confirm exactly one `default-user-YYYYMMDD-HHmmss.zip` downloads. Verify `settings.json`, `characters/`, `chats/`, `worlds/`, and `OpenAI Settings/` are directly at the archive root, no extra `default-user/` wrapper or `secrets.json` exists, and settings use `extension_settings.regex`.
 20. In the STE client, choose the generated ZIP, confirm it reaches the normal selection dialog without changing the saved ST directory, complete the import into the user-selected Vault, and confirm cancel/failure/success all remove the temporary source directory.
@@ -162,6 +168,7 @@ These cover only what round one changed. Items 21 and 22 are the ones most worth
 26. Open tag management from the gallery manager and confirm buttons are horizontal with readable labels at their natural width, on both desktop and mobile. This is the panel that had no layout at all.
 27. On the checkerboard action, hover for the tooltip, then try a genuinely transparent PNG and confirm the message says the image already has an alpha channel and needs no cleanup — distinct from the "no evidenced checkerboard" message an ordinary opaque image produces.
 28. If a troubleshooting run was left stranded by an earlier build, confirm the Butler home screen offers to restore the pre-troubleshooting extension state once, that it restores the original disabled list, and that the card does not return afterwards.
+29. Install from the distribution repository under its new directory name — not `st-stage`. Open Butler's extension guide and confirm the extension marks itself protected and names its actual directory. Then try to disable it and confirm the refusal quotes that same directory name. This is the guarantee the runtime-identification change exists to preserve, and no automated test can cover the real install path. A plain rename of an existing install exercises the same code and is a valid substitute.
 
 ## Deferred
 
@@ -169,9 +176,8 @@ These cover only what round one changed. Items 21 and 22 are the ones most worth
 - Conservative Renderer HTML detection.
 - Renderer Cards pre-generated branch/pruning workflow.
 - Batch cleanup/catalog expansion for the 143-file reference source set and owned long-term hosting/CDN selection.
-- Extraction and publishing automation for the generated standalone ST distribution repository. The split is now decided (separate distribution repository under a new name) and blocked on the hardcoded-directory-name fix below.
-- Runtime self-identification instead of the hardcoded `st-stage` install-directory name, required before the distribution repository can be published under any other name.
-- Product semantic version decision after real-ST acceptance.
+- Extraction and publishing automation for the generated standalone ST distribution repository. The split is decided (separate distribution repository under a new name); its code prerequisite is now done, so what remains is the manual repository creation described under "Next Actions".
+- Product semantic version decision after real-ST acceptance. Untouched this round.
 
 See `docs/maintenance/DEFERRED.md` for details.
 
@@ -180,5 +186,54 @@ See `docs/maintenance/DEFERRED.md` for details.
 - Round one of checks 1–20 passed on `d9852e9` with no blocking defects. Install the current head in real SillyTavern and execute re-checks 21–28, starting with 21 and 22; re-run any of 1–20 whose surface these fixes touched.
 - Keep the deferred Renderer branching protocol out of acceptance fixes; scope it as a separate design task.
 - Fix only failures observed in real ST. Do not expand the API channel matrix unless OpenAI-compatible usage produces concrete gaps.
-- After acceptance passes, execute the distribution split in this order: replace the hardcoded install-directory name with runtime self-identification, then create the distribution repository, then decide the semantic version. The split must not precede the directory-name fix, because publishing under a different name is what breaks Butler self-protection.
-- After blockers pass, decide whether `manifest.json` should move from `0.9.0` to `1.0.0`, then rerun the complete release gates.
+- The directory-name prerequisite is done, so the distribution repository can now be created. Steps are below; they are manual because they require GitHub account access.
+- Add re-check 29 to the next real-ST round: install from the distribution repository under its new directory name, open Butler's extension guide, and confirm the extension still marks itself protected and reports its actual directory name rather than `st-stage`. This is the one guarantee the rename fix exists to preserve, and no automated test can cover the real install path.
+- After the distribution repository works, decide whether `manifest.json` moves from `0.9.0` to `1.0.0`, then rerun the complete release gates. Unchanged this round by instruction.
+
+## Distribution Repository Creation
+
+Manual steps for the maintainer. Nothing here is automated and no GitHub repository was created.
+
+### What Goes In
+
+Exactly the six files already generated in `st-distribution/`, at the repository **root** — not inside a subdirectory. SillyTavern reads `manifest.json` from the repository root and loads only the `js` and `css` it declares.
+
+| File | Size | Purpose |
+| --- | --- | --- |
+| `manifest.json` | 255 B | What ST reads first; declares `index.js` and `style.css` |
+| `index.js` | 1.9 KB | Byte-stable loader stub; resolves its own base URL, then version-busts the rest |
+| `bundle.js` | 800 KB | All extension code, single ESM file |
+| `style.css` | 78 KB | Extension styles plus the shared phone shell |
+| `version.json` | 27 B | Read with `cache: no-store`; supplies the `?v=` cache-busting parameter |
+| `README.md` | 452 B | States the directory is generated and points at the development repository |
+
+Total 887 KB. Regenerate with a fixed stamp so the bytes are reproducible:
+
+```
+ST_STAGE_BUILD_TIME="YYYY-MM-DD HH:MM" pnpm build:st
+```
+
+Do **not** copy `st-extension/`, `core/`, `docs/`, `public/`, `reference/`, `app/`, `components/`, or any test file. The development repository measured 66 MB across 284 files against these 6 files at 887 KB; that gap is the reason for the split.
+
+### One Required Edit
+
+`manifest.json` currently has `"homePage": "https://github.com/LYC619/st-stage"`, which points at the development repository. Change it to the new distribution repository URL before the first release. With `auto_update: true`, ST runs a git update against the origin the user cloned from on every start, so leaving the field stale misdirects anyone who follows it from the extension list. The root `manifest.json` in this repository is the source the build copies, so edit it here and rebuild rather than editing the generated copy.
+
+### Naming Constraint
+
+Pick a name that is **not** `st-stage` and do not later create a new repository at the freed `st-stage` name. Renaming a GitHub repository leaves a redirect from the old path, but creating a fresh repository at that old name overrides the redirect — existing installs would then `auto_update` against an unrelated repository and pull unrelated history. Keeping the development repository at `st-stage` avoids the situation entirely, which is why the split uses a new name for the distribution side.
+
+The install directory name equals the repository name, and the extension now derives its identity from that at runtime, so any name works. Verify with re-check 29 rather than assuming.
+
+### Steps
+
+1. Create an empty repository under the chosen new name. Do not initialise it with a README, licence, or `.gitignore`; the six files are the entire content and an extra file at the root is noise ST will ignore but users will not.
+2. Edit `homePage` in this repository's root `manifest.json` to the new URL, rebuild both trees at one fixed stamp (`pnpm build:ext` and `pnpm build:st`), and confirm the four generated files hash-identically between the root and `st-distribution/`.
+3. Copy the six files from `st-distribution/` into a clean clone of the new repository, commit with fresh history, and push. Do not graft the development repository's history: it carries the 66 MB of source and assets the split exists to remove, and a shallow graft would still fetch those objects.
+4. Add a `.gitattributes` to the distribution repository pinning `*.js`, `*.css`, and `*.json` to `text eol=lf`. Without it, a checkout on a machine with `core.autocrlf=true` rewrites the line endings, the working copy no longer matches the recorded SHA-256, and the reproducibility evidence stops verifying. This repository already does that for its own artifacts.
+5. Install from the new repository into a real SillyTavern under its new directory name and run re-check 29.
+6. Record the distribution repository URL, its first release commit, and the build stamp it carries in this document, then decide the semantic version.
+
+### What Stays Manual For Now
+
+Publishing automation is still deferred. Until it exists, every distribution release is: rebuild at a fixed stamp in this repository, verify the root and `st-distribution/` hashes match, copy the six files across, push. The previous round demonstrates why the hash comparison belongs in that loop — it refreshed the root artifacts and left `st-distribution/` 159 CSS lines behind, so a copy taken from that directory would have shipped without the round-one UI fixes.
