@@ -2,12 +2,13 @@
 record_date: 2026-08-30
 code_head_at_record: ffdb5ca
 build_version: 0.9.0+202608302113
+distribution_commit: 01112ac
 recorded_by: claude-code
 ---
 
 # API First Paint, Prompt Compaction, README Corrections
 
-The first real-ST session after the distribution repository went live raised four items. Two were defects and are fixed; two were questions answered without code changes.
+The first real-ST session after the distribution repository went live raised four items. Two were defects and are fixed; two were questions answered without code changes. A README sweep and the release copy to the distribution repository followed.
 
 ## What Happened
 
@@ -16,6 +17,8 @@ The first real-ST session after the distribution repository went live raised fou
 | `8a5bb3e` | The API app no longer waits on a secret lookup to paint its first frame |
 | `cfa7f48` | The sprite prompt states the range rule once instead of per entry; artifacts rebuilt at `202608302113` |
 | `ffdb5ca` | README install section leads with the address; two shipped Apps added to the inventory |
+
+The artifacts were then copied to the distribution repository and committed there as `01112ac` and `5842b24`; see "The Release Copy Is Not A Maintainer-Only Step" below. Both pushes are still outstanding.
 
 ## The API App Was Waiting On A Key It Never Used
 
@@ -57,12 +60,25 @@ Sweeping the README against recent commits turned up a documentation gap unrelat
 
 The install section was reordered for a different reason. The address was buried in step 3 with the two-repository explanation trailing after step 4, but installing the source repository is the most common failure mode and it fails confusingly: ST clones tens of megabytes and then finds no extension entry point. The address now leads the section and the two repositories are contrasted in a table.
 
+## The Release Copy Is Not A Maintainer-Only Step
+
+The release loop had bundled "copy the six files into the clone, commit, and push" into one step, and because the push needs credentials no agent session can supply, the copy kept getting deferred with it. The two have different requirements: copying between two local clones is reversible and needs no credentials at all. The loop now separates them, and the copy for this stamp was done in-session under standing authorization.
+
+Six files went into `D:\8.Project\0_0_维护\st-stage-ext`, committed as `01112ac` — `release: 0.9.0+202608302113`, built from `cfa7f48`. Git reported exactly three modified files, `bundle.js`, `version.json`, and `README.md`, which independently confirmed the three-files-behind assessment recorded before the copy: the other three artifacts were already byte-identical to what was published.
+
+Two guardrails matter here and are now written into the loop. The clone's root must keep exactly seven entries — the six artifacts plus its own `.gitattributes`, which is not generated and does not come from `st-distribution/` — so the copy must never clear the directory first. And `reference/` must never travel: it holds private chat logs and is git-ignored in the development repository.
+
+Committing surfaced a second finding. Git warned that `README.md`'s LF endings would be replaced by CRLF next time it touched the file, because `.gitattributes` pinned `*.js`, `*.css`, and `*.json` but not `*.md`. The recorded hashes are only reproducible on LF, so on a fresh Windows clone the release loop's own verification step would have reported a mismatch against a file nobody had edited. `5842b24` adds the missing line; `git add --renormalize .` confirmed no artifact content actually needed rewriting and the README hash stayed `F32B5F76084D33B9`.
+
+Both pushes remain outstanding and are a maintainer action. `st-stage` should go first: `01112ac` names `cfa7f48` as its source, and that reference dangles for anyone auditing the published bytes until the development history is public.
+
 ## Verification
 
 - Vitest `4.1.10`: 80 files, 969/969 passed. The full run requires `NODE_OPTIONS=--max-old-space-size=6144` on this machine; the default heap aborts with a V8 OOM (exit 134) partway through. That is an environment limit, not a test failure — per-file runs are unaffected.
 - TypeScript, full ESLint, Next.js `16.2.6` production build, `git diff --check`: all passed.
 - Five new tests, all mutation-checked.
 - Root and `st-distribution/` hash-identically across all five functional files. `manifest.json`, `index.js`, and `style.css` are byte-unchanged from the previous round; only `bundle.js` and `version.json` moved.
+- After the copy, three-way identity holds across the root, `st-distribution/`, and the `st-stage-ext` working tree at `01112ac`, plus the distribution-only `README.md` at `F32B5F76084D33B9`. Every copied file was checked for CRLF pairs and returned zero. This is true of the committed clone; it becomes true of the published repository when `01112ac` is pushed.
 - `next-env.d.ts` churned during `next build` again — the known flip-flop between `./.next/dev/types/routes.d.ts` and `./.next/types/routes.d.ts` — and was restored rather than committed, as in prior rounds.
 
 ## Notes For Next Time
@@ -70,3 +86,7 @@ The install section was reordered for a different reason. The address was buried
 ESLint's `no-irregular-whitespace` exempts plain strings but not template literals, so the ideographic space separating the correct/incorrect example passed review in the test file and failed in the source. It is now a named constant. Worth knowing before reaching for full-width punctuation inside a template literal.
 
 The earlier prohibition on round-tripping CJK source through PowerShell text pipelines held again this round: `Get-Content` without an explicit encoding read UTF-8 as ANSI when inspecting generated prompt output, producing mojibake that looked like a build defect. Read such files with the file tools instead.
+
+A recorded hash is only a verification tool if the file is reproducible, and on Windows that means every extension carrying a recorded hash needs an `eol=lf` line in `.gitattributes`. `*.md` was missing one for as long as the distribution repository has existed. Nothing had broken yet only because no Windows machine had re-checked out that README.
+
+When a checklist step bundles two actions with different prerequisites, the one needing more access silently gates the one needing less. "Copy and push" read as a single credentialed step for several rounds, which is why the published artifacts drifted three files behind while the copy itself was always available to do.
