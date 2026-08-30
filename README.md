@@ -20,7 +20,9 @@
 | 🧹 **管家** | ST 性能管家：一键性能模式 + 改动前快照还原、逐项微调、体检与优化指南（[说明](docs/BUTLER.md)） |
 | 🔢 **MVU** | MVU 版角色卡的变量面板：树状查看/编辑/删除 + 变化高亮（[说明](docs/VARIABLES.md)） |
 | 🧮 **新变量** | 内置轻量变量追踪：任何普通卡 GUI 定义变量，AI 自动维护，模板一键起步（[说明](docs/VARIABLES.md)） |
-| 🔌 **API** | 版本化连接档案快切：常用 Chat 渠道、自定义 OpenAI 兼容、Text Completion 与专用后端 |
+| 📡 **API** | 版本化连接档案快切：常用 Chat 渠道、自定义 OpenAI 兼容、Text Completion 与专用后端 |
+| 🎬 **渲染** | 结构化回复渲染：Galgame 分镜、卡片选择、本地战斗面板（见下） |
+| 📦 **导出** | 云端导出备份：立绘包与设置打包下载，可选整套或按项 |
 
 > 🔐 **密钥存储说明**：「图库」的 imgbb Key 和「API」的站点密钥都**明文**保存在 ST 扩展设置里（随 ST 服务端 `settings.json` 落盘）。扩展自己的导出文件和分享串不含任何密钥，但请不要把 ST 的 `settings.json` 或完整备份直接发给别人。
 
@@ -28,17 +30,25 @@
 
 ## 安装
 
-1. 打开 SillyTavern，点顶部的 **扩展**（Extensions，积木图标）
-2. 点 **安装扩展**（Install extension）
-3. 粘贴**扩展仓库**地址，点安装：
+**安装地址就是下面这一条**，复制它粘到 ST 的安装框里：
 
 ```
 https://github.com/LYC619/st-stage-ext
 ```
 
+1. 打开 SillyTavern，点顶部的 **扩展**（Extensions，积木图标）
+2. 点 **安装扩展**（Install extension）
+3. 粘贴上面的地址，点安装
 4. 安装完成后，聊天界面会出现一个**立绘悬浮窗**（初次是占位提示）和一个可拖动的 **📱 悬浮图标**
 
-> 📦 **两个仓库别装错**：[`st-stage-ext`](https://github.com/LYC619/st-stage-ext) 是**扩展仓库**，只放成品文件（约 1 MB），ST 的自动更新也走它——安装框里填这个。你正在看的 `st-stage` 是**源码仓库**（开发环境 + 测试 + 文档，几十 MB），用来改代码和提 issue，不要粘到 ST 的安装框里。
+> 📦 **为什么不是你正在看的这个仓库？** 本项目分两个仓库，安装只认前者：
+>
+> | 仓库 | 用途 | 体积 | 粘到 ST 安装框？ |
+> | --- | --- | --- | --- |
+> | [`st-stage-ext`](https://github.com/LYC619/st-stage-ext) | **扩展仓库**，只放 6 个成品文件；ST 的自动更新也走它 | 约 1 MB | 就填这个 |
+> | `st-stage`（你正在看的） | **源码仓库**：开发环境、测试、文档，用来改代码和提 issue | 几十 MB | 不要 |
+>
+> 装成源码仓库的话，ST 会拉几十 MB 却找不到扩展入口。装完可以在 `extensions/third-party/` 下确认目录名是 **`st-stage-ext`**——扩展的安装目录名跟仓库名一致，改名会导致资源加载失败。
 
 > ⚠️ **更新扩展后界面没变化？**先看 ST 扩展设置面板底部的版本号（v0.6 起显示 `vX.Y.Z（构建 时间）`）：版本号变了说明已加载新版；没变则多半是**仓库没重新构建/提交**，不是缓存。v0.6 起 `index.js` 是稳定加载器，每次都用 `version.json` 拉最新版本号给 `bundle.js`/`style.css` 破缓存，正常情况无需手动清缓存；极端情况电脑 Ctrl+F5 兜底。
 
@@ -56,6 +66,7 @@ https://github.com/LYC619/st-stage-ext
 - 一条回复**多张立绘按剧情顺序播放**（点击/自动轮播），支持每次回复输出 N 张
 - **多角色/换装**：一个聊天启用多个图包，`[立绘:鸣人/居家服/微笑]` 三级地址严格寻址，绝不串图
 - **一行分享串**把整个立绘包发到群里，对方粘贴即用（imgbb 图床自动直传）
+- **大图包不烧 token**：连号图名在清单里压成 `动作_(1-15)`，范围规则只讲一次。271 张图的图包注入约 850 字，同包旧版是 2300 字
 
 **📖 完整使用指南（三分钟上手、自建图包、多角色、分享、FAQ）：[docs/SPRITE.md](docs/SPRITE.md)**
 
@@ -196,8 +207,11 @@ st-extension/             ST 端（esbuild 打包为根目录产物）
    │  ├─ newvar/          「新变量」引擎：engine(解析/门禁/注入,带单测)、runtime(常驻编排)、
    │  │                   config、templates(内置模板)、designer(变量设计弹窗)
    │  ├─ api-app.ts       「API」App（手机页：站点快切+在线状态）
-   │  └─ api/             「API」支撑层：core(纯逻辑,带单测)、bridge(ST 耦合层，
-   │                      直写 oai_settings/密钥槽位，在线状态走 ST 真事件)、manager(全屏管理弹窗)
+   │  ├─ api/             「API」支撑层：core(纯逻辑,带单测)、bridge(ST 耦合层，
+   │  │                   直写 oai_settings/密钥槽位，在线状态走 ST 真事件)、manager(全屏管理弹窗)
+   │  ├─ renderer-app.ts  「渲染」App（手机页：总开关+分模式开关）
+   │  ├─ renderer/        「渲染」引擎：解析 <STStageRender> 块、Galgame/卡片/战斗三模式面板
+   │  └─ cloud-export/    「导出」App：manifest(清单)、bridge(打包下载)、export-loader(回读)
    ├─ sprite-manager.ts   图库管理弹窗（上传/导入导出/分享/绑定，图库 App 打开）
    ├─ overlay-dom.ts      立绘悬浮窗
    └─ message-postprocess.ts   楼层内标签→图片渲染
