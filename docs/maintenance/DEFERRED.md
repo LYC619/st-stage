@@ -36,7 +36,7 @@ Raised by the same review.
 
 - A malformed `activeTransaction` is silently discarded during migration, so the user loses the "restore this batch of performance settings" safety net without any notice. History records are skipped individually in the same file, making the top-level all-or-nothing behavior inconsistent. Location: `st-extension/src/apps/butler/migrations.ts` v2 normalization.
 - Binary isolation can narrow its candidate list to empty and then run further rounds that disable nothing, leaving the user cycling through no-change rounds. `prepareExtensionExperiment` rejects an empty candidate list, but the advance path does not reach that guard. Location: `st-extension/src/apps/butler/experiments.ts` binary isolation advance.
-  - Update 2026-08-30: no longer reachable from the UI. Acceptance round one replaced the troubleshooting flow with a read-only guide, so nothing calls `advanceBinaryIsolation` any more. The defect is unchanged in source and would return with the entry point, so the entry stays. `experiments.ts` was deliberately kept: it still provides the one-time stranded-run recovery and `isSelf`, which is one of the three hardcoded install-directory-name sites.
+  - Update 2026-08-30: no longer reachable from the UI. Acceptance round one replaced the troubleshooting flow with a read-only guide, so nothing calls `advanceBinaryIsolation` any more. The defect is unchanged in source and would return with the entry point, so the entry stays. `experiments.ts` was deliberately kept: it still provides the one-time stranded-run recovery and `isSelf`, which is one of the two call sites consulting the runtime-derived install directory name. (This clause used to call `isSelf` a hardcoded site; `a164acb` made it delegate to `isSelfExtensionName`, and it hardcodes nothing now.)
 
 ## Product Version Decision
 
@@ -93,6 +93,29 @@ the defect was and what the fix does not cover.
   literals were found during the fix that this entry had not listed — the
   user-facing `管家不能禁用 st-stage 自身` message in each of those two files —
   and both now interpolate the runtime name.
+- The sweep needed a third pass. The 2026-08-31 pre-release review found two
+  more hardcoded literals that both earlier passes missed, and one of them was
+  the single most visible one: the self-protection notice in the third-party
+  extension guide (`butler/modals.ts`, `这是 st-stage 自己。…`) — exactly the
+  string acceptance re-check 29 reads to decide whether the extension names
+  `st-stage-ext`. On a real install it would have said `st-stage` while the
+  disable refusal beside it said `st-stage-ext`, disagreeing on one screen. The
+  second was `prepareExtensionExperiment`'s rejection error in
+  `butler/experiments.ts`. Both now interpolate `SELF_DIRECTORY_NAME`.
+- Why two passes missed them: the earlier sweeps searched for the *disable*
+  wording (`管家不能禁用`), which both of these sites phrase differently — one
+  is a descriptive notice, the other an experiment-rejection error. Searching
+  for the literal `st-stage` inside string literals finds all of them regardless
+  of phrasing, and is the check to repeat if a third site is ever suspected.
+- The invariant is **no `st-stage` in user-visible copy**, not none anywhere.
+  That search still returns about twenty legitimate hits in non-test source:
+  `[st-stage]` console prefixes, the renderer's CSS classes and the
+  `data-st-stage-style` attribute, `FALLBACK_DIRECTORY_NAME`, the `build.mjs`
+  stub fallback, and two live state keys that must not be renamed — the ST
+  prompt slot key `st-stage::<channel>` (`st-adapter.ts`) and
+  `st-stage:butler:extension-recovery:v1` (`experiments.ts`). Renaming either
+  key orphans existing user state. Filter the search to strings that reach the
+  UI before concluding anything from its hit count.
 - Deliberately not covered: the stub's last-resort fallback in `build.mjs` still
   contains the literal. It is only reached when `Error().stack` parsing fails,
   and identity no longer depends on it, so a renamed install with a working stack

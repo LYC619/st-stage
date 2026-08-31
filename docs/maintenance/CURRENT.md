@@ -2,14 +2,14 @@
 status_version: 1
 project: st-stage
 base_branch: main
-verified_code_head: ffdb5ca
-remote_code_head_at_update: bf58bd8
-build_version: 0.9.0+202608302113
+verified_code_head: 8af9b16
+remote_code_head_at_update: edb5643
+build_version: 0.9.0+202608310738
 phase: distribution-repo-published-awaiting-real-st-acceptance
-updated_at: 2026-08-30T22:47:00+08:00
+updated_at: 2026-08-31T23:55:00+08:00
 updated_by: claude-code
-verification_source: claude-code-api-first-paint-and-prompt-compaction-2026-08-30
-history: docs/maintenance/history/2026-08-30-api-first-paint-and-prompt-compaction.md
+verification_source: claude-code-pre-release-review-2026-08-31
+history: docs/maintenance/history/2026-08-31-pre-release-review.md
 ---
 
 # Current Project Status
@@ -17,11 +17,12 @@ history: docs/maintenance/history/2026-08-30-api-first-paint-and-prompt-compacti
 ## Snapshot
 
 - Fifth-round fixes are represented by code/build commit `69066357f025b56ebac482384b592802ddd156e8`, fast-forwarded to `main` and pushed to `origin/main` after the maintenance handoff.
-- Cloud Export registration, lazy loading, batch selection, bounded-concurrency export, and standard backup are represented by code/build commit `116103a`; the review fixes by `d9852e9`, which is what real-ST acceptance round one was run against. The round-one fixes are represented by `62d0135`, the runtime self-identification change by `a164acb`, the `homePage` retarget plus the artifacts of that round by `838c2af`, and the install-URL and distribution-README rewrite by `0e6352c`. The first real-ST feedback after publication produced `8a5bb3e` (API app first paint) and `cfa7f48` (sprite prompt compaction, which carries the current artifacts), and `ffdb5ca` corrected the README's install section and App inventory. Everything through `bf58bd8` is on `origin/main`; `838c2af` onward is committed locally and not yet pushed. Next Actions carries the current list rather than a count here, so the two do not drift apart as record commits accumulate.
+- Cloud Export registration, lazy loading, batch selection, bounded-concurrency export, and standard backup are represented by code/build commit `116103a`; the review fixes by `d9852e9`, which is what real-ST acceptance round one was run against. The round-one fixes are represented by `62d0135`, the runtime self-identification change by `a164acb`, the `homePage` retarget plus the artifacts of that round by `838c2af`, and the install-URL and distribution-README rewrite by `0e6352c`. The first real-ST feedback after publication produced `8a5bb3e` (API app first paint) and `cfa7f48` (sprite prompt compaction), and `ffdb5ca` corrected the README's install section and App inventory. **Everything through `edb5643` is on `origin/main` — the two pushes previously listed as outstanding both landed on 2026-08-31 (`st-stage` at 01:08, `st-stage-ext` at `5842b24`).** The pre-release review round then produced the current artifacts at stamp `0.9.0+202608310738`; its own commit is not yet pushed. Next Actions carries the current list rather than a count here, so the two do not drift apart as record commits accumulate.
 - The paired STE ZIP input implementation is tracked in the sibling repository at `f874b55`; it extracts into a temporary authorized root and reuses the existing ST scan/selection/import flow without persisting `stRoot`.
-- Product version remains `0.9.0`; the cache-busting build stamp advanced to `0.9.0+202608302113`. The version decision is still open and deliberately untouched.
+- Product version remains `0.9.0`; the cache-busting build stamp advanced to `0.9.0+202608310738`. The version decision is still open and deliberately untouched.
 - **The distribution split is done.** The distribution repository is published at `https://github.com/LYC619/st-stage-ext`, first release commit `25809d9`, carrying build stamp `0.9.0+202608301732`. It holds the six generated files with fresh history and a local clone sits at `D:\8.Project\0_0_维护\st-stage-ext`. The development repository stays at `st-stage`, which is what keeps the freed-name hazard from ever arising.
-- **The distribution clone is staged for release; only the push is outstanding.** The six files were copied into `D:\8.Project\0_0_维护\st-stage-ext` and committed as `01112ac` — `release: 0.9.0+202608302113`, built from `cfa7f48`. Git reported exactly three modified files (`bundle.js`, `version.json`, `README.md`), independently confirming the "three files behind" assessment: `manifest.json`, `index.js`, and `style.css` were byte-identical to what was already published. Until that commit is pushed, installed copies still lack the API first-paint fix and the shorter sprite prompt.
+- **The `202608302113` release reached the published repository.** `01112ac` (`release: 0.9.0+202608302113`, built from `cfa7f48`) and `5842b24` (markdown line-ending pin) are both on `st-stage-ext`'s `origin/main`, confirmed by `git ls-remote`. That release carried the API first-paint fix and the shorter sprite prompt to installed copies.
+- **A new release is staged for the pre-release review round.** Stamp `0.9.0+202608310738` rebuilds `bundle.js` and `version.json` only; `manifest.json`, `index.js`, and `style.css` are byte-identical to the published copies, since this round touched no CSS and no manifest field. The copy into the clone and its commit are done; only the two pushes remain.
 - Install directory names are derived at runtime, so the extension recognizes itself as `st-stage-ext`. That guarantee has not been exercised against a real install yet; it is re-check 29.
 - This round addresses phone click-through, variable-toggle feedback, gallery stack/filter/tag management, opt-in baked-checkerboard cleanup, readable Butler comparisons, and system-extension guidance.
 - The first real-ST acceptance round passed all 20 checks with no blocking defects. The six fixes it raised are described under "Acceptance Round One Fixes" below and are represented by the current artifacts.
@@ -71,11 +72,45 @@ The first real-ST session after publication raised two items. Both are fixed her
 - **`coverTag` does not survive a share string.** The field exists in `core/types.ts` and `getPackCover` gives it priority over array order, but `encodeShareStringV2` emits only `@author`, `@kind`, `@tags`, and `@host`. An imported pack therefore always falls back to its first sprite for a cover. Adding `@cover=` would be a small neutral change; it was not made this round because it was outside the request.
 - **A numbered-tag glossary was considered and declined.** Mapping numbers to names in a pack's notes field would put a per-pack constant into every injection, undoing the compaction above, and the reporter had already confirmed numbers alone generate correctly. Notes remain the right home for anything genuinely needed at generation time, since they flow into the prompt only when set.
 
+### Pre-Release Review Fixes
+
+A whole-repository review run before release. Gates, artifacts, and documents were all checked; five source defects and one README error were found and fixed, all of them small.
+
+- **The self-protection notice named the wrong directory.** `butler/modals.ts` hardcoded `这是 st-stage 自己` in the extension guide, and `butler/experiments.ts` hardcoded `st-stage 自身不能进入扩展实验`. Both now interpolate `SELF_DIRECTORY_NAME`. This matters because it is exactly what re-check 29 tests: on the published `st-stage-ext` install the notice would have read `st-stage`, contradicting the runtime-derivation guarantee at the one place a user actually reads it. The `Hardcoded Install Directory Name` entry in `DEFERRED.md` claimed two user-facing literals had been found and fixed; these were a third and fourth that the entry missed.
+- **The phone status bar showed the repository name.** `core/phone-shell.ts` set the Home-screen status title to the literal `st-stage` at two sites. It is now one `HOME_TITLE` constant holding the product name `掌柜的`, which is what `manifest.json`, the settings panel, and the README all use. A test asserts the title on Home and inside an App, and that the status bar contains no `st-stage`; it was mutation-checked by restoring the literal.
+- **The settings panel tooltip leaked the same name.** The 显示手机 row described the phone as `st-stage 各功能的统一入口` while the drawer header immediately above it said 掌柜的.
+- **Two variable-app strings referred to the extension by repository name.** The restore toast and the hide-setting tooltip in `newvar-app.ts` both said `st-stage` where they were distinguishing this extension from SillyTavern Regex. Rewritten to the product name and to 本扩展; the toast was restructured rather than substituted, because 掌柜的 ends in 的 and the possessive form stacked it twice.
+- **Three dead symbols were removed.** `getAvailableTags` (`core/sprite-store.ts`), `extractLastTag` (`core/tag-parser.ts`), and `readHealth` plus its `PerfHealth` interface (`butler/bridge.ts`) had no callers anywhere, tests included. `readHealth` was self-described as a "compatibility wrapper for the pre-Task-8 UI" and the live service of the same name resolves to `readHealthState`. The `tag-parser.ts` module comment still advertised "多个标签取最后一个", which described only the removed function, and was corrected.
+- **The README told users renaming the install directory breaks resource loading.** That stopped being true with the runtime self-identification change: `index.js` derives its base URL from `Error().stack` and the bundle derives its identity from `import.meta.url`, so a renamed directory loads and protects itself correctly. `build.mjs`'s own comment beside the hardcoded fallback already said as much, so the README contradicted the build script. Rewritten to say `st-stage-ext` is the default because ST names the directory after the repository, and that renaming is unnecessary rather than fatal.
+
 ## Recorded Verification
 
-Current artifact hashes belong to the post-publication feedback fixes described above. Earlier rounds' hashes stay in their dated `history/` records rather than here, so this section always matches the artifacts currently in the worktree.
+Current artifact hashes belong to the pre-release review round described above. Earlier rounds' hashes stay in their dated `history/` records rather than here, so this section always matches the artifacts currently in the worktree.
 
-Evidence for the current build stamp `0.9.0+202608302113`:
+`verified_code_head` is `8af9b16`, the README correction, because the protocol's staleness check counts any non-excluded file changed after that commit. The artifacts themselves were built from `1d8d901`, which is the commit `3953ec7` names as its source; `8af9b16` touches only `README.md`, which is not a build input, so it changes no artifact and required no rebuild.
+
+Evidence for the current build stamp `0.9.0+202608310738`:
+
+- Vitest `4.1.10`: 80 files, 970/970 passed — the previous 969 plus the status-bar test. The full run needs `NODE_OPTIONS=--max-old-space-size=6144`.
+- TypeScript typecheck, full ESLint, Next.js `16.2.6` production build, and `git diff --check`: all passed.
+- **ESLint needs the raised heap too.** At the default heap it aborts with `Fatal process out of memory: Zone` rather than reporting violations, and the Next build run immediately afterwards then fails resolving `lightningcss`'s native binding. Both are environment limits, not code defects: with `NODE_OPTIONS=--max-old-space-size=6144` both pass cleanly. Only the Vitest heap requirement was previously recorded, so a reviewer hitting the lint OOM had nothing telling them it was expected.
+- Artifacts rebuilt at a fixed stamp are reproducible: a second `build:ext` + `build:st` at `2026-08-31 07:38` left all five functional files byte-identical.
+- Hash identity holds: the five functional files match three ways across the development root, `st-distribution/`, and the `st-stage-ext` clone, and the distribution-only `README.md` matches between `st-distribution/` and the clone. The root `README.md` is the development repository's own and is excluded on purpose — see step 2 of the release loop. Zero CRLF pairs in all six copied files. SHA-256 as built:
+  - `manifest.json`: `FF64862A61B75564D86990E6C710E8394E3FAB4694F29209A222D23119B87BE3`
+  - `index.js`: `27DB248504A6EE1FEC948C3C6135F93732C0B075A0803317B82C972BCFCF457D`
+  - `bundle.js`: `C0DD5281EEDC6BD460E0BF28BC13CF3BAA466587969234F12D718E66D13B5093`
+  - `style.css`: `AF026AFAB5DB7AA36290BB622E9E61E7F178240CEFFC72063866B697A3DEE4A1`
+  - `version.json`: `66FA300B41F2B9C89A8505384996FB064D32C9B2221FD5507BBF85187B59F01F`
+  - `st-distribution/README.md`: `F32B5F76084D33B93B24EFF262B50571A7EEED3F5DFA61D79504543B08F1F760`
+- `manifest.json`, `index.js`, and `style.css` are byte-identical to the published `202608302113` copies. Only `bundle.js` and `version.json` moved, which matches a round that changed TypeScript and no CSS or manifest field.
+- Distribution boundary: `st-distribution/` holds exactly `bundle.js`, `index.js`, `manifest.json`, `README.md`, `style.css`, `version.json` — six files, 903,549 bytes. The clone's root additionally holds its own `.gitattributes`, which is correct and must not be deleted.
+- `manifest.json` verified field by field: `display_name` `掌柜的`, `version` `0.9.0`, `homePage` `https://github.com/LYC619/st-stage-ext`, `auto_update: true`, `js`/`css` naming the two files ST loads. Identical across root, `st-distribution/`, and the clone.
+- Dead-code and copy audits were run by throwaway scripts over all 100 non-test source files and 2,046 Chinese-bearing string literals, then deleted. The copy scan's other 43 hits were all false positives on inspection: dot-notation variable paths (`时间.日期`), `)` inside `${…}` interpolations, one deliberate ideographic space used as a full-width separator, and `！！` in web-simulator sample dialogue. Remaining never-imported exports are `Deps`/type interfaces used for structural typing and Next.js framework conventions (`metadata`, `viewport`), not dead code.
+- The install-directory-name invariant is **no `st-stage` in user-visible copy**, not none anywhere. Searching the literal across non-test source still returns about twenty correct hits: `[st-stage]` console prefixes, the renderer CSS classes and `data-st-stage-style` attribute, `FALLBACK_DIRECTORY_NAME`, the `build.mjs` stub fallback, and two live state keys that must never be renamed — the ST prompt slot key `st-stage::<channel>` (`st-adapter.ts`) and `st-stage:butler:extension-recovery:v1` (`experiments.ts`), where a rename would orphan an injected prompt and a stranded-run recovery record respectively. Filter to strings that reach the UI before drawing conclusions from the hit count.
+- One `console.log` remains in source, in `index.ts`: the load banner printing product name, version, and build stamp. It is the documented first step for diagnosing "updated but nothing changed" and is referenced from `settings-panel.ts`; it is not debug residue. No other `console.log`/`debug`/`dir`/`table`/`trace` exists in source.
+- `next-env.d.ts` is committed at its **production** variant. It is generated and tracked, and Next.js rewrites the import between `./.next/dev/types/routes.d.ts` and `./.next/types/routes.d.ts` depending on whether `next dev` or `next build` ran last — it has already flipped once in history (`e113f95` prod, `2c61953` dev). Since `pnpm build` is part of the release gates, the production variant is the only state that leaves a clean worktree at the point the protocol requires one.
+
+Evidence retained from the previous stamp `0.9.0+202608302113`:
 
 - Vitest `4.1.10`: 80 files, 969/969 passed. The full run needs `NODE_OPTIONS=--max-old-space-size=6144` on this machine; the default heap aborts with a V8 out-of-memory (exit 134) partway through, which is an environment limit and not a test failure. Per-file runs are unaffected.
 - TypeScript typecheck and full ESLint: passed.
@@ -84,14 +119,14 @@ Evidence for the current build stamp `0.9.0+202608302113`:
 - Five new tests, all mutation-checked. The two API tests assert the absence of network calls — zero `secrets/find` requests on a `withSecret: false` read, and zero across a full profile apply against exactly one `write` — so they fail if the skip regresses. The prompt tests pin that the range rule and its example each appear exactly once regardless of how many ranges exist.
 - ESLint caught a real portability issue rather than a style preference: the ideographic space separating the correct/incorrect example is fine in a plain string but not in a template literal, since `no-irregular-whitespace` only exempts the former. It is now a named constant.
 - The `homePage` retarget was verified to be exactly that: the whole-worktree diff for this stamp is six files, and the only non-stamp change is the one `homePage` line in the root and distribution `manifest.json`. `bundle.js` differs in two lines, both stamp interpolations.
-- Three-way hash identity re-established across the development root, `st-distribution/`, and the `st-stage-ext` working tree at `01112ac` — all five functional files match, plus the distribution-only `README.md` at `F32B5F76084D33B9`. Every copied file was checked for CRLF pairs and returned zero, and the clone's root still holds exactly seven entries (six artifacts plus `.gitattributes`). This identity is true of the committed clone; it becomes true of the *published* repository when `01112ac` is pushed. SHA-256 as built:
+- Three-way hash identity re-established across the development root, `st-distribution/`, and the `st-stage-ext` working tree at `01112ac` — all five functional files match, plus the distribution-only `README.md` at `F32B5F76084D33B9`. Every copied file was checked for CRLF pairs and returned zero, and the clone's root still holds exactly seven entries (six artifacts plus `.gitattributes`). `01112ac` has since been pushed, so this identity now holds of the published repository as well. SHA-256 as built:
   - `manifest.json`: `FF64862A61B75564D86990E6C710E8394E3FAB4694F29209A222D23119B87BE3`
   - `index.js`: `27DB248504A6EE1FEC948C3C6135F93732C0B075A0803317B82C972BCFCF457D`
   - `bundle.js`: `E19FFAB36B1D02E6DB8C266DDB99D53074ADEF925276DF249505F8B1D22876B6`
   - `style.css`: `AF026AFAB5DB7AA36290BB622E9E61E7F178240CEFFC72063866B697A3DEE4A1`
   - `version.json`: `5A4F4C2DDAF73F7A66DD2ED76B02DBA7EFB30FE600CDF28F15AC1B5AB52C6255`
 - `manifest.json`, `index.js`, and `style.css` are byte-identical to the previous round, as expected: this round touched no CSS and no manifest field, and the stub's cross-version byte stability continues to hold. Only `bundle.js` and `version.json` moved.
-- The published repository was inspected directly rather than assumed: one commit, fresh history with no development ancestry, clean worktree, in sync with its `origin/main`, `.gitattributes` present pinning `*.js`/`*.css`/`*.json` to `eol=lf`, and exactly the six files plus that `.gitattributes` at the root. `*.md` was missing from that list and was added later in dist `5842b24`.
+- The published repository was inspected directly rather than assumed: at the time, one commit, fresh history with no development ancestry, clean worktree, in sync with its `origin/main`, `.gitattributes` present pinning `*.js`/`*.css`/`*.json` to `eol=lf`, and exactly the six files plus that `.gitattributes` at the root. `*.md` was missing from that list and was added later in dist `5842b24`. It now carries three commits (`25809d9`, `01112ac`, `5842b24`), still linear and still without development ancestry.
 - The runtime identity derivation was verified against the **built artifact**, not only the source: `import.meta.url` survives esbuild verbatim into `bundle.js`, and the shipped derivation returns the correct directory for renamed installs, non-default ports, and mixed-case names, while falling back for a non-ST layout. The throwaway checker was deleted afterwards.
 - Both rename regression tests were mutation-checked: restoring the old `name === 'st-stage'` literal makes both fail. One of them was vacuous on first write — the fake's `findExtension` did not know the name under test, so the call returned `not-found` and never reached the self-check. It now asserts the disable actually goes through.
 - Distribution boundary re-checked: `st-distribution/` contains exactly `bundle.js`, `index.js`, `manifest.json`, `README.md`, `style.css`, `version.json` — six files, 882 KB (903,499 bytes), with no images, `public/`, `reference/`, or preset source.
@@ -149,7 +184,7 @@ The first real-ST acceptance round passed all 20 checks with no blocking defects
 
 ### Runtime And Renderer
 
-1. Update the extension and confirm the settings page shows exactly `v0.9.0` with no build time. The stamp `202608301732` now lives only in `version.json`, the `bundle.js?v=` parameter, the console load line, and Butler reports — confirm it there or in DevTools to prove the update landed. Then switch chat/character once and confirm prompt injection still self-heals.
+1. Update the extension and confirm the settings page shows exactly `v0.9.0` with no build time. The stamp `202608310738` now lives only in `version.json`, the `bundle.js?v=` parameter, the console load line, and Butler reports — confirm it there or in DevTools to prove the update landed. Then switch chat/character once and confirm prompt injection still self-heals. While on that panel, confirm the 显示手机 tooltip says 掌柜的 rather than `st-stage`, and open the phone to confirm the Home-screen status bar reads 掌柜的.
 2. Open the phone over a clickable Gal panel or chat control, tap phone checkboxes/buttons, and confirm only the phone control activates.
 3. With a real reply containing `<UpdateVariable>`, enable hiding and confirm the payload disappears; disable it and confirm st-stage restores the payload immediately or after the scheduled reprocess without requiring message edit mode.
 4. Separately enable a SillyTavern Regex rule that deletes the same block. Confirm the st-stage notice explains why disabling its own hide setting cannot restore content already removed by Regex; disable the external rule and reprocess to recover it.
@@ -172,7 +207,7 @@ The first real-ST acceptance round passed all 20 checks with no blocking defects
 15. Open system-extension guidance and verify the nine common built-ins show understandable purpose, need conditions, disable impact, and conservative advice; unknown built-ins must not receive a fabricated performance conclusion.
 16. Open the third-party extension guide. Confirm it is read-only — no checkboxes and no disable buttons — and that each installed extension shows its id, version, declared CSS/JS, dependencies, reverse dependents, and load order, with the general cost principles rather than an invented per-extension millisecond figure. Confirm st-stage shows its self-protection notice and that the guide points to SillyTavern's own extension manager.
 
-17. Update SillyTavern with the `0.9.0+202608301732` artifacts. Open `导出` with an account containing many roles/chats/worldbooks and confirm the role list appears before chat lists, worldbook bodies, or settings assets are requested.
+17. Update SillyTavern with the `0.9.0+202608310738` artifacts. Open `导出` with an account containing many roles/chats/worldbooks and confirm the role list appears before chat lists, worldbook bodies, or settings assets are requested.
 18. Expand one role and confirm only that role's chat list loads once. Use 全选/反选/清空 on the filtered result, then combine selected worldbooks, OpenAI presets, and global regex.
 19. Export and confirm exactly one `default-user-YYYYMMDD-HHmmss.zip` downloads. Verify `settings.json`, `characters/`, `chats/`, `worlds/`, and `OpenAI Settings/` are directly at the archive root, no extra `default-user/` wrapper or `secrets.json` exists, and settings use `extension_settings.regex`.
 20. In the STE client, choose the generated ZIP, confirm it reaches the normal selection dialog without changing the saved ST directory, complete the import into the user-selected Vault, and confirm cancel/failure/success all remove the temporary source directory.
@@ -189,7 +224,7 @@ These cover only what round one changed. Items 21 and 22 are the ones most worth
 26. Open tag management from the gallery manager and confirm buttons are horizontal with readable labels at their natural width, on both desktop and mobile. This is the panel that had no layout at all.
 27. On the checkerboard action, hover for the tooltip, then try a genuinely transparent PNG and confirm the message says the image already has an alpha channel and needs no cleanup — distinct from the "no evidenced checkerboard" message an ordinary opaque image produces.
 28. If a troubleshooting run was left stranded by an earlier build, confirm the Butler home screen offers to restore the pre-troubleshooting extension state once, that it restores the original disabled list, and that the card does not return afterwards.
-29. Install `https://github.com/LYC619/st-stage-ext` through SillyTavern's extension installer. Confirm it lands in `extensions/third-party/st-stage-ext` and loads. Open Butler's extension guide and confirm the extension marks itself protected and names `st-stage-ext`, not `st-stage`. Then try to disable it and confirm the refusal quotes `st-stage-ext` too. This is the guarantee the runtime-identification change exists to preserve, and no automated test can cover the real install path. Also confirm the extension-list entry links to `st-stage-ext` rather than the development repository, and restart ST once to confirm `auto_update` against the new origin is clean.
+29. Install `https://github.com/LYC619/st-stage-ext` through SillyTavern's extension installer. Confirm it lands in `extensions/third-party/st-stage-ext` and loads. Open Butler's extension guide and confirm the extension marks itself protected and names `st-stage-ext`, not `st-stage`. Then try to disable it and confirm the refusal quotes `st-stage-ext` too. **This check would have failed before the pre-release review**: the guide's self-protection notice hardcoded `st-stage` even though the disable refusal already interpolated the runtime name, so the two disagreed on the same screen. Both now derive it. This is the guarantee the runtime-identification change exists to preserve, and no automated test can cover the real install path. Also confirm the extension-list entry links to `st-stage-ext` rather than the development repository, and restart ST once to confirm `auto_update` against the new origin is clean.
 
 ## Deferred
 
@@ -206,10 +241,10 @@ See `docs/maintenance/DEFERRED.md` for details.
 
 - **Install from `st-stage-ext` in real SillyTavern and run re-check 29 first.** The extension is now published under a directory name it has never actually run under, and self-protection is derived at runtime. Everything else in this round is byte-verified; this is the only claim resting on untested behavior.
 - Then execute re-checks 21–28, starting with 21 and 22, and re-run any of 1–20 whose surface the round-one fixes touched. Round one of 1–20 passed on `d9852e9` with no blocking defects.
-- **Two pushes are outstanding, and they are the only remaining step.** Both repositories are committed with clean worktrees; pushing from the agent session fails on credentials rather than network, so it is a maintainer action.
-  - `st-stage`: push everything in `bf58bd8..HEAD` to `origin/main` — `838c2af`, `0e6352c`, `fa834ce`, `8a5bb3e`, `cfa7f48`, `ffdb5ca`, `74f4539`, plus the commit carrying this line.
-  - `st-stage-ext`: push `01112ac` (the `202608302113` release) and `5842b24` (markdown line-ending pin).
-  - Push `st-stage` first, or at least in the same sitting. The distribution commit names `cfa7f48` as its source, and that link dangles until the development history is public.
+- **Two pushes are outstanding, and they are the only remaining step.** Both repositories are committed with clean worktrees; pushing from the agent session fails on credentials rather than network, so it is a maintainer action. The previous round's two pushes both landed on 2026-08-31 and are no longer pending.
+  - `st-stage`: push three commits to `origin/main` — `1d8d901` (source and artifacts), `8af9b16` (the README correction), and the maintenance-record commit on top. `1d8d901` sits directly on `edb5643`.
+  - `st-stage-ext`: push `3953ec7` — `release: 0.9.0+202608310738` — which sits on `5842b24`.
+  - Push `st-stage` first, or at least in the same sitting. `3953ec7`'s message names `1d8d901` as its source, and that link dangles until the development history is public.
 - After re-check 29 passes, decide whether `manifest.json` moves from `0.9.0` to `1.0.0`, then rerun the complete release gates. Recommended sequence is to hold `0.9.0` until acceptance closes, since the version travels to every installed copy through `auto_update` and is awkward to walk back.
 - Decide whether to add `@cover=` to the stpack2 share format. Without it every imported pack falls back to its first sprite as the cover, which is why pack ordering currently has to double as cover selection. Small and self-contained; deferred only because it was outside this round's request.
 - Keep the deferred Renderer branching protocol out of acceptance fixes; scope it as a separate design task.
@@ -223,13 +258,13 @@ Published 2026-08-30. Creation is done; what remains below is the release loop f
 | --- | --- |
 | Repository | `https://github.com/LYC619/st-stage-ext` |
 | First release commit | `25809d9` — `initial release: 0.9.0+202608301732` |
-| Build stamp published | `0.9.0+202608301732` |
-| Build stamp pending release | `0.9.0+202608302113` — built from `cfa7f48`, not yet copied or pushed |
-| Built from | development commit `838c2af` |
+| Build stamp published | `0.9.0+202608302113` at `01112ac`, plus `5842b24` (markdown line-ending pin) |
+| Build stamp pending release | `0.9.0+202608310738` at `3953ec7` — copied and committed in the clone, push outstanding |
+| Built from | development commit `cfa7f48` (published) / `1d8d901` (pending) |
 | Local clone | `D:\8.Project\0_0_维护\st-stage-ext` |
 | Install directory name | `st-stage-ext` |
 
-Fresh history, one commit, no development ancestry. `.gitattributes` is present in the distribution repository pinning `*.js`, `*.css`, `*.json`, and — since dist `5842b24` — `*.md` to `text eol=lf`. It lives only there, since it is not part of the copied file set and the development repository pins its own artifacts separately. That is why the copy step must never clear the directory first: `.gitattributes` has no upstream copy to restore it from.
+Fresh linear history, no development ancestry. `.gitattributes` is present in the distribution repository pinning `*.js`, `*.css`, `*.json`, and — since dist `5842b24` — `*.md` to `text eol=lf`. It lives only there, since it is not part of the copied file set and the development repository pins its own artifacts separately. That is why the copy step must never clear the directory first: `.gitattributes` has no upstream copy to restore it from.
 
 The development repository keeps the `st-stage` name. That is deliberate and load-bearing: renaming would leave a redirect that a later repository at the freed name could override, and existing installs would then `auto_update` against unrelated history. Holding the old name means the hazard never arises. Do not rename `st-stage`, and do not create anything else under that name.
 
