@@ -12441,7 +12441,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-09-01 13:16"}`;
+  return `${"0.9.0"}+${"2026-09-01 13:22"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -15012,9 +15012,15 @@ async function loadWithLimit(items, limit, task) {
   };
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
 }
-function deselectCharacter(characterId, selection, chats) {
+function deselectCharacter(characterId, selection, chats, allCharacters, worldbooks) {
   selection.characterIds.delete(characterId);
   for (const chat2 of chats.get(characterId)?.data ?? []) selection.chatIds.delete(chat2.id);
+  const character = allCharacters.find((item) => item.id === characterId);
+  if (!character?.linkedWorldName) return;
+  const linked = findLinkedWorldbook(character, worldbooks);
+  if (!linked) return;
+  const stillNeeded = allCharacters.some((item) => item.id !== characterId && selection.characterIds.has(item.id) && item.linkedWorldName && findLinkedWorldbook(item, worldbooks)?.id === linked.id);
+  if (!stillNeeded) selection.worldbookIds.delete(linked.id);
 }
 function findLinkedWorldbook(character, worldbooks) {
   const target = character.linkedWorldName?.trim().toLowerCase().replace(/\.json$/i, "");
@@ -15278,7 +15284,7 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
           });
           addAction("反选当前结果", () => {
             const toAdd = visibleCharacters.filter((item) => !selection.characterIds.has(item.id));
-            visibleCharacters.filter((item) => selection.characterIds.has(item.id)).forEach((item) => deselectCharacter(item.id, selection, chats));
+            visibleCharacters.filter((item) => selection.characterIds.has(item.id)).forEach((item) => deselectCharacter(item.id, selection, chats, characters.data, worldbooks.data));
             if (toAdd.length === 0) {
               render2();
               return;
@@ -15331,7 +15337,7 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
             const row = el2("div", "cloud-export-character");
             row.append(checkbox(`${character.name} · ${formatDate(character.updatedAt)}`, selection.characterIds.has(character.id), (checked) => {
               if (!checked) {
-                deselectCharacter(character.id, selection, chats);
+                deselectCharacter(character.id, selection, chats, characters.data, worldbooks.data);
                 render2();
                 return;
               }
@@ -18909,7 +18915,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-09-01 13:16"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-09-01 13:22"}`;
   console.log(`[sprite-overlay] 百工（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

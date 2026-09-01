@@ -43,13 +43,41 @@ async function loadWithLimit<T>(items: T[], limit: number, task: (item: T) => Pr
  * 聊天 ID 由桥接层构造为 `<角色 id>:<路径或名称>`，但这里不依赖该格式：以已加载的
  * 聊天清单为准，清单未加载过就不可能有该角色的聊天被选中。
  */
+/**
+ * 取消选中一个角色，并撤掉「勾选角色 = 整体选中」附带选上的东西。
+ *
+ * 勾选时会连聊天和关联世界书一起选（见 selectCharacterBundle），取消时必须对称地放掉，
+ * 否则用户取消了角色、世界书还留在清单里，导出一本自己没打算带的世界书。
+ *
+ * 世界书不能无条件删：多个角色可以关联同一本。这里守的不变式是
+ * **只要还有被选中的角色关联它，它就留着**——按当前选择集算，不记历史，
+ * 所以反复勾选取消也不会漂移。
+ *
+ * 已知取舍：用户在「世界书」分类里手动勾的书，如果恰好也是某个角色的关联书，
+ * 取消那个角色时会被一起放掉。区分手动与自动需要引入来源状态，而那个状态要跟
+ * 勾选历史同步，比它解决的问题更容易出错。整体勾选的语义下，这个结果也讲得通。
+ */
 function deselectCharacter(
   characterId: string,
   selection: ExportSelection,
   chats: Map<string, { data: ExportChat[] }>,
+  allCharacters: ExportCharacter[],
+  worldbooks: ExportWorldbook[],
 ): void {
   selection.characterIds.delete(characterId)
   for (const chat of chats.get(characterId)?.data ?? []) selection.chatIds.delete(chat.id)
+
+  const character = allCharacters.find((item) => item.id === characterId)
+  if (!character?.linkedWorldName) return
+  const linked = findLinkedWorldbook(character, worldbooks)
+  if (!linked) return
+  const stillNeeded = allCharacters.some((item) => (
+    item.id !== characterId
+    && selection.characterIds.has(item.id)
+    && item.linkedWorldName
+    && findLinkedWorldbook(item, worldbooks)?.id === linked.id
+  ))
+  if (!stillNeeded) selection.worldbookIds.delete(linked.id)
 }
 
 /**
@@ -226,7 +254,7 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
             const toAdd = visibleCharacters.filter((item) => !selection.characterIds.has(item.id))
             visibleCharacters
               .filter((item) => selection.characterIds.has(item.id))
-              .forEach((item) => deselectCharacter(item.id, selection, chats))
+              .forEach((item) => deselectCharacter(item.id, selection, chats, characters.data, worldbooks.data))
             if (toAdd.length === 0) { render(); return }
             void selectVisibleBundles(toAdd)
           })
@@ -246,7 +274,7 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
             // 勾选角色 = 连它的聊天与关联世界书一起选：角色卡是一个整体，
             // 只导出 PNG 会丢掉独立成文件的关联世界书（内嵌世界书和局部正则在 PNG 里，不用单独收）
             row.append(checkbox(`${character.name} · ${formatDate(character.updatedAt)}`, selection.characterIds.has(character.id), (checked) => {
-              if (!checked) { deselectCharacter(character.id, selection, chats); render(); return }
+              if (!checked) { deselectCharacter(character.id, selection, chats, characters.data, worldbooks.data); render(); return }
               void selectCharacterBundle(character)
             }, 'cloud-export-character-name'))
             const bundleNote = el('div', 'cloud-export-bundle-note')

@@ -54,6 +54,15 @@ function checkCharacter(container: HTMLElement): void {
   box.dispatchEvent(new Event('change'))
 }
 
+/** 按顺序取第 index 个角色行的复选框，并设成 checked。 */
+function setCharacterChecked(container: HTMLElement, index: number, checked: boolean): void {
+  const rows = [...container.querySelectorAll<HTMLElement>('.cloud-export-character')]
+  const box = rows[index]?.querySelector<HTMLInputElement>('input[type="checkbox"]')
+  if (!box) throw new Error(`character checkbox not found at index ${index}`)
+  box.checked = checked
+  box.dispatchEvent(new Event('change'))
+}
+
 describe('cloud export app', () => {
   it('loads only the character list on mount and lazily loads chats once', async () => {
     const bridge = fakeBridge()
@@ -267,6 +276,54 @@ describe('cloud export app', () => {
 
     expect(bridge.listWorldbooks).toHaveBeenCalledOnce()
     expect(container.textContent).toContain('已选 2 个角色、2 段聊天、1 本世界书')
+  })
+
+  // 勾选是整体选中，取消也必须对称：否则用户取消了角色，世界书还留在导出清单里
+  it('releases the linked worldbook when the character is deselected', async () => {
+    const bridge = fakeBridge()
+    vi.mocked(bridge.listCharacters).mockResolvedValue([
+      { ...alice, linkedWorldName: 'World' },
+    ])
+    const container = document.createElement('div')
+    cloudExportApp(bridge).mount(container, context())
+    await settle()
+
+    setCharacterChecked(container, 0, true)
+    await settle()
+    expect(container.textContent).toContain('已选 1 个角色、1 段聊天、1 本世界书')
+
+    setCharacterChecked(container, 0, false)
+    await settle()
+    expect(container.textContent).toContain('已选 0 个角色、0 段聊天、0 本世界书')
+  })
+
+  // 多个角色可以关联同一本：放掉一个不能把另一个还需要的书一起带走
+  it('keeps a shared worldbook while another selected character still links to it', async () => {
+    const bridge = fakeBridge()
+    vi.mocked(bridge.listCharacters).mockResolvedValue([
+      { ...alice, linkedWorldName: 'World' },
+      { id: 'Bob.png', name: 'Bob', avatar: 'Bob.png', chats: [], linkedWorldName: 'World' },
+    ])
+    vi.mocked(bridge.listChats).mockImplementation(async (character) => [
+      { id: `${character.id}:first`, name: 'first', path: 'first.jsonl' },
+    ])
+    const container = document.createElement('div')
+    cloudExportApp(bridge).mount(container, context())
+    await settle()
+
+    clickText(container, '全选当前结果')
+    await settle()
+    expect(container.textContent).toContain('已选 2 个角色、2 段聊天、1 本世界书')
+
+    // 取消 Alice：Bob 还在，World 必须留着
+    setCharacterChecked(container, 0, false)
+    await settle()
+    expect(container.textContent).toContain('已选 1 个角色、1 段聊天、1 本世界书')
+
+    // 再取消 Bob：没人需要了，才放掉
+    setCharacterChecked(container, 1, false)
+    await settle()
+    expect(container.textContent).toContain('已选 0 个角色、0 段聊天、0 本世界书')
   })
 
   // 计数器涨了不等于文件进了包，这里验证到实际产出的文件路径
