@@ -125,13 +125,13 @@ describe('手机壳交互', () => {
     const { shell } = setup([makeApp('gallery')], { open: true })
     const title = () => document.querySelector('.so-phone-status-title')?.textContent
 
-    expect(title()).toBe('掌柜的')
+    expect(title()).toBe('百工')
 
     shell.openApp('gallery')
     expect(title()).toBe('gallery')
 
     ;(document.querySelector('.so-phone-homebtn') as HTMLElement).click()
-    expect(title()).toBe('掌柜的')
+    expect(title()).toBe('百工')
 
     expect(document.querySelector('.so-phone-status')?.textContent).not.toContain('st-stage')
     shell.destroy()

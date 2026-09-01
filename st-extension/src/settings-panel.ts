@@ -23,7 +23,7 @@ export function mountSettingsPanel(deps: PanelDeps): () => void {
   wrapper.innerHTML = `
     <div class="inline-drawer">
       <div class="inline-drawer-toggle inline-drawer-header">
-        <b>掌柜的</b>
+        <b>百工</b>
         <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
       </div>
       <div class="inline-drawer-content" id="so-panel-content"></div>
@@ -56,7 +56,7 @@ export function mountSettingsPanel(deps: PanelDeps): () => void {
   // 另有 version.json 与 bundle.js?v= 参数。
   const version = typeof __EXT_VERSION__ === 'undefined' ? '' : ` v${__EXT_VERSION__}`
   hint.textContent =
-    `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`
+    `酒馆里的事，百工都做。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`
   content.append(hint)
   return () => wrapper.remove()
 }

@@ -4041,7 +4041,7 @@ function openTrackedAppModal(build, hooks, track) {
 
 // core/phone-shell.ts
 var DRAG_THRESHOLD = 6;
-var HOME_TITLE = "掌柜的";
+var HOME_TITLE = "百工";
 function createPhoneShell(initialState, deps) {
   let state = { ...initialState };
   let activeApp = null;
@@ -9050,7 +9050,7 @@ function mountSettingsPanel(deps) {
   wrapper.innerHTML = `
     <div class="inline-drawer">
       <div class="inline-drawer-toggle inline-drawer-header">
-        <b>掌柜的</b>
+        <b>百工</b>
         <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
       </div>
       <div class="inline-drawer-content" id="so-panel-content"></div>
@@ -9076,7 +9076,7 @@ function mountSettingsPanel(deps) {
   const hint = document.createElement("div");
   hint.className = "so-status";
   const version = false ? "" : ` v${"0.9.0"}`;
-  hint.textContent = `酒馆里的事，掌柜的都管。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
+  hint.textContent = `酒馆里的事，百工都做。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
   content.append(hint);
   return () => wrapper.remove();
 }
@@ -12441,7 +12441,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-08-31 07:38"}`;
+  return `${"0.9.0"}+${"2026-09-01 11:52"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -13883,7 +13883,7 @@ function newvarApp(deps) {
               ctx.setAppData({ ...runtime.getData(), hideUpdateBlocks: v });
               ctx.toast(
                 "success",
-                v ? "已隐藏变量更新记录；原始回复和变量快照保持不变。" : "变量更新记录已恢复（此前由掌柜的隐藏）。若仍不可见，请检查 ST Regex 中删除 UpdateVariable 的规则。"
+                v ? "已隐藏变量更新记录；原始回复和变量快照保持不变。" : "变量更新记录已恢复（此前由百工隐藏）。若仍不可见，请检查 ST Regex 中删除 UpdateVariable 的规则。"
               );
               renderCfg();
             }),
@@ -18909,8 +18909,8 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-08-31 07:38"}`;
-  console.log(`[sprite-overlay] 掌柜的（st-stage）已加载（含手机框架）${version}`);
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-09-01 11:52"}`;
+  console.log(`[sprite-overlay] 百工（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);
 runWhenDomReady(document, extensionLifecycle, () => init(extensionLifecycle));

@@ -53,7 +53,7 @@ export function newvarApp(deps: NewvarAppDeps): PhoneApp {
                 'success',
                 v
                   ? '已隐藏变量更新记录；原始回复和变量快照保持不变。'
-                  : '变量更新记录已恢复（此前由掌柜的隐藏）。若仍不可见，请检查 ST Regex 中删除 UpdateVariable 的规则。',
+                  : '变量更新记录已恢复（此前由百工隐藏）。若仍不可见，请检查 ST Regex 中删除 UpdateVariable 的规则。',
               )
               renderCfg()
             }),

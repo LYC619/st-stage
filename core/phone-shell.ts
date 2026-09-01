@@ -33,7 +33,7 @@ const DRAG_THRESHOLD = 6
  * Home 屏状态栏标题：面向用户的产品名，不是仓库名/安装目录名。
  * 安装目录叫 st-stage-ext、开发仓库叫 st-stage，两者都不该出现在界面上。
  */
-const HOME_TITLE = '掌柜的'
+const HOME_TITLE = '百工'
 
 export function createPhoneShell(
   initialState: PhoneState,
