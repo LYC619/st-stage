@@ -2,14 +2,14 @@
 status_version: 1
 project: st-stage
 base_branch: main
-verified_code_head: fa42020
+verified_code_head: bea201c
 remote_code_head_at_update: edb5643
-build_version: 0.9.0+202609011152
+build_version: 0.9.0+202609011401
 phase: distribution-repo-published-awaiting-real-st-acceptance
-updated_at: 2026-09-01T12:20:00+08:00
+updated_at: 2026-09-01T15:05:00+08:00
 updated_by: claude-code
-verification_source: claude-code-product-rename-2026-09-01
-history: docs/maintenance/history/2026-08-31-pre-release-review.md
+verification_source: claude-code-test-round-fixes-2026-09-01
+history: docs/maintenance/history/2026-09-01-rename-and-test-round-fixes.md
 ---
 
 # Current Project Status
@@ -17,16 +17,16 @@ history: docs/maintenance/history/2026-08-31-pre-release-review.md
 ## Snapshot
 
 - Fifth-round fixes are represented by code/build commit `69066357f025b56ebac482384b592802ddd156e8`, fast-forwarded to `main` and pushed to `origin/main` after the maintenance handoff.
-- Cloud Export registration, lazy loading, batch selection, bounded-concurrency export, and standard backup are represented by code/build commit `116103a`; the review fixes by `d9852e9`, which is what real-ST acceptance round one was run against. The round-one fixes are represented by `62d0135`, the runtime self-identification change by `a164acb`, the `homePage` retarget plus the artifacts of that round by `838c2af`, and the install-URL and distribution-README rewrite by `0e6352c`. The first real-ST feedback after publication produced `8a5bb3e` (API app first paint) and `cfa7f48` (sprite prompt compaction), and `ffdb5ca` corrected the README's install section and App inventory. **Everything through `edb5643` is on `origin/main` — the two pushes previously listed as outstanding both landed on 2026-08-31 (`st-stage` at 01:08, `st-stage-ext` at `5842b24`).** The pre-release review round then produced the current artifacts at stamp `0.9.0+202608310738`; its own commit is not yet pushed. Next Actions carries the current list rather than a count here, so the two do not drift apart as record commits accumulate.
+- Cloud Export registration, lazy loading, batch selection, bounded-concurrency export, and standard backup are represented by code/build commit `116103a`; the review fixes by `d9852e9`, which is what real-ST acceptance round one was run against. The round-one fixes are represented by `62d0135`, the runtime self-identification change by `a164acb`, the `homePage` retarget plus the artifacts of that round by `838c2af`, and the install-URL and distribution-README rewrite by `0e6352c`. The first real-ST feedback after publication produced `8a5bb3e` (API app first paint) and `cfa7f48` (sprite prompt compaction), and `ffdb5ca` corrected the README's install section and App inventory. **Everything through `edb5643` is on `origin/main` — the two pushes previously listed as outstanding both landed on 2026-08-31 (`st-stage` at 01:08, `st-stage-ext` at `5842b24`).** The pre-release review round then produced artifacts at stamp `0.9.0+202608310738`, which the rename superseded a day later (see below). Next Actions carries the current list rather than a count here, so the two do not drift apart as record commits accumulate.
 - The paired STE ZIP input implementation is tracked in the sibling repository at `f874b55`; it extracts into a temporary authorized root and reuses the existing ST scan/selection/import flow without persisting `stRoot`.
 - **The product is now called 百工.** Renamed from 掌柜的 on 2026-09-01 in `fa42020`, after real-ST testing. Display surfaces only: `manifest.json`'s `display_name`, the phone Home-screen status bar, the settings drawer header and hint, the newvar restore toast, the console load banner, and the three READMEs. The repository stays `st-stage`, the install directory stays `st-stage-ext`, and every machine identifier is untouched — the ST prompt slot key `st-stage::<channel>`, the butler extension-recovery localStorage key, the renderer CSS classes, and `data-st-stage-style`. Renaming any of those would orphan existing user state. The tagline was adapted rather than substituted: 酒馆里的事，百工都做, because 百工 does not take 管.
-- Product version remains `0.9.0`; the cache-busting build stamp advanced to `0.9.0+202609011152`. The version decision is still open, but the rename strengthens the case for a bump: installed copies will see the extension list entry change name, which is the most visible thing a release has done so far.
+- Product version remains `0.9.0`; the cache-busting build stamp advanced to `0.9.0+202609011401`. The version decision is still open, but the rename strengthens the case for a bump: installed copies will see the extension list entry change name, which is the most visible thing a release has done so far.
 - **The distribution split is done.** The distribution repository is published at `https://github.com/LYC619/st-stage-ext`, first release commit `25809d9`, carrying build stamp `0.9.0+202608301732`. It holds the six generated files with fresh history and a local clone sits at `D:\8.Project\0_0_维护\st-stage-ext`. The development repository stays at `st-stage`, which is what keeps the freed-name hazard from ever arising.
 - **The `202608302113` release reached the published repository.** `01112ac` (`release: 0.9.0+202608302113`, built from `cfa7f48`) and `5842b24` (markdown line-ending pin) are both on `st-stage-ext`'s `origin/main`, confirmed by `git ls-remote`. That release carried the API first-paint fix and the shorter sprite prompt to installed copies.
-- **A new release is staged, carrying the rename.** Stamp `0.9.0+202609011152`, committed in the clone as `b3650c6`. `manifest.json`, `style.css`, `bundle.js`, `version.json`, and `README.md` all changed; `index.js` is byte-identical, because the loader stub is deliberately version-agnostic so a cached copy stays correct.
+- **Two releases are staged in the clone, neither pushed.** `b3650c6` (`0.9.0+202609011152`, the rename alone) and `f852965` (`0.9.0+202609011401`, the rename plus the first batch of test-round fixes). Both sit on `5842b24`. Pushing `f852965` publishes both, since it is a descendant — there is no need to push them separately, and no reason to: `b3650c6` was never public either.
 - **The pre-release review's own release was superseded before it shipped.** `3953ec7` (`0.9.0+202608310738`) was committed in the clone but never pushed, and the rename replaced it a day later. Rather than publish a version that would have shown the old name for one day, it was reset — `git ls-remote` confirmed it was not an ancestor of `origin/main` first, so nothing public was rewritten and the linear-history requirement `auto_update` depends on is intact. The distribution repository therefore goes straight from `5842b24` to `b3650c6`, and stamp `202608310738` exists only in this development repository's history.
 - Install directory names are derived at runtime, so the extension recognizes itself as `st-stage-ext`. That guarantee has not been exercised against a real install yet; it is re-check 29.
-- This round addresses phone click-through, variable-toggle feedback, gallery stack/filter/tag management, opt-in baked-checkerboard cleanup, readable Butler comparisons, and system-extension guidance.
+- This round addresses phone click-through, variable-toggle feedback, gallery stack/filter/tag management, readable Butler comparisons, and system-extension guidance. It also carried opt-in baked-checkerboard cleanup, which the 2026-09-01 test round then removed; the paragraphs describing it below are kept as the record of what shipped and are marked as retired.
 - The first real-ST acceptance round passed all 20 checks with no blocking defects. The six fixes it raised are described under "Acceptance Round One Fixes" below and are represented by the current artifacts.
 - Automated gates are complete for those fixes. The re-check items below remain manual and are not claimed as passed.
 - API management was not changed. OpenAI-compatible quick switching remains the supported common-channel baseline.
@@ -46,9 +46,9 @@ history: docs/maintenance/history/2026-08-31-pre-release-review.md
 - Gallery search covers pack name, role, outfit, and custom tags. Role, pack type, and custom-tag filters can be combined; bulk "select all" affects only the current filtered result.
 - Tag management can add, globally rename, and globally delete custom tags. Role and type remain derived, read-only dimensions. Preset metadata persists through the existing override path.
 - Bulk checkboxes now render above active/preset/resource badges.
-- A conservative edge-connected pixel detector recognizes only evidenced light-grey baked checkerboards. It refuses ordinary opaque images, already transparent images, unsupported evidence, and regions too small to establish confidence.
-- Image details expose an explicit "detect and remove checkerboard" action. Merely opening the gallery or preview does not download or alter images. Successful cleanup is exported as a transparent PNG to the SillyTavern user-image directory.
-- Preset cleanup/localization updates the same pack and sprite identity, retains the remote fallback URL, and does not create another local-copy pack. Cancellation or failure changes neither files nor settings.
+- **Retired 2026-09-01.** A conservative edge-connected pixel detector recognized only evidenced light-grey baked checkerboards, refusing ordinary opaque images, already transparent images, unsupported evidence, and regions too small to establish confidence. Image details exposed an explicit "detect and remove checkerboard" action, and successful cleanup was exported as a transparent PNG to the SillyTavern user-image directory. Removal is gone; **detection survives** — `analyzeImagePixels` still reports `opaque-checkerboard`, so the batch-upload warning still tells users their images have a baked checkerboard.
+- Preset localization updates the same pack and sprite identity, retains the remote fallback URL, and does not create another local-copy pack. Cancellation or failure changes neither files nor settings. This path used to run only through the checkerboard handler; `localize` now carries it directly and is the sole read-only-pack action.
+- Merely opening the gallery or preview does not download or alter images.
 
 ### Butler Reports And Extension Guidance
 
@@ -125,10 +125,37 @@ fonts rather than a device's CJK metrics. Findings 5 and 6 both live in that bli
 
 **Features — deliverable, with the scope the finding states.**
 
-4. *(finding 1)* Per-pack custom 清单提示词. The prompt template already supports direct
-   replacement, but the inventory section is only referenced as 【清单】. Adding a per-pack override
-   that falls back to the default when empty gives users an escape hatch when the built-in rules do
-   not fit their images.
+4. *(finding 1)* Per-pack custom 清单提示词. **Not built — one design decision has to be made
+   first, because guessing it wrong produces contradictory prompts on every reply.**
+
+   What already exists: `settings.promptTemplate` accepts `{清单}` and `{数量}`, so a **global**
+   custom inventory wording is already possible (`core/prompt-builder.ts` `buildPrompt`). Packs also
+   already carry `promptNote` plus `promptNotePlacement` (`before-list` / `after-list`) and
+   `outfitNotes`, which inject per-pack text around that pack's scene lines. So per-pack prose that
+   *accompanies* the list is a solved problem; what is missing is per-pack text that *replaces* the
+   generated list.
+
+   Why that is not a simple field: **the 清单 is grouped by scene, not by pack.** A scene is a
+   `(role, outfit)` pair built from addresses pooled across every enabled pack
+   (`buildScenes` → `renderGroupedSceneList`). Two packs can contribute to the same scene. If pack A
+   supplies custom inventory text and pack B auto-generates for that same scene, the injected prompt
+   describes one scene twice, in two different voices — the model then has contradictory
+   instructions about which names exist. Per-pack notes avoid this only because they are keyed to
+   scene coordinates and *added* rather than substituted.
+
+   Second, smaller issue: `fitToBudget` enforces `promptBudget` by trimming tags per scene. Literal
+   user text cannot be trimmed that way, so custom inventory text is either exempt from the budget —
+   breaking the guarantee that injection stays under it — or gets cut mid-sentence.
+
+   The decision needed: when a pack has custom inventory text and shares a scene with another pack,
+   does the custom text (a) replace the whole scene line, so the other pack's sprites go unlisted,
+   (b) replace only its own sprites, so the scene appears twice, or (c) get refused with a warning,
+   making the field usable only on packs that own their scenes outright?
+
+   Recommendation: (c). It is the only one that cannot silently produce a wrong prompt, it matches
+   the stated purpose — a fallback for when generation does not suit an unusual pack — and single-pack
+   roles are the common case anyway. Worth confirming before building, since it is the one option
+   that visibly refuses input.
 5. *(finding 4)* **Done.** 按编码添加 now accepts 图名+编号 and extracts the code, via
    `parseImageCodeEntries` in `core/share-code.ts`. Three forms are recognised in a fixed order so
    the result is never ambiguous: every whitespace token being a valid code means several bare codes
@@ -193,10 +220,9 @@ fonts rather than a device's CJK metrics. Findings 5 and 6 both live in that bli
    format-neutral and the build ships no image bytes, so a `.gif` preset URL would work at
    runtime — only that assertion has to widen.
 
-   Three caveats worth knowing before committing to GIF assets:
-   - The opt-in checkerboard detector has no GIF guard and would flatten an opaque animated GIF
-     to frame one (`cleanCheckerboardImage`, `core/image-compress.ts`). Finding 5 removes that
-     detector, which disposes of the issue.
+   Two caveats worth knowing before committing to GIF assets. A third is now moot: the opt-in
+   checkerboard detector had no GIF guard and would have flattened an opaque animated GIF to frame
+   one, and finding 5 removed that detector.
    - Because the GIF guard returns before the canvas decode, GIFs skip the 1024px downscale and
      the transparency checks, and direct upload has no size cap. A large GIF is stored at full
      size and animates at full size in the card wall.
@@ -207,23 +233,25 @@ fonts rather than a device's CJK metrics. Findings 5 and 6 both live in that bli
 
 Current artifact hashes belong to the 2026-09-01 rename round. Earlier rounds' hashes stay in their dated `history/` records rather than here, so this section always matches the artifacts currently in the worktree.
 
-`verified_code_head` is `fa42020`, the rename, which carries both the source changes and the rebuilt artifacts.
+`verified_code_head` is `bea201c`, the last commit of the test-round batch, which carries both the source changes and the rebuilt artifacts.
 
-Evidence for the current build stamp `0.9.0+202609011152`:
+Evidence for the current build stamp `0.9.0+202609011401`:
 
-- Vitest `4.1.10`: 80 files, 970/970 passed. The full run needs `NODE_OPTIONS=--max-old-space-size=6144`.
+- Vitest `4.1.10`: 79 files, 970/970 passed. The full run needs `NODE_OPTIONS=--max-old-space-size=6144`. The file count fell by one and the test count round-tripped through 962: deleting `core/checkerboard-cleanup.test.ts` and the checkerboard blocks removed 10, and the worldbook, code-parsing, and readonly-action tests added 10 back.
 - TypeScript typecheck, full ESLint, Next.js `16.2.6` production build, and `git diff --check`: all passed.
+- Playwright: `e2e/butler.spec.ts` green on `desktop-butler`, `mobile`, and `mobile-small`; `e2e/mobile.spec.ts` gallery test green on `mobile` and `mobile-small`. **`pnpm test:mobile` is not one of the four release gates**, which is how `e2e/butler.spec.ts` sat broken since acceptance round one renamed 临时关闭扩展找卡顿 to 扩展指南 without anyone noticing. Fixed here. Worth considering whether it should be gated.
 - **ESLint needs the raised heap too.** At the default heap it aborts with `Fatal process out of memory: Zone` rather than reporting violations, and the Next build run immediately afterwards then fails resolving `lightningcss`'s native binding. Both are environment limits, not code defects: with `NODE_OPTIONS=--max-old-space-size=6144` both pass cleanly. Only the Vitest heap requirement was previously recorded, so a reviewer hitting the lint OOM had nothing telling them it was expected.
 - Artifacts were built at `2026-09-01 11:52`, which is the stamp `bundle.js` carries as `__BUILD_TIME__` and `version.json` carries as `202609011152`. The two agree, which is the check that catches a stale-stamp release.
 - Hash identity holds: the five functional files match three ways across the development root, `st-distribution/`, and the `st-stage-ext` clone, and the distribution-only `README.md` matches between `st-distribution/` and the clone. The root `README.md` is the development repository's own and is excluded on purpose — see step 2 of the release loop. Zero CRLF pairs in all six copied files. SHA-256 as built:
   - `manifest.json`: `4DFA85A871DE9351647BB3D3BB4C18D69BD6007ABFD735D02E877D0DE8B3D12E`
   - `index.js`: `27DB248504A6EE1FEC948C3C6135F93732C0B075A0803317B82C972BCFCF457D`
-  - `bundle.js`: `AD49007994B7FBDB7760BE118341408C08573C3ED318722E4216D3150358EBFE`
-  - `style.css`: `0F981FDEA0E6783B55A12AFF4BB29E04E5F240D461856649CC97E256D3195E4B`
-  - `version.json`: `8616F0EC6CF5AD6C33917387946EA38B8442E34B6604893E6AE7B2C5F503631D`
+  - `bundle.js`: `3EF2B63EF5AD13237167C080566E6609D3CA917B3FDEEDEFA9FD57109D3C9825`
+  - `style.css`: `AA0417171E99244B2675F0D1AF2F70A9B6F6A44D9E13A86CCFF920DADA5D6811`
+  - `version.json`: `FDF609F5A17C0FB71D19302FEC9B2F0C15F761B610487FECF62F82D943BEBC3B`
   - `st-distribution/README.md`: `83041F395050B9B41C915221177AA9EA33433321B79C719994554F36734D5F3F`
-- Only `index.js` is byte-identical to the published `202608302113` copy. `manifest.json` and `style.css` moved for the first time in three rounds — the manifest because `display_name` changed, the stylesheet because its header comment carries the product name — alongside `bundle.js`, `version.json`, and `README.md`. `index.js` holding still is the correct shape: the loader stub is deliberately version-agnostic so a browser-cached copy stays valid.
-- Distribution boundary: `st-distribution/` holds exactly `bundle.js`, `index.js`, `manifest.json`, `README.md`, `style.css`, `version.json` — six files, 903,590 bytes. The clone's root additionally holds its own `.gitattributes`, which is correct and must not be deleted.
+- Only `index.js` is byte-identical to the published `202608302113` copy. `manifest.json` and `style.css` moved for the first time in three rounds — the manifest because `display_name` changed, the stylesheet because its header comment carries the product name and the modal/Butler CSS fixes landed in it — alongside `bundle.js`, `version.json`, and `README.md`. `index.js` holding still is the correct shape: the loader stub is deliberately version-agnostic so a browser-cached copy stays valid.
+- Distribution boundary: `st-distribution/` holds exactly `bundle.js`, `index.js`, `manifest.json`, `README.md`, `style.css`, `version.json` — six files, 900,159 bytes. The clone's root additionally holds its own `.gitattributes`, which is correct and must not be deleted.
+- The bundle shrank from 903,590 to 900,159 bytes across this round, which is the expected direction: the checkerboard removal deleted more code than the rename and the three fixes added.
 - `manifest.json` verified field by field: `display_name` `百工`, `version` `0.9.0`, `homePage` `https://github.com/LYC619/st-stage-ext`, `auto_update: true`, `js`/`css` naming the two files ST loads. Identical across root, `st-distribution/`, and the clone, UTF-8 with no BOM.
 - Dead-code and copy audits were run by throwaway scripts over all 100 non-test source files and 2,046 Chinese-bearing string literals, then deleted. The copy scan's other 43 hits were all false positives on inspection: dot-notation variable paths (`时间.日期`), `)` inside `${…}` interpolations, one deliberate ideographic space used as a full-width separator, and `！！` in web-simulator sample dialogue. Remaining never-imported exports are `Deps`/type interfaces used for structural typing and Next.js framework conventions (`metadata`, `viewport`), not dead code.
 - The install-directory-name invariant is **no `st-stage` in user-visible copy**, not none anywhere. Searching the literal across non-test source still returns about twenty correct hits: `[st-stage]` console prefixes, the renderer CSS classes and `data-st-stage-style` attribute, `FALLBACK_DIRECTORY_NAME`, the `build.mjs` stub fallback, and two live state keys that must never be renamed — the ST prompt slot key `st-stage::<channel>` (`st-adapter.ts`) and `st-stage:butler:extension-recovery:v1` (`experiments.ts`), where a rename would orphan an injected prompt and a stranded-run recovery record respectively. Filter to strings that reach the UI before drawing conclusions from the hit count.
@@ -323,7 +351,7 @@ The first real-ST acceptance round passed all 20 checks with no blocking defects
 9. Combine role, type, and custom-tag filters and confirm dimensions intersect. Enter bulk mode and confirm "select all" selects only visible filtered packs.
 10. Add a custom tag, globally rename it, and globally delete it. Reload SillyTavern and confirm metadata persists, including on an edited preset override.
 11. In bulk mode, verify the checkbox remains clickable above "in use", preset, local/cloud, and long-label badges on desktop and mobile.
-12. From image details, test one known baked checkerboard, one normal opaque image, and one real transparent PNG. Confirm only the evidenced checkerboard offers a successful cleanup; confirm before saving; verify the transparent PNG is stored locally on the same pack/sprite ID with the remote fallback retained. Cancellation and rejected images must not change settings or create a second pack.
+12. **Rewritten 2026-09-01, since the cleanup action is gone.** Batch-upload a known baked checkerboard and confirm the diagnostic warning still names it. Then localize one sprite from a **preset** pack and one from an ordinary pack: both must keep the same pack/sprite ID with the remote fallback retained, and neither may create a second pack. The preset case is the one that regressed most easily — it is the only read-only-pack action, and it used to reach `setPresetLocalSprite` only through the removed checkerboard handler.
 
 ### Butler
 
@@ -347,7 +375,7 @@ These cover only what round one changed. Items 21 and 22 are the ones most worth
 24. Scroll well down a long character list, check a box, and confirm the view stays put rather than jumping to the top. Repeat with a character whose chats are still loading, since selection re-renders on progress.
 25. Expand a character's chats and confirm three distinguishable levels: the character card, the bold character name, and the indented chat rows behind a left rule. The parent and its children must not look identical.
 26. Open tag management from the gallery manager and confirm buttons are horizontal with readable labels at their natural width, on both desktop and mobile. This is the panel that had no layout at all.
-27. On the checkerboard action, hover for the tooltip, then try a genuinely transparent PNG and confirm the message says the image already has an alpha channel and needs no cleanup — distinct from the "no evidenced checkerboard" message an ordinary opaque image produces.
+27. **Retired 2026-09-01 along with the cleanup action.** It read: on the checkerboard action, hover for the tooltip, then try a genuinely transparent PNG and confirm the message distinguishes "already has an alpha channel" from "no evidenced checkerboard". There is no action left to hover. The surviving diagnostic is covered by re-check 12.
 28. If a troubleshooting run was left stranded by an earlier build, confirm the Butler home screen offers to restore the pre-troubleshooting extension state once, that it restores the original disabled list, and that the card does not return afterwards.
 29. Install `https://github.com/LYC619/st-stage-ext` through SillyTavern's extension installer. Confirm it lands in `extensions/third-party/st-stage-ext` and loads. Open Butler's extension guide and confirm the extension marks itself protected and names `st-stage-ext`, not `st-stage`. Then try to disable it and confirm the refusal quotes `st-stage-ext` too. **This check would have failed before the pre-release review**: the guide's self-protection notice hardcoded `st-stage` even though the disable refusal already interpolated the runtime name, so the two disagreed on the same screen. Both now derive it. This is the guarantee the runtime-identification change exists to preserve, and no automated test can cover the real install path. Also confirm the extension-list entry links to `st-stage-ext` rather than the development repository, and restart ST once to confirm `auto_update` against the new origin is clean.
 
@@ -367,10 +395,14 @@ See `docs/maintenance/DEFERRED.md` for details.
 - **Install from `st-stage-ext` in real SillyTavern and run re-check 29 first.** The extension is now published under a directory name it has never actually run under, and self-protection is derived at runtime. Everything else in this round is byte-verified; this is the only claim resting on untested behavior.
 - Then execute re-checks 21–28, starting with 21 and 22, and re-run any of 1–20 whose surface the round-one fixes touched. Round one of 1–20 passed on `d9852e9` with no blocking defects.
 - **Two pushes are outstanding, and they are the only remaining step.** Both repositories are committed with clean worktrees; pushing from the agent session fails on credentials rather than network, so it is a maintainer action. The previous round's two pushes both landed on 2026-08-31 and are no longer pending.
-  - `st-stage`: push four commits to `origin/main` — `1d8d901` (pre-release review source and artifacts), `8af9b16` (the README correction), `ab45173` (the review record), and `fa42020` (the rename), plus whatever record commit sits on top. `1d8d901` sits directly on `edb5643`.
-  - `st-stage-ext`: push `b3650c6` — `release: 0.9.0+202609011152` — which sits directly on `5842b24`.
-  - Push `st-stage` first, or at least in the same sitting. `b3650c6`'s message names `fa42020` as its source, and that link dangles until the development history is public.
+  - `st-stage`: push everything from `1d8d901` through the current head to `origin/main`. `1d8d901` sits directly on `edb5643`. The chain is `1d8d901` (pre-release review) → `8af9b16` (README correction) → `ab45173` (review record) → `fa42020` (rename to 百工) → `c1785c0` (rename record) → `052c0ad` (modal viewport fix) → `f3b7b3a` (worldbook deselect fix) → `c07f1c1` (checkerboard removal, host copy) → `bea201c` (图名+编号 import), plus the record commit on top.
+  - `st-stage-ext`: push `f852965` — `release: 0.9.0+202609011401` — which carries `b3650c6` with it.
+  - Push `st-stage` first, or at least in the same sitting. `f852965`'s message names `bea201c` as its source, and that link dangles until the development history is public.
 - After re-check 29 passes, decide whether `manifest.json` moves from `0.9.0` to `1.0.0`, then rerun the complete release gates. Recommended sequence is to hold `0.9.0` until acceptance closes, since the version travels to every installed copy through `auto_update` and is awkward to walk back.
+- **Three of the eight test-round findings are still open, and one of them is blocked on a question only the maintainer can answer.**
+  - *Finding 1, per-pack custom 清单提示词.* Answer the (a)/(b)/(c) question in item 4 above before any code is written. Recommendation is (c) — refuse the field on packs that share a scene — because it is the only option that cannot silently emit a contradictory prompt. Everything else about the feature is straightforward; per-pack prose that *accompanies* the list already exists as `promptNote`.
+  - *Finding 2, approximate matching*, and *finding 7, floating variable viewer.* Both need design work and neither is a defect. Finding 2 is explicitly framed as raising the ceiling later and expected to need several test rounds, so it should not be attempted in an acceptance round.
+- **Two fixes from this round are unproven and need a real device.** Finding 6's modal fix cannot be reproduced in the harness at all — headless Chromium has no browser chrome, so `dvh`, `vh`, and `innerHeight` are equal under emulation, and restoring the broken `100vh` leaves the suite green. Finding 5's gallery-layout symptom did not reproduce at 390px or 360px either; a screenshot naming the squeezed buttons would settle it in one step, and what was actually fixed was the same hazard in Butler's action grid.
 - Decide whether to add `@cover=` to the stpack2 share format. Without it every imported pack falls back to its first sprite as the cover, which is why pack ordering currently has to double as cover selection. Small and self-contained; deferred only because it was outside this round's request.
 - Keep the deferred Renderer branching protocol out of acceptance fixes; scope it as a separate design task.
 - Fix only failures observed in real ST. Do not expand the API channel matrix unless OpenAI-compatible usage produces concrete gaps.
@@ -384,8 +416,8 @@ Published 2026-08-30. Creation is done; what remains below is the release loop f
 | Repository | `https://github.com/LYC619/st-stage-ext` |
 | First release commit | `25809d9` — `initial release: 0.9.0+202608301732` |
 | Build stamp published | `0.9.0+202608302113` at `01112ac`, plus `5842b24` (markdown line-ending pin) |
-| Build stamp pending release | `0.9.0+202609011152` at `b3650c6` — copied and committed in the clone, push outstanding |
-| Built from | development commit `cfa7f48` (published) / `fa42020` (pending) |
+| Build stamp pending release | `0.9.0+202609011401` at `f852965` (carries `b3650c6`, the rename-only build) — committed in the clone, push outstanding |
+| Built from | development commit `cfa7f48` (published) / `bea201c` (pending) |
 | Superseded, never published | `0.9.0+202608310738` — committed as `3953ec7`, reset after the rename replaced it; confirmed not an ancestor of `origin/main` before resetting |
 | Local clone | `D:\8.Project\0_0_维护\st-stage-ext` |
 | Install directory name | `st-stage-ext` |
