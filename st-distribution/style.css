@@ -2436,6 +2436,132 @@
   }
 }
 
+/* ==================== 变量速查悬浮窗（Finding 7） ==================== */
+
+#st-stage-varhud {
+  position: fixed;
+  z-index: 9998; /* 低于手机壳(10000)与立绘悬浮窗(9999)，避免遮挡主界面 */
+  user-select: none;
+  touch-action: none;
+}
+
+#st-stage-varhud .so-varhud-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(20, 20, 24, 0.72);
+  color: #fff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: move;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(6px);
+}
+
+#st-stage-varhud .so-varhud-panel {
+  display: none;
+  flex-direction: column;
+  width: min(280px, calc(100vw - 24px));
+  max-height: min(380px, calc(100vh - 48px));
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(20, 20, 24, 0.92);
+  color: #fff;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+}
+
+#st-stage-varhud .so-varhud-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 0 0 auto; /* 关闭按钮是唯一收起入口，绝不允许被压掉 */
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: move;
+}
+
+#st-stage-varhud .so-varhud-title {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#st-stage-varhud .so-varhud-close {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#st-stage-varhud .so-varhud-body {
+  flex: 1 1 auto;
+  min-height: 0; /* flex 子项默认 min-height:auto，不给 0 则 overflow-y 不生效 */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 10px 10px;
+}
+
+#st-stage-varhud .so-varhud-section + .so-varhud-section {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#st-stage-varhud .so-varhud-source {
+  margin-bottom: 4px;
+  font-size: 11px;
+  opacity: 0.65;
+}
+
+#st-stage-varhud .so-varhud-group {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+#st-stage-varhud .so-varhud-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+#st-stage-varhud .so-varhud-key {
+  flex: 0 0 auto;
+  opacity: 0.75;
+  white-space: nowrap; /* CJK 任意字间可断行，不锁就会竖排 */
+}
+
+#st-stage-varhud .so-varhud-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  word-break: break-all;
+}
+
+#st-stage-varhud .so-varhud-notice {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
 /* 手机框架样式 — 双端共用（ST 由 build.mjs 拼进 style.css；Web 由 globals.css import） */
 
 /* ==================== 手机框架 ==================== */

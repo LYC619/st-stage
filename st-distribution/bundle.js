@@ -2478,6 +2478,8 @@ function createDefaultSettings() {
     imgbbApiKey: "",
     autoUpload: false,
     galleryFoldByRole: true,
+    approxMatch: false,
+    variableHud: false,
     packs: [],
     presetOverrides: {},
     bindings: [],
@@ -2489,6 +2491,7 @@ function createDefaultSettings() {
 var MAX_LABELS = 24;
 var MAX_LABEL_CODE_POINTS = 32;
 var MAX_NOTE_CODE_POINTS = 500;
+var MAX_INVENTORY_PROMPT_CODE_POINTS = 800;
 function parseNumberedTag(tag) {
   const match = /^(.+?)(\d+)$/u.exec(tag);
   if (!match) return null;
@@ -2574,6 +2577,9 @@ function packLabels(pack) {
 }
 function normalizeNote(raw) {
   return typeof raw === "string" ? clipCodePoints(raw.trim(), MAX_NOTE_CODE_POINTS) : "";
+}
+function normalizeInventoryPrompt(raw) {
+  return typeof raw === "string" ? clipCodePoints(raw.trim(), MAX_INVENTORY_PROMPT_CODE_POINTS) : "";
 }
 function normalizeOutfitNotes(raw) {
   const notes = /* @__PURE__ */ Object.create(null);
@@ -2770,6 +2776,25 @@ function buildPromptSceneNotes(packs, addresses) {
   }
   return notes;
 }
+function buildPromptSceneInventories(packs, addresses) {
+  const inventories = [];
+  const multiPack = packs.length > 1;
+  const available2 = new Set(addresses.map(addressConflictKey));
+  for (const pack of packs) {
+    const inventoryText = pack.inventoryPrompt?.trim();
+    if (!inventoryText) continue;
+    const scenes = /* @__PURE__ */ new Set();
+    for (const sprite of pack.sprites) {
+      const scene = effectiveSpriteAddress(pack, sprite, multiPack);
+      if (!available2.has(addressConflictKey(scene))) continue;
+      const key = JSON.stringify([scene.role, scene.outfit]);
+      if (scenes.has(key)) continue;
+      scenes.add(key);
+      inventories.push({ role: scene.role, outfit: scene.outfit, inventoryPrompt: inventoryText });
+    }
+  }
+  return inventories;
+}
 function countInstruction(count) {
   if (count <= 1) {
     return "请在每次回复的末尾，选择一个最贴合当前情境与角色情绪的立绘，以 [立绘:名称] 的格式单独标注。";
@@ -2783,6 +2808,16 @@ function sceneLabel(a) {
   if (a.role && a.outfit) return `${a.role}/${a.outfit}`;
   if (a.role) return a.role;
   return "默认";
+}
+function indexSceneInventories(inventories) {
+  const index = /* @__PURE__ */ new Map();
+  for (const { role, outfit, inventoryPrompt } of inventories) {
+    const key = `${role}|${outfit}`;
+    const existing = index.get(key) ?? [];
+    existing.push(inventoryPrompt);
+    index.set(key, existing);
+  }
+  return index;
 }
 function scenePrefix(a) {
   if (a.role && a.outfit) return `${a.role}/${a.outfit}`;
@@ -2863,7 +2898,7 @@ function noteLines(scene, note) {
   }
   return [`  备注：${head}`, ...rest.map((line) => `  ${line}`)];
 }
-function renderGroupedSceneList(scenes, noteIndex, reservedTags) {
+function renderGroupedSceneList(scenes, noteIndex, reservedTags, inventoryIndex = /* @__PURE__ */ new Map()) {
   const lines = [];
   const ranges = [];
   for (const scene of scenes) {
@@ -2873,6 +2908,12 @@ function renderGroupedSceneList(scenes, noteIndex, reservedTags) {
     const rendered = renderTags(scene.tags, reservedTags);
     lines.push(`- ${scene.label}：${rendered.text}`);
     ranges.push(...rendered.ranges);
+    for (const text4 of inventoryIndex.get(scene.key) ?? []) {
+      for (const line of text4.split("\n")) {
+        const trimmed = line.trim();
+        if (trimmed) lines.push(`  ${trimmed}`);
+      }
+    }
     for (const note of matchingNotes(noteIndex, scene, "after-list")) {
       lines.push(...noteLines(scene, note));
     }
@@ -2907,9 +2948,9 @@ function formatInstruction(scenes) {
   return "输出格式：默认场景直接写 [立绘:图名]；其他场景写 [立绘:场景/图名]。两段地址表示无服装，三级地址表示指定服装。";
 }
 var CLOSING_INSTRUCTION = "只能使用上述场景中实际列出的图名，不要自行拼造不存在的角色/服装/图名组合。";
-function buildGroupedFull(addresses, count, noteIndex, reservedTags) {
+function buildGroupedFull(addresses, count, noteIndex, reservedTags, inventoryIndex) {
   const scenes = buildScenes(addresses);
-  const rendered = renderGroupedSceneList(scenes, noteIndex, reservedTags);
+  const rendered = renderGroupedSceneList(scenes, noteIndex, reservedTags, inventoryIndex);
   return [
     "[角色立绘系统]",
     "可用立绘（按场景）：",
@@ -2947,14 +2988,14 @@ function findSharedCluster(scenes) {
   }
   return best;
 }
-function buildShared(addresses, count, noteIndex, reservedTags) {
+function buildShared(addresses, count, noteIndex, reservedTags, inventoryIndex) {
   const scenes = buildScenes(addresses);
   if (scenes.length <= 1 || reservedTags.has(SHARED_LIST_LABEL)) {
-    return buildGroupedFull(addresses, count, noteIndex, reservedTags);
+    return buildGroupedFull(addresses, count, noteIndex, reservedTags, inventoryIndex);
   }
   const cluster = findSharedCluster(scenes);
   if (!cluster) {
-    return buildGroupedFull(addresses, count, noteIndex, reservedTags);
+    return buildGroupedFull(addresses, count, noteIndex, reservedTags, inventoryIndex);
   }
   const coreSet = new Set(cluster.core);
   const renderedCore = renderTags(cluster.core, reservedTags);
@@ -2981,6 +3022,12 @@ function buildShared(addresses, count, noteIndex, reservedTags) {
       const rendered = renderTags(scene.tags, reservedTags);
       lines.push(`- ${scene.label}：${rendered.text}`);
       ranges.push(...rendered.ranges);
+    }
+    for (const text4 of inventoryIndex.get(scene.key) ?? []) {
+      for (const line of text4.split("\n")) {
+        const trimmed = line.trim();
+        if (trimmed) lines.push(`  ${trimmed}`);
+      }
     }
     for (const note of matchingNotes(noteIndex, scene, "after-list")) {
       lines.push(...noteLines(scene, note));
@@ -3042,7 +3089,7 @@ function relativeFewShotExample(scenes, count) {
     `[立绘:${second}]`
   ];
 }
-function buildRoleCompact(addresses, count, noteIndex, reservedTags) {
+function buildRoleCompact(addresses, count, noteIndex, reservedTags, inventoryIndex) {
   const scenes = buildScenes(addresses);
   const role = scenes[0]?.role;
   if (scenes.length < 2 || !role || reservedTags.has(ROLE_BASE_LIST_LABEL) || scenes.some((scene) => scene.role !== role || !scene.outfit)) return null;
@@ -3076,6 +3123,12 @@ function buildRoleCompact(addresses, count, noteIndex, reservedTags) {
       const rendered = renderTags(plainTags, reservedTags);
       lines.push(`- ${label}：${rendered.text}`);
       ranges.push(...rendered.ranges);
+    }
+    for (const text4 of inventoryIndex.get(scene.key) ?? []) {
+      for (const line of text4.split("\n")) {
+        const trimmed = line.trim();
+        if (trimmed) lines.push(`  ${trimmed}`);
+      }
     }
     const variants = variantBases(scene.tags);
     if (variants.length > 0) lines.push(`  可用“${VARIANT_SUFFIX}”后缀：${variants.join("、")}`);
@@ -3155,26 +3208,27 @@ function isKnownBuiltinTemplate(template) {
   const normalized = normalizeTemplateLineEndings(template);
   return [BUILTIN_TEMPLATE, ...LEGACY_BUILTIN_TEMPLATES].some((known) => normalized === known);
 }
-function buildPrompt(addresses, mode, count, template = "", budget = 0, notes = []) {
+function buildPrompt(addresses, mode, count, template = "", budget = 0, notes = [], inventories = []) {
   if (addresses.length === 0) return "";
   const n = Math.max(1, Math.round(count) || 1);
   const b = Math.max(0, Math.round(budget) || 0);
   const noteIndex = indexSceneNotes(notes);
+  const inventoryIndex = indexSceneInventories(inventories);
   const reservedTags = new Set(addresses.map((address) => address.tag));
   const custom = template.trim();
   if (custom && !isKnownBuiltinTemplate(template)) {
     return fitToBudget(addresses, b, (addrs) => {
       const scenes = buildScenes(addrs);
-      const rendered = renderGroupedSceneList(scenes, noteIndex, reservedTags);
+      const rendered = renderGroupedSceneList(scenes, noteIndex, reservedTags, inventoryIndex);
       const list = [...rendered.lines, ...rangeInstruction(rendered.ranges, findRangeExample(scenes, reservedTags))].join("\n");
       return custom.replace(/\{清单\}/g, list).replace(/\{数量\}/g, String(n));
     });
   }
   return fitToBudget(addresses, b, (addrs) => {
-    const grouped = buildGroupedFull(addrs, n, noteIndex, reservedTags);
+    const grouped = buildGroupedFull(addrs, n, noteIndex, reservedTags, inventoryIndex);
     if (mode === "full") return grouped;
-    const shared = chooseShorterPrompt(grouped, buildShared(addrs, n, noteIndex, reservedTags));
-    const roleCompact = buildRoleCompact(addrs, n, noteIndex, reservedTags);
+    const shared = chooseShorterPrompt(grouped, buildShared(addrs, n, noteIndex, reservedTags, inventoryIndex));
+    const roleCompact = buildRoleCompact(addrs, n, noteIndex, reservedTags, inventoryIndex);
     return roleCompact && roleCompact.length < grouped.length ? roleCompact : shared;
   });
 }
@@ -3701,7 +3755,8 @@ function buildActiveSpritePrompt(settings, characterName, budget = settings.prom
     settings.spriteCount,
     settings.promptTemplate,
     budget,
-    buildPromptSceneNotes(packs, addresses)
+    buildPromptSceneNotes(packs, addresses),
+    buildPromptSceneInventories(packs, addresses)
   );
 }
 
@@ -3730,6 +3785,1125 @@ function replaceTags(text4, replacer) {
 }
 function hasTag(text4) {
   return new RegExp(TAG_REGEX.source).test(text4);
+}
+
+// core/approx-match.ts
+function addressTerms(role, outfit, tag) {
+  const terms = [];
+  for (const part of [role, outfit]) {
+    const trimmed = part.trim();
+    if (trimmed) terms.push(trimmed);
+  }
+  const tagTrimmed = tag.trim();
+  if (tagTrimmed) {
+    terms.push(tagTrimmed);
+    for (const piece of tagTrimmed.split(/[_\-\s/·、,，.。]+/)) {
+      const p = piece.trim();
+      if (p && p !== tagTrimmed && !/^\d+$/.test(p)) terms.push(p);
+    }
+  }
+  return [...new Set(terms)];
+}
+function buildApproxCandidates(packs) {
+  const multiPack = packs.length > 1;
+  const candidates = [];
+  for (const pack of packs) {
+    for (const sprite of pack.sprites) {
+      const address = effectiveSpriteAddress(pack, sprite, multiPack);
+      const terms = addressTerms(address.role, address.outfit, address.tag);
+      if (terms.length > 0) candidates.push({ sprite, terms });
+    }
+  }
+  return candidates;
+}
+function termWeight(term) {
+  return term.length >= 2 ? 2 : 1;
+}
+var MIN_SCORE = 2;
+function approxMatchSprite(candidates, description) {
+  const text4 = description.trim();
+  if (!text4 || candidates.length === 0) return null;
+  let best = null;
+  let tied = false;
+  for (const candidate of candidates) {
+    let score = 0;
+    const hits = [];
+    for (const term of candidate.terms) {
+      if (text4.includes(term)) {
+        score += termWeight(term);
+        hits.push(term);
+      }
+    }
+    if (score < MIN_SCORE) continue;
+    if (!best || score > best.score) {
+      best = { sprite: candidate.sprite, score, hits };
+      tied = false;
+    } else if (score === best.score && candidate.sprite !== best.sprite) {
+      tied = true;
+    }
+  }
+  return best && !tied ? best : null;
+}
+function resolveWithApprox(packs, address, resolveOne, enabled, candidatesCache) {
+  const exact = resolveOne(packs, address);
+  if (exact || !enabled) return exact;
+  if (candidatesCache) {
+    candidatesCache.current ?? (candidatesCache.current = buildApproxCandidates(packs));
+    return approxMatchSprite(candidatesCache.current, address)?.sprite ?? null;
+  }
+  return approxMatchSprite(buildApproxCandidates(packs), address)?.sprite ?? null;
+}
+
+// core/variable-hud.ts
+function isPlainObject(v) {
+  return v != null && typeof v === "object" && !Array.isArray(v);
+}
+function isTupleLeaf(v) {
+  return Array.isArray(v) && v.length === 2 && typeof v[1] === "string" && !Array.isArray(v[0]);
+}
+function formatHudValue(v) {
+  if (typeof v === "string") return v;
+  if (v === null) return "null";
+  if (v === void 0) return "";
+  if (typeof v === "object") {
+    try {
+      return JSON.stringify(v);
+    } catch {
+      return String(v);
+    }
+  }
+  return String(v);
+}
+function clipHudValue(text4, max = 80) {
+  const oneLine = text4.replace(/\s+/g, " ").trim();
+  return oneLine.length > max ? `${oneLine.slice(0, max - 1)}…` : oneLine;
+}
+function flattenVariables(root, maxDepth = 3) {
+  const rows = [];
+  if (!isPlainObject(root)) return rows;
+  const walk = (node, prefix, depth) => {
+    for (const [key, raw] of Object.entries(node)) {
+      const path = prefix ? `${prefix}.${key}` : key;
+      if (isTupleLeaf(raw)) {
+        rows.push({
+          path,
+          key,
+          depth,
+          value: clipHudValue(formatHudValue(raw[0])),
+          description: raw[1]
+        });
+        continue;
+      }
+      if (isPlainObject(raw)) {
+        if (depth + 1 > maxDepth) {
+          rows.push({
+            path,
+            key,
+            depth,
+            value: clipHudValue(formatHudValue(raw)),
+            description: ""
+          });
+          continue;
+        }
+        if (Object.keys(raw).length === 0) {
+          rows.push({ path, key, depth, value: "{}", description: "" });
+          continue;
+        }
+        rows.push({ path, key, depth, value: null, description: "" });
+        walk(raw, path, depth + 1);
+        continue;
+      }
+      rows.push({ path, key, depth, value: clipHudValue(formatHudValue(raw)), description: "" });
+    }
+  };
+  walk(root, "", 0);
+  return rows;
+}
+function countLeafRows(rows) {
+  return rows.filter((row) => row.value !== null).length;
+}
+
+// st-extension/src/variable-hud.ts
+var DRAG_THRESHOLD = 4;
+var BUTTON_SIZE = 44;
+function clampPosition(x, y) {
+  const maxX = Math.max(0, window.innerWidth - BUTTON_SIZE);
+  const maxY = Math.max(0, window.innerHeight - BUTTON_SIZE);
+  return {
+    x: Math.min(maxX, Math.max(0, x)),
+    y: Math.min(maxY, Math.max(0, y))
+  };
+}
+function el(tag, className) {
+  const node = document.createElement(tag);
+  node.className = className;
+  return node;
+}
+function createVariableHud(deps) {
+  const saved = deps.readState();
+  let position = clampPosition(saved.x, saved.y);
+  let open = saved.open;
+  let disposed = false;
+  const root = el("div", "so-varhud");
+  root.id = "st-stage-varhud";
+  const button2 = el("button", "so-varhud-btn");
+  button2.setAttribute("type", "button");
+  button2.setAttribute("aria-label", "变量速查");
+  button2.textContent = "🔢";
+  const panel = el("div", "so-varhud-panel");
+  const panelHead = el("div", "so-varhud-head");
+  const panelTitle = el("span", "so-varhud-title");
+  panelTitle.textContent = "变量速查";
+  const closeBtn = el("button", "so-varhud-close");
+  closeBtn.setAttribute("type", "button");
+  closeBtn.setAttribute("aria-label", "收起");
+  closeBtn.textContent = "✕";
+  panelHead.append(panelTitle, closeBtn);
+  const panelBody = el("div", "so-varhud-body");
+  panel.append(panelHead, panelBody);
+  root.append(button2, panel);
+  document.body.append(root);
+  function applyPosition() {
+    root.style.left = `${position.x}px`;
+    root.style.top = `${position.y}px`;
+  }
+  function applyOpen() {
+    root.classList.toggle("so-varhud-open", open);
+    button2.style.display = open ? "none" : "flex";
+    panel.style.display = open ? "flex" : "none";
+  }
+  function renderRows(container, rows) {
+    for (const row of rows) {
+      const line = el("div", row.value === null ? "so-varhud-group" : "so-varhud-row");
+      line.style.paddingLeft = `${row.depth * 12}px`;
+      const key = el("span", "so-varhud-key");
+      key.textContent = row.key;
+      line.append(key);
+      if (row.value !== null) {
+        const value = el("span", "so-varhud-value");
+        value.textContent = row.value;
+        line.append(value);
+        if (row.description) line.title = row.description;
+      }
+      container.append(line);
+    }
+  }
+  let renderToken = 0;
+  async function render2() {
+    if (disposed || !open) return;
+    const token = ++renderToken;
+    let sections;
+    try {
+      sections = await deps.readSections();
+    } catch (err) {
+      if (token !== renderToken || disposed) return;
+      panelBody.textContent = "";
+      const fail = el("div", "so-varhud-notice");
+      fail.textContent = `读取失败：${err instanceof Error ? err.message : String(err)}`;
+      panelBody.append(fail);
+      return;
+    }
+    if (token !== renderToken || disposed || !open) return;
+    panelBody.textContent = "";
+    let anyRow = false;
+    for (const section2 of sections) {
+      const block = el("div", "so-varhud-section");
+      const label = el("div", "so-varhud-source");
+      const rows = section2.root ? flattenVariables(section2.root) : [];
+      label.textContent = section2.root ? `${section2.source}（${countLeafRows(rows)}）` : section2.source;
+      block.append(label);
+      if (!section2.root) {
+        const notice = el("div", "so-varhud-notice");
+        notice.textContent = section2.notice || "当前不可用";
+        block.append(notice);
+      } else if (rows.length === 0) {
+        const empty = el("div", "so-varhud-notice");
+        empty.textContent = "暂无变量";
+        block.append(empty);
+      } else {
+        anyRow = true;
+        renderRows(block, rows);
+      }
+      panelBody.append(block);
+    }
+    if (sections.length === 0) {
+      const empty = el("div", "so-varhud-notice");
+      empty.textContent = "没有可用的变量来源";
+      panelBody.append(empty);
+    }
+    panelTitle.textContent = anyRow ? "变量速查" : "变量速查（空）";
+  }
+  function setOpen(next) {
+    open = next;
+    applyOpen();
+    deps.writeState({ ...position, open });
+    if (open) void render2();
+  }
+  function startDrag(event) {
+    if (event.button !== 0 && event.pointerType === "mouse") return;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const origin = { ...position };
+    let moved = false;
+    const onMove = (ev) => {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+      moved = true;
+      position = clampPosition(origin.x + dx, origin.y + dy);
+      applyPosition();
+    };
+    const finish = (asClick) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      if (moved) deps.writeState({ ...position, open });
+      else if (asClick) setOpen(!open);
+    };
+    const onUp = () => finish(true);
+    const onCancel = () => finish(false);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+  }
+  button2.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+    startDrag(event);
+  });
+  panelHead.addEventListener("pointerdown", (event) => {
+    if (event.target === closeBtn) return;
+    event.stopPropagation();
+    startDrag(event);
+  });
+  closeBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setOpen(false);
+  });
+  for (const type of ["pointerdown", "click"]) {
+    panelBody.addEventListener(type, (event) => event.stopPropagation());
+  }
+  const unsubscribe = deps.subscribe(() => void render2());
+  const onResize = () => {
+    position = clampPosition(position.x, position.y);
+    applyPosition();
+  };
+  window.addEventListener("resize", onResize);
+  applyPosition();
+  applyOpen();
+  if (open) void render2();
+  return {
+    dispose() {
+      disposed = true;
+      unsubscribe();
+      window.removeEventListener("resize", onResize);
+      root.remove();
+    },
+    refresh() {
+      void render2();
+    }
+  };
+}
+
+// st-extension/src/apps/widgets.ts
+function el2(tag, className) {
+  const node = document.createElement(tag);
+  node.className = className;
+  return node;
+}
+function appButton(label, onClick) {
+  const btn = el2("div", "menu_button so-app-btn");
+  btn.setAttribute("role", "button");
+  btn.tabIndex = 0;
+  btn.textContent = label;
+  btn.addEventListener("click", onClick);
+  btn.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onClick();
+    }
+  });
+  return btn;
+}
+function toggleRow(label, checked, onChange) {
+  const row = el2("label", "so-app-toggle checkbox_label");
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = checked;
+  input.addEventListener("change", () => onChange(input.checked));
+  const span = document.createElement("span");
+  span.textContent = label;
+  row.append(input, span);
+  return row;
+}
+function selectRow(label, value, options, onChange) {
+  const row = el2("label", "so-app-toggle");
+  const span = document.createElement("span");
+  span.textContent = label;
+  const select = document.createElement("select");
+  select.className = "text_pole so-app-input";
+  for (const opt of options) {
+    const o = document.createElement("option");
+    o.value = opt.value;
+    o.textContent = opt.label;
+    if (opt.value === value) o.selected = true;
+    select.append(o);
+  }
+  select.addEventListener("change", () => onChange(select.value));
+  row.append(span, select);
+  return row;
+}
+function numberRow(label, value, min, max, onChange) {
+  const row = el2("label", "so-app-toggle");
+  const span = document.createElement("span");
+  span.textContent = label;
+  const input = document.createElement("input");
+  input.type = "number";
+  input.className = "text_pole so-app-num";
+  input.min = String(min);
+  input.max = String(max);
+  input.step = "1";
+  input.value = String(value);
+  input.addEventListener("change", () => {
+    const n = Math.round(Number(input.value));
+    const clamped = Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min;
+    input.value = String(clamped);
+    onChange(clamped);
+  });
+  row.append(span, input);
+  return row;
+}
+function rangeRow(label, value, min, max, onInput, onCommit, format = String) {
+  const row = el2("label", "so-app-toggle so-app-range");
+  const span = document.createElement("span");
+  span.textContent = label;
+  const controls = el2("span", "so-app-range-controls");
+  const input = document.createElement("input");
+  input.type = "range";
+  input.min = String(min);
+  input.max = String(max);
+  input.step = "1";
+  input.value = String(Math.min(max, Math.max(min, Math.round(value))));
+  const output = document.createElement("output");
+  const read = () => {
+    const parsed = Math.round(Number(input.value));
+    const clamped = Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : min;
+    input.value = String(clamped);
+    output.value = format(clamped);
+    output.textContent = output.value;
+    return clamped;
+  };
+  read();
+  input.addEventListener("input", () => onInput(read()));
+  input.addEventListener("change", () => onCommit(read()));
+  controls.append(input, output);
+  row.append(span, controls);
+  return row;
+}
+var foldOpenState = /* @__PURE__ */ new Map();
+function foldSection(title2, open = false, key = "") {
+  const box = document.createElement("details");
+  box.className = "so-app-section so-app-fold";
+  box.open = key ? foldOpenState.get(key) ?? open : open;
+  if (key) box.addEventListener("toggle", () => foldOpenState.set(key, box.open));
+  const summary = document.createElement("summary");
+  summary.className = "so-app-title";
+  summary.textContent = title2;
+  const body = el2("div", "so-app-fold-body");
+  box.append(summary, body);
+  return { box, body };
+}
+function textareaRow(label, value, placeholder, onCommit) {
+  const wrap = el2("div", "so-app-field");
+  const title2 = el2("div", "so-app-title");
+  title2.textContent = label;
+  const input = document.createElement("textarea");
+  input.className = "text_pole so-app-input";
+  input.rows = 5;
+  input.value = value;
+  input.placeholder = placeholder;
+  input.addEventListener("change", () => onCommit(input.value));
+  wrap.append(title2, input);
+  return wrap;
+}
+function hintField(row, hint) {
+  const wrap = el2("div", "so-app-hintwrap");
+  const line = el2("div", "so-app-hintrow");
+  row.classList.add("so-app-hintrow-main");
+  const badge = document.createElement("button");
+  badge.type = "button";
+  badge.className = "so-app-hint-badge";
+  badge.textContent = "ⓘ";
+  badge.title = hint;
+  badge.setAttribute("aria-label", "说明");
+  badge.setAttribute("aria-expanded", "false");
+  const detail = el2("div", "so-app-hint");
+  detail.textContent = hint;
+  detail.hidden = true;
+  badge.addEventListener("click", (e) => {
+    e.preventDefault();
+    detail.hidden = !detail.hidden;
+    badge.classList.toggle("so-app-hint-badge-on", !detail.hidden);
+    badge.setAttribute("aria-expanded", String(!detail.hidden));
+  });
+  line.append(row, badge);
+  wrap.append(line, detail);
+  return wrap;
+}
+function textRow(label, value, placeholder, onCommit, type = "text") {
+  const wrap = el2("div", "so-app-field");
+  const title2 = el2("div", "so-app-title");
+  title2.textContent = label;
+  const input = document.createElement("input");
+  input.type = type;
+  input.className = "text_pole so-app-input";
+  input.value = value;
+  input.placeholder = placeholder;
+  input.autocomplete = "off";
+  input.addEventListener("change", () => onCommit(input.value));
+  wrap.append(title2, input);
+  return wrap;
+}
+
+// st-extension/src/apps/path-utils.ts
+var FORBIDDEN_PATH_SEGMENTS = /* @__PURE__ */ new Set(["__proto__", "prototype", "constructor"]);
+function parsePath(path) {
+  const segments = path.split(".");
+  return segments.some((segment) => segment.length === 0 || FORBIDDEN_PATH_SEGMENTS.has(segment)) ? null : segments;
+}
+function isSafePath(path) {
+  return parsePath(path) !== null;
+}
+function getNested(obj, path) {
+  const segments = parsePath(path);
+  if (!segments) return void 0;
+  let cur = obj;
+  for (const seg of segments) {
+    if (cur == null || typeof cur !== "object") return void 0;
+    cur = cur[seg];
+  }
+  return cur;
+}
+function setNested(obj, path, value) {
+  const segs = parsePath(path);
+  if (!segs || segs.length === 0) return;
+  let cur = obj;
+  for (let i = 0; i < segs.length - 1; i++) {
+    const seg = segs[i];
+    const next = cur[seg];
+    if (next == null || typeof next !== "object" || Array.isArray(next)) cur[seg] = {};
+    cur = cur[seg];
+  }
+  cur[segs[segs.length - 1]] = value;
+}
+function deleteNested(obj, path) {
+  const segs = parsePath(path);
+  if (!segs || segs.length === 0) return;
+  let cur = obj;
+  for (let i = 0; i < segs.length - 1; i++) {
+    if (cur == null || typeof cur !== "object") return;
+    cur = cur[segs[i]];
+  }
+  if (cur != null && typeof cur === "object") delete cur[segs[segs.length - 1]];
+}
+
+// st-extension/src/apps/variable-tree.ts
+function isPlainObject2(v) {
+  return v != null && typeof v === "object" && !Array.isArray(v);
+}
+function isTupleLeaf2(v) {
+  return Array.isArray(v) && v.length === 2 && typeof v[1] === "string" && !Array.isArray(v[0]);
+}
+function extractStatRootFrom(wrapper) {
+  if (isPlainObject2(wrapper.stat_data)) return { root: wrapper.stat_data, wrapped: true };
+  return { root: wrapper, wrapped: false };
+}
+function formatValue(v) {
+  if (typeof v === "string") return v;
+  if (v === null) return "null";
+  if (v === void 0) return "";
+  if (typeof v === "object") {
+    try {
+      return JSON.stringify(v, null, 2);
+    } catch {
+      return String(v);
+    }
+  }
+  return String(v);
+}
+function parseInputValue(raw) {
+  const t = raw.trim();
+  if (t === "null") return null;
+  if (t === "true") return true;
+  if (t === "false") return false;
+  if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
+  if (t.startsWith("{") || t.startsWith("[")) {
+    try {
+      return JSON.parse(t);
+    } catch {
+    }
+  }
+  return raw;
+}
+function editKind(v, definition) {
+  if (definition?.type === "number") return "number";
+  if (definition?.type === "enum") return "enum";
+  if (definition?.type === "boolean") return "boolean";
+  if (definition?.type === "string") return "text";
+  if (typeof v === "boolean") return "boolean";
+  if (v !== null && typeof v === "object") return "json";
+  return "text";
+}
+function valueTypeLabel(v, tuple) {
+  const inner = tuple ? v[0] : v;
+  if (inner === null) return "null";
+  if (Array.isArray(inner)) return `数组[${inner.length}]`;
+  if (typeof inner === "object") return "对象";
+  return typeof inner === "number" ? "数字" : typeof inner === "boolean" ? "布尔" : "文本";
+}
+function jsonEqual(a, b) {
+  if (a === b) return true;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+}
+function computeDelta(current2, prev, isMvu) {
+  const delta = /* @__PURE__ */ new Map();
+  if (!prev) return delta;
+  const walk = (obj, prefix) => {
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      const path = prefix ? `${prefix}.${key}` : key;
+      const tuple = isMvu && isTupleLeaf2(val);
+      if (!tuple && isPlainObject2(val) && Object.keys(val).length > 0) {
+        walk(val, path);
+        continue;
+      }
+      const curLeaf = tuple ? val[0] : val;
+      const prevRaw = getNested(prev, path);
+      if (prevRaw === void 0) {
+        delta.set(path, { kind: "added" });
+        continue;
+      }
+      const prevLeaf = isMvu && isTupleLeaf2(prevRaw) ? prevRaw[0] : prevRaw;
+      if (typeof curLeaf === "number" && typeof prevLeaf === "number") {
+        if (curLeaf !== prevLeaf) delta.set(path, { kind: curLeaf > prevLeaf ? "inc" : "dec", diff: curLeaf - prevLeaf });
+      } else if (!jsonEqual(curLeaf, prevLeaf)) {
+        delta.set(path, { kind: "changed" });
+      }
+    }
+  };
+  walk(current2, "");
+  return delta;
+}
+function createVariableTreeView(container, handlers) {
+  let editingPath = null;
+  const groupOpen = /* @__PURE__ */ new Map();
+  let addOpen = false;
+  function render2() {
+    const model = handlers.getModel();
+    container.textContent = "";
+    const head = el2("div", "so-app-section vm-head");
+    const line = el2("div", "vm-statusrow");
+    const status = el2("div", "so-app-desc vm-status");
+    status.textContent = model.statusText;
+    const refreshBtn = el2("button", "menu_button vm-refresh");
+    refreshBtn.setAttribute("role", "button");
+    refreshBtn.textContent = "刷新";
+    refreshBtn.addEventListener("click", () => handlers.requestRefresh());
+    line.append(status, refreshBtn);
+    head.append(line);
+    container.append(head);
+    if (model.noticeText) {
+      appendNotice(model.noticeText);
+      if (model.status === "unavailable") return;
+    }
+    const keys = Object.keys(model.data);
+    if (keys.length === 0) {
+      appendNotice(model.emptyText);
+    } else {
+      const tree = el2("div", "vm-tree");
+      for (const key of keys) renderNode(model, tree, key, model.data[key], key, 0);
+      container.append(tree);
+    }
+    if (model.allowAdd !== false) container.append(buildAddSection(model));
+  }
+  function appendNotice(text4) {
+    const note = el2("div", "so-app-section");
+    const d = el2("div", "so-app-desc");
+    d.textContent = text4;
+    note.append(d);
+    container.append(note);
+  }
+  function renderNode(model, parent, key, value, path, depth) {
+    const tuple = model.isMvu && isTupleLeaf2(value);
+    if (!tuple && isPlainObject2(value) && Object.keys(value).length > 0) {
+      const details = document.createElement("details");
+      details.className = "so-app-fold vm-group";
+      details.open = groupOpen.get(path) ?? depth < 1;
+      details.addEventListener("toggle", () => groupOpen.set(path, details.open));
+      const summary = document.createElement("summary");
+      summary.className = "so-app-title vm-group-title";
+      summary.textContent = `${key}（${Object.keys(value).length}）`;
+      const body = el2("div", "so-app-fold-body vm-group-body");
+      for (const childKey of Object.keys(value)) {
+        renderNode(model, body, childKey, value[childKey], `${path}.${childKey}`, depth + 1);
+      }
+      details.append(summary, body);
+      parent.append(details);
+      return;
+    }
+    renderLeaf(model, parent, key, value, path, tuple);
+  }
+  function renderLeaf(model, parent, key, value, path, tuple) {
+    if (editingPath === path) {
+      parent.append(buildEditForm(model, key, value, path, tuple));
+      return;
+    }
+    const card = el2("div", "vm-leaf");
+    const main = el2("div", "vm-leaf-main");
+    const keyEl = el2("span", "vm-key");
+    keyEl.textContent = key;
+    const valEl = el2("span", "vm-val");
+    const shown = formatValue(tuple ? value[0] : value);
+    valEl.textContent = shown.length > 80 ? `${shown.slice(0, 80)}…` : shown;
+    valEl.title = `类型：${valueTypeLabel(value, tuple)}`;
+    main.append(keyEl, valEl);
+    const d = model.delta.get(path);
+    if (d) main.append(buildDeltaBadge(d));
+    if (tuple) {
+      const desc = el2("div", "vm-desc");
+      desc.textContent = value[1];
+      main.append(desc);
+    }
+    if (model.canWrite) {
+      main.setAttribute("role", "button");
+      main.tabIndex = 0;
+      const enterEdit = () => {
+        editingPath = path;
+        render2();
+      };
+      main.addEventListener("click", enterEdit);
+      main.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          enterEdit();
+        }
+      });
+    }
+    card.append(main);
+    if (model.canWrite) {
+      const del = el2("button", "vm-del");
+      del.setAttribute("aria-label", "删除变量");
+      del.title = "删除该变量";
+      del.textContent = "✕";
+      del.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!window.confirm(`删除变量「${path}」？此操作不可撤销。`)) return;
+        editingPath = null;
+        handlers.commitDelete(path);
+      });
+      card.append(del);
+    }
+    parent.append(card);
+  }
+  function buildDeltaBadge(d) {
+    const badge = el2("span", `vm-badge vm-badge-${d.kind}`);
+    if (d.kind === "inc" || d.kind === "dec") {
+      const n = d.diff ?? 0;
+      const shown = Number.isInteger(n) ? String(n) : String(Number(n.toFixed(2)));
+      badge.textContent = `${n > 0 ? "+" : ""}${shown}`;
+    } else {
+      badge.textContent = d.kind === "added" ? "新" : "改";
+    }
+    return badge;
+  }
+  function buildEditForm(model, key, value, path, tuple) {
+    const inner = tuple ? value[0] : value;
+    const definition = model.definitions?.find((item) => item.key === path);
+    const kind = editKind(inner, definition);
+    const wrap = el2("div", "vm-leaf vm-editing");
+    const title2 = el2("div", "so-app-title vm-edit-title");
+    title2.textContent = `${key} · ${valueTypeLabel(value, tuple)}`;
+    wrap.append(title2);
+    if (tuple) {
+      const desc = el2("div", "vm-desc");
+      desc.textContent = `描述：${value[1]}（保留不变，仅编辑值）`;
+      wrap.append(desc);
+    }
+    const err = el2("div", "so-app-desc vm-add-err");
+    err.hidden = true;
+    let readValue;
+    if (kind === "boolean") {
+      const row = el2("label", "so-app-toggle checkbox_label");
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = inner === true;
+      const label = document.createElement("span");
+      label.textContent = "启用（true）";
+      row.append(input, label);
+      wrap.append(row);
+      readValue = () => ({ ok: true, value: input.checked });
+    } else if (kind === "enum") {
+      const select = document.createElement("select");
+      select.className = "text_pole so-app-input vm-edit-input";
+      for (const value2 of definition?.enum ?? []) {
+        const option = document.createElement("option");
+        option.value = value2;
+        option.textContent = value2;
+        option.selected = value2 === inner;
+        select.append(option);
+      }
+      wrap.append(select);
+      readValue = () => ({ ok: true, value: select.value });
+    } else if (kind === "number") {
+      const input = document.createElement("input");
+      input.type = "number";
+      input.step = "any";
+      input.className = "text_pole so-app-input vm-edit-input";
+      input.value = typeof inner === "number" && Number.isFinite(inner) ? String(inner) : "";
+      if (definition?.range) {
+        input.min = String(definition.range[0]);
+        input.max = String(definition.range[1]);
+      }
+      wrap.append(input);
+      readValue = () => {
+        if (input.value.trim() === "") return { ok: false, msg: "请输入有效数字。" };
+        const value2 = Number(input.value);
+        return Number.isFinite(value2) ? { ok: true, value: value2 } : { ok: false, msg: "请输入有效数字。" };
+      };
+      setTimeout(() => input.focus(), 0);
+    } else if (kind === "json") {
+      const ta = document.createElement("textarea");
+      ta.className = "text_pole so-app-input vm-edit-input";
+      ta.rows = 5;
+      ta.value = formatValue(inner);
+      wrap.append(ta);
+      readValue = () => {
+        try {
+          return { ok: true, value: JSON.parse(ta.value) };
+        } catch (e) {
+          return { ok: false, msg: `JSON 格式错误：${e instanceof Error ? e.message : String(e)}` };
+        }
+      };
+      setTimeout(() => ta.focus(), 0);
+    } else {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "text_pole so-app-input vm-edit-input";
+      input.value = formatValue(inner);
+      input.autocomplete = "off";
+      wrap.append(input);
+      readValue = () => ({ ok: true, value: definition?.type === "string" ? input.value : parseInputValue(input.value) });
+      setTimeout(() => input.focus(), 0);
+    }
+    wrap.append(err);
+    const actions = el2("div", "vm-actions");
+    const save = el2("button", "menu_button vm-act");
+    save.textContent = "保存";
+    save.addEventListener("click", () => {
+      const r = readValue();
+      if (!r.ok) {
+        err.textContent = r.msg ?? "输入无效。";
+        err.hidden = false;
+        return;
+      }
+      editingPath = null;
+      const committed = handlers.commitSet(path, r.value);
+      if (committed && !committed.ok) {
+        editingPath = path;
+        err.textContent = committed.error;
+        err.hidden = false;
+      }
+    });
+    const cancel = el2("button", "menu_button vm-act vm-act-ghost");
+    cancel.textContent = "取消";
+    cancel.addEventListener("click", () => {
+      editingPath = null;
+      render2();
+    });
+    actions.append(save, cancel);
+    wrap.append(actions);
+    return wrap;
+  }
+  function buildAddSection(model) {
+    const box = document.createElement("details");
+    box.className = "so-app-fold so-app-section";
+    box.open = addOpen;
+    box.addEventListener("toggle", () => addOpen = box.open);
+    const summary = document.createElement("summary");
+    summary.className = "so-app-title";
+    summary.textContent = "＋ 新增变量";
+    const body = el2("div", "so-app-fold-body");
+    const hint = el2("div", "so-app-desc");
+    hint.textContent = model.addHint;
+    body.append(hint);
+    const pathInput = document.createElement("input");
+    pathInput.type = "text";
+    pathInput.className = "text_pole so-app-input";
+    pathInput.placeholder = "变量路径（如 状态.体力）";
+    pathInput.autocomplete = "off";
+    const valInput = document.createElement("input");
+    valInput.type = "text";
+    valInput.className = "text_pole so-app-input";
+    valInput.placeholder = "值（如 80 / 健康 / true）";
+    valInput.autocomplete = "off";
+    body.append(pathInput, valInput);
+    const err = el2("div", "so-app-desc vm-add-err");
+    err.hidden = true;
+    body.append(err);
+    body.append(
+      appButton("添加", () => {
+        const path = pathInput.value.trim();
+        if (!path) {
+          err.textContent = "请填写变量路径。";
+          err.hidden = false;
+          return;
+        }
+        if (!model.canWrite) {
+          err.textContent = "当前环境不可写入变量。";
+          err.hidden = false;
+          return;
+        }
+        const committed = handlers.commitSet(path, parseInputValue(valInput.value));
+        if (committed && !committed.ok) {
+          err.textContent = committed.error;
+          err.hidden = false;
+        }
+      })
+    );
+    box.append(summary, body);
+    return box;
+  }
+  return {
+    render: render2,
+    resetEditing() {
+      editingPath = null;
+    },
+    isEditing() {
+      return editingPath !== null;
+    }
+  };
+}
+
+// st-extension/src/apps/mvu/bridge.ts
+function getMvu() {
+  const w = window;
+  return w.parent?.Mvu ?? w.Mvu;
+}
+function getHelper() {
+  const w = window;
+  return w.parent?.TavernHelper ?? w.TavernHelper;
+}
+function getST() {
+  try {
+    return window.SillyTavern?.getContext();
+  } catch {
+    return void 0;
+  }
+}
+function isMvuAvailable() {
+  const mvu = getMvu();
+  return typeof mvu?.getMvuData === "function" && typeof mvu?.replaceMvuData === "function";
+}
+function delay(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+function getLastMessageId() {
+  const helper = getHelper();
+  if (typeof helper?.getLastMessageId === "function") {
+    try {
+      const id = helper.getLastMessageId();
+      if (Number.isInteger(id) && id >= 0) return id;
+    } catch {
+    }
+  }
+  const chat2 = getST()?.chat;
+  if (Array.isArray(chat2) && chat2.length > 0) return chat2.length - 1;
+  return -1;
+}
+async function waitForMvuInitialized(timeoutMs) {
+  const w = window;
+  const waitFn = w.parent?.waitGlobalInitialized ?? w.waitGlobalInitialized;
+  if (typeof waitFn !== "function") return;
+  await Promise.race([Promise.resolve(waitFn("Mvu")).catch(() => void 0), delay(timeoutMs)]);
+}
+async function readMvuDataWithRetry(scope, timeoutMs, intervalMs) {
+  const mvu = getMvu();
+  const start = Date.now();
+  let attempts = 0;
+  let data;
+  for (; ; ) {
+    attempts++;
+    data = await Promise.resolve(mvu.getMvuData(scope)) ?? {};
+    const stat = data.stat_data;
+    if (stat && Object.keys(stat).length > 0) return { data, attempts };
+    if (Date.now() - start >= timeoutMs) return { data, attempts };
+    await delay(intervalMs);
+  }
+}
+async function readHelperWrapper(scope) {
+  const helper = getHelper();
+  if (typeof helper?.getVariables !== "function") return null;
+  const vars = await Promise.resolve(helper.getVariables(scope));
+  return vars && typeof vars === "object" ? vars : {};
+}
+async function readStatRootAt(messageId) {
+  if (messageId < 0) return null;
+  const scope = { type: "message", message_id: messageId };
+  try {
+    if (isMvuAvailable()) {
+      const data = await Promise.resolve(getMvu().getMvuData(scope)) ?? {};
+      return isPlainObject2(data.stat_data) ? data.stat_data : null;
+    }
+    const wrapper = await readHelperWrapper(scope);
+    return wrapper ? extractStatRootFrom(wrapper).root : null;
+  } catch {
+    return null;
+  }
+}
+async function findPrevStatRoot(fromId, maxScan = 20) {
+  const stop = Math.max(0, fromId - maxScan + 1);
+  for (let id = fromId; id >= stop; id--) {
+    const root = await readStatRootAt(id);
+    if (root && Object.keys(root).length > 0) return root;
+  }
+  return null;
+}
+async function readVariables(scope, messageId) {
+  const meta = { source: "none", waitedMvu: false };
+  const base = { isMvu: false, wrapped: true, messageId, meta };
+  if (messageId < 0) return { status: "empty", data: {}, ...base };
+  if (!isMvuAvailable()) {
+    await waitForMvuInitialized(1200);
+    meta.waitedMvu = true;
+  }
+  if (isMvuAvailable()) {
+    try {
+      const { data } = await readMvuDataWithRetry(scope, 1200, 120);
+      const stat = data.stat_data ?? {};
+      if (Object.keys(stat).length > 0) {
+        meta.source = "mvu";
+        return { status: "ready", data: stat, isMvu: true, wrapped: true, messageId, meta };
+      }
+      const fb = await readHelperFallback(scope, messageId, meta);
+      if (fb) return fb;
+      return { status: "empty", data: {}, isMvu: true, wrapped: true, messageId, meta };
+    } catch (err) {
+      const fb = await readHelperFallback(scope, messageId, meta);
+      if (fb) return fb;
+      return {
+        status: "error",
+        data: {},
+        isMvu: false,
+        wrapped: true,
+        messageId,
+        meta,
+        error: err instanceof Error ? err.message : String(err)
+      };
+    }
+  }
+  const wrapper = await readHelperWrapper(scope).catch(() => null);
+  if (wrapper) {
+    const { root, wrapped } = extractStatRootFrom(wrapper);
+    meta.source = Object.keys(root).length > 0 ? "tavern-helper" : "none";
+    return {
+      status: Object.keys(root).length > 0 ? "ready" : "empty",
+      data: root,
+      isMvu: false,
+      wrapped,
+      messageId,
+      meta
+    };
+  }
+  return { status: "unavailable", data: {}, isMvu: false, wrapped: true, messageId, meta };
+}
+async function readHelperFallback(scope, messageId, meta) {
+  const wrapper = await readHelperWrapper(scope).catch(() => null);
+  if (!wrapper) return null;
+  const { root, wrapped } = extractStatRootFrom(wrapper);
+  if (Object.keys(root).length === 0) return null;
+  meta.source = "tavern-helper";
+  return { status: "ready", data: root, isMvu: false, wrapped, messageId, meta };
+}
+function fullPath(wrapped, path) {
+  return wrapped ? `stat_data.${path}` : path;
+}
+function applySet(container, wrapped, path, value) {
+  const fp = fullPath(wrapped, path);
+  const old = getNested(container, fp);
+  const final = isTupleLeaf2(old) ? [value, old[1]] : value;
+  setNested(container, fp, final);
+}
+async function setFloorVariable(scope, wrapped, path, value) {
+  const mvu = getMvu();
+  if (isMvuAvailable()) {
+    const wrapper = await Promise.resolve(mvu.getMvuData(scope)) ?? {};
+    applySet(wrapper, true, path, value);
+    await Promise.resolve(mvu.replaceMvuData(wrapper, scope));
+    return;
+  }
+  await writeHelper(scope, (vars) => applySet(vars, wrapped, path, value));
+}
+async function deleteFloorVariable(scope, wrapped, path) {
+  const mvu = getMvu();
+  if (isMvuAvailable()) {
+    const wrapper = await Promise.resolve(mvu.getMvuData(scope)) ?? {};
+    deleteNested(wrapper, fullPath(true, path));
+    await Promise.resolve(mvu.replaceMvuData(wrapper, scope));
+    return;
+  }
+  await writeHelper(scope, (vars) => deleteNested(vars, fullPath(wrapped, path)));
+}
+async function writeHelper(scope, mutate) {
+  const helper = getHelper();
+  if (typeof helper?.updateVariablesWith === "function") {
+    await Promise.resolve(
+      helper.updateVariablesWith((vars) => {
+        const v = isPlainObject2(vars) ? vars : {};
+        mutate(v);
+        return v;
+      }, scope)
+    );
+    return;
+  }
+  if (typeof helper?.getVariables === "function" && typeof helper?.replaceVariables === "function") {
+    const vars = await Promise.resolve(helper.getVariables(scope)) ?? {};
+    mutate(vars);
+    await Promise.resolve(helper.replaceVariables(vars, scope));
+    return;
+  }
+  throw new Error("无可用的变量写入通道（MVU / 酒馆助手均不可用）");
+}
+function subscribeVarEvents(handler) {
+  const st = getST();
+  const es = st?.eventSource;
+  if (!es) return () => {
+  };
+  const mvu = getMvu();
+  const names = /* @__PURE__ */ new Set([
+    mvu?.events?.VARIABLE_UPDATE_ENDED ?? "mag_variable_update_ended",
+    mvu?.events?.VARIABLE_INITIALIZED ?? "mag_variable_initialized",
+    st?.eventTypes?.CHAT_CHANGED ?? "chat_id_changed",
+    st?.eventTypes?.MESSAGE_SWIPED ?? "message_swiped",
+    st?.eventTypes?.MESSAGE_DELETED ?? "message_deleted"
+  ]);
+  const offs = [];
+  for (const name of names) {
+    if (!name) continue;
+    const h = () => handler();
+    es.on(name, h);
+    offs.push(() => {
+      try {
+        es.removeListener(name, h);
+      } catch {
+      }
+    });
+  }
+  return () => {
+    for (const off of offs) off();
+  };
 }
 
 // core/sprite-preload.ts
@@ -4040,7 +5214,7 @@ function openTrackedAppModal(build, hooks, track) {
 }
 
 // core/phone-shell.ts
-var DRAG_THRESHOLD = 6;
+var DRAG_THRESHOLD2 = 6;
 var HOME_TITLE = "百工";
 function createPhoneShell(initialState, deps) {
   let state = { ...initialState };
@@ -4169,7 +5343,7 @@ function createPhoneShell(initialState, deps) {
     const onMove = (ev) => {
       const dx = ev.clientX - startX;
       const dy = ev.clientY - startY;
-      if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+      if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD2) return;
       moved = true;
       state = { ...origin, x: origin.x + dx, y: origin.y + dy };
       applyLayout();
@@ -4775,6 +5949,11 @@ function sanitizePresetOverrides(raw, presets = getPresetPacks()) {
       else if (source.promptNotePlacement === "before-list" || source.promptNotePlacement === "after-list") {
         metadata.promptNotePlacement = source.promptNotePlacement;
       }
+      if (source.inventoryPrompt === null) metadata.inventoryPrompt = null;
+      else if (typeof source.inventoryPrompt === "string") {
+        const text4 = normalizeInventoryPrompt(source.inventoryPrompt);
+        if (text4) metadata.inventoryPrompt = text4;
+      }
       if (source.outfitNotes === null) metadata.outfitNotes = null;
       else if (source.outfitNotes && typeof source.outfitNotes === "object" && !Array.isArray(source.outfitNotes)) {
         metadata.outfitNotes = normalizeOutfitNotes(source.outfitNotes);
@@ -4864,6 +6043,9 @@ function migrateSettings(saved) {
     imgbbApiKey: typeof raw.imgbbApiKey === "string" ? raw.imgbbApiKey : defaults.imgbbApiKey,
     autoUpload: typeof raw.autoUpload === "boolean" ? raw.autoUpload : defaults.autoUpload,
     galleryFoldByRole: savedVersion >= 6 && typeof raw.galleryFoldByRole === "boolean" ? raw.galleryFoldByRole : defaults.galleryFoldByRole,
+    // 新增字段无需 bump 版本：缺失时取默认（false），老设置读进来就是关闭状态
+    approxMatch: typeof raw.approxMatch === "boolean" ? raw.approxMatch : defaults.approxMatch,
+    variableHud: typeof raw.variableHud === "boolean" ? raw.variableHud : defaults.variableHud,
     packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
     presetOverrides: sanitizePresetOverrides(raw.presetOverrides),
     bindings: Array.isArray(raw.bindings) ? raw.bindings.flatMap((b) => migrateBinding(b) ?? []) : [],
@@ -5337,7 +6519,7 @@ var STAdapter = class {
 };
 
 // st-extension/src/overlay-dom.ts
-var DRAG_THRESHOLD2 = 6;
+var DRAG_THRESHOLD3 = 6;
 function createOverlay(initialLayout, onLayoutChange, onManage, onClose, onOpenSprites) {
   let layout = { ...initialLayout };
   let sprites = [];
@@ -5454,7 +6636,7 @@ function createOverlay(initialLayout, onLayoutChange, onManage, onClose, onOpenS
     if (!cur) return;
     showImage(cur.url, cur.tag);
     Array.from(dots.children).forEach(
-      (el3, i) => el3.classList.toggle("active", i === index)
+      (el4, i) => el4.classList.toggle("active", i === index)
     );
   }
   function stopAuto() {
@@ -5495,7 +6677,7 @@ function createOverlay(initialLayout, onLayoutChange, onManage, onClose, onOpenS
     const onMove = (ev) => {
       const dx = ev.clientX - startX;
       const dy = ev.clientY - startY;
-      if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD2) return;
+      if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD3) return;
       moved = true;
       if (mode === "move") {
         layout = { ...origin, x: Math.max(0, origin.x + dx), y: Math.max(0, origin.y + dy) };
@@ -6502,15 +7684,15 @@ function createSpriteManager(deps) {
     enableListOpen = false;
     batchMode = false;
     selectedPackIds.clear();
-    backdrop = el("div", "so-manager-backdrop");
+    backdrop = el3("div", "so-manager-backdrop");
     document.addEventListener("keydown", onEscape);
     window.addEventListener("resize", applyBackdropSize);
     applyBackdropSize();
-    const dialog = el("div", "so-manager");
+    const dialog = el3("div", "so-manager");
     dialog.setAttribute("role", "dialog");
     dialog.setAttribute("aria-label", "立绘包管理");
-    const header = el("div", "so-manager-header");
-    const backBtn = el("div", "menu_button so-manager-back");
+    const header = el3("div", "so-manager-header");
+    const backBtn = el3("div", "menu_button so-manager-back");
     backBtn.title = "返回列表";
     backBtn.textContent = "‹";
     backBtn.setAttribute("role", "button");
@@ -6526,14 +7708,14 @@ function createSpriteManager(deps) {
         goBack();
       }
     });
-    const title2 = el("b", "so-manager-title");
-    const actions = el("div", "so-manager-actions");
-    const closeBtn = el("div", "menu_button so-manager-close");
+    const title2 = el3("b", "so-manager-title");
+    const actions = el3("div", "so-manager-actions");
+    const closeBtn = el3("div", "menu_button so-manager-close");
     closeBtn.title = "关闭";
     closeBtn.textContent = "✕";
     closeBtn.addEventListener("click", () => close());
     header.append(backBtn, title2, actions, closeBtn);
-    const body = el("div", "so-manager-body");
+    const body = el3("div", "so-manager-body");
     dialog.append(header, body);
     backdrop.append(dialog);
     document.body.append(backdrop);
@@ -6788,13 +7970,13 @@ ${options}`,
     const body = backdrop?.querySelector(".so-manager-body");
     const settings = deps.getSettings();
     const boundIds = settings.bindings.find((b) => b.characterName === characterName)?.packIds ?? [];
-    const panel = el("div", "so-popover so-enable-pop");
+    const panel = el3("div", "so-popover so-enable-pop");
     panel.dataset.pop = "启用包";
-    const heading = el("div", "so-popover-title");
+    const heading = el3("div", "so-popover-title");
     heading.textContent = `勾选启用（${characterName}，即时生效）`;
     panel.append(heading);
     if (settings.packs.length === 0) {
-      const tip = el("div", "so-status");
+      const tip = el3("div", "so-status");
       tip.textContent = "还没有立绘包，先用「新建」或「导入」。";
       panel.append(tip);
     }
@@ -6825,7 +8007,7 @@ ${options}`,
       const existing = header.querySelector(`.so-popover[data-pop="${label}"]`);
       closePopovers();
       if (existing) return;
-      const panel = el("div", "so-popover");
+      const panel = el3("div", "so-popover");
       panel.dataset.pop = label;
       build(panel);
       header.append(panel);
@@ -6866,7 +8048,7 @@ ${options}`,
       renderList(body, actions);
     } catch (err) {
       console.error("[sprite-overlay] 管理弹窗渲染失败", err);
-      const msg = el("div", "so-status");
+      const msg = el3("div", "so-status");
       msg.textContent = `界面渲染出错：${err instanceof Error ? err.message : String(err)}`;
       body.append(msg);
     }
@@ -6879,7 +8061,7 @@ ${options}`,
     const summary = document.createElement("summary");
     summary.className = "so-section-title";
     summary.textContent = titleText;
-    const inner = el("div", "so-collapse-body");
+    const inner = el3("div", "so-collapse-body");
     box.append(summary, inner);
     return { box, body: inner };
   }
@@ -6955,7 +8137,7 @@ ${options}`,
       }
       actions.append(
         dropdownButton("新建", (panel) => {
-          const heading = el("div", "so-popover-title");
+          const heading = el3("div", "so-popover-title");
           heading.textContent = "新建立绘包";
           const nameInput = textInput("输入新包名称…");
           nameInput.maxLength = 40;
@@ -6976,7 +8158,7 @@ ${options}`,
           panel.append(heading, nameInput, createBtn);
         }),
         dropdownButton("导入", (panel) => {
-          const shareHeading = el("div", "so-popover-title");
+          const shareHeading = el3("div", "so-popover-title");
           shareHeading.textContent = "从分享字符串导入";
           const shareInput = document.createElement("textarea");
           shareInput.className = "text_pole";
@@ -6994,7 +8176,7 @@ ${options}`,
               toast(body, err instanceof Error ? err.message : "分享串解析失败");
             }
           });
-          const jsonHeading = el("div", "so-popover-title");
+          const jsonHeading = el3("div", "so-popover-title");
           jsonHeading.textContent = "从 JSON 文件导入";
           const jsonBtn = button("选择 JSON 文件…", () => {
             pickFile(".json,application/json", false, async (files) => {
@@ -7029,15 +8211,15 @@ ${options}`,
         );
       }
     }
-    const strip = el("div", "so-row so-bind-strip");
+    const strip = el3("div", "so-row so-bind-strip");
     if (characterName) {
-      const label = el("span", "so-bind-label");
+      const label = el3("span", "so-bind-label");
       label.textContent = boundIds.length > 0 ? `${characterName} · 已启用 ${boundIds.length} 个：` : `${characterName} · 尚未启用立绘包（用右上角选择启用）`;
       strip.append(label);
       boundIds.forEach((id, index) => {
         const pack = settings.packs.find((p) => p.id === id);
-        const chip = el("span", "so-chip");
-        const name = el("span", "so-chip-name");
+        const chip = el3("span", "so-chip");
+        const name = el3("span", "so-chip-name");
         name.textContent = pack ? `${index + 1}. ${pack.name}（${pack.sprites.length} 张）` : `（已删除的包 ${id}）`;
         chip.append(name);
         if (boundIds.length > 1) {
@@ -7059,7 +8241,7 @@ ${options}`,
       });
       if (binding) {
         strip.append(
-          el("span", "so-spacer"),
+          el3("span", "so-spacer"),
           checkboxRow(
             "全部启用",
             binding.enabled,
@@ -7068,20 +8250,20 @@ ${options}`,
         );
       }
     } else {
-      const tip = el("span", "so-status");
+      const tip = el3("span", "so-status");
       tip.textContent = "请先打开一个角色聊天，再回来启用立绘包。";
       strip.append(tip);
     }
     body.append(strip);
     body.append(renderPackFilters(settings, filteredPacks.length));
     if (batchMode) {
-      const tip = el("div", "so-status so-batch-tip");
+      const tip = el3("div", "so-status so-batch-tip");
       tip.textContent = "批量管理：先勾选图包，再统一设置类型或标签；资源操作和排序仍可在上方完成。预设包可保存本地或分享，但不可删除。";
       body.append(tip);
       body.append(renderBatchClassificationTools(body));
     }
     const useFold = settings.galleryFoldByRole && !batchMode;
-    const grid = el("div", useFold ? "so-pack-list-folded" : "so-pack-grid");
+    const grid = el3("div", useFold ? "so-pack-list-folded" : "so-pack-grid");
     const boundState = (pack) => boundIds.includes(pack.id) ? binding?.enabled ? "active" : "off" : null;
     if (useFold) {
       for (const group of groupPacksByRole(filteredPacks)) {
@@ -7089,7 +8271,7 @@ ${options}`,
           grid.append(renderPackCard(group.packs[0], boundState(group.packs[0])));
           continue;
         }
-        const section2 = el("div", "so-role-pack-group");
+        const section2 = el3("div", "so-role-pack-group");
         section2.dataset.roleKey = group.key;
         const expanded = expandedRoleGroupKey === group.key;
         const toggle = () => {
@@ -7098,18 +8280,18 @@ ${options}`,
         };
         if (expanded) {
           section2.classList.add("so-role-pack-group-expanded");
-          const row = el("button", "so-role-pack-row");
+          const row = el3("button", "so-role-pack-row");
           row.type = "button";
           row.setAttribute("aria-expanded", "true");
-          const title2 = el("b");
+          const title2 = el3("b");
           title2.textContent = group.role;
-          const counts = el("span");
+          const counts = el3("span");
           counts.textContent = `${group.packCount} 个图包 · ${group.spriteCount} 张`;
-          const arrow = el("span", "so-role-pack-arrow");
+          const arrow = el3("span", "so-role-pack-arrow");
           arrow.textContent = "▾";
           row.append(title2, counts, arrow);
           row.addEventListener("click", toggle);
-          const packs = el("div", "so-role-pack-strip");
+          const packs = el3("div", "so-role-pack-strip");
           packs.setAttribute("aria-label", `${group.role}的图包`);
           for (const pack of group.packs) packs.append(renderPackCard(pack, boundState(pack)));
           section2.append(row, packs);
@@ -7123,7 +8305,7 @@ ${options}`,
     }
     body.append(grid);
     if (filteredPacks.length === 0) {
-      const empty = el("div", "so-status so-pack-filter-empty");
+      const empty = el3("div", "so-status so-pack-filter-empty");
       empty.textContent = "没有符合当前筛选条件的图包";
       body.append(empty);
     }
@@ -7131,7 +8313,7 @@ ${options}`,
     renderEnableList();
   }
   function renderPackFilters(settings, visibleCount) {
-    const panel = el("div", "so-pack-filters");
+    const panel = el3("div", "so-pack-filters");
     const search = textInput("搜索包名、角色、服装或标签");
     search.classList.add("so-pack-filter-search");
     search.value = packFilterQuery;
@@ -7189,7 +8371,7 @@ ${options}`,
         packFilterTag = value;
       }
     );
-    const status = el("span", "so-pack-filter-count");
+    const status = el3("span", "so-pack-filter-count");
     status.textContent = `${visibleCount}/${settings.packs.length} 个图包`;
     panel.append(search, role, kind, tag, status);
     if (packFilterQuery || packFilterRole || packFilterKind || packFilterTag) {
@@ -7202,18 +8384,18 @@ ${options}`,
     return panel;
   }
   function openTagManager() {
-    const modal = el("div", "so-upload-modal so-tag-manager");
+    const modal = el3("div", "so-upload-modal so-tag-manager");
     modal.setAttribute("role", "dialog");
     modal.setAttribute("aria-label", "图包标签管理");
-    const panel = el("div", "so-upload-panel so-tag-manager-panel");
-    const heading = el("div", "so-tag-manager-heading");
-    const title2 = el("b");
+    const panel = el3("div", "so-upload-panel so-tag-manager-panel");
+    const heading = el3("div", "so-tag-manager-heading");
+    const title2 = el3("b");
     title2.textContent = "标签管理";
     heading.append(title2, button("关闭", () => modal.remove()));
-    const help = el("div", "so-status");
+    const help = el3("div", "so-status");
     help.textContent = "角色和类型由图包信息自动生成，只能在包信息或批量管理中修改。这里管理自定义标签。";
     const settings = deps.getSettings();
-    const addRow = el("div", "so-row so-tag-manager-add");
+    const addRow = el3("div", "so-row so-tag-manager-add");
     const packSelect = document.createElement("select");
     packSelect.className = "text_pole so-tag-manager-pack";
     for (const pack of settings.packs) {
@@ -7240,20 +8422,20 @@ ${options}`,
         commitTags(addPackCustomTag(deps.getSettings(), [packSelect.value], tag));
       })
     );
-    const list = el("div", "so-tag-manager-list");
+    const list = el3("div", "so-tag-manager-list");
     const tags = normalizeLabels(settings.packs.flatMap((pack) => pack.customTags ?? []));
     if (tags.length === 0) {
-      const empty = el("div", "so-status");
+      const empty = el3("div", "so-status");
       empty.textContent = "还没有自定义标签";
       list.append(empty);
     }
     for (const tag of tags) {
-      const row = el("div", "so-tag-manager-row");
+      const row = el3("div", "so-tag-manager-row");
       row.dataset.tag = tag;
       const input = textInput("标签名称");
       input.value = tag;
       const count = settings.packs.filter((pack) => normalizeLabels(pack.customTags).includes(tag)).length;
-      const usage = el("span", "so-status");
+      const usage = el3("span", "so-status");
       usage.textContent = `${count} 个图包`;
       row.append(
         input,
@@ -7303,7 +8485,7 @@ ${options}`,
     return next;
   }
   function renderBatchClassificationTools(body) {
-    const panel = el("div", "so-batch-classification");
+    const panel = el3("div", "so-batch-classification");
     const ids = [...selectedPackIds];
     const kindSelect = document.createElement("select");
     kindSelect.className = "text_pole so-batch-kind-select";
@@ -7313,7 +8495,7 @@ ${options}`,
       option.textContent = label;
       kindSelect.append(option);
     }
-    const kindRow = el("div", "so-row");
+    const kindRow = el3("div", "so-row");
     kindRow.append(
       labeled("类型", kindSelect),
       button("设置类型", () => {
@@ -7334,7 +8516,7 @@ ${options}`,
     const tagInput = textInput("输入自定义标签");
     tagInput.classList.add("so-batch-tag-input");
     tagInput.maxLength = 32;
-    const addRow = el("div", "so-row");
+    const addRow = el3("div", "so-row");
     addRow.append(
       labeled("自定义标签", tagInput),
       button("添加标签", () => {
@@ -7366,7 +8548,7 @@ ${options}`,
       option.textContent = tag;
       removeSelect.append(option);
     }
-    const removeRow = el("div", "so-row");
+    const removeRow = el3("div", "so-row");
     removeRow.append(
       labeled("移除标签", removeSelect),
       button("移除标签", () => {
@@ -7560,18 +8742,18 @@ ${preview}
     toast(currentManagerBody(), `已删除 ${names.length} 个立绘包及 ${deleted} 张本地文件`);
   }
   function renderRolePackStack(role, roleKey, packs, spriteCount, boundState, expand) {
-    const stack = el("button", "so-role-pack-stack");
+    const stack = el3("button", "so-role-pack-stack");
     stack.type = "button";
     stack.dataset.roleKey = roleKey;
     stack.setAttribute("aria-expanded", "false");
     stack.setAttribute("aria-label", `展开「${role}」的 ${packs.length} 个图包`);
     for (let index = 2; index >= 1; index -= 1) {
-      const layer = el("span", `so-role-stack-layer so-role-stack-layer-${index}`);
+      const layer = el3("span", `so-role-stack-layer so-role-stack-layer-${index}`);
       layer.setAttribute("aria-hidden", "true");
       stack.append(layer);
     }
-    const face = el("span", "so-role-stack-face");
-    const coverBox = el("span", "so-role-stack-cover");
+    const face = el3("span", "so-role-stack-face");
+    const coverBox = el3("span", "so-role-stack-cover");
     const first = packs[0];
     const cover = first ? getPackCover(first) : null;
     if (cover) {
@@ -7585,16 +8767,16 @@ ${preview}
     }
     const activeCount = packs.filter((pack) => boundState(pack) === "active").length;
     if (activeCount > 0) {
-      const badge = el("span", "so-card-badge");
+      const badge = el3("span", "so-card-badge");
       badge.textContent = activeCount === 1 ? "使用中" : `使用中 ${activeCount}`;
       coverBox.append(badge);
     }
-    const info = el("span", "so-card-info");
-    const title2 = el("b");
+    const info = el3("span", "so-card-info");
+    const title2 = el3("b");
     title2.textContent = role;
-    const detail = el("small");
+    const detail = el3("small");
     detail.textContent = `${packs.length} 个图包 · ${spriteCount} 张`;
-    const count = el("span", "so-role-stack-count");
+    const count = el3("span", "so-role-stack-count");
     count.textContent = `${packs.length} 个图包`;
     info.append(title2, detail);
     face.append(coverBox, count, info);
@@ -7603,12 +8785,12 @@ ${preview}
     return stack;
   }
   function renderPackCard(pack, bound) {
-    const card = el("div", "so-pack-card");
+    const card = el3("div", "so-pack-card");
     card.tabIndex = 0;
     card.setAttribute("role", "button");
     card.setAttribute("aria-label", `打开立绘包「${pack.name}」`);
     card.title = "点击进入管理";
-    const coverBox = el("div", "so-card-cover");
+    const coverBox = el3("div", "so-card-cover");
     const cover = getPackCover(pack);
     if (cover) {
       const img = document.createElement("img");
@@ -7621,24 +8803,24 @@ ${preview}
     }
     if (bound) {
       if (bound === "active") card.classList.add("so-card-active");
-      const badge = el("span", bound === "active" ? "so-card-badge" : "so-card-badge so-card-badge-off");
+      const badge = el3("span", bound === "active" ? "so-card-badge" : "so-card-badge so-card-badge-off");
       badge.textContent = bound === "active" ? "使用中" : "已停用";
       badge.dataset.corner = "bottom-left";
       coverBox.append(badge);
     }
     if (isPresetPack(pack.id)) {
-      const chip = el("span", "so-card-chip");
+      const chip = el3("span", "so-card-chip");
       chip.textContent = "预设";
       coverBox.append(chip);
     }
     const resources = summarizePackResources(pack);
     if (resources.total > 0) {
-      const status = el("span", "so-card-resource-status");
+      const status = el3("span", "so-card-resource-status");
       status.dataset.corner = "bottom-right";
       const resourceLabel = (kind, label) => {
         const count = resources[kind];
         if (count === 0) return;
-        const chip = el("span", `so-card-resource-chip so-card-resource-${kind}`);
+        const chip = el3("span", `so-card-resource-chip so-card-resource-${kind}`);
         chip.textContent = count === resources.total ? label : `${label} ${count}/${resources.total}`;
         status.append(chip);
       };
@@ -7646,15 +8828,15 @@ ${preview}
       resourceLabel("cloud", "云端");
       coverBox.append(status);
     }
-    const info = el("div", "so-card-info");
-    const nameEl = el("b");
+    const info = el3("div", "so-card-info");
+    const nameEl = el3("b");
     nameEl.textContent = pack.name;
-    const metaEl = el("small");
+    const metaEl = el3("small");
     metaEl.textContent = `${pack.sprites.length} 张 · ${pack.author ?? "未知作者"}`;
     const labels = packLabels(pack);
-    const labelRow = el("div", "so-pack-labels");
+    const labelRow = el3("div", "so-pack-labels");
     for (const text4 of [`角色：${labels.role}`, `类型：${labels.type}`, ...labels.custom]) {
-      const chip = el("span");
+      const chip = el3("span");
       chip.textContent = text4;
       labelRow.append(chip);
     }
@@ -7665,11 +8847,11 @@ ${preview}
       const selected = selectedPackIds.has(pack.id);
       card.classList.add("so-card-batch");
       if (selected) card.classList.add("so-card-selected");
-      const check = el("span", `so-card-check${selected ? " so-card-check-on" : ""}`);
+      const check = el3("span", `so-card-check${selected ? " so-card-check-on" : ""}`);
       check.textContent = selected ? "✓" : "";
       check.dataset.corner = "top-left";
       coverBox.append(check);
-      const orderRow = el("div", "so-row so-card-order");
+      const orderRow = el3("div", "so-row so-card-order");
       orderRow.append(
         iconButton("◀", "前移", () => {
           commit(movePack(deps.getSettings(), pack.id, -1));
@@ -7737,15 +8919,15 @@ ${preview}
     if (!readonly) {
       actions.append(
         dropdownButton("添加立绘", (panel) => {
-          const upHeading = el("div", "so-popover-title");
+          const upHeading = el3("div", "so-popover-title");
           upHeading.textContent = "直接上传";
           const upBtn = button("选择图片（自动压缩+解析预览）", () => {
             closePopovers();
             pickFile("image/*", true, (files) => openUploadPreview(pack.id, files));
           });
-          const upHint = el("div", "so-status");
+          const upHint = el3("div", "so-status");
           upHint.textContent = "默认整个文件名作图名、落入当前包；预览里勾选「自动拆分」可按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png）并按前缀拆分成包。";
-          const codeHeading = el("div", "so-popover-title");
+          const codeHeading = el3("div", "so-popover-title");
           codeHeading.textContent = "按编码添加";
           const codeInput = document.createElement("textarea");
           codeInput.className = "text_pole";
@@ -7782,13 +8964,13 @@ ${preview}
               named > 0 ? `已添加 ${added} 张，其中 ${named} 张用了你给的图名` : `已按编码添加 ${added} 张（图名取编码名，可在图卡上改名）`
             );
           });
-          const codeHint = el("div", "so-status");
+          const codeHint = el3("div", "so-status");
           codeHint.textContent = `编码拼接图床前缀 ${deps.getSettings().imageHost} 成直链。写「微笑 ab12cd.png」就用「微笑」当图名，连写「微笑ab12cd.png」也认；只给编码时图名取编码名。改名/分组用图卡上的 ✎ / 🏷。`;
           panel.append(upHeading, upBtn, upHint, codeHeading, codeInput, codeBtn, codeHint);
         })
       );
     }
-    const topRow = el("div", "so-row so-detail-top");
+    const topRow = el3("div", "so-row so-detail-top");
     topRow.append(
       button("导出 JSON", async () => {
         const file = await exportPack(pack);
@@ -7818,7 +9000,7 @@ ${preview}
         if (!ok) window.prompt("手动复制分享串：", result.text);
       })
     );
-    const spacer = el("div", "so-spacer");
+    const spacer = el3("div", "so-spacer");
     topRow.append(spacer);
     if (!readonly) {
       topRow.append(
@@ -7830,7 +9012,7 @@ ${preview}
     body.append(topRow);
     {
       const metaPanel = collapsible("包信息", false, `pack-meta:${pack.id}`);
-      const metaRow = el("div", "so-row so-meta-row");
+      const metaRow = el3("div", "so-row so-meta-row");
       const nameInput = textInput("包名");
       nameInput.value = pack.name;
       const authorInput = textInput("作者");
@@ -7860,8 +9042,14 @@ ${preview}
         placementSelect.append(option);
       }
       placementSelect.value = pack.promptNotePlacement ?? DEFAULT_PROMPT_NOTE_PLACEMENT;
+      const inventoryPromptInput = document.createElement("textarea");
+      inventoryPromptInput.className = "text_pole so-pack-inventory-prompt";
+      inventoryPromptInput.placeholder = "自定义清单提示词（可选，替换默认的表情列表）";
+      inventoryPromptInput.rows = 4;
+      inventoryPromptInput.maxLength = MAX_INVENTORY_PROMPT_CODE_POINTS;
+      inventoryPromptInput.value = pack.inventoryPrompt ?? "";
       const outfitNoteDrafts = new Map(Object.entries(pack.outfitNotes ?? {}));
-      const outfitNotesBox = el("div", "so-outfit-note-list");
+      const outfitNotesBox = el3("div", "so-outfit-note-list");
       const syncOutfitNoteDrafts = () => {
         for (const input of outfitNotesBox.querySelectorAll(".so-outfit-note-input")) {
           outfitNoteDrafts.set(input.dataset.outfit ?? "", input.value);
@@ -7876,7 +9064,7 @@ ${preview}
         ].filter(Boolean))];
         outfitNotesBox.replaceChildren();
         if (outfits.length === 0) return;
-        const title2 = el("div", "so-section-title");
+        const title2 = el3("div", "so-section-title");
         title2.textContent = "服装备注";
         outfitNotesBox.append(title2);
         for (const outfit of outfits) {
@@ -7895,11 +9083,17 @@ ${preview}
       };
       outfitInput.addEventListener("change", renderOutfitNotes);
       renderOutfitNotes();
-      const promptRow = el("div", "so-row so-pack-note-row");
+      const promptRow = el3("div", "so-row so-pack-note-row");
       promptRow.append(
         labeled("图包备注", promptNoteInput),
         labeled("插入位置", placementSelect)
       );
+      const inventoryRow = el3("div", "so-row so-pack-inventory-row");
+      const inventoryHint = el3("div", "so-status so-pack-inventory-hint");
+      inventoryHint.textContent = "填了就用它替换这个包在清单里的表情列表；留空走默认列表。多个包同场景时两段都会出现，不会互相覆盖。";
+      const inventoryCell = labeled("自定义清单提示词", inventoryPromptInput);
+      inventoryCell.append(inventoryHint);
+      inventoryRow.append(inventoryCell);
       metaRow.append(
         labeled("包名", nameInput),
         labeled("作者", authorInput),
@@ -7907,7 +9101,7 @@ ${preview}
         labeled("服装", outfitInput),
         labeled("描述", descInput)
       );
-      const saveRow = el("div", "so-row so-meta-save-row");
+      const saveRow = el3("div", "so-row so-meta-save-row");
       saveRow.append(
         button("保存包信息", () => {
           const name = sanitizePackName(nameInput.value);
@@ -7918,11 +9112,12 @@ ${preview}
           const roleName = normalizeTag(roleInput.value);
           const outfit = normalizeTag(outfitInput.value);
           const promptNote = normalizeNote(promptNoteInput.value);
+          const inventoryPrompt = normalizeInventoryPrompt(inventoryPromptInput.value);
           syncOutfitNoteDrafts();
           const outfitNotes = normalizeOutfitNotes(Object.fromEntries(outfitNoteDrafts));
           if (readonly) {
             const current2 = deps.getSettings();
-            const next = setPresetMetadata(current2, pack.id, {
+            const metadata = {
               name,
               author: sanitizePackName(authorInput.value) || null,
               description: sanitizeDescription(descInput.value) || null,
@@ -7931,7 +9126,9 @@ ${preview}
               promptNote: promptNote || null,
               promptNotePlacement: promptNote ? placementSelect.value === "after-list" ? "after-list" : "before-list" : null,
               outfitNotes: Object.keys(outfitNotes).length > 0 ? outfitNotes : null
-            });
+            };
+            if (inventoryPrompt) metadata.inventoryPrompt = inventoryPrompt;
+            const next = setPresetMetadata(current2, pack.id, metadata);
             const materialized = next.packs.find((candidate) => candidate.id === pack.id);
             if (!materialized || !checkedSettings(upsertPack(current2, materialized))) return;
             commit(next);
@@ -7953,6 +9150,8 @@ ${preview}
             delete nextPack.promptNote;
             delete nextPack.promptNotePlacement;
           }
+          if (inventoryPrompt) nextPack.inventoryPrompt = inventoryPrompt;
+          else delete nextPack.inventoryPrompt;
           if (Object.keys(outfitNotes).length > 0) nextPack.outfitNotes = outfitNotes;
           else delete nextPack.outfitNotes;
           if (commitChecked(upsertPack(deps.getSettings(), nextPack))) {
@@ -7971,17 +9170,17 @@ ${preview}
           toast(body, "已恢复内置信息，本地图片保持不变");
         }));
       }
-      const metaHint = el("div", "so-status");
+      const metaHint = el3("div", "so-status");
       metaHint.textContent = readonly ? "可覆盖预设包信息；立绘图片本身仍不可添加、改名或删除。" : "人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。";
-      metaPanel.body.append(metaRow, promptRow, outfitNotesBox, metaHint, saveRow);
+      metaPanel.body.append(metaRow, promptRow, inventoryRow, outfitNotesBox, metaHint, saveRow);
       body.append(metaPanel.box);
     }
     if (pack.sprites.length === 0) {
-      const empty = el("div", "so-status");
+      const empty = el3("div", "so-status");
       empty.textContent = "还没有立绘：点右上角「添加立绘」上传图片或粘贴编码。";
       body.append(empty);
     } else {
-      const filters = el("div", "so-gallery-filters");
+      const filters = el3("div", "so-gallery-filters");
       const search = document.createElement("input");
       search.type = "search";
       search.className = "text_pole so-gallery-search";
@@ -8002,12 +9201,12 @@ ${preview}
         option.textContent = label;
         labelSelect.append(option);
       }
-      const chips = el("div", "so-gallery-filter-chips");
+      const chips = el3("div", "so-gallery-filter-chips");
       filters.append(search, labelSelect, chips);
       body.append(filters);
-      const gallery = el("div", "so-sprite-gallery");
-      const count = el("div", "so-status so-sprite-count");
-      const paging = el("div", "so-gallery-paging");
+      const gallery = el3("div", "so-sprite-gallery");
+      const count = el3("div", "so-status so-sprite-count");
+      const paging = el3("div", "so-gallery-paging");
       body.append(gallery, count, paging);
       let filteredEntries = [];
       let sections = [];
@@ -8016,13 +9215,13 @@ ${preview}
       const ensureGrid = (group) => {
         const existing = grids.get(group);
         if (existing) return existing;
-        const section2 = el("div", "so-sprite-section");
+        const section2 = el3("div", "so-sprite-section");
         if (groups.length > 0) {
-          const head = el("div", "so-group-head");
+          const head = el3("div", "so-group-head");
           head.textContent = group === "" ? "未分组" : group;
           section2.append(head);
         }
-        const grid = el("div", "so-sprite-grid");
+        const grid = el3("div", "so-sprite-grid");
         section2.append(grid);
         const nextGrid = sections.slice(sections.indexOf(group) + 1).map((nextGroup) => grids.get(nextGroup)).find((candidate) => candidate != null);
         gallery.insertBefore(section2, nextGrid?.parentElement ?? null);
@@ -8066,7 +9265,7 @@ ${preview}
         gallery.replaceChildren();
         grids.clear();
         if (filteredEntries.length === 0) {
-          const empty = el("div", "so-status so-gallery-empty");
+          const empty = el3("div", "so-status so-gallery-empty");
           empty.textContent = "没有符合筛选条件的立绘。";
           gallery.append(empty);
         } else {
@@ -8118,10 +9317,10 @@ ${preview}
       );
       const { imgbbApiKey } = deps.getSettings();
       if (pending.length > 0 && imgbbApiKey.trim()) {
-        const upSection = el("div", "so-section");
-        const upTitle = el("div", "so-section-title");
+        const upSection = el3("div", "so-section");
+        const upTitle = el3("div", "so-section-title");
         upTitle.textContent = "图床补传";
-        const upDesc = el("div", "so-status");
+        const upDesc = el3("div", "so-status");
         upDesc.textContent = `${pending.length} 张立绘还没有远程地址（分享时对方看不到）。补传到 imgbb 后本地图仍保留。`;
         upSection.append(
           upTitle,
@@ -8135,7 +9334,7 @@ ${preview}
       const splitPreview = previewGroupSplit(pack);
       if (splitPreview.length >= 2) {
         const splitPanel = collapsible("按分组拆成立绘包", false, `pack-split:${pack.id}`);
-        const splitDesc = el("div", "so-status");
+        const splitDesc = el3("div", "so-status");
         splitDesc.textContent = `检测到 ${splitPreview.length} 个分组：${splitPreview.map((s) => `${s.roleName}(${s.count})`).join("、")}。拆分会新建这些包（原包与绑定保留，可稍后自行删除）。`;
         splitPanel.body.append(
           splitDesc,
@@ -8360,20 +9559,20 @@ ${preview}
     return createSpriteActions(context).filter((action) => action.allowedInReadonly).map((action) => ({ ...action, run: () => runSpriteAction(action) }));
   }
   function renderSpriteCell(body, pack, sprite, index, readonly) {
-    const cell = el("div", "so-sprite-cell");
+    const cell = el3("div", "so-sprite-cell");
     if (pack.coverTag === sprite.tag) cell.classList.add("so-cover");
     const img = document.createElement("img");
     img.src = sprite.url;
     img.alt = sprite.tag;
     img.title = sprite.tag;
     img.loading = "lazy";
-    const tagEl = el("div", "so-sprite-tag");
+    const tagEl = el3("div", "so-sprite-tag");
     tagEl.textContent = sprite.tag;
     tagEl.title = sprite.tag;
     cell.append(img, tagEl);
     cell.addEventListener("click", () => openLightbox(pack.id, index));
     if (readonly) return cell;
-    const bar = el("div", "so-sprite-actions");
+    const bar = el3("div", "so-sprite-actions");
     const identity = {
       tag: sprite.tag,
       group: spriteGroup(sprite),
@@ -8420,20 +9619,20 @@ ${preview}
     let autoSplit = false;
     let strategy = "skip";
     let uploading = false;
-    const modal = el("div", "so-upload-modal");
-    const panel = el("div", "so-upload-panel");
-    const head = el("div", "so-upload-head");
-    const title2 = el("b");
+    const modal = el3("div", "so-upload-modal");
+    const panel = el3("div", "so-upload-panel");
+    const head = el3("div", "so-upload-head");
+    const title2 = el3("b");
     title2.textContent = `批量上传预览（${fileArr.length} 张）`;
     head.append(title2);
-    const rows = el("div", "so-upload-rows");
+    const rows = el3("div", "so-upload-rows");
     const inputs = [];
     function buildRows() {
       rows.innerHTML = "";
       inputs.length = 0;
       fileArr.forEach((file, i) => {
-        const row = el("div", "so-upload-row");
-        const name = el("div", "so-upload-fname");
+        const row = el3("div", "so-upload-row");
+        const name = el3("div", "so-upload-fname");
         name.textContent = file.name;
         name.title = file.name;
         const roleIn = textInput("人名");
@@ -8461,15 +9660,15 @@ ${preview}
       });
     }
     buildRows();
-    const opts = el("div", "so-upload-opts");
+    const opts = el3("div", "so-upload-opts");
     opts.append(
       checkboxRow("按文件名前缀自动拆分人名/服装（勾选后在下方预览拆分结果，可拆出新包）", autoSplit, (v) => {
         autoSplit = v;
         buildRows();
       })
     );
-    const stratWrap = el("div", "so-row");
-    const stratLabel = el("span");
+    const stratWrap = el3("div", "so-row");
+    const stratLabel = el3("span");
     stratLabel.textContent = "重名时：";
     const stratSel = document.createElement("select");
     stratSel.className = "text_pole";
@@ -8486,8 +9685,8 @@ ${preview}
     stratSel.addEventListener("change", () => strategy = stratSel.value);
     stratWrap.append(stratLabel, stratSel);
     opts.append(stratWrap);
-    const status = el("div", "so-upload-status");
-    const actions = el("div", "so-row so-upload-actions");
+    const status = el3("div", "so-upload-status");
+    const actions = el3("div", "so-row so-upload-actions");
     const confirmBtn = button("开始上传", () => {
       if (uploading) return;
       uploading = true;
@@ -8739,7 +9938,7 @@ ${preview}
   }
   return { open, close, destroy, refreshIfOpen };
 }
-function el(tag, className) {
+function el3(tag, className) {
   const node = document.createElement(tag);
   if (className) node.className = className;
   return node;
@@ -8752,14 +9951,14 @@ function textInput(placeholder) {
   return input;
 }
 function labeled(label, input) {
-  const wrap = el("label", "so-labeled");
-  const span = el("span", "so-labeled-text");
+  const wrap = el3("label", "so-labeled");
+  const span = el3("span", "so-labeled-text");
   span.textContent = label;
   wrap.append(span, input);
   return wrap;
 }
 function checkboxRow(label, checked, onChange) {
-  const row = el("label", "so-row checkbox_label");
+  const row = el3("label", "so-row checkbox_label");
   const input = document.createElement("input");
   input.type = "checkbox";
   input.checked = checked;
@@ -8770,7 +9969,7 @@ function checkboxRow(label, checked, onChange) {
   return row;
 }
 function button(label, onClick, extraClass = "") {
-  const btn = el("div", `menu_button so-btn ${extraClass}`.trim());
+  const btn = el3("div", `menu_button so-btn ${extraClass}`.trim());
   btn.setAttribute("role", "button");
   btn.tabIndex = 0;
   btn.textContent = label;
@@ -8784,7 +9983,7 @@ function button(label, onClick, extraClass = "") {
   return btn;
 }
 function iconButton(icon, title2, onClick, className = "so-icon-btn", disabled = false) {
-  const btn = el("div", className);
+  const btn = el3("div", className);
   btn.textContent = icon;
   btn.title = title2;
   btn.setAttribute("role", "button");
@@ -8797,7 +9996,7 @@ function iconButton(icon, title2, onClick, className = "so-icon-btn", disabled =
   return btn;
 }
 function statusBar() {
-  return el("div", "so-status so-toast");
+  return el3("div", "so-status so-toast");
 }
 function toast(scope, msg) {
   const bar = scope?.querySelector(".so-toast");
@@ -8932,48 +10131,6 @@ function replaceInlineImages(text4, replacer) {
     const out = replacer({ raw, code });
     return out === null ? raw : out;
   });
-}
-
-// st-extension/src/apps/path-utils.ts
-var FORBIDDEN_PATH_SEGMENTS = /* @__PURE__ */ new Set(["__proto__", "prototype", "constructor"]);
-function parsePath(path) {
-  const segments = path.split(".");
-  return segments.some((segment) => segment.length === 0 || FORBIDDEN_PATH_SEGMENTS.has(segment)) ? null : segments;
-}
-function isSafePath(path) {
-  return parsePath(path) !== null;
-}
-function getNested(obj, path) {
-  const segments = parsePath(path);
-  if (!segments) return void 0;
-  let cur = obj;
-  for (const seg of segments) {
-    if (cur == null || typeof cur !== "object") return void 0;
-    cur = cur[seg];
-  }
-  return cur;
-}
-function setNested(obj, path, value) {
-  const segs = parsePath(path);
-  if (!segs || segs.length === 0) return;
-  let cur = obj;
-  for (let i = 0; i < segs.length - 1; i++) {
-    const seg = segs[i];
-    const next = cur[seg];
-    if (next == null || typeof next !== "object" || Array.isArray(next)) cur[seg] = {};
-    cur = cur[seg];
-  }
-  cur[segs[segs.length - 1]] = value;
-}
-function deleteNested(obj, path) {
-  const segs = parsePath(path);
-  if (!segs || segs.length === 0) return;
-  let cur = obj;
-  for (let i = 0; i < segs.length - 1; i++) {
-    if (cur == null || typeof cur !== "object") return;
-    cur = cur[segs[i]];
-  }
-  if (cur != null && typeof cur === "object") delete cur[segs[segs.length - 1]];
 }
 
 // st-extension/src/apps/newvar/config.ts
@@ -9300,8 +10457,8 @@ function clampFloors(settings) {
   if (!Number.isFinite(n)) return RECENT_FLOORS_MIN;
   return Math.min(RECENT_FLOORS_MAX, Math.max(RECENT_FLOORS_MIN, n));
 }
-function originalTextOf(el3) {
-  return snapshots.get(el3)?.originalText ?? el3.textContent ?? "";
+function originalTextOf(el4) {
+  return snapshots.get(el4)?.originalText ?? el4.textContent ?? "";
 }
 function collectCandidates(extraCandidates = /* @__PURE__ */ new Set()) {
   const out = [];
@@ -9321,22 +10478,22 @@ function processMessages(settings, messageId = null, rawMessage = null) {
   if (messageId !== null && messageId !== void 0 && `${messageId}` !== "") {
     const idStr = `${messageId}`;
     const allMes = Array.from(document.querySelectorAll("#chat .mes"));
-    const scope = allMes.filter((m) => m.getAttribute("mesid") === idStr).map((m) => m.querySelector(".mes_text")).filter((el3) => el3 !== null);
+    const scope = allMes.filter((m) => m.getAttribute("mesid") === idStr).map((m) => m.querySelector(".mes_text")).filter((el4) => el4 !== null);
     const lastMes = allMes.length > 0 ? allMes[allMes.length - 1] : null;
     let windowSet = null;
-    for (const el3 of scope) {
-      if (lastMes !== null && el3.closest(".mes") === lastMes) {
-        processMessageElement(el3, settings, rawMessage);
+    for (const el4 of scope) {
+      if (lastMes !== null && el4.closest(".mes") === lastMes) {
+        processMessageElement(el4, settings, rawMessage);
         continue;
       }
-      const rawCandidate = rawMessage !== null && sanitizedUpdateRange(rawMessage, originalTextOf(el3)) !== null ? /* @__PURE__ */ new Set([el3]) : void 0;
+      const rawCandidate = rawMessage !== null && sanitizedUpdateRange(rawMessage, originalTextOf(el4)) !== null ? /* @__PURE__ */ new Set([el4]) : void 0;
       windowSet ?? (windowSet = new Set(collectCandidates(rawCandidate).slice(-clampFloors(settings))));
-      if (windowSet.has(el3)) processMessageElement(el3, settings, rawMessage);
+      if (windowSet.has(el4)) processMessageElement(el4, settings, rawMessage);
     }
     return;
   }
-  for (const el3 of collectCandidates().slice(-clampFloors(settings))) {
-    processMessageElement(el3, settings);
+  for (const el4 of collectCandidates().slice(-clampFloors(settings))) {
+    processMessageElement(el4, settings);
   }
 }
 function reprocessAllMessages(settings) {
@@ -9407,6 +10564,7 @@ function processMessageElement(root, settings, rawMessage = null) {
   const chName = inlineSprites ? root.closest(".mes")?.getAttribute("ch_name") ?? "" : "";
   const packs = chName ? getActivePacks(settings, chName) : [];
   const hasPacks = packs.length > 0;
+  const approxCache = { current: null };
   const freshText = root.textContent ?? "";
   const literalUpdateRanges = hideUpdateBlocks ? updateBlockRanges(freshText) : [];
   const sanitizedRange = hideUpdateBlocks && literalUpdateRanges.length === 0 ? sanitizedUpdateRange(rawMessage, freshText) : null;
@@ -9435,10 +10593,16 @@ function processMessageElement(root, settings, rawMessage = null) {
     if (!needsSprites && !needsStrip && !needsImages) continue;
     let processed = needsStrip ? stripTags(text4) : text4;
     const elements = [];
-    const marker = (el3) => `\0${elements.push(el3) - 1}\0`;
+    const marker = (el4) => `\0${elements.push(el4) - 1}\0`;
     if (needsSprites && hasPacks) {
       processed = replaceTags(processed, (address, raw) => {
-        const sprite = resolveSprite(packs, address);
+        const sprite = resolveWithApprox(
+          packs,
+          address,
+          resolveSprite,
+          settings.approxMatch,
+          approxCache
+        );
         if (!sprite) return settings.hideTagInMessage ? "" : null;
         const image = createImage(sprite.url, sprite.tag, "so-inline-sprite");
         const imageMarker = marker(image);
@@ -9577,166 +10741,6 @@ function isEligible(image) {
   const width = image.naturalWidth || image.width;
   const height = image.naturalHeight || image.height;
   return !(width > 0 && height > 0 && (width < 64 || height < 64));
-}
-
-// st-extension/src/apps/widgets.ts
-function el2(tag, className) {
-  const node = document.createElement(tag);
-  node.className = className;
-  return node;
-}
-function appButton(label, onClick) {
-  const btn = el2("div", "menu_button so-app-btn");
-  btn.setAttribute("role", "button");
-  btn.tabIndex = 0;
-  btn.textContent = label;
-  btn.addEventListener("click", onClick);
-  btn.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      onClick();
-    }
-  });
-  return btn;
-}
-function toggleRow(label, checked, onChange) {
-  const row = el2("label", "so-app-toggle checkbox_label");
-  const input = document.createElement("input");
-  input.type = "checkbox";
-  input.checked = checked;
-  input.addEventListener("change", () => onChange(input.checked));
-  const span = document.createElement("span");
-  span.textContent = label;
-  row.append(input, span);
-  return row;
-}
-function selectRow(label, value, options, onChange) {
-  const row = el2("label", "so-app-toggle");
-  const span = document.createElement("span");
-  span.textContent = label;
-  const select = document.createElement("select");
-  select.className = "text_pole so-app-input";
-  for (const opt of options) {
-    const o = document.createElement("option");
-    o.value = opt.value;
-    o.textContent = opt.label;
-    if (opt.value === value) o.selected = true;
-    select.append(o);
-  }
-  select.addEventListener("change", () => onChange(select.value));
-  row.append(span, select);
-  return row;
-}
-function numberRow(label, value, min, max, onChange) {
-  const row = el2("label", "so-app-toggle");
-  const span = document.createElement("span");
-  span.textContent = label;
-  const input = document.createElement("input");
-  input.type = "number";
-  input.className = "text_pole so-app-num";
-  input.min = String(min);
-  input.max = String(max);
-  input.step = "1";
-  input.value = String(value);
-  input.addEventListener("change", () => {
-    const n = Math.round(Number(input.value));
-    const clamped = Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min;
-    input.value = String(clamped);
-    onChange(clamped);
-  });
-  row.append(span, input);
-  return row;
-}
-function rangeRow(label, value, min, max, onInput, onCommit, format = String) {
-  const row = el2("label", "so-app-toggle so-app-range");
-  const span = document.createElement("span");
-  span.textContent = label;
-  const controls = el2("span", "so-app-range-controls");
-  const input = document.createElement("input");
-  input.type = "range";
-  input.min = String(min);
-  input.max = String(max);
-  input.step = "1";
-  input.value = String(Math.min(max, Math.max(min, Math.round(value))));
-  const output = document.createElement("output");
-  const read = () => {
-    const parsed = Math.round(Number(input.value));
-    const clamped = Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : min;
-    input.value = String(clamped);
-    output.value = format(clamped);
-    output.textContent = output.value;
-    return clamped;
-  };
-  read();
-  input.addEventListener("input", () => onInput(read()));
-  input.addEventListener("change", () => onCommit(read()));
-  controls.append(input, output);
-  row.append(span, controls);
-  return row;
-}
-var foldOpenState = /* @__PURE__ */ new Map();
-function foldSection(title2, open = false, key = "") {
-  const box = document.createElement("details");
-  box.className = "so-app-section so-app-fold";
-  box.open = key ? foldOpenState.get(key) ?? open : open;
-  if (key) box.addEventListener("toggle", () => foldOpenState.set(key, box.open));
-  const summary = document.createElement("summary");
-  summary.className = "so-app-title";
-  summary.textContent = title2;
-  const body = el2("div", "so-app-fold-body");
-  box.append(summary, body);
-  return { box, body };
-}
-function textareaRow(label, value, placeholder, onCommit) {
-  const wrap = el2("div", "so-app-field");
-  const title2 = el2("div", "so-app-title");
-  title2.textContent = label;
-  const input = document.createElement("textarea");
-  input.className = "text_pole so-app-input";
-  input.rows = 5;
-  input.value = value;
-  input.placeholder = placeholder;
-  input.addEventListener("change", () => onCommit(input.value));
-  wrap.append(title2, input);
-  return wrap;
-}
-function hintField(row, hint) {
-  const wrap = el2("div", "so-app-hintwrap");
-  const line = el2("div", "so-app-hintrow");
-  row.classList.add("so-app-hintrow-main");
-  const badge = document.createElement("button");
-  badge.type = "button";
-  badge.className = "so-app-hint-badge";
-  badge.textContent = "ⓘ";
-  badge.title = hint;
-  badge.setAttribute("aria-label", "说明");
-  badge.setAttribute("aria-expanded", "false");
-  const detail = el2("div", "so-app-hint");
-  detail.textContent = hint;
-  detail.hidden = true;
-  badge.addEventListener("click", (e) => {
-    e.preventDefault();
-    detail.hidden = !detail.hidden;
-    badge.classList.toggle("so-app-hint-badge-on", !detail.hidden);
-    badge.setAttribute("aria-expanded", String(!detail.hidden));
-  });
-  line.append(row, badge);
-  wrap.append(line, detail);
-  return wrap;
-}
-function textRow(label, value, placeholder, onCommit, type = "text") {
-  const wrap = el2("div", "so-app-field");
-  const title2 = el2("div", "so-app-title");
-  title2.textContent = label;
-  const input = document.createElement("input");
-  input.type = type;
-  input.className = "text_pole so-app-input";
-  input.value = value;
-  input.placeholder = placeholder;
-  input.autocomplete = "off";
-  input.addEventListener("change", () => onCommit(input.value));
-  wrap.append(title2, input);
-  return wrap;
 }
 
 // st-extension/src/apps/sprite-app.ts
@@ -9881,8 +10885,16 @@ function spriteApp(deps = {}) {
           PROMPT_BUDGET_MIN,
           PROMPT_BUDGET_MAX,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), promptBudget: v })
+        ),
+        toggleRow(
+          "近似匹配（实验，默认关闭）",
+          settings.approxMatch,
+          (v) => ctx.updateSettings({ ...ctx.getSettings(), approxMatch: v })
         )
       );
+      const approxHint = el2("div", "so-app-desc");
+      approxHint.textContent = "开启后，[立绘:...] 里写的不是准确地址时，会拿它当描述去找最像的一张（如「穿连衣裙逛街」命中 连衣裙/逛街）。只在准确地址找不到时才生效，同分打平就放弃，所以不会改变原本能命中的结果。";
+      promptSection.body.append(approxHint);
       const budgeted = buildActiveSpritePrompt(settings, characterName);
       const unlimited = settings.promptBudget > 0 ? buildActiveSpritePrompt(settings, characterName, 0) : budgeted;
       const budgetHint = el2("div", "so-app-desc");
@@ -11586,7 +12598,7 @@ function parseFoundExtension(value) {
 }
 
 // st-extension/src/apps/butler/bridge.ts
-function getST() {
+function getST2() {
   try {
     return window.SillyTavern?.getContext();
   } catch {
@@ -11608,7 +12620,7 @@ function unavailableCapabilities2(reason) {
   );
 }
 function readPerfState() {
-  const pu = getST()?.powerUserSettings;
+  const pu = getST2()?.powerUserSettings;
   if (!pu) {
     const reason = "未检测到 SillyTavern power_user 设置";
     return { status: "unavailable", snapshot: {}, capabilities: unavailableCapabilities2(reason), reason };
@@ -11634,7 +12646,7 @@ function readPerf() {
   return result.status === "ready" ? result.snapshot : null;
 }
 function readMobileState() {
-  const st = getST();
+  const st = getST2();
   if (typeof st?.isMobile !== "function") {
     return { available: false, reason: "未检测到 SillyTavern 移动端判断接口" };
   }
@@ -11667,7 +12679,7 @@ async function reloadChatSafe(st) {
   }
 }
 async function writePerf(fields) {
-  const st = getST();
+  const st = getST2();
   const pu = st?.powerUserSettings;
   if (!st || !pu) return;
   const prevTrunc = typeof pu.chat_truncation === "number" && Number.isFinite(pu.chat_truncation) ? pu.chat_truncation : void 0;
@@ -11680,7 +12692,7 @@ async function writePerf(fields) {
   }
 }
 function readHealthState() {
-  const ext = getST()?.extensionSettings;
+  const ext = getST2()?.extensionSettings;
   if (!ext) {
     const reason = "未检测到 SillyTavern 扩展设置";
     return {
@@ -11712,7 +12724,7 @@ function chatKey(st) {
   return `chat:${comparisonDigest(identity)}`;
 }
 function readPageSummary() {
-  const st = getST();
+  const st = getST2();
   const chat2 = st?.chat;
   const chatSummary = Array.isArray(chat2) ? {
     available: true,
@@ -12260,7 +13272,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-09-01 14:01"}`;
+  return `${"0.9.0"}+${"2026-09-01 20:48"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -12942,615 +13954,31 @@ ${lines.join("\n")}
   });
 }
 
-// st-extension/src/apps/variable-tree.ts
-function isPlainObject(v) {
-  return v != null && typeof v === "object" && !Array.isArray(v);
-}
-function isTupleLeaf(v) {
-  return Array.isArray(v) && v.length === 2 && typeof v[1] === "string" && !Array.isArray(v[0]);
-}
-function extractStatRootFrom(wrapper) {
-  if (isPlainObject(wrapper.stat_data)) return { root: wrapper.stat_data, wrapped: true };
-  return { root: wrapper, wrapped: false };
-}
-function formatValue(v) {
-  if (typeof v === "string") return v;
-  if (v === null) return "null";
-  if (v === void 0) return "";
-  if (typeof v === "object") {
-    try {
-      return JSON.stringify(v, null, 2);
-    } catch {
-      return String(v);
-    }
-  }
-  return String(v);
-}
-function parseInputValue(raw) {
-  const t = raw.trim();
-  if (t === "null") return null;
-  if (t === "true") return true;
-  if (t === "false") return false;
-  if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
-  if (t.startsWith("{") || t.startsWith("[")) {
-    try {
-      return JSON.parse(t);
-    } catch {
-    }
-  }
-  return raw;
-}
-function editKind(v, definition) {
-  if (definition?.type === "number") return "number";
-  if (definition?.type === "enum") return "enum";
-  if (definition?.type === "boolean") return "boolean";
-  if (definition?.type === "string") return "text";
-  if (typeof v === "boolean") return "boolean";
-  if (v !== null && typeof v === "object") return "json";
-  return "text";
-}
-function valueTypeLabel(v, tuple) {
-  const inner = tuple ? v[0] : v;
-  if (inner === null) return "null";
-  if (Array.isArray(inner)) return `数组[${inner.length}]`;
-  if (typeof inner === "object") return "对象";
-  return typeof inner === "number" ? "数字" : typeof inner === "boolean" ? "布尔" : "文本";
-}
-function jsonEqual(a, b) {
-  if (a === b) return true;
-  try {
-    return JSON.stringify(a) === JSON.stringify(b);
-  } catch {
-    return false;
-  }
-}
-function computeDelta(current2, prev, isMvu) {
-  const delta = /* @__PURE__ */ new Map();
-  if (!prev) return delta;
-  const walk = (obj, prefix) => {
-    for (const key of Object.keys(obj)) {
-      const val = obj[key];
-      const path = prefix ? `${prefix}.${key}` : key;
-      const tuple = isMvu && isTupleLeaf(val);
-      if (!tuple && isPlainObject(val) && Object.keys(val).length > 0) {
-        walk(val, path);
-        continue;
-      }
-      const curLeaf = tuple ? val[0] : val;
-      const prevRaw = getNested(prev, path);
-      if (prevRaw === void 0) {
-        delta.set(path, { kind: "added" });
-        continue;
-      }
-      const prevLeaf = isMvu && isTupleLeaf(prevRaw) ? prevRaw[0] : prevRaw;
-      if (typeof curLeaf === "number" && typeof prevLeaf === "number") {
-        if (curLeaf !== prevLeaf) delta.set(path, { kind: curLeaf > prevLeaf ? "inc" : "dec", diff: curLeaf - prevLeaf });
-      } else if (!jsonEqual(curLeaf, prevLeaf)) {
-        delta.set(path, { kind: "changed" });
-      }
-    }
-  };
-  walk(current2, "");
-  return delta;
-}
-function createVariableTreeView(container, handlers) {
-  let editingPath = null;
-  const groupOpen = /* @__PURE__ */ new Map();
-  let addOpen = false;
-  function render2() {
-    const model = handlers.getModel();
-    container.textContent = "";
-    const head = el2("div", "so-app-section vm-head");
-    const line = el2("div", "vm-statusrow");
-    const status = el2("div", "so-app-desc vm-status");
-    status.textContent = model.statusText;
-    const refreshBtn = el2("button", "menu_button vm-refresh");
-    refreshBtn.setAttribute("role", "button");
-    refreshBtn.textContent = "刷新";
-    refreshBtn.addEventListener("click", () => handlers.requestRefresh());
-    line.append(status, refreshBtn);
-    head.append(line);
-    container.append(head);
-    if (model.noticeText) {
-      appendNotice(model.noticeText);
-      if (model.status === "unavailable") return;
-    }
-    const keys = Object.keys(model.data);
-    if (keys.length === 0) {
-      appendNotice(model.emptyText);
-    } else {
-      const tree = el2("div", "vm-tree");
-      for (const key of keys) renderNode(model, tree, key, model.data[key], key, 0);
-      container.append(tree);
-    }
-    if (model.allowAdd !== false) container.append(buildAddSection(model));
-  }
-  function appendNotice(text4) {
-    const note = el2("div", "so-app-section");
-    const d = el2("div", "so-app-desc");
-    d.textContent = text4;
-    note.append(d);
-    container.append(note);
-  }
-  function renderNode(model, parent, key, value, path, depth) {
-    const tuple = model.isMvu && isTupleLeaf(value);
-    if (!tuple && isPlainObject(value) && Object.keys(value).length > 0) {
-      const details = document.createElement("details");
-      details.className = "so-app-fold vm-group";
-      details.open = groupOpen.get(path) ?? depth < 1;
-      details.addEventListener("toggle", () => groupOpen.set(path, details.open));
-      const summary = document.createElement("summary");
-      summary.className = "so-app-title vm-group-title";
-      summary.textContent = `${key}（${Object.keys(value).length}）`;
-      const body = el2("div", "so-app-fold-body vm-group-body");
-      for (const childKey of Object.keys(value)) {
-        renderNode(model, body, childKey, value[childKey], `${path}.${childKey}`, depth + 1);
-      }
-      details.append(summary, body);
-      parent.append(details);
-      return;
-    }
-    renderLeaf(model, parent, key, value, path, tuple);
-  }
-  function renderLeaf(model, parent, key, value, path, tuple) {
-    if (editingPath === path) {
-      parent.append(buildEditForm(model, key, value, path, tuple));
-      return;
-    }
-    const card = el2("div", "vm-leaf");
-    const main = el2("div", "vm-leaf-main");
-    const keyEl = el2("span", "vm-key");
-    keyEl.textContent = key;
-    const valEl = el2("span", "vm-val");
-    const shown = formatValue(tuple ? value[0] : value);
-    valEl.textContent = shown.length > 80 ? `${shown.slice(0, 80)}…` : shown;
-    valEl.title = `类型：${valueTypeLabel(value, tuple)}`;
-    main.append(keyEl, valEl);
-    const d = model.delta.get(path);
-    if (d) main.append(buildDeltaBadge(d));
-    if (tuple) {
-      const desc = el2("div", "vm-desc");
-      desc.textContent = value[1];
-      main.append(desc);
-    }
-    if (model.canWrite) {
-      main.setAttribute("role", "button");
-      main.tabIndex = 0;
-      const enterEdit = () => {
-        editingPath = path;
-        render2();
-      };
-      main.addEventListener("click", enterEdit);
-      main.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          enterEdit();
-        }
-      });
-    }
-    card.append(main);
-    if (model.canWrite) {
-      const del = el2("button", "vm-del");
-      del.setAttribute("aria-label", "删除变量");
-      del.title = "删除该变量";
-      del.textContent = "✕";
-      del.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (!window.confirm(`删除变量「${path}」？此操作不可撤销。`)) return;
-        editingPath = null;
-        handlers.commitDelete(path);
-      });
-      card.append(del);
-    }
-    parent.append(card);
-  }
-  function buildDeltaBadge(d) {
-    const badge = el2("span", `vm-badge vm-badge-${d.kind}`);
-    if (d.kind === "inc" || d.kind === "dec") {
-      const n = d.diff ?? 0;
-      const shown = Number.isInteger(n) ? String(n) : String(Number(n.toFixed(2)));
-      badge.textContent = `${n > 0 ? "+" : ""}${shown}`;
-    } else {
-      badge.textContent = d.kind === "added" ? "新" : "改";
-    }
-    return badge;
-  }
-  function buildEditForm(model, key, value, path, tuple) {
-    const inner = tuple ? value[0] : value;
-    const definition = model.definitions?.find((item) => item.key === path);
-    const kind = editKind(inner, definition);
-    const wrap = el2("div", "vm-leaf vm-editing");
-    const title2 = el2("div", "so-app-title vm-edit-title");
-    title2.textContent = `${key} · ${valueTypeLabel(value, tuple)}`;
-    wrap.append(title2);
-    if (tuple) {
-      const desc = el2("div", "vm-desc");
-      desc.textContent = `描述：${value[1]}（保留不变，仅编辑值）`;
-      wrap.append(desc);
-    }
-    const err = el2("div", "so-app-desc vm-add-err");
-    err.hidden = true;
-    let readValue;
-    if (kind === "boolean") {
-      const row = el2("label", "so-app-toggle checkbox_label");
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.checked = inner === true;
-      const label = document.createElement("span");
-      label.textContent = "启用（true）";
-      row.append(input, label);
-      wrap.append(row);
-      readValue = () => ({ ok: true, value: input.checked });
-    } else if (kind === "enum") {
-      const select = document.createElement("select");
-      select.className = "text_pole so-app-input vm-edit-input";
-      for (const value2 of definition?.enum ?? []) {
-        const option = document.createElement("option");
-        option.value = value2;
-        option.textContent = value2;
-        option.selected = value2 === inner;
-        select.append(option);
-      }
-      wrap.append(select);
-      readValue = () => ({ ok: true, value: select.value });
-    } else if (kind === "number") {
-      const input = document.createElement("input");
-      input.type = "number";
-      input.step = "any";
-      input.className = "text_pole so-app-input vm-edit-input";
-      input.value = typeof inner === "number" && Number.isFinite(inner) ? String(inner) : "";
-      if (definition?.range) {
-        input.min = String(definition.range[0]);
-        input.max = String(definition.range[1]);
-      }
-      wrap.append(input);
-      readValue = () => {
-        if (input.value.trim() === "") return { ok: false, msg: "请输入有效数字。" };
-        const value2 = Number(input.value);
-        return Number.isFinite(value2) ? { ok: true, value: value2 } : { ok: false, msg: "请输入有效数字。" };
-      };
-      setTimeout(() => input.focus(), 0);
-    } else if (kind === "json") {
-      const ta = document.createElement("textarea");
-      ta.className = "text_pole so-app-input vm-edit-input";
-      ta.rows = 5;
-      ta.value = formatValue(inner);
-      wrap.append(ta);
-      readValue = () => {
-        try {
-          return { ok: true, value: JSON.parse(ta.value) };
-        } catch (e) {
-          return { ok: false, msg: `JSON 格式错误：${e instanceof Error ? e.message : String(e)}` };
-        }
-      };
-      setTimeout(() => ta.focus(), 0);
-    } else {
-      const input = document.createElement("input");
-      input.type = "text";
-      input.className = "text_pole so-app-input vm-edit-input";
-      input.value = formatValue(inner);
-      input.autocomplete = "off";
-      wrap.append(input);
-      readValue = () => ({ ok: true, value: definition?.type === "string" ? input.value : parseInputValue(input.value) });
-      setTimeout(() => input.focus(), 0);
-    }
-    wrap.append(err);
-    const actions = el2("div", "vm-actions");
-    const save = el2("button", "menu_button vm-act");
-    save.textContent = "保存";
-    save.addEventListener("click", () => {
-      const r = readValue();
-      if (!r.ok) {
-        err.textContent = r.msg ?? "输入无效。";
-        err.hidden = false;
-        return;
-      }
-      editingPath = null;
-      const committed = handlers.commitSet(path, r.value);
-      if (committed && !committed.ok) {
-        editingPath = path;
-        err.textContent = committed.error;
-        err.hidden = false;
-      }
-    });
-    const cancel = el2("button", "menu_button vm-act vm-act-ghost");
-    cancel.textContent = "取消";
-    cancel.addEventListener("click", () => {
-      editingPath = null;
-      render2();
-    });
-    actions.append(save, cancel);
-    wrap.append(actions);
-    return wrap;
-  }
-  function buildAddSection(model) {
-    const box = document.createElement("details");
-    box.className = "so-app-fold so-app-section";
-    box.open = addOpen;
-    box.addEventListener("toggle", () => addOpen = box.open);
-    const summary = document.createElement("summary");
-    summary.className = "so-app-title";
-    summary.textContent = "＋ 新增变量";
-    const body = el2("div", "so-app-fold-body");
-    const hint = el2("div", "so-app-desc");
-    hint.textContent = model.addHint;
-    body.append(hint);
-    const pathInput = document.createElement("input");
-    pathInput.type = "text";
-    pathInput.className = "text_pole so-app-input";
-    pathInput.placeholder = "变量路径（如 状态.体力）";
-    pathInput.autocomplete = "off";
-    const valInput = document.createElement("input");
-    valInput.type = "text";
-    valInput.className = "text_pole so-app-input";
-    valInput.placeholder = "值（如 80 / 健康 / true）";
-    valInput.autocomplete = "off";
-    body.append(pathInput, valInput);
-    const err = el2("div", "so-app-desc vm-add-err");
-    err.hidden = true;
-    body.append(err);
-    body.append(
-      appButton("添加", () => {
-        const path = pathInput.value.trim();
-        if (!path) {
-          err.textContent = "请填写变量路径。";
-          err.hidden = false;
-          return;
-        }
-        if (!model.canWrite) {
-          err.textContent = "当前环境不可写入变量。";
-          err.hidden = false;
-          return;
-        }
-        const committed = handlers.commitSet(path, parseInputValue(valInput.value));
-        if (committed && !committed.ok) {
-          err.textContent = committed.error;
-          err.hidden = false;
-        }
-      })
-    );
-    box.append(summary, body);
-    return box;
-  }
-  return {
-    render: render2,
-    resetEditing() {
-      editingPath = null;
-    },
-    isEditing() {
-      return editingPath !== null;
-    }
-  };
-}
-
-// st-extension/src/apps/mvu/bridge.ts
-function getMvu() {
-  const w = window;
-  return w.parent?.Mvu ?? w.Mvu;
-}
-function getHelper() {
-  const w = window;
-  return w.parent?.TavernHelper ?? w.TavernHelper;
-}
-function getST2() {
-  try {
-    return window.SillyTavern?.getContext();
-  } catch {
-    return void 0;
-  }
-}
-function isMvuAvailable() {
-  const mvu = getMvu();
-  return typeof mvu?.getMvuData === "function" && typeof mvu?.replaceMvuData === "function";
-}
-function delay(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-function getLastMessageId() {
-  const helper = getHelper();
-  if (typeof helper?.getLastMessageId === "function") {
-    try {
-      const id = helper.getLastMessageId();
-      if (Number.isInteger(id) && id >= 0) return id;
-    } catch {
-    }
-  }
-  const chat2 = getST2()?.chat;
-  if (Array.isArray(chat2) && chat2.length > 0) return chat2.length - 1;
-  return -1;
-}
-async function waitForMvuInitialized(timeoutMs) {
-  const w = window;
-  const waitFn = w.parent?.waitGlobalInitialized ?? w.waitGlobalInitialized;
-  if (typeof waitFn !== "function") return;
-  await Promise.race([Promise.resolve(waitFn("Mvu")).catch(() => void 0), delay(timeoutMs)]);
-}
-async function readMvuDataWithRetry(scope, timeoutMs, intervalMs) {
-  const mvu = getMvu();
-  const start = Date.now();
-  let attempts = 0;
-  let data;
-  for (; ; ) {
-    attempts++;
-    data = await Promise.resolve(mvu.getMvuData(scope)) ?? {};
-    const stat = data.stat_data;
-    if (stat && Object.keys(stat).length > 0) return { data, attempts };
-    if (Date.now() - start >= timeoutMs) return { data, attempts };
-    await delay(intervalMs);
-  }
-}
-async function readHelperWrapper(scope) {
-  const helper = getHelper();
-  if (typeof helper?.getVariables !== "function") return null;
-  const vars = await Promise.resolve(helper.getVariables(scope));
-  return vars && typeof vars === "object" ? vars : {};
-}
-async function readStatRootAt(messageId) {
-  if (messageId < 0) return null;
-  const scope = { type: "message", message_id: messageId };
-  try {
-    if (isMvuAvailable()) {
-      const data = await Promise.resolve(getMvu().getMvuData(scope)) ?? {};
-      return isPlainObject(data.stat_data) ? data.stat_data : null;
-    }
-    const wrapper = await readHelperWrapper(scope);
-    return wrapper ? extractStatRootFrom(wrapper).root : null;
-  } catch {
-    return null;
-  }
-}
-async function findPrevStatRoot(fromId, maxScan = 20) {
-  const stop = Math.max(0, fromId - maxScan + 1);
-  for (let id = fromId; id >= stop; id--) {
-    const root = await readStatRootAt(id);
-    if (root && Object.keys(root).length > 0) return root;
-  }
-  return null;
-}
-async function readVariables(scope, messageId) {
-  const meta = { source: "none", waitedMvu: false };
-  const base = { isMvu: false, wrapped: true, messageId, meta };
-  if (messageId < 0) return { status: "empty", data: {}, ...base };
-  if (!isMvuAvailable()) {
-    await waitForMvuInitialized(1200);
-    meta.waitedMvu = true;
-  }
-  if (isMvuAvailable()) {
-    try {
-      const { data } = await readMvuDataWithRetry(scope, 1200, 120);
-      const stat = data.stat_data ?? {};
-      if (Object.keys(stat).length > 0) {
-        meta.source = "mvu";
-        return { status: "ready", data: stat, isMvu: true, wrapped: true, messageId, meta };
-      }
-      const fb = await readHelperFallback(scope, messageId, meta);
-      if (fb) return fb;
-      return { status: "empty", data: {}, isMvu: true, wrapped: true, messageId, meta };
-    } catch (err) {
-      const fb = await readHelperFallback(scope, messageId, meta);
-      if (fb) return fb;
-      return {
-        status: "error",
-        data: {},
-        isMvu: false,
-        wrapped: true,
-        messageId,
-        meta,
-        error: err instanceof Error ? err.message : String(err)
-      };
-    }
-  }
-  const wrapper = await readHelperWrapper(scope).catch(() => null);
-  if (wrapper) {
-    const { root, wrapped } = extractStatRootFrom(wrapper);
-    meta.source = Object.keys(root).length > 0 ? "tavern-helper" : "none";
-    return {
-      status: Object.keys(root).length > 0 ? "ready" : "empty",
-      data: root,
-      isMvu: false,
-      wrapped,
-      messageId,
-      meta
-    };
-  }
-  return { status: "unavailable", data: {}, isMvu: false, wrapped: true, messageId, meta };
-}
-async function readHelperFallback(scope, messageId, meta) {
-  const wrapper = await readHelperWrapper(scope).catch(() => null);
-  if (!wrapper) return null;
-  const { root, wrapped } = extractStatRootFrom(wrapper);
-  if (Object.keys(root).length === 0) return null;
-  meta.source = "tavern-helper";
-  return { status: "ready", data: root, isMvu: false, wrapped, messageId, meta };
-}
-function fullPath(wrapped, path) {
-  return wrapped ? `stat_data.${path}` : path;
-}
-function applySet(container, wrapped, path, value) {
-  const fp = fullPath(wrapped, path);
-  const old = getNested(container, fp);
-  const final = isTupleLeaf(old) ? [value, old[1]] : value;
-  setNested(container, fp, final);
-}
-async function setFloorVariable(scope, wrapped, path, value) {
-  const mvu = getMvu();
-  if (isMvuAvailable()) {
-    const wrapper = await Promise.resolve(mvu.getMvuData(scope)) ?? {};
-    applySet(wrapper, true, path, value);
-    await Promise.resolve(mvu.replaceMvuData(wrapper, scope));
-    return;
-  }
-  await writeHelper(scope, (vars) => applySet(vars, wrapped, path, value));
-}
-async function deleteFloorVariable(scope, wrapped, path) {
-  const mvu = getMvu();
-  if (isMvuAvailable()) {
-    const wrapper = await Promise.resolve(mvu.getMvuData(scope)) ?? {};
-    deleteNested(wrapper, fullPath(true, path));
-    await Promise.resolve(mvu.replaceMvuData(wrapper, scope));
-    return;
-  }
-  await writeHelper(scope, (vars) => deleteNested(vars, fullPath(wrapped, path)));
-}
-async function writeHelper(scope, mutate) {
-  const helper = getHelper();
-  if (typeof helper?.updateVariablesWith === "function") {
-    await Promise.resolve(
-      helper.updateVariablesWith((vars) => {
-        const v = isPlainObject(vars) ? vars : {};
-        mutate(v);
-        return v;
-      }, scope)
-    );
-    return;
-  }
-  if (typeof helper?.getVariables === "function" && typeof helper?.replaceVariables === "function") {
-    const vars = await Promise.resolve(helper.getVariables(scope)) ?? {};
-    mutate(vars);
-    await Promise.resolve(helper.replaceVariables(vars, scope));
-    return;
-  }
-  throw new Error("无可用的变量写入通道（MVU / 酒馆助手均不可用）");
-}
-function subscribeVarEvents(handler) {
-  const st = getST2();
-  const es = st?.eventSource;
-  if (!es) return () => {
-  };
-  const mvu = getMvu();
-  const names = /* @__PURE__ */ new Set([
-    mvu?.events?.VARIABLE_UPDATE_ENDED ?? "mag_variable_update_ended",
-    mvu?.events?.VARIABLE_INITIALIZED ?? "mag_variable_initialized",
-    st?.eventTypes?.CHAT_CHANGED ?? "chat_id_changed",
-    st?.eventTypes?.MESSAGE_SWIPED ?? "message_swiped",
-    st?.eventTypes?.MESSAGE_DELETED ?? "message_deleted"
-  ]);
-  const offs = [];
-  for (const name of names) {
-    if (!name) continue;
-    const h = () => handler();
-    es.on(name, h);
-    offs.push(() => {
-      try {
-        es.removeListener(name, h);
-      } catch {
-      }
-    });
-  }
-  return () => {
-    for (const off of offs) off();
-  };
-}
-
 // st-extension/src/apps/mvu-app.ts
-function createInstance(container, _ctx) {
+function createInstance(container, ctx) {
   let disposed = false;
   let seq = 0;
   let lastResult = null;
   let delta = /* @__PURE__ */ new Map();
   let refreshTimer = null;
   let offEvents = null;
-  const view = createVariableTreeView(container, {
+  const settingsBox = el2("div", "so-app-section");
+  const treeBox = el2("div", "mvu-tree-host");
+  container.append(settingsBox, treeBox);
+  function renderSettings() {
+    settingsBox.textContent = "";
+    settingsBox.append(
+      hintField(
+        toggleRow("变量速查悬浮窗", ctx.getSettings().variableHud, (v) => {
+          ctx.updateSettings({ ...ctx.getSettings(), variableHud: v });
+          renderSettings();
+        }),
+        "在聊天界面常驻一个可拖动的小圆钮，点开就能看到全部变量的当前值，省掉「开手机→开 App→翻找」。只读速查，改值仍在下方变量面板里。这个开关是全局的，与「新变量」App 里的是同一个。"
+      )
+    );
+  }
+  renderSettings();
+  const view = createVariableTreeView(treeBox, {
     getModel: () => buildModel(),
     commitSet: (path, value) => void runWrite(() => setFloorVariable(currentScope(), currentWrapped(), path, value)),
     commitDelete: (path) => void runWrite(() => deleteFloorVariable(currentScope(), currentWrapped(), path)),
@@ -13707,6 +14135,13 @@ function newvarApp(deps) {
               renderCfg();
             }),
             "只隐藏消息气泡里完整的 <UpdateVariable>...</UpdateVariable> 区块，不修改 SillyTavern 保存的原始回复，也不影响变量解析和楼层快照。关闭后只能恢复本扩展隐藏的内容；ST Regex 等外部规则仍会独立生效。"
+          ),
+          hintField(
+            toggleRow("变量速查悬浮窗", ctx.getSettings().variableHud, (v) => {
+              ctx.updateSettings({ ...ctx.getSettings(), variableHud: v });
+              renderCfg();
+            }),
+            "在聊天界面常驻一个可拖动的小圆钮，点开就能看到全部变量的当前值，省掉「开手机→开 App→翻找」。只读速查，改值仍在下方变量面板里；MVU 与「新变量」两边的变量会分段列出。这个开关是全局的，两个变量 App 里改哪个都一样。"
           ),
           appButton("打开变量设计", openDesigner)
         );
@@ -18421,6 +18856,7 @@ function runWhenDomReady(doc, lifecycle, start) {
 }
 
 // st-extension/src/index.ts
+var VARHUD_STATE_KEY = "varhud";
 async function init(lifecycle) {
   const adapter = new STAdapter();
   let settings;
@@ -18442,7 +18878,9 @@ async function init(lifecycle) {
     if (autoChanged) overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds);
     refresh();
     if (displayChanged) reprocessAllMessages(settings);
+    onSettingsApplied?.();
   }
+  let onSettingsApplied = null;
   function saveSettingsOnly(next) {
     const previousNewvar = normalizeNewvarData(settings.apps[NEWVAR_APP_ID]);
     const nextNewvar = normalizeNewvarData(next.apps[NEWVAR_APP_ID]);
@@ -18569,6 +19007,64 @@ async function init(lifecycle) {
     }
   });
   lifecycle.track(() => rendererRuntime.dispose());
+  let variableHud = null;
+  function syncVariableHud() {
+    if (settings.variableHud && !variableHud) {
+      variableHud = createVariableHud({
+        readSections: async () => {
+          const sections = [];
+          const messageId = getLastMessageId();
+          const read = await readVariables({ type: "message", message_id: "latest" }, messageId);
+          sections.push({
+            source: "MVU",
+            root: read.status === "ready" || read.status === "empty" ? read.data : null,
+            notice: read.status === "unavailable" ? "未检测到 MVU / 酒馆助手" : read.error ?? ""
+          });
+          const newvarState = newvarRuntime.getCurrentState();
+          sections.push({
+            source: "新变量",
+            root: newvarState,
+            notice: ""
+          });
+          return sections;
+        },
+        subscribe: (handler) => {
+          const offVar = subscribeVarEvents(handler);
+          const offNewvar = newvarRuntime.subscribe(handler);
+          return () => {
+            offVar();
+            offNewvar();
+          };
+        },
+        readState: () => {
+          const stored = settings.apps[VARHUD_STATE_KEY];
+          const s = stored && typeof stored === "object" ? stored : {};
+          return {
+            x: typeof s.x === "number" ? s.x : 12,
+            y: typeof s.y === "number" ? s.y : 120,
+            open: typeof s.open === "boolean" ? s.open : false
+          };
+        },
+        // 位置/展开态是纯 UI 状态：走 saveSettingsOnly，不触发立绘重渲染
+        writeState: (state) => {
+          saveSettingsOnly({
+            ...settings,
+            apps: { ...settings.apps, [VARHUD_STATE_KEY]: state }
+          });
+        }
+      });
+    } else if (!settings.variableHud && variableHud) {
+      variableHud.dispose();
+      variableHud = null;
+    }
+  }
+  syncVariableHud();
+  onSettingsApplied = syncVariableHud;
+  lifecycle.track(() => {
+    onSettingsApplied = null;
+    variableHud?.dispose();
+    variableHud = null;
+  });
   const newvarDesigner = createNewvarDesigner({
     getData: () => newvarRuntime.getData(),
     setData: (next) => {
@@ -18651,12 +19147,21 @@ async function init(lifecycle) {
     }
     overlay.setVisible(overlayAllowed());
   }
+  function resolveSequenceWithApprox(packs, addresses) {
+    const cache = { current: null };
+    const out = [];
+    for (const address of addresses) {
+      const sprite = resolveWithApprox(packs, address, resolveSprite, true, cache);
+      if (sprite && out[out.length - 1] !== sprite) out.push(sprite);
+    }
+    return out;
+  }
   function displaySprites(addresses) {
     if (!settings.enabled || addresses.length === 0) return;
     const characterName = adapter.getCurrentCharacterName();
     const packs = getActivePacks(settings, characterName);
     if (packs.length === 0) return;
-    const seq = resolveSprites(packs, addresses);
+    const seq = settings.approxMatch ? resolveSequenceWithApprox(packs, addresses) : resolveSprites(packs, addresses);
     preloadMatchedSprites(seq);
     if (seq.length > 0 && overlayAllowed()) {
       overlay.setSprites(seq);
@@ -18734,7 +19239,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-09-01 14:01"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-09-01 20:48"}`;
   console.log(`[sprite-overlay] 百工（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);
