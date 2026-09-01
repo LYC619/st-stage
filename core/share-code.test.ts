@@ -111,6 +111,14 @@ describe('parseImageCodeEntries', () => {
   it('空输入不产出任何东西', () => {
     expect(parseImageCodeEntries('   \n , ；')).toEqual({ entries: [], invalid: [] })
   })
+
+  it('返回的 tag 就是立绘的图名本身（Finding 4）', () => {
+    // upsertSprite 会把 sprite.tag 作为立绘的标签存储，不走 labels 字段
+    const result = parseImageCodeEntries('侧身微笑 ab12cd.png\n生气-xy34zw.webp')
+    expect(result.entries[0].tag).toBe('侧身微笑')
+    expect(result.entries[1].tag).toBe('生气')
+    // 调用方会拿这个 tag 传给 normalizeTag 后直接作为 sprite.tag 字段
+  })
 })
 
 describe('encodeShareString', () => {

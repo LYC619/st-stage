@@ -22,7 +22,14 @@ describe('remote built-in presets', () => {
     for (const pack of packs) {
       expect(pack.roleName).toBe('塞拉菲娜')
       expect(pack.sprites.length).toBeGreaterThan(0)
-      expect(pack.sprites.every((sprite) => /^https:\/\/i\.ibb\.co\/.+\.webp$/.test(sprite.url))).toBe(true)
+      // 格式不限 webp：GIF 预设在运行时本就可用（compressImage 对 image/gif 原样返回，
+      // 显示端全是 <img src>），此处只守住「远程 HTTPS 图床直链」这条真正的不变量——
+      // 构建产物不带图片字节。收窄成单一格式会把动图预设挡在门外。
+      expect(
+        pack.sprites.every((sprite) =>
+          /^https:\/\/i\.ibb\.co\/.+\.(webp|gif|png|jpg|jpeg)$/.test(sprite.url),
+        ),
+      ).toBe(true)
       expect(pack.sprites.every((sprite) => sprite.remoteUrl === sprite.url)).toBe(true)
     }
   })
