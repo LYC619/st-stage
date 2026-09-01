@@ -129,8 +129,16 @@ fonts rather than a device's CJK metrics. Findings 5 and 6 both live in that bli
    replacement, but the inventory section is only referenced as 【清单】. Adding a per-pack override
    that falls back to the default when empty gives users an escape hatch when the built-in rules do
    not fit their images.
-5. *(finding 4)* Catbox import should accept 图名+编号 and extract the number. Several worldbook
-   authors name images that way so the model can identify them, then pull the number out by regex.
+5. *(finding 4)* **Done.** 按编码添加 now accepts 图名+编号 and extracts the code, via
+   `parseImageCodeEntries` in `core/share-code.ts`. Three forms are recognised in a fixed order so
+   the result is never ambiguous: every whitespace token being a valid code means several bare codes
+   (this ordering is what preserves the documented "space separates multiple" behavior); otherwise a
+   valid trailing token is the code and everything before it is the name; otherwise a filename-shaped
+   suffix is split off, which handles the run-together `微笑ab12cd.png`. Connectors between name and
+   code are trimmed. Anything unrecognised is reported back verbatim rather than guessed — guessing
+   would silently create a sprite pointing at the wrong address.
+   Side benefit: the name is now used as the tag when given. Previously every code-added sprite was
+   named after the code, and the hint openly told users to rename each one by hand.
 6. *(finding 5, remainder)* **Done.** The checkerboard detector is removed and the channel copy
    rewritten.
    - Removed `core/checkerboard-cleanup.ts`, `cleanCheckerboardImage`, `cleanAndLocalizeSprite`,
@@ -220,6 +228,11 @@ Evidence for the current build stamp `0.9.0+202609011152`:
 - Dead-code and copy audits were run by throwaway scripts over all 100 non-test source files and 2,046 Chinese-bearing string literals, then deleted. The copy scan's other 43 hits were all false positives on inspection: dot-notation variable paths (`时间.日期`), `)` inside `${…}` interpolations, one deliberate ideographic space used as a full-width separator, and `！！` in web-simulator sample dialogue. Remaining never-imported exports are `Deps`/type interfaces used for structural typing and Next.js framework conventions (`metadata`, `viewport`), not dead code.
 - The install-directory-name invariant is **no `st-stage` in user-visible copy**, not none anywhere. Searching the literal across non-test source still returns about twenty correct hits: `[st-stage]` console prefixes, the renderer CSS classes and `data-st-stage-style` attribute, `FALLBACK_DIRECTORY_NAME`, the `build.mjs` stub fallback, and two live state keys that must never be renamed — the ST prompt slot key `st-stage::<channel>` (`st-adapter.ts`) and `st-stage:butler:extension-recovery:v1` (`experiments.ts`), where a rename would orphan an injected prompt and a stranded-run recovery record respectively. Filter to strings that reach the UI before drawing conclusions from the hit count.
 - One `console.log` remains in source, in `index.ts`: the load banner printing product name, version, and build stamp. It is the documented first step for diagnosing "updated but nothing changed" and is referenced from `settings-panel.ts`; it is not debug residue. No other `console.log`/`debug`/`dir`/`table`/`trace` exists in source.
+- **`pnpm test:mobile` also flips `next-env.d.ts`.** Playwright's `webServer` runs `next dev` on
+  port 3101, so running the E2E suite after `pnpm build` rewrites the import back to the dev form.
+  This actually happened on 2026-09-01: `c07f1c1` committed the dev variant because the Playwright
+  run came after the build. If the E2E suite is run at all, re-run `pnpm build` before committing,
+  or check this one file. The rule is simply that whichever Next command ran last wins.
 - `next-env.d.ts` is committed at its **production** variant. It is generated and tracked, and Next.js rewrites the import between `./.next/dev/types/routes.d.ts` and `./.next/types/routes.d.ts` depending on whether `next dev` or `next build` ran last — it has already flipped once in history (`e113f95` prod, `2c61953` dev). Since `pnpm build` is part of the release gates, the production variant is the only state that leaves a clean worktree at the point the protocol requires one.
 
 Evidence retained from the previous stamp `0.9.0+202608302113`:

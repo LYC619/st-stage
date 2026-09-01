@@ -8,6 +8,7 @@ import {
   encodeShareStringV2,
   extractImageCode,
   isValidImageCode,
+  parseImageCodeEntries,
   SHARE_PREFIX,
   SHARE_PREFIX_V2,
 } from './share-code'
@@ -42,6 +43,73 @@ describe('isValidImageCode / extractImageCode', () => {
     expect(extractImageCode('https://x.com/a/b/c.webp?t=1#f')).toBe('c.webp')
     expect(extractImageCode('/user/images/local.png')).toBeNull()
     expect(extractImageCode('data:image/png;base64,xxx')).toBeNull()
+  })
+})
+
+describe('parseImageCodeEntries', () => {
+  // 原有用法必须照旧可用：占位符一直写着「空格分隔可粘多个」
+  it('空格分隔的纯编码仍各自成条，不带图名', () => {
+    expect(parseImageCodeEntries('ab12cd.png xy34zw.webp')).toEqual({
+      entries: [
+        { tag: null, code: 'ab12cd.png' },
+        { tag: null, code: 'xy34zw.webp' },
+      ],
+      invalid: [],
+    })
+  })
+
+  it('「图名 编码」取图名，编码是最后一个分词', () => {
+    expect(parseImageCodeEntries('微笑 ab12cd.png')).toEqual({
+      entries: [{ tag: '微笑', code: 'ab12cd.png' }],
+      invalid: [],
+    })
+  })
+
+  it('连写的「图名编码」按末尾文件名切开', () => {
+    expect(parseImageCodeEntries('微笑ab12cd.png')).toEqual({
+      entries: [{ tag: '微笑', code: 'ab12cd.png' }],
+      invalid: [],
+    })
+  })
+
+  it('削掉图名与编码之间的连接符', () => {
+    expect(parseImageCodeEntries('微笑 - ab12cd.png\n生气-xy34zw.webp')).toEqual({
+      entries: [
+        { tag: '微笑', code: 'ab12cd.png' },
+        { tag: '生气', code: 'xy34zw.webp' },
+      ],
+      invalid: [],
+    })
+  })
+
+  it('换行与中英文标点都能分条，图名可含空格', () => {
+    expect(parseImageCodeEntries('侧身 微笑 ab12cd.png，生气 xy34zw.webp；散步 q1.gif')).toEqual({
+      entries: [
+        { tag: '侧身 微笑', code: 'ab12cd.png' },
+        { tag: '生气', code: 'xy34zw.webp' },
+        { tag: '散步', code: 'q1.gif' },
+      ],
+      invalid: [],
+    })
+  })
+
+  // 认不出就原样报回去，不猜：猜错会静默建出一张指向错地址的立绘
+  it('认不出编码的片段进 invalid 且不产出条目', () => {
+    expect(parseImageCodeEntries('微笑.png\n没有编码')).toEqual({
+      entries: [],
+      invalid: ['微笑.png', '没有编码'],
+    })
+  })
+
+  it('路径穿越形状的编码被拒', () => {
+    expect(parseImageCodeEntries('微笑 ../etc/passwd')).toEqual({
+      entries: [],
+      invalid: ['微笑 ../etc/passwd'],
+    })
+  })
+
+  it('空输入不产出任何东西', () => {
+    expect(parseImageCodeEntries('   \n , ；')).toEqual({ entries: [], invalid: [] })
   })
 })
 

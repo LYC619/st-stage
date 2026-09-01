@@ -32,6 +32,73 @@ export function extractImageCode(url: string): string | null {
   return isValidImageCode(seg) ? seg : null
 }
 
+/** 「按编码添加」解析出的一条：tag 为 null 表示没给图名，由调用方回退到编码名。 */
+export interface ImageCodeEntry {
+  tag: string | null
+  code: string
+}
+
+export interface ImageCodeParseResult {
+  entries: ImageCodeEntry[]
+  /** 认不出编码的片段，原样回给用户看 */
+  invalid: string[]
+}
+
+/** 条目分隔符：换行与标点。**不含空格**——空格要留给「图名 编码」这种写法。 */
+const ENTRY_SEPARATORS = /[\n\r,，;；|、]+/
+/** 末尾像文件名的一段：用于把「微笑ab12cd.png」这种连写切开。 */
+const TRAILING_FILENAME = /^(.*?)([0-9A-Za-z][0-9A-Za-z._-]*\.[0-9A-Za-z]{1,8})$/
+
+/**
+ * 解析「按编码添加」的输入，支持「图名+编号」并把编号提取出来。
+ *
+ * 起因：不少世界书作者把图片命名成「图名+编号」方便 AI 认，再用正则把编号抽出来拼地址。
+ * 原来这里要求每一段都是纯编码，粘进「微笑 ab12cd.png」会因为「微笑」不合格而整批拒绝。
+ *
+ * 三种写法都认，判定顺序是固定的，避免歧义：
+ * 1. 一段里所有空格分词都是合法编码 → 各自成条，都不带图名。
+ *    这条排在最前面是为了兼容原有用法：占位符一直写着「空格分隔可粘多个」。
+ * 2. 最后一个分词是合法编码 → 它是编码，前面全部当图名（「微笑 ab12cd.png」）。
+ * 3. 整段结尾能切出一个像文件名的后缀 → 切开（「微笑ab12cd.png」这种连写）。
+ * 都不匹配的进 invalid，原样报给用户，不猜。
+ *
+ * 图名只做原样返回，规范化（normalizeTag）交给调用方，本模块不碰命名规则。
+ */
+export function parseImageCodeEntries(raw: string): ImageCodeParseResult {
+  const entries: ImageCodeEntry[] = []
+  const invalid: string[] = []
+
+  for (const chunk of raw.split(ENTRY_SEPARATORS)) {
+    const entry = chunk.trim()
+    if (!entry) continue
+    const tokens = entry.split(/\s+/).filter(Boolean)
+
+    if (tokens.every((token) => isValidImageCode(token))) {
+      for (const token of tokens) entries.push({ tag: null, code: token })
+      continue
+    }
+
+    const last = tokens[tokens.length - 1]
+    if (tokens.length > 1 && isValidImageCode(last)) {
+      // 图名允许含空格，所以前面的分词整体拼回去；顺带削掉「微笑 - ab12cd.png」的连接符
+      const name = tokens.slice(0, -1).join(' ').replace(/[\s\-–—=:：]+$/, '').trim()
+      entries.push({ tag: name || null, code: last })
+      continue
+    }
+
+    const match = TRAILING_FILENAME.exec(entry)
+    if (match && isValidImageCode(match[2])) {
+      const name = match[1].replace(/[\s\-–—=:：]+$/, '').trim()
+      entries.push({ tag: name || null, code: match[2] })
+      continue
+    }
+
+    invalid.push(entry)
+  }
+
+  return { entries, invalid }
+}
+
 export interface ShareEncodeResult {
   /** 一行分享串 */
   text: string

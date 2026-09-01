@@ -53,7 +53,7 @@ import {
   validatePackMergeChoices,
 } from '../../core/pack-merge'
 import { exportPack, importPack, urlToDataUri } from '../../core/pack-io'
-import { decodeShareString, encodeShareStringV2, isValidImageCode } from '../../core/share-code'
+import { decodeShareString, encodeShareStringV2, parseImageCodeEntries } from '../../core/share-code'
 import {
   normalizeTag,
   parseSpriteFileName,
@@ -1553,16 +1553,15 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           const codeInput = document.createElement('textarea')
           codeInput.className = 'text_pole'
           codeInput.rows = 3
-          codeInput.placeholder = '粘贴编码，可多个（空格/逗号/换行分隔）'
+          codeInput.placeholder = '粘贴编码，或「图名 编码」，可多个（空格/逗号/换行分隔）'
           const codeBtn = button('添加', () => {
-            const codes = codeInput.value.split(/[\s,，、;；|]+/).filter(Boolean)
-            if (codes.length === 0) {
-              toast(body, '请填写图床编码，如 ab12cd.png（可一次粘贴多个）')
+            const { entries, invalid } = parseImageCodeEntries(codeInput.value)
+            if (entries.length === 0 && invalid.length === 0) {
+              toast(body, '请填写图床编码，如 ab12cd.png，或「微笑 ab12cd.png」（可一次粘贴多个）')
               return
             }
-            const bad = codes.filter((c) => !isValidImageCode(c))
-            if (bad.length > 0) {
-              toast(body, `编码格式不对：${bad.slice(0, 3).join('、')}${bad.length > 3 ? ' 等' : ''}`)
+            if (invalid.length > 0) {
+              toast(body, `认不出编码：${invalid.slice(0, 3).join('、')}${invalid.length > 3 ? ' 等' : ''}`)
               return
             }
             const current = deps.getSettings()
@@ -1571,17 +1570,29 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
             const host = current.imageHost.endsWith('/') ? current.imageHost : `${current.imageHost}/`
             let next = target
             let added = 0
-            for (const code of codes) {
-              const tag = normalizeTag(code.replace(/\.[^.]+$/, ''))
+            let named = 0
+            for (const entry of entries) {
+              // 给了图名就用图名，没给才回退到编码名（编码通常是随机串，当图名没有意义）
+              const fromName = entry.tag ? normalizeTag(entry.tag) : ''
+              const tag = fromName || normalizeTag(entry.code.replace(/\.[^.]+$/, ''))
               if (!tag) continue
-              next = upsertSprite(next, { tag, url: host + code, code })
+              if (fromName) named++
+              next = upsertSprite(next, { tag, url: host + entry.code, code: entry.code })
               added++
             }
             commitPack(next)
-            toast(body, `已按编码添加 ${added} 张（图名取编码名，可在图卡上改名）`)
+            toast(
+              body,
+              named > 0
+                ? `已添加 ${added} 张，其中 ${named} 张用了你给的图名`
+                : `已按编码添加 ${added} 张（图名取编码名，可在图卡上改名）`,
+            )
           })
           const codeHint = el('div', 'so-status')
-          codeHint.textContent = `编码拼接图床前缀 ${deps.getSettings().imageHost} 成直链，图名自动取编码名；改名/分组用图卡上的 ✎ / 🏷。`
+          codeHint.textContent =
+            `编码拼接图床前缀 ${deps.getSettings().imageHost} 成直链。`
+            + '写「微笑 ab12cd.png」就用「微笑」当图名，连写「微笑ab12cd.png」也认；'
+            + '只给编码时图名取编码名。改名/分组用图卡上的 ✎ / 🏷。'
           panel.append(upHeading, upBtn, upHint, codeHeading, codeInput, codeBtn, codeHint)
         }),
       )
