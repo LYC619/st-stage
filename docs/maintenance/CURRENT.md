@@ -250,8 +250,8 @@ Evidence for the current build stamp `0.9.0+202609011401`:
   - `version.json`: `FDF609F5A17C0FB71D19302FEC9B2F0C15F761B610487FECF62F82D943BEBC3B`
   - `st-distribution/README.md`: `83041F395050B9B41C915221177AA9EA33433321B79C719994554F36734D5F3F`
 - Only `index.js` is byte-identical to the published `202608302113` copy. `manifest.json` and `style.css` moved for the first time in three rounds — the manifest because `display_name` changed, the stylesheet because its header comment carries the product name and the modal/Butler CSS fixes landed in it — alongside `bundle.js`, `version.json`, and `README.md`. `index.js` holding still is the correct shape: the loader stub is deliberately version-agnostic so a browser-cached copy stays valid.
-- Distribution boundary: `st-distribution/` holds exactly `bundle.js`, `index.js`, `manifest.json`, `README.md`, `style.css`, `version.json` — six files, 900,159 bytes. The clone's root additionally holds its own `.gitattributes`, which is correct and must not be deleted.
-- The bundle shrank from 903,590 to 900,159 bytes across this round, which is the expected direction: the checkerboard removal deleted more code than the rename and the three fixes added.
+- Distribution boundary: `st-distribution/` holds exactly `bundle.js`, `index.js`, `manifest.json`, `README.md`, `style.css`, `version.json` — six files, 900,088 bytes, of which `bundle.js` is 814,259 and `style.css` is 82,381. The clone's root additionally holds its own `.gitattributes`, which is correct and must not be deleted. Measured identically in `st-distribution/` and in the clone.
+- The six-file set shrank from 903,549 to 900,088 bytes across this round, 3,461 fewer, which is the expected direction: the checkerboard removal deleted more code than the rename and the three fixes added.
 - `manifest.json` verified field by field: `display_name` `百工`, `version` `0.9.0`, `homePage` `https://github.com/LYC619/st-stage-ext`, `auto_update: true`, `js`/`css` naming the two files ST loads. Identical across root, `st-distribution/`, and the clone, UTF-8 with no BOM.
 - Dead-code and copy audits were run by throwaway scripts over all 100 non-test source files and 2,046 Chinese-bearing string literals, then deleted. The copy scan's other 43 hits were all false positives on inspection: dot-notation variable paths (`时间.日期`), `)` inside `${…}` interpolations, one deliberate ideographic space used as a full-width separator, and `！！` in web-simulator sample dialogue. Remaining never-imported exports are `Deps`/type interfaces used for structural typing and Next.js framework conventions (`metadata`, `viewport`), not dead code.
 - The install-directory-name invariant is **no `st-stage` in user-visible copy**, not none anywhere. Searching the literal across non-test source still returns about twenty correct hits: `[st-stage]` console prefixes, the renderer CSS classes and `data-st-stage-style` attribute, `FALLBACK_DIRECTORY_NAME`, the `build.mjs` stub fallback, and two live state keys that must never be renamed — the ST prompt slot key `st-stage::<channel>` (`st-adapter.ts`) and `st-stage:butler:extension-recovery:v1` (`experiments.ts`), where a rename would orphan an injected prompt and a stranded-run recovery record respectively. Filter to strings that reach the UI before drawing conclusions from the hit count.
@@ -282,7 +282,7 @@ Evidence retained from the previous stamp `0.9.0+202608302113`:
 - The published repository was inspected directly rather than assumed: at the time, one commit, fresh history with no development ancestry, clean worktree, in sync with its `origin/main`, `.gitattributes` present pinning `*.js`/`*.css`/`*.json` to `eol=lf`, and exactly the six files plus that `.gitattributes` at the root. `*.md` was missing from that list and was added later in dist `5842b24`. It now carries three commits (`25809d9`, `01112ac`, `5842b24`), still linear and still without development ancestry.
 - The runtime identity derivation was verified against the **built artifact**, not only the source: `import.meta.url` survives esbuild verbatim into `bundle.js`, and the shipped derivation returns the correct directory for renamed installs, non-default ports, and mixed-case names, while falling back for a non-ST layout. The throwaway checker was deleted afterwards.
 - Both rename regression tests were mutation-checked: restoring the old `name === 'st-stage'` literal makes both fail. One of them was vacuous on first write — the fake's `findExtension` did not know the name under test, so the call returned `not-found` and never reached the self-check. It now asserts the disable actually goes through.
-- Distribution boundary re-checked: `st-distribution/` contains exactly `bundle.js`, `index.js`, `manifest.json`, `README.md`, `style.css`, `version.json` — six files, 882 KB (903,499 bytes), with no images, `public/`, `reference/`, or preset source.
+- Distribution boundary re-checked: `st-distribution/` contains exactly the six files listed above and nothing else — no images, no `public/`, no `reference/`, no preset source. Byte total is recorded once, above, rather than repeated here where it would go stale.
 - Artifact hashes are reproducible on any checkout: the build normalizes generated files to LF and `.gitattributes` pins the release artifacts to `eol=lf`. Re-hashing a fresh checkout reproduces the values above.
 - The install-URL and distribution-README rewrite (`0e6352c`) was gated on its own: Vitest 964/964, typecheck, ESLint, Next build, and `git diff --check` all passed, and a rebuild at the same fixed stamp left the five functional artifacts byte-identical to `838c2af`. `st-distribution/README.md` was the only artifact that changed, hash `F32B5F76084D…` against the published `D8FA59C2058E…`.
 - The reordered action pack the reporter is preparing for community sharing was verified through the real decoder rather than by inspection: `decodeShareString` returns 271 sprites, the segment multiset is unchanged from the original, every group prefix resolved against the intensity order table with none left unranked, and the cover tag now sorts first. That file lives in `reference/`, which is git-ignored and never copied into the distribution repository — the verification was run from a throwaway test that was deleted afterwards.
@@ -432,14 +432,14 @@ Exactly the six files generated in `st-distribution/`, at the repository **root*
 
 | File | Size | Purpose |
 | --- | --- | --- |
-| `manifest.json` | 259 B | What ST reads first; declares `index.js` and `style.css` |
+| `manifest.json` | 256 B | What ST reads first; declares `index.js` and `style.css` |
 | `index.js` | 1.9 KB | Byte-stable loader stub; resolves its own base URL, then version-busts the rest |
-| `bundle.js` | 801 KB | All extension code, single ESM file |
-| `style.css` | 78 KB | Extension styles plus the shared phone shell |
+| `bundle.js` | 795 KB | All extension code, single ESM file |
+| `style.css` | 80 KB | Extension styles plus the shared phone shell |
 | `version.json` | 27 B | Read with `cache: no-store`; supplies the `?v=` cache-busting parameter |
 | `README.md` | 1.2 KB | The distribution repository's front page: what the extension is, how to install it, and where the source lives. Generated from `st-extension/distribution-readme.md` — edit that, not the output |
 
-Total 882 KB (903,499 bytes). Regenerate with a fixed stamp so the bytes are reproducible:
+Total 879 KB (900,088 bytes) at stamp `0.9.0+202609011401`. Regenerate with a fixed stamp so the bytes are reproducible:
 
 ```
 ST_STAGE_BUILD_TIME="YYYY-MM-DD HH:MM" pnpm build:st
