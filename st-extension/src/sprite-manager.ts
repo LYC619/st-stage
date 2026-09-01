@@ -87,13 +87,12 @@ import {
 } from '../../core/sprite-metadata'
 import type { STAdapter } from './st-adapter'
 import {
-  createCheckerboardAction,
   createSpriteActions,
   type SpriteAction,
   type SpriteActionContext,
 } from './sprite-actions'
 import { openSpriteLightbox, type SpriteLightboxController } from './sprite-lightbox'
-import { cleanAndLocalizeSprite, localizeSprite } from './sprite-localize'
+import { localizeSprite } from './sprite-localize'
 
 export interface ManagerDeps {
   adapter: STAdapter
@@ -2173,57 +2172,24 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         if (!pack || !latest || latest.url !== source.url) {
           throw new Error('立绘在保存期间已发生变化，请重试')
         }
-        commitActionPack(upsertSprite(pack, {
-          ...latest,
-          url: localized.url,
-          remoteUrl: localized.remoteUrl,
-        }))
-        context.refresh()
-        toast(currentManagerBody(), `已将「${source.tag}」保存到本地`)
-      },
-      cleanCheckerboard: async (source) => {
-        const identity = {
-          tag: source.tag,
-          group: spriteGroup(source),
-          outfit: source.outfit ?? '',
-        }
-        const cleaned = await cleanAndLocalizeSprite(source, `${source.tag}-transparent.png`, {
-          fetch: window.fetch.bind(window),
-          confirmSave: (removedPixels) => window.confirm(
-            `检测到 ${removedPixels} 个可安全去除的背景像素。\n\n要保存为新的透明 PNG 吗？原远程地址仍会保留。`,
-          ),
-          saveImage: (file, fileName) => deps.adapter.saveImageFile(
-            file,
-            fileName,
-            deps.adapter.getCurrentCharacterName() || getPack()?.name || 'shared',
-          ),
-        })
-        const latestSettings = deps.getSettings()
-        const latestPack = latestSettings.packs.find((candidate) => candidate.id === packId)
-        const latest = latestPack?.sprites.find((candidate) =>
-          candidate.tag === identity.tag &&
-          spriteGroup(candidate) === identity.group &&
-          (candidate.outfit ?? '') === identity.outfit,
-        )
-        if (!latestPack || !latest || latest.url !== source.url) {
-          throw new Error('立绘在清理期间已发生变化，请重试')
-        }
+        // 预设包是只读的，改不了 sprites 本身，只能记一条同 ID 覆盖：
+        // 这是「本地化预设立绘」唯一的落地方式，去掉棋盘格功能时必须保住这条路。
         if (isPresetPack(packId)) {
           deps.updateSettings(setPresetLocalSprite(
-            latestSettings,
+            deps.getSettings(),
             packId,
             latest,
-            cleaned.sprite.url,
+            localized.url,
           ))
         } else {
-          commitActionPack(upsertSprite(latestPack, {
+          commitActionPack(upsertSprite(pack, {
             ...latest,
-            url: cleaned.sprite.url,
-            ...(cleaned.sprite.remoteUrl ? { remoteUrl: cleaned.sprite.remoteUrl } : {}),
+            url: localized.url,
+            remoteUrl: localized.remoteUrl,
           }))
         }
         context.refresh()
-        toast(currentManagerBody(), `已去除 ${cleaned.removedPixels} 个背景像素，并保存为透明 PNG`)
+        toast(currentManagerBody(), `已将「${source.tag}」保存到本地`)
       },
       refresh: () => {
         render()
@@ -2249,17 +2215,20 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     }))
   }
 
+  /**
+   * 预设包（只读）图片详情里可用的操作。
+   *
+   * 只放 allowedInReadonly 的那些：预设的 sprites 不可改写，能做的是记一条同 ID 本地覆盖。
+   */
   function presetLightboxActions(state: ActiveLightbox): SpriteAction[] {
     const context = actionContext(
       state.packId,
       (pack) => pack.sprites[state.index] ?? null,
       () => state.controller?.close(),
     )
-    const action = createCheckerboardAction(context)
-    return [{
-      ...action,
-      run: () => runSpriteAction(action),
-    }]
+    return createSpriteActions(context)
+      .filter((action) => action.allowedInReadonly)
+      .map((action) => ({ ...action, run: () => runSpriteAction(action) }))
   }
 
   function renderSpriteCell(

@@ -52,20 +52,40 @@ export function galleryApp(deps: GalleryAppDeps): PhoneApp {
       }
       container.append(list)
 
-      // 图床设置：两条通道并存，界面上明确区分（用户实测反馈有割裂感）
+      /*
+       * 图床设置：两条通道并存。
+       *
+       * 实测反馈：第一次用的人看不懂为什么有两个图床、自己该配哪个。原来的文案只标了
+       * 「①自动直传」「②手动编码通道」，说的是机制，没说清两者的分工——真正的区别是
+       * **一个负责把你的图传上去，一个负责把别人的编号还原成地址**，多数人只需要其中一个。
+       * 所以这里先用一句话让人对号入座，再展开每条通道。
+       */
       const hostSection = el('div', 'so-app-section')
       const hostTitle = el('div', 'so-app-title')
-      hostTitle.textContent = '图床（两条通道，互不影响）'
+      hostTitle.textContent = '图床'
       hostSection.append(hostTitle)
+
+      const hostIntro = el('div', 'so-app-desc')
+      hostIntro.textContent =
+        '两条通道各管一件事，按需要配，不用都配：'
+        + '要把自己的图变成能分享的链接 → 配 ①；'
+        + '只是想用别人给的图包/编号 → 什么都不用配，② 已有默认值。'
+      hostSection.append(hostIntro)
 
       const autoDesc = el('div', 'so-app-desc')
       autoDesc.textContent =
-        '① 自动直传（imgbb）：上传/替换图片时自动传 imgbb 并绑定编号，本地图保留作显示保底，直链用于分享串。'
+        '① 自动直传（imgbb，需要 Key）：上传/替换图片时自动传到 imgbb 并绑定编号，'
+        + '本地图保留作显示保底，直链用于分享串。别人才能看到你分享的图，靠的是这条。'
+      const autoWhy = el('div', 'so-app-desc')
+      autoWhy.textContent =
+        '为什么是 imgbb 而不是 catbox：浏览器里只能传 imgbb。catbox 的接口不返回 CORS 头，'
+        + '网页无法直接上传，所以它只能用在下面那条「按编号还原地址」的通道上。'
       const hint = el('div', 'so-app-desc')
       hint.textContent =
         'Key 明文保存在 ST 扩展设置里（随 ST 服务端 settings.json 落盘），不会写入分享串或导出文件；上传失败时图片仍保留本地，可稍后补传。'
       hostSection.append(
         autoDesc,
+        autoWhy,
         textRow(
           'imgbb API Key（存 ST 设置，明文）',
           settings.imgbbApiKey,
@@ -87,9 +107,14 @@ export function galleryApp(deps: GalleryAppDeps): PhoneApp {
 
       const manualDesc = el('div', 'so-app-desc')
       manualDesc.textContent =
-        '② 手动编码通道：「按编码添加」和分享串/插图编码解析时，用下面前缀拼接完整地址（默认 catbox）。'
+        '② 按编号还原地址（默认 catbox，不需要 Key）：「按编码添加」以及解析分享串和插图编码时，'
+        + '把编号接在下面这个前缀后面拼成完整地址。它只读不写，不会上传任何东西。'
+      const manualWhen = el('div', 'so-app-desc')
+      manualWhen.textContent =
+        '只有当对方的图不在 catbox 上时才需要改前缀——改成他们用的图床域名即可。'
       hostSection.append(
         manualDesc,
+        manualWhen,
         textRow('图床前缀', settings.imageHost, DEFAULT_IMAGE_HOST, (raw) => {
           const v = raw.trim() || DEFAULT_IMAGE_HOST
           const value = /^https?:\/\/.+/.test(v) ? (v.endsWith('/') ? v : `${v}/`) : DEFAULT_IMAGE_HOST

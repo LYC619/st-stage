@@ -9,7 +9,6 @@ export interface SpriteActionContext {
   commit(pack: SpritePack): void
   pickReplacement(): void
   localize(sprite: Sprite): Promise<void>
-  cleanCheckerboard(sprite: Sprite): Promise<void>
   refresh(): void
   close(): void
 }
@@ -37,27 +36,6 @@ function commitAndRefresh(context: SpriteActionContext, pack: SpritePack): void 
     context.commit(pack)
   } finally {
     context.refresh()
-  }
-}
-
-export const CHECKERBOARD_HINT =
-  '检测并去除棋盘格：只适用于「棋盘格被烤成不透明像素」的图片，' +
-  '要求四边连通且是两级浅灰交替的方格。已带透明通道的图不需要处理，' +
-  '纯色/深色/彩色背景会被拒绝，以免误删画面内容。'
-
-export function createCheckerboardAction(context: SpriteActionContext): SpriteAction {
-  return {
-    id: 'checkerboard',
-    label: '检测并去除棋盘格',
-    hint: CHECKERBOARD_HINT,
-    icon: '▦',
-    destructive: false,
-    allowedInReadonly: true,
-    async run() {
-      const state = current(context)
-      if (!state) return
-      await context.cleanCheckerboard(state.sprite)
-    },
   }
 }
 
@@ -129,11 +107,15 @@ export function createSpriteActions(context: SpriteActionContext): SpriteAction[
         context.pickReplacement()
       },
     },
-    createCheckerboardAction(context),
     {
       id: 'localize',
       label: '保存到本地',
       icon: '↓',
+      hint: '把图床上的图片下载成本地文件再引用，之后不再依赖外链。'
+        + '预设包不会被改写，只记一条同 ID 的本地覆盖，随时可以删掉回到原图。',
+      // 预设包只读，但本地化是记覆盖而不是改包，所以只读态下也应当放行——
+      // 这是预设立绘唯一的本地化入口。
+      allowedInReadonly: true,
       disabled: !source || getSpriteSource(source) !== 'hosted',
       async run() {
         const state = current(context)

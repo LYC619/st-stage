@@ -312,6 +312,44 @@ async function expectInsideViewport(page: Page, selector: string): Promise<void>
   }, { message: `${selector} should stay inside the viewport` }).toBe(true)
 }
 
+/**
+ * 断言容器内每个带文字的控件都能完整显示自己的文字。
+ *
+ * expectInsideViewport 只保证容器落在视口里，管不到里面的按钮有没有被压窄——
+ * 容器规规矩矩，按钮文字却被裁掉，这正是移动端实测反馈「很多按钮被挤得字看不全」的形态。
+ * 判据是 scrollWidth > clientWidth：内容比可见宽度宽，就是被裁了。
+ */
+async function expectLabelsNotTruncated(page: Page, rootSelector: string): Promise<void> {
+  const truncated = await page.locator(rootSelector).evaluate((root) => {
+    const nodes = [...root.querySelectorAll<HTMLElement>('[role="button"], button, summary, .so-app-btn, .so-icon-btn')]
+    return nodes
+      .filter((node) => {
+        const style = getComputedStyle(node)
+        if (style.visibility === 'hidden' || style.display === 'none') return false
+        /*
+         * 只量「自己直接写着字」的元素。
+         *
+         * 否则会误判复合容器：.so-role-pack-stack 的叠层卡片效果靠
+         * transform: translate(14px, 14px) 实现，并用同宽的 margin-right 留位，
+         * 它的 scrollWidth 天然比 clientWidth 大 14px——那是装饰，不是文字被裁。
+         */
+        const ownText = [...node.childNodes]
+          .filter((child) => child.nodeType === Node.TEXT_NODE)
+          .map((child) => child.textContent?.trim() ?? '')
+          .join('')
+        if (!ownText) return false
+        // 2px 容差：亚像素取整和 1px 边框都可能造成假阳性
+        return node.scrollWidth > node.clientWidth + 2
+      })
+      .map((node) => ({
+        label: node.textContent?.trim().slice(0, 40) ?? '',
+        clientWidth: node.clientWidth,
+        scrollWidth: node.scrollWidth,
+      }))
+  })
+  expect(truncated, `${rootSelector} 内有按钮文字被裁切`).toEqual([])
+}
+
 async function expectLightboxLayout(page: Page): Promise<void> {
   await expectInsideViewport(page, '.so-lightbox')
   await expectInsideViewport(page, '.so-lightbox-image')
@@ -469,6 +507,8 @@ test('真实图库在横竖屏中保持可操作，并支持角色折叠与搜�
   })
   await openRealGalleryManager(page)
   await expectInsideViewport(page, '.so-manager')
+  // 容器不出界不代表按钮读得出来：实测反馈是按钮文字被挤掉，这条才管得到
+  await expectLabelsNotTruncated(page, '.so-manager')
 
   const roleStack = page.locator('.so-role-pack-stack', { hasText: '小雪' })
   await expect(roleStack).toContainText('2 个图包')

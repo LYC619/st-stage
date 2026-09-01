@@ -13,7 +13,6 @@ import { MAX_NOTE_CODE_POINTS } from '../../core/sprite-metadata'
 
 const imageMocks = vi.hoisted(() => ({
   compressImage: vi.fn(),
-  cleanCheckerboardImage: vi.fn(),
 }))
 const imgbbMocks = vi.hoisted(() => ({ uploadToImgbb: vi.fn() }))
 
@@ -22,7 +21,6 @@ vi.mock('../../core/image-compress', async (importOriginal) => {
   return {
     ...actual,
     compressImage: imageMocks.compressImage,
-    cleanCheckerboardImage: imageMocks.cleanCheckerboardImage,
   }
 })
 
@@ -257,7 +255,6 @@ describe('createSpriteManager binding conflict UI', () => {
       '#标签',
       '🏷设分组',
       '🖼重新上传 / 替换图片',
-      '▦检测并去除棋盘格',
       '↓保存到本地',
       '🔗远程地址',
       '★设为封面',
@@ -480,17 +477,19 @@ describe('createSpriteManager binding conflict UI', () => {
     manager.close()
   })
 
-  it('exposes only checkerboard cleanup for readonly packs', () => {
+  it('exposes only local save for readonly packs', () => {
     const { manager } = openActionGallery(['只读'], 'preset_silver_loli')
     document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
 
     expect(document.querySelectorAll('.so-sprite-actions')).toHaveLength(0)
     expect([...document.querySelectorAll<HTMLElement>('.so-lightbox [data-action-id]')]
-      .map((item) => item.dataset.actionId)).toEqual(['checkerboard'])
+      .map((item) => item.dataset.actionId)).toEqual(['localize'])
     manager.close()
   })
 
-  it('cleans a preset sprite only after confirmation and persists a same-id local override', async () => {
+  // 预设包只读，本地化必须落成同 ID 覆盖而不是改写 packs：
+  // 这是预设立绘唯一的本地化路径，2026-09-01 去掉棋盘格功能时特意保留。
+  it('localizes a preset sprite as a same-id override instead of rewriting the pack', async () => {
     const builtIn = getPresetPacks()[0]
     const source = builtIn.sprites[0]
     let settings: PluginSettings = {
@@ -501,15 +500,15 @@ describe('createSpriteManager binding conflict UI', () => {
       ok: true,
       status: 200,
       headers: { get: () => null },
-      blob: async () => new Blob(['checkerboard'], { type: 'image/png' }),
+      blob: async () => new Blob(['remote'], { type: 'image/webp' }),
     })
     vi.stubGlobal('fetch', fetchImage)
-    imageMocks.cleanCheckerboardImage.mockResolvedValue({
-      blob: new Blob(['transparent'], { type: 'image/png' }),
-      removedPixels: 321,
+    imageMocks.compressImage.mockResolvedValue({
+      dataUri: 'data:image/webp;base64,AA==',
+      compressed: true,
+      bytes: 2,
     })
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    const saveImageFile = vi.fn().mockResolvedValue('/user/images/seraphina/clean.png')
+    const saveImageFile = vi.fn().mockResolvedValue('/user/images/seraphina/local.webp')
     const manager = createSpriteManager({
       adapter: { getCurrentCharacterName: () => '塞拉菲娜', saveImageFile } as unknown as STAdapter,
       getSettings: () => settings,
@@ -520,25 +519,18 @@ describe('createSpriteManager binding conflict UI', () => {
     document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
 
     expect(fetchImage).not.toHaveBeenCalled()
-    document.querySelector<HTMLElement>('[data-action-id="checkerboard"]')!.click()
+    document.querySelector<HTMLElement>('[data-action-id="localize"]')!.click()
     await vi.waitFor(() => expect(saveImageFile).toHaveBeenCalledOnce())
 
     expect(fetchImage).toHaveBeenCalledWith(source.url, expect.anything())
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('检测到 321 个可安全去除的背景像素'))
     expect(settings.packs).toHaveLength(1)
     expect(settings.packs[0].id).toBe(builtIn.id)
-    expect(settings.packs[0].sprites[0]).toMatchObject({
-      tag: source.tag,
-      url: '/user/images/seraphina/clean.png',
-      remoteUrl: source.url,
-    })
     expect(settings.presetOverrides[builtIn.id]?.localSprites?.[presetSpriteKey(source)])
-      .toBe('/user/images/seraphina/clean.png')
-    expect(document.querySelector('.so-toast')?.textContent).toContain('已去除 321 个背景像素')
+      .toBe('/user/images/seraphina/local.webp')
     manager.close()
   })
 
-  it('keeps preset settings unchanged when checkerboard cleanup fails', async () => {
+  it('keeps preset settings unchanged when localizing a preset sprite fails', async () => {
     const builtIn = getPresetPacks()[0]
     const source = builtIn.sprites[0]
     let settings: PluginSettings = {
@@ -546,14 +538,7 @@ describe('createSpriteManager binding conflict UI', () => {
       packs: [{ ...builtIn, sprites: [source] }],
     }
     const before = structuredClone(settings)
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      headers: { get: () => null },
-      blob: async () => new Blob(['opaque'], { type: 'image/png' }),
-    }))
-    imageMocks.cleanCheckerboardImage.mockRejectedValue(new Error('没有确认到可安全去除的棋盘格背景'))
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('CORS blocked') }))
     const saveImageFile = vi.fn()
     const manager = createSpriteManager({
       adapter: { getCurrentCharacterName: () => '塞拉菲娜', saveImageFile } as unknown as STAdapter,
@@ -564,12 +549,11 @@ describe('createSpriteManager binding conflict UI', () => {
     document.querySelector<HTMLElement>('.so-pack-card')!.click()
     document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
 
-    document.querySelector<HTMLElement>('[data-action-id="checkerboard"]')!.click()
+    document.querySelector<HTMLElement>('[data-action-id="localize"]')!.click()
     await vi.waitFor(() => expect(document.querySelector('.so-toast')?.textContent)
-      .toContain('没有确认到可安全去除的棋盘格背景'))
+      .toContain('下载远程图片失败'))
 
     expect(saveImageFile).not.toHaveBeenCalled()
-    expect(confirm).not.toHaveBeenCalled()
     expect(settings).toEqual(before)
     manager.close()
   })
@@ -1787,7 +1771,7 @@ describe('createSpriteManager selected-pack resource actions', () => {
     document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
     expect(document.querySelectorAll('.so-sprite-actions')).toHaveLength(0)
     expect([...document.querySelectorAll<HTMLElement>('.so-lightbox [data-action-id]')]
-      .map((item) => item.dataset.actionId)).toEqual(['checkerboard'])
+      .map((item) => item.dataset.actionId)).toEqual(['localize'])
     manager.close()
   })
 

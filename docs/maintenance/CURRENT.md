@@ -92,15 +92,33 @@ is delivered in `fa42020`. The eight are recorded here with their nature, becaus
 same kind of item and should not be treated as one queue: three are defects with one correct
 behavior, four are features, and one is a question.
 
+**The mobile E2E harness cannot see ST-styled layout defects.** Worth stating before the findings,
+because it explains why two reported layout bugs have no failing test. `e2e/` builds a minimal ST
+DOM and loads only `st-extension/style.css` plus `core/phone-shell.css` — **SillyTavern's own
+stylesheet is never loaded**. The extension reuses ST's `menu_button` class, so any squeeze caused
+by ST's own padding or font-size is structurally invisible to the suite. Emulated viewports also
+have no browser chrome (so `100vh` equals `innerHeight`, unlike a real phone) and use the host's
+fonts rather than a device's CJK metrics. Findings 5 and 6 both live in that blind spot.
+
 **Defects — clear correct behavior, no design decision needed.**
 
 1. *(finding 6)* Butler modal overflows the viewport on mobile. Tapping 查看结果 renders the modal
    so only its lower half is visible in the upper screen region; the close button is unreachable
    and the only recovery is reloading SillyTavern. This is the most severe of the eight — it strands
    the user.
-2. *(finding 5, first part)* Gallery manager is not adapted for mobile: button labels are squeezed
-   until unreadable. Related to the CJK `min-content` hazard already recorded — Chinese breaks
-   between any two characters, so an `auto` track collapses to one character's width.
+2. *(finding 5, first part)* Gallery manager button labels squeezed until unreadable on mobile.
+   **Not reproduced, and not confirmed fixed.** Measured every control in `.so-manager` at 390px
+   and 360px: all buttons already carry `white-space: nowrap` with `width: max-content` and
+   `flex-shrink: 0`, from the earlier tag-manager fix at `st-extension/style.css:565`, and none
+   clipped or wrapped. The two hits an automated sweep did report were false positives — the
+   `.so-role-pack-stack` layered-card look uses `transform: translate(14px, 14px)` with a matching
+   `margin-right`, so its `scrollWidth` legitimately exceeds `clientWidth`.
+   What was found and fixed is a real instance of the same hazard elsewhere: `.so-butler-actions`
+   was a hard `repeat(2, minmax(0, 1fr))` grid whose tracks could collapse to zero, with buttons
+   given `min-width: 0` *and* `white-space: normal` — the exact pair that lets a CJK label fold to
+   one character per line. Now `repeat(auto-fit, minmax(9em, 1fr))`, so it drops to a single column
+   instead of crushing two. That is in Butler, not the gallery, so it may or may not be what was
+   seen. A screenshot naming the specific buttons would settle it in one step.
 3. *(finding 8)* Selecting a character in the export app auto-checks its linked worldbook, which is
    correct; deselecting the character leaves the worldbook checked. The user then exports a
    worldbook for a character they removed.
@@ -113,10 +131,27 @@ behavior, four are features, and one is a question.
    not fit their images.
 5. *(finding 4)* Catbox import should accept 图名+编号 and extract the number. Several worldbook
    authors name images that way so the model can identify them, then pull the number out by regex.
-6. *(finding 5, remainder)* Remove the checkerboard detector. Rewrite the imgbb-versus-catbox
-   explanation, which currently does not tell a first-time user what the difference is. Lay
-   groundwork for more channels without committing to specific ones — the maintainer still needs to
-   pick hosts that have no aggressive review, need no proxy, and expose an API.
+6. *(finding 5, remainder)* **Done.** The checkerboard detector is removed and the channel copy
+   rewritten.
+   - Removed `core/checkerboard-cleanup.ts`, `cleanCheckerboardImage`, `cleanAndLocalizeSprite`,
+     the action, and its context method. `analyzeImagePixels` stays: it still reports
+     `opaque-checkerboard` so the batch-upload warning survives as a diagnostic. Detection without
+     removal is the right split — the removal path decoded and re-encoded a single-frame PNG, which
+     would have flattened any animated GIF, and its preconditions were narrow enough that most
+     images were refused anyway.
+   - **Preset localization was nearly lost with it.** Localizing a preset sprite records a same-ID
+     override through `setPresetLocalSprite`, and that call lived *only* inside the checkerboard
+     handler; the plain `localize` action committed through `commitActionPack`, which cannot write a
+     read-only preset pack. The checkerboard action was also the only one marked
+     `allowedInReadonly`, so deleting it naively would have left preset image details with no
+     actions at all and silently dropped a delivered capability the reference-sprite plan depends
+     on. `localize` now branches on `isPresetPack` and is marked `allowedInReadonly`.
+   - Channel copy now leads with which channel the reader needs rather than naming mechanisms:
+     configure ① only to make your own images shareable; ② needs nothing configured to consume
+     someone else's codes. It also states the reason there are two — catbox returns no CORS headers,
+     so a browser cannot upload to it at all, which is why it is prefix-only.
+   - Groundwork for more channels was **not** built. Nothing was committed to a specific host, per
+     the finding; ② already accepts any `https://` prefix, which is the extension point.
 
 **Features needing a design decision before implementation.**
 
@@ -128,10 +163,37 @@ behavior, four are features, and one is a question.
 8. *(finding 7)* A floating variable viewer for both variable apps, collapsible to a small handle
    and expanding on click — effectively an external status bar.
 
-**Question.**
+**Question — answered 2026-09-01.**
 
-9. *(finding 3)* Does the current design support built-in GIFs? Worth answering before the
-   maintainer invests in GIF assets.
+9. *(finding 3)* **A user-supplied GIF already works end to end as an animated sprite.** Nothing
+   rejects it and every automatic transform that would flatten it is deliberately guarded.
+   - No format allowlist exists anywhere. File pickers use `image/*`, pack import checks no
+     format, and the image-code regex (`core/share-code.ts:21`) is extension-agnostic.
+   - `compressImage` returns the original untouched for `image/gif`
+     (`core/image-compress.ts:188`), with the same guard on the export re-compression path
+     (`core/image-compress.ts:240`), so export/re-import preserves animation. The comment there
+     already states the intent — this was designed for, not accidental.
+   - The ST save path derives the on-disk extension from the data-URI MIME rather than a list
+     (`st-extension/src/st-adapter.ts:114-121`), so a GIF lands as `.gif`.
+   - Every display site is a plain `<img src>` — overlay, floor sprites, lightbox, renderer
+     modes, gallery grid. Canvas appears only in `core/image-compress.ts` and never in a render
+     path, and there is no thumbnail pipeline, so GIFs animate everywhere they appear.
+   - `core/types.ts` has no `format`/`mimeType` field to exclude GIF from.
+
+   **Built-in preset GIFs are blocked by exactly one line:** `core/presets.test.ts:25` asserts
+   every preset URL matches `/^https:\/\/i\.ibb\.co\/.+\.webp$/`. The preset data structure is
+   format-neutral and the build ships no image bytes, so a `.gif` preset URL would work at
+   runtime — only that assertion has to widen.
+
+   Three caveats worth knowing before committing to GIF assets:
+   - The opt-in checkerboard detector has no GIF guard and would flatten an opaque animated GIF
+     to frame one (`cleanCheckerboardImage`, `core/image-compress.ts`). Finding 5 removes that
+     detector, which disposes of the issue.
+   - Because the GIF guard returns before the canvas decode, GIFs skip the 1024px downscale and
+     the transparency checks, and direct upload has no size cap. A large GIF is stored at full
+     size and animates at full size in the card wall.
+   - Not verifiable from this repository: whether SillyTavern's own `saveBase64AsFile` accepts a
+     `gif` extension. ST core is not vendored here.
 
 ## Recorded Verification
 

@@ -4,8 +4,6 @@
  * 仅浏览器可用（依赖 Image/canvas）；GIF/SVG 跳过压缩（保动画/本身够小）。
  */
 
-import { removeBakedCheckerboard, type CheckerboardImageData } from './checkerboard-cleanup'
-
 export interface CompressOptions {
   /** 最长边像素，超出则等比缩小；默认 1024（立绘悬浮窗最大 600px 宽，1024 留足余量） */
   maxDimension?: number
@@ -26,17 +24,13 @@ export interface CompressResult {
 
 export type ImageTransparencyEvidence = 'transparent' | 'opaque' | 'opaque-checkerboard'
 
-export interface CheckerboardImageCodec {
-  decode(blob: Blob): Promise<CheckerboardImageData>
-  encodePng(data: Uint8ClampedArray, width: number, height: number): Promise<Blob>
-}
-
-export interface CleanCheckerboardResult {
-  blob: Blob
-  removedPixels: number
-}
-
-/** 从 RGBA 像素判断透明度，并保守识别常见浅灰棋盘格背景。 */
+/**
+ * 从 RGBA 像素判断透明度，并保守识别常见浅灰棋盘格背景。
+ *
+ * 「识别」到此为止：上传后据此提示用户，不再提供自动去除。去除功能于 2026-09-01 移除——
+ * 它要 canvas 解码重编码单帧 PNG，会把 GIF 压成第一帧，而适用条件（四边连通、两级浅灰）
+ * 窄到大多数图都被拒，留着的主要作用是让用户以为有救。
+ */
 export function analyzeImagePixels(data: Uint8ClampedArray): ImageTransparencyEvidence {
   if (data.length < 4) return 'opaque'
   const luminanceBins = new Map<number, number>()
@@ -88,80 +82,6 @@ export function estimateDataUriBytes(dataUri: string): number {
   const comma = dataUri.indexOf(',')
   const payload = comma >= 0 ? dataUri.length - comma - 1 : dataUri.length
   return Math.round(payload * 0.75)
-}
-
-async function decodeImagePixels(blob: Blob): Promise<CheckerboardImageData> {
-  const img = await loadImage(await blobToDataUri(blob))
-  const width = img.naturalWidth
-  const height = img.naturalHeight
-  if (width < 1 || height < 1) throw new Error('图片尺寸无效')
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('当前浏览器无法读取图片像素')
-  ctx.drawImage(img, 0, 0)
-  return { data: ctx.getImageData(0, 0, width, height).data, width, height }
-}
-
-async function encodePng(data: Uint8ClampedArray, width: number, height: number): Promise<Blob> {
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('当前浏览器无法写入透明图片')
-  const imageData = ctx.createImageData(width, height)
-  imageData.data.set(data)
-  ctx.putImageData(imageData, 0, 0)
-  return await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob)
-      else reject(new Error('透明 PNG 编码失败'))
-    }, 'image/png')
-  })
-}
-
-const browserCheckerboardCodec: CheckerboardImageCodec = {
-  decode: decodeImagePixels,
-  encodePng,
-}
-
-/**
- * 检测并清除烤入像素的棋盘格；证据不足时拒绝生成新文件。
- *
- * 拒绝原因分开报：本来就带透明通道的图（含真正的透明 PNG）永远不可能通过
- * `removeBakedCheckerboard` 的全不透明前置检查，这跟「是不透明图但没找到棋盘格证据」
- * 是两件完全不同的事。合成一句「没有确认到…」会让人以为功能坏了——
- * 实测就踩过：拿透明 PNG 去试，看到的提示读起来像 bug。
- */
-export async function cleanCheckerboardImage(
-  blob: Blob,
-  codec: CheckerboardImageCodec = browserCheckerboardCodec,
-): Promise<CleanCheckerboardResult> {
-  if (!blob.type.startsWith('image/')) throw new Error('所选内容不是图片')
-  const decoded = await codec.decode(blob)
-  if (hasTransparentPixels(decoded.data)) {
-    throw new Error('这张图已经带透明通道，不需要去棋盘格。此功能只处理「棋盘格被烤成不透明像素」的图片')
-  }
-  const cleaned = removeBakedCheckerboard(decoded)
-  if (!cleaned) {
-    throw new Error(
-      '没有在这张图里确认到可安全去除的棋盘格背景：需要图片四边连通、且是两级浅灰交替的方格。' +
-      '纯色背景、深色或彩色格子、以及已被压缩糊掉边界的格子都会被拒绝，以免误删画面内容',
-    )
-  }
-  return {
-    blob: await codec.encodePng(cleaned.data, decoded.width, decoded.height),
-    removedPixels: cleaned.removedPixels,
-  }
-}
-
-/** 与 removeBakedCheckerboard 的前置检查同阈值：alpha < 250 即视为已带透明通道。 */
-function hasTransparentPixels(data: Uint8ClampedArray): boolean {
-  for (let offset = 3; offset < data.length; offset += 4) {
-    if (data[offset] < 250) return true
-  }
-  return false
 }
 
 /** 人类可读体积，如 "384 KB" */

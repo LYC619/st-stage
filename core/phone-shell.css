@@ -563,10 +563,18 @@
   font-size: 11px;
 }
 
+/*
+ * 管家操作区：宁可掉成一列，也不要把两列压窄。
+ *
+ * 原来是 repeat(2, minmax(0, 1fr))，轨道下限为 0，配合下面按钮的
+ * `min-width: 0` + `white-space: normal`，窄屏上「记忆与服务器设置建议」这种长标签
+ * 会在列里逐字折行。中文可在任意字符间断行，所以轨道越窄它折得越碎，最终一列一个字。
+ * auto-fit + 9em 下限的意思是：塞不下两列可读宽度时自动变一列，而不是硬挤成两列。
+ */
 .so-butler-actions,
 .so-butler-modal-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(9em, 1fr));
   gap: 6px;
 }
 
@@ -574,9 +582,12 @@
   grid-template-columns: 1fr;
 }
 
+/*
+ * 这里保留 white-space: normal 是故意的：两列布局下允许长标签折到第二行，
+ * 比强行 nowrap 溢出好。但不能再给 min-width: 0——那会让轨道的 9em 下限失效。
+ */
 .so-butler-actions .so-app-btn,
 .so-butler-modal-actions .so-app-btn {
-  min-width: 0;
   margin: 0;
   white-space: normal;
 }

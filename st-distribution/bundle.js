@@ -4974,84 +4974,6 @@ function migratePack(raw) {
   };
 }
 
-// core/checkerboard-cleanup.ts
-function pixelOffset(index) {
-  return index * 4;
-}
-function grayscaleValue(data, index) {
-  const offset = pixelOffset(index);
-  const red = data[offset];
-  const green = data[offset + 1];
-  const blue = data[offset + 2];
-  if (Math.max(red, green, blue) - Math.min(red, green, blue) > 6) return null;
-  return Math.round((red + green + blue) / 3);
-}
-function edgeIndices(width, height) {
-  const indices = [];
-  for (let x = 0; x < width; x += 1) indices.push(x);
-  for (let y = 1; y < height - 1; y += 1) indices.push(y * width + width - 1);
-  if (height > 1) {
-    for (let x = width - 1; x >= 0; x -= 1) indices.push((height - 1) * width + x);
-  }
-  for (let y = height - 2; y >= 1; y -= 1) indices.push(y * width);
-  return indices;
-}
-function detectPalette(data, width, height) {
-  const edges = edgeIndices(width, height);
-  const bins = /* @__PURE__ */ new Map();
-  for (const index of edges) {
-    const value = grayscaleValue(data, index);
-    if (value === null || value < 160) continue;
-    const bin = Math.round(value / 4) * 4;
-    bins.set(bin, (bins.get(bin) ?? 0) + 1);
-  }
-  const dominant = [...bins.entries()].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count).slice(0, 2);
-  if (dominant.length !== 2) return null;
-  const difference = Math.abs(dominant[0].value - dominant[1].value);
-  const combined = dominant[0].count + dominant[1].count;
-  if (dominant[0].count / edges.length < 0.1 || dominant[1].count / edges.length < 0.1 || combined / edges.length < 0.6 || difference < 8 || difference > 64) return null;
-  return dominant[0].value < dominant[1].value ? [dominant[0].value, dominant[1].value] : [dominant[1].value, dominant[0].value];
-}
-function matchesPalette(data, index, palette) {
-  const value = grayscaleValue(data, index);
-  return value !== null && Math.min(Math.abs(value - palette[0]), Math.abs(value - palette[1])) <= 6;
-}
-function removeBakedCheckerboard(image) {
-  const { data, width, height } = image;
-  const total = width * height;
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 2 || height < 2 || data.length !== total * 4) return null;
-  for (let offset = 3; offset < data.length; offset += 4) {
-    if (data[offset] < 250) return null;
-  }
-  const palette = detectPalette(data, width, height);
-  if (!palette) return null;
-  const visited = new Uint8Array(total);
-  const queue = new Int32Array(total);
-  let head = 0;
-  let tail = 0;
-  const enqueue = (index) => {
-    if (visited[index] || !matchesPalette(data, index, palette)) return;
-    visited[index] = 1;
-    queue[tail++] = index;
-  };
-  for (const index of edgeIndices(width, height)) enqueue(index);
-  while (head < tail) {
-    const index = queue[head++];
-    const x = index % width;
-    const y = Math.floor(index / width);
-    if (x > 0) enqueue(index - 1);
-    if (x + 1 < width) enqueue(index + 1);
-    if (y > 0) enqueue(index - width);
-    if (y + 1 < height) enqueue(index + width);
-  }
-  if (tail < Math.max(4, Math.ceil(total * 0.15))) return null;
-  const output = new Uint8ClampedArray(data);
-  for (let index = 0; index < total; index += 1) {
-    if (visited[index]) output[pixelOffset(index) + 3] = 0;
-  }
-  return { data: output, removedPixels: tail, palette };
-}
-
 // core/image-compress.ts
 function analyzeImagePixels(data) {
   if (data.length < 4) return "opaque";
@@ -5090,62 +5012,6 @@ function estimateDataUriBytes(dataUri) {
   const comma = dataUri.indexOf(",");
   const payload = comma >= 0 ? dataUri.length - comma - 1 : dataUri.length;
   return Math.round(payload * 0.75);
-}
-async function decodeImagePixels(blob) {
-  const img = await loadImage(await blobToDataUri(blob));
-  const width = img.naturalWidth;
-  const height = img.naturalHeight;
-  if (width < 1 || height < 1) throw new Error("图片尺寸无效");
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("当前浏览器无法读取图片像素");
-  ctx.drawImage(img, 0, 0);
-  return { data: ctx.getImageData(0, 0, width, height).data, width, height };
-}
-async function encodePng(data, width, height) {
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("当前浏览器无法写入透明图片");
-  const imageData = ctx.createImageData(width, height);
-  imageData.data.set(data);
-  ctx.putImageData(imageData, 0, 0);
-  return await new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error("透明 PNG 编码失败"));
-    }, "image/png");
-  });
-}
-var browserCheckerboardCodec = {
-  decode: decodeImagePixels,
-  encodePng
-};
-async function cleanCheckerboardImage(blob, codec = browserCheckerboardCodec) {
-  if (!blob.type.startsWith("image/")) throw new Error("所选内容不是图片");
-  const decoded = await codec.decode(blob);
-  if (hasTransparentPixels(decoded.data)) {
-    throw new Error("这张图已经带透明通道，不需要去棋盘格。此功能只处理「棋盘格被烤成不透明像素」的图片");
-  }
-  const cleaned = removeBakedCheckerboard(decoded);
-  if (!cleaned) {
-    throw new Error(
-      "没有在这张图里确认到可安全去除的棋盘格背景：需要图片四边连通、且是两级浅灰交替的方格。纯色背景、深色或彩色格子、以及已被压缩糊掉边界的格子都会被拒绝，以免误删画面内容"
-    );
-  }
-  return {
-    blob: await codec.encodePng(cleaned.data, decoded.width, decoded.height),
-    removedPixels: cleaned.removedPixels
-  };
-}
-function hasTransparentPixels(data) {
-  for (let offset = 3; offset < data.length; offset += 4) {
-    if (data[offset] < 250) return true;
-  }
-  return false;
 }
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -6172,22 +6038,6 @@ function commitAndRefresh(context, pack) {
     context.refresh();
   }
 }
-var CHECKERBOARD_HINT = "检测并去除棋盘格：只适用于「棋盘格被烤成不透明像素」的图片，要求四边连通且是两级浅灰交替的方格。已带透明通道的图不需要处理，纯色/深色/彩色背景会被拒绝，以免误删画面内容。";
-function createCheckerboardAction(context) {
-  return {
-    id: "checkerboard",
-    label: "检测并去除棋盘格",
-    hint: CHECKERBOARD_HINT,
-    icon: "▦",
-    destructive: false,
-    allowedInReadonly: true,
-    async run() {
-      const state = current(context);
-      if (!state) return;
-      await context.cleanCheckerboard(state.sprite);
-    }
-  };
-}
 function createSpriteActions(context) {
   const source = context.getSprite();
   return [
@@ -6256,11 +6106,14 @@ function createSpriteActions(context) {
         context.pickReplacement();
       }
     },
-    createCheckerboardAction(context),
     {
       id: "localize",
       label: "保存到本地",
       icon: "↓",
+      hint: "把图床上的图片下载成本地文件再引用，之后不再依赖外链。预设包不会被改写，只记一条同 ID 的本地覆盖，随时可以删掉回到原图。",
+      // 预设包只读，但本地化是记覆盖而不是改包，所以只读态下也应当放行——
+      // 这是预设立绘唯一的本地化入口。
+      allowedInReadonly: true,
       disabled: !source || getSpriteSource(source) !== "hosted",
       async run() {
         const state = current(context);
@@ -6548,44 +6401,6 @@ async function localizeSprite(sprite, fileName, deps) {
     throw new Error("保存本地图片失败：平台未返回本地地址");
   }
   return { ...sprite, url: localUrl, remoteUrl: sprite.url };
-}
-async function cleanAndLocalizeSprite(sprite, fileName, deps) {
-  let response;
-  try {
-    response = await deps.fetch(sprite.url, requestInit());
-  } catch (error) {
-    throw new Error(`读取图片失败：${downloadFailure(error)}`, { cause: error });
-  }
-  if (!response.ok) throw new Error(`读取图片失败：HTTP ${response.status}`);
-  const declaredBytes = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declaredBytes) && declaredBytes > LOCALIZE_MAX_BYTES) {
-    throw new Error(`图片过大，不能超过 ${formatLimit()}`);
-  }
-  let blob;
-  try {
-    blob = await response.blob();
-  } catch (error) {
-    throw new Error(`读取图片失败：${downloadFailure(error)}`, { cause: error });
-  }
-  if (blob.size > LOCALIZE_MAX_BYTES) throw new Error(`图片过大，不能超过 ${formatLimit()}`);
-  if (!blob.type.startsWith("image/")) throw new Error("图片地址没有返回图片");
-  const cleaned = await (deps.clean ?? cleanCheckerboardImage)(blob);
-  if (deps.confirmSave && !await deps.confirmSave(cleaned.removedPixels)) {
-    throw new Error("已取消保存透明图片");
-  }
-  let localUrl;
-  try {
-    const file = new File([cleaned.blob], fileName, { type: cleaned.blob.type || "image/png" });
-    localUrl = await deps.saveImage(file, fileName);
-  } catch (error) {
-    throw new Error(`保存本地图片失败：${errorMessage(error)}`, { cause: error });
-  }
-  if (!localUrl || getSpriteSource({ ...sprite, url: localUrl }) === "hosted") {
-    throw new Error("保存本地图片失败：平台未返回本地地址");
-  }
-  const localized = { ...sprite, url: localUrl };
-  if (getSpriteSource(sprite) === "hosted") localized.remoteUrl = sprite.remoteUrl ?? sprite.url;
-  return { sprite: localized, removedPixels: cleaned.removedPixels };
 }
 function dataUriToFile(dataUri, fileName) {
   const match = /^data:(image\/[^;,]+);base64,([A-Za-z0-9+/]*={0,2})$/.exec(dataUri);
@@ -8463,57 +8278,22 @@ ${preview}
         if (!pack || !latest || latest.url !== source.url) {
           throw new Error("立绘在保存期间已发生变化，请重试");
         }
-        commitActionPack(upsertSprite(pack, {
-          ...latest,
-          url: localized.url,
-          remoteUrl: localized.remoteUrl
-        }));
-        context.refresh();
-        toast(currentManagerBody(), `已将「${source.tag}」保存到本地`);
-      },
-      cleanCheckerboard: async (source) => {
-        const identity = {
-          tag: source.tag,
-          group: spriteGroup(source),
-          outfit: source.outfit ?? ""
-        };
-        const cleaned = await cleanAndLocalizeSprite(source, `${source.tag}-transparent.png`, {
-          fetch: window.fetch.bind(window),
-          confirmSave: (removedPixels) => window.confirm(
-            `检测到 ${removedPixels} 个可安全去除的背景像素。
-
-要保存为新的透明 PNG 吗？原远程地址仍会保留。`
-          ),
-          saveImage: (file, fileName) => deps.adapter.saveImageFile(
-            file,
-            fileName,
-            deps.adapter.getCurrentCharacterName() || getPack()?.name || "shared"
-          )
-        });
-        const latestSettings = deps.getSettings();
-        const latestPack = latestSettings.packs.find((candidate) => candidate.id === packId);
-        const latest = latestPack?.sprites.find(
-          (candidate) => candidate.tag === identity.tag && spriteGroup(candidate) === identity.group && (candidate.outfit ?? "") === identity.outfit
-        );
-        if (!latestPack || !latest || latest.url !== source.url) {
-          throw new Error("立绘在清理期间已发生变化，请重试");
-        }
         if (isPresetPack(packId)) {
           deps.updateSettings(setPresetLocalSprite(
-            latestSettings,
+            deps.getSettings(),
             packId,
             latest,
-            cleaned.sprite.url
+            localized.url
           ));
         } else {
-          commitActionPack(upsertSprite(latestPack, {
+          commitActionPack(upsertSprite(pack, {
             ...latest,
-            url: cleaned.sprite.url,
-            ...cleaned.sprite.remoteUrl ? { remoteUrl: cleaned.sprite.remoteUrl } : {}
+            url: localized.url,
+            remoteUrl: localized.remoteUrl
           }));
         }
         context.refresh();
-        toast(currentManagerBody(), `已去除 ${cleaned.removedPixels} 个背景像素，并保存为透明 PNG`);
+        toast(currentManagerBody(), `已将「${source.tag}」保存到本地`);
       },
       refresh: () => {
         render2();
@@ -8543,11 +8323,7 @@ ${preview}
       (pack) => pack.sprites[state.index] ?? null,
       () => state.controller?.close()
     );
-    const action = createCheckerboardAction(context);
-    return [{
-      ...action,
-      run: () => runSpriteAction(action)
-    }];
+    return createSpriteActions(context).filter((action) => action.allowedInReadonly).map((action) => ({ ...action, run: () => runSpriteAction(action) }));
   }
   function renderSpriteCell(body, pack, sprite, index, readonly) {
     const cell = el("div", "so-sprite-cell");
@@ -10137,14 +9913,20 @@ function galleryApp(deps) {
       container.append(list);
       const hostSection = el2("div", "so-app-section");
       const hostTitle = el2("div", "so-app-title");
-      hostTitle.textContent = "图床（两条通道，互不影响）";
+      hostTitle.textContent = "图床";
       hostSection.append(hostTitle);
+      const hostIntro = el2("div", "so-app-desc");
+      hostIntro.textContent = "两条通道各管一件事，按需要配，不用都配：要把自己的图变成能分享的链接 → 配 ①；只是想用别人给的图包/编号 → 什么都不用配，② 已有默认值。";
+      hostSection.append(hostIntro);
       const autoDesc = el2("div", "so-app-desc");
-      autoDesc.textContent = "① 自动直传（imgbb）：上传/替换图片时自动传 imgbb 并绑定编号，本地图保留作显示保底，直链用于分享串。";
+      autoDesc.textContent = "① 自动直传（imgbb，需要 Key）：上传/替换图片时自动传到 imgbb 并绑定编号，本地图保留作显示保底，直链用于分享串。别人才能看到你分享的图，靠的是这条。";
+      const autoWhy = el2("div", "so-app-desc");
+      autoWhy.textContent = "为什么是 imgbb 而不是 catbox：浏览器里只能传 imgbb。catbox 的接口不返回 CORS 头，网页无法直接上传，所以它只能用在下面那条「按编号还原地址」的通道上。";
       const hint = el2("div", "so-app-desc");
       hint.textContent = "Key 明文保存在 ST 扩展设置里（随 ST 服务端 settings.json 落盘），不会写入分享串或导出文件；上传失败时图片仍保留本地，可稍后补传。";
       hostSection.append(
         autoDesc,
+        autoWhy,
         textRow(
           "imgbb API Key（存 ST 设置，明文）",
           settings.imgbbApiKey,
@@ -10164,9 +9946,12 @@ function galleryApp(deps) {
         hint
       );
       const manualDesc = el2("div", "so-app-desc");
-      manualDesc.textContent = "② 手动编码通道：「按编码添加」和分享串/插图编码解析时，用下面前缀拼接完整地址（默认 catbox）。";
+      manualDesc.textContent = "② 按编号还原地址（默认 catbox，不需要 Key）：「按编码添加」以及解析分享串和插图编码时，把编号接在下面这个前缀后面拼成完整地址。它只读不写，不会上传任何东西。";
+      const manualWhen = el2("div", "so-app-desc");
+      manualWhen.textContent = "只有当对方的图不在 catbox 上时才需要改前缀——改成他们用的图床域名即可。";
       hostSection.append(
         manualDesc,
+        manualWhen,
         textRow("图床前缀", settings.imageHost, DEFAULT_IMAGE_HOST, (raw) => {
           const v = raw.trim() || DEFAULT_IMAGE_HOST;
           const value = /^https?:\/\/.+/.test(v) ? v.endsWith("/") ? v : `${v}/` : DEFAULT_IMAGE_HOST;
@@ -12441,7 +12226,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-09-01 13:22"}`;
+  return `${"0.9.0"}+${"2026-09-01 13:52"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -18915,7 +18700,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-09-01 13:22"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-09-01 13:52"}`;
   console.log(`[sprite-overlay] 百工（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

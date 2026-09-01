@@ -3,7 +3,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Sprite, SpritePack } from '../../core/types'
 import {
-  createCheckerboardAction,
   createSpriteActions,
   type SpriteActionContext,
 } from './sprite-actions'
@@ -18,7 +17,6 @@ function createContext(initialPack: SpritePack, index = 0) {
     }),
     pickReplacement: vi.fn(),
     localize: vi.fn(async () => {}),
-    cleanCheckerboard: vi.fn(async () => {}),
     refresh: vi.fn(),
     close: vi.fn(),
   }
@@ -41,7 +39,6 @@ describe('createSpriteActions', () => {
       ['labels', '标签'],
       ['group', '设分组'],
       ['replace', '重新上传 / 替换图片'],
-      ['checkerboard', '检测并去除棋盘格'],
       ['localize', '保存到本地'],
       ['remote', '远程地址'],
       ['cover', '设为封面'],
@@ -80,26 +77,21 @@ describe('createSpriteActions', () => {
       '分组「目标组」中已存在表情「微笑」',
     )
     actions.find((action) => action.id === 'replace')!.run()
-    await actions.find((action) => action.id === 'checkerboard')!.run()
     await actions.find((action) => action.id === 'localize')!.run()
 
     expect(state.context.pickReplacement).toHaveBeenCalledTimes(1)
-    expect(state.context.cleanCheckerboard).toHaveBeenCalledTimes(1)
     expect(state.context.localize).toHaveBeenCalledTimes(1)
   })
 
-  it('exposes checkerboard cleanup as a standalone action for readonly preset lightboxes', async () => {
+  // 预设包只读，但本地化是记同 ID 覆盖而不是改包，所以必须留在只读态可用的集合里。
+  // 去掉棋盘格功能前，它是唯一带 allowedInReadonly 的操作，删干净会让预设详情一个操作都没有。
+  it('keeps local save as the one action available in readonly preset lightboxes', () => {
     const state = createContext({ id: 'preset', name: '预设', sprites: [sprite('微笑')] })
 
-    const action = createCheckerboardAction(state.context)
-    await action.run()
+    const readonly = createSpriteActions(state.context).filter((action) => action.allowedInReadonly)
 
-    expect(action).toMatchObject({
-      id: 'checkerboard',
-      label: '检测并去除棋盘格',
-      destructive: false,
-    })
-    expect(state.context.cleanCheckerboard).toHaveBeenCalledWith(state.getPack().sprites[0])
+    expect(readonly.map((action) => action.id)).toEqual(['localize'])
+    expect(readonly[0].disabled).toBe(false)
   })
 
   it('shows the current remote address, sets cover, and deletes from current state', () => {
