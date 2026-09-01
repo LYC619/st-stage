@@ -13,6 +13,12 @@ import {
   resolveSprite,
   resolveSprites,
 } from '../../core/sprite-store'
+import { buildApproxCandidates, resolveWithApprox } from '../../core/approx-match'
+import { createVariableHud, type HudSectionSnapshot } from './variable-hud'
+import { getLastMessageId, readVariables, subscribeVarEvents } from './apps/mvu/bridge'
+
+/** 变量速查悬浮窗的位置/展开态存放键（App 私有存储命名空间，不是核心设置） */
+const VARHUD_STATE_KEY = 'varhud'
 import { preloadMatchedSprites, preloadOnActivate } from '../../core/sprite-preload'
 import { PhoneAppRegistry, createPhoneAppContext, installRegisterQueue, runAppSetup, type AppHostDeps, type PhoneApp, type ToastKind } from '../../core/phone-registry'
 import { createCapabilityTracker, createEventHub, type CapabilityTracker } from '../../core/capabilities'
@@ -83,7 +89,12 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     refresh()
     // 显示相关设置变更：先恢复原始 DOM 再按新规则补渲染（总开关关闭时只恢复）
     if (displayChanged) reprocessAllMessages(settings)
+    // 变量速查悬浮窗的开关：挂载/卸载在下方定义后才可用，故用可变钩子
+    onSettingsApplied?.()
   }
+
+  /** updateSettings 尾部的额外同步钩子（在下方 HUD 初始化处赋值） */
+  let onSettingsApplied: (() => void) | null = null
 
   /**
    * 仅持久化设置（阶段7）：不触发立绘 refresh / Prompt 重注入 / 楼层重渲染 / 悬浮窗布局刷新。
@@ -239,6 +250,69 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   })
   lifecycle.track(() => rendererRuntime.dispose())
 
+  // 变量速查悬浮窗（Finding 7）：只读，两个变量来源各占一段。
+  // 默认关闭，开关在「立绘」App 的 Prompt 区之外——见 sprite-app 的设置项。
+  let variableHud: ReturnType<typeof createVariableHud> | null = null
+  function syncVariableHud(): void {
+    if (settings.variableHud && !variableHud) {
+      variableHud = createVariableHud({
+        readSections: async () => {
+          const sections: HudSectionSnapshot[] = []
+          // MVU / 酒馆助手：bridge 自己处理三级降级，不可用时给出原因
+          const messageId = getLastMessageId()
+          const read = await readVariables({ type: 'message', message_id: 'latest' }, messageId)
+          sections.push({
+            source: 'MVU',
+            root: read.status === 'ready' || read.status === 'empty' ? read.data : null,
+            notice: read.status === 'unavailable' ? '未检测到 MVU / 酒馆助手' : read.error ?? '',
+          })
+          // 「新变量」：本扩展自己的快照，始终可读
+          const newvarState = newvarRuntime.getCurrentState()
+          sections.push({
+            source: '新变量',
+            root: newvarState,
+            notice: '',
+          })
+          return sections
+        },
+        subscribe: (handler) => {
+          const offVar = subscribeVarEvents(handler)
+          const offNewvar = newvarRuntime.subscribe(handler)
+          return () => {
+            offVar()
+            offNewvar()
+          }
+        },
+        readState: () => {
+          const stored = settings.apps[VARHUD_STATE_KEY]
+          const s = stored && typeof stored === 'object' ? stored as Record<string, unknown> : {}
+          return {
+            x: typeof s.x === 'number' ? s.x : 12,
+            y: typeof s.y === 'number' ? s.y : 120,
+            open: typeof s.open === 'boolean' ? s.open : false,
+          }
+        },
+        // 位置/展开态是纯 UI 状态：走 saveSettingsOnly，不触发立绘重渲染
+        writeState: (state) => {
+          saveSettingsOnly({
+            ...settings,
+            apps: { ...settings.apps, [VARHUD_STATE_KEY]: state },
+          })
+        },
+      })
+    } else if (!settings.variableHud && variableHud) {
+      variableHud.dispose()
+      variableHud = null
+    }
+  }
+  syncVariableHud()
+  onSettingsApplied = syncVariableHud
+  lifecycle.track(() => {
+    onSettingsApplied = null
+    variableHud?.dispose()
+    variableHud = null
+  })
+
   // 「变量设计」弹窗：配置写 App 私有存储（saveSettingsOnly，不触发立绘刷新）后通知运行时重注入
   const newvarDesigner = createNewvarDesigner({
     getData: () => newvarRuntime.getData(),
@@ -341,12 +415,29 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     overlay.setVisible(overlayAllowed())
   }
 
+  /** 逐条解析并近似兜底；去重规则与 resolveSprites 一致（不连续重复同一张） */
+  function resolveSequenceWithApprox(
+    packs: ReturnType<typeof getActivePacks>,
+    addresses: string[],
+  ): ReturnType<typeof resolveSprites> {
+    const cache = { current: null as ReturnType<typeof buildApproxCandidates> | null }
+    const out: ReturnType<typeof resolveSprites> = []
+    for (const address of addresses) {
+      const sprite = resolveWithApprox(packs, address, resolveSprite, true, cache)
+      if (sprite && out[out.length - 1] !== sprite) out.push(sprite)
+    }
+    return out
+  }
+
   function displaySprites(addresses: ReturnType<typeof extractTags>): void {
     if (!settings.enabled || addresses.length === 0) return
     const characterName = adapter.getCurrentCharacterName()
     const packs = getActivePacks(settings, characterName)
     if (packs.length === 0) return
-    const seq = resolveSprites(packs, addresses)
+    // 关闭近似匹配时走原来的批量解析，保持逐字相同的行为
+    const seq = settings.approxMatch
+      ? resolveSequenceWithApprox(packs, addresses)
+      : resolveSprites(packs, addresses)
     preloadMatchedSprites(seq)
     if (seq.length > 0 && overlayAllowed()) {
       overlay.setSprites(seq)

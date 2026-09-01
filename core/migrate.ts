@@ -145,6 +145,9 @@ export function migrateSettings(saved: unknown): PluginSettings {
       savedVersion >= 6 && typeof raw.galleryFoldByRole === 'boolean'
         ? raw.galleryFoldByRole
         : defaults.galleryFoldByRole,
+    // 新增字段无需 bump 版本：缺失时取默认（false），老设置读进来就是关闭状态
+    approxMatch: typeof raw.approxMatch === 'boolean' ? raw.approxMatch : defaults.approxMatch,
+    variableHud: typeof raw.variableHud === 'boolean' ? raw.variableHud : defaults.variableHud,
     packs: Array.isArray(raw.packs) ? raw.packs.flatMap((p) => migratePack(p) ?? []) : [],
     presetOverrides: sanitizePresetOverrides(raw.presetOverrides),
     bindings: Array.isArray(raw.bindings)

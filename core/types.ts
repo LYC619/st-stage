@@ -119,6 +119,13 @@ export interface SpritePack {
   promptNotePlacement?: PromptNotePlacement
   /** 服装名到服装提示词备注的映射（备注最多 500 字符） */
   outfitNotes?: Record<string, string>
+  /**
+   * 自定义清单提示词（Finding 1）：填入后替换该包的「场景：tag、tag…」行。
+   * 用于大图包作者根据自己的图片内容手写描述，作为内置 tag 列表不适配时的备用方案。
+   * 多包共享同一场景时，带自定义提示词的包和普通包各自渲染一行（选项 B：堆叠保留）。
+   * 最多 800 字符。
+   */
+  inventoryPrompt?: string
   /** 导入来源的故事标识 */
   sourceStoryKey?: string
   /** 封面立绘的 tag（可选，缺省用第一张） */
@@ -142,6 +149,7 @@ export interface PresetPackOverride {
     promptNote: string | null
     promptNotePlacement: PromptNotePlacement | null
     outfitNotes: Record<string, string> | null
+    inventoryPrompt: string | null
   }>
   /** 原始立绘坐标键 → SillyTavern 用户图片路径。 */
   localSprites?: Record<string, string>
@@ -304,6 +312,13 @@ export interface PluginSettings {
   autoUpload: boolean
   /** 图库中是否按角色折叠立绘包 */
   galleryFoldByRole: boolean
+  /**
+   * 近似匹配（Finding 2，默认关闭）：严格寻址失败时，按 AI 写的自然语言描述兜底找图。
+   * 只在精确命中为空时生效，打平即放弃，所以开启不会改变任何原本能命中的结果。
+   */
+  approxMatch: boolean
+  /** 变量速查悬浮窗（Finding 7，默认关闭）：常驻聊天界面的只读小窗，不替代变量面板 */
+  variableHud: boolean
   /** 所有立绘包 */
   packs: SpritePack[]
   /** 代码内预设的元数据和本地图片覆盖层。 */
@@ -353,6 +368,7 @@ export interface SpritePackFileV3 extends Omit<SpritePackFile, 'format' | 'sprit
   promptNote?: string
   promptNotePlacement?: PromptNotePlacement
   outfitNotes?: Record<string, string>
+  inventoryPrompt?: string
   sourceStoryKey?: string
   sprites: Array<SpritePackFile['sprites'][number] & { labels?: string[] }>
 }
@@ -392,6 +408,8 @@ export function createDefaultSettings(): PluginSettings {
     imgbbApiKey: '',
     autoUpload: false,
     galleryFoldByRole: true,
+    approxMatch: false,
+    variableHud: false,
     packs: [],
     presetOverrides: {},
     bindings: [],

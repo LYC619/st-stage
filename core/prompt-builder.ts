@@ -23,6 +23,12 @@ export interface PromptSceneNote {
 }
 
 /** 活动包与最终地址 → 各包实际贡献场景的有序备注。 */
+export interface PromptSceneInventory {
+  role: string
+  outfit: string
+  inventoryPrompt: string
+}
+
 export function buildPromptSceneNotes(
   packs: SpritePack[],
   addresses: SpriteAddress[],
@@ -62,6 +68,29 @@ export function buildPromptSceneNotes(
   return notes
 }
 
+export function buildPromptSceneInventories(
+  packs: SpritePack[],
+  addresses: SpriteAddress[],
+): PromptSceneInventory[] {
+  const inventories: PromptSceneInventory[] = []
+  const multiPack = packs.length > 1
+  const available = new Set(addresses.map(addressConflictKey))
+  for (const pack of packs) {
+    const inventoryText = pack.inventoryPrompt?.trim()
+    if (!inventoryText) continue
+    const scenes = new Set<string>()
+    for (const sprite of pack.sprites) {
+      const scene = effectiveSpriteAddress(pack, sprite, multiPack)
+      if (!available.has(addressConflictKey(scene))) continue
+      const key = JSON.stringify([scene.role, scene.outfit])
+      if (scenes.has(key)) continue
+      scenes.add(key)
+      inventories.push({ role: scene.role, outfit: scene.outfit, inventoryPrompt: inventoryText })
+    }
+  }
+  return inventories
+}
+
 /** 收尾说明：N=1 保持旧的单标签语义；N>1 要求按情节顺序输出多个 */
 function countInstruction(count: number): string {
   if (count <= 1) {
@@ -98,6 +127,19 @@ type PromptSceneNoteIndex = Map<
   string,
   Record<PromptNotePlacement, PromptSceneNote[]>
 >
+
+type PromptSceneInventoryIndex = Map<string, string[]>
+
+function indexSceneInventories(inventories: PromptSceneInventory[]): PromptSceneInventoryIndex {
+  const index = new Map<string, string[]>()
+  for (const { role, outfit, inventoryPrompt } of inventories) {
+    const key = `${role}|${outfit}`
+    const existing = index.get(key) ?? []
+    existing.push(inventoryPrompt)
+    index.set(key, existing)
+  }
+  return index
+}
 
 interface RenderedTags {
   text: string
@@ -228,6 +270,7 @@ function renderGroupedSceneList(
   scenes: PromptScene[],
   noteIndex: PromptSceneNoteIndex,
   reservedTags: ReadonlySet<string>,
+  inventoryIndex: PromptSceneInventoryIndex = new Map(),
 ): {
   lines: string[]
   ranges: string[]
@@ -241,6 +284,14 @@ function renderGroupedSceneList(
     const rendered = renderTags(scene.tags, reservedTags)
     lines.push(`- ${scene.label}：${rendered.text}`)
     ranges.push(...rendered.ranges)
+    // 自定义清单提示词堆叠在默认列表之后（选项 B）：两段都保留，作者手写的描述
+    // 不覆盖默认 tag 列表，模型同时看到「有哪些图名」和「该怎么理解这些图」。
+    for (const text of inventoryIndex.get(scene.key) ?? []) {
+      for (const line of text.split('\n')) {
+        const trimmed = line.trim()
+        if (trimmed) lines.push(`  ${trimmed}`)
+      }
+    }
     for (const note of matchingNotes(noteIndex, scene, 'after-list')) {
       lines.push(...noteLines(scene, note))
     }
@@ -293,9 +344,10 @@ function buildGroupedFull(
   count: number,
   noteIndex: PromptSceneNoteIndex,
   reservedTags: ReadonlySet<string>,
+  inventoryIndex: PromptSceneInventoryIndex,
 ): string {
   const scenes = buildScenes(addresses)
-  const rendered = renderGroupedSceneList(scenes, noteIndex, reservedTags)
+  const rendered = renderGroupedSceneList(scenes, noteIndex, reservedTags, inventoryIndex)
   return [
     '[角色立绘系统]',
     '可用立绘（按场景）：',
@@ -360,14 +412,15 @@ function buildShared(
   count: number,
   noteIndex: PromptSceneNoteIndex,
   reservedTags: ReadonlySet<string>,
+  inventoryIndex: PromptSceneInventoryIndex,
 ): string {
   const scenes = buildScenes(addresses)
   if (scenes.length <= 1 || reservedTags.has(SHARED_LIST_LABEL)) {
-    return buildGroupedFull(addresses, count, noteIndex, reservedTags)
+    return buildGroupedFull(addresses, count, noteIndex, reservedTags, inventoryIndex)
   }
   const cluster = findSharedCluster(scenes)
   if (!cluster) {
-    return buildGroupedFull(addresses, count, noteIndex, reservedTags)
+    return buildGroupedFull(addresses, count, noteIndex, reservedTags, inventoryIndex)
   }
 
   const coreSet = new Set(cluster.core)
@@ -395,6 +448,12 @@ function buildShared(
       const rendered = renderTags(scene.tags, reservedTags)
       lines.push(`- ${scene.label}：${rendered.text}`)
       ranges.push(...rendered.ranges)
+    }
+    for (const text of inventoryIndex.get(scene.key) ?? []) {
+      for (const line of text.split('\n')) {
+        const trimmed = line.trim()
+        if (trimmed) lines.push(`  ${trimmed}`)
+      }
     }
     for (const note of matchingNotes(noteIndex, scene, 'after-list')) {
       lines.push(...noteLines(scene, note))
@@ -471,6 +530,7 @@ function buildRoleCompact(
   count: number,
   noteIndex: PromptSceneNoteIndex,
   reservedTags: ReadonlySet<string>,
+  inventoryIndex: PromptSceneInventoryIndex,
 ): string | null {
   const scenes = buildScenes(addresses)
   const role = scenes[0]?.role
@@ -516,6 +576,12 @@ function buildRoleCompact(
       ranges.push(...rendered.ranges)
     }
 
+    for (const text of inventoryIndex.get(scene.key) ?? []) {
+      for (const line of text.split('\n')) {
+        const trimmed = line.trim()
+        if (trimmed) lines.push(`  ${trimmed}`)
+      }
+    }
     const variants = variantBases(scene.tags)
     if (variants.length > 0) lines.push(`  可用“${VARIANT_SUFFIX}”后缀：${variants.join('、')}`)
     for (const note of matchingNotes(noteIndex, scene, 'after-list')) {
@@ -640,28 +706,30 @@ export function buildPrompt(
   template = '',
   budget = 0,
   notes: PromptSceneNote[] = [],
+  inventories: PromptSceneInventory[] = [],
 ): string {
   if (addresses.length === 0) return ''
   const n = Math.max(1, Math.round(count) || 1)
   const b = Math.max(0, Math.round(budget) || 0)
   const noteIndex = indexSceneNotes(notes)
+  const inventoryIndex = indexSceneInventories(inventories)
   const reservedTags = new Set(addresses.map((address) => address.tag))
   const custom = template.trim()
   if (custom && !isKnownBuiltinTemplate(template)) {
     return fitToBudget(addresses, b, (addrs) => {
       const scenes = buildScenes(addrs)
-      const rendered = renderGroupedSceneList(scenes, noteIndex, reservedTags)
+      const rendered = renderGroupedSceneList(scenes, noteIndex, reservedTags, inventoryIndex)
       const list = [...rendered.lines, ...rangeInstruction(rendered.ranges, findRangeExample(scenes, reservedTags))].join('\n')
       return custom.replace(/\{清单\}/g, list).replace(/\{数量\}/g, String(n))
     })
   }
   return fitToBudget(addresses, b, (addrs) => {
-    const grouped = buildGroupedFull(addrs, n, noteIndex, reservedTags)
+    const grouped = buildGroupedFull(addrs, n, noteIndex, reservedTags, inventoryIndex)
     if (mode === 'full') return grouped
     // 角色级格式的收益不只在字符数：它让模型学会服装/图名相对地址。
     // 因此只要它比全量格式短就优先；不适用时再在两个旧格式中取更短者。
-    const shared = chooseShorterPrompt(grouped, buildShared(addrs, n, noteIndex, reservedTags))
-    const roleCompact = buildRoleCompact(addrs, n, noteIndex, reservedTags)
+    const shared = chooseShorterPrompt(grouped, buildShared(addrs, n, noteIndex, reservedTags, inventoryIndex))
+    const roleCompact = buildRoleCompact(addrs, n, noteIndex, reservedTags, inventoryIndex)
     return roleCompact && roleCompact.length < grouped.length ? roleCompact : shared
   })
 }

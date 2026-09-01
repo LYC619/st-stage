@@ -5,6 +5,8 @@ export const MAX_LABELS = 24
 const MAX_LABEL_CODE_POINTS = 32
 /** 备注上限（码点）：编辑框用它设 maxlength，避免保存时才静默截断 */
 export const MAX_NOTE_CODE_POINTS = 500
+/** 自定义清单提示词上限（码点，Finding 1） */
+export const MAX_INVENTORY_PROMPT_CODE_POINTS = 800
 
 export type CompactNumberedTagEntry =
   | { kind: 'range'; label: string; values: string[] }
@@ -136,6 +138,12 @@ export function packLabels(pack: SpritePack): PackLabels {
 export function normalizeNote(raw: unknown): string {
   return typeof raw === 'string'
     ? clipCodePoints(raw.trim(), MAX_NOTE_CODE_POINTS)
+    : ''
+}
+
+export function normalizeInventoryPrompt(raw: unknown): string {
+  return typeof raw === 'string'
+    ? clipCodePoints(raw.trim(), MAX_INVENTORY_PROMPT_CODE_POINTS)
     : ''
 }
 

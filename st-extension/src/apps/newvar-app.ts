@@ -59,6 +59,13 @@ export function newvarApp(deps: NewvarAppDeps): PhoneApp {
             }),
             '只隐藏消息气泡里完整的 <UpdateVariable>...</UpdateVariable> 区块，不修改 SillyTavern 保存的原始回复，也不影响变量解析和楼层快照。关闭后只能恢复本扩展隐藏的内容；ST Regex 等外部规则仍会独立生效。',
           ),
+          hintField(
+            toggleRow('变量速查悬浮窗', ctx.getSettings().variableHud, (v) => {
+              ctx.updateSettings({ ...ctx.getSettings(), variableHud: v })
+              renderCfg()
+            }),
+            '在聊天界面常驻一个可拖动的小圆钮，点开就能看到全部变量的当前值，省掉「开手机→开 App→翻找」。只读速查，改值仍在下方变量面板里；MVU 与「新变量」两边的变量会分段列出。这个开关是全局的，两个变量 App 里改哪个都一样。',
+          ),
           appButton('打开变量设计', openDesigner),
         )
         cfgBox.append(section)

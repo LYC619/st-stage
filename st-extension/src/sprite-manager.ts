@@ -80,8 +80,10 @@ import {
   filterSprites,
   groupPacksByRole,
   MAX_NOTE_CODE_POINTS,
+  MAX_INVENTORY_PROMPT_CODE_POINTS,
   normalizeLabels,
   normalizeNote,
+  normalizeInventoryPrompt,
   normalizeOutfitNotes,
   packLabels,
 } from '../../core/sprite-metadata'
@@ -1678,6 +1680,13 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       }
       placementSelect.value = pack.promptNotePlacement ?? DEFAULT_PROMPT_NOTE_PLACEMENT
 
+      const inventoryPromptInput = document.createElement('textarea')
+      inventoryPromptInput.className = 'text_pole so-pack-inventory-prompt'
+      inventoryPromptInput.placeholder = '自定义清单提示词（可选，替换默认的表情列表）'
+      inventoryPromptInput.rows = 4
+      inventoryPromptInput.maxLength = MAX_INVENTORY_PROMPT_CODE_POINTS
+      inventoryPromptInput.value = pack.inventoryPrompt ?? ''
+
       const outfitNoteDrafts = new Map(Object.entries(pack.outfitNotes ?? {}))
       const outfitNotesBox = el('div', 'so-outfit-note-list')
       const syncOutfitNoteDrafts = (): void => {
@@ -1723,6 +1732,15 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         labeled('图包备注', promptNoteInput),
         labeled('插入位置', placementSelect),
       )
+
+      const inventoryRow = el('div', 'so-row so-pack-inventory-row')
+      const inventoryHint = el('div', 'so-status so-pack-inventory-hint')
+      inventoryHint.textContent =
+        '填了就用它替换这个包在清单里的表情列表；留空走默认列表。'
+        + '多个包同场景时两段都会出现，不会互相覆盖。'
+      const inventoryCell = labeled('自定义清单提示词', inventoryPromptInput)
+      inventoryCell.append(inventoryHint)
+      inventoryRow.append(inventoryCell)
       metaRow.append(
         labeled('包名', nameInput),
         labeled('作者', authorInput),
@@ -1742,11 +1760,12 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           const roleName = normalizeTag(roleInput.value)
           const outfit = normalizeTag(outfitInput.value)
           const promptNote = normalizeNote(promptNoteInput.value)
+          const inventoryPrompt = normalizeInventoryPrompt(inventoryPromptInput.value)
           syncOutfitNoteDrafts()
           const outfitNotes = normalizeOutfitNotes(Object.fromEntries(outfitNoteDrafts))
           if (readonly) {
             const current = deps.getSettings()
-            const next = setPresetMetadata(current, pack.id, {
+            const metadata: Parameters<typeof setPresetMetadata>[2] = {
               name,
               author: sanitizePackName(authorInput.value) || null,
               description: sanitizeDescription(descInput.value) || null,
@@ -1757,7 +1776,9 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
                 ? placementSelect.value === 'after-list' ? 'after-list' : 'before-list'
                 : null,
               outfitNotes: Object.keys(outfitNotes).length > 0 ? outfitNotes : null,
-            })
+            }
+            if (inventoryPrompt) metadata.inventoryPrompt = inventoryPrompt
+            const next = setPresetMetadata(current, pack.id, metadata)
             const materialized = next.packs.find((candidate) => candidate.id === pack.id)
             if (!materialized || !checkedSettings(upsertPack(current, materialized))) return
             commit(next)
@@ -1781,6 +1802,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
             delete nextPack.promptNote
             delete nextPack.promptNotePlacement
           }
+          if (inventoryPrompt) nextPack.inventoryPrompt = inventoryPrompt
+          else delete nextPack.inventoryPrompt
           if (Object.keys(outfitNotes).length > 0) nextPack.outfitNotes = outfitNotes
           else delete nextPack.outfitNotes
           if (commitChecked(upsertPack(deps.getSettings(), nextPack))) {
@@ -1804,7 +1827,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         readonly
           ? '可覆盖预设包信息；立绘图片本身仍不可添加、改名或删除。'
           : '人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。'
-      metaPanel.body.append(metaRow, promptRow, outfitNotesBox, metaHint, saveRow)
+      metaPanel.body.append(metaRow, promptRow, inventoryRow, outfitNotesBox, metaHint, saveRow)
       body.append(metaPanel.box)
     }
 

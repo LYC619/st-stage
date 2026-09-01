@@ -26,6 +26,7 @@ import {
   type MvuScope,
   type ReadResult,
 } from './mvu/bridge'
+import { el, hintField, toggleRow } from './widgets'
 
 // —— 页面实例（render token 防过期 + MVU 精准事件自动刷新） —— //
 
@@ -35,7 +36,7 @@ interface Instance {
 }
 
 // 数据读写全走 ./mvu/bridge，不经 PhoneAppContext；ctx 保留供将来持久化 UI 偏好
-function createInstance(container: HTMLElement, _ctx: PhoneAppContext): Instance {
+function createInstance(container: HTMLElement, ctx: PhoneAppContext): Instance {
   let disposed = false
   let seq = 0
   let lastResult: ReadResult | null = null
@@ -43,7 +44,26 @@ function createInstance(container: HTMLElement, _ctx: PhoneAppContext): Instance
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
   let offEvents: (() => void) | null = null
 
-  const view: VariableTreeView = createVariableTreeView(container, {
+  // 树视图每次渲染都会清空自己的容器，所以设置行必须待在它外面的兄弟节点里
+  const settingsBox = el('div', 'so-app-section')
+  const treeBox = el('div', 'mvu-tree-host')
+  container.append(settingsBox, treeBox)
+
+  function renderSettings(): void {
+    settingsBox.textContent = ''
+    settingsBox.append(
+      hintField(
+        toggleRow('变量速查悬浮窗', ctx.getSettings().variableHud, (v) => {
+          ctx.updateSettings({ ...ctx.getSettings(), variableHud: v })
+          renderSettings()
+        }),
+        '在聊天界面常驻一个可拖动的小圆钮，点开就能看到全部变量的当前值，省掉「开手机→开 App→翻找」。只读速查，改值仍在下方变量面板里。这个开关是全局的，与「新变量」App 里的是同一个。',
+      ),
+    )
+  }
+  renderSettings()
+
+  const view: VariableTreeView = createVariableTreeView(treeBox, {
     getModel: () => buildModel(),
     commitSet: (path, value) => void runWrite(() => setFloorVariable(currentScope(), currentWrapped(), path, value)),
     commitDelete: (path) => void runWrite(() => deleteFloorVariable(currentScope(), currentWrapped(), path)),

@@ -163,7 +163,16 @@ export function spriteApp(deps: SpriteAppDeps = {}): PhoneApp {
           PROMPT_BUDGET_MAX,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), promptBudget: v }),
         ),
+        toggleRow('近似匹配（实验，默认关闭）', settings.approxMatch, (v) =>
+          ctx.updateSettings({ ...ctx.getSettings(), approxMatch: v }),
+        ),
       )
+      const approxHint = el('div', 'so-app-desc')
+      approxHint.textContent =
+        '开启后，[立绘:...] 里写的不是准确地址时，会拿它当描述去找最像的一张'
+        + '（如「穿连衣裙逛街」命中 连衣裙/逛街）。'
+        + '只在准确地址找不到时才生效，同分打平就放弃，所以不会改变原本能命中的结果。'
+      promptSection.body.append(approxHint)
       // 预算反馈：算一遍实际会注入的 prompt，超预算时同时给出截取前的长度
       const budgeted = buildActiveSpritePrompt(settings, characterName)
       const unlimited =

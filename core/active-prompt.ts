@@ -1,4 +1,4 @@
-import { buildPrompt, buildPromptSceneNotes } from './prompt-builder'
+import { buildPrompt, buildPromptSceneNotes, buildPromptSceneInventories } from './prompt-builder'
 import { getActiveAddresses, getActivePacks } from './sprite-store'
 import type { PluginSettings } from './types'
 
@@ -17,5 +17,6 @@ export function buildActiveSpritePrompt(
     settings.promptTemplate,
     budget,
     buildPromptSceneNotes(packs, addresses),
+    buildPromptSceneInventories(packs, addresses),
   )
 }

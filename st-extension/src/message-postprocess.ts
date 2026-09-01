@@ -20,6 +20,7 @@
 import { hasTag, replaceTags, stripTags } from '../../core/tag-parser'
 import { hasInlineImageMarkup, replaceInlineImages } from '../../core/inline-image'
 import { getActivePacks, resolveSprite } from '../../core/sprite-store'
+import { resolveWithApprox, type ApproxCandidate } from '../../core/approx-match'
 import type { PluginSettings } from '../../core/types'
 import { RECENT_FLOORS_MAX, RECENT_FLOORS_MIN } from '../../core/types'
 import { NEWVAR_APP_ID, normalizeNewvarData } from './apps/newvar/config'
@@ -486,6 +487,8 @@ function processMessageElement(root: HTMLElement, settings: PluginSettings, rawM
   const chName = inlineSprites ? (root.closest('.mes')?.getAttribute('ch_name') ?? '') : ''
   const packs = chName ? getActivePacks(settings, chName) : []
   const hasPacks = packs.length > 0
+  // 近似匹配候选表：一次后处理里所有未命中标签共用，关闭时永远不建
+  const approxCache = { current: null as ApproxCandidate[] | null }
 
   const freshText = root.textContent ?? ''
   const literalUpdateRanges = hideUpdateBlocks ? updateBlockRanges(freshText) : []
@@ -536,7 +539,13 @@ function processMessageElement(root: HTMLElement, settings: PluginSettings, rawM
 
     if (needsSprites && hasPacks) {
       processed = replaceTags(processed, (address, raw) => {
-        const sprite = resolveSprite(packs, address)
+        const sprite = resolveWithApprox(
+          packs,
+          address,
+          resolveSprite,
+          settings.approxMatch,
+          approxCache,
+        )
         // 匹配不到的标签退回「隐藏标签」语义：开了隐藏就摘除，否则保留原文
         if (!sprite) return settings.hideTagInMessage ? '' : null
         const image = createImage(sprite.url, sprite.tag, 'so-inline-sprite')

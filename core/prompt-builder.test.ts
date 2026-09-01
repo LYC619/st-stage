@@ -5,6 +5,7 @@ import {
   buildInjectionPrompt,
   buildMultiRolePrompt,
   buildPrompt,
+  buildPromptSceneInventories,
   buildPromptSceneNotes,
   chooseShorterPrompt,
   isKnownBuiltinTemplate,
@@ -588,5 +589,100 @@ describe('buildPrompt — Gallery 兼容基线', () => {
       3,
       '可用：\n{清单}\n请输出 {数量} 个标签。',
     )).toBe('可用：\n- 鸣人：微笑\n- 默认：哭泣\n请输出 3 个标签。')
+  })
+})
+
+/* ==================== Finding 1：包级自定义清单提示词（选项 B） ==================== */
+
+describe('buildPromptSceneInventories', () => {
+  const pack = (over: Partial<SpritePack>): SpritePack => ({
+    id: 'p',
+    name: '包',
+    sprites: [{ tag: '微笑', url: 'a.png' }],
+    ...over,
+  })
+
+  it('没填自定义清单提示词的包不产出条目', () => {
+    const p = pack({ roleName: '鸣人' })
+    expect(buildPromptSceneInventories([p], [addr('鸣人', '', '微笑')])).toEqual([])
+  })
+
+  it('填了就按包实际贡献的场景产出（空白串视为没填）', () => {
+    const p = pack({ roleName: '鸣人', inventoryPrompt: '  这包是水墨风格  ' })
+    expect(buildPromptSceneInventories([p], [addr('鸣人', '', '微笑')])).toEqual([
+      { role: '鸣人', outfit: '', inventoryPrompt: '这包是水墨风格' },
+    ])
+    const blank = pack({ roleName: '鸣人', inventoryPrompt: '   \n  ' })
+    expect(buildPromptSceneInventories([blank], [addr('鸣人', '', '微笑')])).toEqual([])
+  })
+
+  // 与 buildPromptSceneNotes 同一约定：只认最终地址表里真实存在的场景，
+  // 否则给未启用的包写提示词也会注入，模型会看到根本取不到的图。
+  it('不在最终地址表里的场景不产出条目', () => {
+    const p = pack({ roleName: '佐助', inventoryPrompt: '文本' })
+    expect(buildPromptSceneInventories([p], [addr('鸣人', '', '微笑')])).toEqual([])
+  })
+
+  it('一个包跨多场景时每个场景各产出一条', () => {
+    const p = pack({
+      roleName: '鸣人',
+      inventoryPrompt: '文本',
+      sprites: [
+        { tag: '微笑', url: 'a.png', outfit: '居家服' },
+        { tag: '生气', url: 'b.png', outfit: '战斗服' },
+      ],
+    })
+    const addrs = [addr('鸣人', '居家服', '微笑'), addr('鸣人', '战斗服', '生气')]
+    expect(buildPromptSceneInventories([p], addrs)).toEqual([
+      { role: '鸣人', outfit: '居家服', inventoryPrompt: '文本' },
+      { role: '鸣人', outfit: '战斗服', inventoryPrompt: '文本' },
+    ])
+  })
+})
+
+describe('buildPrompt — 自定义清单提示词堆叠（选项 B）', () => {
+  const addrs = [addr('鸣人', '', '微笑'), addr('鸣人', '', '生气')]
+
+  it('默认 tag 列表保留，自定义文本堆在它后面', () => {
+    const p = buildPrompt(addrs, 'full', 1, '', 0, [], [
+      { role: '鸣人', outfit: '', inventoryPrompt: '水墨风格，情绪偏克制' },
+    ])
+    expect(p).toContain('- 鸣人：微笑、生气')
+    expect(p).toContain('  水墨风格，情绪偏克制')
+    // 顺序：先默认列表，再自定义文本——两段都在，不互相覆盖
+    expect(p.indexOf('- 鸣人：微笑、生气')).toBeLessThan(p.indexOf('水墨风格'))
+  })
+
+  it('两个包共享同一场景时两段文本都出现（B 方案的核心）', () => {
+    const p = buildPrompt(addrs, 'full', 1, '', 0, [], [
+      { role: '鸣人', outfit: '', inventoryPrompt: '甲包：水墨' },
+      { role: '鸣人', outfit: '', inventoryPrompt: '乙包：赛博' },
+    ])
+    expect(p).toContain('甲包：水墨')
+    expect(p).toContain('乙包：赛博')
+    expect(p).toContain('- 鸣人：微笑、生气')
+  })
+
+  it('多行文本逐行缩进，空行丢掉', () => {
+    const p = buildPrompt(addrs, 'full', 1, '', 0, [], [
+      { role: '鸣人', outfit: '', inventoryPrompt: '第一行\n\n第二行' },
+    ])
+    expect(p).toContain('  第一行')
+    expect(p).toContain('  第二行')
+    expect(p).not.toContain('\n\n  第二行')
+  })
+
+  it('不传 inventories 时输出与旧行为逐字一致', () => {
+    expect(buildPrompt(addrs, 'full', 1, '', 0, [])).toBe(
+      buildPrompt(addrs, 'full', 1, '', 0, [], []),
+    )
+  })
+
+  it('自定义模板的 {清单} 里也堆叠', () => {
+    const p = buildPrompt(addrs, 'full', 2, '可用：\n{清单}\n输出 {数量} 个。', 0, [], [
+      { role: '鸣人', outfit: '', inventoryPrompt: '手写描述' },
+    ])
+    expect(p).toContain('- 鸣人：微笑、生气')
+    expect(p).toContain('  手写描述')
   })
 })

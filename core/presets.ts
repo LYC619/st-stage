@@ -6,6 +6,7 @@ import { isSafeLocalUserImagePath } from './sprite-store'
 import {
   normalizeLabels,
   normalizeNote,
+  normalizeInventoryPrompt,
   normalizeOutfitNotes,
   normalizePackKind,
 } from './sprite-metadata'
@@ -272,6 +273,11 @@ export function sanitizePresetOverrides(
       if (source.promptNotePlacement === null) metadata.promptNotePlacement = null
       else if (source.promptNotePlacement === 'before-list' || source.promptNotePlacement === 'after-list') {
         metadata.promptNotePlacement = source.promptNotePlacement
+      }
+      if (source.inventoryPrompt === null) metadata.inventoryPrompt = null
+      else if (typeof source.inventoryPrompt === 'string') {
+        const text = normalizeInventoryPrompt(source.inventoryPrompt)
+        if (text) metadata.inventoryPrompt = text
       }
       if (source.outfitNotes === null) metadata.outfitNotes = null
       else if (source.outfitNotes && typeof source.outfitNotes === 'object' && !Array.isArray(source.outfitNotes)) {

@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PluginSettings } from '@/core/types'
 import { formatAddress } from '@/core/types'
 import { extractTags } from '@/core/tag-parser'
-import { buildPrompt } from '@/core/prompt-builder'
+import { buildPrompt, buildPromptSceneNotes, buildPromptSceneInventories } from '@/core/prompt-builder'
 import {
   getActiveAddresses,
   getActivePacks,
@@ -60,9 +60,11 @@ export default function Page() {
             settings.spriteCount,
             settings.promptTemplate,
             settings.promptBudget,
+            buildPromptSceneNotes(activePacks, addresses),
+            buildPromptSceneInventories(activePacks, addresses),
           )
         : '',
-    [settings, addresses],
+    [settings, addresses, activePacks],
   )
 
   // 聊天模拟器的快捷触发项：用完整三级地址（纯图名场景即图名）
