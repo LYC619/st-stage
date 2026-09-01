@@ -156,6 +156,32 @@ async function expectNoOverflowOrOverlap(page: Page, rootSelector: string): Prom
   expect(result).toEqual({ fits: true, documentFits: true, overlapPairs: [] })
 }
 
+/**
+ * 断言元素完整落在视口内，不依赖滚动。
+ *
+ * 为什么单独一个：expectNoOverflowOrOverlap 只看横向（scrollWidth vs clientWidth）和控件
+ * 重叠，纵向溢出视口它测不到。而 Playwright 的 click() 会先把元素滚进视口，所以哪怕关闭
+ * 按钮被顶到视口上方，测试也照样点得到——真实用户在 position: fixed 的遮罩里滚不动，只能
+ * 刷新。这两点叠加，让"弹窗超出窗口、✕ 点不到"这类把用户关在里面的缺陷完全逃过了门禁。
+ */
+async function expectWithinViewport(page: Page, selector: string, label: string): Promise<void> {
+  const result = await page.locator(selector).evaluate((node) => {
+    const box = node.getBoundingClientRect()
+    return {
+      top: Math.round(box.top),
+      bottom: Math.round(box.bottom),
+      viewportHeight: window.innerHeight,
+      // 容忍 1px 的取整误差，超出则记为溢出量
+      overflowTop: Math.max(0, Math.round(-box.top) - 1),
+      overflowBottom: Math.max(0, Math.round(box.bottom - window.innerHeight) - 1),
+    }
+  })
+  expect(
+    { label, overflowTop: result.overflowTop, overflowBottom: result.overflowBottom },
+    `${label} 必须完整可见（top=${result.top} bottom=${result.bottom} 视口高=${result.viewportHeight}）`,
+  ).toEqual({ label, overflowTop: 0, overflowBottom: 0 })
+}
+
 test('管家主屏和三个全屏弹窗在桌面与移动视口均可读可操作', async ({ page }, testInfo) => {
   await loadButler(page)
 
@@ -165,7 +191,9 @@ test('管家主屏和三个全屏弹窗在桌面与移动视口均可读可操�
 
   const modals = [
     ['查看详细结果', '详细检查结果'],
-    ['临时关闭扩展找卡顿', '第三方扩展'],
+    // 验收第一轮把「临时关闭扩展找卡顿」换成只读的「扩展指南」，这里的按钮名一直没跟上。
+    // 没被发现是因为 pnpm test:mobile 不在四项发布门禁里——见 CURRENT.md 的门禁说明。
+    ['扩展指南', '第三方扩展'],
     ['记忆与服务器设置建议', 'Vector Storage：当前启用'],
   ] as const
   for (const [button, expected] of modals) {
@@ -174,6 +202,10 @@ test('管家主屏和三个全屏弹窗在桌面与移动视口均可读可操�
     await expect(modal).toBeVisible()
     await expect(modal).toContainText(expected)
     await expectNoOverflowOrOverlap(page, '.so-app-modal')
+    // 弹窗盒子和关闭按钮都必须完整在视口内：移动端曾因 height: 100vh 比 fixed 遮罩高，
+    // 被 align-items: center 上下均分溢出，✕ 被顶到视口上方，用户只能刷新退出。
+    await expectWithinViewport(page, '.so-app-modal', `${button} 弹窗`)
+    await expectWithinViewport(page, '.so-app-modal-close', `${button} 关闭按钮`)
     await page.locator('.so-app-modal-close').click()
     await expect(modal).toBeHidden()
     await expect(page.locator('.so-butler-app')).toBeVisible()

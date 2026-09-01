@@ -3641,6 +3641,18 @@
 .so-app-modal-backdrop {
   position: fixed;
   inset: 0;
+  /*
+   * 移动端必须用 dvh，inset: 0 不够。
+   *
+   * position: fixed 的包含块是「布局视口」，等于工具栏收起时的那个大视口；100vh 也是同一个
+   * 大值。真正可见的是「视觉视口」（window.innerHeight），地址栏露出时更小。所以 inset: 0
+   * 和 100vh 都会让遮罩比可见区域高一截，里面 align-items: center 居中的盒子随之上下溢出，
+   * 头部的 ✕ 被顶到可见区域上方——遮罩是 fixed，用户滚不动，只能刷新。
+   *
+   * dvh 跟随工具栏显隐变化，取的就是当前可见高度。100vh 留作老内核兜底。
+   */
+  height: 100vh;
+  height: 100dvh;
   z-index: 10000; /* 压过手机壳（9999）与悬浮图标（9998） */
   display: flex;
   align-items: center;
@@ -3652,7 +3664,13 @@
   display: flex;
   flex-direction: column;
   width: min(680px, calc(100vw - 16px));
-  max-height: calc(100vh - 16px);
+  /*
+   * 高度上限用 100% 而不是 100vh：backdrop 是 position: fixed; inset: 0，它的高度
+   * 就是真实可见区域。移动端 100vh 含地址栏占的那条，比可见区域高——盒子一旦比
+   * backdrop 高，align-items: center 会让它上下同时溢出，头部（✕ 所在）被顶到可见
+   * 区域上方，用户只能刷新。dvh 作为渐进增强留给不以 backdrop 为父的场景。
+   */
+  max-height: 100%;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 12px;
@@ -3664,6 +3682,8 @@
   display: flex;
   justify-content: flex-end;
   padding: 6px;
+  /* 永不压缩：这里是唯一的关闭入口，被挤掉等于把用户关在弹窗里 */
+  flex: 0 0 auto;
 }
 
 .so-app-modal-close {
@@ -3692,14 +3712,30 @@
   padding: 0 14px 14px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  /*
+   * flex 项默认 min-height: auto，不会收缩到内容以下——overflow-y: auto 因此不生效，
+   * 长报告会把盒子顶高、连带把头部挤出可见区域。min-height: 0 才让它真的滚动。
+   */
+  /*
+   * flex 项默认 min-height: auto，不会收缩到内容以下。盒子高度是定死的（移动端 100%、
+   * 桌面 max-height），所以缺了这条不是把盒子顶高，而是 overflow-y: auto 根本不生效——
+   * 超出的内容被 .so-app-modal 的 overflow: hidden 裁掉且滚不到。
+   */
+  flex: 1 1 auto;
+  min-height: 0;
+  /* 滚到边界不要把手机后面的聊天一起带着滚 */
+  overscroll-behavior: contain;
 }
 
 /* 手机端全屏（三原则：复杂编辑占满屏） */
 @media (max-width: 600px) {
   .so-app-modal {
-    width: 100vw;
-    height: 100vh;
-    max-height: none;
+    /*
+     * 100% 撑满 backdrop（fixed; inset: 0），不用 100vw/100vh：
+     * 视口单位在移动端含浏览器工具栏，会让盒子比可见区域大一圈。
+     */
+    width: 100%;
+    height: 100%;
     border: none;
     border-radius: 0;
   }
