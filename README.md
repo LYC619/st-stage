@@ -15,7 +15,7 @@
 
 | App | 一句话 |
 | --- | --- |
-| 🎭 **立绘** | 给任何纯文字角色卡加视觉小说式立绘（旗舰功能，见下） |
+| 🎭 **立绘** | 给任何纯文字角色卡加视觉小说式立绘 |
 | 🗂 **图库** | 立绘包管理：上传/分组/绑定/分享/图床 |
 | 🧹 **管家** | ST 性能管家：一键性能模式 + 改动前快照还原、逐项微调、体检与优化指南（[说明](docs/BUTLER.md)） |
 | 🔢 **MVU** | MVU 版角色卡的变量面板：树状查看/编辑/删除 + 变化高亮（[说明](docs/VARIABLES.md)） |
@@ -228,9 +228,3 @@ docs/superpowers/         历史设计文档（plans/specs，归档参考）
 ```
 
 > 注意：修改 `core/` 或 `st-extension/src/` 后必须运行 `pnpm build:ext` 并提交根目录产物，GitHub 安装的用户才能拿到更新（热更新会让他们免清缓存）。需要生成独立 ST 发布目录时再运行 `pnpm build:st`。`st-distribution/` 不会复制 `public/` 或 `reference/`；`.planning/`、`_analysis/`、`reference/` 等本地工作区目录已 gitignore，不随仓库分发。
-
-## Built with v0
-
-This repository is linked to a [v0](https://v0.app) project.
-
-[Continue working on v0 →](https://v0.app/chat/projects/prj_D1rjqBadx2EAZHnDXoNJs9UVMFlP)
