@@ -2536,7 +2536,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           const url = await deps.adapter.saveImage(
             file.name,
             result.dataUri,
-            deps.adapter.getCurrentCharacterName() || plan.targetPackName,
+            plan.targetPackName, // 始终按图包名称建目录，不依赖当前角色卡
           )
 
           // 解析/新建目标包

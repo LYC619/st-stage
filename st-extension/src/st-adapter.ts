@@ -116,11 +116,44 @@ export class STAdapter implements PlatformAdapter {
     const [, ext, data] = match
     const baseName = sanitizePathSegment(fileName.replace(/\.[^.]+$/, '')) || `sprite_${Date.now()}`
     const folder = sanitizePathSegment(characterName) || 'shared'
-    if (typeof ctx.saveBase64AsFile === 'function') {
-      return await ctx.saveBase64AsFile(data, `sprite-overlay/${folder}`, baseName, ext)
+
+    // SillyTavern 不在 context 上暴露 saveBase64AsFile，我们直接调用 /api/images/upload
+    // 注意：ch_name 会被 sanitize-filename 处理，所以不能包含斜杠
+    // 我们只传角色名，让 ST 在 user/images/<角色名>/ 下保存
+    try {
+      const payload = {
+        image: data,              // 纯 base64 数据（不含 data:image/...;base64, 前缀）
+        format: ext,              // 文件扩展名（不含点）
+        ch_name: folder,          // 角色名（会被 sanitize，不能含斜杠）
+        filename: baseName.replace(/\./g, '_')  // 文件名，点号替换成下划线
+      }
+
+      console.log('[sprite-overlay] 上传图片到 ST:', {
+        ch_name: payload.ch_name,
+        filename: payload.filename,
+        format: payload.format
+      })
+
+      const response = await fetch('/api/images/upload', {
+        method: 'POST',
+        headers: ctx.getRequestHeaders(),
+        body: JSON.stringify(payload)
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`HTTP ${response.status}: ${errorText}`)
+      }
+
+      const result = await response.json()
+      console.log('[sprite-overlay] 上传成功，路径:', result.path)
+      return result.path
+
+    } catch (error) {
+      console.error('[sprite-overlay] 上传失败，回退到 base64:', error)
+      // 回退：直接内嵌 data URI（占空间但保证可用）
+      return base64Data
     }
-    // 回退：直接内嵌 data URI（占空间但保证可用）
-    return base64Data
   }
 
   async saveImageFile(file: File, fileName: string, characterName: string): Promise<string> {
