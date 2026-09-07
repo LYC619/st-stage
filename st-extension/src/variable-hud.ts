@@ -45,10 +45,9 @@ export interface VariableHudController {
 const DRAG_THRESHOLD = 4
 const BUTTON_SIZE = 44
 
-/** 贴边收拢：拖到屏幕外会永远拿不回来，所以夹在可视区内。 */
-function clampPosition(x: number, y: number): { x: number; y: number } {
-  const maxX = Math.max(0, window.innerWidth - BUTTON_SIZE)
-  const maxY = Math.max(0, window.innerHeight - BUTTON_SIZE)
+function clampPosition(x: number, y: number, width = BUTTON_SIZE, height = BUTTON_SIZE): { x: number; y: number } {
+  const maxX = Math.max(0, window.innerWidth - width)
+  const maxY = Math.max(0, window.innerHeight - height)
   return {
     x: Math.min(maxX, Math.max(0, x)),
     y: Math.min(maxY, Math.max(0, y)),
@@ -102,6 +101,29 @@ export function createVariableHud(deps: VariableHudDeps): VariableHudController 
     panel.style.display = open ? 'flex' : 'none'
   }
 
+  let measureFrame: number | null = null
+  const useAnimationFrame = typeof window.requestAnimationFrame === 'function'
+  function measureAndClamp(): void {
+    if (disposed) return
+    const rect = root.getBoundingClientRect()
+    const next = clampPosition(position.x, position.y, rect.width || BUTTON_SIZE, rect.height || BUTTON_SIZE)
+    const changed = next.x !== position.x || next.y !== position.y
+    position = next
+    applyPosition()
+    if (changed) deps.writeState({ ...position, open })
+  }
+
+  function scheduleMeasure(): void {
+    if (disposed || measureFrame !== null) return
+    const measure = (): void => {
+      measureFrame = null
+      measureAndClamp()
+    }
+    measureFrame = useAnimationFrame
+      ? window.requestAnimationFrame(measure)
+      : window.setTimeout(measure, 0)
+  }
+
   function renderRows(container: HTMLElement, rows: HudRow[]): void {
     for (const row of rows) {
       const line = el('div', row.value === null ? 'so-varhud-group' : 'so-varhud-row')
@@ -127,11 +149,12 @@ export function createVariableHud(deps: VariableHudDeps): VariableHudController 
     try {
       sections = await deps.readSections()
     } catch (err) {
-      if (token !== renderToken || disposed) return
+      if (token !== renderToken || disposed || !open) return
       panelBody.textContent = ''
       const fail = el('div', 'so-varhud-notice')
       fail.textContent = `读取失败：${err instanceof Error ? err.message : String(err)}`
       panelBody.append(fail)
+      scheduleMeasure()
       return
     }
     // 异步读期间用户可能已收起或又点开一次：晚到的结果直接丢掉
@@ -167,17 +190,22 @@ export function createVariableHud(deps: VariableHudDeps): VariableHudController 
       panelBody.append(empty)
     }
     panelTitle.textContent = anyRow ? '变量速查' : '变量速查（空）'
+    scheduleMeasure()
   }
 
   function setOpen(next: boolean): void {
+    if (disposed) return
     open = next
     applyOpen()
+    scheduleMeasure()
     deps.writeState({ ...position, open })
     if (open) void render()
   }
 
   // —— 拖动：按下起测位移，超过阈值才算拖，否则抬起时当点击 ——
+  let cancelDrag: (() => void) | null = null
   function startDrag(event: PointerEvent): void {
+    if (disposed || cancelDrag) return
     if (event.button !== 0 && event.pointerType === 'mouse') return
     const startX = event.clientX
     const startY = event.clientY
@@ -185,24 +213,33 @@ export function createVariableHud(deps: VariableHudDeps): VariableHudController 
     let moved = false
 
     const onMove = (ev: PointerEvent): void => {
+      if (ev.pointerId !== event.pointerId) return
       const dx = ev.clientX - startX
       const dy = ev.clientY - startY
       if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return
       moved = true
-      position = clampPosition(origin.x + dx, origin.y + dy)
+      const rect = root.getBoundingClientRect()
+      position = clampPosition(origin.x + dx, origin.y + dy, rect.width || BUTTON_SIZE, rect.height || BUTTON_SIZE)
       applyPosition()
     }
-    const finish = (asClick: boolean): void => {
+    const cleanup = (): void => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
       window.removeEventListener('pointercancel', onCancel)
+      cancelDrag = null
+    }
+    const finish = (ev: PointerEvent, asClick: boolean): void => {
+      if (ev.pointerId !== event.pointerId) return
+      cleanup()
       if (moved) deps.writeState({ ...position, open })
       else if (asClick) setOpen(!open)
+      scheduleMeasure()
     }
-    const onUp = (): void => finish(true)
+    const onUp = (ev: PointerEvent): void => finish(ev, true)
     // 系统手势接管：保留已拖到的位置，但不当作点击
-    const onCancel = (): void => finish(false)
+    const onCancel = (ev: PointerEvent): void => finish(ev, false)
 
+    cancelDrag = cleanup
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
     window.addEventListener('pointercancel', onCancel)
@@ -229,20 +266,32 @@ export function createVariableHud(deps: VariableHudDeps): VariableHudController 
   const unsubscribe = deps.subscribe(() => void render())
 
   const onResize = (): void => {
-    position = clampPosition(position.x, position.y)
-    applyPosition()
+    scheduleMeasure()
   }
   window.addEventListener('resize', onResize)
+  const visualViewport = window.visualViewport
+  visualViewport?.addEventListener('resize', onResize)
+  visualViewport?.addEventListener('scroll', onResize)
 
   applyPosition()
   applyOpen()
+  scheduleMeasure()
   if (open) void render()
 
   return {
     dispose() {
+      if (disposed) return
       disposed = true
+      cancelDrag?.()
       unsubscribe()
       window.removeEventListener('resize', onResize)
+      visualViewport?.removeEventListener('resize', onResize)
+      visualViewport?.removeEventListener('scroll', onResize)
+      if (measureFrame !== null) {
+        if (useAnimationFrame) window.cancelAnimationFrame(measureFrame)
+        else window.clearTimeout(measureFrame)
+        measureFrame = null
+      }
       root.remove()
     },
     refresh() {

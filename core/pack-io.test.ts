@@ -245,3 +245,19 @@ describe('remoteUrl 导入导出（阶段7）', () => {
     expect(pack.sprites.every((s) => s.remoteUrl === undefined)).toBe(true)
   })
 })
+
+
+describe('inventoryPrompt JSON roundtrip', () => {
+  it.each([
+    ['  {list} 提示  ', '{list} 提示'],
+    ['  ', undefined], [42, undefined], [null, undefined],
+    ['😀'.repeat(801), '😀'.repeat(800)],
+  ])('normalizes %s on both export and import', async (raw, expected) => {
+    const pack = { id: 'inv', name: '图包', inventoryPrompt: raw,
+      sprites: [{ tag: '笑', url: 'https://img.test/a.webp' }] } as unknown as SpritePack
+    const exported = await exportPack(pack)
+    expect(exported.inventoryPrompt).toBe(expected)
+    expect(importPack(JSON.stringify({ ...exported, inventoryPrompt: raw })).inventoryPrompt).toBe(expected)
+    expect(importPack(JSON.stringify(exported)).inventoryPrompt).toBe(expected)
+  })
+})

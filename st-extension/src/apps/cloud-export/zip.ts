@@ -1,4 +1,5 @@
 import JSZip from 'jszip'
+import { isArchiveSegment } from './archive-path'
 import type { ExportFile } from './types'
 
 export interface ZipProgress {
@@ -17,6 +18,24 @@ export interface DownloadSchedulers {
   scheduleRevoke?: (revoke: () => void, delayMs: number) => void
 }
 
+/** 在 JSZip 可以覆盖条目前预检全部路径，不自动重命名资源。 */
+export function assertUniqueArchivePaths(files: Pick<ExportFile, 'path'>[]): void {
+  const seen = new Map<string, string>()
+  for (const { path } of files) {
+    if (!path.split('/').every(isArchiveSegment)) throw new Error('备份路径不合法：' + path)
+    const canonical = path.normalize('NFC').toLowerCase()
+    if (seen.has(canonical)) throw new Error('备份路径冲突：' + seen.get(canonical) + ' 与 ' + path)
+    seen.set(canonical, path)
+  }
+  for (const [canonical, path] of seen) {
+    const parts = canonical.split('/')
+    for (let length = 1; length < parts.length; length += 1) {
+      const parent = parts.slice(0, length).join('/')
+      if (seen.has(parent)) throw new Error('备份路径冲突：' + seen.get(parent) + ' 与 ' + path)
+    }
+  }
+}
+
 export async function downloadSTBackup(
   files: ExportFile[],
   filename: string,
@@ -24,6 +43,7 @@ export async function downloadSTBackup(
   schedulers: DownloadSchedulers = {},
 ): Promise<void> {
   if (!files.length) throw new Error('没有选择任何可导出的资产')
+  assertUniqueArchivePaths(files)
   const zip = new JSZip()
   for (const file of files) {
     zip.file(file.path, file.data, file.updatedAt ? { date: new Date(file.updatedAt) } : undefined)

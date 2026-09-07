@@ -48,6 +48,7 @@ import { normalizeTag, sanitizePackName } from './naming'
 import { extractImageCode } from './share-code'
 import {
   normalizeLabels,
+  normalizeInventoryPrompt,
   normalizeNote,
   normalizeOutfitNotes,
   normalizePackKind,
@@ -332,6 +333,7 @@ function migratePack(raw: unknown): SpritePack | null {
   const kind = normalizePackKind(p.kind)
   const customTags = normalizeLabels(p.customTags)
   const promptNote = normalizeNote(p.promptNote)
+  const inventoryPrompt = normalizeInventoryPrompt(p.inventoryPrompt)
   const outfitNotes = normalizeOutfitNotes(p.outfitNotes)
   const sourceStoryKey = typeof p.sourceStoryKey === 'string' ? p.sourceStoryKey.trim() : ''
   return {
@@ -344,6 +346,7 @@ function migratePack(raw: unknown): SpritePack | null {
     ...(roleName ? { roleName } : {}),
     ...(outfit ? { outfit } : {}),
     ...(promptNote ? { promptNote } : {}),
+    ...(inventoryPrompt ? { inventoryPrompt } : {}),
     ...(p.promptNotePlacement === 'before-list' || p.promptNotePlacement === 'after-list'
       ? { promptNotePlacement: p.promptNotePlacement }
       : {}),

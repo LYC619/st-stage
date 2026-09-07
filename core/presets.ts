@@ -317,7 +317,7 @@ export function mergePresetPacks(
     const metadata = override.metadata
     if (metadata) {
       if (metadata.name !== undefined) merged.name = metadata.name
-      for (const field of ['author', 'description', 'roleName', 'outfit', 'promptNote'] as const) {
+      for (const field of ['author', 'description', 'roleName', 'outfit', 'promptNote', 'inventoryPrompt'] as const) {
         const value = metadata[field]
         if (value === null) delete merged[field]
         else if (value !== undefined) merged[field] = value

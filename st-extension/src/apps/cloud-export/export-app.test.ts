@@ -468,3 +468,72 @@ describe('cloud export app', () => {
     expect(ctx.toast).toHaveBeenCalledWith('warning', '请先选择要导出的内容')
   })
 })
+
+
+describe('stable search input', () => {
+  it('retains focus, caret and raw query while typing, editing, pasting and selecting results', async () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const app = cloudExportApp(fakeBridge(), vi.fn())
+    app.mount(container, context())
+    await settle()
+    const input = container.querySelector<HTMLInputElement>('input.so-app-input')!
+    input.focus()
+    const check = () => {
+      expect(container.querySelector('input.so-app-input')).toBe(input)
+      expect(document.activeElement).toBe(input)
+    }
+    for (const char of ['A', 'l', 'i']) {
+      input.setRangeText(char, input.selectionStart ?? 0, input.selectionEnd ?? 0, 'end')
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, data: char }))
+      check()
+    }
+    expect(input.value).toBe('Ali')
+    expect(input.selectionStart).toBe(3)
+    input.setSelectionRange(1, 1)
+    input.setRangeText('X', 1, 1, 'end')
+    input.dispatchEvent(new InputEvent('input', { bubbles: true, data: 'X' }))
+    check()
+    expect(input.selectionStart).toBe(2)
+    input.setRangeText('', 1, 2, 'end')
+    input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }))
+    check()
+    input.setRangeText('Alice ', 0, input.value.length, 'end')
+    input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste' }))
+    check()
+    checkCharacter(container)
+    await settle()
+    check()
+    expect(input.value).toBe('Alice ')
+    expect(input.selectionStart).toBe(6)
+    app.unmount?.()
+    container.remove()
+  })
+
+  it('preserves an IME draft when lazy loading renders and commits only on compositionend', async () => {
+    const bridge = fakeBridge()
+    let resolve!: (value: ExportCharacter[]) => void
+    vi.mocked(bridge.listCharacters).mockReturnValue(new Promise(done => { resolve = done }))
+    const container = document.createElement('div')
+    document.body.append(container)
+    const app = cloudExportApp(bridge)
+    app.mount(container, context())
+    const input = container.querySelector<HTMLInputElement>('input.so-app-input')!
+    input.focus()
+    input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+    input.value = ' 测试 '
+    input.setSelectionRange(1, 3)
+    input.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: true }))
+    resolve([alice])
+    await settle()
+    expect(container.querySelector('input.so-app-input')).toBe(input)
+    expect(document.activeElement).toBe(input)
+    expect(input.value).toBe(' 测试 ')
+    expect([input.selectionStart, input.selectionEnd]).toEqual([1, 3])
+    expect(container.querySelectorAll('.cloud-export-character')).toHaveLength(1)
+    input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+    expect(container.querySelectorAll('.cloud-export-character')).toHaveLength(0)
+    app.unmount?.()
+    container.remove()
+  })
+})

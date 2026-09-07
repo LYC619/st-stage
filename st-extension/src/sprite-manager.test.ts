@@ -10,6 +10,7 @@ import { buildPromptSceneNotes } from '../../core/prompt-builder'
 import { getPresetPacks, presetSpriteKey } from '../../core/presets'
 import { setPresetLocalSprite, setPresetMetadata } from '../../core/preset-overrides'
 import { MAX_NOTE_CODE_POINTS } from '../../core/sprite-metadata'
+import { encodeShareStringV2 } from '../../core/share-code'
 
 const imageMocks = vi.hoisted(() => ({
   compressImage: vi.fn(),
@@ -974,7 +975,7 @@ describe('createSpriteManager upload finalization', () => {
     const manager = createSpriteManager({
       adapter: {
         getCurrentCharacterName: () => '阿珍',
-        saveImage: async () => 'saved-url',
+        saveImage: async () => '/user/images/saved.webp',
       } as unknown as STAdapter,
       getSettings: () => settings,
       updateSettings: (next) => {
@@ -1005,7 +1006,7 @@ describe('createSpriteManager upload finalization', () => {
     const manager = createSpriteManager({
       adapter: {
         getCurrentCharacterName: () => '阿珍',
-        saveImage: async (name: string) => `saved:${name}`,
+        saveImage: async (name: string) => `/user/images/${name}`,
       } as unknown as STAdapter,
       getSettings: () => settings,
       updateSettings: (next) => {
@@ -1022,7 +1023,7 @@ describe('createSpriteManager upload finalization', () => {
 
     await vi.waitFor(() => expect(document.querySelector('.so-upload-modal')).toBeNull())
     expect(settings.packs.find((pack) => pack.id === 'current')?.sprites).toEqual([
-      { tag: '安全', url: 'saved:鸣人-安全.png' },
+      { tag: '安全', url: '/user/images/鸣人-安全.png' },
     ])
     expect(document.querySelector('.so-toast')?.textContent).toContain(
       '成功 1 张，冲突 1 张，失败 0 张，未处理 0 张',
@@ -1041,7 +1042,7 @@ describe('createSpriteManager upload finalization', () => {
     const manager = createSpriteManager({
       adapter: {
         getCurrentCharacterName: () => '阿珍',
-        saveImage: async () => 'saved-url',
+        saveImage: async () => '/user/images/saved.webp',
       } as unknown as STAdapter,
       getSettings: () => settings,
       updateSettings: (next) => {
@@ -1056,7 +1057,7 @@ describe('createSpriteManager upload finalization', () => {
 
     await vi.waitFor(() => expect(document.querySelector('.so-upload-modal')).toBeNull())
     expect(settings.packs.find((pack) => pack.id === 'current')?.sprites).toEqual([
-      { tag: '安全', url: 'saved-url' },
+      { tag: '安全', url: '/user/images/saved.webp' },
     ])
     expect(document.querySelector('.so-toast')?.textContent).toContain(
       '成功 1 张，冲突 0 张，失败 0 张，未处理 0 张',
@@ -1535,7 +1536,7 @@ describe('createSpriteManager selected-pack resource actions', () => {
     const manager = createSpriteManager({
       adapter: {
         getCurrentCharacterName: () => '阿珍',
-        saveImage: async () => 'saved-url',
+        saveImage: async () => '/user/images/saved.webp',
       } as unknown as STAdapter,
       getSettings: () => settings,
       updateSettings: (next) => { settings = next },
@@ -1547,7 +1548,7 @@ describe('createSpriteManager selected-pack resource actions', () => {
     expect(document.querySelector('.so-toast')?.textContent).toContain(
       '疑似把棋盘格烤进图片，插件无法安全自动去除',
     )
-    expect(settings.packs[0].sprites[0].url).toBe('saved-url')
+    expect(settings.packs[0].sprites[0].url).toBe('/user/images/saved.webp')
     manager.close()
   })
 
@@ -1766,6 +1767,7 @@ describe('createSpriteManager selected-pack resource actions', () => {
       promptNote: '用户备注',
       promptNotePlacement: 'after-list',
       outfitNotes: null,
+      inventoryPrompt: null,
     })
 
     document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
@@ -1818,6 +1820,27 @@ describe('createSpriteManager selected-pack resource actions', () => {
     expect(settings.presetOverrides[builtIn.id]).toBeUndefined()
     expect(document.querySelector('.so-toast')?.textContent)
       .toContain('操作未生效，存在地址冲突')
+    manager.close()
+  })
+
+  it('keeps an explicitly cleared preset inventory prompt cleared', () => {
+    const builtIn = getPresetPacks()[0]
+    let settings = setPresetMetadata({ ...createDefaultSettings(), galleryFoldByRole: false, packs: [builtIn] },
+      builtIn.id, { inventoryPrompt: '用户清单' })
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '塞拉菲娜' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+    })
+    manager.open()
+    document.querySelector<HTMLElement>('.so-pack-card')!.click()
+    const panel = openPackInfoPanel()
+    const input = panel.querySelector<HTMLTextAreaElement>('.so-pack-inventory-prompt')!
+    expect(input.value).toBe('用户清单')
+    input.value = ''
+    findButton(panel, '保存包信息').click()
+    expect(settings.presetOverrides[builtIn.id]?.metadata?.inventoryPrompt).toBeNull()
+    expect(settings.packs[0].inventoryPrompt).toBeUndefined()
     manager.close()
   })
 
@@ -2111,5 +2134,238 @@ describe('createSpriteManager selected-pack resource actions', () => {
     expect(copied).toContain('stpack2:乙|')
     expect(copied.split('\n\n')).toHaveLength(2)
     manager.close()
+  })
+})
+
+
+describe('image save boundaries and concurrent edits', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    imageMocks.compressImage.mockReset()
+    imgbbMocks.uploadToImgbb.mockReset()
+  })
+
+  it.each(['reject', 'embedded', 'concurrent', 'hosted-concurrent'])('preserves the target on replacement %s', async (mode) => {
+    let settings: PluginSettings = { ...createDefaultSettings(), autoUpload: mode === 'hosted-concurrent', imgbbApiKey: 'key',
+      packs: [{ id: 'p', name: '替换包', sprites: [{ tag: '旧图', url: '/user/images/old.webp', labels: ['保留'] }] }] }
+    const change = () => { settings = { ...settings, packs: [{ ...settings.packs[0], sprites: [
+      { ...settings.packs[0].sprites[0], url: '/user/images/newer.webp', labels: ['新编辑'] },
+    ] }] } }
+    imageMocks.compressImage.mockResolvedValue({ dataUri: 'data:image/webp;base64,AA==', compressed: true, bytes: 1 })
+    const saveImage = vi.fn(async () => {
+      if (mode === 'reject') throw new Error('HTTP 500')
+      if (mode === 'concurrent') change()
+      return mode === 'embedded' ? 'data:image/webp;base64,AA==' : '/user/images/replaced.webp'
+    })
+    imgbbMocks.uploadToImgbb.mockImplementation(async () => {
+      change()
+      return { url: 'https://i.ibb.co/a.webp', code: 'a.webp' }
+    })
+    installFilePicker([new File(['a'], 'a.png')])
+    const manager = createSpriteManager({ adapter: { getCurrentCharacterName: () => '', saveImage } as unknown as STAdapter,
+      getSettings: () => settings, updateSettings: next => { settings = next } })
+    manager.open()
+    document.querySelector<HTMLElement>('.so-pack-card')!.click()
+    document.querySelector<HTMLElement>('.so-sprite-cell')!.click()
+    document.querySelector<HTMLElement>('[data-action-id="replace"]')!.click()
+    await vi.waitFor(() => expect(document.querySelector('.so-toast')?.textContent).toBeTruthy())
+    expect(settings.packs[0].sprites[0].url).toBe(mode.includes('concurrent') ? '/user/images/newer.webp' : '/user/images/old.webp')
+    expect(settings.packs[0].sprites[0].remoteUrl).toBeUndefined()
+    if (mode.includes('concurrent')) expect(document.querySelector('.so-toast')?.textContent).toContain('目标已更改')
+    manager.destroy()
+  })
+
+  it.each(['insert', 'delete'])('does not overwrite batch targets changed during upload: %s', async mode => {
+    let settings = uploadSettings()
+    imageMocks.compressImage.mockResolvedValue({ dataUri: 'data:image/png;base64,AA==', compressed: false, bytes: 1 })
+    const saveImage = vi.fn(async () => {
+      settings = { ...settings, packs: mode === 'delete' ? settings.packs.slice(1) : settings.packs.map(pack =>
+        pack.id === 'current' ? { ...pack, sprites: [{ tag: 'good', url: '/user/images/newer.webp' }] } : pack) }
+      return '/user/images/upload.webp'
+    })
+    const manager = createSpriteManager({ adapter: { getCurrentCharacterName: () => '', saveImage } as unknown as STAdapter,
+      getSettings: () => settings, updateSettings: next => { settings = next } })
+    const modal = openUploadPreview(manager, '当前包', [new File(['a'], 'good.png')])
+    findButton(modal, '开始上传').click()
+    await vi.waitFor(() => expect(document.querySelector('.so-upload-modal')).toBeNull())
+    expect(settings.packs.flatMap(pack => pack.sprites).some(sprite => sprite.url === '/user/images/upload.webp')).toBe(false)
+    if (mode === 'insert') expect(settings.packs[0].sprites[0].url).toBe('/user/images/newer.webp')
+    expect(document.querySelector('.so-toast')?.textContent).toContain('成功 0 张')
+    manager.destroy()
+  })
+
+  it('counts only persisted local files in a mixed batch', async () => {
+    let settings = uploadSettings()
+    imageMocks.compressImage.mockResolvedValue({ dataUri: 'data:image/png;base64,AA==', compressed: false, bytes: 1 })
+    const saveImage = vi.fn().mockResolvedValueOnce('/user/images/good.webp').mockResolvedValueOnce('data:image/png;base64,AA==')
+    const manager = createSpriteManager({ adapter: { getCurrentCharacterName: () => '', saveImage } as unknown as STAdapter,
+      getSettings: () => settings, updateSettings: next => { settings = next } })
+    const modal = openUploadPreview(manager, '当前包', [new File(['a'], 'good.png'), new File(['b'], 'bad.png')])
+    findButton(modal, '开始上传').click()
+    await vi.waitFor(() => expect(document.querySelector('.so-upload-modal')).toBeNull())
+    expect(settings.packs[0].sprites).toEqual([{ tag: 'good', url: '/user/images/good.webp' }])
+    expect(document.querySelector('.so-toast')?.textContent).toContain('成功 1 张，冲突 0 张，失败 1 张')
+    manager.destroy()
+  })
+})
+
+describe('createSpriteManager import lifecycle', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+  })
+
+  it('asks before reading a large JSON using its actual byte size', () => {
+    const file = new File(['{}'], 'large.json')
+    Object.defineProperty(file, 'size', { value: 3 * 1024 * 1024 })
+    const read = vi.spyOn(file, 'text')
+    installFilePicker([file])
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const manager = createSpriteManager({ adapter: { getCurrentCharacterName: () => '' } as STAdapter,
+      getSettings: () => createDefaultSettings(), updateSettings: vi.fn(), saveDataUri: vi.fn() })
+    manager.open()
+    findButton(document, '导入 ▾').click()
+    findButton(document, '选择 JSON 文件…').click()
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('3.0 MiB'))
+    expect(read).not.toHaveBeenCalled()
+    manager.destroy()
+  })
+
+  it('does not open migration during an active import', async () => {
+    const settings = createDefaultSettings()
+    let resolve!: (url: string) => void
+    const pending = new Promise<string>((done) => { resolve = done })
+    const saveDataUri = vi.fn(() => pending)
+    installFilePicker([new File([JSON.stringify({ format: 'sprite-pack@3', name: 'import',
+      sprites: [{ tag: 'a', data: 'data:image/png;base64,QUFB' }],
+    })], 'pack.json')])
+    const manager = createSpriteManager({ adapter: { getCurrentCharacterName: () => '' } as STAdapter,
+      getSettings: () => settings, updateSettings: vi.fn(), saveDataUri })
+    manager.open()
+    findButton(document, '导入 ▾').click()
+    findButton(document, '选择 JSON 文件…').click()
+    await vi.waitFor(() => expect(saveDataUri).toHaveBeenCalledOnce())
+    expect(document.querySelector('.so-toast')?.textContent).toContain('正在准备导入')
+    findButton(document, '存储检查与迁移').click()
+    expect(document.querySelector('.so-storage-dialog')).toBeNull()
+    manager.destroy()
+    resolve('/user/images/a.png')
+    await pending
+  })
+
+  it('does not upload a delayed file while the storage dialog is open', async () => {
+    const settings = createDefaultSettings()
+    const file = new File(['pending'], 'pending.json')
+    let resolve!: (text: string) => void
+    const pending = new Promise<string>((done) => { resolve = done })
+    vi.spyOn(file, 'text').mockReturnValue(pending)
+    installFilePicker([file])
+    const saveDataUri = vi.fn(async () => '/user/images/a.png')
+    const manager = createSpriteManager({ adapter: { getCurrentCharacterName: () => '' } as STAdapter,
+      getSettings: () => settings, updateSettings: vi.fn(), saveDataUri })
+    manager.open()
+    findButton(document, '导入 ▾').click()
+    findButton(document, '选择 JSON 文件…').click()
+    findButton(document, '存储检查与迁移').click()
+    resolve(JSON.stringify({ format: 'sprite-pack@3', name: 'import', sprites: [{ tag: 'a', data: 'data:image/png;base64,QUFB' }] }))
+    await pending
+    await Promise.resolve()
+    expect(saveDataUri).not.toHaveBeenCalled()
+    manager.destroy()
+  })
+
+  it('does not install a JSON pack after the manager closes during image staging', async () => {
+    let settings = createDefaultSettings()
+    let release!: () => void
+    const pending = new Promise<string>((resolve) => { release = () => resolve('/user/images/imported.png') })
+    const saveDataUri = vi.fn(() => pending)
+    installFilePicker([new File([JSON.stringify({
+      format: 'sprite-pack@3',
+      name: '迟到导入',
+      sprites: [{ tag: '一', data: 'data:image/png;base64,QUFB' }],
+    })], 'import.json', { type: 'application/json' })])
+    const manager = createSpriteManager({
+      adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
+      getSettings: () => settings,
+      updateSettings: (next) => { settings = next },
+      saveDataUri,
+    })
+    manager.open()
+    findButton(document, '导入 ▾').click()
+    findButton(document, '选择 JSON 文件…').click()
+    await vi.waitFor(() => expect(saveDataUri).toHaveBeenCalledOnce())
+    manager.close()
+    release()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(settings.packs).toHaveLength(0)
+  })
+
+  it('does not upload a JSON file whose read finishes after closing and reopening', async () => {
+    const settings = createDefaultSettings()
+    const file = new File(['pending'], 'pending.json')
+    let resolve!: (text: string) => void
+    const text = new Promise<string>((done) => { resolve = done })
+    vi.spyOn(file, 'text').mockReturnValue(text)
+    installFilePicker([file])
+    const saveDataUri = vi.fn(async () => '/user/images/late.png')
+    const updateSettings = vi.fn()
+    const manager = createSpriteManager({ adapter: { getCurrentCharacterName: () => '' } as STAdapter,
+      getSettings: () => settings, updateSettings, saveDataUri })
+    manager.open()
+    findButton(document, '导入 ▾').click()
+    findButton(document, '选择 JSON 文件…').click()
+    manager.close()
+    manager.open()
+    resolve(JSON.stringify({ format: 'sprite-pack@3', name: 'late', sprites: [{ tag: 'a', data: 'data:image/png;base64,QUFB' }] }))
+    await text
+    await Promise.resolve()
+    expect(saveDataUri).not.toHaveBeenCalled()
+    expect(updateSettings).not.toHaveBeenCalled()
+    manager.destroy()
+  })
+
+  it.each([false, true])('installs an embedded JSON pack only after every image succeeds (failure=%s)', async (fail) => {
+    let settings = createDefaultSettings()
+    installFilePicker([new File([JSON.stringify({ format: 'sprite-pack@3', name: 'import', inventoryPrompt: 'kept',
+      sprites: [{ tag: 'a', data: 'data:image/png;base64,QUFB' }, { tag: 'b', data: 'data:image/gif;base64,QkJC' }],
+    })], 'pack.json')])
+    const saveDataUri = vi.fn().mockResolvedValueOnce('/user/images/a.png')
+    if (fail) saveDataUri.mockRejectedValueOnce(new Error('HTTP 413'))
+    else saveDataUri.mockResolvedValueOnce('/user/images/b.gif')
+    const updateSettings = vi.fn((next: PluginSettings) => { settings = next })
+    const manager = createSpriteManager({ adapter: { getCurrentCharacterName: () => '' } as STAdapter,
+      getSettings: () => settings, updateSettings, saveDataUri })
+    manager.open()
+    findButton(document, '导入 ▾').click()
+    findButton(document, '选择 JSON 文件…').click()
+    await vi.waitFor(() => expect(saveDataUri).toHaveBeenCalledTimes(2))
+    if (fail) {
+      await vi.waitFor(() => expect(document.querySelector('.so-toast')?.textContent).toContain('未安装'))
+      expect(updateSettings).not.toHaveBeenCalled()
+      expect(settings.packs).toHaveLength(0)
+    } else {
+      await vi.waitFor(() => expect(settings.packs).toHaveLength(1))
+      expect(settings.packs[0].inventoryPrompt).toBe('kept')
+      expect(JSON.stringify(settings)).not.toContain('data:image')
+    }
+    manager.destroy()
+  })
+
+  it('installs hosted share strings without uploading', async () => {
+    let settings = createDefaultSettings()
+    const saveDataUri = vi.fn()
+    const manager = createSpriteManager({ adapter: { getCurrentCharacterName: () => '' } as STAdapter,
+      getSettings: () => settings, updateSettings: (next) => { settings = next }, saveDataUri })
+    manager.open()
+    findButton(document, '导入 ▾').click()
+    const panel = document.querySelector<HTMLElement>('.so-popover[data-pop="导入"]')!
+    panel.querySelector('textarea')!.value = encodeShareStringV2({ id: 'p', name: 'shared', sprites: [{ tag: 'a', url: 'https://img.test/a.png' }] })!.text
+    findButton(panel, '导入').click()
+    await vi.waitFor(() => expect(settings.packs).toHaveLength(1))
+    expect(saveDataUri).not.toHaveBeenCalled()
+    manager.destroy()
   })
 })

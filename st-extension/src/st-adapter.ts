@@ -7,7 +7,7 @@
  * - context.setExtensionPrompt(MODULE, prompt, position, depth)：prompt 注入（官方 API，
  *   优于 fetch 拦截，抗 ST 版本升级）
  * - context.eventSource.on(event_types.MESSAGE_RECEIVED)：消息事件（优于 DOM 监听）
- * - saveBase64AsFile：把上传图片写入用户数据目录，返回可访问 URL
+ * - /api/images/upload：把上传图片写入用户数据目录，并读回校验后返回可访问 URL
  */
 
 import type { PlatformAdapter } from '../../core/adapter'
@@ -16,13 +16,20 @@ import { createDefaultSettings, INJECTION_DEPTH_DEFAULT } from '../../core/types
 import { migrateSettings } from '../../core/migrate'
 import { isPresetPack, mergePresetPacks } from '../../core/presets'
 import { isSafeLocalUserImagePath } from '../../core/sprite-store'
-import { sanitizePathSegment } from '../../core/naming'
 import { blobToDataUri } from '../../core/image-compress'
+import { persistSTImage, type ImageSaveOptions } from './image-persistence'
 import { storyArchiveKey, type StoryContext } from '../../core/story-archive'
 
 export const MODULE_NAME = 'sprite_overlay'
 
-/** 仓库名即扩展安装目录名（通过 GitHub 链接安装时） */
+/** ST 设置只保存用户自定义包；代码内预设通过覆盖层重新合成。 */
+export function persistableSTSettings(settings: PluginSettings): PluginSettings {
+  return {
+    ...settings,
+    packs: settings.packs.filter((pack) => !isPresetPack(pack.id)),
+  }
+}
+
 /** ST 全局 context 的最小类型描述 */
 interface STContext {
   extensionSettings: Record<string, unknown>
@@ -98,62 +105,26 @@ export class STAdapter implements PlatformAdapter {
   async saveSettings(settings: PluginSettings): Promise<void> {
     const ctx = getContext()
     // 预设包随扩展分发、加载时动态合并，持久化时剔除以免存储冗余/过期 URL
-    ctx.extensionSettings[MODULE_NAME] = {
-      ...settings,
-      packs: settings.packs.filter((p) => !isPresetPack(p.id)),
-    }
+    ctx.extensionSettings[MODULE_NAME] = persistableSTSettings(settings)
     ctx.saveSettingsDebounced()
   }
 
-  async saveImage(fileName: string, base64Data: string, characterName: string): Promise<string> {
-    // ST 提供的文件保存工具（写入用户数据目录，返回静态可访问路径）
-    // saveBase64AsFile(base64WithoutPrefix, subFolder, fileName, extension)
-    const ctx = getContext() as STContext & {
-      saveBase64AsFile?: (data: string, folder: string, name: string, ext: string) => Promise<string>
-    }
-    const match = base64Data.match(/^data:image\/(\w+);base64,(.+)$/s)
-    if (!match) throw new Error('图片数据格式不正确')
-    const [, ext, data] = match
-    const baseName = sanitizePathSegment(fileName.replace(/\.[^.]+$/, '')) || `sprite_${Date.now()}`
-    const folder = sanitizePathSegment(characterName) || 'shared'
+  /** 迁移/备份入口按需读取原始插件值，不在启动时复制大对象。 */
+  getStoredSettingsForBackup(): unknown {
+    return getContext().extensionSettings[MODULE_NAME]
+  }
 
-    // SillyTavern 不在 context 上暴露 saveBase64AsFile，我们直接调用 /api/images/upload
-    // 注意：ch_name 会被 sanitize-filename 处理，所以不能包含斜杠
-    // 我们只传角色名，让 ST 在 user/images/<角色名>/ 下保存
-    try {
-      const payload = {
-        image: data,              // 纯 base64 数据（不含 data:image/...;base64, 前缀）
-        format: ext,              // 文件扩展名（不含点）
-        ch_name: folder,          // 角色名（会被 sanitize，不能含斜杠）
-        filename: baseName.replace(/\./g, '_')  // 文件名，点号替换成下划线
-      }
+  saveDataUri(dataUri: string, options: ImageSaveOptions = {}): Promise<string> {
+    const ctx = getContext()
+    const headers = ctx.getRequestHeaders
+    return persistSTImage(dataUri, {
+      fetch,
+      getRequestHeaders: headers ? () => headers.call(ctx) : undefined,
+    }, options)
+  }
 
-      console.log('[sprite-overlay] 上传图片到 ST:', {
-        ch_name: payload.ch_name,
-        filename: payload.filename,
-        format: payload.format
-      })
-
-      const response = await fetch('/api/images/upload', {
-        method: 'POST',
-        headers: ctx.getRequestHeaders(),
-        body: JSON.stringify(payload)
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`HTTP ${response.status}: ${errorText}`)
-      }
-
-      const result = await response.json()
-      console.log('[sprite-overlay] 上传成功，路径:', result.path)
-      return result.path
-
-    } catch (error) {
-      console.error('[sprite-overlay] 上传失败，回退到 base64:', error)
-      // 回退：直接内嵌 data URI（占空间但保证可用）
-      return base64Data
-    }
+  async saveImage(_fileName: string, base64Data: string, _characterName: string): Promise<string> {
+    return this.saveDataUri(base64Data)
   }
 
   async saveImageFile(file: File, fileName: string, characterName: string): Promise<string> {

@@ -13,6 +13,7 @@ import { extractImageCode } from './share-code'
 import { recompressDataUri } from './image-compress'
 import {
   normalizeLabels,
+  normalizeInventoryPrompt,
   normalizeNote,
   normalizeOutfitNotes,
   normalizePackKind,
@@ -51,6 +52,7 @@ export async function exportPack(pack: SpritePack, embedHosted = false): Promise
     }
   }
   const promptNote = normalizeNote(pack.promptNote)
+  const inventoryPrompt = normalizeInventoryPrompt(pack.inventoryPrompt)
   const outfitNotes = normalizeOutfitNotes(pack.outfitNotes)
   const sourceStoryKey = typeof pack.sourceStoryKey === 'string' ? pack.sourceStoryKey.trim() : ''
   const kind = normalizePackKind(pack.kind)
@@ -65,6 +67,7 @@ export async function exportPack(pack: SpritePack, embedHosted = false): Promise
     ...(pack.roleName ? { roleName: pack.roleName } : {}),
     ...(pack.outfit ? { outfit: pack.outfit } : {}),
     ...(promptNote ? { promptNote } : {}),
+    ...(inventoryPrompt ? { inventoryPrompt } : {}),
     ...(pack.promptNotePlacement === 'before-list' || pack.promptNotePlacement === 'after-list'
       ? { promptNotePlacement: pack.promptNotePlacement }
       : {}),
@@ -105,6 +108,7 @@ export function importPack(jsonText: string): SpritePack {
     customTags?: unknown
     roleName?: unknown
     outfit?: unknown
+    inventoryPrompt?: unknown
     promptNote?: unknown
     promptNotePlacement?: unknown
     outfitNotes?: unknown
@@ -171,6 +175,7 @@ export function importPack(jsonText: string): SpritePack {
   const kind = normalizePackKind(file.kind)
   const customTags = normalizeLabels(file.customTags)
   const promptNote = normalizeNote(file.promptNote)
+  const inventoryPrompt = normalizeInventoryPrompt(file.inventoryPrompt)
   const outfitNotes = normalizeOutfitNotes(file.outfitNotes)
   const sourceStoryKey = typeof file.sourceStoryKey === 'string' ? file.sourceStoryKey.trim() : ''
 
@@ -188,6 +193,7 @@ export function importPack(jsonText: string): SpritePack {
     ...(kind ? { kind } : {}),
     ...(customTags.length > 0 ? { customTags } : {}),
     ...(promptNote ? { promptNote } : {}),
+    ...(inventoryPrompt ? { inventoryPrompt } : {}),
     ...(file.promptNotePlacement === 'before-list' || file.promptNotePlacement === 'after-list'
       ? { promptNotePlacement: file.promptNotePlacement }
       : {}),

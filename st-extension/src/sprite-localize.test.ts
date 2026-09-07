@@ -117,7 +117,13 @@ describe('localizeSprite', () => {
     })).rejects.toThrow('远程图片过大')
   })
 
-  it('rejects a save result that is still remote', async () => {
+  it.each([
+    ['remote URL', 'https://img.test/not-local.webp'],
+    ['data URI', 'data:image/webp;base64,AA=='],
+    ['blob URL', 'blob:https://img.test/id'],
+    ['extension path', '/scripts/extension/image.webp'],
+    ['traversal path', '/user/images/../secret.webp'],
+  ])('rejects a save result that is not a safe ST user-image path (%s)', async (_name, savedUrl) => {
     await expect(localizeSprite(remote, 'image.webp', {
       fetch: vi.fn(async () => response(new Blob(['remote'], { type: 'image/png' }))) as typeof fetch,
       compress: vi.fn(async () => ({
@@ -125,8 +131,17 @@ describe('localizeSprite', () => {
         compressed: true,
         bytes: 1,
       })),
-      saveImage: vi.fn(async () => 'https://img.test/not-local.webp'),
-    })).rejects.toThrow('平台未返回本地地址')
+      saveImage: vi.fn(async () => savedUrl),
+    })).rejects.toThrow('安全的本地用户图片地址')
+  })
+
+  it('preserves URL encoding after validating the local path', async () => {
+    const localized = await localizeSprite(remote, 'image.webp', {
+      fetch: vi.fn(async () => response(new Blob(['remote'], { type: 'image/png' }))) as typeof fetch,
+      compress: vi.fn(async () => ({ dataUri: 'data:image/webp;base64,AA==', compressed: true, bytes: 1 })),
+      saveImage: vi.fn(async () => '/user/images/a%23b.webp'),
+    })
+    expect(localized.url).toBe('/user/images/a%23b.webp')
   })
 
   it('reports response body read failures as download failures', async () => {

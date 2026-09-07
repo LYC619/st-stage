@@ -1,5 +1,6 @@
 import type { Sprite } from '../../core/types'
 import { getSpriteSource } from '../../core/types'
+import { localUserImagePath } from '../../core/sprite-store'
 import {
   compressImage,
   type CompressResult,
@@ -66,8 +67,9 @@ export async function localizeSprite(
   } catch (error) {
     throw new Error(`保存本地图片失败：${errorMessage(error)}`, { cause: error })
   }
-  if (!localUrl || getSpriteSource({ ...sprite, url: localUrl }) === 'hosted') {
-    throw new Error('保存本地图片失败：平台未返回本地地址')
+  const safeLocalUrl = localUserImagePath(localUrl)
+  if (!safeLocalUrl) {
+    throw new Error('保存本地图片失败：平台未返回安全的本地用户图片地址')
   }
 
   return { ...sprite, url: localUrl, remoteUrl: sprite.url }

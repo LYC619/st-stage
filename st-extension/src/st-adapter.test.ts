@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { STAdapter } from './st-adapter'
+import { STAdapter, persistableSTSettings } from './st-adapter'
 import { createDefaultSettings } from '../../core/types'
 import { getPresetPacks, presetSpriteKey } from '../../core/presets'
 
@@ -30,6 +30,27 @@ describe('STAdapter story context', () => {
 })
 
 describe('STAdapter settings persistence', () => {
+  it('uses the same custom-pack projection for saving and storage diagnostics', async () => {
+    const context = { extensionSettings: {} as Record<string, unknown>, saveSettingsDebounced: vi.fn() }
+    window.SillyTavern = { getContext: () => context } as never
+    const settings = createDefaultSettings()
+    settings.packs = [...getPresetPacks(), { id: 'custom', name: '自定义', sprites: [] }]
+    expect(persistableSTSettings(settings).packs.map((pack) => pack.id)).toEqual(['custom'])
+    await new STAdapter().saveSettings(settings)
+    expect(new STAdapter().getStoredSettingsForBackup()).toEqual(context.extensionSettings.sprite_overlay)
+  })
+
+  it('preserves normalized inventory prompts through save and reload', async () => {
+    const context = { extensionSettings: {} as Record<string, unknown>, saveSettingsDebounced: vi.fn() }
+    window.SillyTavern = { getContext: () => context } as never
+    const adapter = new STAdapter()
+    const settings = createDefaultSettings()
+    settings.packs = [{ id: 'custom', name: '自定义', sprites: [], inventoryPrompt: '  第一行\n第二行  ' }]
+    await adapter.saveSettings(settings)
+    expect((await adapter.loadSettings()).packs.find(pack => pack.id === 'custom')?.inventoryPrompt)
+      .toBe('第一行\n第二行')
+  })
+
   it('loads merged preset overrides beside custom packs', async () => {
     const preset = getPresetPacks()[0]
     const sprite = preset.sprites[0]
@@ -146,6 +167,55 @@ describe('STAdapter runtime events', () => {
     expect(handler).toHaveBeenCalledWith('正文 [立绘:微笑]')
     off()
     expect(removeListener).toHaveBeenCalledWith('stream_token_received', wrapped)
+  })
+})
+
+describe('STAdapter image persistence', () => {
+  it('does not reuse a display filename and preserves the first uploaded bytes', async () => {
+    const disk = new Map<string, Uint8Array>()
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/images/upload') {
+        const payload = JSON.parse(String(init?.body)) as { ch_name: string; filename: string; format: string; image: string }
+        const path = `/user/images/${payload.ch_name}/${payload.filename}.${payload.format}`
+        disk.set(path, Uint8Array.from(atob(payload.image), (char) => char.charCodeAt(0)))
+        return new Response(JSON.stringify({ path }), { status: 200 })
+      }
+      const bytes = disk.get(String(input))
+      return bytes ? new Response(bytes as BodyInit) : new Response('', { status: 404 })
+    }))
+    window.SillyTavern = {
+      getContext: () => ({ getRequestHeaders: () => ({ 'X-CSRF-Token': 'token' }) }),
+    } as never
+
+    const adapter = new STAdapter()
+    const first = await adapter.saveImage('happy.webp', 'data:image/webp;base64,QUFB', 'Alice')
+    const second = await adapter.saveImage('happy.webp', 'data:image/webp;base64,QkJC', 'Alice')
+
+    expect(second).not.toBe(first)
+    expect(new TextDecoder().decode(disk.get(first))).toBe('AAA')
+    expect(new TextDecoder().decode(disk.get(second))).toBe('BBB')
+  })
+
+  it('rejects upload failure instead of returning the original data URI', async () => {
+    const request = vi.fn().mockResolvedValue(new Response('', { status: 500 }))
+    vi.stubGlobal('fetch', request)
+    window.SillyTavern = {
+      getContext: () => ({ getRequestHeaders: () => ({ 'X-CSRF-Token': 'token' }) }),
+    } as never
+
+    await expect(new STAdapter().saveImage('happy.webp', 'data:image/webp;base64,QUFB', 'Alice'))
+      .rejects.toThrow('图片上传失败')
+    expect(request).toHaveBeenCalledOnce()
+  })
+
+  it('reports missing ST request-header capability before issuing a request', async () => {
+    const request = vi.fn()
+    vi.stubGlobal('fetch', request)
+    window.SillyTavern = { getContext: () => ({}) } as never
+
+    await expect(new STAdapter().saveImage('happy.webp', 'data:image/webp;base64,QUFB', 'Alice'))
+      .rejects.toThrow('请求头能力')
+    expect(request).not.toHaveBeenCalled()
   })
 })
 

@@ -2646,7 +2646,6 @@ var DESCRIPTION_MAX_LENGTH = 200;
 var CONTROL_CHARS = new RegExp("[\\u0000-\\u001f\\u007f]", "g");
 var TAG_FORBIDDEN = /[[\]【】|=,，:：@/\\<>"'`]/g;
 var PACK_NAME_FORBIDDEN = /[|=@<>"'`]/g;
-var PATH_SEGMENT_ALLOWED = /[^0-9A-Za-z一-鿿぀-ヿ .\-_]/g;
 function normalizeTag(raw) {
   return raw.replace(CONTROL_CHARS, "").replace(TAG_FORBIDDEN, "").replace(/\s+/g, " ").trim().slice(0, TAG_MAX_LENGTH).trim();
 }
@@ -2694,9 +2693,6 @@ function sanitizePackName(raw) {
 }
 function sanitizeDescription(raw) {
   return raw.replace(CONTROL_CHARS, "").replace(/[<>]/g, "").trim().slice(0, DESCRIPTION_MAX_LENGTH).trim();
-}
-function sanitizePathSegment(raw) {
-  return raw.replace(CONTROL_CHARS, "").replace(PATH_SEGMENT_ALLOWED, "").replace(/\.{2,}/g, ".").replace(/^[. ]+|[. ]+$/g, "").slice(0, 40).trim();
 }
 
 // core/address-policy.ts
@@ -3926,9 +3922,9 @@ function countLeafRows(rows) {
 // st-extension/src/variable-hud.ts
 var DRAG_THRESHOLD = 4;
 var BUTTON_SIZE = 44;
-function clampPosition(x, y) {
-  const maxX = Math.max(0, window.innerWidth - BUTTON_SIZE);
-  const maxY = Math.max(0, window.innerHeight - BUTTON_SIZE);
+function clampPosition(x, y, width = BUTTON_SIZE, height = BUTTON_SIZE) {
+  const maxX = Math.max(0, window.innerWidth - width);
+  const maxY = Math.max(0, window.innerHeight - height);
   return {
     x: Math.min(maxX, Math.max(0, x)),
     y: Math.min(maxY, Math.max(0, y))
@@ -3972,6 +3968,25 @@ function createVariableHud(deps) {
     button2.style.display = open ? "none" : "flex";
     panel.style.display = open ? "flex" : "none";
   }
+  let measureFrame = null;
+  const useAnimationFrame = typeof window.requestAnimationFrame === "function";
+  function measureAndClamp() {
+    if (disposed) return;
+    const rect = root.getBoundingClientRect();
+    const next = clampPosition(position.x, position.y, rect.width || BUTTON_SIZE, rect.height || BUTTON_SIZE);
+    const changed = next.x !== position.x || next.y !== position.y;
+    position = next;
+    applyPosition();
+    if (changed) deps.writeState({ ...position, open });
+  }
+  function scheduleMeasure() {
+    if (disposed || measureFrame !== null) return;
+    const measure = () => {
+      measureFrame = null;
+      measureAndClamp();
+    };
+    measureFrame = useAnimationFrame ? window.requestAnimationFrame(measure) : window.setTimeout(measure, 0);
+  }
   function renderRows(container, rows) {
     for (const row of rows) {
       const line = el("div", row.value === null ? "so-varhud-group" : "so-varhud-row");
@@ -3996,11 +4011,12 @@ function createVariableHud(deps) {
     try {
       sections = await deps.readSections();
     } catch (err) {
-      if (token !== renderToken || disposed) return;
+      if (token !== renderToken || disposed || !open) return;
       panelBody.textContent = "";
       const fail = el("div", "so-varhud-notice");
       fail.textContent = `读取失败：${err instanceof Error ? err.message : String(err)}`;
       panelBody.append(fail);
+      scheduleMeasure();
       return;
     }
     if (token !== renderToken || disposed || !open) return;
@@ -4032,36 +4048,50 @@ function createVariableHud(deps) {
       panelBody.append(empty);
     }
     panelTitle.textContent = anyRow ? "变量速查" : "变量速查（空）";
+    scheduleMeasure();
   }
   function setOpen(next) {
+    if (disposed) return;
     open = next;
     applyOpen();
+    scheduleMeasure();
     deps.writeState({ ...position, open });
     if (open) void render2();
   }
+  let cancelDrag = null;
   function startDrag(event) {
+    if (disposed || cancelDrag) return;
     if (event.button !== 0 && event.pointerType === "mouse") return;
     const startX = event.clientX;
     const startY = event.clientY;
     const origin = { ...position };
     let moved = false;
     const onMove = (ev) => {
+      if (ev.pointerId !== event.pointerId) return;
       const dx = ev.clientX - startX;
       const dy = ev.clientY - startY;
       if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
       moved = true;
-      position = clampPosition(origin.x + dx, origin.y + dy);
+      const rect = root.getBoundingClientRect();
+      position = clampPosition(origin.x + dx, origin.y + dy, rect.width || BUTTON_SIZE, rect.height || BUTTON_SIZE);
       applyPosition();
     };
-    const finish = (asClick) => {
+    const cleanup = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
+      cancelDrag = null;
+    };
+    const finish = (ev, asClick) => {
+      if (ev.pointerId !== event.pointerId) return;
+      cleanup();
       if (moved) deps.writeState({ ...position, open });
       else if (asClick) setOpen(!open);
+      scheduleMeasure();
     };
-    const onUp = () => finish(true);
-    const onCancel = () => finish(false);
+    const onUp = (ev) => finish(ev, true);
+    const onCancel = (ev) => finish(ev, false);
+    cancelDrag = cleanup;
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onCancel);
@@ -4084,18 +4114,30 @@ function createVariableHud(deps) {
   }
   const unsubscribe = deps.subscribe(() => void render2());
   const onResize = () => {
-    position = clampPosition(position.x, position.y);
-    applyPosition();
+    scheduleMeasure();
   };
   window.addEventListener("resize", onResize);
+  const visualViewport = window.visualViewport;
+  visualViewport?.addEventListener("resize", onResize);
+  visualViewport?.addEventListener("scroll", onResize);
   applyPosition();
   applyOpen();
+  scheduleMeasure();
   if (open) void render2();
   return {
     dispose() {
+      if (disposed) return;
       disposed = true;
+      cancelDrag?.();
       unsubscribe();
       window.removeEventListener("resize", onResize);
+      visualViewport?.removeEventListener("resize", onResize);
+      visualViewport?.removeEventListener("scroll", onResize);
+      if (measureFrame !== null) {
+        if (useAnimationFrame) window.cancelAnimationFrame(measureFrame);
+        else window.clearTimeout(measureFrame);
+        measureFrame = null;
+      }
       root.remove();
     },
     refresh() {
@@ -5986,7 +6028,7 @@ function mergePresetPacks(overrides, presets = getPresetPacks()) {
     const metadata = override.metadata;
     if (metadata) {
       if (metadata.name !== void 0) merged.name = metadata.name;
-      for (const field of ["author", "description", "roleName", "outfit", "promptNote"]) {
+      for (const field of ["author", "description", "roleName", "outfit", "promptNote", "inventoryPrompt"]) {
         const value = metadata[field];
         if (value === null) delete merged[field];
         else if (value !== void 0) merged[field] = value;
@@ -6164,6 +6206,7 @@ function migratePack(raw) {
   const kind = normalizePackKind(p.kind);
   const customTags = normalizeLabels(p.customTags);
   const promptNote = normalizeNote(p.promptNote);
+  const inventoryPrompt = normalizeInventoryPrompt(p.inventoryPrompt);
   const outfitNotes = normalizeOutfitNotes(p.outfitNotes);
   const sourceStoryKey = typeof p.sourceStoryKey === "string" ? p.sourceStoryKey.trim() : "";
   return {
@@ -6176,6 +6219,7 @@ function migratePack(raw) {
     ...roleName ? { roleName } : {},
     ...outfit ? { outfit } : {},
     ...promptNote ? { promptNote } : {},
+    ...inventoryPrompt ? { inventoryPrompt } : {},
     ...p.promptNotePlacement === "before-list" || p.promptNotePlacement === "after-list" ? { promptNotePlacement: p.promptNotePlacement } : {},
     ...Object.keys(outfitNotes).length > 0 ? { outfitNotes } : {},
     ...sourceStoryKey ? { sourceStoryKey } : {},
@@ -6292,6 +6336,105 @@ function loadImage(src) {
   });
 }
 
+// st-extension/src/image-persistence.ts
+var ST_IMAGE_SAVE_TIMEOUT_MS = 3e4;
+var ST_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
+var IMAGE_FORMATS = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/svg+xml": "svg",
+  "image/avif": "avif",
+  "image/bmp": "bmp"
+};
+function uniqueImageName() {
+  const cryptoApi = globalThis.crypto;
+  if (!cryptoApi || typeof cryptoApi.getRandomValues !== "function") {
+    throw new Error("当前环境不支持安全随机图片命名");
+  }
+  const bytes = new Uint8Array(16);
+  cryptoApi.getRandomValues(bytes);
+  return `sprite_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+function parseImageData(dataUri) {
+  const match = /^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/]+={0,2})$/i.exec(dataUri);
+  if (!match || match[2].length % 4 !== 0) throw new Error("图片数据格式不正确");
+  const format = IMAGE_FORMATS[match[1].toLowerCase()];
+  if (!format) throw new Error("不支持的图片格式，请转换为 PNG、WebP 或 GIF 后重试");
+  const binarySize = match[2].length * 3 / 4 - (match[2].endsWith("==") ? 2 : match[2].endsWith("=") ? 1 : 0);
+  if (binarySize > ST_IMAGE_MAX_BYTES) throw new Error("单张图片不能超过 20 MiB");
+  let binary;
+  try {
+    binary = atob(match[2]);
+  } catch (error) {
+    throw new Error("图片数据格式不正确", { cause: error });
+  }
+  if (!binary.length) throw new Error("图片数据为空");
+  return {
+    image: match[2],
+    format,
+    bytes: Uint8Array.from(binary, (char) => char.charCodeAt(0))
+  };
+}
+function sameBytes(actual, expected) {
+  if (actual.length !== expected.length) return false;
+  for (let index = 0; index < expected.length; index += 1) {
+    if (actual[index] !== expected[index]) return false;
+  }
+  return true;
+}
+async function persistSTImage(dataUri, deps, options = {}) {
+  if (typeof deps.fetch !== "function") throw new Error("当前环境不支持图片保存请求能力");
+  if (typeof deps.getRequestHeaders !== "function") {
+    throw new Error("当前酒馆未提供图片保存所需的请求头能力");
+  }
+  const headers = deps.getRequestHeaders();
+  if (!headers || typeof headers !== "object" || Object.keys(headers).length === 0) {
+    throw new Error("当前酒馆未提供图片保存所需的请求头能力");
+  }
+  const data = parseImageData(dataUri);
+  const filename = uniqueImageName();
+  const expectedPath = `/user/images/sprite_overlay/${filename}.${data.format}`;
+  const controller = new AbortController();
+  const onAbort = () => controller.abort(options.signal?.reason);
+  options.signal?.addEventListener("abort", onAbort, { once: true });
+  if (options.signal?.aborted) onAbort();
+  const timer = setTimeout(() => controller.abort(new Error("图片保存超时")), ST_IMAGE_SAVE_TIMEOUT_MS);
+  try {
+    const response = await deps.fetch("/api/images/upload", {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        image: data.image,
+        format: data.format,
+        ch_name: "sprite_overlay",
+        filename
+      })
+    });
+    if (!response.ok) throw new Error(`图片上传失败：HTTP ${response.status}`);
+    const result = await response.json();
+    const path = result && typeof result === "object" && "path" in result ? result.path : void 0;
+    if (typeof path !== "string" || path !== expectedPath || localUserImagePath(path) !== expectedPath) {
+      throw new Error("图片上传响应未返回本次保存的安全本地路径");
+    }
+    const readback = await deps.fetch(path, {
+      cache: "no-store",
+      credentials: "same-origin",
+      signal: controller.signal
+    });
+    if (!readback.ok) throw new Error(`图片保存后校验失败：HTTP ${readback.status}`);
+    const actual = new Uint8Array(await readback.arrayBuffer());
+    if (!sameBytes(actual, data.bytes)) throw new Error("图片保存后校验失败：文件内容不一致");
+    return path;
+  } finally {
+    clearTimeout(timer);
+    options.signal?.removeEventListener("abort", onAbort);
+  }
+}
+
 // core/story-archive.ts
 function storyArchiveKey(parts) {
   const groupId = clean(parts.groupId);
@@ -6360,6 +6503,12 @@ function hash(value) {
 
 // st-extension/src/st-adapter.ts
 var MODULE_NAME = "sprite_overlay";
+function persistableSTSettings(settings) {
+  return {
+    ...settings,
+    packs: settings.packs.filter((pack) => !isPresetPack(pack.id))
+  };
+}
 function getContext() {
   const st = window.SillyTavern;
   if (!st) throw new Error("[sprite-overlay] SillyTavern 全局对象不存在，扩展只能在 ST 内运行");
@@ -6394,23 +6543,23 @@ var STAdapter = class {
   }
   async saveSettings(settings) {
     const ctx = getContext();
-    ctx.extensionSettings[MODULE_NAME] = {
-      ...settings,
-      packs: settings.packs.filter((p) => !isPresetPack(p.id))
-    };
+    ctx.extensionSettings[MODULE_NAME] = persistableSTSettings(settings);
     ctx.saveSettingsDebounced();
   }
-  async saveImage(fileName, base64Data, characterName) {
+  /** 迁移/备份入口按需读取原始插件值，不在启动时复制大对象。 */
+  getStoredSettingsForBackup() {
+    return getContext().extensionSettings[MODULE_NAME];
+  }
+  saveDataUri(dataUri, options = {}) {
     const ctx = getContext();
-    const match = base64Data.match(/^data:image\/(\w+);base64,(.+)$/s);
-    if (!match) throw new Error("图片数据格式不正确");
-    const [, ext, data] = match;
-    const baseName = sanitizePathSegment(fileName.replace(/\.[^.]+$/, "")) || `sprite_${Date.now()}`;
-    const folder = sanitizePathSegment(characterName) || "shared";
-    if (typeof ctx.saveBase64AsFile === "function") {
-      return await ctx.saveBase64AsFile(data, `sprite-overlay/${folder}`, baseName, ext);
-    }
-    return base64Data;
+    const headers = ctx.getRequestHeaders;
+    return persistSTImage(dataUri, {
+      fetch,
+      getRequestHeaders: headers ? () => headers.call(ctx) : void 0
+    }, options);
+  }
+  async saveImage(_fileName, base64Data, _characterName) {
+    return this.saveDataUri(base64Data);
   }
   async saveImageFile(file, fileName, characterName) {
     return this.saveImage(fileName, await blobToDataUri(file), characterName);
@@ -6916,6 +7065,7 @@ async function exportPack(pack, embedHosted = false) {
     }
   }
   const promptNote = normalizeNote(pack.promptNote);
+  const inventoryPrompt = normalizeInventoryPrompt(pack.inventoryPrompt);
   const outfitNotes = normalizeOutfitNotes(pack.outfitNotes);
   const sourceStoryKey = typeof pack.sourceStoryKey === "string" ? pack.sourceStoryKey.trim() : "";
   const kind = normalizePackKind(pack.kind);
@@ -6930,6 +7080,7 @@ async function exportPack(pack, embedHosted = false) {
     ...pack.roleName ? { roleName: pack.roleName } : {},
     ...pack.outfit ? { outfit: pack.outfit } : {},
     ...promptNote ? { promptNote } : {},
+    ...inventoryPrompt ? { inventoryPrompt } : {},
     ...pack.promptNotePlacement === "before-list" || pack.promptNotePlacement === "after-list" ? { promptNotePlacement: pack.promptNotePlacement } : {},
     ...Object.keys(outfitNotes).length > 0 ? { outfitNotes } : {},
     ...sourceStoryKey ? { sourceStoryKey } : {},
@@ -6996,6 +7147,7 @@ function importPack(jsonText) {
   const kind = normalizePackKind(file.kind);
   const customTags = normalizeLabels(file.customTags);
   const promptNote = normalizeNote(file.promptNote);
+  const inventoryPrompt = normalizeInventoryPrompt(file.inventoryPrompt);
   const outfitNotes = normalizeOutfitNotes(file.outfitNotes);
   const sourceStoryKey = typeof file.sourceStoryKey === "string" ? file.sourceStoryKey.trim() : "";
   return {
@@ -7008,6 +7160,7 @@ function importPack(jsonText) {
     ...kind ? { kind } : {},
     ...customTags.length > 0 ? { customTags } : {},
     ...promptNote ? { promptNote } : {},
+    ...inventoryPrompt ? { inventoryPrompt } : {},
     ...file.promptNotePlacement === "before-list" || file.promptNotePlacement === "after-list" ? { promptNotePlacement: file.promptNotePlacement } : {},
     ...Object.keys(outfitNotes).length > 0 ? { outfitNotes } : {},
     ...sourceStoryKey ? { sourceStoryKey } : {},
@@ -7608,8 +7761,9 @@ async function localizeSprite(sprite, fileName, deps) {
   } catch (error) {
     throw new Error(`保存本地图片失败：${errorMessage(error)}`, { cause: error });
   }
-  if (!localUrl || getSpriteSource({ ...sprite, url: localUrl }) === "hosted") {
-    throw new Error("保存本地图片失败：平台未返回本地地址");
+  const safeLocalUrl = localUserImagePath(localUrl);
+  if (!safeLocalUrl) {
+    throw new Error("保存本地图片失败：平台未返回安全的本地用户图片地址");
   }
   return { ...sprite, url: localUrl, remoteUrl: sprite.url };
 }
@@ -7635,6 +7789,690 @@ function formatLimit() {
   return `${LOCALIZE_MAX_BYTES / 1024 / 1024} MB`;
 }
 
+// core/image-storage.ts
+function imageRefKey(ref) {
+  return JSON.stringify([ref.packId, ref.group, ref.outfit, ref.tag]);
+}
+function spriteImageRef(pack, sprite) {
+  return {
+    packId: pack.id,
+    group: sprite.group ?? "",
+    outfit: sprite.outfit ?? "",
+    tag: sprite.tag
+  };
+}
+function scanEmbeddedImages(settings) {
+  const candidates = [];
+  const byRef = /* @__PURE__ */ new Map();
+  const uniqueUrls = /* @__PURE__ */ new Set();
+  for (const pack of settings.packs) {
+    if (isPresetPack(pack.id)) continue;
+    for (const sprite of pack.sprites) {
+      const ref = spriteImageRef(pack, sprite);
+      const key = imageRefKey(ref);
+      byRef.set(key, (byRef.get(key) ?? 0) + 1);
+      if (!/^data:/i.test(sprite.url)) continue;
+      uniqueUrls.add(sprite.url);
+      candidates.push({ ref, sourceUrl: sprite.url });
+    }
+  }
+  const encoder = new TextEncoder();
+  return {
+    candidates,
+    ambiguous: candidates.filter((candidate) => (byRef.get(imageRefKey(candidate.ref)) ?? 0) > 1).map((candidate) => candidate.ref).filter((ref, index, refs) => refs.findIndex((item) => imageRefKey(item) === imageRefKey(ref)) === index),
+    embeddedReferenceCount: candidates.length,
+    uniqueEmbeddedCount: uniqueUrls.size,
+    embeddedTextBytes: [...uniqueUrls].reduce((total, url) => total + encoder.encode(url).byteLength, 0)
+  };
+}
+function applyImageChanges(latest, changes) {
+  const changeCounts = /* @__PURE__ */ new Map();
+  for (const change of changes) {
+    const key = imageRefKey(change.ref);
+    changeCounts.set(key, (changeCounts.get(key) ?? 0) + 1);
+  }
+  const targets = /* @__PURE__ */ new Map();
+  for (const pack of latest.packs) {
+    if (isPresetPack(pack.id)) continue;
+    for (const sprite of pack.sprites) {
+      const key = imageRefKey(spriteImageRef(pack, sprite));
+      const list = targets.get(key) ?? [];
+      list.push(sprite);
+      targets.set(key, list);
+    }
+  }
+  const accepted = /* @__PURE__ */ new Map();
+  const conflicts = [];
+  for (const change of changes) {
+    const key = imageRefKey(change.ref);
+    const matches = targets.get(key) ?? [];
+    if (changeCounts.get(key) !== 1 || matches.length !== 1 || matches[0].url !== change.expectedUrl || !change.nextUrl) {
+      conflicts.push(change);
+    } else {
+      accepted.set(key, change);
+    }
+  }
+  if (accepted.size === 0) return { settings: latest, applied: [], conflicts };
+  const packs = latest.packs.map((pack) => {
+    if (isPresetPack(pack.id)) return pack;
+    let changed = false;
+    const sprites = pack.sprites.map((sprite) => {
+      const change = accepted.get(imageRefKey(spriteImageRef(pack, sprite)));
+      if (!change) return sprite;
+      changed = true;
+      return { ...sprite, url: change.nextUrl };
+    });
+    return changed ? { ...pack, sprites } : pack;
+  });
+  return { settings: { ...latest, packs }, applied: [...accepted.values()], conflicts };
+}
+
+// st-extension/src/image-storage.ts
+async function stageEmbeddedImages(candidates, deps, options = {}) {
+  const savedByUri = /* @__PURE__ */ new Map();
+  const result = { ready: [], failed: [], unprocessed: [], cancelled: false };
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidate = candidates[index];
+    if (options.signal?.aborted) {
+      result.cancelled = true;
+      result.unprocessed = candidates.slice(index);
+      break;
+    }
+    try {
+      let saved = savedByUri.get(candidate.sourceUrl);
+      if (!saved) {
+        saved = deps.save(candidate.sourceUrl, { signal: options.signal }).then((url) => {
+          if (!localUserImagePath(url)) throw new Error("保存失败：平台未返回本地图片路径");
+          return url;
+        });
+        savedByUri.set(candidate.sourceUrl, saved);
+      }
+      const nextUrl = await saved;
+      if (options.signal?.aborted) {
+        result.cancelled = true;
+        result.unprocessed = candidates.slice(index);
+        result.ready = [];
+        break;
+      }
+      result.ready.push({ ref: candidate.ref, expectedUrl: candidate.sourceUrl, nextUrl });
+    } catch (error) {
+      if (options.signal?.aborted) {
+        result.cancelled = true;
+        result.unprocessed = candidates.slice(index);
+        result.ready = [];
+        break;
+      }
+      result.failed.push({
+        candidate,
+        message: error instanceof Error ? error.message : "保存失败"
+      });
+    }
+    options.onProgress?.(index + 1, candidates.length);
+    if (options.signal?.aborted) {
+      result.cancelled = true;
+      result.unprocessed = candidates.slice(index + 1);
+      result.ready = [];
+      break;
+    }
+  }
+  return result;
+}
+async function prepareImportedPack(pack, deps, options = {}) {
+  if (isPresetPack(pack.id)) throw new Error("内置预设不能作为导入目标");
+  if (options.signal?.aborted) throw new Error("内嵌图片准备未完成，图包未安装（已取消）");
+  const staging = {
+    ...createDefaultSettings(),
+    packs: [pack]
+  };
+  const scan = scanEmbeddedImages(staging);
+  if (scan.ambiguous.length > 0) throw new Error("图包包含重复图片身份，未安装");
+  if (scan.candidates.length === 0) return pack;
+  const staged = await stageEmbeddedImages(scan.candidates, deps, options);
+  if (staged.cancelled || staged.failed.length > 0 || staged.unprocessed.length > 0) {
+    throw new Error(`内嵌图片准备未完成，图包未安装（失败 ${staged.failed.length}）`);
+  }
+  const applied = applyImageChanges(staging, staged.ready);
+  const prepared = applied.settings.packs[0];
+  if (!prepared || applied.conflicts.length > 0 || prepared.sprites.some((sprite) => /^data:/i.test(sprite.url))) {
+    throw new Error("图包仍有未落盘图片，未安装");
+  }
+  return prepared;
+}
+
+// core/image-storage-backup.ts
+function validId(value) {
+  return typeof value === "string" && /^[0-9a-f]{32}$/i.test(value);
+}
+function object(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+function hasFields(value, fields) {
+  const record = object(value);
+  return !!record && fields.every((key) => Object.hasOwn(record, key));
+}
+function preservesFields(original, normalized) {
+  if (original === normalized) return true;
+  if (Array.isArray(original)) {
+    return Array.isArray(normalized) && original.length === normalized.length && original.every((value, index) => preservesFields(value, normalized[index]));
+  }
+  const record = object(original);
+  const next = object(normalized);
+  return !!record && !!next && Object.keys(record).every((key) => Object.hasOwn(next, key) && preservesFields(record[key], next[key]));
+}
+function findUnmappedEmbeddedImages(rawSettings, settings) {
+  const raw = object(rawSettings);
+  if (!raw) return [];
+  const validRefs = new Map(scanEmbeddedImages(settings).candidates.map((item) => [imageRefKey(item.ref), item.sourceUrl]));
+  const result = [];
+  const rawPacks = Array.isArray(raw.packs) ? raw.packs : [];
+  rawPacks.forEach((rawPack, packIndex) => {
+    const pack = object(rawPack);
+    const sprites = pack && Array.isArray(pack.sprites) ? pack.sprites : [];
+    sprites.forEach((rawSprite, spriteIndex) => {
+      const sprite = object(rawSprite);
+      if (typeof sprite?.url !== "string" || !/^data:/i.test(sprite.url)) return;
+      const ref = {
+        packId: typeof pack?.id === "string" ? pack.id : "",
+        group: typeof sprite.group === "string" ? sprite.group : "",
+        outfit: typeof sprite.outfit === "string" ? sprite.outfit : "",
+        tag: typeof sprite.tag === "string" ? sprite.tag : ""
+      };
+      if (isPresetPack(ref.packId) || validRefs.get(imageRefKey(ref)) !== sprite.url) {
+        result.push({ location: "packs[" + packIndex + "].sprites[" + spriteIndex + "].url", value: sprite.url });
+      }
+    });
+  });
+  const overrides = object(raw.presetOverrides);
+  for (const [presetId, rawOverride] of Object.entries(overrides ?? {})) {
+    const localSprites = object(object(rawOverride)?.localSprites);
+    for (const [key, value] of Object.entries(localSprites ?? {})) {
+      if (typeof value === "string" && /^data:/i.test(value)) {
+        result.push({ location: "presetOverrides." + presetId + ".localSprites." + key, value });
+      }
+    }
+  }
+  return result;
+}
+function createStorageBackup(settings, rawSettings, backupId, createdAt) {
+  if (!validId(backupId)) throw new Error("备份 ID 不合法");
+  if (!createdAt) throw new Error("备份时间不合法");
+  const persisted = { ...settings, packs: settings.packs.filter((pack) => !isPresetPack(pack.id)) };
+  const backup = { format: "st-stage-storage-backup@1", backupId, createdAt, settings: persisted, unmappedEmbedded: findUnmappedEmbeddedImages(rawSettings, persisted) };
+  return JSON.parse(JSON.stringify(backup));
+}
+function parseStorageBackup(text4) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text4);
+  } catch (error) {
+    throw new Error("存储备份不是有效 JSON", { cause: error });
+  }
+  const raw = object(parsed);
+  if (!raw || raw.format !== "st-stage-storage-backup@1" || !validId(raw.backupId) || typeof raw.createdAt !== "string" || !raw.createdAt || !Array.isArray(raw.unmappedEmbedded)) throw new Error("存储备份格式或版本不支持");
+  if (raw.unmappedEmbedded.some((item) => {
+    const entry = object(item);
+    return typeof entry?.location !== "string" || typeof entry.value !== "string" || !/^data:/i.test(entry.value);
+  })) throw new Error("存储备份附录不合法");
+  const rawSettings = object(raw.settings);
+  const defaults = createDefaultSettings();
+  if (!rawSettings || !Array.isArray(rawSettings.packs) || rawSettings.settingsVersion !== SETTINGS_VERSION || !hasFields(rawSettings, Object.keys(defaults)) || !hasFields(rawSettings.overlay, Object.keys(defaults.overlay)) || !hasFields(rawSettings.phone, Object.keys(defaults.phone)) || !Array.isArray(rawSettings.bindings) || rawSettings.bindings.some((binding) => !hasFields(binding, ["characterName", "packIds", "enabled"]))) {
+    throw new Error("存储备份设置不合法");
+  }
+  const settings = migrateSettings(rawSettings);
+  if (settings.packs.some((pack) => isPresetPack(pack.id)) || !preservesFields(rawSettings, settings)) {
+    throw new Error("存储备份设置不合法");
+  }
+  const packIds = /* @__PURE__ */ new Set();
+  const refs = /* @__PURE__ */ new Set();
+  for (const pack of settings.packs) {
+    if (packIds.has(pack.id)) throw new Error("存储备份包含重复图片身份");
+    packIds.add(pack.id);
+    for (const sprite of pack.sprites) {
+      const key = imageRefKey(spriteImageRef(pack, sprite));
+      if (refs.has(key)) throw new Error("存储备份包含重复图片身份");
+      refs.add(key);
+    }
+  }
+  return { format: "st-stage-storage-backup@1", backupId: raw.backupId, createdAt: raw.createdAt, settings: rawSettings, unmappedEmbedded: raw.unmappedEmbedded };
+}
+function assertLocalUrl(url) {
+  const normalized = localUserImagePath(url);
+  const hasControl = Array.from(url).some((char) => char.charCodeAt(0) < 32);
+  if (!normalized || !url.startsWith("/user/images/") || /[?#\\]/.test(url) || hasControl || /%(?:2f|5c)/i.test(url) || normalized.endsWith("/") || normalized.includes("//")) {
+    throw new Error("迁移回执包含不安全的本地图片路径");
+  }
+  return url;
+}
+function createMigrationReceipt(backup, ready) {
+  const scan = scanEmbeddedImages(backup.settings);
+  if (scan.ambiguous.length > 0) throw new Error("迁移回执与备份不匹配");
+  const sourceByRef = new Map(scan.candidates.map((item) => [imageRefKey(item.ref), item]));
+  const keys = /* @__PURE__ */ new Set();
+  const entries = ready.map((change) => {
+    const key = imageRefKey(change.ref);
+    const source = sourceByRef.get(key);
+    if (keys.has(key)) throw new Error("迁移回执包含重复图片身份");
+    if (!source || source.sourceUrl !== change.expectedUrl) throw new Error("迁移回执与备份不匹配");
+    keys.add(key);
+    return { ref: change.ref, localUrl: assertLocalUrl(change.nextUrl) };
+  });
+  return { format: "st-stage-image-migration-receipt@1", backupId: backup.backupId, entries };
+}
+function parseMigrationReceipt(text4, backup) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text4);
+  } catch (error) {
+    throw new Error("迁移回执不是有效 JSON", { cause: error });
+  }
+  const raw = object(parsed);
+  if (!raw || raw.format !== "st-stage-image-migration-receipt@1" || raw.backupId !== backup.backupId || !Array.isArray(raw.entries)) throw new Error("迁移回执与备份不匹配");
+  const scan = scanEmbeddedImages(backup.settings);
+  if (scan.ambiguous.length > 0) throw new Error("迁移回执与备份不匹配");
+  const sourceByRef = new Map(scan.candidates.map((item) => [imageRefKey(item.ref), item]));
+  const keys = /* @__PURE__ */ new Set();
+  const entries = raw.entries.map((item) => {
+    const entry = object(item);
+    const ref = object(entry?.ref);
+    if (!ref || typeof ref.packId !== "string" || typeof ref.group !== "string" || typeof ref.outfit !== "string" || typeof ref.tag !== "string" || typeof entry?.localUrl !== "string") throw new Error("迁移回执条目不合法");
+    const normalized = { packId: ref.packId, group: ref.group, outfit: ref.outfit, tag: ref.tag };
+    const key = imageRefKey(normalized);
+    if (keys.has(key) || !sourceByRef.has(key)) throw new Error("迁移回执与备份不匹配");
+    keys.add(key);
+    assertLocalUrl(entry.localUrl);
+    return { ref: normalized, localUrl: entry.localUrl };
+  });
+  return { format: "st-stage-image-migration-receipt@1", backupId: backup.backupId, entries };
+}
+function restoreMigratedImages(latest, backup, receipt) {
+  if (receipt.backupId !== backup.backupId) throw new Error("迁移回执与备份不匹配");
+  if (receipt.format !== "st-stage-image-migration-receipt@1") throw new Error("迁移回执格式不支持");
+  const scan = scanEmbeddedImages(backup.settings);
+  if (scan.ambiguous.length > 0) throw new Error("迁移回执与备份不匹配");
+  const sourceByRef = new Map(scan.candidates.map((item) => [imageRefKey(item.ref), item]));
+  const keys = /* @__PURE__ */ new Set();
+  const changes = receipt.entries.map((entry) => {
+    const key = imageRefKey(entry.ref);
+    const source = sourceByRef.get(imageRefKey(entry.ref));
+    if (keys.has(key) || !source) throw new Error("迁移回执与备份不匹配");
+    keys.add(key);
+    const localUrl = assertLocalUrl(entry.localUrl);
+    return { ref: entry.ref, expectedUrl: localUrl, nextUrl: source.sourceUrl };
+  });
+  return applyImageChanges(latest, changes);
+}
+
+// st-extension/src/image-storage-dialog.ts
+function sameCandidates(left, right) {
+  if (left.ambiguous.length || right.ambiguous.length || left.candidates.length !== right.candidates.length) return false;
+  const sources = new Map(left.candidates.map((item) => [imageRefKey(item.ref), item.sourceUrl]));
+  return right.candidates.every((item) => sources.get(imageRefKey(item.ref)) === item.sourceUrl);
+}
+function actionButton(label, action) {
+  const node = document.createElement("button");
+  node.type = "button";
+  node.className = "menu_button so-btn";
+  node.textContent = label;
+  node.addEventListener("click", action);
+  return node;
+}
+function randomId() {
+  const bytes = new Uint8Array(16);
+  if (!globalThis.crypto?.getRandomValues) throw new Error("当前环境不支持安全随机备份 ID");
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+function downloadJson(name, value, onDisposed) {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }));
+  let timer;
+  let disposed = false;
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    window.clearTimeout(timer);
+    URL.revokeObjectURL(url);
+    onDisposed();
+  };
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.style.display = "none";
+  document.body.append(link);
+  try {
+    link.click();
+    timer = window.setTimeout(dispose, 6e4);
+    return dispose;
+  } catch (error) {
+    dispose();
+    throw error;
+  } finally {
+    link.remove();
+  }
+}
+function openImageStorageDialog(deps) {
+  let phase = "inspect";
+  let backup = null;
+  let staged = [];
+  let receipt = null;
+  let backupDownloaded = false;
+  let receiptDownloaded = false;
+  let controller = null;
+  let runToken = 0;
+  let restoreSource = null;
+  const downloads = /* @__PURE__ */ new Set();
+  let scan = scanEmbeddedImages(deps.getSettings());
+  const previousFocus = document.activeElement;
+  function download(name, data) {
+    let dispose = () => {
+    };
+    dispose = downloadJson(name, data, () => downloads.delete(dispose));
+    downloads.add(dispose);
+  }
+  const backdrop = document.createElement("div");
+  backdrop.className = "so-storage-backdrop";
+  const dialog = document.createElement("section");
+  dialog.className = "so-storage-dialog";
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-label", "存储检查与迁移");
+  dialog.tabIndex = -1;
+  const heading = document.createElement("h3");
+  heading.textContent = "存储检查与迁移";
+  const summary = document.createElement("div");
+  summary.textContent = "发现 " + scan.embeddedReferenceCount + " 个内嵌图片引用，" + scan.uniqueEmbeddedCount + " 张不同图片，约 " + scan.embeddedTextBytes + " 字节文本";
+  const status = document.createElement("div");
+  status.className = "so-storage-status";
+  status.setAttribute("role", "status");
+  const privacy = document.createElement("p");
+  privacy.className = "so-storage-warning";
+  privacy.textContent = "备份可能包含私人提示词和 API Key，仅保存在自己的设备，不要公开上传。";
+  const progress = document.createElement("progress");
+  progress.setAttribute("aria-label", "图片上传校验进度");
+  const errors = document.createElement("ul");
+  errors.className = "so-storage-errors";
+  const controls = document.createElement("div");
+  controls.className = "so-storage-actions";
+  const confirmBackup = document.createElement("input");
+  confirmBackup.type = "checkbox";
+  const confirmLabel = document.createElement("label");
+  confirmLabel.append(confirmBackup, document.createTextNode("我已确认备份文件已保存在本机"));
+  const backupButton = actionButton("下载当前插件状态备份", () => {
+    if (phase !== "inspect" && phase !== "restore-ready") return;
+    invalidateBackup();
+    try {
+      scan = scanEmbeddedImages(deps.getSettings());
+      backup = createStorageBackup(
+        deps.getSettings(),
+        deps.adapter.getStoredSettingsForBackup(),
+        randomId(),
+        (/* @__PURE__ */ new Date()).toISOString()
+      );
+      download("sprite-overlay-storage-backup-" + backup.backupId + ".json", backup);
+      backupDownloaded = true;
+      status.textContent = scan.ambiguous.length > 0 || backup.unmappedEmbedded.length > 0 ? "备份已下载，但存在未能唯一映射的内嵌图片，不能自动迁移。请先整理为明确的自定义图包后重新下载备份。" : "备份下载请求已完成，请确认文件已保存后开始迁移。";
+    } catch (error) {
+      invalidateBackup();
+      status.textContent = error instanceof Error ? error.message : "备份失败";
+    }
+    render2();
+  });
+  const startButton = actionButton("开始迁移内嵌图片", () => {
+    void stage();
+  });
+  const receiptConfirmation = document.createElement("input");
+  receiptConfirmation.type = "checkbox";
+  receiptConfirmation.dataset.confirm = "receipt";
+  const receiptLabel = document.createElement("label");
+  receiptLabel.append(receiptConfirmation, document.createTextNode("我已确认迁移回执已保存在本机"));
+  const receiptButton = actionButton("下载迁移回执", () => {
+    if (!receipt || phase !== "staged") return;
+    receiptDownloaded = false;
+    receiptConfirmation.checked = false;
+    try {
+      download("sprite-overlay-image-migration-receipt-" + receipt.backupId + ".json", receipt);
+      receiptDownloaded = true;
+      status.textContent = "回执下载请求已完成，请确认文件已保存后应用成功项。";
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message : "回执下载失败";
+    }
+    render2();
+  });
+  const applyButton = actionButton("确认应用成功项", () => {
+    if (!receipt || !receiptDownloaded || !receiptConfirmation.checked || phase !== "staged") return;
+    const result = applyImageChanges(deps.getSettings(), staged);
+    finishApply(result, "应用");
+  });
+  const cancelButton = actionButton("取消暂存", () => {
+    if (phase !== "staging") return;
+    ++runToken;
+    controller?.abort();
+    controller = null;
+    reset();
+    status.textContent = "暂存已取消，原设置未改变；已上传的新文件未自动删除。";
+  });
+  const retryButton = actionButton("重新检查", () => reset());
+  const restorePanel = document.createElement("details");
+  restorePanel.className = "so-storage-restore";
+  const restoreHeading = document.createElement("summary");
+  restoreHeading.textContent = "恢复迁移前图片";
+  const restoreWarning = document.createElement("p");
+  restoreWarning.className = "so-storage-warning";
+  restoreWarning.textContent = "恢复会重新写入内嵌图片，增大 settings。仅回退仍与回执匹配的图片，其他设置和后续编辑不变。";
+  function fileInput(label) {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json,application/json";
+    input.setAttribute("aria-label", label);
+    input.addEventListener("change", () => {
+      if (phase === "closed" || phase === "staging" || phase === "staged" || phase === "applied") return;
+      ++runToken;
+      phase = "inspect";
+      restoreSource = null;
+      invalidateBackup();
+      render2();
+    });
+    const field = document.createElement("label");
+    field.className = "so-storage-file";
+    field.append(document.createTextNode(label), input);
+    restorePanel.append(field);
+    return input;
+  }
+  restorePanel.append(restoreHeading, restoreWarning);
+  const restoreBackup = fileInput("迁移前备份");
+  const restoreReceipt = fileInput("迁移回执");
+  const inspectRestoreButton = actionButton("检查恢复文件", () => {
+    void inspectRestore();
+  });
+  const restoreButton = actionButton("确认恢复图片", () => {
+    if (phase !== "restore-ready" || !restoreSource || !backupDownloaded || !confirmBackup.checked) return;
+    const result = restoreMigratedImages(deps.getSettings(), restoreSource.backup, restoreSource.receipt);
+    finishApply(result, "恢复");
+  });
+  restorePanel.append(inspectRestoreButton, restoreButton);
+  function finishApply(result, action) {
+    if (!checkRawImages()) return;
+    phase = "applied";
+    try {
+      if (result.applied.length > 0) deps.updateSettings(result.settings);
+      status.textContent = "已" + action + " " + result.applied.length + " 项，冲突 " + result.conflicts.length + " 项未修改。" + (result.applied.length ? "宿主已请求保存，请重载后复查。" : "原设置未改变。");
+    } catch (error) {
+      status.textContent = "设置更新或界面刷新失败，请保留备份和回执，重载后复查：" + (error instanceof Error ? error.message : "未知错误");
+    }
+    staged = [];
+    receipt = null;
+    restoreSource = null;
+    backup = null;
+    render2();
+  }
+  const closeButton = actionButton("关闭", () => close());
+  controls.append(backupButton, confirmLabel, startButton, cancelButton, receiptButton, receiptLabel, applyButton, retryButton);
+  const footer = document.createElement("div");
+  footer.className = "so-storage-footer";
+  footer.append(closeButton);
+  dialog.append(heading, summary, privacy, status, progress, errors, controls, restorePanel, footer);
+  backdrop.append(dialog);
+  document.body.append(backdrop);
+  dialog.focus();
+  function invalidateBackup() {
+    backup = null;
+    backupDownloaded = false;
+    confirmBackup.checked = false;
+    staged = [];
+    receipt = null;
+    receiptDownloaded = false;
+    receiptConfirmation.checked = false;
+  }
+  function reset() {
+    if (phase === "closed") return;
+    ++runToken;
+    phase = "inspect";
+    invalidateBackup();
+    restoreSource = null;
+    scan = scanEmbeddedImages(deps.getSettings());
+    errors.replaceChildren();
+    status.textContent = "";
+    render2();
+  }
+  function checkRawImages() {
+    if (!findUnmappedEmbeddedImages(deps.adapter.getStoredSettingsForBackup(), deps.getSettings()).length) return true;
+    reset();
+    status.textContent = "当前原始设置有未能映射的内嵌图片，操作已停止。请重新下载备份并整理图片后再继续。";
+    return false;
+  }
+  function render2() {
+    if (phase === "closed") return;
+    summary.textContent = "发现 " + scan.embeddedReferenceCount + " 个内嵌图片引用，" + scan.uniqueEmbeddedCount + " 张不同图片，约 " + scan.embeddedTextBytes + " 字节文本";
+    startButton.disabled = !backupDownloaded || !confirmBackup.checked || scan.candidates.length === 0 || scan.ambiguous.length > 0 || (backup?.unmappedEmbedded.length ?? 0) > 0 || phase !== "inspect";
+    receiptButton.disabled = !receipt || phase !== "staged";
+    applyButton.disabled = !receipt || !receiptDownloaded || !receiptConfirmation.checked || phase !== "staged";
+    backupButton.disabled = phase !== "inspect" && phase !== "restore-ready";
+    confirmBackup.disabled = !backupDownloaded || phase !== "inspect" && phase !== "restore-ready";
+    receiptConfirmation.disabled = !receiptDownloaded || phase !== "staged";
+    receiptLabel.hidden = phase !== "staged";
+    receiptButton.hidden = applyButton.hidden = phase !== "staged";
+    cancelButton.hidden = phase !== "staging";
+    progress.hidden = phase !== "staging";
+    retryButton.disabled = phase === "staging" || phase === "restore-reading";
+    inspectRestoreButton.disabled = phase !== "inspect" || !restoreBackup.files?.length || !restoreReceipt.files?.length;
+    restoreBackup.disabled = restoreReceipt.disabled = phase !== "inspect";
+    restoreButton.disabled = phase !== "restore-ready" || !restoreSource || !backupDownloaded || !confirmBackup.checked;
+  }
+  async function inspectRestore() {
+    const backupFile = restoreBackup.files?.[0];
+    const receiptFile = restoreReceipt.files?.[0];
+    if (phase !== "inspect" || !backupFile || !receiptFile) return;
+    const token = ++runToken;
+    phase = "restore-reading";
+    invalidateBackup();
+    render2();
+    try {
+      const sourceBackup = parseStorageBackup(await backupFile.text());
+      if (token !== runToken) return;
+      const sourceReceipt = parseMigrationReceipt(await receiptFile.text(), sourceBackup);
+      if (token !== runToken) return;
+      const result = restoreMigratedImages(deps.getSettings(), sourceBackup, sourceReceipt);
+      restoreSource = { backup: sourceBackup, receipt: sourceReceipt };
+      phase = "restore-ready";
+      restoreButton.hidden = false;
+      status.textContent = "可恢复 " + result.applied.length + " 项，冲突 " + result.conflicts.length + " 项。请先下载并确认当前插件状态备份。";
+    } catch (error) {
+      if (token !== runToken) return;
+      phase = "inspect";
+      restoreSource = null;
+      status.textContent = error instanceof Error ? error.message : "恢复文件校验失败";
+    }
+    render2();
+  }
+  async function stage() {
+    if (!backup || !backupDownloaded || !confirmBackup.checked || phase !== "inspect" || scan.ambiguous.length || backup.unmappedEmbedded.length || !scan.candidates.length) return;
+    if (!checkRawImages()) return;
+    const latestScan = scanEmbeddedImages(deps.getSettings());
+    if (!sameCandidates(scanEmbeddedImages(backup.settings), latestScan)) {
+      scan = latestScan;
+      invalidateBackup();
+      status.textContent = "备份后设置已变化，请重新下载备份并扫描后再迁移。";
+      render2();
+      return;
+    }
+    phase = "staging";
+    const token = ++runToken;
+    const sourceBackup = backup;
+    const runController = new AbortController();
+    controller = runController;
+    errors.replaceChildren();
+    progress.max = scan.candidates.length;
+    progress.value = 0;
+    render2();
+    try {
+      parseStorageBackup(JSON.stringify(sourceBackup));
+      const result = await stageEmbeddedImages(scan.candidates, {
+        save: (dataUri, options) => deps.saveDataUri(dataUri, options)
+      }, { signal: runController.signal, onProgress: (completed, total) => {
+        if (token !== runToken) return;
+        progress.value = completed;
+        status.textContent = "校验进度 " + completed + "/" + total;
+      } });
+      if (token !== runToken || runController.signal.aborted || result.cancelled) return;
+      staged = result.ready;
+      receipt = staged.length ? createMigrationReceipt(sourceBackup, staged) : null;
+      phase = staged.length ? "staged" : "inspect";
+      for (const failure of result.failed) {
+        const item = document.createElement("li");
+        item.textContent = failure.candidate.ref.tag + "：" + failure.message;
+        errors.append(item);
+      }
+      status.textContent = (staged.length ? "暂存完成" : "迁移未完成") + "：成功 " + staged.length + " 项，失败 " + result.failed.length + " 项，未处理 " + result.unprocessed.length + " 项，未支持 " + sourceBackup.unmappedEmbedded.length + " 项。原设置未改变。";
+    } catch (error) {
+      if (token === runToken && !runController.signal.aborted) {
+        status.textContent = error instanceof Error ? error.message : "迁移失败，原设置未改变";
+        phase = "inspect";
+      }
+    } finally {
+      if (controller === runController) controller = null;
+      render2();
+    }
+  }
+  function close() {
+    if (phase === "closed") return;
+    phase = "closed";
+    ++runToken;
+    controller?.abort();
+    controller = null;
+    for (const dispose of downloads) dispose();
+    downloads.clear();
+    backup = null;
+    staged = [];
+    receipt = null;
+    restoreSource = null;
+    scan = { candidates: [], ambiguous: [], embeddedReferenceCount: 0, uniqueEmbeddedCount: 0, embeddedTextBytes: 0 };
+    backdrop.remove();
+    if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
+    deps.onClosed();
+  }
+  confirmBackup.addEventListener("change", render2);
+  receiptConfirmation.addEventListener("change", render2);
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+    }
+    if (event.key !== "Tab") return;
+    const focusable = [...dialog.querySelectorAll("button:not(:disabled), input:not(:disabled), summary")].filter((node) => node.getClientRects().length > 0);
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  });
+  render2();
+  return { close };
+}
+
 // st-extension/src/sprite-manager.ts
 var SPRITE_PAGE_SIZE = 60;
 function createSpriteManager(deps) {
@@ -7657,6 +8495,8 @@ function createSpriteManager(deps) {
   let batchResourceBusy = false;
   let openedFrom = "overlay";
   let activeLightbox = null;
+  let storageDialog = null;
+  let importController = null;
   function applyBackdropSize() {
     if (!backdrop) return;
     backdrop.style.left = "0";
@@ -7741,6 +8581,10 @@ function createSpriteManager(deps) {
     if (!backdrop) return;
     activeLightbox?.controller?.close();
     closeEnableList();
+    importController?.abort();
+    importController = null;
+    storageDialog?.close();
+    storageDialog = null;
     document.removeEventListener("keydown", onEscape);
     window.removeEventListener("resize", applyBackdropSize);
     backdrop.remove();
@@ -7892,6 +8736,43 @@ ${options}`,
       return true;
     }
     return false;
+  }
+  async function prepareAndInstall(pack, body) {
+    if (destroyed || !backdrop || currentManagerBody() !== body) return;
+    if (storageDialog) {
+      toast(body, "请先关闭存储检查与迁移窗口");
+      return;
+    }
+    if (importController) {
+      toast(body, "已有导入任务正在处理");
+      return;
+    }
+    const controller = new AbortController();
+    importController = controller;
+    try {
+      toast(body, "正在准备导入图片");
+      const prepared = await prepareImportedPack(pack, {
+        save: (dataUri, options) => deps.saveDataUri ? deps.saveDataUri(dataUri, options) : deps.adapter.saveDataUri(dataUri, options)
+      }, {
+        signal: controller.signal,
+        onProgress: (completed, total) => {
+          if (!destroyed && !controller.signal.aborted && currentManagerBody() === body) {
+            toast(body, `导入图片校验 ${completed}/${total}`);
+          }
+        }
+      });
+      if (destroyed || controller.signal.aborted || !backdrop) return;
+      const activeBody = currentManagerBody();
+      if (!activeBody || activeBody !== body) return;
+      if (!installImportedPack(prepared, activeBody)) return;
+      const installed = deps.getSettings().packs.find((item) => item.id === prepared.id);
+      if (installed) view = { kind: "pack", packId: installed.id };
+      render2();
+    } catch (error) {
+      if (!controller.signal.aborted && !destroyed) toast(body, error instanceof Error ? error.message : "导入失败");
+    } finally {
+      if (importController === controller) importController = null;
+    }
   }
   function bindPackWithChoices(characterName, packId, body) {
     const settings = deps.getSettings();
@@ -8136,6 +9017,22 @@ ${options}`,
         actions.append(enableBtn);
       }
       actions.append(
+        button("存储检查与迁移", () => {
+          if (importController) {
+            toast(body, "已有导入任务正在处理");
+            return;
+          }
+          storageDialog?.close();
+          storageDialog = openImageStorageDialog({
+            adapter: deps.adapter,
+            getSettings: deps.getSettings,
+            updateSettings: deps.updateSettings,
+            saveDataUri: deps.saveDataUri ?? ((dataUri, options) => deps.adapter.saveDataUri(dataUri, options)),
+            onClosed: () => {
+              storageDialog = null;
+            }
+          });
+        }),
         dropdownButton("新建", (panel) => {
           const heading = el3("div", "so-popover-title");
           heading.textContent = "新建立绘包";
@@ -8168,10 +9065,7 @@ ${options}`,
             if (!shareInput.value.trim()) return;
             try {
               const pack = decodeShareString(shareInput.value);
-              if (!installImportedPack(pack, body)) return;
-              const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
-              if (installed) view = { kind: "pack", packId: installed.id };
-              render2();
+              void prepareAndInstall(pack, body);
             } catch (err) {
               toast(body, err instanceof Error ? err.message : "分享串解析失败");
             }
@@ -8181,16 +9075,14 @@ ${options}`,
           const jsonBtn = button("选择 JSON 文件…", () => {
             pickFile(".json,application/json", false, async (files) => {
               try {
-                const text4 = await files[0].text();
-                if (text4.length > 2 * 1024 * 1024 && !window.confirm(
-                  `这个 JSON 有 ${(text4.length / 1024 / 1024).toFixed(1)}MB（内嵌 base64 图）。云端部署的酒馆导入大包容易内存爆满，建议让对方先传图床再发分享串。仍要导入吗？`
-                ))
-                  return;
+                if (destroyed || currentManagerBody() !== body || !files[0]) return;
+                const file = files[0];
+                if (file.size > 2 * 1024 * 1024 && !window.confirm(
+                  `这个 JSON 有 ${(file.size / 1024 / 1024).toFixed(1)} MiB。读取会占用临时内存，内嵌图片需要逐张上传到酒馆本地文件。继续导入吗？`
+                )) return;
+                const text4 = await file.text();
                 const pack = importPack(text4);
-                if (!installImportedPack(pack, body)) return;
-                const installed = deps.getSettings().packs.find((item) => item.id === pack.id);
-                if (installed) view = { kind: "pack", packId: installed.id };
-                render2();
+                void prepareAndInstall(pack, body);
               } catch (err) {
                 toast(body, err instanceof Error ? err.message : "导入失败");
               }
@@ -8478,6 +9370,7 @@ ${options}`,
         promptNote: pack.promptNote ?? null,
         promptNotePlacement: pack.promptNotePlacement ?? null,
         outfitNotes: pack.outfitNotes ?? null,
+        inventoryPrompt: pack.inventoryPrompt ?? null,
         kind: pack.kind ?? null,
         customTags: customTags.length > 0 ? customTags : null
       });
@@ -8595,13 +9488,16 @@ ${options}`,
           (sprite) => getSpriteSource(sprite) !== "hosted" && !(sprite.remoteUrl && /^https?:\/\//.test(sprite.remoteUrl))
         );
         for (const sprite of pending) {
+          const beforeUrl = sprite.url;
           try {
-            const dataUri = sprite.url.startsWith("data:") ? sprite.url : await urlToDataUri(sprite.url);
+            const dataUri = beforeUrl.startsWith("data:") ? beforeUrl : await urlToDataUri(beforeUrl);
             const result = await uploadToImgbb(apiKey, dataUri);
             if (!isValidImgbbResult(result)) throw new Error("图床响应无效");
             const latestPack = deps.getSettings().packs.find((candidate) => candidate.id === pack.id);
             const latestSprite = latestPack ? sameSprite(latestPack, sprite) : null;
-            if (!latestPack || !latestSprite) throw new Error("立绘在上传期间已变化");
+            if (!latestPack || !latestSprite || latestSprite.url !== beforeUrl) {
+              throw new Error("目标已更改，本次结果未应用");
+            }
             if (!updateChecked(upsertPack(
               deps.getSettings(),
               upsertSprite(latestPack, { ...latestSprite, code: result.code, remoteUrl: result.url })
@@ -8974,7 +9870,7 @@ ${preview}
     topRow.append(
       button("导出 JSON", async () => {
         const file = await exportPack(pack);
-        downloadJson(file, `${pack.name}.sprite-pack.json`);
+        downloadJson2(file, `${pack.name}.sprite-pack.json`);
         toast(body, `已导出「${pack.name}」`);
       }),
       button("复制分享串", async () => {
@@ -9127,7 +10023,7 @@ ${preview}
               promptNotePlacement: promptNote ? placementSelect.value === "after-list" ? "after-list" : "before-list" : null,
               outfitNotes: Object.keys(outfitNotes).length > 0 ? outfitNotes : null
             };
-            if (inventoryPrompt) metadata.inventoryPrompt = inventoryPrompt;
+            metadata.inventoryPrompt = inventoryPrompt || null;
             const next = setPresetMetadata(current2, pack.id, metadata);
             const materialized = next.packs.find((candidate) => candidate.id === pack.id);
             if (!materialized || !checkedSettings(upsertPack(current2, materialized))) return;
@@ -9434,13 +10330,17 @@ ${preview}
         const result = await compressImage(files[0]);
         const beforeSave = latestTarget();
         if (!beforeSave) return;
+        const beforeUrl = beforeSave.sprite.url;
         const url = await deps.adapter.saveImage(
           `${beforeSave.sprite.tag}.webp`,
           result.dataUri,
           deps.adapter.getCurrentCharacterName() || beforeSave.pack.name
         );
+        if (!localUserImagePath(url)) throw new Error("保存失败：平台未返回安全的本地用户图片地址");
         const target = latestTarget();
-        if (!target) return;
+        if (!target || target.sprite.url !== beforeUrl) {
+          throw new Error("目标已更改，本次结果未应用");
+        }
         const base = {
           tag: target.sprite.tag,
           url,
@@ -9455,13 +10355,16 @@ ${preview}
             const uploaded = await uploadToImgbb(imgbbApiKey, result.dataUri);
             if (isValidImgbbResult(uploaded)) {
               const latest = latestTarget();
-              if (latest) {
+              if (latest && latest.sprite.url === url) {
                 commitPack(upsertSprite(latest.pack, {
-                  ...base,
+                  ...latest.sprite,
                   code: uploaded.code,
                   remoteUrl: uploaded.url
                 }));
                 toast(currentManagerBody(), `已替换「${identity.tag}」并重传图床（${formatBytes(result.bytes)}）`);
+                return;
+              } else {
+                toast(currentManagerBody(), "目标已更改，本次图床结果未应用；已保留本地文件");
                 return;
               }
             }
@@ -9770,19 +10673,26 @@ ${preview}
           continue;
         }
         try {
+          const batchKey = JSON.stringify([plan.entry.role, plan.entry.outfit, plan.targetPackName]);
+          const beforeId = plan.targetPackId ?? newPackIds.get(batchKey);
+          const beforeTarget = deps.getSettings().packs.find((pack) => pack.id === beforeId);
+          if (beforeId && !beforeTarget) throw new Error("目标已更改，本次结果未应用");
+          const beforeUrl = beforeTarget ? sameSprite(beforeTarget, { tag: plan.finalTag, url: "" })?.url : void 0;
           const result = await compressImage(file);
           if (result.transparency === "opaque-checkerboard") checkerboardImages += 1;
           else if (result.transparency === "opaque") opaqueImages += 1;
           const url = await deps.adapter.saveImage(
             file.name,
             result.dataUri,
-            deps.adapter.getCurrentCharacterName() || plan.targetPackName
+            plan.targetPackName
+            // 显示提示；物理文件身份由适配器独立生成
           );
+          if (!localUserImagePath(url)) throw new Error("保存失败：平台未返回安全的本地用户图片地址");
           let targetId = plan.targetPackId;
           if (!targetId) {
             const role = plan.entry.role;
             const outfit = plan.entry.outfit;
-            const key = `${role}|${outfit}|${plan.targetPackName}`;
+            const key = JSON.stringify([role, outfit, plan.targetPackName]);
             targetId = newPackIds.get(key) ?? null;
             if (!targetId) {
               const np = {
@@ -9810,7 +10720,11 @@ ${preview}
             failed++;
             continue;
           }
-          const sprite = { tag: plan.finalTag, url };
+          const latestSprite = sameSprite(target, { tag: plan.finalTag, url: "" });
+          if (latestSprite?.url !== beforeUrl) throw new Error("目标已更改，本次结果未应用");
+          const sprite = { ...latestSprite, tag: plan.finalTag, url };
+          delete sprite.code;
+          delete sprite.remoteUrl;
           if (!applyUploadSettings(
             upsertPack(deps.getSettings(), upsertSprite(target, sprite)),
             () => persisted(targetId, sprite)
@@ -9825,13 +10739,16 @@ ${preview}
               const up = await uploadToImgbb(imgbbApiKey, result.dataUri);
               if (isValidImgbbResult(up)) {
                 const latest = deps.getSettings().packs.find((p) => p.id === targetId);
-                if (latest) {
-                  const hostedSprite = { tag: plan.finalTag, url, code: up.code, remoteUrl: up.url };
+                const latestSprite2 = latest ? sameSprite(latest, sprite) : null;
+                if (latest && latestSprite2?.url === url) {
+                  const hostedSprite = { ...latestSprite2, code: up.code, remoteUrl: up.url };
                   if (applyUploadSettings(
                     upsertPack(deps.getSettings(), upsertSprite(latest, hostedSprite)),
                     () => persisted(targetId, hostedSprite)
                   )) hosted++;
                   else hostFailed++;
+                } else {
+                  hostFailed++;
                 }
               } else {
                 hostFailed++;
@@ -9897,9 +10814,10 @@ ${preview}
     let fail = 0;
     for (let i = 0; i < pending.length; i++) {
       const sprite = pending[i];
+      const beforeUrl = sprite.url;
       toast(body, `补传中 ${i + 1}/${pending.length}：${sprite.tag}`);
       try {
-        const dataUri = sprite.url.startsWith("data:") ? sprite.url : await urlToDataUri(sprite.url);
+        const dataUri = beforeUrl.startsWith("data:") ? beforeUrl : await urlToDataUri(beforeUrl);
         const up = await uploadToImgbb(imgbbApiKey, dataUri);
         if (!isValidImgbbResult(up)) {
           fail++;
@@ -9909,7 +10827,7 @@ ${preview}
         const target = latest?.sprites.find(
           (s) => s.tag === sprite.tag && (s.group ?? "") === (sprite.group ?? "") && (s.outfit ?? "") === (sprite.outfit ?? "")
         );
-        if (!latest || !target) {
+        if (!latest || !target || target.url !== beforeUrl) {
           fail++;
           continue;
         }
@@ -10016,7 +10934,7 @@ function pickFile(accept, multiple, onPick) {
   });
   input.click();
 }
-function downloadJson(data, fileName) {
+function downloadJson2(data, fileName) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -13272,7 +14190,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-09-01 20:48"}`;
+  return `${"0.9.0"}+${"2026-09-07 21:09"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -14339,8 +15257,8 @@ function toast2(kind, message) {
   const t = window.toastr;
   t?.[kind]?.(message, "API 切换");
 }
-function readString(object, key) {
-  const value = key ? object?.[key] : void 0;
+function readString(object2, key) {
+  const value = key ? object2?.[key] : void 0;
   return typeof value === "string" ? value : "";
 }
 function settingsFor(st, mainApi) {
@@ -15061,10 +15979,21 @@ function createSTCloudExportBridge() {
   };
 }
 
+// st-extension/src/apps/cloud-export/archive-path.ts
+function isArchiveSegment(value) {
+  const hasControl = Array.from(value).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127);
+  return Boolean(value) && value.trim() === value && !/^[.]+$/.test(value) && !hasControl && !/[\\/:*?"<>|]/.test(value) && !/[. ]$/.test(value) && !/^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/i.test(value);
+}
+function archiveSegment(value, kind) {
+  if (!isArchiveSegment(value)) throw new Error("无法生成可恢复备份：" + kind + "文件名不合法");
+  return value;
+}
+
 // st-extension/src/apps/cloud-export/manifest.ts
-function safeSegment(value, fallback) {
-  const clean2 = value.replace(/[\\/\0]/g, "_").replace(/^(?:\.+)$/g, "_").trim();
-  return (clean2 || fallback).slice(0, 180);
+function characterArchiveIdentity(avatar) {
+  const name = archiveSegment(avatar, "角色头像");
+  if (!/\.png$/i.test(name)) throw new Error("无法确定角色聊天目录：头像文件必须为 PNG");
+  return { avatar: name, stem: archiveSegment(name.slice(0, -4), "角色目录") };
 }
 function buildMinimalSettings(snapshot, selection) {
   const selectedWorldNames = snapshot.worldbooks.filter((worldbook) => selection.worldbookIds.has(worldbook.id)).map((worldbook) => worldbook.name);
@@ -15085,31 +16014,35 @@ function buildExportFiles(snapshot, selection) {
   for (const worldbook of snapshot.worldbooks) {
     if (selection.worldbookIds.has(worldbook.id)) {
       if (worldbook.content !== void 0) {
-        files.push({ path: `worlds/${safeSegment(worldbook.fileName, "world.json")}`, data: JSON.stringify(worldbook.content, null, 2), updatedAt: worldbook.updatedAt });
+        files.push({ path: `worlds/${archiveSegment(worldbook.fileName, "世界书")}`, data: JSON.stringify(worldbook.content, null, 2), updatedAt: worldbook.updatedAt });
       }
     }
   }
   for (const preset of snapshot.presets) {
     if (selection.presetIds.has(preset.id)) {
-      files.push({ path: `OpenAI Settings/${safeSegment(preset.fileName, "preset.json")}`, data: JSON.stringify(preset.content, null, 2), updatedAt: preset.updatedAt });
+      files.push({ path: `OpenAI Settings/${archiveSegment(preset.fileName, "预设")}`, data: JSON.stringify(preset.content, null, 2), updatedAt: preset.updatedAt });
     }
   }
   return files;
 }
 function buildCharacterFiles(character, cardData, chats, selection) {
   const files = [];
+  const selectedChats = character.chats.filter((chat2) => selection.chatIds.has(chat2.id) && chats.has(chat2.id));
+  const selectedCard = selection.characterIds.has(character.id) && cardData !== void 0;
+  if (!selectedCard && selectedChats.length === 0) return files;
+  const identity = characterArchiveIdentity(character.avatar);
   if (selection.characterIds.has(character.id) && cardData !== void 0) {
     files.push({
-      path: `characters/${safeSegment(character.avatar, "character.png")}`,
+      path: `characters/${identity.avatar}`,
       data: cardData,
       updatedAt: character.updatedAt
     });
   }
-  for (const chat2 of character.chats) {
+  for (const chat2 of selectedChats) {
     const data = chats.get(chat2.id);
     if (!selection.chatIds.has(chat2.id) || data === void 0) continue;
     files.push({
-      path: `chats/${safeSegment(character.name, "character")}/${safeSegment(chat2.name, "chat")}.jsonl`,
+      path: `chats/${identity.stem}/${archiveSegment((chat2.path || chat2.name).replace(/\.jsonl$/i, ""), "聊天")}.jsonl`,
       data,
       updatedAt: chat2.updatedAt
     });
@@ -15195,8 +16128,25 @@ async function loadSelectedExportFiles({
 // st-extension/src/apps/cloud-export/zip.ts
 var import_jszip = __toESM(require_jszip_min());
 var REVOKE_DELAY_MS = 6e4;
+function assertUniqueArchivePaths(files) {
+  const seen = /* @__PURE__ */ new Map();
+  for (const { path } of files) {
+    if (!path.split("/").every(isArchiveSegment)) throw new Error("备份路径不合法：" + path);
+    const canonical = path.normalize("NFC").toLowerCase();
+    if (seen.has(canonical)) throw new Error("备份路径冲突：" + seen.get(canonical) + " 与 " + path);
+    seen.set(canonical, path);
+  }
+  for (const [canonical, path] of seen) {
+    const parts = canonical.split("/");
+    for (let length = 1; length < parts.length; length += 1) {
+      const parent = parts.slice(0, length).join("/");
+      if (seen.has(parent)) throw new Error("备份路径冲突：" + seen.get(parent) + " 与 " + path);
+    }
+  }
+}
 async function downloadSTBackup(files, filename, onProgress, schedulers = {}) {
   if (!files.length) throw new Error("没有选择任何可导出的资产");
+  assertUniqueArchivePaths(files);
   const zip = new import_jszip.default();
   for (const file of files) {
     zip.file(file.path, file.data, file.updatedAt ? { date: new Date(file.updatedAt) } : void 0);
@@ -15308,6 +16258,33 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
       disposeMount = () => {
         disposed = true;
       };
+      const title2 = el2("div", "so-app-title");
+      title2.textContent = "SillyTavern 选择式备份";
+      const desc = el2("div", "so-app-desc");
+      desc.textContent = "选择需要的数据，统一导出为 SillyTavern 标准 default-user ZIP。";
+      const tabs = el2("div", "so-app-section cloud-export-tabs");
+      const search = document.createElement("input");
+      search.className = "text_pole so-app-input";
+      search.placeholder = "搜索当前分类";
+      search.setAttribute("aria-label", "搜索当前分类");
+      const results = el2("div", "cloud-export-results");
+      const footer = el2("div", "so-app-section");
+      let composing = false;
+      const applyQuery = () => {
+        query = search.value.trim().toLowerCase();
+        render2();
+      };
+      search.addEventListener("compositionstart", () => {
+        composing = true;
+      });
+      search.addEventListener("compositionend", () => {
+        composing = false;
+        applyQuery();
+      });
+      search.addEventListener("input", (event) => {
+        if (!composing && !event.isComposing) applyQuery();
+      });
+      container.replaceChildren(title2, desc, tabs, search, results, footer);
       const ensureCharacters = async (retry = false) => {
         if (!retry && characters.status === "ready") return characters.data;
         characters.status = "loading";
@@ -15495,35 +16472,21 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
         if (disposed) return;
         const scroller = scrollParent();
         const previousScrollTop = scroller?.scrollTop ?? 0;
-        container.replaceChildren();
-        const title2 = el2("div", "so-app-title");
-        title2.textContent = "SillyTavern 选择式备份";
-        const desc = el2("div", "so-app-desc");
-        desc.textContent = "选择需要的数据，统一导出为 SillyTavern 标准 default-user ZIP。";
-        container.append(title2, desc);
-        const tabs = el2("div", "so-app-section cloud-export-tabs");
+        tabs.replaceChildren();
         for (const tab of TABS) {
           const button2 = appButton(tab.label, () => {
             if (busy || activeTab === tab.id) return;
             activeTab = tab.id;
             query = "";
+            composing = false;
+            search.value = "";
             render2();
             void ensureActiveTab();
           });
           if (activeTab === tab.id) button2.classList.add("cloud-export-active");
           tabs.append(button2);
         }
-        container.append(tabs);
-        const search = document.createElement("input");
-        search.className = "text_pole so-app-input";
-        search.placeholder = "搜索当前分类";
-        search.value = query;
         search.disabled = busy;
-        search.addEventListener("input", () => {
-          query = search.value.trim().toLowerCase();
-          render2();
-        });
-        container.append(search);
         const visibleCharacters = characters.data.filter((item) => item.name.toLowerCase().includes(query));
         const visibleWorldbooks = worldbooks.data.filter((item) => item.name.toLowerCase().includes(query));
         const visiblePresets = (settings.data?.presets ?? []).filter((item) => item.name.toLowerCase().includes(query));
@@ -15577,7 +16540,6 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
             render2();
           });
         }
-        if (actions.childElementCount) container.append(actions);
         const list = el2("div", "so-app-section");
         const state = activeTab === "characters" ? characters : activeTab === "worldbooks" ? worldbooks : settings;
         if (state.status === "idle" || state.status === "loading") list.textContent = "正在读取当前分类…";
@@ -15647,8 +16609,8 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
             render2();
           }));
         }
-        container.append(list);
-        const footer = el2("div", "so-app-section");
+        results.replaceChildren(...actions.childElementCount ? [actions, list] : [list]);
+        footer.replaceChildren();
         const count = el2("div", "so-app-desc");
         count.textContent = `已选 ${selection.characterIds.size} 个角色、${selection.chatIds.size} 段聊天、${selection.worldbookIds.size} 本世界书、${selection.presetIds.size} 个预设${selection.regex ? "、1 组正则" : ""}`;
         footer.append(count);
@@ -15686,7 +16648,6 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
             render2();
           }
         }));
-        container.append(footer);
         if (scroller && previousScrollTop > 0) scroller.scrollTop = previousScrollTop;
       };
       render2();
@@ -18366,7 +19327,7 @@ function combatantView(fighter, side, deps) {
   card.append(statuses);
   return card;
 }
-function actionButton(action, label, disabled) {
+function actionButton2(action, label, disabled) {
   const button2 = document.createElement("button");
   button2.type = "button";
   button2.className = "st-render-battle-action";
@@ -18444,7 +19405,7 @@ function mountBattleMode(root, block, deps) {
     if (ended) {
       outcome.append(
         textElement3("span", "st-render-battle-outcome-text", outcomeText(state)),
-        actionButton("continue", "继续剧情", false)
+        actionButton2("continue", "继续剧情", false)
       );
     }
     outcome.hidden = !ended;
@@ -18455,24 +19416,24 @@ function mountBattleMode(root, block, deps) {
     }
     actions.replaceChildren();
     const locked = ended || pending;
-    const attack = actionButton("attack", "⚔ 攻击", locked);
-    const defend = actionButton("defend", "◆ 防御", locked);
+    const attack = actionButton2("attack", "⚔ 攻击", locked);
+    const defend = actionButton2("defend", "◆ 防御", locked);
     const skillOptions = state.player.skills.map((skill2) => ({
       id: skill2.id,
       label: `${skill2.name} · ${skill2.mpCost} MP`,
       disabled: state.player.mp < skill2.mpCost
     }));
     const skillSelect = createSelect("st-render-battle-skill-select", skillOptions, locked || skillOptions.length === 0);
-    const skill = actionButton("skill", "✦ 施放技能", locked || !skillOptions.some((option) => !option.disabled));
+    const skill = actionButton2("skill", "✦ 施放技能", locked || !skillOptions.some((option) => !option.disabled));
     const itemOptions = state.player.items.map((item2) => ({
       id: item2.id,
       label: `${item2.name} · ${item2.quantity}`,
       disabled: item2.quantity <= 0
     }));
     const itemSelect = createSelect("st-render-battle-item-select", itemOptions, locked || itemOptions.length === 0);
-    const item = actionButton("item", "＋ 使用物品", locked || !itemOptions.some((option) => !option.disabled));
-    const flee = actionButton("flee", "↗ 逃跑", locked || !state.allowFlee);
-    const free = actionButton("free", "… 自由行动", locked);
+    const item = actionButton2("item", "＋ 使用物品", locked || !itemOptions.some((option) => !option.disabled));
+    const flee = actionButton2("flee", "↗ 逃跑", locked || !state.allowFlee);
+    const free = actionButton2("free", "… 自由行动", locked);
     actions.append(attack, defend, skillSelect, skill, itemSelect, item, flee, free);
     if (freeOpen && !locked) {
       const freePanel = document.createElement("div");
@@ -18482,7 +19443,7 @@ function mountBattleMode(root, block, deps) {
       input.className = "st-render-battle-free-input";
       input.maxLength = 500;
       input.placeholder = "输入行动";
-      const submit = actionButton("free-submit", "填入草稿", false);
+      const submit = actionButton2("free-submit", "填入草稿", false);
       freePanel.append(input, submit);
       actions.append(freePanel);
       input.focus();
@@ -19239,7 +20200,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-09-01 20:48"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-09-07 21:09"}`;
   console.log(`[sprite-overlay] 百工（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

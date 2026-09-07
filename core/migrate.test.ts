@@ -476,3 +476,31 @@ describe('migrateSettings', () => {
     expect(migrated.imageHost).toBe(current.imageHost)
   })
 })
+
+
+describe('inventoryPrompt settings roundtrip', () => {
+  it.each([
+    ['  {list} 提示  ', '{list} 提示'],
+    ['  ', undefined], [42, undefined], [null, undefined],
+    ['😀'.repeat(801), '😀'.repeat(800)],
+  ])('preserves normalized %s across reloads', (raw, expected) => {
+    const saved = { ...createDefaultSettings(), packs: [{ id: 'inv', name: '图包',
+      inventoryPrompt: raw, coverTag: '笑', promptNote: '备注', promptNotePlacement: 'after-list',
+      sourceStoryKey: 'story', outfitNotes: { 常服: '说明' },
+      sprites: [{ tag: '笑', group: '角色', outfit: '常服', labels: ['表情'],
+        url: '/user/images/a.webp', remoteUrl: 'https://img.test/a.webp' }] }] }
+    const first = migrateSettings(saved as never)
+    const second = migrateSettings(JSON.parse(JSON.stringify(first)))
+    expect(second.packs[0].inventoryPrompt).toBe(expected)
+    const { inventoryPrompt: _raw, ...otherFields } = saved.packs[0]
+    expect(second.packs[0]).toMatchObject(otherFields)
+  })
+  it('retains the explicit null preset override on reload', () => {
+    const preset = getPresetPacks()[0]
+    const saved = { ...createDefaultSettings(), presetOverrides: {
+      [preset.id]: { metadata: { inventoryPrompt: null } },
+    } }
+    expect(migrateSettings(JSON.parse(JSON.stringify(saved))).presetOverrides[preset.id].metadata)
+      .toEqual({ inventoryPrompt: null })
+  })
+})

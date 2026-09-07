@@ -112,6 +112,22 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
       const chats = new Map<string, LoadState<ExportChat[]>>()
       const chatRequests = new Map<string, Promise<ExportChat[]>>()
       disposeMount = () => { disposed = true }
+      // 输入节点和其祖先只挂载一次，避免输入法、焦点和选区在 render 时丢失。
+      const title = el('div', 'so-app-title'); title.textContent = 'SillyTavern 选择式备份'
+      const desc = el('div', 'so-app-desc'); desc.textContent = '选择需要的数据，统一导出为 SillyTavern 标准 default-user ZIP。'
+      const tabs = el('div', 'so-app-section cloud-export-tabs')
+      const search = document.createElement('input')
+      search.className = 'text_pole so-app-input'
+      search.placeholder = '搜索当前分类'
+      search.setAttribute('aria-label', '搜索当前分类')
+      const results = el('div', 'cloud-export-results')
+      const footer = el('div', 'so-app-section')
+      let composing = false
+      const applyQuery = () => { query = search.value.trim().toLowerCase(); render() }
+      search.addEventListener('compositionstart', () => { composing = true })
+      search.addEventListener('compositionend', () => { composing = false; applyQuery() })
+      search.addEventListener('input', event => { if (!composing && !(event as InputEvent).isComposing) applyQuery() })
+      container.replaceChildren(title, desc, tabs, search, results, footer)
 
       const ensureCharacters = async (retry = false): Promise<ExportCharacter[]> => {
         if (!retry && characters.status === 'ready') return characters.data
@@ -235,13 +251,9 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
         if (disposed) return
         const scroller = scrollParent()
         const previousScrollTop = scroller?.scrollTop ?? 0
-        container.replaceChildren()
-        const title = el('div', 'so-app-title'); title.textContent = 'SillyTavern 选择式备份'
-        const desc = el('div', 'so-app-desc'); desc.textContent = '选择需要的数据，统一导出为 SillyTavern 标准 default-user ZIP。'; container.append(title, desc)
-        const tabs = el('div', 'so-app-section cloud-export-tabs')
-        for (const tab of TABS) { const button = appButton(tab.label, () => { if (busy || activeTab === tab.id) return; activeTab = tab.id; query = ''; render(); void ensureActiveTab() }); if (activeTab === tab.id) button.classList.add('cloud-export-active'); tabs.append(button) }
-        container.append(tabs)
-        const search = document.createElement('input'); search.className = 'text_pole so-app-input'; search.placeholder = '搜索当前分类'; search.value = query; search.disabled = busy; search.addEventListener('input', () => { query = search.value.trim().toLowerCase(); render() }); container.append(search)
+        tabs.replaceChildren()
+        for (const tab of TABS) { const button = appButton(tab.label, () => { if (busy || activeTab === tab.id) return; activeTab = tab.id; query = ''; composing = false; search.value = ''; render(); void ensureActiveTab() }); if (activeTab === tab.id) button.classList.add('cloud-export-active'); tabs.append(button) }
+        search.disabled = busy
         const visibleCharacters = characters.data.filter((item) => item.name.toLowerCase().includes(query))
         const visibleWorldbooks = worldbooks.data.filter((item) => item.name.toLowerCase().includes(query))
         const visiblePresets = (settings.data?.presets ?? []).filter((item) => item.name.toLowerCase().includes(query))
@@ -264,7 +276,6 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
         } else if (activeTab === 'presets' && settings.status === 'ready' && visiblePresets.length) {
           addAction('全选当前结果', () => { visiblePresets.forEach((item) => selection.presetIds.add(item.id)); render() }); addAction('反选当前结果', () => { toggleSet(visiblePresets, selection.presetIds); render() }); addAction('清空当前分类', () => { selection.presetIds.clear(); render() })
         }
-        if (actions.childElementCount) container.append(actions)
         const list = el('div', 'so-app-section'); const state = activeTab === 'characters' ? characters : activeTab === 'worldbooks' ? worldbooks : settings
         if (state.status === 'idle' || state.status === 'loading') list.textContent = '正在读取当前分类…'
         else if (state.status === 'error') { list.textContent = `读取失败：${state.error ?? '未知错误'}`; list.append(appButton('重试', () => { void ensureActiveTab(true) })) }
@@ -303,11 +314,10 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
           for (const preset of visiblePresets) list.append(checkbox(`${preset.name} · ${formatDate(preset.updatedAt)}`, selection.presetIds.has(preset.id), (checked) => { if (checked) selection.presetIds.add(preset.id); else selection.presetIds.delete(preset.id); render() }))
         }
         else { const regex = settings.data?.regex; list.append(checkbox(regex ? `全局正则（${regex.rules.length} 条）` : '没有发现全局正则', selection.regex, (checked) => { selection.regex = Boolean(regex) && checked; render() })) }
-        container.append(list)
-        const footer = el('div', 'so-app-section'); const count = el('div', 'so-app-desc'); count.textContent = `已选 ${selection.characterIds.size} 个角色、${selection.chatIds.size} 段聊天、${selection.worldbookIds.size} 本世界书、${selection.presetIds.size} 个预设${selection.regex ? '、1 组正则' : ''}`; footer.append(count)
+        results.replaceChildren(...(actions.childElementCount ? [actions, list] : [list]))
+        footer.replaceChildren(); const count = el('div', 'so-app-desc'); count.textContent = `已选 ${selection.characterIds.size} 个角色、${selection.chatIds.size} 段聊天、${selection.worldbookIds.size} 本世界书、${selection.presetIds.size} 个预设${selection.regex ? '、1 组正则' : ''}`; footer.append(count)
         if (progressText) { const progress = el('div', 'so-app-desc'); progress.textContent = progressText; footer.append(progress) }
         footer.append(appButton(busy ? '正在处理…' : '导出所选备份', async () => { if (busy) return; if (!hasSelection(selection)) { ctx.toast('warning', '请先选择要导出的内容'); return }; busy = true; progressText = '正在准备所选数据…'; render(); try { const catalog: ExportSnapshot = { characters: characters.data.map((character) => ({ ...character, chats: chats.get(character.id)?.data ?? [] })), worldbooks: worldbooks.data, presets: settings.data?.presets ?? [], regex: settings.data?.regex ?? null }; const files = await loadSelectedExportFiles({ bridge, catalog, selection, concurrency: 4, onProgress: ({ completed, total, current }) => { progressText = `正在读取 ${completed}/${total}：${current}`; render() } }); await download(files, backupFilename(), ({ percent }) => { progressText = `正在压缩 ${Math.round(percent)}%`; render() }); ctx.toast('success', 'SillyTavern 标准备份已下载') } catch (error) { ctx.toast('error', `导出失败：${String(error)}`) } finally { busy = false; progressText = ''; render() } }))
-        container.append(footer)
         // 内容已重新填充，此时才能把滚动位置放回去（早了会被夹到 0）。
         // 内容变短时 scrollTop 会被浏览器自动夹到新的最大值，不需要自己算边界。
         if (scroller && previousScrollTop > 0) scroller.scrollTop = previousScrollTop

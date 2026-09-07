@@ -1,11 +1,10 @@
+import { archiveSegment } from './archive-path'
 import type { ExportFile, ExportSelection, ExportSnapshot } from './types'
 
-function safeSegment(value: string, fallback: string): string {
-  const clean = value
-    .replace(/[\\/\0]/g, '_')
-    .replace(/^(?:\.+)$/g, '_')
-    .trim()
-  return (clean || fallback).slice(0, 180)
+function characterArchiveIdentity(avatar: string): { avatar: string; stem: string } {
+  const name = archiveSegment(avatar, '角色头像')
+  if (!/\.png$/i.test(name)) throw new Error('无法确定角色聊天目录：头像文件必须为 PNG')
+  return { avatar: name, stem: archiveSegment(name.slice(0, -4), '角色目录') }
 }
 
 /**
@@ -42,13 +41,13 @@ export function buildExportFiles(snapshot: ExportSnapshot, selection: ExportSele
   for (const worldbook of snapshot.worldbooks) {
     if (selection.worldbookIds.has(worldbook.id)) {
       if (worldbook.content !== undefined) {
-        files.push({ path: `worlds/${safeSegment(worldbook.fileName, 'world.json')}`, data: JSON.stringify(worldbook.content, null, 2), updatedAt: worldbook.updatedAt })
+        files.push({ path: `worlds/${archiveSegment(worldbook.fileName, '世界书')}`, data: JSON.stringify(worldbook.content, null, 2), updatedAt: worldbook.updatedAt })
       }
     }
   }
   for (const preset of snapshot.presets) {
     if (selection.presetIds.has(preset.id)) {
-      files.push({ path: `OpenAI Settings/${safeSegment(preset.fileName, 'preset.json')}`, data: JSON.stringify(preset.content, null, 2), updatedAt: preset.updatedAt })
+      files.push({ path: `OpenAI Settings/${archiveSegment(preset.fileName, '预设')}`, data: JSON.stringify(preset.content, null, 2), updatedAt: preset.updatedAt })
     }
   }
   return files
@@ -61,18 +60,22 @@ export function buildCharacterFiles(
   selection: ExportSelection,
 ): ExportFile[] {
   const files: ExportFile[] = []
+  const selectedChats = character.chats.filter(chat => selection.chatIds.has(chat.id) && chats.has(chat.id))
+  const selectedCard = selection.characterIds.has(character.id) && cardData !== undefined
+  if (!selectedCard && selectedChats.length === 0) return files
+  const identity = characterArchiveIdentity(character.avatar)
   if (selection.characterIds.has(character.id) && cardData !== undefined) {
     files.push({
-      path: `characters/${safeSegment(character.avatar, 'character.png')}`,
+      path: `characters/${identity.avatar}`,
       data: cardData,
       updatedAt: character.updatedAt,
     })
   }
-  for (const chat of character.chats) {
+  for (const chat of selectedChats) {
     const data = chats.get(chat.id)
     if (!selection.chatIds.has(chat.id) || data === undefined) continue
     files.push({
-      path: `chats/${safeSegment(character.name, 'character')}/${safeSegment(chat.name, 'chat')}.jsonl`,
+      path: `chats/${identity.stem}/${archiveSegment((chat.path || chat.name).replace(/\.jsonl$/i, ''), '聊天')}.jsonl`,
       data,
       updatedAt: chat.updatedAt,
     })

@@ -80,12 +80,37 @@ describe('cloud export manifest', () => {
     )
     expect(files.map((file) => file.path)).toEqual([
       'characters/Alice.png',
-      'chats/Alice_测试/First_Chat.jsonl',
+      'chats/Alice/first.jsonl',
     ])
   })
 
   it('can build settings independently for the selected regex set', () => {
     const settings = JSON.parse(String(buildMinimalSettings(snapshot, selection({ regex: true }))))
     expect(settings.extension_settings.regex).toEqual([{ find: 'a' }])
+  })
+})
+
+
+describe('archive resource identity', () => {
+  it('keeps identical display names separate by avatar and uses the actual chat filename', () => {
+    const files = [1, 2].flatMap(n => buildCharacterFiles({
+      id: 'Alice' + n, avatar: 'Alice' + n + '.PNG', name: 'Alice',
+      chats: [{ id: 'c' + n, name: 'UI名称', path: 'first.jsonl' }],
+    }, new Uint8Array([n]), new Map([['c' + n, String(n)]]), selection({
+      characterIds: new Set(['Alice1', 'Alice2']), chatIds: new Set(['c1', 'c2']),
+    })))
+    expect(files.map(f => f.path)).toEqual(['characters/Alice1.PNG', 'chats/Alice1/first.jsonl', 'characters/Alice2.PNG', 'chats/Alice2/first.jsonl'])
+  })
+
+  it.each(['中文 角色.v2.png', 'x'.repeat(190) + '.png'])('does not silently rewrite %s', avatar => {
+    const files = buildCharacterFiles({ id: 'c', name: 'UI', avatar, chats: [{ id: 'h', name: '聊天', path: '' }] },
+      new Uint8Array([1]), new Map([['h', 'bytes']]), selection({ characterIds: new Set(['c']), chatIds: new Set(['h']) }))
+    expect(files.map(f => f.path)).toEqual(['characters/' + avatar, 'chats/' + avatar.slice(0, -4) + '/聊天.jsonl'])
+  })
+
+  it.each(['', '../a.png', 'a/b.png', 'a\\b.png', 'a.png ', 'a.jpg', 'CON.png', ' a.png', 'a:.png', '.png'])('rejects ambiguous avatar %s only when selected', avatar => {
+    const character = { id: 'c', name: 'UI', avatar, chats: [] }
+    expect(buildCharacterFiles(character, undefined, new Map(), selection())).toEqual([])
+    expect(() => buildCharacterFiles(character, new Uint8Array([1]), new Map(), selection({ characterIds: new Set(['c']) }))).toThrow()
   })
 })

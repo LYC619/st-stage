@@ -27,6 +27,7 @@ import {
   deletableLocalSpritePaths,
   filterSpritePacks,
   genId,
+  localUserImagePath,
   movePack,
   movePackBefore,
   moveSprite,
@@ -95,11 +96,15 @@ import {
 } from './sprite-actions'
 import { openSpriteLightbox, type SpriteLightboxController } from './sprite-lightbox'
 import { localizeSprite } from './sprite-localize'
+import { prepareImportedPack } from './image-storage'
+import { openImageStorageDialog, type ImageStorageDialogController } from './image-storage-dialog'
 
 export interface ManagerDeps {
   adapter: STAdapter
   getSettings: () => PluginSettings
   updateSettings: (next: PluginSettings) => void
+  /** 将内嵌图片暂存为 ST 用户图片；导入和迁移使用，失败不会写 settings。 */
+  saveDataUri?: (dataUri: string, options?: { signal?: AbortSignal }) => Promise<string>
   /** 弹窗关闭回调（带打开来源）：来源=手机时由 index.ts 重新展开手机回图库页 */
   onClosed?: (source: ManagerSource) => void
 }
@@ -149,6 +154,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   let openedFrom: ManagerSource = 'overlay'
   /** 当前放大查看器及其完整列表索引；管理器重渲染不丢失导航位置。 */
   let activeLightbox: ActiveLightbox | null = null
+  let storageDialog: ImageStorageDialogController | null = null
+  let importController: AbortController | null = null
 
   /** 遮罩尺寸用 JS 按 innerWidth/Height 写死 px（与手机壳同一套定位路径）：
       移动端浏览器对 fixed+四边锚点/视口单位的解释五花八门，内联 px 最稳 */
@@ -247,6 +254,10 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     if (!backdrop) return
     activeLightbox?.controller?.close()
     closeEnableList()
+    importController?.abort()
+    importController = null
+    storageDialog?.close()
+    storageDialog = null
     document.removeEventListener('keydown', onEscape)
     window.removeEventListener('resize', applyBackdropSize)
     backdrop.remove()
@@ -417,6 +428,46 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       return true
     }
     return false
+  }
+
+  async function prepareAndInstall(pack: SpritePack, body: HTMLElement): Promise<void> {
+    if (destroyed || !backdrop || currentManagerBody() !== body) return
+    if (storageDialog) {
+      toast(body, '请先关闭存储检查与迁移窗口')
+      return
+    }
+    if (importController) {
+      toast(body, '已有导入任务正在处理')
+      return
+    }
+    const controller = new AbortController()
+    importController = controller
+    try {
+      toast(body, '正在准备导入图片')
+      const prepared = await prepareImportedPack(pack, {
+        save: (dataUri, options) => deps.saveDataUri
+          ? deps.saveDataUri(dataUri, options)
+          : deps.adapter.saveDataUri(dataUri, options),
+      }, {
+        signal: controller.signal,
+        onProgress: (completed, total) => {
+          if (!destroyed && !controller.signal.aborted && currentManagerBody() === body) {
+            toast(body, `导入图片校验 ${completed}/${total}`)
+          }
+        },
+      })
+      if (destroyed || controller.signal.aborted || !backdrop) return
+      const activeBody = currentManagerBody()
+      if (!activeBody || activeBody !== body) return
+      if (!installImportedPack(prepared, activeBody)) return
+      const installed = deps.getSettings().packs.find((item) => item.id === prepared.id)
+      if (installed) view = { kind: 'pack', packId: installed.id }
+      render()
+    } catch (error) {
+      if (!controller.signal.aborted && !destroyed) toast(body, error instanceof Error ? error.message : '导入失败')
+    } finally {
+      if (importController === controller) importController = null
+    }
   }
 
   function bindPackWithChoices(characterName: string, packId: string, body: HTMLElement): void {
@@ -692,6 +743,20 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         actions.append(enableBtn)
       }
       actions.append(
+        button('存储检查与迁移', () => {
+          if (importController) {
+            toast(body, '已有导入任务正在处理')
+            return
+          }
+          storageDialog?.close()
+          storageDialog = openImageStorageDialog({
+            adapter: deps.adapter,
+            getSettings: deps.getSettings,
+            updateSettings: deps.updateSettings,
+            saveDataUri: deps.saveDataUri ?? ((dataUri, options) => deps.adapter.saveDataUri(dataUri, options)),
+            onClosed: () => { storageDialog = null },
+          })
+        }),
         dropdownButton('新建', (panel) => {
         const heading = el('div', 'so-popover-title')
         heading.textContent = '新建立绘包'
@@ -724,10 +789,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           if (!shareInput.value.trim()) return
           try {
             const pack = decodeShareString(shareInput.value)
-            if (!installImportedPack(pack, body)) return
-            const installed = deps.getSettings().packs.find((item) => item.id === pack.id)
-            if (installed) view = { kind: 'pack', packId: installed.id }
-            render()
+            void prepareAndInstall(pack, body)
           } catch (err) {
             toast(body, err instanceof Error ? err.message : '分享串解析失败')
           }
@@ -737,20 +799,14 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         const jsonBtn = button('选择 JSON 文件…', () => {
           pickFile('.json,application/json', false, async (files) => {
             try {
-              const text = await files[0].text()
-              // ponytail: 2MB 阈值是拍脑袋值——只为在大 base64 包上提醒云端内存风险，不做环境检测
-              if (
-                text.length > 2 * 1024 * 1024 &&
-                !window.confirm(
-                  `这个 JSON 有 ${(text.length / 1024 / 1024).toFixed(1)}MB（内嵌 base64 图）。云端部署的酒馆导入大包容易内存爆满，建议让对方先传图床再发分享串。仍要导入吗？`,
-                )
-              )
-                return
+              if (destroyed || currentManagerBody() !== body || !files[0]) return
+              const file = files[0]
+              if (file.size > 2 * 1024 * 1024 && !window.confirm(
+                `这个 JSON 有 ${(file.size / 1024 / 1024).toFixed(1)} MiB。读取会占用临时内存，内嵌图片需要逐张上传到酒馆本地文件。继续导入吗？`,
+              )) return
+              const text = await file.text()
               const pack = importPack(text)
-              if (!installImportedPack(pack, body)) return
-              const installed = deps.getSettings().packs.find((item) => item.id === pack.id)
-              if (installed) view = { kind: 'pack', packId: installed.id }
-              render()
+              void prepareAndInstall(pack, body)
             } catch (err) {
               toast(body, err instanceof Error ? err.message : '导入失败')
             }
@@ -1057,6 +1113,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         promptNote: pack.promptNote ?? null,
         promptNotePlacement: pack.promptNotePlacement ?? null,
         outfitNotes: pack.outfitNotes ?? null,
+        inventoryPrompt: pack.inventoryPrompt ?? null,
         kind: pack.kind ?? null,
         customTags: customTags.length > 0 ? customTags : null,
       })
@@ -1184,13 +1241,16 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
             !(sprite.remoteUrl && /^https?:\/\//.test(sprite.remoteUrl)),
         )
         for (const sprite of pending) {
+          const beforeUrl = sprite.url
           try {
-            const dataUri = sprite.url.startsWith('data:') ? sprite.url : await urlToDataUri(sprite.url)
+            const dataUri = beforeUrl.startsWith('data:') ? beforeUrl : await urlToDataUri(beforeUrl)
             const result = await uploadToImgbb(apiKey, dataUri)
             if (!isValidImgbbResult(result)) throw new Error('图床响应无效')
             const latestPack = deps.getSettings().packs.find((candidate) => candidate.id === pack.id)
             const latestSprite = latestPack ? sameSprite(latestPack, sprite) : null
-            if (!latestPack || !latestSprite) throw new Error('立绘在上传期间已变化')
+            if (!latestPack || !latestSprite || latestSprite.url !== beforeUrl) {
+              throw new Error('目标已更改，本次结果未应用')
+            }
             if (!updateChecked(upsertPack(
               deps.getSettings(),
               upsertSprite(latestPack, { ...latestSprite, code: result.code, remoteUrl: result.url }),
@@ -1777,7 +1837,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
                 : null,
               outfitNotes: Object.keys(outfitNotes).length > 0 ? outfitNotes : null,
             }
-            if (inventoryPrompt) metadata.inventoryPrompt = inventoryPrompt
+            metadata.inventoryPrompt = inventoryPrompt || null
             const next = setPresetMetadata(current, pack.id, metadata)
             const materialized = next.packs.find((candidate) => candidate.id === pack.id)
             if (!materialized || !checkedSettings(upsertPack(current, materialized))) return
@@ -2121,13 +2181,17 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         const result = await compressImage(files[0])
         const beforeSave = latestTarget()
         if (!beforeSave) return
+        const beforeUrl = beforeSave.sprite.url
         const url = await deps.adapter.saveImage(
           `${beforeSave.sprite.tag}.webp`,
           result.dataUri,
           deps.adapter.getCurrentCharacterName() || beforeSave.pack.name,
         )
+        if (!localUserImagePath(url)) throw new Error('保存失败：平台未返回安全的本地用户图片地址')
         const target = latestTarget()
-        if (!target) return
+        if (!target || target.sprite.url !== beforeUrl) {
+          throw new Error('目标已更改，本次结果未应用')
+        }
         const base: Sprite = {
           tag: target.sprite.tag,
           url,
@@ -2143,13 +2207,16 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
             const uploaded = await uploadToImgbb(imgbbApiKey, result.dataUri)
             if (isValidImgbbResult(uploaded)) {
               const latest = latestTarget()
-              if (latest) {
+              if (latest && latest.sprite.url === url) {
                 commitPack(upsertSprite(latest.pack, {
-                  ...base,
+                  ...latest.sprite,
                   code: uploaded.code,
                   remoteUrl: uploaded.url,
                 }))
                 toast(currentManagerBody(), `已替换「${identity.tag}」并重传图床（${formatBytes(result.bytes)}）`)
+                return
+              } else {
+                toast(currentManagerBody(), '目标已更改，本次图床结果未应用；已保留本地文件')
                 return
               }
             }
@@ -2478,7 +2545,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     let hostFailed = 0
     let opaqueImages = 0
     let checkerboardImages = 0
-    // 本批新建的包：同 (role|outfit|packName) 复用同一个新 id
+    // 本批新建的包：同 [role, outfit, packName] 复用同一个新 id
     const newPackIds = new Map<string, string>()
 
     function persisted(targetId: string, sprite: Sprite): boolean {
@@ -2530,21 +2597,28 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           continue
         }
         try {
+          const batchKey = JSON.stringify([plan.entry.role, plan.entry.outfit, plan.targetPackName])
+          const beforeId = plan.targetPackId ?? newPackIds.get(batchKey)
+          const beforeTarget = deps.getSettings().packs.find(pack => pack.id === beforeId)
+          if (beforeId && !beforeTarget) throw new Error('目标已更改，本次结果未应用')
+          const beforeUrl = beforeTarget ? sameSprite(beforeTarget, { tag: plan.finalTag, url: '' })?.url : undefined
           const result = await compressImage(file)
           if (result.transparency === 'opaque-checkerboard') checkerboardImages += 1
           else if (result.transparency === 'opaque') opaqueImages += 1
           const url = await deps.adapter.saveImage(
             file.name,
             result.dataUri,
-            plan.targetPackName, // 始终按图包名称建目录，不依赖当前角色卡
+            plan.targetPackName, // 显示提示；物理文件身份由适配器独立生成
           )
+
+          if (!localUserImagePath(url)) throw new Error('保存失败：平台未返回安全的本地用户图片地址')
 
           // 解析/新建目标包
           let targetId = plan.targetPackId
           if (!targetId) {
             const role = plan.entry.role
             const outfit = plan.entry.outfit
-            const key = `${role}|${outfit}|${plan.targetPackName}`
+            const key = JSON.stringify([role, outfit, plan.targetPackName])
             targetId = newPackIds.get(key) ?? null
             if (!targetId) {
               const np: SpritePack = {
@@ -2573,7 +2647,11 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
             continue
           }
           // 自动拆分的包用 roleName/outfit，立绘只存图名；不拆分则可能带 group（此处 role 落到包级）
-          const sprite: Sprite = { tag: plan.finalTag, url }
+          const latestSprite = sameSprite(target, { tag: plan.finalTag, url: '' })
+          if (latestSprite?.url !== beforeUrl) throw new Error('目标已更改，本次结果未应用')
+          const sprite: Sprite = { ...latestSprite, tag: plan.finalTag, url }
+          delete sprite.code
+          delete sprite.remoteUrl
           if (!applyUploadSettings(upsertPack(deps.getSettings(), upsertSprite(target, sprite)), () =>
             persisted(targetId, sprite),
           )) {
@@ -2588,13 +2666,16 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
               const up = await uploadToImgbb(imgbbApiKey, result.dataUri)
               if (isValidImgbbResult(up)) {
                 const latest = deps.getSettings().packs.find((p) => p.id === targetId)
-                if (latest) {
-                  // 本地 url 作保底 remoteUrl 记远程；显示仍优先本地
-                  const hostedSprite: Sprite = { tag: plan.finalTag, url, code: up.code, remoteUrl: up.url }
+                const latestSprite = latest ? sameSprite(latest, sprite) : null
+                if (latest && latestSprite?.url === url) {
+                  // 只为本次保存的图片补远程元数据，不覆盖上传期间的编辑。
+                  const hostedSprite: Sprite = { ...latestSprite, code: up.code, remoteUrl: up.url }
                   if (applyUploadSettings(upsertPack(deps.getSettings(), upsertSprite(latest, hostedSprite)), () =>
                     persisted(targetId, hostedSprite),
                   )) hosted++
                   else hostFailed++
+                } else {
+                  hostFailed++
                 }
               } else {
                 hostFailed++
@@ -2662,9 +2743,10 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     let fail = 0
     for (let i = 0; i < pending.length; i++) {
       const sprite = pending[i]
+      const beforeUrl = sprite.url
       toast(body, `补传中 ${i + 1}/${pending.length}：${sprite.tag}`)
       try {
-        const dataUri = sprite.url.startsWith('data:') ? sprite.url : await urlToDataUri(sprite.url)
+        const dataUri = beforeUrl.startsWith('data:') ? beforeUrl : await urlToDataUri(beforeUrl)
         const up = await uploadToImgbb(imgbbApiKey, dataUri)
         if (!isValidImgbbResult(up)) {
           fail++
@@ -2677,7 +2759,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
             (s.group ?? '') === (sprite.group ?? '') &&
             (s.outfit ?? '') === (sprite.outfit ?? ''),
         )
-        if (!latest || !target) {
+        if (!latest || !target || target.url !== beforeUrl) {
           fail++
           continue
         }

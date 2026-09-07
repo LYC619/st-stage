@@ -1,7 +1,7 @@
 /**
  * PlatformAdapter：核心逻辑与运行环境（Web 测试页 / SillyTavern）之间的桥接接口。
  * - Web 端实现：localStorage 存配置，上传图片转 data URI
- * - ST 端实现：extension_settings 存配置，saveBase64AsFile 存图片，setExtensionPrompt 注入
+ * - ST 端实现：extension_settings 存配置，/api/images/upload 存图片，setExtensionPrompt 注入
  */
 
 import type { PluginSettings } from './types'
@@ -13,7 +13,7 @@ export interface PlatformAdapter {
   saveSettings(settings: PluginSettings): Promise<void>
   /**
    * 保存一张上传图片，返回可用于 img.src 的 URL。
-   * Web 端：转 data URI；ST 端：写入用户数据目录并返回静态路由路径。
+   * Web 端：转 data URI；ST 端：写入用户数据目录并校验后返回静态路由路径；失败必须 reject，不回退 data URI。
    */
   saveImage(fileName: string, base64Data: string, characterName: string): Promise<string>
   /** 删除 ST 用户图片目录中的文件；不支持物理删除的平台可省略。 */
