@@ -1,6 +1,25 @@
 # Deferred Findings
 
-These items are known and intentionally do not block the current acceptance branch. Each should receive its own scoped task if promoted.
+Known follow-ups and pending review repairs are recorded here. Older sections retain their original non-blocking decisions; the review queue below is **not** a declaration that its risks are acceptable for a new release. Remove or resolve entries only with an actual fixing commit and fresh verification.
+
+## 2026-09-05 Review Queue — Code Committed, Acceptance Pending
+
+Updated 2026-09-07 after explicit commit/push authorization: fixing code/build commit `81b4286bb68c6f42badc5ca52b39ac1fbf79c72e` is pushed to development main. This updates the legacy install channel, but not the independent `st-stage-ext` repository. Code fixes are traceable and local gates pass; applicable real-ST/device acceptance and independent release parity remain outstanding. Evidence and remaining checks are in history/2026-09-07-maintenance-repairs.md; original provenance is in history/2026-09-05-maintenance-review.md.
+
+| ID | Priority | Code repair in 81b4286 and remaining checks |
+| --- | --- | --- |
+| R1 | P1 | Unique random filenames and concurrent-reference checks are committed; real-ST image-write acceptance remains pending. |
+| R2 | P1 | Avatar-based chat paths and ZIP collision validation are committed and JSZip round trips pass; real-ST ZIP import remains pending. The older fallback-ID edge below is separate. |
+| R3 | P1 | Upload failure now rejects without base64 fallback; byte readback/timeout/limits are tested. Real-ST fault/reload acceptance remains pending. |
+| R4 | P2 | Settings/JSON/preset `inventoryPrompt` round trips and clearing are fixed and verified. No separate code repair remains for this finding. |
+| R5 | P2 | Optional request-header capability is guarded; commit-time tsc passes. No separate code repair remains for this finding. |
+| R6 | P2 | Full HUD bounds and resource disposal are fixed; Edge geometry passes. Physical-phone/live-theme acceptance remains pending. |
+| R7 | P2 | Root/generated-distribution artifacts match and root CSS is committed; independent-release bundle/CSS/version/README parity remains pending synchronization. |
+| R8 | P2 | Persistent input and composition-aware updates are fixed; browser keyboard/paste/CDP composition tests pass. Physical OS-keyboard acceptance remains pending. |
+
+**S1 — migration/storage acceptance pending:** commit `81b4286` adds backup-first staged migration, receipt-confirmed selective restore and complete image preparation before JSON/share installation. Unmapped raw images block writes; Apps remain unchanged. The synthetic 32 MiB STAdapter JSON round trip passes, but real-ST disk-save/reload/restore and physical-device acceptance are not performed. Updating alone does not shrink old settings; migration is explicit. Portable JSON support itself is not classified as a new bug.
+
+Local gates: 89 files / 1172 tests, tsc, lint, Next build, same-stamp extension builds and isolated Edge regressions pass; tests/tsc/lint were rerun before commit. The five runtime files match between root and `st-distribution`. Three-way release parity still fails on bundle/CSS/version and README because the release clone was deliberately not updated; reconcile README before release copying. The authorized development push does not mark real-ST standard ZIP import or physical-phone/OS-keyboard checks as passed. The old manual queue remains in `history/2026-09-05-pre-review-status-snapshot.md`.
 
 ## Renderer Snapshot Image Listeners
 
