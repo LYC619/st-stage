@@ -14,13 +14,14 @@ import {
 import { buildExtension, normalizeArtifactNewlines, normalizeBundleWhitespace } from './build.mjs'
 
 const artifactNames = ['index.js', 'bundle.js', 'style.css', 'version.json'] as const
-const distributionNames = ['README.md', 'bundle.js', 'index.js', 'manifest.json', 'style.css', 'version.json'] as const
+const distributionNames = ['README.md', 'bundle.js', 'index.js', 'locales', 'manifest.json', 'style.css', 'version.json'] as const
 const tempDirs: string[] = []
 
 function createBuildFixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'st-stage-build-'))
   tempDirs.push(root)
   mkdirSync(join(root, 'st-extension', 'src'), { recursive: true })
+  mkdirSync(join(root, 'st-extension', 'locales'), { recursive: true })
   mkdirSync(join(root, 'core'), { recursive: true })
   mkdirSync(join(root, 'public'), { recursive: true })
   mkdirSync(join(root, 'reference', 'assets'), { recursive: true })
@@ -35,6 +36,8 @@ function createBuildFixture(): string {
     '# Generated ST install output\nReference assets are intentionally excluded.\n',
   )
   writeFileSync(join(root, 'core', 'phone-shell.css'), '.phone { color: blue; }\n')
+  writeFileSync(join(root, 'st-extension', 'locales', 'zh-CN.json'), '{"test":"测试"}\n')
+  writeFileSync(join(root, 'st-extension', 'locales', 'en-US.json'), '{"test":"test"}\n')
   return root
 }
 

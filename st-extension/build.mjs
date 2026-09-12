@@ -134,6 +134,13 @@ export async function buildExtension({
     normalizeArtifactNewlines(`${baseCss}\n${phoneCss}`),
   )
 
+  // locale 文件：复制到产物目录，运行时动态加载
+  const localesDir = path.join(extensionDir, 'locales')
+  const outputLocalesDir = path.join(outputRoot, 'locales')
+  mkdirSync(outputLocalesDir, { recursive: true })
+  copyFileSync(path.join(localesDir, 'zh-CN.json'), path.join(outputLocalesDir, 'zh-CN.json'))
+  copyFileSync(path.join(localesDir, 'en-US.json'), path.join(outputLocalesDir, 'en-US.json'))
+
   if (path.resolve(outputRoot) !== path.resolve(sourceRoot)) {
     copyFileSync(path.join(sourceRoot, 'manifest.json'), path.join(outputRoot, 'manifest.json'))
     // README 是唯一未被 .gitattributes 钉住行尾的产物，必须显式归一，否则签出方式会改变它的字节。

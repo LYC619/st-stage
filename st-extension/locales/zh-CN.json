@@ -1,0 +1,35 @@
+{
+  "common": {
+    "confirm": "确认",
+    "cancel": "取消",
+    "save": "保存",
+    "delete": "删除",
+    "close": "关闭",
+    "search": "搜索",
+    "loading": "加载中...",
+    "success": "成功",
+    "error": "错误",
+    "warning": "警告"
+  },
+  "sprite": {
+    "overlay": {
+      "placeholder_no_pack": "未绑定立绘包\n点击 ⚙ 进行绑定",
+      "placeholder_no_character": "打开角色聊天后\n点击 ⚙ 绑定立绘包"
+    },
+    "manager": {
+      "title": "立绘图库管理",
+      "bind_pack": "绑定图包",
+      "upload_image": "上传图片",
+      "settings": "设置"
+    }
+  },
+  "phone": {
+    "home": "主页",
+    "apps": "应用"
+  },
+  "settings": {
+    "general": "基本设置",
+    "display": "显示设置",
+    "advanced": "高级设置"
+  }
+}

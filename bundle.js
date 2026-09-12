@@ -5259,7 +5259,7 @@ function openTrackedAppModal(build, hooks, track) {
 var DRAG_THRESHOLD2 = 6;
 var HOME_TITLE = "百工";
 function createPhoneShell(initialState, deps) {
-  let state = { ...initialState };
+  let state2 = { ...initialState };
   let activeApp = null;
   let activeCtxDispose = null;
   let screenScrollAppId = null;
@@ -5308,7 +5308,7 @@ function createPhoneShell(initialState, deps) {
   closeBtn.tabIndex = 0;
   const collapse = () => {
     leaveApp();
-    commitState({ ...state, open: false });
+    commitState({ ...state2, open: false });
   };
   closeBtn.addEventListener("click", collapse);
   closeBtn.addEventListener("keydown", (e) => {
@@ -5353,13 +5353,13 @@ function createPhoneShell(initialState, deps) {
       return;
     }
     const { w: vw, h: vh } = viewportSize();
-    const clampedX = Math.max(0, Math.min(state.x, vw - 56));
-    const clampedY = Math.max(0, Math.min(state.y, vh - 56));
+    const clampedX = Math.max(0, Math.min(state2.x, vw - 56));
+    const clampedY = Math.max(0, Math.min(state2.y, vh - 56));
     fab.style.left = `${clampedX}px`;
     fab.style.top = `${clampedY}px`;
-    fab.style.display = state.open ? "none" : "flex";
-    shell.style.display = state.open ? "flex" : "none";
-    if (state.open) {
+    fab.style.display = state2.open ? "none" : "flex";
+    shell.style.display = state2.open ? "flex" : "none";
+    if (state2.open) {
       const shellW = Math.min(320, vw - 16);
       const shellH = Math.min(580, vh - 16);
       shell.style.width = `${shellW}px`;
@@ -5372,28 +5372,28 @@ function createPhoneShell(initialState, deps) {
   window.addEventListener("resize", applyLayout);
   window.visualViewport?.addEventListener("resize", applyLayout);
   function commitState(next) {
-    state = next;
+    state2 = next;
     applyLayout();
-    deps.onStateChange(state);
+    deps.onStateChange(state2);
   }
   fab.addEventListener("pointerdown", (startEvent) => {
     startEvent.preventDefault();
     const startX = startEvent.clientX;
     const startY = startEvent.clientY;
-    const origin = { ...state };
+    const origin = { ...state2 };
     let moved = false;
     const onMove = (ev) => {
       const dx = ev.clientX - startX;
       const dy = ev.clientY - startY;
       if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD2) return;
       moved = true;
-      state = { ...origin, x: origin.x + dx, y: origin.y + dy };
+      state2 = { ...origin, x: origin.x + dx, y: origin.y + dy };
       applyLayout();
     };
     const onUp = () => {
       cleanup();
       if (moved) {
-        commitState(state);
+        commitState(state2);
       } else {
         const swallowGhostClick = (e) => {
           e.stopPropagation();
@@ -5404,13 +5404,13 @@ function createPhoneShell(initialState, deps) {
           () => window.removeEventListener("click", swallowGhostClick, { capture: true }),
           400
         );
-        commitState({ ...state, open: true });
+        commitState({ ...state2, open: true });
         renderScreen();
       }
     };
     const onCancel = () => {
       cleanup();
-      if (moved) commitState(state);
+      if (moved) commitState(state2);
     };
     function cleanup() {
       window.removeEventListener("pointermove", onMove);
@@ -5435,7 +5435,7 @@ function createPhoneShell(initialState, deps) {
     }
   });
   const unsubscribe = deps.registry.subscribe(() => {
-    if (state.open && !activeApp) renderScreen();
+    if (state2.open && !activeApp) renderScreen();
   });
   function leaveApp() {
     if (activeApp) {
@@ -5517,11 +5517,11 @@ function createPhoneShell(initialState, deps) {
   return {
     setState(next) {
       if (destroyed) return;
-      const wasOpen = state.open;
-      state = { ...next };
-      if (wasOpen && !state.open) leaveApp();
+      const wasOpen = state2.open;
+      state2 = { ...next };
+      if (wasOpen && !state2.open) leaveApp();
       applyLayout();
-      if (state.open) renderScreen();
+      if (state2.open) renderScreen();
     },
     openApp(appId) {
       if (destroyed) return;
@@ -5529,7 +5529,7 @@ function createPhoneShell(initialState, deps) {
       if (!app) return;
       leaveApp();
       activeApp = app;
-      if (!state.open) commitState({ ...state, open: true });
+      if (!state2.open) commitState({ ...state2, open: true });
       renderScreen();
     },
     setVisible(visible) {
@@ -5537,7 +5537,7 @@ function createPhoneShell(initialState, deps) {
       hidden = !visible;
       if (hidden) leaveApp();
       applyLayout();
-      if (!hidden && state.open) renderScreen();
+      if (!hidden && state2.open) renderScreen();
     },
     destroy() {
       if (destroyed) return;
@@ -6501,8 +6501,66 @@ function hash(value) {
   return (result >>> 0).toString(36);
 }
 
+// core/i18n.ts
+var state = {
+  currentLocale: "zh-CN",
+  translations: {
+    "zh-CN": {},
+    "en-US": {}
+  },
+  fallbackLocale: "zh-CN"
+};
+function setLocale(locale) {
+  const dict = state.translations[locale];
+  if (!dict || Object.keys(dict).length === 0) {
+    throw new Error(`Locale "${locale}" not loaded`);
+  }
+  state.currentLocale = locale;
+}
+function loadTranslations(locale, dict) {
+  state.translations[locale] = dict;
+}
+
 // st-extension/src/st-adapter.ts
 var MODULE_NAME = "sprite_overlay";
+async function loadLocaleFile(locale) {
+  try {
+    const stack = new Error().stack || "";
+    const match = stack.match(/(https?:\/\/[^\s)]+?)\//);
+    const base = match ? match[1] : "/scripts/extensions/third-party/st-stage";
+    const url = `${base}/locales/${locale}.json`;
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) {
+      console.warn(`[sprite-overlay] 加载 locale ${locale} 失败: ${response.status}`);
+      return {};
+    }
+    return await response.json();
+  } catch (err) {
+    console.warn(`[sprite-overlay] 加载 locale ${locale} 异常`, err);
+    return {};
+  }
+}
+async function initI18n() {
+  const [zhDict, enDict] = await Promise.all([
+    loadLocaleFile("zh-CN"),
+    loadLocaleFile("en-US")
+  ]);
+  loadTranslations("zh-CN", zhDict);
+  loadTranslations("en-US", enDict);
+  const browserLang = navigator.language || "zh-CN";
+  const locale = browserLang.startsWith("en") ? "en-US" : "zh-CN";
+  try {
+    setLocale(locale);
+  } catch {
+    if (locale !== "zh-CN") {
+      try {
+        setLocale("zh-CN");
+      } catch {
+      }
+    }
+  }
+  console.log(`[sprite-overlay] i18n 已初始化: ${locale}`);
+}
 function persistableSTSettings(settings) {
   return {
     ...settings,
@@ -7410,18 +7468,18 @@ function createSpriteActions(context) {
       label: "重命名",
       icon: "✎",
       run() {
-        const state = current(context);
-        if (!state) return;
-        const next = window.prompt(`「${state.sprite.tag}」改名为：`, state.sprite.tag);
+        const state2 = current(context);
+        if (!state2) return;
+        const next = window.prompt(`「${state2.sprite.tag}」改名为：`, state2.sprite.tag);
         if (next === null) return;
         commitAndRefresh(
           context,
           renameSprite(
-            state.pack,
-            state.sprite.tag,
+            state2.pack,
+            state2.sprite.tag,
             next,
-            spriteGroup(state.sprite),
-            state.sprite.outfit ?? ""
+            spriteGroup(state2.sprite),
+            state2.sprite.outfit ?? ""
           )
         );
       }
@@ -7431,18 +7489,18 @@ function createSpriteActions(context) {
       label: "标签",
       icon: "#",
       run() {
-        const state = current(context);
-        if (!state) return;
+        const state2 = current(context);
+        if (!state2) return;
         const raw = window.prompt(
-          `「${state.sprite.tag}」的标签（逗号分隔，留空=清除）：`,
-          state.sprite.labels?.join(", ") ?? ""
+          `「${state2.sprite.tag}」的标签（逗号分隔，留空=清除）：`,
+          state2.sprite.labels?.join(", ") ?? ""
         );
         if (raw === null) return;
         const labels = normalizeLabels(raw.split(/[,，]/));
-        const nextSprite = { ...state.sprite };
+        const nextSprite = { ...state2.sprite };
         if (labels.length > 0) nextSprite.labels = labels;
         else delete nextSprite.labels;
-        commitAndRefresh(context, upsertSprite(state.pack, nextSprite));
+        commitAndRefresh(context, upsertSprite(state2.pack, nextSprite));
       }
     },
     {
@@ -7450,14 +7508,14 @@ function createSpriteActions(context) {
       label: "设分组",
       icon: "🏷",
       run() {
-        const state = current(context);
-        if (!state) return;
-        const group = spriteGroup(state.sprite);
-        const next = window.prompt(`「${state.sprite.tag}」的分组（留空=移出分组）：`, group);
+        const state2 = current(context);
+        if (!state2) return;
+        const group = spriteGroup(state2.sprite);
+        const next = window.prompt(`「${state2.sprite.tag}」的分组（留空=移出分组）：`, group);
         if (next === null) return;
         commitAndRefresh(
           context,
-          setSpriteGroup(state.pack, state.sprite.tag, group, next, state.sprite.outfit ?? "")
+          setSpriteGroup(state2.pack, state2.sprite.tag, group, next, state2.sprite.outfit ?? "")
         );
       }
     },
@@ -7480,9 +7538,9 @@ function createSpriteActions(context) {
       allowedInReadonly: true,
       disabled: !source || getSpriteSource(source) !== "hosted",
       async run() {
-        const state = current(context);
-        if (!state || getSpriteSource(state.sprite) !== "hosted") return;
-        await context.localize(state.sprite);
+        const state2 = current(context);
+        if (!state2 || getSpriteSource(state2.sprite) !== "hosted") return;
+        await context.localize(state2.sprite);
       }
     },
     {
@@ -7490,14 +7548,14 @@ function createSpriteActions(context) {
       label: "远程地址",
       icon: "🔗",
       run() {
-        const state = current(context);
-        if (!state) return;
-        const remote = state.sprite.remoteUrl || (getSpriteSource(state.sprite) === "hosted" ? state.sprite.url : "");
+        const state2 = current(context);
+        if (!state2) return;
+        const remote = state2.sprite.remoteUrl || (getSpriteSource(state2.sprite) === "hosted" ? state2.sprite.url : "");
         if (!remote) {
-          throw new Error(`「${state.sprite.tag}」还没有远程地址（未上传图床，分享时对方看不到）`);
+          throw new Error(`「${state2.sprite.tag}」还没有远程地址（未上传图床，分享时对方看不到）`);
         }
         window.prompt(
-          `「${state.sprite.tag}」编号：${state.sprite.code || "无"}
+          `「${state2.sprite.tag}」编号：${state2.sprite.code || "无"}
 远程地址（Ctrl+C 复制）：`,
           remote
         );
@@ -7508,9 +7566,9 @@ function createSpriteActions(context) {
       label: "设为封面",
       icon: "★",
       run() {
-        const state = current(context);
-        if (!state) return;
-        commitAndRefresh(context, { ...state.pack, coverTag: state.sprite.tag });
+        const state2 = current(context);
+        if (!state2) return;
+        commitAndRefresh(context, { ...state2.pack, coverTag: state2.sprite.tag });
       }
     },
     {
@@ -7519,13 +7577,13 @@ function createSpriteActions(context) {
       icon: "✕",
       destructive: true,
       run() {
-        const state = current(context);
-        if (!state || !window.confirm(`删除立绘「${state.sprite.tag}」？`)) return;
+        const state2 = current(context);
+        if (!state2 || !window.confirm(`删除立绘「${state2.sprite.tag}」？`)) return;
         const next = removeSprite(
-          state.pack,
-          state.sprite.tag,
-          spriteGroup(state.sprite),
-          state.sprite.outfit ?? ""
+          state2.pack,
+          state2.sprite.tag,
+          spriteGroup(state2.sprite),
+          state2.sprite.outfit ?? ""
         );
         context.commit(next);
         if (next.sprites.length === 0) context.close();
@@ -10261,34 +10319,34 @@ ${preview}
     const pack = deps.getSettings().packs.find((candidate) => candidate.id === packId);
     if (!pack || pack.sprites.length === 0) return;
     activeLightbox?.controller?.close();
-    const state = { controller: null, packId, index: startIndex };
+    const state2 = { controller: null, packId, index: startIndex };
     const controller = openSpriteLightbox({
       pack,
       index: startIndex,
       readonly: isPresetPack(pack.id),
-      actions: isPresetPack(pack.id) ? presetLightboxActions(state) : lightboxActions(state),
+      actions: isPresetPack(pack.id) ? presetLightboxActions(state2) : lightboxActions(state2),
       onNavigate: (index) => {
-        state.index = index;
+        state2.index = index;
         refreshLightbox();
       },
       onClose: () => {
-        if (activeLightbox === state) activeLightbox = null;
+        if (activeLightbox === state2) activeLightbox = null;
       }
     });
-    state.controller = controller;
-    activeLightbox = state;
+    state2.controller = controller;
+    activeLightbox = state2;
   }
   function refreshLightbox() {
-    const state = activeLightbox;
-    if (!state?.controller) return;
-    const pack = deps.getSettings().packs.find((candidate) => candidate.id === state.packId);
+    const state2 = activeLightbox;
+    if (!state2?.controller) return;
+    const pack = deps.getSettings().packs.find((candidate) => candidate.id === state2.packId);
     if (!pack || pack.sprites.length === 0) {
-      state.controller.close();
+      state2.controller.close();
       return;
     }
-    state.index = Math.max(0, Math.min(state.index, pack.sprites.length - 1));
-    const actions = isPresetPack(pack.id) ? presetLightboxActions(state) : lightboxActions(state);
-    state.controller.update(pack, state.index, actions);
+    state2.index = Math.max(0, Math.min(state2.index, pack.sprites.length - 1));
+    const actions = isPresetPack(pack.id) ? presetLightboxActions(state2) : lightboxActions(state2);
+    state2.controller.update(pack, state2.index, actions);
   }
   function commitActionPack(pack) {
     const result = upsertPack(deps.getSettings(), pack);
@@ -10439,13 +10497,13 @@ ${preview}
     };
     return context;
   }
-  function lightboxActions(state) {
+  function lightboxActions(state2) {
     const context = actionContext(
-      state.packId,
-      (pack) => pack.sprites[state.index] ?? null,
+      state2.packId,
+      (pack) => pack.sprites[state2.index] ?? null,
       () => {
         render2();
-        state.controller?.close();
+        state2.controller?.close();
       }
     );
     return createSpriteActions(context).map((action) => ({
@@ -10453,11 +10511,11 @@ ${preview}
       run: () => runSpriteAction(action)
     }));
   }
-  function presetLightboxActions(state) {
+  function presetLightboxActions(state2) {
     const context = actionContext(
-      state.packId,
-      (pack) => pack.sprites[state.index] ?? null,
-      () => state.controller?.close()
+      state2.packId,
+      (pack) => pack.sprites[state2.index] ?? null,
+      () => state2.controller?.close()
     );
     return createSpriteActions(context).filter((action) => action.allowedInReadonly).map((action) => ({ ...action, run: () => runSpriteAction(action) }));
   }
@@ -14190,7 +14248,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-09-07 21:09"}`;
+  return `${"0.9.0"}+${"2026-09-12 18:08"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -14519,7 +14577,7 @@ function createState() {
     disposed: false
   };
 }
-function mountButler(container, ctx, services, state) {
+function mountButler(container, ctx, services, state2) {
   let data = migrateButlerData(ctx.getAppData(), {
     now: services.now(),
     idFactory: services.createId
@@ -14529,17 +14587,17 @@ function mountButler(container, ctx, services, state) {
     data = result.data;
     ctx.setAppData(data);
     if (result.status === "protected-over-budget" || result.status === "data-over-budget") {
-      state.notice = "管家恢复状态已达到 64 KiB 上限；新的历史记录未保存。";
-      state.noticeKind = "error";
+      state2.notice = "管家恢复状态已达到 64 KiB 上限；新的历史记录未保存。";
+      state2.noticeKind = "error";
     } else if (candidateHistoryId && !result.historyAccepted) {
-      state.notice = "本次结果可查看，但因 64 KiB 上限未写入历史。";
-      state.noticeKind = "info";
+      state2.notice = "本次结果可查看，但因 64 KiB 上限未写入历史。";
+      state2.noticeKind = "info";
     }
     return data;
   };
   const setNotice = (message, kind = "info") => {
-    state.notice = message;
-    state.noticeKind = kind;
+    state2.notice = message;
+    state2.noticeKind = kind;
   };
   const safely = async (task) => {
     try {
@@ -14547,7 +14605,7 @@ function mountButler(container, ctx, services, state) {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "操作失败，请重试", "error");
     }
-    if (!state.disposed) render2();
+    if (!state2.disposed) render2();
   };
   const readPerformanceGroup = async () => {
     const current2 = services.readPerformance();
@@ -14582,38 +14640,38 @@ function mountButler(container, ctx, services, state) {
     warnRecovery: services.warnRecovery
   };
   const runProbe = async (probe, forExperiment = false) => {
-    state.sampling = true;
+    state2.sampling = true;
     const controller = new AbortController();
-    state.controller = controller;
+    state2.controller = controller;
     setNotice(forExperiment ? "正在检查扩展关闭后的表现，请保持页面前台。" : "正在检查，请保持页面前台且不要操作聊天。");
     render2();
     try {
       const result = probe === "controlledScroll" ? await services.sampleControlledScroll(controller.signal) : await services.sampleIdle(controller.signal);
-      state.measurement = result;
-      state.findings = diagnose(result, services.readPerformance());
+      state2.measurement = result;
+      state2.findings = diagnose(result, services.readPerformance());
       setNotice(result.invalidReason ?? "6 秒体检完成。", result.invalidReason ? "error" : "success");
       return result;
     } finally {
-      if (state.controller === controller) state.controller = null;
-      state.sampling = false;
+      if (state2.controller === controller) state2.controller = null;
+      state2.sampling = false;
     }
   };
   const baselineForTransaction = () => {
     const baselineId = data.activeTransaction?.baselineMeasurementId;
     if (baselineId) return latestMeasurement(data, baselineId);
-    const current2 = state.measurement;
+    const current2 = state2.measurement;
     if (current2 && current2.probe !== "static") return current2;
     return null;
   };
   const applySafePlan = async (plan) => {
-    if (state.applying || plan.actions.length === 0) return;
-    state.applying = true;
+    if (state2.applying || plan.actions.length === 0) return;
+    state2.applying = true;
     setNotice("正在逐项应用并回读 SillyTavern 实际值。");
     render2();
     try {
       let baseline = baselineForTransaction();
       if (!baseline || baseline.probe === "static" || baseline.invalidReason) {
-        baseline = await runProbe(state.selectedProbe);
+        baseline = await runProbe(state2.selectedProbe);
         const record = measurementHistory(
           baseline,
           "优化前基线",
@@ -14633,20 +14691,20 @@ function mountButler(container, ctx, services, state) {
         data = persistData(upsertHistory(data, record), record.id);
       }
     } finally {
-      state.applying = false;
+      state2.applying = false;
     }
   };
   const remeasure = async () => {
-    if (state.sampling) return;
+    if (state2.sampling) return;
     const baseline = baselineForTransaction();
     if (!baseline || baseline.probe === "static") throw new Error("请先完成一次检查，再点“再测一次，比较优化前后”。");
     const result = await runProbe(baseline.probe);
     const record = measurementHistory(result, "优化后再次检查", result.invalidReason ? "cancelled" : "completed");
     data = persistData(upsertHistory(data, record), record.id);
-    state.comparison = compareMeasurements(baseline, result);
+    state2.comparison = compareMeasurements(baseline, result);
     setNotice(
-      state.comparison.comparable ? "两次检查条件一致，已显示优化前后的变化。" : `两次检查条件不同，暂时不能直接比较：${state.comparison.reasons.join("；")}。`,
-      state.comparison.comparable ? "success" : "info"
+      state2.comparison.comparable ? "两次检查条件一致，已显示优化前后的变化。" : `两次检查条件不同，暂时不能直接比较：${state2.comparison.reasons.join("；")}。`,
+      state2.comparison.comparable ? "success" : "info"
     );
   };
   const restorePerformance = async () => {
@@ -14679,9 +14737,9 @@ ${lines.join("\n")}
   };
   const modalController = {
     getData: () => data,
-    getMeasurement: () => state.measurement,
-    getFindings: () => state.findings,
-    getComparison: () => state.comparison,
+    getMeasurement: () => state2.measurement,
+    getFindings: () => state2.findings,
+    getComparison: () => state2.comparison,
     /**
      * 升级搁浅救援：把扩展还原到排查前的原始禁用清单，然后清空待处理排查。
      *
@@ -14737,7 +14795,7 @@ ${lines.join("\n")}
     parent.append(result.box);
   };
   const render2 = () => {
-    if (state.disposed) return;
+    if (state2.disposed) return;
     container.textContent = "";
     container.classList.add("so-butler-app");
     const current2 = services.readPerformance();
@@ -14763,12 +14821,12 @@ ${lines.join("\n")}
       summary.append(item);
     }
     header.append(heading, summary);
-    if (!state.measurement) text2(header, "正在读取当前环境...", "so-butler-muted");
+    if (!state2.measurement) text2(header, "正在读取当前环境...", "so-butler-muted");
     else {
       text2(
         header,
-        state.measurement.invalidReason ? `最近体检无效：${state.measurement.invalidReason}` : `最近检查：${state.measurement.probe === "static" ? "基础检查" : "6 秒检查"} · ${state.findings.length} 条发现`,
-        state.measurement.invalidReason ? "so-butler-alert" : "so-butler-text"
+        state2.measurement.invalidReason ? `最近体检无效：${state2.measurement.invalidReason}` : `最近检查：${state2.measurement.probe === "static" ? "基础检查" : "6 秒检查"} · ${state2.findings.length} 条发现`,
+        state2.measurement.invalidReason ? "so-butler-alert" : "so-butler-text"
       );
     }
     container.append(header);
@@ -14786,26 +14844,26 @@ ${lines.join("\n")}
     text2(sampling, "“不操作时检查”观察页面自己是否持续占用资源；“滚动长聊天检查”会自动滚动一小段并恢复原位置。切后台、生成回复、切换聊天或手动操作时，本次检查会取消。");
     sampling.append(selectRow(
       "检查方式",
-      state.selectedProbe,
+      state2.selectedProbe,
       [
         { value: "idle", label: "不操作时检查（6 秒）" },
         { value: "controlledScroll", label: "滚动长聊天检查（6 秒）" }
       ],
       (value) => {
-        state.selectedProbe = value;
+        state2.selectedProbe = value;
         render2();
       }
     ));
-    if (state.sampling) sampling.append(appButton("取消本次检查", () => state.controller?.abort()));
+    if (state2.sampling) sampling.append(appButton("取消本次检查", () => state2.controller?.abort()));
     else sampling.append(appButton("开始 6 秒体检", () => void safely(async () => {
-      const result = await runProbe(state.selectedProbe);
+      const result = await runProbe(state2.selectedProbe);
       const record = measurementHistory(result, result.probe === "idle" ? "静置体检" : "受控滚动体检", result.invalidReason ? "cancelled" : "completed");
       data = persistData(upsertHistory(data, record), record.id);
     })));
     container.append(sampling);
-    const findingSection = foldSection(`检查发现（${state.findings.length}）`, true, "butler-findings");
-    if (state.findings.length === 0) text2(findingSection.body, state.measurement ? "当前证据没有触发建议。" : "静态体检完成后显示。");
-    for (const finding2 of state.findings.slice(0, 5)) renderFinding(findingSection.body, finding2);
+    const findingSection = foldSection(`检查发现（${state2.findings.length}）`, true, "butler-findings");
+    if (state2.findings.length === 0) text2(findingSection.body, state2.measurement ? "当前证据没有触发建议。" : "静态体检完成后显示。");
+    for (const finding2 of state2.findings.slice(0, 5)) renderFinding(findingSection.body, finding2);
     container.append(findingSection.box);
     const planSection = el2("div", "so-app-section");
     const planTitle = el2("div", "so-app-title");
@@ -14820,13 +14878,13 @@ ${lines.join("\n")}
         renderTransaction(planSection, data.activeTransaction);
         const actions = el2("div", "so-butler-actions");
         actions.append(
-          appButton(state.sampling ? "正在再次检查" : "再测一次，比较优化前后", () => void safely(remeasure)),
+          appButton(state2.sampling ? "正在再次检查" : "再测一次，比较优化前后", () => void safely(remeasure)),
           appButton("恢复本次性能设置", () => void safely(restorePerformance))
         );
         planSection.append(actions);
       } else if (plan.actions.length > 0) {
         const apply = appButton(
-          state.applying ? "正在应用建议" : `立即应用 ${plan.actions.length} 项建议`,
+          state2.applying ? "正在应用建议" : `立即应用 ${plan.actions.length} 项建议`,
           () => void safely(() => applySafePlan(plan))
         );
         apply.classList.add("so-butler-primary-action");
@@ -14835,10 +14893,10 @@ ${lines.join("\n")}
         text2(planSection, "这里没有需要应用的设置。如果仍然卡顿，可以打开“扩展指南”看看哪些扩展代价较大、能否安全关掉。", "so-butler-muted");
       }
     }
-    if (state.comparison) {
+    if (state2.comparison) {
       const comparison = foldSection("优化前后对比", true, "butler-comparison");
-      text2(comparison.body, state.comparison.comparable ? "两次检查条件一致。下面按普通用户能理解的指标展示前后变化。" : `两次检查条件不同，暂不计算差值：${state.comparison.reasons.join("；")}。可在详细结果中查看两次原始数据。`);
-      renderMeasurementComparison(comparison.body, state.comparison);
+      text2(comparison.body, state2.comparison.comparable ? "两次检查条件一致。下面按普通用户能理解的指标展示前后变化。" : `两次检查条件不同，暂不计算差值：${state2.comparison.reasons.join("；")}。可在详细结果中查看两次原始数据。`);
+      renderMeasurementComparison(comparison.body, state2.comparison);
       planSection.append(comparison.box);
     }
     container.append(planSection);
@@ -14855,7 +14913,7 @@ ${lines.join("\n")}
       pending.append(appButton("恢复排查前的扩展状态", () => ctx.openModal(buildExtensionModal(services, modalController))));
       container.append(pending);
     }
-    if (state.notice) text2(container, state.notice, `so-butler-notice so-butler-notice-${state.noticeKind}`);
+    if (state2.notice) text2(container, state2.notice, `so-butler-notice so-butler-notice-${state2.noticeKind}`);
   };
   if (data.pendingExperiment?.status === "awaitingReload") {
     data = persistData({ ...data, pendingExperiment: resumeExtensionExperiment(data.pendingExperiment) });
@@ -14864,11 +14922,11 @@ ${lines.join("\n")}
   render2();
   void safely(async () => {
     const measurement = await services.collectStatic();
-    if (!state.measurement || state.measurement.probe === "static") {
-      state.measurement = measurement;
-      state.findings = diagnose(measurement, services.readPerformance());
+    if (!state2.measurement || state2.measurement.probe === "static") {
+      state2.measurement = measurement;
+      state2.findings = diagnose(measurement, services.readPerformance());
     }
-    if (!state.notice) setNotice("基础检查完成。需要观察页面运行时表现时，再运行 6 秒检查。", "success");
+    if (!state2.notice) setNotice("基础检查完成。需要观察页面运行时表现时，再运行 6 秒检查。", "success");
   });
 }
 
@@ -15069,12 +15127,12 @@ function newvarApp(deps) {
         getModel: () => {
           const st = runtime.isSTAvailable();
           const d = runtime.getData();
-          const state = runtime.getCurrentState();
+          const state2 = runtime.getCurrentState();
           return {
-            data: state,
+            data: state2,
             definitions: d.schema.variables,
             isMvu: false,
-            delta: computeDelta(state, runtime.getPrevState(), false),
+            delta: computeDelta(state2, runtime.getPrevState(), false),
             status: st ? "ready" : "unavailable",
             statusText: st ? `内置追踪 · ${d.enabled ? "已启用" : "未启用"}` : "内置追踪 · 模拟器",
             emptyText: "暂无变量。点上方「打开变量设计」定义或导入模板，启用后 AI 回复会逐楼更新这里。",
@@ -15448,11 +15506,11 @@ function apiApp(deps) {
     icon: "📡",
     order: 6,
     mount(container, ctx) {
-      const state = { busy: false, message: "", connection: null, connectionLoaded: false };
-      render(container, ctx, deps, state);
-      void refreshConnection(container, ctx, deps, state);
+      const state2 = { busy: false, message: "", connection: null, connectionLoaded: false };
+      render(container, ctx, deps, state2);
+      void refreshConnection(container, ctx, deps, state2);
       unsubscribe = onOnlineStatusChanged(() => {
-        if (!state.busy && container.isConnected) void refreshConnection(container, ctx, deps, state);
+        if (!state2.busy && container.isConnected) void refreshConnection(container, ctx, deps, state2);
       });
     },
     unmount() {
@@ -15461,16 +15519,16 @@ function apiApp(deps) {
     }
   };
 }
-async function refreshConnection(container, ctx, deps, state) {
+async function refreshConnection(container, ctx, deps, state2) {
   const connection = await readConnection({ withSecret: false });
   if (!container.isConnected) return;
-  state.connection = connection;
-  state.connectionLoaded = true;
-  render(container, ctx, deps, state);
+  state2.connection = connection;
+  state2.connectionLoaded = true;
+  render(container, ctx, deps, state2);
 }
-function render(container, ctx, deps, state) {
+function render(container, ctx, deps, state2) {
   const data = sanitizeAppData(ctx.getAppData());
-  const connection = state.connection;
+  const connection = state2.connection;
   if (!container.isConnected) return;
   const active = connection ? findActiveProfile(data.profiles, connection) : void 0;
   container.textContent = "";
@@ -15479,7 +15537,7 @@ function render(container, ctx, deps, state) {
   title2.textContent = "当前连接";
   status.append(title2);
   const line = el2("div", "so-app-desc");
-  if (!state.connectionLoaded) line.textContent = "正在读取当前连接…";
+  if (!state2.connectionLoaded) line.textContent = "正在读取当前连接…";
   else if (!connection) line.textContent = "未检测到 SillyTavern 运行时（这里只展示已保存档案）。";
   else {
     const source = getSource(connection.mainApi, connection.source);
@@ -15499,10 +15557,10 @@ function render(container, ctx, deps, state) {
     empty.textContent = "还没有连接档案，请进入管理页添加或导入。";
     profiles.append(empty);
   }
-  for (const profile of data.profiles) profiles.append(buildRow(profile, active?.id === profile.id, state.busy, () => void switchProfile(profile)));
-  if (state.message) {
+  for (const profile of data.profiles) profiles.append(buildRow(profile, active?.id === profile.id, state2.busy, () => void switchProfile(profile)));
+  if (state2.message) {
     const feedback = el2("div", "so-app-desc");
-    feedback.textContent = state.message;
+    feedback.textContent = state2.message;
     profiles.append(feedback);
   }
   container.append(profiles);
@@ -15512,27 +15570,27 @@ function render(container, ctx, deps, state) {
   manage.append(description, appButton("管理连接档案", deps.openManager));
   container.append(manage, buildApiGuide());
   async function switchProfile(profile) {
-    if (state.busy) return;
-    state.busy = true;
-    state.message = `正在应用「${profile.name}」的类型、来源、密钥、URL 与模型…`;
-    render(container, ctx, deps, state);
+    if (state2.busy) return;
+    state2.busy = true;
+    state2.message = `正在应用「${profile.name}」的类型、来源、密钥、URL 与模型…`;
+    render(container, ctx, deps, state2);
     try {
       const connected = await applyProfile(profile, (message) => {
-        state.message = message;
-        if (container.isConnected) render(container, ctx, deps, state);
+        state2.message = message;
+        if (container.isConnected) render(container, ctx, deps, state2);
       });
-      state.connection = connected;
-      state.connectionLoaded = true;
-      state.message = `「${profile.name}」已连接${connected.model ? `，实际模型：${connected.model}` : ""}`;
-      toast2("success", state.message);
+      state2.connection = connected;
+      state2.connectionLoaded = true;
+      state2.message = `「${profile.name}」已连接${connected.model ? `，实际模型：${connected.model}` : ""}`;
+      toast2("success", state2.message);
     } catch (error) {
-      state.message = `切换失败：${error instanceof Error ? error.message : String(error)}`;
-      toast2("error", state.message);
+      state2.message = `切换失败：${error instanceof Error ? error.message : String(error)}`;
+      toast2("error", state2.message);
       console.error("[st-stage] API 切换失败", error);
     } finally {
-      state.busy = false;
-      render(container, ctx, deps, state);
-      void refreshConnection(container, ctx, deps, state);
+      state2.busy = false;
+      render(container, ctx, deps, state2);
+      void refreshConnection(container, ctx, deps, state2);
     }
   }
 }
@@ -16356,20 +16414,20 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
         if (current2?.status === "ready") return current2.data;
         const pending = chatRequests.get(character.id);
         if (pending) return pending;
-        const state = { status: "loading", data: [] };
-        chats.set(character.id, state);
+        const state2 = { status: "loading", data: [] };
+        chats.set(character.id, state2);
         if (shouldRender) render2();
         const request = bridge.listChats(character).then((data) => {
           if (!disposed) {
-            state.data = data;
-            state.status = "ready";
+            state2.data = data;
+            state2.status = "ready";
             if (shouldRender) render2();
           }
           ;
           return data;
         }).catch((error) => {
-          state.status = "error";
-          state.error = String(error);
+          state2.status = "error";
+          state2.error = String(error);
           if (shouldRender) render2();
           throw error;
         }).finally(() => {
@@ -16541,10 +16599,10 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
           });
         }
         const list = el2("div", "so-app-section");
-        const state = activeTab === "characters" ? characters : activeTab === "worldbooks" ? worldbooks : settings;
-        if (state.status === "idle" || state.status === "loading") list.textContent = "正在读取当前分类…";
-        else if (state.status === "error") {
-          list.textContent = `读取失败：${state.error ?? "未知错误"}`;
+        const state2 = activeTab === "characters" ? characters : activeTab === "worldbooks" ? worldbooks : settings;
+        if (state2.status === "idle" || state2.status === "loading") list.textContent = "正在读取当前分类…";
+        else if (state2.status === "error") {
+          list.textContent = `读取失败：${state2.error ?? "未知错误"}`;
           list.append(appButton("重试", () => {
             void ensureActiveTab(true);
           }));
@@ -16843,11 +16901,11 @@ function syntaxError(source, index, message) {
 
 // st-extension/src/apps/newvar/engine.ts
 function initStateFromSchema(schema) {
-  const state = {};
+  const state2 = {};
   for (const def of schema.variables) {
-    setNested(state, def.key, clone(def.default));
+    setNested(state2, def.key, clone(def.default));
   }
-  return state;
+  return state2;
 }
 function clone(v) {
   if (v == null || typeof v !== "object") return v;
@@ -16857,8 +16915,8 @@ function clone(v) {
     return v;
   }
 }
-function fillDefaults(state, schema) {
-  const next = clone(state);
+function fillDefaults(state2, schema) {
+  const next = clone(state2);
   for (const def of schema.variables) {
     if (getNested(next, def.key) === void 0) setNested(next, def.key, clone(def.default));
   }
@@ -16993,8 +17051,8 @@ function parseLodash(inner) {
     ...parsed.errors.length > 0 ? { error: parsed.errors.join("；") } : {}
   };
 }
-function applyOps(state, ops, schema) {
-  const next = clone(state);
+function applyOps(state2, ops, schema) {
+  const next = clone(state2);
   const log = [];
   const defByKey = new Map(schema.variables.map((v) => [v.key, v]));
   const hasSchema = schema.variables.length > 0;
@@ -17036,10 +17094,10 @@ function applyOps(state, ops, schema) {
   }
   return { state: next, log };
 }
-function buildInjection(state, schema, format) {
+function buildInjection(state2, schema, format) {
   const visible = schema.variables.filter((v) => !v.hidden);
   const stateLines = visible.map((v) => {
-    const value = getNested(state, v.key);
+    const value = getNested(state2, v.key);
     const desc = v.description ? `  // ${v.description}` : "";
     return `  ${v.key}: ${JSON.stringify(value)}${desc}`;
   });
@@ -17068,7 +17126,7 @@ function buildInjection(state, schema, format) {
   const exampleDef = visible[0];
   const example = exampleDef?.key ?? "变量路径";
   const examplePatchValue = exampleDef ? exampleValue(exampleDef) : "新值";
-  const currentExampleValue = exampleDef ? getNested(state, example) : "旧值";
+  const currentExampleValue = exampleDef ? getNested(state2, example) : "旧值";
   const examplePatch = JSON.stringify([
     { op: "replace", path: dottedToPointer(example), value: examplePatchValue }
   ]);
@@ -17169,11 +17227,11 @@ function createNewvarRuntime(deps) {
     }
     return null;
   }
-  function writeSnapshot(st, messageId, state) {
+  function writeSnapshot(st, messageId, state2) {
     const msg = st.chat?.[messageId];
     if (!msg) return;
     if (!msg.extra || typeof msg.extra !== "object") msg.extra = {};
-    msg.extra[NEWVAR_EXTRA_KEY] = { stat_data: state };
+    msg.extra[NEWVAR_EXTRA_KEY] = { stat_data: state2 };
     saveChat(st);
   }
   function saveChat(st) {
@@ -17234,9 +17292,9 @@ function createNewvarRuntime(deps) {
     const st = getST4();
     const chat2 = st?.chat;
     if (!st || !Array.isArray(chat2) || chat2.length === 0) return false;
-    const state = getCurrentState();
-    mutate(state);
-    writeSnapshot(st, chat2.length - 1, state);
+    const state2 = getCurrentState();
+    mutate(state2);
+    writeSnapshot(st, chat2.length - 1, state2);
     reinject();
     notify();
     return true;
@@ -17286,13 +17344,13 @@ function createNewvarRuntime(deps) {
       if (!def) return { ok: false, error: `未定义的变量路径：${path}` };
       const validated = validateValue(def, value);
       if (!validated.ok) return { ok: false, error: validated.error ?? "输入值不符合变量定义。" };
-      if (!mutateCurrent((state) => setNested(state, path, validated.value))) {
+      if (!mutateCurrent((state2) => setNested(state2, path, validated.value))) {
         return { ok: false, error: "当前环境没有可写入的聊天楼层。" };
       }
       return { ok: true, value: validated.value };
     },
     deleteVariable(path) {
-      mutateCurrent((state) => deleteNested(state, path));
+      mutateCurrent((state2) => deleteNested(state2, path));
     },
     onConfigChanged() {
       reinject();
@@ -18717,20 +18775,20 @@ function hideSourceBlock(root, parsed) {
 }
 function outsideSignature(root, mounts) {
   const holder = document.createElement("div");
-  const owned = new Set(mounts.flatMap((state) => [state.marker, state.container]));
+  const owned = new Set(mounts.flatMap((state2) => [state2.marker, state2.container]));
   for (const node of Array.from(root.childNodes)) {
     if (!owned.has(node)) holder.append(node.cloneNode(true));
   }
   return holder.innerHTML;
 }
-function stillOwnsDom(root, state) {
-  return state.mounts.every((mount) => mount.marker.parentNode === root && mount.container.parentNode === root) && outsideSignature(root, state.mounts) === state.outsideSignature;
+function stillOwnsDom(root, state2) {
+  return state2.mounts.every((mount) => mount.marker.parentNode === root && mount.container.parentNode === root) && outsideSignature(root, state2.mounts) === state2.outsideSignature;
 }
-function destroyMount(state) {
-  if (state.destroyed) return;
-  state.destroyed = true;
+function destroyMount(state2) {
+  if (state2.destroyed) return;
+  state2.destroyed = true;
   try {
-    state.mount.destroy();
+    state2.mount.destroy();
   } catch {
   }
 }
@@ -18740,13 +18798,13 @@ function createRendererRuntime(deps) {
   const modeDeps = deps.modeDeps ?? { getSettings: deps.getSettings };
   let disposed = false;
   function cleanupRoot(root) {
-    const state = states.get(root);
-    if (!state) return;
-    for (const mount of state.mounts) destroyMount(mount);
-    if (stillOwnsDom(root, state)) {
-      root.replaceChildren(...state.snapshot);
+    const state2 = states.get(root);
+    if (!state2) return;
+    for (const mount of state2.mounts) destroyMount(mount);
+    if (stillOwnsDom(root, state2)) {
+      root.replaceChildren(...state2.snapshot);
     } else {
-      for (const mount of state.mounts) {
+      for (const mount of state2.mounts) {
         mount.marker.remove();
         mount.container.remove();
         if (root.contains(mount.source)) mount.source.replaceWith(...Array.from(mount.source.childNodes));
@@ -19096,12 +19154,12 @@ function cloneFighter(fighter) {
     statuses: fighter.statuses.map((status) => ({ ...status }))
   };
 }
-function cloneState(state) {
+function cloneState(state2) {
   return {
-    ...state,
-    player: cloneFighter(state.player),
-    enemy: cloneFighter(state.enemy),
-    log: state.log.map((entry) => ({ ...entry }))
+    ...state2,
+    player: cloneFighter(state2.player),
+    enemy: cloneFighter(state2.enemy),
+    log: state2.log.map((entry) => ({ ...entry }))
   };
 }
 function createFighter(config) {
@@ -19138,7 +19196,7 @@ function createBattleEngine(config, deps = {}) {
   const random = createRandom(deps.random ?? Math.random);
   const player = createFighter(config.player);
   const enemy = createFighter(config.enemy);
-  const state = {
+  const state2 = {
     title: config.title,
     player,
     enemy,
@@ -19150,7 +19208,7 @@ function createBattleEngine(config, deps = {}) {
   function record(events, kind, text4) {
     const entry = { kind, text: text4 };
     events.push(entry);
-    state.log.push({ ...entry });
+    state2.log.push({ ...entry });
   }
   function dealDamage(attacker, target, power, events, allowCritical = true) {
     if (random() * 100 < target.dodge) {
@@ -19164,8 +19222,8 @@ function createBattleEngine(config, deps = {}) {
     record(events, "damage", `${attacker.name}${critical ? "暴击" : ""}对 ${target.name} 造成 ${damage} 点伤害。`);
   }
   function updateOutcome() {
-    if (state.enemy.hp <= 0) state.outcome = "won";
-    else if (state.player.hp <= 0) state.outcome = "lost";
+    if (state2.enemy.hp <= 0) state2.outcome = "won";
+    else if (state2.player.hp <= 0) state2.outcome = "lost";
   }
   function tickStatuses(fighter, events) {
     const next = [];
@@ -19181,21 +19239,21 @@ function createBattleEngine(config, deps = {}) {
     fighter.statuses = next;
   }
   function runEnemyTurn(events) {
-    if (state.outcome !== "ongoing") return;
-    dealDamage(state.enemy, state.player, effectiveStat(state.enemy, "attack"), events);
+    if (state2.outcome !== "ongoing") return;
+    dealDamage(state2.enemy, state2.player, effectiveStat(state2.enemy, "attack"), events);
     updateOutcome();
   }
   function finishRound(events) {
-    tickStatuses(state.player, events);
-    tickStatuses(state.enemy, events);
+    tickStatuses(state2.player, events);
+    tickStatuses(state2.enemy, events);
     updateOutcome();
-    state.turn += 1;
+    state2.turn += 1;
   }
   function reject(error) {
-    return { ok: false, error, state: cloneState(state), events: [] };
+    return { ok: false, error, state: cloneState(state2), events: [] };
   }
   function dispatch(action) {
-    if (state.outcome !== "ongoing") return reject("战斗已经结束。");
+    if (state2.outcome !== "ongoing") return reject("战斗已经结束。");
     const actionType = action?.type;
     if (!["attack", "defend", "skill", "item", "flee"].includes(String(actionType))) {
       return reject("不支持的战斗动作。");
@@ -19204,58 +19262,58 @@ function createBattleEngine(config, deps = {}) {
     let skill;
     let item;
     if (action.type === "skill") {
-      skill = state.player.skills.find((candidate) => candidate.id === action.skillId);
+      skill = state2.player.skills.find((candidate) => candidate.id === action.skillId);
       if (!skill) validationError = "找不到该技能。";
-      else if (state.player.mp < skill.mpCost) validationError = "MP 不足。";
+      else if (state2.player.mp < skill.mpCost) validationError = "MP 不足。";
     } else if (action.type === "item") {
-      item = state.player.items.find((candidate) => candidate.id === action.itemId);
+      item = state2.player.items.find((candidate) => candidate.id === action.itemId);
       if (!item) validationError = "找不到该物品。";
       else if (item.quantity <= 0) validationError = "该物品已经用完。";
-    } else if (action.type === "flee" && !state.allowFlee) {
+    } else if (action.type === "flee" && !state2.allowFlee) {
       validationError = "本场战斗不能逃跑。";
     }
     if (validationError) return reject(validationError);
     const events = [];
     if (action.type === "attack") {
-      dealDamage(state.player, state.enemy, effectiveStat(state.player, "attack"), events);
+      dealDamage(state2.player, state2.enemy, effectiveStat(state2.player, "attack"), events);
     } else if (action.type === "defend") {
-      upsertStatus(state.player, {
+      upsertStatus(state2.player, {
         id: DEFENDING_STATUS_ID,
         name: "防御",
         duration: 1,
-        defenseDelta: Math.max(10, effectiveStat(state.player, "defense"))
+        defenseDelta: Math.max(10, effectiveStat(state2.player, "defense"))
       });
-      record(events, "defend", `${state.player.name} 进入防御姿态。`);
+      record(events, "defend", `${state2.player.name} 进入防御姿态。`);
     } else if (action.type === "skill" && skill) {
-      state.player.mp = bounded(state.player.mp - skill.mpCost, 0, state.player.maxMp);
-      if (skill.type === "damage") dealDamage(state.player, state.enemy, skill.power, events);
+      state2.player.mp = bounded(state2.player.mp - skill.mpCost, 0, state2.player.maxMp);
+      if (skill.type === "damage") dealDamage(state2.player, state2.enemy, skill.power, events);
       else {
-        const before = state.player.hp;
-        state.player.hp = bounded(state.player.hp + skill.power, 0, state.player.maxHp);
-        record(events, "heal", `${state.player.name} 恢复 ${state.player.hp - before} 点生命。`);
+        const before = state2.player.hp;
+        state2.player.hp = bounded(state2.player.hp + skill.power, 0, state2.player.maxHp);
+        record(events, "heal", `${state2.player.name} 恢复 ${state2.player.hp - before} 点生命。`);
       }
     } else if (action.type === "item" && item) {
       item.quantity -= 1;
       const field = item.effect === "heal_hp" ? "hp" : "mp";
       const maxField = item.effect === "heal_hp" ? "maxHp" : "maxMp";
-      const before = state.player[field];
-      state.player[field] = bounded(before + item.power, 0, state.player[maxField]);
-      record(events, "heal", `${state.player.name} 使用 ${item.name}，恢复 ${state.player[field] - before} 点资源。`);
+      const before = state2.player[field];
+      state2.player[field] = bounded(before + item.power, 0, state2.player[maxField]);
+      record(events, "heal", `${state2.player.name} 使用 ${item.name}，恢复 ${state2.player[field] - before} 点资源。`);
     } else if (action.type === "flee") {
       if (random() < 0.5) {
-        state.outcome = "fled";
-        record(events, "flee", `${state.player.name} 成功脱离战斗。`);
-        return { ok: true, state: cloneState(state), events: events.map((event) => ({ ...event })) };
+        state2.outcome = "fled";
+        record(events, "flee", `${state2.player.name} 成功脱离战斗。`);
+        return { ok: true, state: cloneState(state2), events: events.map((event) => ({ ...event })) };
       }
-      record(events, "flee", `${state.player.name} 逃跑失败。`);
+      record(events, "flee", `${state2.player.name} 逃跑失败。`);
     }
     updateOutcome();
-    if (state.outcome === "ongoing") runEnemyTurn(events);
-    if (state.outcome === "ongoing") finishRound(events);
-    return { ok: true, state: cloneState(state), events: events.map((event) => ({ ...event })) };
+    if (state2.outcome === "ongoing") runEnemyTurn(events);
+    if (state2.outcome === "ongoing") finishRound(events);
+    return { ok: true, state: cloneState(state2), events: events.map((event) => ({ ...event })) };
   }
   return {
-    getState: () => cloneState(state),
+    getState: () => cloneState(state2),
     dispatch
   };
 }
@@ -19368,15 +19426,15 @@ function mountBattleMode(root, block, deps) {
   let destroyed = false;
   let freeOpen = false;
   let timer = null;
-  function outcomeText(state) {
-    if (state.outcome === "won") return "战斗胜利";
-    if (state.outcome === "lost") return "战斗失败";
-    if (state.outcome === "fled") return "已脱离战斗";
+  function outcomeText(state2) {
+    if (state2.outcome === "won") return "战斗胜利";
+    if (state2.outcome === "lost") return "战斗失败";
+    if (state2.outcome === "fled") return "已脱离战斗";
     return "";
   }
-  function continuationText(state) {
-    const summary = state.log.slice(-6).map((entry) => entry.text).join(" ");
-    return `战斗结果：${outcomeText(state)}。战斗摘要：${summary || "战斗已结束。"}`;
+  function continuationText(state2) {
+    const summary = state2.log.slice(-6).map((entry) => entry.text).join(" ");
+    return `战斗结果：${outcomeText(state2)}。战斗摘要：${summary || "战斗已结束。"}`;
   }
   function createSelect(className, options, disabled) {
     const select = document.createElement("select");
@@ -19394,45 +19452,45 @@ function mountBattleMode(root, block, deps) {
     return select;
   }
   function render2() {
-    const state = engine.getState();
-    const ended = state.outcome !== "ongoing";
-    turn.textContent = `回合 ${state.turn}`;
+    const state2 = engine.getState();
+    const ended = state2.outcome !== "ongoing";
+    turn.textContent = `回合 ${state2.turn}`;
     combatants.replaceChildren(
-      combatantView(state.player, "player", deps),
-      combatantView(state.enemy, "enemy", deps)
+      combatantView(state2.player, "player", deps),
+      combatantView(state2.enemy, "enemy", deps)
     );
     outcome.replaceChildren();
     if (ended) {
       outcome.append(
-        textElement3("span", "st-render-battle-outcome-text", outcomeText(state)),
+        textElement3("span", "st-render-battle-outcome-text", outcomeText(state2)),
         actionButton2("continue", "继续剧情", false)
       );
     }
     outcome.hidden = !ended;
     log.replaceChildren();
-    if (state.log.length === 0) log.append(textElement3("li", "st-render-battle-log-entry", "等待行动"));
+    if (state2.log.length === 0) log.append(textElement3("li", "st-render-battle-log-entry", "等待行动"));
     else {
-      for (const entry of state.log.slice(-12)) log.append(textElement3("li", `st-render-battle-log-entry st-render-battle-log-${entry.kind}`, entry.text));
+      for (const entry of state2.log.slice(-12)) log.append(textElement3("li", `st-render-battle-log-entry st-render-battle-log-${entry.kind}`, entry.text));
     }
     actions.replaceChildren();
     const locked = ended || pending;
     const attack = actionButton2("attack", "⚔ 攻击", locked);
     const defend = actionButton2("defend", "◆ 防御", locked);
-    const skillOptions = state.player.skills.map((skill2) => ({
+    const skillOptions = state2.player.skills.map((skill2) => ({
       id: skill2.id,
       label: `${skill2.name} · ${skill2.mpCost} MP`,
-      disabled: state.player.mp < skill2.mpCost
+      disabled: state2.player.mp < skill2.mpCost
     }));
     const skillSelect = createSelect("st-render-battle-skill-select", skillOptions, locked || skillOptions.length === 0);
     const skill = actionButton2("skill", "✦ 施放技能", locked || !skillOptions.some((option) => !option.disabled));
-    const itemOptions = state.player.items.map((item2) => ({
+    const itemOptions = state2.player.items.map((item2) => ({
       id: item2.id,
       label: `${item2.name} · ${item2.quantity}`,
       disabled: item2.quantity <= 0
     }));
     const itemSelect = createSelect("st-render-battle-item-select", itemOptions, locked || itemOptions.length === 0);
     const item = actionButton2("item", "＋ 使用物品", locked || !itemOptions.some((option) => !option.disabled));
-    const flee = actionButton2("flee", "↗ 逃跑", locked || !state.allowFlee);
+    const flee = actionButton2("flee", "↗ 逃跑", locked || !state2.allowFlee);
     const free = actionButton2("free", "… 自由行动", locked);
     actions.append(attack, defend, skillSelect, skill, itemSelect, item, flee, free);
     if (freeOpen && !locked) {
@@ -19494,9 +19552,9 @@ function mountBattleMode(root, block, deps) {
       const result = deps.insertDraft?.(`战斗行动：${value}`) ?? { ok: false, error: "未找到 SillyTavern 输入框。" };
       notice.textContent = result.ok ? "已填入自由行动" : result.error;
     } else if (action === "continue") {
-      const state = engine.getState();
-      if (state.outcome === "ongoing") return;
-      const result = deps.insertDraft?.(continuationText(state)) ?? { ok: false, error: "未找到 SillyTavern 输入框。" };
+      const state2 = engine.getState();
+      if (state2.outcome === "ongoing") return;
+      const result = deps.insertDraft?.(continuationText(state2)) ?? { ok: false, error: "未找到 SillyTavern 输入框。" };
       notice.textContent = result.ok ? "已填入战斗结果" : result.error;
     }
   }
@@ -19819,6 +19877,9 @@ function runWhenDomReady(doc, lifecycle, start) {
 // st-extension/src/index.ts
 var VARHUD_STATE_KEY = "varhud";
 async function init(lifecycle) {
+  await initI18n().catch((err) => {
+    console.warn("[sprite-overlay] i18n 初始化失败", err);
+  });
   const adapter = new STAdapter();
   let settings;
   try {
@@ -19928,8 +19989,8 @@ async function init(lifecycle) {
   const phone = createPhoneShell(settings.phone, {
     registry,
     createAppContext,
-    onStateChange: (state) => {
-      saveSettingsOnly({ ...settings, phone: state });
+    onStateChange: (state2) => {
+      saveSettingsOnly({ ...settings, phone: state2 });
     }
   });
   lifecycle.track(() => phone.destroy());
@@ -20007,10 +20068,10 @@ async function init(lifecycle) {
           };
         },
         // 位置/展开态是纯 UI 状态：走 saveSettingsOnly，不触发立绘重渲染
-        writeState: (state) => {
+        writeState: (state2) => {
           saveSettingsOnly({
             ...settings,
-            apps: { ...settings.apps, [VARHUD_STATE_KEY]: state }
+            apps: { ...settings.apps, [VARHUD_STATE_KEY]: state2 }
           });
         }
       });
@@ -20200,7 +20261,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-09-07 21:09"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-09-12 18:08"}`;
   console.log(`[sprite-overlay] 百工（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

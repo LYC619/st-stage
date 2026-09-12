@@ -45,6 +45,7 @@ import { createComposerBridge } from './apps/renderer/composer'
 import { createApiManager } from './apps/api/manager'
 import { API_APP_ID, sanitizeAppData } from './apps/api/core'
 import { beginExtensionLifecycle, runWhenDomReady } from './lifecycle'
+import { initI18n } from './st-adapter'
 
 declare global {
   interface Window {
@@ -58,6 +59,11 @@ declare global {
 }
 
 async function init(lifecycle: CapabilityTracker): Promise<void> {
+  // i18n 初始化：加载翻译文件，失败不阻塞后续流程
+  await initI18n().catch((err) => {
+    console.warn('[sprite-overlay] i18n 初始化失败', err)
+  })
+
   const adapter = new STAdapter()
   let settings: PluginSettings
   try {

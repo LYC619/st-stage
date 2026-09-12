@@ -73,6 +73,7 @@ vi.mock('./st-adapter', () => ({
       return mocks.characterOff
     }
   },
+  initI18n: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock('./overlay-dom', () => ({
   createOverlay: (...args: unknown[]) => {

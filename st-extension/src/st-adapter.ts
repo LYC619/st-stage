@@ -19,10 +19,73 @@ import { isSafeLocalUserImagePath } from '../../core/sprite-store'
 import { blobToDataUri } from '../../core/image-compress'
 import { persistSTImage, type ImageSaveOptions } from './image-persistence'
 import { storyArchiveKey, type StoryContext } from '../../core/story-archive'
+import { loadTranslations, setLocale, type Locale, type I18nDict } from '../../core/i18n'
 
 export const MODULE_NAME = 'sprite_overlay'
 
-/** ST 设置只保存用户自定义包；代码内预设通过覆盖层重新合成。 */
+/**
+ * 加载 i18n 翻译文件（从扩展根目录 /locales/）
+ *
+ * @param locale - 语言标识
+ * @returns 加载并解析的翻译字典，失败时返回空对象
+ */
+async function loadLocaleFile(locale: Locale): Promise<I18nDict> {
+  try {
+    // baseUrl 从 stack 推导扩展根目录（与 index.js stub 逻辑一致）
+    const stack = new Error().stack || ''
+    const match = stack.match(/(https?:\/\/[^\s)]+?)\//)
+    const base = match ? match[1] : '/scripts/extensions/third-party/st-stage'
+
+    const url = `${base}/locales/${locale}.json`
+    const response = await fetch(url, { cache: 'no-store' })
+    if (!response.ok) {
+      console.warn(`[sprite-overlay] 加载 locale ${locale} 失败: ${response.status}`)
+      return {}
+    }
+
+    return await response.json() as I18nDict
+  } catch (err) {
+    console.warn(`[sprite-overlay] 加载 locale ${locale} 异常`, err)
+    return {}
+  }
+}
+
+/**
+ * 初始化 i18n 系统
+ *
+ * 默认加载中文和英文，当前语言从浏览器 navigator.language 推断。
+ * 加载失败不阻塞扩展启动，降级到 fallback 文本。
+ */
+export async function initI18n(): Promise<void> {
+  const [zhDict, enDict] = await Promise.all([
+    loadLocaleFile('zh-CN'),
+    loadLocaleFile('en-US'),
+  ])
+
+  loadTranslations('zh-CN', zhDict)
+  loadTranslations('en-US', enDict)
+
+  // 根据浏览器语言选择 locale（默认中文）
+  const browserLang = navigator.language || 'zh-CN'
+  const locale: Locale = browserLang.startsWith('en') ? 'en-US' : 'zh-CN'
+
+  try {
+    setLocale(locale)
+  } catch {
+    // 空字典会抛错，降级到 zh-CN
+    if (locale !== 'zh-CN') {
+      try {
+        setLocale('zh-CN')
+      } catch {
+        // 两个都是空字典，不再重试
+      }
+    }
+  }
+
+  console.log(`[sprite-overlay] i18n 已初始化: ${locale}`)
+}
+
+/** ST 设置只保存用户自定义包;代码内预设通过覆盖层重新合成。 */
 export function persistableSTSettings(settings: PluginSettings): PluginSettings {
   return {
     ...settings,
