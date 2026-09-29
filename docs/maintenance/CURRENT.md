@@ -2,94 +2,60 @@
 status_version: 1
 project: st-stage
 base_branch: main
-verified_code_head: 26a40d8c142eae9bd17dc5cc59efe5f682e090c7
-remote_code_head_at_update: 81b4286bb68c6f42badc5ca52b39ac1fbf79c72e
-build_version: 0.9.0+202609121809
-phase: development-i18n-foundation-complete
-updated_at: 2026-09-12
-updated_by: opus-5
-verification_source: opus-5-single-agent-i18n-foundation-2026-09-12
-history: docs/maintenance/history/2026-09-12-i18n-foundation.md
-previous_history: docs/maintenance/history/2026-09-07-maintenance-repairs.md
+working_branch: codex/i18n-acceptance
+verified_code_head: e11cd3d378736cd7540f56d225c3870482a9bf85
+remote_code_head_at_update: null
+remote_tracking_head: 1989c2fab99a28b8b204073bcb32f59b73800079
+build_version: 0.9.0+202609300018
+phase: i18n-first-ui-validated
+updated_at: 2026-09-30
+updated_by: codex
+verification_source: codex-regression-and-isolated-real-st-1.18.0
+history: docs/maintenance/history/2026-09-30-i18n-acceptance.md
+previous_history: docs/maintenance/history/2026-09-12-i18n-foundation.md
 ---
 
 # Current Project Status
 
 ## Snapshot
 
-- **Latest committed work:** i18n foundation implemented and committed as **`26a40d8c142eae9bd17dc5cc59efe5f682e090c7`** on 2026-09-12. This adds core i18n system, locale loading, 17 tests, and build integration. Not yet pushed to remote.
-- **Previous maintenance repairs:** R1-R8 + S1 committed and pushed as `81b4286` on September 7. Real-ST and physical-phone acceptance remains pending.
-- Distribution `st-stage-ext` local/tracking/actual remote `main` remain `d6e8a892dbb7529a5b5fc8f53e4443e1bc33c03b`, with a clean worktree. No release files were copied or changed.
-- Root and `st-distribution` were rebuilt at `2026-09-12 18:09` (Asia/Shanghai), version `0.9.0+202609121809`; `manifest.json` remains `0.9.0`. The product is 百工; machine IDs and persistent keys stay unchanged.
-- Single agent (Opus 5), existing dependencies, no installation or live-user settings operations. Development `main` has one unpushed commit. The pre-existing untracked `tore style.css` is preserved and excluded from all commits.
-- September 5 review and repair plans remain in `docs/superpowers/plans/` and `history/`. September 7 repairs are in `history/2026-09-07-maintenance-repairs.md`. Current i18n work is in `history/2026-09-12-i18n-foundation.md`.
+- Code/build commit **e11cd3d** completes the recovery/acceptance batch on **codex/i18n-acceptance**, at `C:\Users\yicha\.codex\worktrees\i18n-acceptance\st-stage`. No merge or push was performed.
+- Original development main remains at `25d62bd`, two commits ahead of local `origin/main`; the pre-existing untracked `tore style.css` is preserved. Actual development remote main could not be rechecked because Git authentication is required. The null remote-head field distinguishes this from a confirmed remote ref.
+- Independent release `st-stage-ext` is clean at `d6e8a892dbb7529a5b5fc8f53e4443e1bc33c03b`; actual remote main was confirmed at that commit. No release files were copied or pushed.
+- Root and generated distribution runtime files, including both locale JSON files, match at **0.9.0+202609300018**. Manifest remains `0.9.0`; product name 百工 and persistent IDs/keys are unchanged.
 
-## Committed Work
+## Delivered
 
-### September 7 Repairs (81b4286)
+- Locale assets resolve relative to the running bundle, supporting renamed installs and proxy prefixes. Language follows host `localStorage.language`, then browser language. The actual ST selector reloads the page; no separate preference was added.
+- A three-second request/body deadline, dictionary validation, actual fallback logging, own-property lookup and `t(key, fallback, params)` interpolation make loading failures safe.
+- Phone navigation, overlay buttons/placeholders, extension settings and gallery header/new/import controls are translated. Both dictionaries contain 51 matching entries; Chinese fallback remains usable when assets fail.
+- Fixed actual-ST mobile gallery toolbar overflow and duplicate Enter handling from the host keyboard listener. Gear/close controls gained accessible labels and keyboard activation.
+- `pnpm build:all` shares one timestamp between destinations. Locale output is LF-normalized/pinned. Parity checks include nested locale paths, exact case and escaping links. CI verifies required files are tracked before rebuilding.
 
-Evidence, commit/push follow-up and remaining release checks are in `history/2026-09-07-maintenance-repairs.md`. DEFERRED records the fixing commit while retaining outstanding acceptance and independent-distribution checks.
+This is the first UI translation batch. App names/content, deeper gallery controls/messages and comprehensive focus/screen-reader support remain future work.
 
-| ID | Priority | Implementation in 81b4286 |
-| --- | --- | --- |
-| R1 | P1 | Each image write uses a new 128-bit random filename; callers protect references edited during upload. |
-| R2 | P1 | Chat paths derive from avatar identity; unsafe, duplicate and file/directory-colliding ZIP paths are rejected before download. |
-| R3 | P1 | Upload errors reject without base64 fallback; POST and exact byte readback must succeed, with cancellation, timeout and 20 MiB limit. |
-| R4 | P2 | `inventoryPrompt` survives settings/JSON round trips and preset override clearing. |
-| R5 | P2 | Optional request-header capability is guarded; TypeScript passes. |
-| R6 | P2 | Full HUD bounds are clamped; resize measurement is coalesced and drag/frame/subscription resources are released. |
-| R7 | P2 | Root and generated distribution runtime files match. Release-clone parity remains pending publication. |
-| R8 | P2 | Persistent search input preserves focus/caret and browser composition lifecycle. |
+## Fresh Verification
 
-**S1:** The gallery has an explicit backup-first, staged image migration and receipt-based selective restore. JSON/share imports pass through complete image preparation before installation. Closing/cancelling does not apply staged results; unmapped raw embedded values block automatic writes. Apps stay unchanged and orphan files are never automatically deleted. Updating alone still does not shrink old settings: migration is opt-in. Host settings-save acknowledgement requires a real reload check.
+- **92 Vitest files / 1231 tests passed**; TypeScript, ESLint and whitespace checks passed.
+- Default Next.js 16.2.6/Turbopack production build, both extension builds and local runtime/locale parity passed.
+- **Real ST 1.18.0 / Edge 143.0.3650.80: 10/10 scenarios passed**, zero page JavaScript errors: desktop/mobile Chinese/English layouts, renamed-directory locale HTTP 200 responses, actual host language switching and reload retention, browser fallback, unsupported locale, 404, malformed JSON and one/both locale timeouts.
+- Existing maintenance browser regression passed again: five HUD viewports, drag/resize/disposal, keyboard/caret/paste/composition and four storage-dialog layouts with synthetic backup/apply.
+- Independent spec/quality reviews passed. Final screenshots were inspected; translated controls stay in bounds without overlap.
 
-### September 12 i18n Foundation (26a40d8)
-
-Full details in `history/2026-09-12-i18n-foundation.md`. Not yet pushed to remote.
-
-- **Core system:** Nested key path access, parameter substitution, locale switching, missing key fallback
-- **Locale files:** zh-CN and en-US with common/sprite/phone/settings namespaces (36 entries each)
-- **Platform integration:** Async locale loading from `/locales/`, fallback to zh-CN on fetch errors
-- **Build integration:** Locale files copied to output root and `st-distribution`
-- **Testing:** 17 new tests covering all core functionality
-- **Tests now:** 90 files / 1189 tests (up from 1172)
-
-## Current Verification (26a40d8)
-
-- **Test results:** 90 files / 1189 tests passed, ~12 seconds
-- **Quality gates:** TypeScript, ESLint, `git diff --check` all passed
-- **Builds:** Extension and distribution builds successful
-- **Artifacts:** Root and `st-distribution` have matching runtime files and locale directories
-- **Build timestamp:** `0.9.0+202609121809`
-- **Not yet tested:** Real ST locale detection, browser locale loading, physical device display
-
-## Previous Verification (81b4286 - September 7)
-
-- Commit-time Vitest rerun: **89 files / 1172 tests passed**, one worker, no file parallelism, 147.09 seconds. Includes 32 MiB synthetic settings save/reload/restore/remigration, without rewriting App data. TypeScript and ESLint also passed again before the commit.
-- TypeScript, ESLint, Next production build, both extension builds, script syntax and `git diff --check`: passed.
-- `node scripts/verify-maintenance-browser.mjs`: passed on isolated headless Edge 143.0.3650.80. Five HUD viewports, content growth, drag/rotation/disposal, real keyboard/caret/clipboard and browser-native composition through CDP, four storage-dialog layouts and synthetic backup/receipt/apply flow. Screenshots inspected, no clipping/overlap in these fixtures.
-- At 375x667, saved-open HUD at (331,623) becomes a 282x382 panel at (93,285); panel right/bottom are 375/667, close-button right is 364.
-- Root/distribution five-file byte parity: passed. Three-way checker exits **1** because the untouched release clone differs in `bundle.js`, `style.css`, `version.json` and distribution README. This is not a passed release gate.
-- Both actual remote main refs were rechecked with read-only `git ls-remote`; release worktree and `.gitattributes` remain unchanged.
-- Browser evidence is synthetic and has no live ST host theme or physical device. Screenshots/traces/results are ignored under `test-results/maintenance-browser/`; the harness source is in `scripts/`.
+Real-ST testing used a disposable program copy and separate data under ignored `test-results/real-st/`; the instance has been stopped. Daily ST data was not used or modified. Mobile evidence is browser emulation, not physical-phone acceptance. External preset thumbnails were blocked, so cloud-image availability was not validated.
 
 ## Next Actions
 
-### For September 12 i18n Work (26a40d8)
-1. **Real ST validation:** Test locale detection from actual `STContext.getLocale()`, verify fetch paths resolve correctly, confirm language switching persists
-2. **UI integration (Phase 2):** Migrate sprite overlay, manager dialog, phone shell to use `t()` function
-3. **Accessibility (Phase 3):** Add ARIA labels, focus management, screen reader announcements, keyboard navigation
-
-### For September 7 Repairs (81b4286)
-1. In an isolated real-ST user directory, verify large synthetic settings migration, server-save/reload, readable images/GIF bytes, receipt restore/remigration, and 413/offline/cancel/conflict handling. No live-user migration is authorized.
-2. Import the generated same-display-name character ZIP in real ST and check both avatar/chat identities. Exercise HUD/search/storage controls on a physical phone and its OS keyboard.
-3. Development commit/push is complete. Independent `st-stage-ext` synchronization and push still require a separate release instruction; do not treat the current authorization as permission to operate live-user data.
-4. Before that independent distribution release, reconcile the differing README, perform the six-file release sync, rerun the three-way parity checker, and record the release commit alongside fixing code commit `81b4286`. Historical unrelated DEFERRED items remain outside this repair scope.
+1. Integrate the reviewed branch into development main when ready. Development Git authentication must work before push verification.
+2. Continue translations by App, then keyboard/focus/screen-reader work. The broad Phase 2/3 goals in the September 12 plan remain open.
+3. Complete September 7 real-ST image migration/save/reload/restore, fault handling, standard ZIP import and physical-phone/OS-keyboard checks. This i18n run does not close them; see DEFERRED.md.
+4. Perform a separately instructed independent release. Reconcile its README and copy the complete install manifest below; current three-way parity correctly fails against the untouched older release.
 
 ## Distribution Invariants
 
-- Keep development repository name `st-stage`; new installs use `st-stage-ext`. Do not rename/reuse the old name, rewrite published distribution history, or graft development history into the distribution repository.
-- Distribution clone: `D:\8.Project\0_0_维护\st-stage-ext`. Its six root files are `manifest.json`, `index.js`, `bundle.js`, `style.css`, `version.json`, and `README.md`. The generated README comes from `st-extension/distribution-readme.md`; it intentionally differs from the development root README.
-- Build root compatibility outputs and `st-distribution/` at the same new stamp. Compare the five runtime files between root, distribution output, and release clone; compare the generated README only between distribution output and release clone. Preserve the clone's own `.gitattributes` and LF pins; never clear the release directory before copying.
-- Never copy source, tests, `docs/`, `public/`, or private `reference/` data to the distribution repository.
-- The development code/build commit is now pushed. A later authorized independent release must copy exactly the six files to the distribution clone, verify hashes, and commit there. Publish development history before distribution history. No distribution-clone copy/push was performed; automation remains deferred.
+- Keep development name `st-stage` and new-install name `st-stage-ext`. Do not rewrite release history, rename/reuse the old name or graft development history into release history.
+- Release clone: `D:\8.Project\0_0_维护\st-stage-ext`.
+- Required release manifest is now **eight files**: `manifest.json`, `index.js`, `bundle.js`, `style.css`, `version.json`, `README.md`, `locales/zh-CN.json`, `locales/en-US.json`. This supersedes pre-i18n six-file instructions.
+- Build with `pnpm build:all`. Compare the seven runtime files across root/distribution/release, and README only across distribution/release. Generated README comes from `st-extension/distribution-readme.md`, not the development README.
+- Preserve release `.gitattributes` and history; pin locale JSON to LF when publishing. Never clear the release directory or copy source, tests, docs, public assets, private references or test user data into it.
+- Publish development history before distribution history. This batch does not authorize live-user migration or settings operations.

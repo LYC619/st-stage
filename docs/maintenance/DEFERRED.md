@@ -2,6 +2,13 @@
 
 Known follow-ups and pending review repairs are recorded here. Older sections retain their original non-blocking decisions; the review queue below is **not** a declaration that its risks are acceptable for a new release. Remove or resolve entries only with an actual fixing commit and fresh verification.
 
+## 2026-09-30 i18n Continuation and Release Gates
+
+- `e11cd3d` repairs locale loading, adds the first translated UI controls and fixes real-ST gallery toolbar/keyboard issues. Real ST 1.18.0 i18n acceptance passes 10 scenarios; full App/deep gallery translation, focus management and screen-reader support remain pending.
+- Mobile browser emulation is separate from physical-phone/OS-keyboard acceptance. External sprite hosts were blocked; the isolated copied ST runtime logged thumbnail-conversion dependency-path errors. Cloud images and image conversion were not validated by this run.
+- September 7 real-ST image migration/save/reload/restore, fault handling and standard ZIP-import checks below remain open. Only their existing synthetic maintenance browser regressions were rerun.
+- The reviewed branch has not been merged or pushed. Development remote lookup requires authentication. Independent release remains `d6e8a89`; publication must reconcile README, include both locale JSON files alongside the original six root files and pass three-way parity. Historical six-file instructions are superseded by CURRENT.md.
+
 ## 2026-09-05 Review Queue — Code Committed, Acceptance Pending
 
 Updated 2026-09-07 after explicit commit/push authorization: fixing code/build commit `81b4286bb68c6f42badc5ca52b39ac1fbf79c72e` is pushed to development main. This updates the legacy install channel, but not the independent `st-stage-ext` repository. Code fixes are traceable and local gates pass; applicable real-ST/device acceptance and independent release parity remain outstanding. Evidence and remaining checks are in history/2026-09-07-maintenance-repairs.md; original provenance is in history/2026-09-05-maintenance-review.md.
