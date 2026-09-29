@@ -7,6 +7,7 @@
  * 样式类名前缀 so-phone-*，样式在 st-extension/style.css（Web 端 globals.css 引用同一段）。
  */
 
+import { t, getLocale } from './i18n'
 import type { PhoneState } from './types'
 import type { MountedAppContext, PhoneApp, PhoneAppRegistry } from './phone-registry'
 
@@ -52,10 +53,10 @@ export function createPhoneShell(
   /* ---- 悬浮图标 ---- */
   const fab = document.createElement('div')
   fab.className = 'so-phone-fab'
-  fab.title = '打开手机'
+  fab.title = t('phone.open', '打开手机')
   fab.textContent = '📱'
   fab.setAttribute('role', 'button')
-  fab.setAttribute('aria-label', '打开手机面板')
+  fab.setAttribute('aria-label', t('phone.open_panel', '打开手机面板'))
 
   /* ---- 手机壳 ---- */
   const shell = document.createElement('div')
@@ -72,9 +73,9 @@ export function createPhoneShell(
   const backBtn = document.createElement('div')
   backBtn.className = 'so-phone-back'
   backBtn.textContent = '‹'
-  backBtn.title = '返回主屏'
+  backBtn.title = t('phone.back', '返回主屏')
   backBtn.setAttribute('role', 'button')
-  backBtn.setAttribute('aria-label', '返回主屏')
+  backBtn.setAttribute('aria-label', t('phone.back', '返回主屏'))
   backBtn.tabIndex = 0
   backBtn.addEventListener('click', () => goHome())
   backBtn.addEventListener('keydown', (e) => {
@@ -92,9 +93,9 @@ export function createPhoneShell(
   const closeBtn = document.createElement('div')
   closeBtn.className = 'so-phone-close'
   closeBtn.textContent = '✕'
-  closeBtn.title = '收起手机'
+  closeBtn.title = t('phone.collapse', '收起手机')
   closeBtn.setAttribute('role', 'button')
-  closeBtn.setAttribute('aria-label', '收起手机')
+  closeBtn.setAttribute('aria-label', t('phone.collapse', '收起手机'))
   closeBtn.tabIndex = 0
   const collapse = () => {
     leaveApp()
@@ -117,9 +118,9 @@ export function createPhoneShell(
   homeBar.className = 'so-phone-homebar'
   const homeBtn = document.createElement('div')
   homeBtn.className = 'so-phone-homebtn'
-  homeBtn.title = '返回主屏'
+  homeBtn.title = t('phone.back', '返回主屏')
   homeBtn.setAttribute('role', 'button')
-  homeBtn.setAttribute('aria-label', '返回主屏')
+  homeBtn.setAttribute('aria-label', t('phone.back', '返回主屏'))
   homeBtn.tabIndex = 0
   homeBar.append(homeBtn)
 
@@ -129,7 +130,7 @@ export function createPhoneShell(
   const clockTimer = setInterval(updateClock, 30_000)
   updateClock()
   function updateClock(): void {
-    clock.textContent = new Date().toLocaleTimeString('zh-CN', {
+    clock.textContent = new Date().toLocaleTimeString(getLocale(), {
       hour: '2-digit',
       minute: '2-digit',
     })
@@ -286,7 +287,7 @@ export function createPhoneShell(
         container.replaceChildren()
         const errBox = document.createElement('div')
         errBox.className = 'so-phone-app-error'
-        errBox.textContent = 'App 打开失败，详见控制台'
+        errBox.textContent = t('phone.app_error', 'App 打开失败，详见控制台')
         container.append(errBox)
       }
       if (prevScrollAppId === activeApp.id && prevScrollTop > 0) screen.scrollTop = prevScrollTop
@@ -309,7 +310,7 @@ export function createPhoneShell(
     cell.className = 'so-phone-app-icon'
     cell.setAttribute('role', 'button')
     cell.tabIndex = 0
-    cell.setAttribute('aria-label', `打开 ${app.name}`)
+    cell.setAttribute('aria-label', t('phone.open_app', '打开 {{name}}', { name: app.name }))
 
     const icon = document.createElement('div')
     icon.className = 'so-phone-app-glyph'

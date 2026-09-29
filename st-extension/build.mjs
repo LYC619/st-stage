@@ -138,8 +138,10 @@ export async function buildExtension({
   const localesDir = path.join(extensionDir, 'locales')
   const outputLocalesDir = path.join(outputRoot, 'locales')
   mkdirSync(outputLocalesDir, { recursive: true })
-  copyFileSync(path.join(localesDir, 'zh-CN.json'), path.join(outputLocalesDir, 'zh-CN.json'))
-  copyFileSync(path.join(localesDir, 'en-US.json'), path.join(outputLocalesDir, 'en-US.json'))
+  for (const locale of ['zh-CN', 'en-US']) {
+    writeFileSync(path.join(outputLocalesDir, `${locale}.json`),
+      normalizeArtifactNewlines(readFileSync(path.join(localesDir, `${locale}.json`), 'utf8')))
+  }
 
   if (path.resolve(outputRoot) !== path.resolve(sourceRoot)) {
     copyFileSync(path.join(sourceRoot, 'manifest.json'), path.join(outputRoot, 'manifest.json'))
@@ -156,13 +158,32 @@ export async function buildExtension({
   return { buildTime, version }
 }
 
+/** Build both install channels with a single timestamp, even across a minute boundary. */
+export async function buildExtensionPair({
+  sourceRoot = defaultSourceRoot,
+  env = process.env,
+  now = new Date(),
+  logLevel = 'info',
+  log = console.log,
+} = {}) {
+  const buildTime = resolveBuildTime(env, now)
+  const pairedEnv = { ...env, ST_STAGE_BUILD_TIME: buildTime }
+  const result = await buildExtension({ sourceRoot, outputRoot: sourceRoot, env: pairedEnv, logLevel, log })
+  await buildExtension({ sourceRoot, outputRoot: path.join(sourceRoot, 'st-distribution'), env: pairedEnv, logLevel, log })
+  return result
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(moduleFile)) {
   const outputFlag = process.argv.indexOf('--output-root')
+  if (process.argv.includes('--all') && outputFlag >= 0) {
+    throw new Error('--all cannot be combined with --output-root')
+  }
   if (outputFlag >= 0 && !process.argv[outputFlag + 1]) {
     throw new Error('用法：node st-extension/build.mjs [--output-root <directory>]')
   }
   const outputRoot = outputFlag >= 0
     ? path.resolve(process.cwd(), process.argv[outputFlag + 1])
     : defaultSourceRoot
-  await buildExtension({ outputRoot })
+  if (process.argv.includes('--all')) await buildExtensionPair()
+  else await buildExtension({ outputRoot })
 }

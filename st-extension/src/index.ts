@@ -5,6 +5,7 @@
  * 手机框架：悬浮 📱 图标 → Home 屏 → 内置 App（立绘/图库/设置）；见 docs/APP-SPEC.md。
  */
 
+import { t } from '../../core/i18n'
 import { getPackCover, type PluginSettings } from '../../core/types'
 import { buildActiveSpritePrompt } from '../../core/active-prompt'
 import { extractTags } from '../../core/tag-parser'
@@ -412,9 +413,9 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
         overlay.setImage(pack.sprites[0].url, pack.sprites[0].tag)
       } else if (characterName) {
         // 未绑定：显示占位提示，保留 ⚙ 管理入口
-        overlay.setPlaceholder('未绑定立绘包\n点击 ⚙ 进行绑定')
+        overlay.setPlaceholder(t('sprite.overlay.placeholder_no_pack', '未绑定立绘包\n点击 ⚙ 进行绑定'))
       } else {
-        overlay.setPlaceholder('打开角色聊天后\n点击 ⚙ 绑定立绘包')
+        overlay.setPlaceholder(t('sprite.overlay.placeholder_no_character', '打开角色聊天后\n点击 ⚙ 绑定立绘包'))
       }
     }
     // 仅楼层模式 / 用户手动关闭：悬浮窗一律不显示

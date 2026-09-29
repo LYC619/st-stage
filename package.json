@@ -13,6 +13,7 @@
     "test:mobile": "playwright test",
     "typecheck": "tsc --noEmit",
     "build:ext": "node st-extension/build.mjs",
+    "build:all": "node st-extension/build.mjs --all",
     "build:st": "node st-extension/build.mjs --output-root st-distribution"
   },
   "dependencies": {

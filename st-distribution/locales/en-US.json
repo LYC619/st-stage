@@ -14,22 +14,52 @@
   "sprite": {
     "overlay": {
       "placeholder_no_pack": "No sprite pack bound\nClick ⚙ to bind",
-      "placeholder_no_character": "Open a character chat\nthen click ⚙ to bind sprite pack"
+      "placeholder_no_character": "Open a character chat\nthen click ⚙ to bind sprite pack",
+      "open_app": "Open Sprites App",
+      "close": "Close sprite overlay",
+      "close_hint": "Close the overlay. Sprites stay enabled; reopen it in the Sprites App."
     },
     "manager": {
-      "title": "Sprite Gallery Manager",
+      "title": "Manage sprite packs",
       "bind_pack": "Bind Pack",
       "upload_image": "Upload Image",
-      "settings": "Settings"
+      "settings": "Settings",
+      "back": "Back to packs",
+      "storage": "Storage & migration",
+      "new": "New",
+      "import": "Import",
+      "tags": "Manage tags",
+      "batch": "Batch actions",
+      "new_title": "New sprite pack",
+      "new_name": "Enter pack name…",
+      "create": "Create",
+      "import_share": "Import a share string",
+      "share_placeholder": "Paste a stpack2:/stpack1: share string…",
+      "import_json": "Import a JSON file",
+      "choose_json": "Choose JSON file…",
+      "enabled_count": "Enabled ({{count}}) ▾",
+      "enable": "Enable packs ▾",
+      "enable_for": "Select sprite packs for {{name}}"
     }
   },
   "phone": {
     "home": "Home",
-    "apps": "Apps"
+    "apps": "Apps",
+    "open": "Open phone",
+    "open_panel": "Open phone panel",
+    "back": "Return home",
+    "collapse": "Collapse phone",
+    "app_error": "Could not open App. See the console for details.",
+    "open_app": "Open {{name}}"
   },
   "settings": {
     "general": "General",
     "display": "Display",
-    "advanced": "Advanced"
+    "advanced": "Advanced",
+    "enable_sprites": "Enable sprites",
+    "show_phone": "Show phone",
+    "sprites_help": "Send sprite lists to the AI and display sprites from replies. Turning this off clears the prompt, stops parsing, hides the overlay and restores original messages. The phone and other tools remain available.",
+    "phone_help": "Show a draggable 📱 icon. Open it to access all Apps.",
+    "hint": "Baigong tools for SillyTavern. Configure sprite display, playback and prompts in the Sprites App; manage packs and image hosting in the Gallery App."
   }
 }

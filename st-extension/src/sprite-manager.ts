@@ -11,6 +11,7 @@
  * 预设包的图片内容只读，包信息和本地图片通过 same-ID 覆盖层持久化。
  */
 
+import { t } from '../../core/i18n'
 import type { PluginSettings, Sprite, SpritePack } from '../../core/types'
 import {
   DEFAULT_PROMPT_NOTE_PLACEMENT,
@@ -195,12 +196,13 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
     const dialog = el('div', 'so-manager')
     dialog.setAttribute('role', 'dialog')
-    dialog.setAttribute('aria-label', '立绘包管理')
+    dialog.setAttribute('aria-label', t('sprite.manager.title', '立绘包管理'))
 
     const header = el('div', 'so-manager-header')
     // 详情页专用返回键：放在固定头部，滚到哪都能返回（移动端全屏时尤其重要）
     const backBtn = el('div', 'menu_button so-manager-back')
-    backBtn.title = '返回列表'
+    backBtn.title = t('sprite.manager.back', '返回列表')
+    backBtn.setAttribute('aria-label', backBtn.title)
     backBtn.textContent = '‹'
     backBtn.setAttribute('role', 'button')
     backBtn.tabIndex = 0
@@ -219,8 +221,17 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     // 头部操作区（列表页放启用选择 + 新建/导入下拉；详情页留空自动隐藏）
     const actions = el('div', 'so-manager-actions')
     const closeBtn = el('div', 'menu_button so-manager-close')
-    closeBtn.title = '关闭'
+    closeBtn.title = t('common.close', '关闭')
     closeBtn.textContent = '✕'
+    closeBtn.setAttribute('role', 'button')
+    closeBtn.setAttribute('aria-label', closeBtn.title)
+    closeBtn.tabIndex = 0
+    closeBtn.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        close()
+      }
+    })
     closeBtn.addEventListener('click', () => close())
     header.append(backBtn, title, actions, closeBtn)
 
@@ -640,7 +651,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         view = { kind: 'list' }
       }
       backBtn.style.display = 'none'
-      title.textContent = '立绘包管理'
+      title.textContent = t('sprite.manager.title', '立绘包管理')
       renderList(body, actions)
     } catch (err) {
       console.error('[sprite-overlay] 管理弹窗渲染失败', err)
@@ -727,7 +738,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     } else {
       if (characterName) {
         const enableBtn = button(
-          boundIds.length > 0 ? `启用包（${boundIds.length}） ▾` : '启用包 ▾',
+          boundIds.length > 0 ? t('sprite.manager.enabled_count', '启用包（{{count}}） ▾', { count: boundIds.length }) : t('sprite.manager.enable', '启用包 ▾'),
           () => {
             if (enableListOpen) {
               closeEnableList()
@@ -739,11 +750,11 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           },
         )
         enableBtn.classList.add('so-enable-btn')
-        enableBtn.setAttribute('aria-label', `为「${characterName}」勾选启用立绘包`)
+        enableBtn.setAttribute('aria-label', t('sprite.manager.enable_for', '为「{{name}}」勾选启用立绘包', { name: characterName }))
         actions.append(enableBtn)
       }
       actions.append(
-        button('存储检查与迁移', () => {
+        button(t('sprite.manager.storage', '存储检查与迁移'), () => {
           if (importController) {
             toast(body, '已有导入任务正在处理')
             return
@@ -757,12 +768,12 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
             onClosed: () => { storageDialog = null },
           })
         }),
-        dropdownButton('新建', (panel) => {
+        dropdownButton(t('sprite.manager.new', '新建'), (panel) => {
         const heading = el('div', 'so-popover-title')
-        heading.textContent = '新建立绘包'
-        const nameInput = textInput('输入新包名称…')
+        heading.textContent = t('sprite.manager.new_title', '新建立绘包')
+        const nameInput = textInput(t('sprite.manager.new_name', '输入新包名称…'))
         nameInput.maxLength = 40
-        const createBtn = button('创建', () => {
+        const createBtn = button(t('sprite.manager.create', '创建'), () => {
           const name = sanitizePackName(nameInput.value)
           if (!name) {
             toast(body, '包名不能为空（| = @ < > 等符号会被剔除）')
@@ -778,14 +789,14 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         })
         panel.append(heading, nameInput, createBtn)
       }),
-      dropdownButton('导入', (panel) => {
+      dropdownButton(t('sprite.manager.import', '导入'), (panel) => {
         const shareHeading = el('div', 'so-popover-title')
-        shareHeading.textContent = '从分享字符串导入'
+        shareHeading.textContent = t('sprite.manager.import_share', '从分享字符串导入')
         const shareInput = document.createElement('textarea')
         shareInput.className = 'text_pole'
         shareInput.rows = 3
-        shareInput.placeholder = '粘贴 stpack2:/stpack1: 分享串…'
-        const shareBtn = button('导入', () => {
+        shareInput.placeholder = t('sprite.manager.share_placeholder', '粘贴 stpack2:/stpack1: 分享串…')
+        const shareBtn = button(t('sprite.manager.import', '导入'), () => {
           if (!shareInput.value.trim()) return
           try {
             const pack = decodeShareString(shareInput.value)
@@ -795,8 +806,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           }
         })
         const jsonHeading = el('div', 'so-popover-title')
-        jsonHeading.textContent = '从 JSON 文件导入'
-        const jsonBtn = button('选择 JSON 文件…', () => {
+        jsonHeading.textContent = t('sprite.manager.import_json', '从 JSON 文件导入')
+        const jsonBtn = button(t('sprite.manager.choose_json', '选择 JSON 文件…'), () => {
           pickFile('.json,application/json', false, async (files) => {
             try {
               if (destroyed || currentManagerBody() !== body || !files[0]) return
@@ -817,8 +828,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       )
       if (settings.packs.length > 0) {
         actions.append(
-          button('标签管理', () => openTagManager()),
-          button('批量管理', () => {
+          button(t('sprite.manager.tags', '标签管理'), () => openTagManager()),
+          button(t('sprite.manager.batch', '批量管理'), () => {
             closeEnableList()
             batchMode = true
             selectedPackIds.clear()
@@ -2839,6 +2850,8 @@ function button(label: string, onClick: () => void, extraClass = ''): HTMLElemen
   btn.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
+      // ST also turns bubbling Enter on .menu_button into a click.
+      e.stopPropagation()
       onClick()
     }
   })

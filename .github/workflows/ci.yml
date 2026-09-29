@@ -47,8 +47,20 @@ jobs:
           console.log(`ST_STAGE_BUILD_TIME=${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)} ${compact.slice(8, 10)}:${compact.slice(10, 12)}`)
           NODE
 
-      - name: Extension build
-        run: pnpm build:ext
+      - name: Verify required install assets are committed
+        run: >-
+          git ls-files --error-unmatch
+          manifest.json index.js bundle.js style.css version.json
+          locales/zh-CN.json locales/en-US.json
+          st-distribution/manifest.json st-distribution/index.js st-distribution/bundle.js
+          st-distribution/style.css st-distribution/version.json st-distribution/README.md
+          st-distribution/locales/zh-CN.json st-distribution/locales/en-US.json
+
+      - name: Build both extension destinations with the committed timestamp
+        run: pnpm build:all
+
+      - name: Verify runtime and locale parity
+        run: node scripts/verify-runtime-parity.mjs --root . --distribution st-distribution
 
       - name: Verify committed extension artifacts
-        run: git diff --exit-code -- index.js bundle.js style.css version.json
+        run: git diff --exit-code -- index.js bundle.js style.css version.json locales st-distribution

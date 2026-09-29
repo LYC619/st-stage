@@ -11,7 +11,7 @@ import {
   buildVersion,
   resolveBuildTime,
 } from './build-time.mjs'
-import { buildExtension, normalizeArtifactNewlines, normalizeBundleWhitespace } from './build.mjs'
+import { buildExtension, buildExtensionPair, normalizeArtifactNewlines, normalizeBundleWhitespace } from './build.mjs'
 
 const artifactNames = ['index.js', 'bundle.js', 'style.css', 'version.json'] as const
 const distributionNames = ['README.md', 'bundle.js', 'index.js', 'locales', 'manifest.json', 'style.css', 'version.json'] as const
@@ -145,6 +145,18 @@ describe('extension bundle formatting', () => {
 
 describe('extension build integration', () => {
   const fixedEnv = { ...process.env, ST_STAGE_BUILD_TIME: '2026-07-31 09:05' }
+
+  it('builds both destinations with one timestamp and identical locale bytes', async () => {
+    const root = createBuildFixture()
+    writeFileSync(join(root, 'st-extension/locales/en-US.json'), '{\r\n  "test": "test"\r\n}\r\n')
+    const result = await buildExtensionPair({ sourceRoot: root, env: fixedEnv, logLevel: 'silent', log: () => {} })
+    expect(result.version).toBe('1.2.3+202607310905')
+    for (const name of [...artifactNames, 'locales/en-US.json', 'locales/zh-CN.json']) {
+      const source = readFileSync(join(root, name))
+      expect(readFileSync(join(root, 'st-distribution', name))).toEqual(source)
+      expect(source.includes(Buffer.from('\r\n'))).toBe(false)
+    }
+  })
 
   it('rejects an invalid explicit time before changing any artifact', async () => {
     const root = createBuildFixture()

@@ -9,7 +9,7 @@ import { t } from '../core/i18n'
 const confirmText = t('common.confirm')  // "确认" 或 "Confirm"
 
 // 带参数的翻译
-const greeting = t('welcome.message', { name: 'Alice' })
+const greeting = t('welcome.message', '你好，{{name}}', { name: 'Alice' })
 
 // 嵌套路径
 const title = t('sprite.manager.title')  // "立绘图库管理"
@@ -44,6 +44,10 @@ const title = t('myFeature.title')
 
 ## 切换语言
 
+用户在 SillyTavern 的语言设置里切换，刷新后生效。百工读取宿主保存在浏览器 `localStorage.language` 中的选择；未设置时使用浏览器语言。英文系列使用 `en-US`，其余语言暂时使用 `zh-CN`。扩展不会修改这项偏好。
+
+以下接口供代码使用：它影响后续的 `t()` 调用，不会自动重绘已经挂载的 DOM。
+
 ```typescript
 import { setLocale, getLocale } from '../core/i18n'
 
@@ -57,6 +61,22 @@ setLocale('en-US')
 ## 注意事项
 
 - 所有翻译键使用点分隔的路径（如 `common.confirm`）
-- 缺失的键会返回键本身，便于开发时识别
-- 运行 `pnpm build:ext` 或 `pnpm build:st` 会自动复制 locale 文件到产物目录
+- 用户可见文案始终保留原中文 fallback。缺失键优先查中文词典，然后使用 fallback；两者都没有时返回键本身。
+- `{{name}}` 参数接受字符串或数字，未提供的参数保留占位符。返回值通过 `textContent` 或属性写入，不能作为用户输入的 HTML 使用。
+- 运行 `pnpm build:all` 用同一构建时间生成根目录与 `st-distribution/`，同时复制两份语言文件。单独调试仍可使用 `build:ext` 或 `build:st`。
+- 发布清单是原有六个根文件，加上 `locales/zh-CN.json` 和 `locales/en-US.json`；不要漏拷贝语言目录。
+- 语言文件相对于运行中的 `bundle.js` 加载，支持安装目录改名与代理路径前缀。请求和响应体共用 3 秒时限；加载失败或格式错误不阻止扩展启动。
 - locale 文件使用 UTF-8 编码，支持所有 Unicode 字符
+
+## 当前覆盖范围
+
+手机壳导航、立绘悬浮窗按钮与占位提示、扩展设置、图库管理头部及新建/导入入口已接入。App 内部、图库详情、深层提示与其他工具仍待逐批翻译；本轮没有完成整个 Phase 2 或完整无障碍支持。
+
+## 验证
+
+```powershell
+node scripts/verify-runtime-parity.mjs --root . --distribution st-distribution
+# 独立发布时增加 --release <发布仓库目录>，检查 README 与两份语言文件。
+```
+
+CI 在构建前检查必需产物都受 Git 跟踪，构建后检查字节一致性和已提交产物差异。真实 ST 浏览器验收使用独立测试实例与新建浏览器上下文，不能指向日常数据目录。

@@ -4,6 +4,7 @@
  * 其余设置全部在手机 App 内：「立绘」App 管显示/轮播/Prompt，「图库」App 管图包与图床。
  */
 
+import { t } from '../../core/i18n'
 import type { PluginSettings } from '../../core/types'
 
 interface PanelDeps {
@@ -36,16 +37,16 @@ export function mountSettingsPanel(deps: PanelDeps): () => void {
 
   content.append(
     checkboxRow(
-      '启用立绘功能',
+      t('settings.enable_sprites', '启用立绘功能'),
       settings.enabled,
       (v) => deps.updateSettings({ ...deps.getSettings(), enabled: v }),
-      '总开关：注入立绘清单给 AI 并展示回复中的立绘。关闭后清空注入、停止解析、隐藏悬浮窗并把楼层恢复原文；手机与其他工具不受影响。',
+      t('settings.sprites_help', '总开关：注入立绘清单给 AI 并展示回复中的立绘。关闭后清空注入、停止解析、隐藏悬浮窗并把楼层恢复原文；手机与其他工具不受影响。'),
     ),
     checkboxRow(
-      '显示手机',
+      t('settings.show_phone', '显示手机'),
       settings.showPhone,
       (v) => deps.updateSettings({ ...deps.getSettings(), showPhone: v }),
-      '屏幕上显示可拖动的 📱 图标，点击展开小手机——所有功能 App 的统一入口。',
+      t('settings.phone_help', '屏幕上显示可拖动的 📱 图标，点击展开小手机——所有功能 App 的统一入口。'),
     ),
   )
 
@@ -56,7 +57,7 @@ export function mountSettingsPanel(deps: PanelDeps): () => void {
   // 另有 version.json 与 bundle.js?v= 参数。
   const version = typeof __EXT_VERSION__ === 'undefined' ? '' : ` v${__EXT_VERSION__}`
   hint.textContent =
-    `酒馆里的事，百工都做。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`
+    t('settings.hint', '酒馆里的事，百工都做。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。') + version
   content.append(hint)
   return () => wrapper.remove()
 }

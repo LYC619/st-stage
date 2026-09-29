@@ -72,6 +72,36 @@ describe('i18n', () => {
 
       expect(t('common.confirm')).toBe('Confirm')
     })
+
+    test('interpolates string and numeric parameters in translated text', () => {
+      loadTranslations('en-US', { greeting: 'Hello {{name}}: {{count}} / {{count}}' })
+      setLocale('en-US')
+
+      expect(t('greeting', undefined, { name: 'Alice', count: 0 })).toBe('Hello Alice: 0 / 0')
+    })
+
+    test('interpolates fallback locale text and explicit fallback text', () => {
+      loadTranslations('zh-CN', { greeting: '你好，{{name}}' })
+      loadTranslations('en-US', { other: 'Other' })
+      setLocale('en-US')
+
+      expect(t('greeting', 'Hello {{name}}', { name: '小雪' })).toBe('你好，小雪')
+      expect(t('missing', '已选择 {{count}} 项', { count: 2 })).toBe('已选择 2 项')
+    })
+
+    test('preserves placeholders for missing or inherited parameters', () => {
+      const params = Object.create({ name: 'inherited' }) as Record<string, string>
+
+      expect(t('missing', '{{name}} / {{count}}', params)).toBe('{{name}} / {{count}}')
+      expect(t('missing.{{name}}', undefined, {})).toBe('missing.{{name}}')
+    })
+
+    test('does not traverse inherited object properties or string characters', () => {
+      loadTranslations('zh-CN', { common: { word: 'hello' } })
+
+      expect(t('common.__proto__.constructor.name', 'fallback')).toBe('fallback')
+      expect(t('common.word.0', 'fallback')).toBe('fallback')
+    })
   })
 
   describe('setLocale()', () => {
@@ -120,6 +150,16 @@ describe('i18n', () => {
       loadTranslations('zh-CN', { key: 'new' })
       expect(t('key')).toBe('new')
     })
+
+    test.each([null, [], 'text', 42, { key: false }, { key: ['text'] }, { key: { value: null } }].map(dict => [dict]))(
+      'rejects malformed dictionaries without replacing loaded translations: %j',
+      (dict) => {
+        loadTranslations('zh-CN', { key: '原文' })
+
+        expect(() => loadTranslations('zh-CN', dict)).toThrow()
+        expect(t('key')).toBe('原文')
+      },
+    )
   })
 
   describe('edge cases', () => {

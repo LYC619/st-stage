@@ -14,22 +14,52 @@
   "sprite": {
     "overlay": {
       "placeholder_no_pack": "未绑定立绘包\n点击 ⚙ 进行绑定",
-      "placeholder_no_character": "打开角色聊天后\n点击 ⚙ 绑定立绘包"
+      "placeholder_no_character": "打开角色聊天后\n点击 ⚙ 绑定立绘包",
+      "open_app": "打开立绘 App",
+      "close": "关闭悬浮窗",
+      "close_hint": "关闭悬浮窗（立绘功能不受影响，可在手机「立绘」App 重新打开）"
     },
     "manager": {
-      "title": "立绘图库管理",
+      "title": "立绘包管理",
       "bind_pack": "绑定图包",
       "upload_image": "上传图片",
-      "settings": "设置"
+      "settings": "设置",
+      "back": "返回列表",
+      "storage": "存储检查与迁移",
+      "new": "新建",
+      "import": "导入",
+      "tags": "标签管理",
+      "batch": "批量管理",
+      "new_title": "新建立绘包",
+      "new_name": "输入新包名称…",
+      "create": "创建",
+      "import_share": "从分享字符串导入",
+      "share_placeholder": "粘贴 stpack2:/stpack1: 分享串…",
+      "import_json": "从 JSON 文件导入",
+      "choose_json": "选择 JSON 文件…",
+      "enabled_count": "启用包（{{count}}） ▾",
+      "enable": "启用包 ▾",
+      "enable_for": "为「{{name}}」勾选启用立绘包"
     }
   },
   "phone": {
     "home": "主页",
-    "apps": "应用"
+    "apps": "应用",
+    "open": "打开手机",
+    "open_panel": "打开手机面板",
+    "back": "返回主屏",
+    "collapse": "收起手机",
+    "app_error": "App 打开失败，详见控制台",
+    "open_app": "打开 {{name}}"
   },
   "settings": {
     "general": "基本设置",
     "display": "显示设置",
-    "advanced": "高级设置"
+    "advanced": "高级设置",
+    "enable_sprites": "启用立绘功能",
+    "show_phone": "显示手机",
+    "sprites_help": "总开关：注入立绘清单给 AI 并展示回复中的立绘。关闭后清空注入、停止解析、隐藏悬浮窗并把楼层恢复原文；手机与其他工具不受影响。",
+    "phone_help": "屏幕上显示可拖动的 📱 图标，点击展开小手机——所有功能 App 的统一入口。",
+    "hint": "酒馆里的事，百工都做。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。"
   }
 }
