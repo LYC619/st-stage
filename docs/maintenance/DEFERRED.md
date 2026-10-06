@@ -4,7 +4,7 @@ Known follow-ups and pending review repairs are recorded here. Older sections re
 
 ## 2026-09-30 i18n Continuation and Release Gates
 
-Updated October 7: `76a262a` completes deep gallery display translation and manager/tag/upload/lightbox/storage focus support, following `d55fd4c` for Sprite/Gallery Apps. Real ST passes 10 i18n scenarios and 4 deep-gallery layouts; native Edge passes 9 scenarios. Real-ST mobile storage/button sizing and upload-preview labels were repaired. Export, MVU, New Variables/designer and remaining shared HUD/common labels remain open. Full reader/device/contrast acceptance is not claimed. See `history/2026-10-07-gallery.md`.
+Updated October 7: `21fa402` completes MVU/New Variables/designer and HUD display/keyboard work after the gallery batches. Current build passes 10 real-ST i18n scenarios, 4 variable layouts and 10 native Edge scenarios. Actual third-party MVU is absent; a separate controlled native fixture passes 5 read/write/focus cases. Cloud Export and remaining shared validation messages remain open. Full reader/device/contrast acceptance is not claimed. See `history/2026-10-07-variables.md` and prior gallery history.
 
 - `e11cd3d` repairs locale loading, adds the first translated UI controls and fixes real-ST gallery toolbar/keyboard issues. Real ST 1.18.0 i18n acceptance passes 10 scenarios; full App/deep gallery translation, focus management and screen-reader support remain pending.
 - Mobile browser emulation is separate from physical-phone/OS-keyboard acceptance. External sprite hosts were blocked; the isolated copied ST runtime logged thumbnail-conversion dependency-path errors. Cloud images and image conversion were not validated by this run.
