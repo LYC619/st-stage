@@ -16,16 +16,42 @@ const built = await build({ stdin: { contents: `
   import { PhoneAppRegistry } from './core/phone-registry.ts'
   import { openSpriteLightbox } from './st-extension/src/sprite-lightbox.ts'
   import { openImageStorageDialog } from './st-extension/src/image-storage-dialog.ts'
+  import { createVariableHud } from './st-extension/src/variable-hud.ts'
   import { createDefaultSettings } from './core/types.ts'
   import { loadTranslations, setLocale } from './core/i18n.ts'
   import en from './st-extension/locales/en-US.json'
-  globalThis.audit = { manageDialogFocus, openAppModal, createPhoneShell, PhoneAppRegistry, openSpriteLightbox, openImageStorageDialog, createDefaultSettings,
+  globalThis.audit = { manageDialogFocus, openAppModal, createPhoneShell, PhoneAppRegistry, openSpriteLightbox, openImageStorageDialog, createVariableHud, createDefaultSettings,
     setEnglish: () => { loadTranslations('en-US', en); setLocale('en-US') } }
 `, resolveDir: root, loader: 'ts' }, bundle: true, platform: 'browser', format: 'iife', write: false })
 const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || 'msedge', headless: true })
 const context = await browser.newContext({ viewport: { width: 900, height: 700 } })
 const report = { browser: browser.version(), scope: 'Production DOM modules with synthetic fixtures; native Edge keyboard, not screen-reader or physical-device certification.', scenarios: [] }
 const scenarios = [
+  ['hud-native-keyboard-and-pointer', async page => {
+    await page.evaluate(() => {
+      window.audit.setEnglish()
+      window.audit.createVariableHud({ readState: () => ({ x: 30, y: 30, open: false }), writeState() {}, subscribe: () => () => {}, readSections: () => [{ source: 'Synthetic', root: { '用户变量': 42 }, notice: '' }] })
+      window.hostActivations = 0
+      document.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') window.hostActivations++ })
+    })
+    for (const key of ['Enter', 'Space']) {
+      await page.locator('.so-varhud-btn').focus()
+      await page.keyboard.press(key)
+      await focused(page, '.so-varhud-close')
+      assert.equal(await page.locator('.so-varhud-btn').getAttribute('aria-expanded'), 'true')
+      assert.ok(await page.locator('.so-varhud-panel').textContent().then(text => text.includes('用户变量42')))
+      await page.keyboard.press('Tab')
+      assert.equal(await page.locator('.so-varhud-panel').evaluate(node => node.contains(document.activeElement)), false) // The HUD is nonmodal.
+      await page.locator('.so-varhud-close').focus()
+      await page.keyboard.press('Escape'); await focused(page, '.so-varhud-btn')
+    }
+    assert.equal(await page.evaluate(() => window.hostActivations), 0)
+    await page.locator('.so-varhud-btn').click()
+    await focused(page, '.so-varhud-close')
+    assert.equal(await page.locator('.so-varhud-panel').isVisible(), true, 'Pointer release and native click must not toggle twice')
+    await page.locator('.so-varhud-close').press('Enter')
+    await focused(page, '.so-varhud-btn')
+  }],
   ['storage-transformed-mobile-root', async page => {
     await page.setViewportSize({ width: 375, height: 667 })
     // ST's mobile host has a transformed, zero-height root; fixed inset alone collapses here.

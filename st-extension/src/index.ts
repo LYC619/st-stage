@@ -271,12 +271,12 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
           sections.push({
             source: 'MVU',
             root: read.status === 'ready' || read.status === 'empty' ? read.data : null,
-            notice: read.status === 'unavailable' ? '未检测到 MVU / 酒馆助手' : read.error ?? '',
+            notice: read.status === 'unavailable' ? t('variableHud.mvu_unavailable', '未检测到 MVU / 酒馆助手') : read.error ?? '',
           })
           // 「新变量」：本扩展自己的快照，始终可读
           const newvarState = newvarRuntime.getCurrentState()
           sections.push({
-            source: '新变量',
+            source: t('apps.newvar.name', '新变量'),
             root: newvarState,
             notice: '',
           })

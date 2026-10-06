@@ -15,6 +15,8 @@
  *      两者都没有（Web 模拟器）→ readVariables 返回 unavailable。
  */
 
+import { t } from '../../../../core/i18n'
+
 import { extractStatRootFrom, getNested, setNested, deleteNested, isPlainObject, isTupleLeaf } from '../variable-tree'
 
 // —— MVU / 酒馆助手 / ST 全局运行时类型（字段随版本可能缺失，全部可选） —— //
@@ -297,7 +299,7 @@ async function writeHelper(scope: MvuScope, mutate: (vars: Record<string, unknow
     await Promise.resolve(helper.replaceVariables(vars, scope))
     return
   }
-  throw new Error('无可用的变量写入通道（MVU / 酒馆助手均不可用）')
+  throw new Error(t('apps.mvu.no_write_channel', "无可用的变量写入通道（MVU / 酒馆助手均不可用）"))
 }
 
 // —— 事件订阅 —— //

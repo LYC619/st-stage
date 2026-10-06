@@ -1,4 +1,5 @@
 import type { PhoneApp, PhoneAppContext } from '../../../core/phone-registry'
+import { t } from '../../../core/i18n'
 import { appButton, el, foldSection, selectRow } from './widgets'
 import { applyTransaction, compareMeasurements, restoreTransaction, type ButlerActionBridge, type MeasurementComparison } from './butler/actions'
 import { buildSafePlan, diagnose, type SafePlan } from './butler/diagnosis'
@@ -151,7 +152,7 @@ export function butlerApp(serviceOverrides?: ButlerAppServices): PhoneApp {
   let activeState: ButlerViewState | null = null
   return {
     id: 'butler',
-    name: '管家',
+    name: t('apps.butler.name', '管家'),
     icon: '🧹',
     order: 3,
     mount(container, ctx) {

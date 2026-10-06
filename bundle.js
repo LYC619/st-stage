@@ -3977,6 +3977,7 @@ function countLeafRows(rows) {
 // st-extension/src/variable-hud.ts
 var DRAG_THRESHOLD = 4;
 var BUTTON_SIZE = 44;
+var hudId = 0;
 function clampPosition(x, y, width = BUTTON_SIZE, height = BUTTON_SIZE) {
   const maxX = Math.max(0, window.innerWidth - width);
   const maxY = Math.max(0, window.innerHeight - height);
@@ -3999,15 +4000,20 @@ function createVariableHud(deps) {
   root.id = "st-stage-varhud";
   const button2 = el("button", "so-varhud-btn");
   button2.setAttribute("type", "button");
-  button2.setAttribute("aria-label", "变量速查");
+  button2.setAttribute("aria-label", t("variableHud.title", "变量速查"));
   button2.textContent = "🔢";
   const panel = el("div", "so-varhud-panel");
+  panel.id = `so-varhud-panel-${++hudId}`;
+  panel.setAttribute("role", "region");
+  button2.setAttribute("aria-controls", panel.id);
   const panelHead = el("div", "so-varhud-head");
   const panelTitle = el("span", "so-varhud-title");
-  panelTitle.textContent = "变量速查";
+  panelTitle.id = `${panel.id}-title`;
+  panelTitle.textContent = t("variableHud.title", "变量速查");
+  panel.setAttribute("aria-labelledby", panelTitle.id);
   const closeBtn = el("button", "so-varhud-close");
   closeBtn.setAttribute("type", "button");
-  closeBtn.setAttribute("aria-label", "收起");
+  closeBtn.setAttribute("aria-label", t("variableHud.collapse", "收起"));
   closeBtn.textContent = "✕";
   panelHead.append(panelTitle, closeBtn);
   const panelBody = el("div", "so-varhud-body");
@@ -4020,6 +4026,7 @@ function createVariableHud(deps) {
   }
   function applyOpen() {
     root.classList.toggle("so-varhud-open", open);
+    button2.setAttribute("aria-expanded", String(open));
     button2.style.display = open ? "none" : "flex";
     panel.style.display = open ? "flex" : "none";
   }
@@ -4069,7 +4076,8 @@ function createVariableHud(deps) {
       if (token !== renderToken || disposed || !open) return;
       panelBody.textContent = "";
       const fail = el("div", "so-varhud-notice");
-      fail.textContent = `读取失败：${err instanceof Error ? err.message : String(err)}`;
+      fail.setAttribute("role", "status");
+      fail.textContent = t("variableHud.read_failed", "读取失败：{{message}}", { message: err instanceof Error ? err.message : String(err) });
       panelBody.append(fail);
       scheduleMeasure();
       return;
@@ -4081,15 +4089,15 @@ function createVariableHud(deps) {
       const block = el("div", "so-varhud-section");
       const label = el("div", "so-varhud-source");
       const rows = section2.root ? flattenVariables(section2.root) : [];
-      label.textContent = section2.root ? `${section2.source}（${countLeafRows(rows)}）` : section2.source;
+      label.textContent = section2.root ? t("variableHud.source_count", "{{source}}（{{count}}）", { source: section2.source, count: countLeafRows(rows) }) : section2.source;
       block.append(label);
       if (!section2.root) {
         const notice = el("div", "so-varhud-notice");
-        notice.textContent = section2.notice || "当前不可用";
+        notice.textContent = section2.notice || t("variableHud.unavailable", "当前不可用");
         block.append(notice);
       } else if (rows.length === 0) {
         const empty = el("div", "so-varhud-notice");
-        empty.textContent = "暂无变量";
+        empty.textContent = t("variableHud.no_variables", "暂无变量");
         block.append(empty);
       } else {
         anyRow = true;
@@ -4099,10 +4107,10 @@ function createVariableHud(deps) {
     }
     if (sections.length === 0) {
       const empty = el("div", "so-varhud-notice");
-      empty.textContent = "没有可用的变量来源";
+      empty.textContent = t("variableHud.no_sources", "没有可用的变量来源");
       panelBody.append(empty);
     }
-    panelTitle.textContent = anyRow ? "变量速查" : "变量速查（空）";
+    panelTitle.textContent = anyRow ? t("variableHud.title", "变量速查") : t("variableHud.empty_title", "变量速查（空）");
     scheduleMeasure();
   }
   function setOpen(next) {
@@ -4112,6 +4120,8 @@ function createVariableHud(deps) {
     scheduleMeasure();
     deps.writeState({ ...position, open });
     if (open) void render2();
+    if (open) closeBtn.focus({ preventScroll: true });
+    else button2.focus({ preventScroll: true });
   }
   let cancelDrag = null;
   function startDrag(event) {
@@ -4154,6 +4164,20 @@ function createVariableHud(deps) {
   button2.addEventListener("pointerdown", (event) => {
     event.stopPropagation();
     startDrag(event);
+  });
+  button2.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (event.detail === 0) setOpen(!open);
+  });
+  root.addEventListener("keydown", (event) => {
+    if (event.isComposing) return;
+    if (event.key === "Escape" && open) {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.stopPropagation();
+    }
   });
   panelHead.addEventListener("pointerdown", (event) => {
     if (event.target === closeBtn) return;
@@ -4198,6 +4222,45 @@ function createVariableHud(deps) {
     refresh() {
       void render2();
     }
+  };
+}
+
+// st-extension/src/apps/newvar/ui-focus.ts
+function variableButton(className) {
+  const button2 = document.createElement("button");
+  button2.type = "button";
+  button2.className = className;
+  button2.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.isComposing) return;
+    event.preventDefault();
+    event.stopPropagation();
+    button2.click();
+  });
+  return button2;
+}
+function captureVariableFocus(container) {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement) || !container.contains(active)) return null;
+  const identity = (node) => {
+    const explicit = node.dataset.variableFocus;
+    if (explicit) return explicit;
+    const labelledBy = node.getAttribute("aria-labelledby");
+    const label = node.getAttribute("aria-label") ?? (labelledBy ? document.getElementById(labelledBy)?.textContent : null) ?? node.closest("label")?.querySelector("span")?.textContent;
+    if (!label) return null;
+    const scope = node.closest("[data-variable-focus-scope]")?.dataset.variableFocusScope ?? "";
+    return `${scope}:${node.tagName}:${node.getAttribute("type") ?? ""}:${label}`;
+  };
+  const key = identity(active);
+  if (!key) return null;
+  const selection = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ? { start: active.selectionStart, end: active.selectionEnd } : null;
+  return () => {
+    const target = [...container.querySelectorAll("button, input, select, textarea, summary, [tabindex]")].find((node) => identity(node) === key && !node.matches(":disabled") && !node.closest("[hidden], [inert]"));
+    if (!target) return false;
+    target.focus({ preventScroll: true });
+    if (selection?.start !== null && selection?.start !== void 0 && selection.end !== null && (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
+      target.setSelectionRange(selection.start, selection.end);
+    }
+    return document.activeElement === target;
   };
 }
 
@@ -4484,9 +4547,9 @@ function editKind(v, definition) {
 function valueTypeLabel(v, tuple) {
   const inner = tuple ? v[0] : v;
   if (inner === null) return "null";
-  if (Array.isArray(inner)) return `数组[${inner.length}]`;
-  if (typeof inner === "object") return "对象";
-  return typeof inner === "number" ? "数字" : typeof inner === "boolean" ? "布尔" : "文本";
+  if (Array.isArray(inner)) return t("variableTree.array", "数组[{{count}}]", { count: inner.length });
+  if (typeof inner === "object") return t("variableTree.object", "对象");
+  return typeof inner === "number" ? t("variableTree.number", "数字") : typeof inner === "boolean" ? t("variableTree.boolean", "布尔") : t("variableTree.text", "文本");
 }
 function jsonEqual(a, b) {
   if (a === b) return true;
@@ -4527,25 +4590,36 @@ function computeDelta(current2, prev, isMvu) {
 }
 function createVariableTreeView(container, handlers) {
   let editingPath = null;
+  let focusRequest = null;
   const groupOpen = /* @__PURE__ */ new Map();
   let addOpen = false;
   function render2() {
     const model = handlers.getModel();
+    const restore = captureVariableFocus(container);
+    const request = focusRequest;
+    focusRequest = null;
+    const active = document.activeElement;
+    const focusPath = request && (!request.editor || request.editor.contains(active) || !request.editor.isConnected && active === document.body) ? request.path : null;
     container.textContent = "";
     const head = el2("div", "so-app-section vm-head");
     const line = el2("div", "vm-statusrow");
     const status = el2("div", "so-app-desc vm-status");
+    status.setAttribute("role", "status");
     status.textContent = model.statusText;
-    const refreshBtn = el2("button", "menu_button vm-refresh");
+    const refreshBtn = variableButton("menu_button vm-refresh");
     refreshBtn.setAttribute("role", "button");
-    refreshBtn.textContent = "刷新";
+    refreshBtn.textContent = t("variableTree.refresh", "刷新");
+    refreshBtn.dataset.variableFocus = "refresh";
     refreshBtn.addEventListener("click", () => handlers.requestRefresh());
     line.append(status, refreshBtn);
     head.append(line);
     container.append(head);
     if (model.noticeText) {
       appendNotice(model.noticeText);
-      if (model.status === "unavailable") return;
+      if (model.status === "unavailable") {
+        restore?.();
+        return;
+      }
     }
     const keys = Object.keys(model.data);
     if (keys.length === 0) {
@@ -4556,6 +4630,11 @@ function createVariableTreeView(container, handlers) {
       container.append(tree);
     }
     if (model.allowAdd !== false) container.append(buildAddSection(model));
+    if (focusPath !== null) {
+      const target = editingPath === focusPath ? container.querySelector(".vm-editing input, .vm-editing select, .vm-editing textarea") : [...container.querySelectorAll(".vm-leaf-main")].find((node) => node.dataset.variableFocus === `leaf:${focusPath}`);
+      if (target) target.focus({ preventScroll: true });
+      else restore?.();
+    } else restore?.();
   }
   function appendNotice(text4) {
     const note = el2("div", "so-app-section");
@@ -4573,6 +4652,7 @@ function createVariableTreeView(container, handlers) {
       details.addEventListener("toggle", () => groupOpen.set(path, details.open));
       const summary = document.createElement("summary");
       summary.className = "so-app-title vm-group-title";
+      summary.dataset.variableFocus = `group:${path}`;
       summary.textContent = `${key}（${Object.keys(value).length}）`;
       const body = el2("div", "so-app-fold-body vm-group-body");
       for (const childKey of Object.keys(value)) {
@@ -4591,12 +4671,13 @@ function createVariableTreeView(container, handlers) {
     }
     const card = el2("div", "vm-leaf");
     const main = el2("div", "vm-leaf-main");
+    main.dataset.variableFocus = `leaf:${path}`;
     const keyEl = el2("span", "vm-key");
     keyEl.textContent = key;
     const valEl = el2("span", "vm-val");
     const shown = formatValue(tuple ? value[0] : value);
     valEl.textContent = shown.length > 80 ? `${shown.slice(0, 80)}…` : shown;
-    valEl.title = `类型：${valueTypeLabel(value, tuple)}`;
+    valEl.title = t("variableTree.type", "类型：{{type}}", { type: valueTypeLabel(value, tuple) });
     main.append(keyEl, valEl);
     const d = model.delta.get(path);
     if (d) main.append(buildDeltaBadge(d));
@@ -4610,25 +4691,28 @@ function createVariableTreeView(container, handlers) {
       main.tabIndex = 0;
       const enterEdit = () => {
         editingPath = path;
+        focusRequest = { path };
         render2();
       };
       main.addEventListener("click", enterEdit);
       main.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
+          e.stopPropagation();
           enterEdit();
         }
       });
     }
     card.append(main);
     if (model.canWrite) {
-      const del = el2("button", "vm-del");
-      del.setAttribute("aria-label", "删除变量");
-      del.title = "删除该变量";
+      const del = variableButton("vm-del");
+      del.setAttribute("aria-label", t("variableTree.delete_path", "删除变量 {{path}}", { path }));
+      del.dataset.variableFocus = `delete:${path}`;
+      del.title = t("variableTree.delete_title", "删除该变量");
       del.textContent = "✕";
       del.addEventListener("click", (e) => {
         e.stopPropagation();
-        if (!window.confirm(`删除变量「${path}」？此操作不可撤销。`)) return;
+        if (!window.confirm(t("variableTree.delete_confirm", "删除变量「{{path}}」？此操作不可撤销。", { path }))) return;
         editingPath = null;
         handlers.commitDelete(path);
       });
@@ -4643,7 +4727,7 @@ function createVariableTreeView(container, handlers) {
       const shown = Number.isInteger(n) ? String(n) : String(Number(n.toFixed(2)));
       badge.textContent = `${n > 0 ? "+" : ""}${shown}`;
     } else {
-      badge.textContent = d.kind === "added" ? "新" : "改";
+      badge.textContent = d.kind === "added" ? t("variableTree.added", "新") : t("variableTree.changed", "改");
     }
     return badge;
   }
@@ -4657,22 +4741,23 @@ function createVariableTreeView(container, handlers) {
     wrap.append(title2);
     if (tuple) {
       const desc = el2("div", "vm-desc");
-      desc.textContent = `描述：${value[1]}（保留不变，仅编辑值）`;
+      desc.textContent = t("variableTree.description", "描述：{{description}}（保留不变，仅编辑值）", { description: value[1] });
       wrap.append(desc);
     }
     const err = el2("div", "so-app-desc vm-add-err");
     err.hidden = true;
+    err.setAttribute("role", "alert");
     let readValue;
     if (kind === "boolean") {
       const row = el2("label", "so-app-toggle checkbox_label");
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.checked = inner === true;
+      const input2 = document.createElement("input");
+      input2.type = "checkbox";
+      input2.checked = inner === true;
       const label = document.createElement("span");
-      label.textContent = "启用（true）";
-      row.append(input, label);
+      label.textContent = t("variableTree.true", "启用（true）");
+      row.append(input2, label);
       wrap.append(row);
-      readValue = () => ({ ok: true, value: input.checked });
+      readValue = () => ({ ok: true, value: input2.checked });
     } else if (kind === "enum") {
       const select = document.createElement("select");
       select.className = "text_pole so-app-input vm-edit-input";
@@ -4686,22 +4771,21 @@ function createVariableTreeView(container, handlers) {
       wrap.append(select);
       readValue = () => ({ ok: true, value: select.value });
     } else if (kind === "number") {
-      const input = document.createElement("input");
-      input.type = "number";
-      input.step = "any";
-      input.className = "text_pole so-app-input vm-edit-input";
-      input.value = typeof inner === "number" && Number.isFinite(inner) ? String(inner) : "";
+      const input2 = document.createElement("input");
+      input2.type = "number";
+      input2.step = "any";
+      input2.className = "text_pole so-app-input vm-edit-input";
+      input2.value = typeof inner === "number" && Number.isFinite(inner) ? String(inner) : "";
       if (definition?.range) {
-        input.min = String(definition.range[0]);
-        input.max = String(definition.range[1]);
+        input2.min = String(definition.range[0]);
+        input2.max = String(definition.range[1]);
       }
-      wrap.append(input);
+      wrap.append(input2);
       readValue = () => {
-        if (input.value.trim() === "") return { ok: false, msg: "请输入有效数字。" };
-        const value2 = Number(input.value);
-        return Number.isFinite(value2) ? { ok: true, value: value2 } : { ok: false, msg: "请输入有效数字。" };
+        if (input2.value.trim() === "") return { ok: false, msg: t("variableTree.invalid_number", "请输入有效数字。") };
+        const value2 = Number(input2.value);
+        return Number.isFinite(value2) ? { ok: true, value: value2 } : { ok: false, msg: t("variableTree.invalid_number", "请输入有效数字。") };
       };
-      setTimeout(() => input.focus(), 0);
     } else if (kind === "json") {
       const ta = document.createElement("textarea");
       ta.className = "text_pole so-app-input vm-edit-input";
@@ -4712,43 +4796,49 @@ function createVariableTreeView(container, handlers) {
         try {
           return { ok: true, value: JSON.parse(ta.value) };
         } catch (e) {
-          return { ok: false, msg: `JSON 格式错误：${e instanceof Error ? e.message : String(e)}` };
+          return { ok: false, msg: t("variableTree.json_error", "JSON 格式错误：{{error}}", { error: e instanceof Error ? e.message : String(e) }) };
         }
       };
-      setTimeout(() => ta.focus(), 0);
     } else {
-      const input = document.createElement("input");
-      input.type = "text";
-      input.className = "text_pole so-app-input vm-edit-input";
-      input.value = formatValue(inner);
-      input.autocomplete = "off";
-      wrap.append(input);
-      readValue = () => ({ ok: true, value: definition?.type === "string" ? input.value : parseInputValue(input.value) });
-      setTimeout(() => input.focus(), 0);
+      const input2 = document.createElement("input");
+      input2.type = "text";
+      input2.className = "text_pole so-app-input vm-edit-input";
+      input2.value = formatValue(inner);
+      input2.autocomplete = "off";
+      wrap.append(input2);
+      readValue = () => ({ ok: true, value: definition?.type === "string" ? input2.value : parseInputValue(input2.value) });
     }
+    const input = wrap.querySelector("input, select, textarea");
+    input?.setAttribute("aria-label", t("variableTree.edit_value", "编辑 {{path}} 的值", { path }));
+    if (input) input.dataset.variableFocus = `value:${path}`;
     wrap.append(err);
     const actions = el2("div", "vm-actions");
-    const save = el2("button", "menu_button vm-act");
-    save.textContent = "保存";
+    const save = variableButton("menu_button vm-act");
+    save.textContent = t("variableTree.save", "保存");
+    save.dataset.variableFocus = `save:${path}`;
     save.addEventListener("click", () => {
       const r = readValue();
       if (!r.ok) {
-        err.textContent = r.msg ?? "输入无效。";
+        err.textContent = r.msg ?? t("variableTree.invalid", "输入无效。");
         err.hidden = false;
         return;
       }
       editingPath = null;
+      focusRequest = { path, editor: wrap };
       const committed = handlers.commitSet(path, r.value);
       if (committed && !committed.ok) {
         editingPath = path;
+        focusRequest = null;
         err.textContent = committed.error;
         err.hidden = false;
       }
     });
-    const cancel = el2("button", "menu_button vm-act vm-act-ghost");
-    cancel.textContent = "取消";
+    const cancel = variableButton("menu_button vm-act vm-act-ghost");
+    cancel.textContent = t("variableTree.cancel", "取消");
+    cancel.dataset.variableFocus = `cancel:${path}`;
     cancel.addEventListener("click", () => {
       editingPath = null;
+      focusRequest = { path };
       render2();
     });
     actions.append(save, cancel);
@@ -4762,7 +4852,8 @@ function createVariableTreeView(container, handlers) {
     box.addEventListener("toggle", () => addOpen = box.open);
     const summary = document.createElement("summary");
     summary.className = "so-app-title";
-    summary.textContent = "＋ 新增变量";
+    summary.textContent = t("variableTree.add_variable", "＋ 新增变量");
+    summary.dataset.variableFocus = "add-section";
     const body = el2("div", "so-app-fold-body");
     const hint = el2("div", "so-app-desc");
     hint.textContent = model.addHint;
@@ -4770,27 +4861,32 @@ function createVariableTreeView(container, handlers) {
     const pathInput = document.createElement("input");
     pathInput.type = "text";
     pathInput.className = "text_pole so-app-input";
-    pathInput.placeholder = "变量路径（如 状态.体力）";
+    pathInput.placeholder = t("variableTree.path_placeholder", "变量路径（如 状态.体力）");
+    pathInput.setAttribute("aria-label", t("variableTree.path", "变量路径"));
+    pathInput.dataset.variableFocus = "new-path";
     pathInput.autocomplete = "off";
     const valInput = document.createElement("input");
     valInput.type = "text";
     valInput.className = "text_pole so-app-input";
-    valInput.placeholder = "值（如 80 / 健康 / true）";
+    valInput.placeholder = t("variableTree.value_placeholder", "值（如 80 / 健康 / true）");
+    valInput.setAttribute("aria-label", t("variableTree.value", "变量值"));
+    valInput.dataset.variableFocus = "new-value";
     valInput.autocomplete = "off";
     body.append(pathInput, valInput);
     const err = el2("div", "so-app-desc vm-add-err");
     err.hidden = true;
+    err.setAttribute("role", "alert");
     body.append(err);
     body.append(
-      appButton("添加", () => {
+      appButton(t("variableTree.add", "添加"), () => {
         const path = pathInput.value.trim();
         if (!path) {
-          err.textContent = "请填写变量路径。";
+          err.textContent = t("variableTree.path_required", "请填写变量路径。");
           err.hidden = false;
           return;
         }
         if (!model.canWrite) {
-          err.textContent = "当前环境不可写入变量。";
+          err.textContent = t("variableTree.cannot_write", "当前环境不可写入变量。");
           err.hidden = false;
           return;
         }
@@ -4807,6 +4903,9 @@ function createVariableTreeView(container, handlers) {
   return {
     render: render2,
     resetEditing() {
+      if (editingPath && container.contains(document.activeElement)) {
+        focusRequest = { path: editingPath, editor: container.querySelector(".vm-editing") ?? void 0 };
+      }
       editingPath = null;
     },
     isEditing() {
@@ -5002,7 +5101,7 @@ async function writeHelper(scope, mutate) {
     await Promise.resolve(helper.replaceVariables(vars, scope));
     return;
   }
-  throw new Error("无可用的变量写入通道（MVU / 酒馆助手均不可用）");
+  throw new Error(t("apps.mvu.no_write_channel", "无可用的变量写入通道（MVU / 酒馆助手均不可用）"));
 }
 function subscribeVarEvents(handler) {
   const st = getST();
@@ -14693,7 +14792,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-10-06 23:41"}`;
+  return `${"0.9.0"}+${"2026-10-07 02:10"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -14991,7 +15090,7 @@ function butlerApp(serviceOverrides) {
   let activeState = null;
   return {
     id: "butler",
-    name: "管家",
+    name: t("apps.butler.name", "管家"),
     icon: "🧹",
     order: 3,
     mount(container, ctx) {
@@ -15390,11 +15489,10 @@ function createInstance(container, ctx) {
     settingsBox.textContent = "";
     settingsBox.append(
       hintField(
-        toggleRow("变量速查悬浮窗", ctx.getSettings().variableHud, (v) => {
+        toggleRow(t("apps.mvu.hud", "变量速查悬浮窗"), ctx.getSettings().variableHud, (v) => {
           ctx.updateSettings({ ...ctx.getSettings(), variableHud: v });
-          renderSettings();
         }),
-        "在聊天界面常驻一个可拖动的小圆钮，点开就能看到全部变量的当前值，省掉「开手机→开 App→翻找」。只读速查，改值仍在下方变量面板里。这个开关是全局的，与「新变量」App 里的是同一个。"
+        t("apps.mvu.hud_help", "在聊天界面常驻一个可拖动的小圆钮，点开就能看到全部变量的当前值，省掉「开手机→开 App→翻找」。只读速查，改值仍在下方变量面板里。这个开关是全局的，与「新变量」App 里的是同一个。")
       )
     );
   }
@@ -15413,7 +15511,7 @@ function createInstance(container, ctx) {
   }
   function sourceLabel(r) {
     if (r.meta.source === "mvu") return "MVU";
-    if (r.meta.source === "tavern-helper") return "酒馆助手";
+    if (r.meta.source === "tavern-helper") return t("apps.mvu.helper", "酒馆助手");
     return "—";
   }
   function buildModel() {
@@ -15424,8 +15522,8 @@ function createInstance(container, ctx) {
         isMvu: true,
         delta: /* @__PURE__ */ new Map(),
         status: "empty",
-        statusText: "正在读取…",
-        emptyText: "正在读取楼层变量…",
+        statusText: t("apps.mvu.reading", "正在读取…"),
+        emptyText: t("apps.mvu.reading_variables", "正在读取楼层变量…"),
         canWrite: false,
         addHint: ""
       };
@@ -15433,20 +15531,20 @@ function createInstance(container, ctx) {
     const canWrite = r.status !== "unavailable";
     let noticeText;
     if (r.status === "unavailable") {
-      noticeText = "未检测到 MVU 框架或酒馆助手（Web 模拟器中仅可查看本说明）。在 SillyTavern 内、且安装了 MVU/酒馆助手时才能读写楼层变量。";
+      noticeText = t("apps.mvu.unavailable", "未检测到 MVU 框架或酒馆助手（Web 模拟器中仅可查看本说明）。在 SillyTavern 内、且安装了 MVU/酒馆助手时才能读写楼层变量。");
     } else if (r.status === "error") {
-      noticeText = `读取变量出错：${r.error ?? "未知错误"}。可点「刷新」重试。`;
+      noticeText = t("apps.mvu.read_error", "读取变量出错：{{error}}。可点「刷新」重试。", { error: r.error ?? t("apps.mvu.unknown_error", "未知错误") });
     }
     return {
       data: r.data,
       isMvu: r.isMvu,
       delta,
       status: r.status,
-      statusText: `来源：${sourceLabel(r)} · ${r.messageId >= 0 ? `楼层 #${r.messageId}` : "无对话"}`,
-      emptyText: r.status === "empty" && r.meta.waitedMvu ? "当前楼层暂无变量（已等待 MVU 初始化）。有变量的楼层刷新后会显示在这里。" : "当前楼层暂无变量。",
+      statusText: t("apps.mvu.source", "来源：{{source}} · {{message}}", { source: sourceLabel(r), message: r.messageId >= 0 ? t("apps.mvu.message", "楼层 #{{id}}", { id: r.messageId }) : t("apps.mvu.no_conversation", "无对话") }),
+      emptyText: r.status === "empty" && r.meta.waitedMvu ? t("apps.mvu.empty_after_wait", "当前楼层暂无变量（已等待 MVU 初始化）。有变量的楼层刷新后会显示在这里。") : t("apps.mvu.empty", "当前楼层暂无变量。"),
       noticeText,
       canWrite,
-      addHint: canWrite ? "正常情况下变量由 MVU 框架按角色卡规则维护，无需手动新增；这里仅用于修补卡片缺失的变量或调试（卡的更新规则里没有的路径，AI 不会主动维护）。路径点号分层，值支持 数字/true/false/null/JSON/文本。" : "当前环境不可写入变量。"
+      addHint: canWrite ? t("apps.mvu.add_hint", "正常情况下变量由 MVU 框架按角色卡规则维护，无需手动新增；这里仅用于修补卡片缺失的变量或调试（卡的更新规则里没有的路径，AI 不会主动维护）。路径点号分层，值支持 数字/true/false/null/JSON/文本。") : t("apps.mvu.cannot_write", "当前环境不可写入变量。")
     };
   }
   function isStale(token) {
@@ -15482,7 +15580,7 @@ function createInstance(container, ctx) {
       await op();
     } catch (err) {
       console.error("[st-stage] 变量写入失败", err);
-      window.alert(`写入失败：${err instanceof Error ? err.message : String(err)}`);
+      window.alert(t("apps.mvu.write_error", "写入失败：{{error}}", { error: err instanceof Error ? err.message : String(err) }));
     }
     if (!disposed) await load();
   }
@@ -15524,7 +15622,7 @@ function newvarApp(deps) {
   let unsub = null;
   return {
     id: "newvar",
-    name: "新变量",
+    name: t("apps.newvar.name", "新变量"),
     icon: "🧮",
     order: 5,
     mount(container, ctx) {
@@ -15539,32 +15637,29 @@ function newvarApp(deps) {
         const section2 = el2("div", "so-app-section");
         section2.append(
           hintField(
-            toggleRow("启用变量追踪", d.enabled, (v) => {
+            toggleRow(t("apps.newvar.enable", "启用变量追踪"), d.enabled, (v) => {
               ctx.setAppData({ ...runtime.getData(), enabled: v });
               runtime.onConfigChanged();
-              renderCfg();
             }),
-            "不依赖 MVU/酒馆助手：按你的变量定义自动向 AI 注入当前状态与更新规则，解析回复末尾的 <UpdateVariable> 并逐楼保存快照，任何角色卡都能用。变量定义、模板、注入预览都在「变量设计」里。"
+            t("apps.newvar.enable_help", "不依赖 MVU/酒馆助手：按你的变量定义自动向 AI 注入当前状态与更新规则，解析回复末尾的 <UpdateVariable> 并逐楼保存快照，任何角色卡都能用。变量定义、模板、注入预览都在「变量设计」里。")
           ),
           hintField(
-            toggleRow("隐藏正文中的变量更新记录", d.hideUpdateBlocks, (v) => {
+            toggleRow(t("apps.newvar.hide_updates", "隐藏正文中的变量更新记录"), d.hideUpdateBlocks, (v) => {
               ctx.setAppData({ ...runtime.getData(), hideUpdateBlocks: v });
               ctx.toast(
                 "success",
-                v ? "已隐藏变量更新记录；原始回复和变量快照保持不变。" : "变量更新记录已恢复（此前由百工隐藏）。若仍不可见，请检查 ST Regex 中删除 UpdateVariable 的规则。"
+                v ? t("apps.newvar.updates_hidden", "已隐藏变量更新记录；原始回复和变量快照保持不变。") : t("apps.newvar.updates_restored", "变量更新记录已恢复（此前由百工隐藏）。若仍不可见，请检查 ST Regex 中删除 UpdateVariable 的规则。")
               );
-              renderCfg();
             }),
-            "只隐藏消息气泡里完整的 <UpdateVariable>...</UpdateVariable> 区块，不修改 SillyTavern 保存的原始回复，也不影响变量解析和楼层快照。关闭后只能恢复本扩展隐藏的内容；ST Regex 等外部规则仍会独立生效。"
+            t("apps.newvar.hide_help", "只隐藏消息气泡里完整的 <UpdateVariable>...</UpdateVariable> 区块，不修改 SillyTavern 保存的原始回复，也不影响变量解析和楼层快照。关闭后只能恢复本扩展隐藏的内容；ST Regex 等外部规则仍会独立生效。")
           ),
           hintField(
-            toggleRow("变量速查悬浮窗", ctx.getSettings().variableHud, (v) => {
+            toggleRow(t("apps.newvar.hud", "变量速查悬浮窗"), ctx.getSettings().variableHud, (v) => {
               ctx.updateSettings({ ...ctx.getSettings(), variableHud: v });
-              renderCfg();
             }),
-            "在聊天界面常驻一个可拖动的小圆钮，点开就能看到全部变量的当前值，省掉「开手机→开 App→翻找」。只读速查，改值仍在下方变量面板里；MVU 与「新变量」两边的变量会分段列出。这个开关是全局的，两个变量 App 里改哪个都一样。"
+            t("apps.newvar.hud_help", "在聊天界面常驻一个可拖动的小圆钮，点开就能看到全部变量的当前值，省掉「开手机→开 App→翻找」。只读速查，改值仍在下方变量面板里；MVU 与「新变量」两边的变量会分段列出。这个开关是全局的，两个变量 App 里改哪个都一样。")
           ),
-          appButton("打开变量设计", openDesigner)
+          appButton(t("apps.newvar.open_designer", "打开变量设计"), openDesigner)
         );
         cfgBox.append(section2);
       }
@@ -15579,12 +15674,12 @@ function newvarApp(deps) {
             isMvu: false,
             delta: computeDelta(state2, runtime.getPrevState(), false),
             status: st ? "ready" : "unavailable",
-            statusText: st ? `内置追踪 · ${d.enabled ? "已启用" : "未启用"}` : "内置追踪 · 模拟器",
-            emptyText: "暂无变量。点上方「打开变量设计」定义或导入模板，启用后 AI 回复会逐楼更新这里。",
-            noticeText: st ? void 0 : "未检测到 SillyTavern：模拟器中可打开变量设计编辑定义与预览注入，状态快照在 ST 内才会产生。",
+            statusText: st ? t("apps.newvar.status", "内置追踪 · {{state}}", { state: d.enabled ? t("apps.newvar.enabled", "已启用") : t("apps.newvar.disabled", "未启用") }) : t("apps.newvar.simulator", "内置追踪 · 模拟器"),
+            emptyText: t("apps.newvar.empty", "暂无变量。点上方「打开变量设计」定义或导入模板，启用后 AI 回复会逐楼更新这里。"),
+            noticeText: st ? void 0 : t("apps.newvar.unavailable", "未检测到 SillyTavern：模拟器中可打开变量设计编辑定义与预览注入，状态快照在 ST 内才会产生。"),
             canWrite: st,
             allowAdd: false,
-            addHint: "这里只能修改变量设计中已有的路径；新增变量请先在「变量设计」中添加定义。"
+            addHint: t("apps.newvar.add_hint", "这里只能修改变量设计中已有的路径；新增变量请先在「变量设计」中添加定义。")
           };
         },
         commitSet: (path, value) => runtime.setManualValue(path, value),
@@ -16256,7 +16351,7 @@ function modeGuide() {
 function rendererApp(deps) {
   return {
     id: RENDERER_APP_ID,
-    name: "渲染",
+    name: t("apps.renderer.name", "渲染"),
     icon: "🎬",
     order: 7,
     setup(host) {
@@ -17206,7 +17301,7 @@ function parseLegacySetCalls(source) {
         index = next;
         continue;
       }
-      throw syntaxError(source, next, "调用后存在不允许的尾随内容");
+      throw syntaxError(source, next, t("apps.newvar.legacy.trailing", "调用后存在不允许的尾随内容"));
     } catch (error) {
       errors.push(error instanceof Error ? error.message : String(error));
       index = recoverAtNextLine(source, start);
@@ -17215,21 +17310,21 @@ function parseLegacySetCalls(source) {
   return { calls, errors };
 }
 function parseCall(source, start) {
-  if (!source.startsWith("_.set", start)) throw syntaxError(source, start, "只允许 _.set(...) 调用");
+  if (!source.startsWith("_.set", start)) throw syntaxError(source, start, t("apps.newvar.legacy.calls_only", "只允许 _.set(...) 调用"));
   let index = skipWhitespace(source, start + "_.set".length);
-  if (source[index] !== "(") throw syntaxError(source, index, "_.set 后缺少左括号");
+  if (source[index] !== "(") throw syntaxError(source, index, t("apps.newvar.legacy.missing_parenthesis", "_.set 后缺少左括号"));
   index = skipWhitespace(source, index + 1);
   const pathArg = parseValue(source, index);
-  if (typeof pathArg.value !== "string") throw syntaxError(source, index, "第一个参数必须是字符串路径");
+  if (typeof pathArg.value !== "string") throw syntaxError(source, index, t("apps.newvar.legacy.path_string", "第一个参数必须是字符串路径"));
   const path = pathArg.value.trim();
-  if (!path) throw syntaxError(source, index, "变量路径不能为空");
-  if (!isSafePath(path)) throw syntaxError(source, index, "变量路径包含危险字段");
-  index = expectComma(source, pathArg.next, "路径后缺少旧值参数");
+  if (!path) throw syntaxError(source, index, t("apps.newvar.legacy.empty_path", "变量路径不能为空"));
+  if (!isSafePath(path)) throw syntaxError(source, index, t("apps.newvar.legacy.unsafe_path", "变量路径包含危险字段"));
+  index = expectComma(source, pathArg.next, t("apps.newvar.legacy.missing_old", "路径后缺少旧值参数"));
   const oldArg = parseValue(source, index);
-  index = expectComma(source, oldArg.next, "旧值后缺少新值参数");
+  index = expectComma(source, oldArg.next, t("apps.newvar.legacy.missing_new", "旧值后缺少新值参数"));
   const newArg = parseValue(source, index);
   index = skipWhitespace(source, newArg.next);
-  if (source[index] !== ")") throw syntaxError(source, index, "新值后必须立即结束调用");
+  if (source[index] !== ")") throw syntaxError(source, index, t("apps.newvar.legacy.unexpected_argument", "新值后必须立即结束调用"));
   return {
     call: { path, oldValue: oldArg.value, newValue: newArg.value },
     next: index + 1
@@ -17252,7 +17347,7 @@ function parseValue(source, start) {
   if (number && isValueBoundary(source[index + number[0].length])) {
     return { value: Number(number[0]), next: index + number[0].length };
   }
-  throw syntaxError(source, index, "参数只能是字符串、数字、布尔值或 null");
+  throw syntaxError(source, index, t("apps.newvar.legacy.literal_only", "参数只能是字符串、数字、布尔值或 null"));
 }
 function parseString(source, start, quote) {
   let value = "";
@@ -17260,14 +17355,14 @@ function parseString(source, start, quote) {
   while (index < source.length) {
     const char = source[index];
     if (char === quote) return { value, next: index + 1 };
-    if (isLineBreak(char)) throw syntaxError(source, index, "字符串引号未闭合");
+    if (isLineBreak(char)) throw syntaxError(source, index, t("apps.newvar.legacy.unclosed_string", "字符串引号未闭合"));
     if (char !== "\\") {
       value += char;
       index += 1;
       continue;
     }
     const escaped = source[index + 1];
-    if (escaped === void 0 || isLineBreak(escaped)) throw syntaxError(source, index, "字符串转义未完成");
+    if (escaped === void 0 || isLineBreak(escaped)) throw syntaxError(source, index, t("apps.newvar.legacy.incomplete_escape", "字符串转义未完成"));
     const simpleEscapes = {
       "'": "'",
       '"': '"',
@@ -17281,16 +17376,16 @@ function parseString(source, start, quote) {
     };
     if (escaped === "u") {
       const hex = source.slice(index + 2, index + 6);
-      if (!/^[0-9a-fA-F]{4}$/.test(hex)) throw syntaxError(source, index, "Unicode 转义必须包含四位十六进制数");
+      if (!/^[0-9a-fA-F]{4}$/.test(hex)) throw syntaxError(source, index, t("apps.newvar.legacy.unicode_escape", "Unicode 转义必须包含四位十六进制数"));
       value += String.fromCharCode(Number.parseInt(hex, 16));
       index += 6;
       continue;
     }
-    if (!(escaped in simpleEscapes)) throw syntaxError(source, index, `不支持的字符串转义 \\${escaped}`);
+    if (!(escaped in simpleEscapes)) throw syntaxError(source, index, t("apps.newvar.legacy.unsupported_escape", "不支持的字符串转义 \\{{escape}}", { escape: escaped }));
     value += simpleEscapes[escaped];
     index += 2;
   }
-  throw syntaxError(source, start, "字符串引号未闭合");
+  throw syntaxError(source, start, t("apps.newvar.legacy.unclosed_string", "字符串引号未闭合"));
 }
 function expectComma(source, start, message) {
   const index = skipWhitespace(source, start);
@@ -17341,7 +17436,7 @@ function syntaxError(source, index, message) {
   const line = before.split("\n").length;
   const lastNewline = before.lastIndexOf("\n");
   const column = index - lastNewline;
-  return new Error(`第 ${line} 行第 ${column} 列：${message}`);
+  return new Error(t("apps.newvar.legacy.position", "第 {{line}} 行第 {{column}} 列：{{message}}", { line, column, message }));
 }
 
 // st-extension/src/apps/newvar/engine.ts
@@ -17371,7 +17466,7 @@ function validateValue(def, raw) {
   switch (def.type) {
     case "number": {
       if (typeof raw !== "number" || !Number.isFinite(raw)) {
-        return { ok: false, error: `期望数字，得到 ${describe(raw)}` };
+        return { ok: false, error: t("apps.newvar.errors.expected_number", "期望数字，得到 {{value}}", { value: describe(raw) }) };
       }
       if (def.range) {
         const [min, max] = def.range;
@@ -17383,15 +17478,15 @@ function validateValue(def, raw) {
       return { ok: true, value: raw };
     }
     case "string":
-      if (typeof raw !== "string") return { ok: false, error: `期望文本，得到 ${describe(raw)}` };
+      if (typeof raw !== "string") return { ok: false, error: t("apps.newvar.errors.expected_string", "期望文本，得到 {{value}}", { value: describe(raw) }) };
       return { ok: true, value: raw };
     case "boolean":
-      if (typeof raw !== "boolean") return { ok: false, error: `期望布尔，得到 ${describe(raw)}` };
+      if (typeof raw !== "boolean") return { ok: false, error: t("apps.newvar.errors.expected_boolean", "期望布尔，得到 {{value}}", { value: describe(raw) }) };
       return { ok: true, value: raw };
     case "enum": {
       const options = def.enum ?? [];
       if (typeof raw !== "string" || !options.includes(raw)) {
-        return { ok: false, error: `值 ${describe(raw)} 不在枚举 [${options.join(", ")}] 中` };
+        return { ok: false, error: t("apps.newvar.errors.invalid_enum", "值 {{value}} 不在枚举 [{{options}}] 中", { value: describe(raw), options: options.join(", ") }) };
       }
       return { ok: true, value: raw };
     }
@@ -17402,7 +17497,7 @@ function validateValue(def, raw) {
 function describe(v) {
   if (v === null) return "null";
   if (typeof v === "string") return `"${v}"`;
-  if (typeof v === "object") return Array.isArray(v) ? "数组" : "对象";
+  if (typeof v === "object") return Array.isArray(v) ? t("apps.newvar.errors.array", "数组") : t("apps.newvar.errors.object", "对象");
   return String(v);
 }
 function exampleValue(def) {
@@ -17433,43 +17528,43 @@ function parseUpdateBlock(text4, format) {
 }
 function parseJsonPatch(inner) {
   const arrText = extractJsonArray(inner);
-  if (arrText === null) return { found: true, ops: [], error: "未找到 JSON Patch 数组" };
+  if (arrText === null) return { found: true, ops: [], error: t("apps.newvar.errors.no_array", "未找到 JSON Patch 数组") };
   let parsed;
   try {
     parsed = JSON.parse(arrText);
   } catch (e) {
-    return { found: true, ops: [], error: `JSON 解析失败：${e instanceof Error ? e.message : String(e)}` };
+    return { found: true, ops: [], error: t("apps.newvar.errors.json", "JSON 解析失败：{{error}}", { error: e instanceof Error ? e.message : String(e) }) };
   }
-  if (!Array.isArray(parsed)) return { found: true, ops: [], error: "JSON Patch 应为数组" };
+  if (!Array.isArray(parsed)) return { found: true, ops: [], error: t("apps.newvar.errors.patch_array", "JSON Patch 应为数组") };
   const ops = [];
   const rejected = [];
   for (const [index, raw] of parsed.entries()) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-      rejected.push({ index, reason: "补丁条目必须是对象" });
+      rejected.push({ index, reason: t("apps.newvar.errors.patch_object", "补丁条目必须是对象") });
       continue;
     }
     const o = raw;
     const op = o.op;
     const pointer = o.path;
     if (op !== "replace" && op !== "add" && op !== "remove") {
-      rejected.push({ index, reason: "op 只允许 add、replace 或 remove" });
+      rejected.push({ index, reason: t("apps.newvar.errors.invalid_op", "op 只允许 add、replace 或 remove") });
       continue;
     }
     if (typeof pointer !== "string") {
-      rejected.push({ index, reason: "path 必须是非空字符串" });
+      rejected.push({ index, reason: t("apps.newvar.errors.path_string", "path 必须是非空字符串") });
       continue;
     }
     const path = pointerToDotted(pointer).trim();
     if (!path) {
-      rejected.push({ index, reason: "path 不能为空" });
+      rejected.push({ index, reason: t("apps.newvar.errors.empty_path", "path 不能为空") });
       continue;
     }
     if (!isSafePath(path)) {
-      rejected.push({ index, reason: "path 包含危险字段" });
+      rejected.push({ index, reason: t("apps.newvar.errors.unsafe_path", "path 包含危险字段") });
       continue;
     }
     if (op !== "remove" && !Object.prototype.hasOwnProperty.call(o, "value")) {
-      rejected.push({ index, reason: `${op} 操作缺少 value` });
+      rejected.push({ index, reason: t("apps.newvar.errors.missing_value", "{{op}} 操作缺少 value", { op }) });
       continue;
     }
     ops.push({ op, path, value: o.value });
@@ -17503,13 +17598,13 @@ function applyOps(state2, ops, schema) {
   const hasSchema = schema.variables.length > 0;
   for (const op of ops) {
     if (!op.path.trim() || !isSafePath(op.path)) {
-      log.push({ path: op.path, status: "rejected", detail: "变量路径为空或包含危险字段" });
+      log.push({ path: op.path, status: "rejected", detail: t("apps.newvar.errors.unsafe_variable_path", "变量路径为空或包含危险字段") });
       continue;
     }
     const def = defByKey.get(op.path);
     if (op.op === "remove") {
       if (hasSchema && !def) {
-        log.push({ path: op.path, status: "rejected", detail: "remove 只能删除 schema 中定义的叶子变量" });
+        log.push({ path: op.path, status: "rejected", detail: t("apps.newvar.errors.remove_leaf", "remove 只能删除 schema 中定义的叶子变量") });
         continue;
       }
       deleteNested(next, op.path);
@@ -17518,7 +17613,7 @@ function applyOps(state2, ops, schema) {
     }
     if (!def) {
       if (hasSchema) {
-        log.push({ path: op.path, status: "rejected", detail: "未定义的变量路径" });
+        log.push({ path: op.path, status: "rejected", detail: t("apps.newvar.errors.undefined", "未定义的变量路径") });
         continue;
       }
       setNested(next, op.path, op.value);
@@ -17534,7 +17629,7 @@ function applyOps(state2, ops, schema) {
     log.push({
       path: op.path,
       status: outcome.corrected ? "corrected" : "accepted",
-      detail: outcome.corrected ? `已修正为 ${JSON.stringify(outcome.value)}` : void 0
+      detail: outcome.corrected ? t("apps.newvar.errors.corrected", "已修正为 {{value}}", { value: JSON.stringify(outcome.value) ?? "undefined" }) : void 0
     });
   }
   return { state: next, log };
@@ -17786,11 +17881,11 @@ function createNewvarRuntime(deps) {
     getPrevState,
     setManualValue(path, value) {
       const def = getData().schema.variables.find((item) => item.key === path);
-      if (!def) return { ok: false, error: `未定义的变量路径：${path}` };
+      if (!def) return { ok: false, error: t("apps.newvar.errors.undefined_path", "未定义的变量路径：{{path}}", { path }) };
       const validated = validateValue(def, value);
-      if (!validated.ok) return { ok: false, error: validated.error ?? "输入值不符合变量定义。" };
+      if (!validated.ok) return { ok: false, error: validated.error ?? t("apps.newvar.errors.invalid_value", "输入值不符合变量定义。") };
       if (!mutateCurrent((state2) => setNested(state2, path, validated.value))) {
-        return { ok: false, error: "当前环境没有可写入的聊天楼层。" };
+        return { ok: false, error: t("apps.newvar.errors.no_message", "当前环境没有可写入的聊天楼层。") };
       }
       return { ok: true, value: validated.value };
     },
@@ -18255,7 +18350,59 @@ var NEWVAR_TEMPLATES = [
 ];
 
 // st-extension/src/apps/newvar/designer.ts
-var TYPE_LABELS = { number: "数字", string: "文本", boolean: "布尔", enum: "枚举" };
+function typeLabels() {
+  return {
+    number: t("variableDesigner.number", "数字"),
+    string: t("variableDesigner.string", "文本"),
+    boolean: t("variableDesigner.boolean", "布尔"),
+    enum: t("variableDesigner.enum", "枚举")
+  };
+}
+function templateDisplay(tpl, customId) {
+  if (customId !== null) return {
+    name: tpl.name,
+    description: tpl.description === `自定义 · ${tpl.variables.length} 项` ? t("variableDesigner.custom_count", "自定义 · {{count}} 项", { count: tpl.variables.length }) : tpl.description
+  };
+  switch (tpl.id) {
+    case "romance-single":
+      return {
+        name: t("variableDesigner.templates_romance_single", "恋爱 · 单角色"),
+        description: t("variableDesigner.templates_romance_single_description", "好感、关系阶段、心情、行动和完整日期时间；关系按明确阈值小步推进。")
+      };
+    case "romance-multi":
+      return {
+        name: t("variableDesigner.templates_romance_multi", "恋爱 · 多角色"),
+        description: t("variableDesigner.templates_romance_multi_description", "为两个角色分别维护在场、好感、关系、状态、位置和穿着；导入前可直接填写角色名。")
+      };
+    case "rpg":
+      return {
+        name: t("variableDesigner.templates_rpg", "RPG 冒险"),
+        description: t("variableDesigner.templates_rpg_description", "生命、法力、金币、等级、身体状态、位置与完整日期时间。")
+      };
+    case "daily":
+      return {
+        name: t("variableDesigner.templates_daily", "日常陪伴"),
+        description: t("variableDesigner.templates_daily_description", "好感、心情、体力、活动、地点与完整日期时间，适合慢节奏日常卡。")
+      };
+    case "survival-exploration":
+      return {
+        name: t("variableDesigner.templates_survival", "生存探索"),
+        description: t("variableDesigner.templates_survival_description", "生命、饥饿、口渴、疲劳、体感温度、危险、地点与时间，适合荒野和末日探索。")
+      };
+    case "mystery-investigation":
+      return {
+        name: t("variableDesigner.templates_mystery", "悬疑调查"),
+        description: t("variableDesigner.templates_mystery_description", "调查目标、线索摘要、嫌疑、紧迫度、阶段、地点与时间，适合推理和侦探剧情。")
+      };
+    case "quest-progression":
+      return {
+        name: t("variableDesigner.templates_quest", "任务推进"),
+        description: t("variableDesigner.templates_quest_description", "目标、进度、阶段、阻碍、截止压力和完成状态，适合长期主线与委托。")
+      };
+    default:
+      return tpl;
+  }
+}
 function draftFromDef(def) {
   return {
     key: def.key,
@@ -18282,14 +18429,14 @@ function emptyDraft2() {
 }
 function draftToDef(draft) {
   const key = draft.key.trim();
-  if (!key) return { error: "请填写变量路径。" };
-  if (!isSafePath(key)) return { error: "变量路径不能包含 __proto__、prototype 或 constructor。" };
+  if (!key) return { error: t("variableDesigner.path_required", "请填写变量路径。") };
+  if (!isSafePath(key)) return { error: t("variableDesigner.unsafe_path", "变量路径不能包含 __proto__、prototype 或 constructor。") };
   const def = { key, type: draft.type, default: void 0, description: draft.description.trim() };
   if (draft.hidden) def.hidden = true;
   if (draft.updateRule.trim()) def.updateRule = draft.updateRule.trim();
   if (draft.type === "number") {
     const range = parseRange(draft.rangeText);
-    if (range === false) return { error: "范围格式应为「最小~最大」，如 0~100。" };
+    if (range === false) return { error: t("variableDesigner.invalid_range", "范围格式应为「最小~最大」，如 0~100。") };
     if (range) def.range = range;
     const n = Number(draft.defaultText.trim());
     let dflt = Number.isFinite(n) ? n : 0;
@@ -18299,7 +18446,7 @@ function draftToDef(draft) {
     def.default = draft.defaultText.trim() === "true";
   } else if (draft.type === "enum") {
     const options = draft.enumText.split(/[,，]/).map((s) => s.trim()).filter((s) => s !== "");
-    if (options.length === 0) return { error: "枚举类型至少需要一个选项（逗号分隔）。" };
+    if (options.length === 0) return { error: t("variableDesigner.enum_required", "枚举类型至少需要一个选项（逗号分隔）。") };
     def.enum = options;
     def.default = options.includes(draft.defaultText.trim()) ? draft.defaultText.trim() : options[0];
   } else {
@@ -18323,6 +18470,7 @@ function parseRange(text4) {
 function createNewvarDesigner(deps) {
   let backdrop = null;
   let body = null;
+  let focus = null;
   let formDraft = null;
   let editingIndex = null;
   let scrollToEditor = false;
@@ -18333,9 +18481,6 @@ function createNewvarDesigner(deps) {
     backdrop.style.width = `${window.innerWidth}px`;
     backdrop.style.height = `${window.innerHeight}px`;
   }
-  function onEscape(e) {
-    if (e.key === "Escape") close();
-  }
   function open() {
     if (backdrop) {
       render2();
@@ -18344,24 +18489,26 @@ function createNewvarDesigner(deps) {
     formDraft = null;
     editingIndex = null;
     backdrop = el2("div", "so-manager-backdrop");
-    document.addEventListener("keydown", onEscape);
     window.addEventListener("resize", applyBackdropSize);
     applyBackdropSize();
     const dialog = el2("div", "so-manager");
     dialog.setAttribute("role", "dialog");
-    dialog.setAttribute("aria-label", "变量设计");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-label", t("variableDesigner.title", "变量设计"));
     const header = el2("div", "so-manager-header");
     const title2 = el2("div", "so-manager-title");
-    title2.textContent = "变量设计";
+    title2.textContent = t("variableDesigner.title", "变量设计");
     const closeBtn = el2("div", "menu_button so-manager-close");
     closeBtn.textContent = "✕";
-    closeBtn.title = "关闭";
+    closeBtn.title = t("variableDesigner.close", "关闭");
+    closeBtn.setAttribute("aria-label", closeBtn.title);
     closeBtn.setAttribute("role", "button");
     closeBtn.tabIndex = 0;
     closeBtn.addEventListener("click", close);
     closeBtn.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
+        e.stopPropagation();
         close();
       }
     });
@@ -18370,11 +18517,15 @@ function createNewvarDesigner(deps) {
     dialog.append(header, body);
     backdrop.append(dialog);
     document.body.append(backdrop);
+    focus = manageDialogFocus(dialog, { onEscape: close, layer: backdrop });
     render2();
+    focus.focusInitial();
   }
   function close() {
     if (!backdrop) return;
-    document.removeEventListener("keydown", onEscape);
+    const closingFocus = focus;
+    focus = null;
+    closingFocus?.dispose();
     window.removeEventListener("resize", applyBackdropSize);
     backdrop.remove();
     backdrop = null;
@@ -18382,6 +18533,7 @@ function createNewvarDesigner(deps) {
     formDraft = null;
     editingIndex = null;
     deps.onClosed?.();
+    closingFocus?.restoreFocus();
   }
   function save(next) {
     deps.setData(next);
@@ -18389,6 +18541,7 @@ function createNewvarDesigner(deps) {
   }
   function render2() {
     if (!body) return;
+    const restore = captureVariableFocus(body);
     try {
       body.textContent = "";
       body.append(
@@ -18400,7 +18553,10 @@ function createNewvarDesigner(deps) {
       );
       if (scrollToEditor) {
         scrollToEditor = false;
-        body.querySelector(".nv-defs-editor")?.scrollIntoView({ block: "nearest" });
+        body.querySelector(".nv-defs-editor")?.scrollIntoView?.({ block: "nearest" });
+        body.querySelector(".nv-defs-editor input")?.focus({ preventScroll: true });
+      } else if (restore && !restore()) {
+        body.querySelector(".nv-defs-editor .so-app-btn")?.focus({ preventScroll: true });
       }
     } catch (err) {
       console.error("[st-stage] 变量设计弹窗渲染失败", err);
@@ -18420,8 +18576,8 @@ function createNewvarDesigner(deps) {
   }
   function buildTemplateSection() {
     const data = deps.getData();
-    const { box } = section2("模板库（一键起步）");
-    descLine(box, "「替换」清空现有定义后导入；「追加」跳过重名路径合并。导入的规则都已写好，可再逐条微调。");
+    const { box } = section2(t("variableDesigner.templates", "模板库（一键起步）"));
+    descLine(box, t("variableDesigner.template_help", "「替换」清空现有定义后导入；「追加」跳过重名路径合并。导入的规则都已写好，可再逐条微调。"));
     const grid = el2("div", "nv-tpl-grid");
     for (const tpl of NEWVAR_TEMPLATES) grid.append(buildTemplateCard(tpl, null));
     for (const tpl of data.customTemplates) grid.append(buildTemplateCard(tpl, tpl.id));
@@ -18430,19 +18586,21 @@ function createNewvarDesigner(deps) {
     const nameInput = document.createElement("input");
     nameInput.type = "text";
     nameInput.className = "text_pole so-app-input";
-    nameInput.placeholder = "模板名（如 我的恋爱系统）";
+    nameInput.placeholder = t("variableDesigner.template_placeholder", "模板名（如 我的恋爱系统）");
     nameInput.autocomplete = "off";
-    const saveBtn = el2("button", "menu_button vm-act");
-    saveBtn.textContent = "把当前定义存为模板";
+    nameInput.setAttribute("aria-label", t("variableDesigner.template_name", "模板名"));
+    const saveBtn = variableButton("menu_button vm-act");
+    saveBtn.textContent = t("variableDesigner.save_template", "把当前定义存为模板");
+    saveBtn.dataset.variableFocus = "save-template";
     saveBtn.addEventListener("click", () => {
       const cur = deps.getData();
       const name = nameInput.value.trim();
       if (!name) {
-        window.alert("请先填写模板名。");
+        window.alert(t("variableDesigner.template_name_required", "请先填写模板名。"));
         return;
       }
       if (cur.schema.variables.length === 0) {
-        window.alert("当前没有任何变量定义，无法保存为模板。");
+        window.alert(t("variableDesigner.template_empty", "当前没有任何变量定义，无法保存为模板。"));
         return;
       }
       const tpl = {
@@ -18459,17 +18617,20 @@ function createNewvarDesigner(deps) {
   }
   function buildTemplateCard(tpl, customId) {
     const card = el2("div", "nv-tpl-card");
+    card.dataset.variableFocusScope = `template:${tpl.id}`;
+    card.setAttribute("role", "group");
+    card.setAttribute("aria-label", templateDisplay(tpl, customId).name);
     const name = el2("div", "vm-key");
-    name.textContent = `${tpl.name}（${tpl.variables.length} 项）`;
+    name.textContent = t("variableDesigner.template_count", "{{name}}（{{count}} 项）", { name: templateDisplay(tpl, customId).name, count: tpl.variables.length });
     const desc = el2("div", "vm-desc nv-tpl-desc");
-    desc.textContent = tpl.description;
+    desc.textContent = templateDisplay(tpl, customId).description;
     card.append(name, desc);
     const builtIn = customId === null ? tpl : null;
     const parameterInputs = /* @__PURE__ */ new Map();
     for (const parameter of builtIn?.parameters ?? []) {
       const row = el2("label", "so-app-toggle");
       const label = document.createElement("span");
-      label.textContent = parameter.label;
+      label.textContent = parameter.key === "roleA" ? t("variableDesigner.role_one", "角色 1 名称") : parameter.key === "roleB" ? t("variableDesigner.role_two", "角色 2 名称") : parameter.label;
       const input = document.createElement("input");
       input.type = "text";
       input.className = "text_pole so-app-input";
@@ -18484,35 +18645,37 @@ function createNewvarDesigner(deps) {
       const parameters = Object.fromEntries([...parameterInputs].map(([key, input]) => [key, input.value.trim()]));
       const names = Object.values(parameters);
       if (names.some((value) => value === "")) {
-        window.alert("请填写所有模板角色名。");
+        window.alert(t("variableDesigner.roles_required", "请填写所有模板角色名。"));
         return null;
       }
       if (new Set(names).size !== names.length) {
-        window.alert("模板角色名不能重复。");
+        window.alert(t("variableDesigner.roles_duplicate", "模板角色名不能重复。"));
         return null;
       }
       if (names.some((value) => value.includes(".") || !isSafePath(`角色.${value}.变量`))) {
-        window.alert("角色名不能包含点号或危险路径字段。");
+        window.alert(t("variableDesigner.roles_unsafe", "角色名不能包含点号或危险路径字段。"));
         return null;
       }
       return builtIn.instantiate(parameters);
     };
     const actions = el2("div", "nv-tpl-actions");
-    const replaceBtn = el2("button", "menu_button vm-act");
-    replaceBtn.textContent = "替换";
+    const replaceBtn = variableButton("menu_button vm-act");
+    replaceBtn.textContent = t("variableDesigner.replace", "替换");
+    replaceBtn.dataset.variableFocus = `template:${tpl.id}:replace`;
     replaceBtn.addEventListener("click", () => {
       const variables = resolveVariables();
       if (!variables) return;
       const cur = deps.getData();
-      if (cur.schema.variables.length > 0 && !window.confirm(`用「${tpl.name}」替换现有 ${cur.schema.variables.length} 条定义？（楼层快照不受影响）`)) {
+      if (cur.schema.variables.length > 0 && !window.confirm(t("variableDesigner.replace_confirm", "用「{{name}}」替换现有 {{count}} 条定义？（楼层快照不受影响）", { name: templateDisplay(tpl, customId).name, count: cur.schema.variables.length }))) {
         return;
       }
       formDraft = null;
       editingIndex = null;
       save({ ...cur, schema: { ...cur.schema, name: tpl.name, variables: cloneDefs(variables) } });
     });
-    const appendBtn = el2("button", "menu_button vm-act vm-act-ghost");
-    appendBtn.textContent = "追加";
+    const appendBtn = variableButton("menu_button vm-act vm-act-ghost");
+    appendBtn.textContent = t("variableDesigner.append", "追加");
+    appendBtn.dataset.variableFocus = `template:${tpl.id}:append`;
     appendBtn.addEventListener("click", () => {
       const variables = resolveVariables();
       if (!variables) return;
@@ -18520,17 +18683,17 @@ function createNewvarDesigner(deps) {
       const existing = new Set(cur.schema.variables.map((v) => v.key));
       const added = variables.filter((v) => !existing.has(v.key));
       if (added.length === 0) {
-        window.alert("该模板的变量路径都已存在，没有可追加的项。");
+        window.alert(t("variableDesigner.no_new_paths", "该模板的变量路径都已存在，没有可追加的项。"));
         return;
       }
       save({ ...cur, schema: { ...cur.schema, variables: [...cur.schema.variables, ...cloneDefs(added)] } });
     });
     actions.append(replaceBtn, appendBtn);
     if (customId) {
-      const delBtn = el2("button", "menu_button vm-act vm-act-ghost nv-tpl-del");
-      delBtn.textContent = "删除";
+      const delBtn = variableButton("menu_button vm-act vm-act-ghost nv-tpl-del");
+      delBtn.textContent = t("variableDesigner.delete", "删除");
       delBtn.addEventListener("click", () => {
-        if (!window.confirm(`删除自定义模板「${tpl.name}」？`)) return;
+        if (!window.confirm(t("variableDesigner.delete_template_confirm", "删除自定义模板「{{name}}」？", { name: tpl.name }))) return;
         const cur = deps.getData();
         save({ ...cur, customTemplates: cur.customTemplates.filter((t2) => t2.id !== customId) });
       });
@@ -18541,12 +18704,12 @@ function createNewvarDesigner(deps) {
   }
   function buildDefsSection() {
     const data = deps.getData();
-    const { box } = section2(`变量定义（${data.schema.variables.length}）`);
+    const { box } = section2(t("variableDesigner.definitions", "变量定义（{{count}}）", { count: data.schema.variables.length }));
     const layout = el2("div", "nv-defs-layout");
     const list = el2("div", "nv-defs-list");
     const editor = el2("div", "nv-defs-editor");
     if (data.schema.variables.length === 0) {
-      descLine(list, "还没有变量。从上方模板一键导入，或点右侧「添加变量」逐条定义。");
+      descLine(list, t("variableDesigner.no_definitions", "还没有变量。从上方模板一键导入，或点右侧「添加变量」逐条定义。"));
     }
     for (let i = 0; i < data.schema.variables.length; i++) {
       list.append(buildDefRow(data.schema.variables[i], i));
@@ -18555,10 +18718,10 @@ function createNewvarDesigner(deps) {
       editor.append(buildDefForm());
     } else {
       const hint = el2("div", "so-app-desc");
-      hint.textContent = "点击左侧变量进行编辑，或新建：";
+      hint.textContent = t("variableDesigner.edit_hint", "点击左侧变量进行编辑，或新建：");
       editor.append(
         hint,
-        appButton("＋ 添加变量", () => {
+        appButton(t("variableDesigner.add", "＋ 添加变量"), () => {
           formDraft = emptyDraft2();
           editingIndex = null;
           scrollToEditor = true;
@@ -18574,13 +18737,14 @@ function createNewvarDesigner(deps) {
     const selected = editingIndex === index;
     const card = el2("div", `vm-leaf${selected ? " nv-def-selected" : ""}`);
     const main = el2("div", "vm-leaf-main");
+    main.dataset.variableFocus = `definition:${def.key}`;
     const keyEl = el2("span", "vm-key");
     keyEl.textContent = def.key;
     const meta = el2("span", "vm-val");
-    const parts = [TYPE_LABELS[def.type], `默认 ${formatValue(def.default)}`];
-    if (def.range) parts.push(`范围 ${def.range[0]}~${def.range[1]}`);
-    if (def.enum) parts.push(`枚举 ${def.enum.join("/")}`);
-    if (def.hidden) parts.push("对 AI 隐藏");
+    const parts = [typeLabels()[def.type], t("variableDesigner.default_summary", "默认 {{value}}", { value: formatValue(def.default) })];
+    if (def.range) parts.push(t("variableDesigner.range_summary", "范围 {{min}}~{{max}}", { min: def.range[0], max: def.range[1] }));
+    if (def.enum) parts.push(t("variableDesigner.enum_summary", "枚举 {{options}}", { options: def.enum.join("/") }));
+    if (def.hidden) parts.push(t("variableDesigner.hidden", "对 AI 隐藏"));
     meta.textContent = parts.join(" · ");
     main.append(keyEl, meta);
     if (def.description) {
@@ -18590,7 +18754,7 @@ function createNewvarDesigner(deps) {
     }
     if (def.updateRule) {
       const rule = el2("div", "vm-desc");
-      rule.textContent = `规则：${def.updateRule.split("\n").join("；")}`;
+      rule.textContent = t("variableDesigner.rules_summary", "规则：{{rules}}", { rules: def.updateRule.split("\n").join("；") });
       main.append(rule);
     }
     main.setAttribute("role", "button");
@@ -18605,16 +18769,17 @@ function createNewvarDesigner(deps) {
     main.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
+        e.stopPropagation();
         edit();
       }
     });
-    const del = el2("button", "vm-del");
-    del.setAttribute("aria-label", "删除定义");
-    del.title = "删除该变量定义";
+    const del = variableButton("vm-del");
+    del.setAttribute("aria-label", t("variableDesigner.delete_path", "删除定义 {{path}}", { path: def.key }));
+    del.title = t("variableDesigner.delete_definition_title", "删除该变量定义");
     del.textContent = "✕";
     del.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (!window.confirm(`删除变量定义「${def.key}」？（已保存的楼层快照不受影响）`)) return;
+      if (!window.confirm(t("variableDesigner.delete_definition_confirm", "删除变量定义「{{path}}」？（已保存的楼层快照不受影响）", { path: def.key }))) return;
       const cur = deps.getData();
       if (editingIndex === index) {
         formDraft = null;
@@ -18629,54 +18794,55 @@ function createNewvarDesigner(deps) {
     const draft = formDraft;
     const wrap = el2("div", "vm-leaf vm-editing");
     const title2 = el2("div", "so-app-title vm-edit-title");
-    title2.textContent = editingIndex === null ? "新变量定义" : `编辑：${draft.key || "（未命名）"}`;
+    title2.textContent = editingIndex === null ? t("variableDesigner.new_definition", "新变量定义") : t("variableDesigner.edit", "编辑：{{path}}", { path: draft.key || t("variableDesigner.unnamed", "（未命名）") });
     wrap.append(title2);
     const err = el2("div", "so-app-desc vm-add-err");
     err.hidden = true;
+    err.setAttribute("role", "alert");
     wrap.append(
-      textRow("路径（点号分层）", draft.key, "如 状态.体力 / 角色.小雪.好感度", (v) => draft.key = v),
+      textRow(t("variableDesigner.path", "路径（点号分层）"), draft.key, t("variableDesigner.path_example", "如 状态.体力 / 角色.小雪.好感度"), (v) => draft.key = v),
       selectRow(
-        "类型",
+        t("variableDesigner.type", "类型"),
         draft.type,
-        Object.keys(TYPE_LABELS).map((t2) => ({ value: t2, label: TYPE_LABELS[t2] })),
+        Object.keys(typeLabels()).map((t2) => ({ value: t2, label: typeLabels()[t2] })),
         (v) => {
           draft.type = v;
           render2();
         }
       ),
-      textRow("默认值", draft.defaultText, draft.type === "boolean" ? "true / false" : "", (v) => draft.defaultText = v),
-      textRow("描述（给 AI 看）", draft.description, "如 角色对用户的好感", (v) => draft.description = v)
+      textRow(t("variableDesigner.default", "默认值"), draft.defaultText, draft.type === "boolean" ? "true / false" : "", (v) => draft.defaultText = v),
+      textRow(t("variableDesigner.description", "描述（给 AI 看）"), draft.description, t("variableDesigner.description_example", "如 角色对用户的好感"), (v) => draft.description = v)
     );
     if (draft.type === "number") {
-      wrap.append(textRow("范围（可空）", draft.rangeText, "如 0~100，越界自动修正", (v) => draft.rangeText = v));
+      wrap.append(textRow(t("variableDesigner.range", "范围（可空）"), draft.rangeText, t("variableDesigner.range_example", "如 0~100，越界自动修正"), (v) => draft.rangeText = v));
     }
     if (draft.type === "enum") {
-      wrap.append(textRow("枚举选项（逗号分隔）", draft.enumText, "如 开心, 平静, 烦躁", (v) => draft.enumText = v));
+      wrap.append(textRow(t("variableDesigner.enum_options", "枚举选项（逗号分隔）"), draft.enumText, t("variableDesigner.enum_example", "如 开心, 平静, 烦躁"), (v) => draft.enumText = v));
     }
     wrap.append(
       textareaRow(
-        "更新规则（每行一条，注入给 AI）",
+        t("variableDesigner.rules", "更新规则（每行一条，注入给 AI）"),
         draft.updateRule,
-        "如：正面互动 +1~3\n重大事件 ±5~10\n禁止无缘由跳变",
+        t("variableDesigner.rules_example", "如：正面互动 +1~3\n重大事件 ±5~10\n禁止无缘由跳变"),
         (v) => draft.updateRule = v
       ),
-      toggleRow("对 AI 隐藏（内部计算用）", draft.hidden, (v) => draft.hidden = v),
+      toggleRow(t("variableDesigner.hidden_input", "对 AI 隐藏（内部计算用）"), draft.hidden, (v) => draft.hidden = v),
       err
     );
     const actions = el2("div", "vm-actions");
-    const saveBtn = el2("button", "menu_button vm-act");
-    saveBtn.textContent = "保存定义";
+    const saveBtn = variableButton("menu_button vm-act");
+    saveBtn.textContent = t("variableDesigner.save_definition", "保存定义");
     saveBtn.addEventListener("click", () => {
       const r = draftToDef(draft);
       if (!r.def) {
-        err.textContent = r.error ?? "输入无效。";
+        err.textContent = r.error ?? t("variableDesigner.invalid", "输入无效。");
         err.hidden = false;
         return;
       }
       const cur = deps.getData();
       const dup = cur.schema.variables.findIndex((v, i) => v.key === r.def.key && i !== editingIndex);
       if (dup >= 0) {
-        err.textContent = `路径「${r.def.key}」已有定义。`;
+        err.textContent = t("variableDesigner.duplicate_path", "路径「{{path}}」已有定义。", { path: r.def.key });
         err.hidden = false;
         return;
       }
@@ -18687,32 +18853,34 @@ function createNewvarDesigner(deps) {
       editingIndex = null;
       save({ ...cur, schema: { ...cur.schema, variables } });
     });
-    const cancel = el2("button", "menu_button vm-act vm-act-ghost");
-    cancel.textContent = "取消";
+    const cancel = variableButton("menu_button vm-act vm-act-ghost");
+    cancel.dataset.variableFocus = "cancel-definition";
+    cancel.textContent = t("variableDesigner.cancel", "取消");
     cancel.addEventListener("click", () => {
       formDraft = null;
       editingIndex = null;
       render2();
     });
+    saveBtn.dataset.variableFocus = "save-definition";
     actions.append(saveBtn, cancel);
     wrap.append(actions);
     return wrap;
   }
   function buildSettingsSection() {
     const data = deps.getData();
-    const { box } = section2("生成设置");
+    const { box } = section2(t("variableDesigner.settings", "生成设置"));
     box.append(
       selectRow(
-        "输出格式",
+        t("variableDesigner.format", "输出格式"),
         data.format,
         [
-          { value: "json_patch", label: "JSON Patch（推荐）" },
-          { value: "lodash_set", label: "_.set（老版 MVU 兼容）" }
+          { value: "json_patch", label: t("variableDesigner.json_patch", "JSON Patch（推荐）") },
+          { value: "lodash_set", label: t("variableDesigner.lodash_set", "_.set（老版 MVU 兼容）") }
         ],
         (v) => save({ ...deps.getData(), format: v === "lodash_set" ? "lodash_set" : "json_patch" })
       ),
       numberRow(
-        "注入深度（距末尾楼层数）",
+        t("variableDesigner.depth", "注入深度（距末尾楼层数）"),
         data.injectionDepth,
         0,
         20,
@@ -18722,30 +18890,36 @@ function createNewvarDesigner(deps) {
     return box;
   }
   function buildPreviewSection() {
-    const fold = foldSection("注入预览");
+    const fold = foldSection(t("variableDesigner.preview", "注入预览"));
     const text4 = deps.buildPreview();
     if (text4) {
       const pre = el2("div", "nv-pre");
       pre.textContent = text4;
       fold.body.append(pre);
     } else {
-      descLine(fold.body, "（未启用或未定义任何变量时不注入。启用开关在手机「新变量」页。）");
+      descLine(fold.body, t("variableDesigner.no_preview", "（未启用或未定义任何变量时不注入。启用开关在手机「新变量」页。）"));
     }
     const wrap = el2("div", "so-section");
     wrap.append(fold.box);
     return wrap;
   }
   function buildLogSection() {
-    const fold = foldSection("解析日志");
+    const fold = foldSection(t("variableDesigner.log", "解析日志"));
     const report = deps.getLastParse();
     if (!report) {
-      descLine(fold.body, "尚无解析记录。AI 回复包含 <UpdateVariable> 块时，这里显示逐条接受/修正/拒绝结果。");
+      descLine(fold.body, t("variableDesigner.no_log", "尚无解析记录。AI 回复包含 <UpdateVariable> 块时，这里显示逐条接受/修正/拒绝结果。"));
     } else {
-      descLine(fold.body, `楼层 #${report.messageId}${report.error ? ` · 解析出错：${report.error}` : ""}`);
+      descLine(fold.body, t("variableDesigner.message_log", "楼层 #{{id}}{{error}}", { id: report.messageId, error: report.error ? t("variableDesigner.parse_error", " · 解析出错：{{error}}", { error: report.error }) : "" }));
       const icons = { accepted: "✅", corrected: "⚠️", rejected: "❌", removed: "🗑️" };
+      const labels = {
+        accepted: t("variableDesigner.log_accepted", "已接受"),
+        corrected: t("variableDesigner.log_corrected", "已修正"),
+        rejected: t("variableDesigner.log_rejected", "已拒绝"),
+        removed: t("variableDesigner.log_removed", "已删除")
+      };
       for (const entry of report.log) {
         const line = el2("div", "so-app-desc nv-log-line");
-        line.textContent = `${icons[entry.status] ?? "·"} ${entry.path}${entry.detail ? ` — ${entry.detail}` : ""}`;
+        line.textContent = `${icons[entry.status] ?? "·"} ${labels[entry.status]} · ${entry.path}${entry.detail ? ` — ${entry.detail}` : ""}`;
         fold.body.append(line);
       }
     }
@@ -20485,11 +20659,11 @@ async function init(lifecycle) {
           sections.push({
             source: "MVU",
             root: read.status === "ready" || read.status === "empty" ? read.data : null,
-            notice: read.status === "unavailable" ? "未检测到 MVU / 酒馆助手" : read.error ?? ""
+            notice: read.status === "unavailable" ? t("variableHud.mvu_unavailable", "未检测到 MVU / 酒馆助手") : read.error ?? ""
           });
           const newvarState = newvarRuntime.getCurrentState();
           sections.push({
-            source: "新变量",
+            source: t("apps.newvar.name", "新变量"),
             root: newvarState,
             notice: ""
           });
@@ -20706,7 +20880,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-10-06 23:41"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-10-07 02:10"}`;
   console.log(`[sprite-overlay] 百工（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

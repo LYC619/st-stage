@@ -1,3 +1,4 @@
+import { t } from '../../../../core/i18n'
 import { isSafePath } from '../path-utils'
 
 export interface LegacySetCall {
@@ -52,7 +53,7 @@ export function parseLegacySetCalls(source: string): LegacySetParseResult {
         index = next
         continue
       }
-      throw syntaxError(source, next, '调用后存在不允许的尾随内容')
+      throw syntaxError(source, next, t('apps.newvar.legacy.trailing', "调用后存在不允许的尾随内容"))
     } catch (error) {
       errors.push(error instanceof Error ? error.message : String(error))
       index = recoverAtNextLine(source, start)
@@ -63,23 +64,23 @@ export function parseLegacySetCalls(source: string): LegacySetParseResult {
 }
 
 function parseCall(source: string, start: number): ParsedCall {
-  if (!source.startsWith('_.set', start)) throw syntaxError(source, start, '只允许 _.set(...) 调用')
+  if (!source.startsWith('_.set', start)) throw syntaxError(source, start, t('apps.newvar.legacy.calls_only', "只允许 _.set(...) 调用"))
   let index = skipWhitespace(source, start + '_.set'.length)
-  if (source[index] !== '(') throw syntaxError(source, index, '_.set 后缺少左括号')
+  if (source[index] !== '(') throw syntaxError(source, index, t('apps.newvar.legacy.missing_parenthesis', "_.set 后缺少左括号"))
 
   index = skipWhitespace(source, index + 1)
   const pathArg = parseValue(source, index)
-  if (typeof pathArg.value !== 'string') throw syntaxError(source, index, '第一个参数必须是字符串路径')
+  if (typeof pathArg.value !== 'string') throw syntaxError(source, index, t('apps.newvar.legacy.path_string', "第一个参数必须是字符串路径"))
   const path = pathArg.value.trim()
-  if (!path) throw syntaxError(source, index, '变量路径不能为空')
-  if (!isSafePath(path)) throw syntaxError(source, index, '变量路径包含危险字段')
+  if (!path) throw syntaxError(source, index, t('apps.newvar.legacy.empty_path', "变量路径不能为空"))
+  if (!isSafePath(path)) throw syntaxError(source, index, t('apps.newvar.legacy.unsafe_path', "变量路径包含危险字段"))
 
-  index = expectComma(source, pathArg.next, '路径后缺少旧值参数')
+  index = expectComma(source, pathArg.next, t('apps.newvar.legacy.missing_old', "路径后缺少旧值参数"))
   const oldArg = parseValue(source, index)
-  index = expectComma(source, oldArg.next, '旧值后缺少新值参数')
+  index = expectComma(source, oldArg.next, t('apps.newvar.legacy.missing_new', "旧值后缺少新值参数"))
   const newArg = parseValue(source, index)
   index = skipWhitespace(source, newArg.next)
-  if (source[index] !== ')') throw syntaxError(source, index, '新值后必须立即结束调用')
+  if (source[index] !== ')') throw syntaxError(source, index, t('apps.newvar.legacy.unexpected_argument', "新值后必须立即结束调用"))
 
   return {
     call: { path, oldValue: oldArg.value, newValue: newArg.value },
@@ -107,7 +108,7 @@ function parseValue(source: string, start: number): ParsedValue {
     return { value: Number(number[0]), next: index + number[0].length }
   }
 
-  throw syntaxError(source, index, '参数只能是字符串、数字、布尔值或 null')
+  throw syntaxError(source, index, t('apps.newvar.legacy.literal_only', "参数只能是字符串、数字、布尔值或 null"))
 }
 
 function parseString(source: string, start: number, quote: string): ParsedValue {
@@ -116,7 +117,7 @@ function parseString(source: string, start: number, quote: string): ParsedValue 
   while (index < source.length) {
     const char = source[index]
     if (char === quote) return { value, next: index + 1 }
-    if (isLineBreak(char)) throw syntaxError(source, index, '字符串引号未闭合')
+    if (isLineBreak(char)) throw syntaxError(source, index, t('apps.newvar.legacy.unclosed_string', "字符串引号未闭合"))
     if (char !== '\\') {
       value += char
       index += 1
@@ -124,7 +125,7 @@ function parseString(source: string, start: number, quote: string): ParsedValue 
     }
 
     const escaped = source[index + 1]
-    if (escaped === undefined || isLineBreak(escaped)) throw syntaxError(source, index, '字符串转义未完成')
+    if (escaped === undefined || isLineBreak(escaped)) throw syntaxError(source, index, t('apps.newvar.legacy.incomplete_escape', "字符串转义未完成"))
     const simpleEscapes: Record<string, string> = {
       "'": "'",
       '"': '"',
@@ -138,16 +139,16 @@ function parseString(source: string, start: number, quote: string): ParsedValue 
     }
     if (escaped === 'u') {
       const hex = source.slice(index + 2, index + 6)
-      if (!/^[0-9a-fA-F]{4}$/.test(hex)) throw syntaxError(source, index, 'Unicode 转义必须包含四位十六进制数')
+      if (!/^[0-9a-fA-F]{4}$/.test(hex)) throw syntaxError(source, index, t('apps.newvar.legacy.unicode_escape', "Unicode 转义必须包含四位十六进制数"))
       value += String.fromCharCode(Number.parseInt(hex, 16))
       index += 6
       continue
     }
-    if (!(escaped in simpleEscapes)) throw syntaxError(source, index, `不支持的字符串转义 \\${escaped}`)
+    if (!(escaped in simpleEscapes)) throw syntaxError(source, index, t('apps.newvar.legacy.unsupported_escape', "不支持的字符串转义 \\{{escape}}", { escape: escaped }))
     value += simpleEscapes[escaped]
     index += 2
   }
-  throw syntaxError(source, start, '字符串引号未闭合')
+  throw syntaxError(source, start, t('apps.newvar.legacy.unclosed_string', "字符串引号未闭合"))
 }
 
 function expectComma(source: string, start: number, message: string): number {
@@ -207,5 +208,5 @@ function syntaxError(source: string, index: number, message: string): Error {
   const line = before.split('\n').length
   const lastNewline = before.lastIndexOf('\n')
   const column = index - lastNewline
-  return new Error(`第 ${line} 行第 ${column} 列：${message}`)
+  return new Error(t('apps.newvar.legacy.position', "第 {{line}} 行第 {{column}} 列：{{message}}", { line, column, message }))
 }

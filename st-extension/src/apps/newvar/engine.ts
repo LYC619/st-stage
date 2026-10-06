@@ -9,6 +9,8 @@
  * - buildInjection：据当前状态 + schema 生成注入给 AI 的提示词
  */
 
+import { t } from '../../../../core/i18n'
+
 import { getNested, setNested, deleteNested, isSafePath } from '../path-utils'
 import { parseLegacySetCalls } from './legacy-set-parser'
 import type {
@@ -67,7 +69,7 @@ export function validateValue(def: VariableDefinition, raw: unknown): ValidateOu
   switch (def.type) {
     case 'number': {
       if (typeof raw !== 'number' || !Number.isFinite(raw)) {
-        return { ok: false, error: `期望数字，得到 ${describe(raw)}` }
+        return { ok: false, error: t('apps.newvar.errors.expected_number', "期望数字，得到 {{value}}", { value: describe(raw) }) }
       }
       if (def.range) {
         const [min, max] = def.range
@@ -79,15 +81,15 @@ export function validateValue(def: VariableDefinition, raw: unknown): ValidateOu
       return { ok: true, value: raw }
     }
     case 'string':
-      if (typeof raw !== 'string') return { ok: false, error: `期望文本，得到 ${describe(raw)}` }
+      if (typeof raw !== 'string') return { ok: false, error: t('apps.newvar.errors.expected_string', "期望文本，得到 {{value}}", { value: describe(raw) }) }
       return { ok: true, value: raw }
     case 'boolean':
-      if (typeof raw !== 'boolean') return { ok: false, error: `期望布尔，得到 ${describe(raw)}` }
+      if (typeof raw !== 'boolean') return { ok: false, error: t('apps.newvar.errors.expected_boolean', "期望布尔，得到 {{value}}", { value: describe(raw) }) }
       return { ok: true, value: raw }
     case 'enum': {
       const options = def.enum ?? []
       if (typeof raw !== 'string' || !options.includes(raw)) {
-        return { ok: false, error: `值 ${describe(raw)} 不在枚举 [${options.join(', ')}] 中` }
+        return { ok: false, error: t('apps.newvar.errors.invalid_enum', "值 {{value}} 不在枚举 [{{options}}] 中", { value: describe(raw), options: options.join(', ') }) }
       }
       return { ok: true, value: raw }
     }
@@ -99,7 +101,7 @@ export function validateValue(def: VariableDefinition, raw: unknown): ValidateOu
 function describe(v: unknown): string {
   if (v === null) return 'null'
   if (typeof v === 'string') return `"${v}"`
-  if (typeof v === 'object') return Array.isArray(v) ? '数组' : '对象'
+  if (typeof v === 'object') return Array.isArray(v) ? t('apps.newvar.errors.array', "数组") : t('apps.newvar.errors.object', "对象")
   return String(v)
 }
 
@@ -139,44 +141,44 @@ export function parseUpdateBlock(text: string, format: OutputFormat): ParsedBloc
 
 function parseJsonPatch(inner: string): ParsedBlock {
   const arrText = extractJsonArray(inner)
-  if (arrText === null) return { found: true, ops: [], error: '未找到 JSON Patch 数组' }
+  if (arrText === null) return { found: true, ops: [], error: t('apps.newvar.errors.no_array', "未找到 JSON Patch 数组") }
   let parsed: unknown
   try {
     parsed = JSON.parse(arrText)
   } catch (e) {
-    return { found: true, ops: [], error: `JSON 解析失败：${e instanceof Error ? e.message : String(e)}` }
+    return { found: true, ops: [], error: t('apps.newvar.errors.json', "JSON 解析失败：{{error}}", { error: e instanceof Error ? e.message : String(e) }) }
   }
-  if (!Array.isArray(parsed)) return { found: true, ops: [], error: 'JSON Patch 应为数组' }
+  if (!Array.isArray(parsed)) return { found: true, ops: [], error: t('apps.newvar.errors.patch_array', "JSON Patch 应为数组") }
 
   const ops: PatchOp[] = []
   const rejected: NonNullable<ParsedBlock['rejected']> = []
   for (const [index, raw] of parsed.entries()) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      rejected.push({ index, reason: '补丁条目必须是对象' })
+      rejected.push({ index, reason: t('apps.newvar.errors.patch_object', "补丁条目必须是对象") })
       continue
     }
     const o = raw as Record<string, unknown>
     const op = o.op
     const pointer = o.path
     if (op !== 'replace' && op !== 'add' && op !== 'remove') {
-      rejected.push({ index, reason: 'op 只允许 add、replace 或 remove' })
+      rejected.push({ index, reason: t('apps.newvar.errors.invalid_op', "op 只允许 add、replace 或 remove") })
       continue
     }
     if (typeof pointer !== 'string') {
-      rejected.push({ index, reason: 'path 必须是非空字符串' })
+      rejected.push({ index, reason: t('apps.newvar.errors.path_string', "path 必须是非空字符串") })
       continue
     }
     const path = pointerToDotted(pointer).trim()
     if (!path) {
-      rejected.push({ index, reason: 'path 不能为空' })
+      rejected.push({ index, reason: t('apps.newvar.errors.empty_path', "path 不能为空") })
       continue
     }
     if (!isSafePath(path)) {
-      rejected.push({ index, reason: 'path 包含危险字段' })
+      rejected.push({ index, reason: t('apps.newvar.errors.unsafe_path', "path 包含危险字段") })
       continue
     }
     if (op !== 'remove' && !Object.prototype.hasOwnProperty.call(o, 'value')) {
-      rejected.push({ index, reason: `${op} 操作缺少 value` })
+      rejected.push({ index, reason: t('apps.newvar.errors.missing_value', "{{op}} 操作缺少 value", { op }) })
       continue
     }
     ops.push({ op, path, value: o.value })
@@ -226,13 +228,13 @@ export function applyOps(
 
   for (const op of ops) {
     if (!op.path.trim() || !isSafePath(op.path)) {
-      log.push({ path: op.path, status: 'rejected', detail: '变量路径为空或包含危险字段' })
+      log.push({ path: op.path, status: 'rejected', detail: t('apps.newvar.errors.unsafe_variable_path', "变量路径为空或包含危险字段") })
       continue
     }
     const def = defByKey.get(op.path)
     if (op.op === 'remove') {
       if (hasSchema && !def) {
-        log.push({ path: op.path, status: 'rejected', detail: 'remove 只能删除 schema 中定义的叶子变量' })
+        log.push({ path: op.path, status: 'rejected', detail: t('apps.newvar.errors.remove_leaf', "remove 只能删除 schema 中定义的叶子变量") })
         continue
       }
       deleteNested(next, op.path)
@@ -241,7 +243,7 @@ export function applyOps(
     }
     if (!def) {
       if (hasSchema) {
-        log.push({ path: op.path, status: 'rejected', detail: '未定义的变量路径' })
+        log.push({ path: op.path, status: 'rejected', detail: t('apps.newvar.errors.undefined', "未定义的变量路径") })
         continue
       }
       // 无 schema（自由模式）：不设门禁，直接写
@@ -258,7 +260,7 @@ export function applyOps(
     log.push({
       path: op.path,
       status: outcome.corrected ? 'corrected' : 'accepted',
-      detail: outcome.corrected ? `已修正为 ${JSON.stringify(outcome.value)}` : undefined,
+      detail: outcome.corrected ? t('apps.newvar.errors.corrected', "已修正为 {{value}}", { value: JSON.stringify(outcome.value) ?? 'undefined' }) : undefined,
     })
   }
   return { state: next, log }
