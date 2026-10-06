@@ -24,6 +24,7 @@ import { resolveWithApprox, type ApproxCandidate } from '../../core/approx-match
 import type { PluginSettings } from '../../core/types'
 import { RECENT_FLOORS_MAX, RECENT_FLOORS_MIN } from '../../core/types'
 import { NEWVAR_APP_ID, normalizeNewvarData } from './apps/newvar/config'
+import { t } from '../../core/i18n'
 
 export interface PostprocessDeps {
   getSettings: () => PluginSettings
@@ -588,16 +589,28 @@ function createImage(src: string, alt: string, extraClass = ''): HTMLElement {
   img.loading = 'lazy'
   img.addEventListener('error', () => {
     wrap.classList.add('so-inline-image-error')
-    wrap.title = '图片加载失败，点击重试'
+    wrap.title = t('imageActions.retry_load', '图片加载失败，点击重试')
+    wrap.setAttribute('role', 'button')
+    wrap.setAttribute('aria-label', wrap.title)
+    wrap.tabIndex = 0
   })
   img.addEventListener('load', () => {
     wrap.classList.remove('so-inline-image-error')
     wrap.removeAttribute('title')
+    wrap.removeAttribute('role')
+    wrap.removeAttribute('aria-label')
+    wrap.removeAttribute('tabindex')
   })
   wrap.addEventListener('click', () => {
     if (!wrap.classList.contains('so-inline-image-error')) return
     // 重试：重设 src 触发重新加载（时间戳参数绕过失败缓存，data: 图源不加）
     img.src = src.startsWith('data:') ? src : `${src}${src.includes('?') ? '&' : '?'}so_retry=${Date.now()}`
+  })
+  wrap.addEventListener('keydown', (event) => {
+    if (event.target !== wrap || !wrap.classList.contains('so-inline-image-error') || (event.key !== 'Enter' && event.key !== ' ')) return
+    event.preventDefault()
+    event.stopPropagation()
+    wrap.click()
   })
   wrap.append(img)
   return wrap

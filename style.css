@@ -1786,6 +1786,11 @@
   box-sizing: border-box;
 }
 
+#chat .so-inline-image-error:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
 @media (max-width: 720px) {
   /* Keep English labels from squeezing the editable preview values to one character. */
   .so-manager-backdrop .so-upload-row .so-labeled {
@@ -4013,26 +4018,30 @@
 
 /* ── 云导出（选择式备份） ─────────────────────────────────────────────── */
 
-/*
- * 分类切换：四个按钮横排一行。
- *
- * .so-app-section 是 flex-direction: column，.so-app-btn 又是 width: 100%，
- * 两者叠加会让四个分类各占一整行、竖着堆四层。这里两个都要覆盖：只改方向的话
- * 按钮仍会各自撑满宽度。
- */
+/* Two columns leave room for translated labels within the narrow phone shell. */
 .cloud-export-tabs {
-  flex-direction: row;
-  flex-wrap: nowrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
 .cloud-export-tabs > .so-app-btn {
-  /* flex-basis: 0 + min-width: 0 = 四等分，不受各自文字长度影响 */
-  flex: 1 1 0;
+  /* Native tabs intentionally do not use the host's .menu_button style/role hooks. */
+  appearance: none;
   min-width: 0;
-  width: auto;
-  padding-left: 4px;
-  padding-right: 4px;
-  font-size: 12px;
+  width: 100%;
+  min-height: 32px;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
 }
 
 /* 当前分类：此前这个类名只挂在 DOM 上，没有任何样式，选中态看不出来 */

@@ -6,6 +6,7 @@
 import type { PluginSettings, Sprite, SpriteAddress, SpritePack, SpritePackKind } from './types'
 import { formatAddress, parseAddress } from './types'
 import { normalizeTag } from './naming'
+import { t } from './i18n'
 import { normalizeLabels } from './sprite-metadata'
 import {
   type AddressConflict,
@@ -756,7 +757,7 @@ export function removeSprite(pack: SpritePack, tag: string, group = '', outfit =
 }
 
 /**
- * 重命名立绘 tag（在其所在 group+outfit 内）。失败时抛出带中文说明的 Error：
+ * 重命名立绘 tag（在其所在 group+outfit 内）。失败时抛出本地化说明的 Error：
  * 新 tag 清洗后为空、或与同 group+outfit 内其他立绘重名。
  */
 export function renameSprite(
@@ -767,10 +768,10 @@ export function renameSprite(
   outfit = '',
 ): SpritePack {
   const newTag = normalizeTag(newTagRaw)
-  if (!newTag) throw new Error('表情名不能为空，且不能包含 [ ] / : | = @ 等符号')
+  if (!newTag) throw new Error(t('spriteValidation.invalid_name', '表情名不能为空，且不能包含 [ ] / : | = @ 等符号'))
   if (newTag === oldTag) return pack
   if (pack.sprites.some((s) => sameIdentity(pack, s, newTag, group, outfit))) {
-    throw new Error(`表情名「${newTag}」在该分组中已存在`)
+    throw new Error(t('spriteValidation.duplicate_name', '表情名「{{name}}」在该分组中已存在', { name: newTag }))
   }
   const sprites = pack.sprites.map((s) =>
     sameIdentity(pack, s, oldTag, group, outfit) ? { ...s, tag: newTag } : s,
@@ -800,7 +801,9 @@ export function setSpriteGroup(
       (s) => !sources.has(s) && sameIdentity(pack, s, tag, toGroup, outfit),
     )
   ) {
-    throw new Error(`分组「${toGroup || '未分组'}」中已存在表情「${tag}」`)
+    throw new Error(t('spriteValidation.duplicate_group', '分组「{{group}}」中已存在表情「{{name}}」', {
+      group: toGroup || t('spriteValidation.ungrouped', '未分组'), name: tag,
+    }))
   }
   const sprites = pack.sprites.map((s) => {
     if (!sources.has(s)) return s

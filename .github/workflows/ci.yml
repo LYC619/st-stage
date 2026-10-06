@@ -65,5 +65,13 @@ jobs:
       - name: Verify runtime and locale parity
         run: node scripts/verify-runtime-parity.mjs --root . --distribution st-distribution
 
+      - name: Report extension bundle size
+        run: |
+          node - <<'NODE'
+          const bytes = require('node:fs').statSync('bundle.js').size
+          console.log(`bundle.js: ${bytes} bytes`)
+          if (bytes > 1000000) console.log(`::warning::bundle.js exceeds 1 MB (${bytes} bytes)`)
+          NODE
+
       - name: Verify committed extension artifacts
         run: git diff --exit-code -- index.js bundle.js style.css version.json locales st-distribution

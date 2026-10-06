@@ -3,6 +3,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDefaultSettings, type PluginSettings, type Sprite } from '../../core/types'
 import { createStoryImageCapture } from './story-image-capture'
+import { loadTranslations, resetI18n, setLocale } from '../../core/i18n'
+import english from '../locales/en-US.json'
 
 function appendImage(parent: HTMLElement, src: string, className = '', width = 512): HTMLImageElement {
   const image = document.createElement('img')
@@ -42,11 +44,46 @@ function setup(localize = vi.fn(async (source: Sprite) => ({
 }
 
 afterEach(() => {
+  resetI18n()
   document.body.innerHTML = ''
   vi.restoreAllMocks()
 })
 
 describe('createStoryImageCapture', () => {
+  it('translates the remote fallback workflow without changing image names or references', async () => {
+    loadTranslations('en-US', english)
+    setLocale('en-US')
+    const root = aiMessage()
+    appendImage(root, 'https://img.test/cors.png')
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { capture, getSettings } = setup(vi.fn(async () => { throw new Error('CORS blocked') }))
+    capture.decorate(root)
+    const action = document.querySelector<HTMLButtonElement>('.so-story-save-action')!
+    expect(action.textContent).toBe('Save to gallery')
+    action.click()
+    expect(action.textContent).toBe('Saving…')
+    await vi.waitFor(() => expect(action.textContent).toBe('Remote reference saved'))
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Keep only a remote reference?'))
+    expect(getSettings().packs[0].sprites[0]).toMatchObject({ tag: '生成场景图', url: 'https://img.test/cors.png' })
+  })
+
+  it('places the save action outside an inline illustration retry control', () => {
+    const root = aiMessage()
+    const retry = document.createElement('span')
+    retry.className = 'so-inline-image so-inline-image-error'
+    retry.setAttribute('role', 'button'); retry.tabIndex = 0
+    root.append(retry)
+    const image = appendImage(retry, 'https://img.test/illustration.png')
+    const { capture, localize } = setup()
+    capture.decorate(root)
+    const action = root.querySelector<HTMLButtonElement>('.so-story-save-action')!
+    expect(action.previousElementSibling).toBe(retry)
+    expect(retry.contains(action)).toBe(false)
+    expect(image.parentElement).toBe(retry)
+    action.click()
+    expect(localize).toHaveBeenCalledOnce()
+  })
+
   it('adds one text action to eligible AI images without downloading during decoration', () => {
     const root = aiMessage()
     const eligible = appendImage(root, 'https://img.test/generated.png')

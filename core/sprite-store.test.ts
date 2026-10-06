@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { loadTranslations, resetI18n, setLocale } from './i18n'
+import english from '../st-extension/locales/en-US.json'
 import type { PluginSettings, SpritePack } from './types'
 import { createDefaultSettings, formatAddress, getPackCover, getSpriteSource } from './types'
 import {
@@ -32,6 +34,23 @@ import {
   upsertPack,
   upsertSprite,
 } from './sprite-store'
+
+afterEach(resetI18n)
+
+it('localizes rename/group errors while preserving user names and source data', () => {
+  loadTranslations('en-US', english)
+  setLocale('en-US')
+  const original: SpritePack = { id: 'user-pack', name: '用户包', sprites: [
+    { tag: '微笑', url: '/a.png' }, { tag: '害羞', url: '/b.png' },
+    { tag: '微笑', group: '用户分组', url: '/c.png' },
+  ] }
+  const snapshot = JSON.stringify(original)
+  expect(() => renameSprite(original, '微笑', '|||')).toThrow('Expression names cannot be empty')
+  expect(() => renameSprite(original, '微笑', '害羞')).toThrow('Expression “害羞” already exists in this group')
+  expect(() => setSpriteGroup(original, '微笑', '用户分组', '')).toThrow('Group “Ungrouped” already contains expression “微笑”')
+  expect(() => setSpriteGroup(original, '微笑', '', '用户分组')).toThrow('Group “用户分组” already contains expression “微笑”')
+  expect(JSON.stringify(original)).toBe(snapshot)
+})
 
 function pack(): SpritePack {
   return {

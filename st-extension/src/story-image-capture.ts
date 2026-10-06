@@ -2,6 +2,7 @@ import { normalizeTag } from '../../core/naming'
 import { type StoryContext, upsertStorySprite } from '../../core/story-archive'
 import type { PluginSettings, Sprite } from '../../core/types'
 import { getSpriteSource } from '../../core/types'
+import { t } from '../../core/i18n'
 
 export interface StoryImageCaptureDeps {
   getSettings(): PluginSettings
@@ -46,11 +47,14 @@ export function createStoryImageCapture(deps: StoryImageCaptureDeps): StoryImage
       const action = document.createElement('button')
       action.type = 'button'
       action.className = ACTION_CLASS
-      action.textContent = '保存到图库'
+      action.textContent = t('imageActions.save', '保存到图库')
+      action.setAttribute('aria-live', 'polite')
+      action.setAttribute('aria-atomic', 'true')
       const handler = () => { void archive(image, action, deps) }
       action.addEventListener('click', handler)
       image.dataset.soStorySave = 'true'
-      image.after(action)
+      // Inline illustrations can become retry buttons; keep Save as a sibling action.
+      ;(image.closest('.so-inline-image') ?? image).after(action)
       decorations.set(action, { image, handler })
     }
   }
@@ -75,7 +79,7 @@ async function archive(
   const source: Sprite = { tag, url }
   const story = deps.getStoryContext()
   action.disabled = true
-  action.textContent = '保存中…'
+  action.textContent = t('imageActions.saving', '保存中…')
   try {
     let stored = source
     let remoteOnly = false
@@ -83,13 +87,13 @@ async function archive(
       try {
         stored = await deps.localize(source, `${tag || 'generated-image'}.webp`, story)
       } catch (error) {
-        const detail = error instanceof Error ? error.message : '未知错误'
+        const detail = error instanceof Error ? error.message : t('imageActions.unknown_error', '未知错误')
         const keepRemote = window.confirm(
-          `图片无法保存到本地：${detail}\n\n是否仅保留远程引用？对方网站失效后图片也会失效。`,
+          t('imageActions.keep_remote', '图片无法保存到本地：{{detail}}\n\n是否仅保留远程引用？对方网站失效后图片也会失效。', { detail }),
         )
         if (!keepRemote) {
           action.disabled = false
-          action.textContent = '保存到图库'
+          action.textContent = t('imageActions.save', '保存到图库')
           return
         }
         stored = { ...source, remoteUrl: source.url }
@@ -98,10 +102,10 @@ async function archive(
     }
     const next = upsertStorySprite(deps.getSettings(), story, stored)
     deps.updateSettings(next)
-    action.textContent = remoteOnly ? '已保存远程引用' : '已保存'
+    action.textContent = remoteOnly ? t('imageActions.saved_remote', '已保存远程引用') : t('imageActions.saved', '已保存')
   } catch (error) {
     action.disabled = false
-    action.textContent = error instanceof Error ? '保存失败，重试' : '保存失败'
+    action.textContent = error instanceof Error ? t('imageActions.retry_save', '保存失败，重试') : t('imageActions.save_failed', '保存失败')
   }
 }
 

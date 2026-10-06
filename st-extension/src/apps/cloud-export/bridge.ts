@@ -1,3 +1,4 @@
+import { t } from '../../../../core/i18n'
 import type {
   ExportCharacter,
   ExportChat,
@@ -43,7 +44,7 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
     ...init,
     headers: { ...requestHeaders(), ...(init.headers ?? {}) },
   })
-  if (!response.ok) throw new Error(`${path} 请求失败（${response.status}）`)
+  if (!response.ok) throw new Error(t('cloudExport.request_failed', '{{path}} 请求失败（{{status}}）', { path, status: response.status }))
   return response.json() as Promise<T>
 }
 
@@ -52,7 +53,7 @@ async function requestBinary(path: string, init: RequestInit = {}): Promise<Arra
     ...init,
     headers: { ...requestHeaders(), ...(init.headers ?? {}) },
   })
-  if (!response.ok) throw new Error(`${path} 请求失败（${response.status}）`)
+  if (!response.ok) throw new Error(t('cloudExport.request_failed', '{{path}} 请求失败（{{status}}）', { path, status: response.status }))
   return response.arrayBuffer()
 }
 
@@ -204,7 +205,7 @@ export function createSTCloudExportBridge(): CloudExportBridge {
         method: 'POST',
         body: JSON.stringify({ ch_name: character.name, avatar_url: character.avatar, file_name: fileName }),
       })
-      if (!Array.isArray(raw)) throw new Error(`聊天 ${chat.name} 返回了无法导出的数据`)
+      if (!Array.isArray(raw)) throw new Error(t('cloudExport.chat_unexportable', '聊天 {{name}} 返回了无法导出的数据', { name: chat.name }))
       return raw.map((line) => JSON.stringify(line)).join('\n') + (raw.length ? '\n' : '')
     },
   }

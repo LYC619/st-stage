@@ -139,7 +139,7 @@ Claude Code 会自动发现这个 skill；其他工具就在提示词开头加�
 
 ### 界面语言
 
-百工跟随 SillyTavern 的语言设置，切换后刷新页面生效。目前已接入手机导航、立绘悬浮窗、扩展设置、图库管理入口，以及立绘 App 和图库 App 的中英文文案。其他 App 与图库详情仍在推进。翻译贡献见 [docs/i18n-usage.md](docs/i18n-usage.md)，键盘操作与当前支持范围见 [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md)。
+百工跟随 SillyTavern 的语言设置，切换后刷新页面生效。手机导航、立绘悬浮窗、扩展设置，以及立绘、图库、导出、MVU、新变量五个主要 App 支持中英文，包含图库详情、变量设计器和相关提示。用户数据、预设内容、备份路径和提示词保持原样。其他非核心工具内部、真实读屏软件与实体设备验收仍有后续工作。翻译贡献见 [docs/i18n-usage.md](docs/i18n-usage.md)，键盘操作与当前支持范围见 [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md)。
 
 网页版是仿 ST 的聊天模拟器，用于本地开发和测试核心链路（注入 → 模拟 AI 回复 → 提取标签 → 切换立绘）：
 

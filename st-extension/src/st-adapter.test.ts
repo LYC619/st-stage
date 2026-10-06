@@ -4,13 +4,29 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { STAdapter, persistableSTSettings } from './st-adapter'
 import { createDefaultSettings } from '../../core/types'
 import { getPresetPacks, presetSpriteKey } from '../../core/presets'
+import { loadTranslations, resetI18n, setLocale } from '../../core/i18n'
+import english from '../locales/en-US.json'
 
 afterEach(() => {
+  resetI18n()
   delete window.SillyTavern
   vi.unstubAllGlobals()
 })
 
 describe('STAdapter story context', () => {
+  it('translates deletion errors while preserving scope checks and request paths', async () => {
+    loadTranslations('en-US', english)
+    setLocale('en-US')
+    const fetchMock = vi.fn(async () => new Response('', { status: 500 }))
+    vi.stubGlobal('fetch', fetchMock)
+    window.SillyTavern = { getContext: () => ({}) } as never
+    const adapter = new STAdapter()
+    await expect(adapter.deleteImage('/outside.png')).rejects.toThrow('Only files in the SillyTavern user image directory')
+    expect(fetchMock).not.toHaveBeenCalled()
+    await expect(adapter.deleteImage('/user/images/用户.webp')).rejects.toThrow('Failed to delete local image: HTTP 500')
+    expect(fetchMock).toHaveBeenCalledWith('/api/images/delete', expect.objectContaining({ body: JSON.stringify({ path: 'user/images/用户.webp' }) }))
+  })
+
   it('uses chatId as the direct-chat title when chat metadata has no filename', () => {
     window.SillyTavern = {
       getContext: () => ({

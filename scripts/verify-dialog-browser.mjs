@@ -17,16 +17,68 @@ const built = await build({ stdin: { contents: `
   import { openSpriteLightbox } from './st-extension/src/sprite-lightbox.ts'
   import { openImageStorageDialog } from './st-extension/src/image-storage-dialog.ts'
   import { createVariableHud } from './st-extension/src/variable-hud.ts'
+  import { processMessages } from './st-extension/src/message-postprocess.ts'
+  import { createStoryImageCapture } from './st-extension/src/story-image-capture.ts'
   import { createDefaultSettings } from './core/types.ts'
   import { loadTranslations, setLocale } from './core/i18n.ts'
   import en from './st-extension/locales/en-US.json'
-  globalThis.audit = { manageDialogFocus, openAppModal, createPhoneShell, PhoneAppRegistry, openSpriteLightbox, openImageStorageDialog, createVariableHud, createDefaultSettings,
+  globalThis.audit = { manageDialogFocus, openAppModal, createPhoneShell, PhoneAppRegistry, openSpriteLightbox, openImageStorageDialog, createVariableHud, processMessages, createStoryImageCapture, createDefaultSettings,
     setEnglish: () => { loadTranslations('en-US', en); setLocale('en-US') } }
 `, resolveDir: root, loader: 'ts' }, bundle: true, platform: 'browser', format: 'iife', write: false })
 const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || 'msedge', headless: true })
 const context = await browser.newContext({ viewport: { width: 900, height: 700 } })
 const report = { browser: browser.version(), scope: 'Production DOM modules with synthetic fixtures; native Edge keyboard, not screen-reader or physical-device certification.', scenarios: [] }
 const scenarios = [
+  ['inline-illustration-save-and-retry-are-independent', async page => {
+    let imageRequests = 0
+    await page.route('https://image.test/**', route => { imageRequests++; return route.abort() })
+    await page.evaluate(() => {
+      window.audit.setEnglish()
+      const chat = document.createElement('div'); chat.id = 'chat'
+      chat.innerHTML = '<div class="mes" mesid="0" is_user="false"><div class="mes_text">[插图:fail1.png] [插图:fail2.png]</div></div>'
+      document.body.append(chat)
+      let settings = window.audit.createDefaultSettings()
+      settings.renderInlineImages = true; settings.imageHost = 'https://image.test/'
+      window.audit.processMessages(settings, 0)
+      window.saveCalls = 0
+      window.capture = window.audit.createStoryImageCapture({ getSettings: () => settings, updateSettings: next => { settings = next }, getStoryContext: () => ({ key: 'test', title: '用户章节', characterName: '用户角色' }), localize: async sprite => { window.saveCalls++; return { ...sprite, url: '/user/images/test.webp' } } })
+      window.capture.decorate(chat)
+    })
+    await page.waitForFunction(() => document.querySelectorAll('.so-inline-image-error').length === 2)
+    assert.equal(await page.locator('.so-inline-image [role="button"], .so-inline-image button').count(), 0)
+    for (const [index, key] of ['Enter', 'Space'].entries()) {
+      const save = page.locator('.so-story-save-action').nth(index)
+      await save.focus(); await page.keyboard.press(key)
+      await page.waitForFunction(count => window.saveCalls === count, index + 1)
+      assert.equal(await save.textContent(), 'Saved')
+    }
+    assert.equal(imageRequests, 2, 'Saving must not trigger image retries')
+    await page.evaluate(() => window.capture.cleanup())
+  }],
+  ['inline-image-keyboard-retry', async page => {
+    await page.route('https://image.test/**', route => route.abort())
+    await page.evaluate(() => {
+      window.audit.setEnglish()
+      const chat = document.createElement('div'); chat.id = 'chat'
+      chat.innerHTML = '<div class="mes" mesid="0" is_user="false" ch_name="User character"><div class="mes_text">[立绘:用户图片]</div></div>'
+      document.body.append(chat)
+      const settings = window.audit.createDefaultSettings()
+      settings.spriteDisplayMode = 'inline'
+      settings.packs = [{ id: 'fixture', name: '用户包', sprites: [{ tag: '用户图片', url: 'https://image.test/fail.png' }] }]
+      settings.bindings = [{ characterName: 'User character', packIds: ['fixture'], enabled: true }]
+      window.audit.processMessages(settings, 0)
+    })
+    const retry = page.getByRole('button', { name: 'Image failed to load. Activate to retry.' })
+    await retry.waitFor()
+    await retry.focus()
+    for (const key of ['Enter', 'Space']) {
+      const request = page.waitForRequest(r => r.url().includes('so_retry='))
+      await page.keyboard.press(key); await request
+      await focused(page, '.so-inline-image-error')
+    }
+    assert.equal(await retry.locator('img').getAttribute('alt'), '用户图片')
+    await page.screenshot({ path: path.join(output, 'inline-image-retry.png') })
+  }],
   ['hud-native-keyboard-and-pointer', async page => {
     await page.evaluate(() => {
       window.audit.setEnglish()

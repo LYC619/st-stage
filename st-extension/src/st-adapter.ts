@@ -19,7 +19,7 @@ import { isSafeLocalUserImagePath } from '../../core/sprite-store'
 import { blobToDataUri } from '../../core/image-compress'
 import { persistSTImage, type ImageSaveOptions } from './image-persistence'
 import { storyArchiveKey, type StoryContext } from '../../core/story-archive'
-import { getLocale, isI18nDict, loadTranslations, resetI18n, setLocale, type Locale, type I18nDict } from '../../core/i18n'
+import { getLocale, isI18nDict, loadTranslations, resetI18n, setLocale, t, type Locale, type I18nDict } from '../../core/i18n'
 
 export const MODULE_NAME = 'sprite_overlay'
 
@@ -210,7 +210,7 @@ export class STAdapter implements PlatformAdapter {
   async deleteImage(url: string): Promise<void> {
     const path = url.split(/[?#]/, 1)[0].replace(/\\/g, '/')
     if (!isSafeLocalUserImagePath(path)) {
-      throw new Error('只能删除 SillyTavern 用户图片目录中的文件')
+      throw new Error(t('imageActions.delete_scope', '只能删除 SillyTavern 用户图片目录中的文件'))
     }
     const ctx = getContext()
     const response = await fetch('/api/images/delete', {
@@ -219,7 +219,7 @@ export class STAdapter implements PlatformAdapter {
       body: JSON.stringify({ path: path.slice(1) }),
     })
     if (!response.ok && response.status !== 404) {
-      throw new Error(`删除本地图片失败：HTTP ${response.status}`)
+      throw new Error(t('imageActions.delete_failed', '删除本地图片失败：HTTP {{status}}', { status: response.status }))
     }
   }
 

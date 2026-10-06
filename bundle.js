@@ -3741,10 +3741,10 @@ function removeSprite(pack, tag, group = "", outfit = "") {
 }
 function renameSprite(pack, oldTag, newTagRaw, group = "", outfit = "") {
   const newTag = normalizeTag(newTagRaw);
-  if (!newTag) throw new Error("表情名不能为空，且不能包含 [ ] / : | = @ 等符号");
+  if (!newTag) throw new Error(t("spriteValidation.invalid_name", "表情名不能为空，且不能包含 [ ] / : | = @ 等符号"));
   if (newTag === oldTag) return pack;
   if (pack.sprites.some((s) => sameIdentity(pack, s, newTag, group, outfit))) {
-    throw new Error(`表情名「${newTag}」在该分组中已存在`);
+    throw new Error(t("spriteValidation.duplicate_name", "表情名「{{name}}」在该分组中已存在", { name: newTag }));
   }
   const sprites = pack.sprites.map(
     (s) => sameIdentity(pack, s, oldTag, group, outfit) ? { ...s, tag: newTag } : s
@@ -3761,7 +3761,10 @@ function setSpriteGroup(pack, tag, fromGroup, toGroupRaw, outfit = "") {
   if (pack.sprites.some(
     (s) => !sources.has(s) && sameIdentity(pack, s, tag, toGroup, outfit)
   )) {
-    throw new Error(`分组「${toGroup || "未分组"}」中已存在表情「${tag}」`);
+    throw new Error(t("spriteValidation.duplicate_group", "分组「{{group}}」中已存在表情「{{name}}」", {
+      group: toGroup || t("spriteValidation.ungrouped", "未分组"),
+      name: tag
+    }));
   }
   const sprites = pack.sprites.map((s) => {
     if (!sources.has(s)) return s;
@@ -6989,7 +6992,7 @@ var STAdapter = class {
   async deleteImage(url) {
     const path = url.split(/[?#]/, 1)[0].replace(/\\/g, "/");
     if (!isSafeLocalUserImagePath(path)) {
-      throw new Error("只能删除 SillyTavern 用户图片目录中的文件");
+      throw new Error(t("imageActions.delete_scope", "只能删除 SillyTavern 用户图片目录中的文件"));
     }
     const ctx = getContext();
     const response = await fetch("/api/images/delete", {
@@ -6998,7 +7001,7 @@ var STAdapter = class {
       body: JSON.stringify({ path: path.slice(1) })
     });
     if (!response.ok && response.status !== 404) {
-      throw new Error(`删除本地图片失败：HTTP ${response.status}`);
+      throw new Error(t("imageActions.delete_failed", "删除本地图片失败：HTTP {{status}}", { status: response.status }));
     }
   }
   getCurrentCharacterName() {
@@ -12155,15 +12158,27 @@ function createImage(src, alt, extraClass = "") {
   img.loading = "lazy";
   img.addEventListener("error", () => {
     wrap.classList.add("so-inline-image-error");
-    wrap.title = "图片加载失败，点击重试";
+    wrap.title = t("imageActions.retry_load", "图片加载失败，点击重试");
+    wrap.setAttribute("role", "button");
+    wrap.setAttribute("aria-label", wrap.title);
+    wrap.tabIndex = 0;
   });
   img.addEventListener("load", () => {
     wrap.classList.remove("so-inline-image-error");
     wrap.removeAttribute("title");
+    wrap.removeAttribute("role");
+    wrap.removeAttribute("aria-label");
+    wrap.removeAttribute("tabindex");
   });
   wrap.addEventListener("click", () => {
     if (!wrap.classList.contains("so-inline-image-error")) return;
     img.src = src.startsWith("data:") ? src : `${src}${src.includes("?") ? "&" : "?"}so_retry=${Date.now()}`;
+  });
+  wrap.addEventListener("keydown", (event) => {
+    if (event.target !== wrap || !wrap.classList.contains("so-inline-image-error") || event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopPropagation();
+    wrap.click();
   });
   wrap.append(img);
   return wrap;
@@ -12191,13 +12206,15 @@ function createStoryImageCapture(deps) {
       const action = document.createElement("button");
       action.type = "button";
       action.className = ACTION_CLASS;
-      action.textContent = "保存到图库";
+      action.textContent = t("imageActions.save", "保存到图库");
+      action.setAttribute("aria-live", "polite");
+      action.setAttribute("aria-atomic", "true");
       const handler = () => {
         void archive(image, action, deps);
       };
       action.addEventListener("click", handler);
       image.dataset.soStorySave = "true";
-      image.after(action);
+      (image.closest(".so-inline-image") ?? image).after(action);
       decorations.set(action, { image, handler });
     }
   };
@@ -12215,7 +12232,7 @@ async function archive(image, action, deps) {
   const source = { tag, url };
   const story = deps.getStoryContext();
   action.disabled = true;
-  action.textContent = "保存中…";
+  action.textContent = t("imageActions.saving", "保存中…");
   try {
     let stored = source;
     let remoteOnly = false;
@@ -12223,15 +12240,13 @@ async function archive(image, action, deps) {
       try {
         stored = await deps.localize(source, `${tag || "generated-image"}.webp`, story);
       } catch (error) {
-        const detail = error instanceof Error ? error.message : "未知错误";
+        const detail = error instanceof Error ? error.message : t("imageActions.unknown_error", "未知错误");
         const keepRemote = window.confirm(
-          `图片无法保存到本地：${detail}
-
-是否仅保留远程引用？对方网站失效后图片也会失效。`
+          t("imageActions.keep_remote", "图片无法保存到本地：{{detail}}\n\n是否仅保留远程引用？对方网站失效后图片也会失效。", { detail })
         );
         if (!keepRemote) {
           action.disabled = false;
-          action.textContent = "保存到图库";
+          action.textContent = t("imageActions.save", "保存到图库");
           return;
         }
         stored = { ...source, remoteUrl: source.url };
@@ -12240,10 +12255,10 @@ async function archive(image, action, deps) {
     }
     const next = upsertStorySprite(deps.getSettings(), story, stored);
     deps.updateSettings(next);
-    action.textContent = remoteOnly ? "已保存远程引用" : "已保存";
+    action.textContent = remoteOnly ? t("imageActions.saved_remote", "已保存远程引用") : t("imageActions.saved", "已保存");
   } catch (error) {
     action.disabled = false;
-    action.textContent = error instanceof Error ? "保存失败，重试" : "保存失败";
+    action.textContent = error instanceof Error ? t("imageActions.retry_save", "保存失败，重试") : t("imageActions.save_failed", "保存失败");
   }
 }
 function isEligible(image) {
@@ -14792,7 +14807,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-10-07 02:10"}`;
+  return `${"0.9.0"}+${"2026-10-07 03:57"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -16422,7 +16437,7 @@ async function requestJson(path, init2 = {}) {
     ...init2,
     headers: { ...requestHeaders(), ...init2.headers ?? {} }
   });
-  if (!response.ok) throw new Error(`${path} 请求失败（${response.status}）`);
+  if (!response.ok) throw new Error(t("cloudExport.request_failed", "{{path}} 请求失败（{{status}}）", { path, status: response.status }));
   return response.json();
 }
 async function requestBinary(path, init2 = {}) {
@@ -16430,7 +16445,7 @@ async function requestBinary(path, init2 = {}) {
     ...init2,
     headers: { ...requestHeaders(), ...init2.headers ?? {} }
   });
-  if (!response.ok) throw new Error(`${path} 请求失败（${response.status}）`);
+  if (!response.ok) throw new Error(t("cloudExport.request_failed", "{{path}} 请求失败（{{status}}）", { path, status: response.status }));
   return response.arrayBuffer();
 }
 function asRecord(value) {
@@ -16571,7 +16586,7 @@ function createSTCloudExportBridge() {
         method: "POST",
         body: JSON.stringify({ ch_name: character.name, avatar_url: character.avatar, file_name: fileName })
       });
-      if (!Array.isArray(raw)) throw new Error(`聊天 ${chat2.name} 返回了无法导出的数据`);
+      if (!Array.isArray(raw)) throw new Error(t("cloudExport.chat_unexportable", "聊天 {{name}} 返回了无法导出的数据", { name: chat2.name }));
       return raw.map((line) => JSON.stringify(line)).join("\n") + (raw.length ? "\n" : "");
     }
   };
@@ -16583,15 +16598,15 @@ function isArchiveSegment(value) {
   return Boolean(value) && value.trim() === value && !/^[.]+$/.test(value) && !hasControl && !/[\\/:*?"<>|]/.test(value) && !/[. ]$/.test(value) && !/^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/i.test(value);
 }
 function archiveSegment(value, kind) {
-  if (!isArchiveSegment(value)) throw new Error("无法生成可恢复备份：" + kind + "文件名不合法");
+  if (!isArchiveSegment(value)) throw new Error(t("cloudExport.invalid_filename", "无法生成可恢复备份：{{kind}}文件名不合法", { kind }));
   return value;
 }
 
 // st-extension/src/apps/cloud-export/manifest.ts
 function characterArchiveIdentity(avatar) {
-  const name = archiveSegment(avatar, "角色头像");
-  if (!/\.png$/i.test(name)) throw new Error("无法确定角色聊天目录：头像文件必须为 PNG");
-  return { avatar: name, stem: archiveSegment(name.slice(0, -4), "角色目录") };
+  const name = archiveSegment(avatar, t("cloudExport.kind_avatar", "角色头像"));
+  if (!/\.png$/i.test(name)) throw new Error(t("cloudExport.avatar_png_required", "无法确定角色聊天目录：头像文件必须为 PNG"));
+  return { avatar: name, stem: archiveSegment(name.slice(0, -4), t("cloudExport.kind_directory", "角色目录")) };
 }
 function buildMinimalSettings(snapshot, selection) {
   const selectedWorldNames = snapshot.worldbooks.filter((worldbook) => selection.worldbookIds.has(worldbook.id)).map((worldbook) => worldbook.name);
@@ -16612,13 +16627,13 @@ function buildExportFiles(snapshot, selection) {
   for (const worldbook of snapshot.worldbooks) {
     if (selection.worldbookIds.has(worldbook.id)) {
       if (worldbook.content !== void 0) {
-        files.push({ path: `worlds/${archiveSegment(worldbook.fileName, "世界书")}`, data: JSON.stringify(worldbook.content, null, 2), updatedAt: worldbook.updatedAt });
+        files.push({ path: `worlds/${archiveSegment(worldbook.fileName, t("cloudExport.kind_worldbook", "世界书"))}`, data: JSON.stringify(worldbook.content, null, 2), updatedAt: worldbook.updatedAt });
       }
     }
   }
   for (const preset of snapshot.presets) {
     if (selection.presetIds.has(preset.id)) {
-      files.push({ path: `OpenAI Settings/${archiveSegment(preset.fileName, "预设")}`, data: JSON.stringify(preset.content, null, 2), updatedAt: preset.updatedAt });
+      files.push({ path: `OpenAI Settings/${archiveSegment(preset.fileName, t("cloudExport.kind_preset", "预设"))}`, data: JSON.stringify(preset.content, null, 2), updatedAt: preset.updatedAt });
     }
   }
   return files;
@@ -16640,7 +16655,7 @@ function buildCharacterFiles(character, cardData, chats, selection) {
     const data = chats.get(chat2.id);
     if (!selection.chatIds.has(chat2.id) || data === void 0) continue;
     files.push({
-      path: `chats/${identity.stem}/${archiveSegment((chat2.path || chat2.name).replace(/\.jsonl$/i, ""), "聊天")}.jsonl`,
+      path: `chats/${identity.stem}/${archiveSegment((chat2.path || chat2.name).replace(/\.jsonl$/i, ""), t("cloudExport.kind_chat", "聊天"))}.jsonl`,
       data,
       updatedAt: chat2.updatedAt
     });
@@ -16663,7 +16678,7 @@ async function runTasks(tasks, concurrency, onProgress) {
       try {
         await task.run();
       } catch (error) {
-        failed = new Error(`读取${task.label}失败：${error instanceof Error ? error.message : String(error)}`);
+        failed = new Error(t("cloudExport.asset_read_failed", "读取{{label}}失败：{{error}}", { label: task.label, error: error instanceof Error ? error.message : String(error) }));
         return;
       }
       completed += 1;
@@ -16688,7 +16703,7 @@ async function loadSelectedExportFiles({
   for (const character of catalog.characters) {
     if (selection.characterIds.has(character.id)) {
       tasks.push({
-        label: `角色卡 ${character.name}`,
+        label: t("cloudExport.asset_character", "角色卡 {{name}}", { name: character.name }),
         run: async () => {
           cardData.set(character.id, await bridge.readCharacterCard(character));
         }
@@ -16697,7 +16712,7 @@ async function loadSelectedExportFiles({
     for (const chat2 of character.chats) {
       if (!selection.chatIds.has(chat2.id)) continue;
       tasks.push({
-        label: `聊天 ${character.name}/${chat2.name}`,
+        label: t("cloudExport.asset_chat", "聊天 {{character}}/{{chat}}", { character: character.name, chat: chat2.name }),
         run: async () => {
           chatData.set(chat2.id, await bridge.readChat(character, chat2));
         }
@@ -16707,7 +16722,7 @@ async function loadSelectedExportFiles({
   for (const worldbook of catalog.worldbooks) {
     if (!selection.worldbookIds.has(worldbook.id)) continue;
     tasks.push({
-      label: `世界书 ${worldbook.name}`,
+      label: t("cloudExport.asset_worldbook", "世界书 {{name}}", { name: worldbook.name }),
       run: async () => {
         worldbookContent.set(worldbook.id, await bridge.readWorldbook(worldbook));
       }
@@ -16729,21 +16744,21 @@ var REVOKE_DELAY_MS = 6e4;
 function assertUniqueArchivePaths(files) {
   const seen = /* @__PURE__ */ new Map();
   for (const { path } of files) {
-    if (!path.split("/").every(isArchiveSegment)) throw new Error("备份路径不合法：" + path);
+    if (!path.split("/").every(isArchiveSegment)) throw new Error(t("cloudExport.invalid_path", "备份路径不合法：{{path}}", { path }));
     const canonical = path.normalize("NFC").toLowerCase();
-    if (seen.has(canonical)) throw new Error("备份路径冲突：" + seen.get(canonical) + " 与 " + path);
+    if (seen.has(canonical)) throw new Error(t("cloudExport.path_collision", "备份路径冲突：{{first}} 与 {{second}}", { first: seen.get(canonical), second: path }));
     seen.set(canonical, path);
   }
   for (const [canonical, path] of seen) {
     const parts = canonical.split("/");
     for (let length = 1; length < parts.length; length += 1) {
       const parent = parts.slice(0, length).join("/");
-      if (seen.has(parent)) throw new Error("备份路径冲突：" + seen.get(parent) + " 与 " + path);
+      if (seen.has(parent)) throw new Error(t("cloudExport.path_collision", "备份路径冲突：{{first}} 与 {{second}}", { first: seen.get(parent), second: path }));
     }
   }
 }
 async function downloadSTBackup(files, filename, onProgress, schedulers = {}) {
-  if (!files.length) throw new Error("没有选择任何可导出的资产");
+  if (!files.length) throw new Error(t("cloudExport.no_assets", "没有选择任何可导出的资产"));
   assertUniqueArchivePaths(files);
   const zip = new import_jszip.default();
   for (const file of files) {
@@ -16771,17 +16786,20 @@ async function downloadSTBackup(files, filename, onProgress, schedulers = {}) {
 }
 
 // st-extension/src/apps/cloud-export/export-app.ts
-var TABS = [
-  { id: "characters", label: "角色卡" },
-  { id: "worldbooks", label: "世界书" },
-  { id: "presets", label: "预设" },
-  { id: "regex", label: "正则" }
-];
+function exportTabs() {
+  return [
+    { id: "characters", label: t("cloudExport.characters", "角色卡") },
+    { id: "worldbooks", label: t("cloudExport.worldbooks", "世界书") },
+    { id: "presets", label: t("cloudExport.presets", "预设") },
+    { id: "regex", label: t("cloudExport.regex", "正则") }
+  ];
+}
+var mountId = 0;
 function emptySelection() {
   return { characterIds: /* @__PURE__ */ new Set(), chatIds: /* @__PURE__ */ new Set(), worldbookIds: /* @__PURE__ */ new Set(), presetIds: /* @__PURE__ */ new Set(), regex: false };
 }
 function formatDate(value) {
-  return value ? new Date(value).toLocaleString() : "更新时间未知";
+  return value ? new Date(value).toLocaleString(getLocale()) : t("cloudExport.unknown_date", "更新时间未知");
 }
 function backupFilename(now = /* @__PURE__ */ new Date()) {
   const pad = (value) => String(value).padStart(2, "0");
@@ -16790,13 +16808,25 @@ function backupFilename(now = /* @__PURE__ */ new Date()) {
 function hasSelection(selection) {
   return selection.characterIds.size > 0 || selection.chatIds.size > 0 || selection.worldbookIds.size > 0 || selection.presetIds.size > 0 || selection.regex;
 }
-function checkbox(label, checked, onChange, extraClass = "") {
+function checkbox(label, checked, onChange, focusKey, busy, extraClass = "") {
   const row = el2("div", `so-app-toggle${extraClass ? ` ${extraClass}` : ""}`);
   const control2 = document.createElement("label");
   const input = document.createElement("input");
   input.type = "checkbox";
   input.checked = checked;
-  input.addEventListener("change", () => onChange(input.checked));
+  input.dataset.exportFocus = focusKey;
+  input.setAttribute("aria-disabled", String(busy));
+  input.addEventListener("click", (event) => {
+    if (busy) event.preventDefault();
+  });
+  input.addEventListener("change", () => {
+    if (busy) {
+      input.checked = checked;
+      return;
+    }
+    ;
+    onChange(input.checked);
+  });
   const text4 = el2("span", "");
   text4.textContent = label;
   control2.append(input, text4);
@@ -16837,7 +16867,7 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
   let disposeMount;
   return {
     id: "cloud-export",
-    name: "导出",
+    name: t("cloudExport.name", "导出"),
     icon: "📦",
     order: 15,
     mount(container, ctx) {
@@ -16856,17 +16886,33 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
       disposeMount = () => {
         disposed = true;
       };
+      const prefix = `cloud-export-${++mountId}`;
       const title2 = el2("div", "so-app-title");
-      title2.textContent = "SillyTavern 选择式备份";
+      title2.textContent = t("cloudExport.title", "SillyTavern 选择式备份");
       const desc = el2("div", "so-app-desc");
-      desc.textContent = "选择需要的数据，统一导出为 SillyTavern 标准 default-user ZIP。";
+      desc.textContent = t("cloudExport.description", "选择需要的数据，统一导出为 SillyTavern 标准 default-user ZIP。");
       const tabs = el2("div", "so-app-section cloud-export-tabs");
+      tabs.setAttribute("role", "tablist");
+      tabs.setAttribute("aria-label", t("cloudExport.categories", "备份分类"));
       const search = document.createElement("input");
       search.className = "text_pole so-app-input";
-      search.placeholder = "搜索当前分类";
-      search.setAttribute("aria-label", "搜索当前分类");
+      search.placeholder = t("cloudExport.search", "搜索当前分类");
+      search.setAttribute("aria-label", t("cloudExport.search", "搜索当前分类"));
       const results = el2("div", "cloud-export-results");
+      results.id = `${prefix}-results`;
+      results.setAttribute("role", "tabpanel");
+      results.tabIndex = 0;
       const footer = el2("div", "so-app-section");
+      const count = el2("div", "so-app-desc");
+      const status = el2("div", "so-app-desc");
+      status.setAttribute("role", "status");
+      status.setAttribute("aria-live", "polite");
+      status.setAttribute("aria-atomic", "true");
+      const exportButton = appButton(t("cloudExport.export", "导出所选备份"), () => {
+        void exportSelected();
+      });
+      exportButton.dataset.exportFocus = "export";
+      footer.append(count, status, exportButton);
       let composing = false;
       const applyQuery = () => {
         query = search.value.trim().toLowerCase();
@@ -16986,26 +17032,26 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
       };
       const selectCharacterBundle = async (character) => {
         if (busy) return;
-        busy = true;
-        progressText = `正在收集 ${character.name} 的关联数据…`;
-        render2();
         selection.characterIds.add(character.id);
+        busy = true;
+        progressText = t("cloudExport.collect_character", "正在收集 {{name}} 的关联数据…", { name: character.name });
+        render2();
         const missing = [];
         try {
           try {
             const items = await ensureChats(character, false);
             items.forEach((chat2) => selection.chatIds.add(chat2.id));
           } catch {
-            missing.push("聊天清单");
+            missing.push(t("cloudExport.chat_list", "聊天清单"));
           }
           if (character.linkedWorldName) {
             try {
               const books = await ensureWorldbooks();
               const linked = findLinkedWorldbook(character, books);
               if (linked) selection.worldbookIds.add(linked.id);
-              else missing.push(`关联世界书「${character.linkedWorldName}」在清单里没找到`);
+              else missing.push(t("cloudExport.linked_missing", "关联世界书「{{name}}」在清单里没找到", { name: character.linkedWorldName }));
             } catch {
-              missing.push("世界书清单");
+              missing.push(t("cloudExport.worldbook_list", "世界书清单"));
             }
           }
         } finally {
@@ -17013,14 +17059,14 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
           progressText = "";
           render2();
         }
-        if (missing.length > 0) {
-          ctx.toast("warning", `${character.name} 已选中，但这些没能带上：${missing.join("、")}`);
+        if (!disposed && missing.length > 0) {
+          ctx.toast("warning", t("cloudExport.bundle_incomplete", "{{name}} 已选中，但这些没能带上：{{items}}", { name: character.name, items: missing.join(t("cloudExport.list_separator", "、")) }));
         }
       };
       const selectVisibleBundles = async (targets) => {
         if (busy) return;
         busy = true;
-        progressText = "正在收集角色的关联数据…";
+        progressText = t("cloudExport.collect_characters", "正在收集角色的关联数据…");
         render2();
         const unresolved = [];
         try {
@@ -17029,7 +17075,7 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
             try {
               books = await ensureWorldbooks();
             } catch {
-              unresolved.push("世界书清单读取失败");
+              unresolved.push(t("cloudExport.worldbook_list_failed", "世界书清单读取失败"));
             }
           }
           await loadWithLimit(targets, 4, async (character) => {
@@ -17038,22 +17084,22 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
               const items = await ensureChats(character, false);
               items.forEach((chat2) => selection.chatIds.add(chat2.id));
             } catch {
-              unresolved.push(`${character.name} 的聊天清单`);
+              unresolved.push(t("cloudExport.character_chat_list", "{{name}} 的聊天清单", { name: character.name }));
             }
             if (!character.linkedWorldName) return;
             const linked = findLinkedWorldbook(character, books);
             if (linked) selection.worldbookIds.add(linked.id);
-            else unresolved.push(`${character.name} 的关联世界书「${character.linkedWorldName}」`);
+            else unresolved.push(t("cloudExport.character_worldbook", "{{name}} 的关联世界书「{{worldbook}}」", { name: character.name, worldbook: character.linkedWorldName }));
           });
         } catch (error) {
-          ctx.toast("error", `批量选择失败：${String(error)}`);
+          if (!disposed) ctx.toast("error", t("cloudExport.batch_failed", "批量选择失败：{{error}}", { error: String(error) }));
         } finally {
           busy = false;
           progressText = "";
           render2();
         }
-        if (unresolved.length > 0) {
-          ctx.toast("warning", `已选中，但这些没能带上：${unresolved.join("、")}`);
+        if (!disposed && unresolved.length > 0) {
+          ctx.toast("warning", t("cloudExport.batch_incomplete", "已选中，但这些没能带上：{{items}}", { items: unresolved.join(t("cloudExport.list_separator", "、")) }));
         }
       };
       const scrollParent = () => {
@@ -17066,13 +17112,55 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
         }
         return null;
       };
+      const exportSelected = async () => {
+        if (busy || disposed) return;
+        if (!hasSelection(selection)) {
+          ctx.toast("warning", t("cloudExport.select_first", "请先选择要导出的内容"));
+          return;
+        }
+        busy = true;
+        progressText = t("cloudExport.preparing", "正在准备所选数据…");
+        render2();
+        try {
+          const catalog = {
+            characters: characters.data.map((character) => ({ ...character, chats: chats.get(character.id)?.data ?? [] })),
+            worldbooks: worldbooks.data,
+            presets: settings.data?.presets ?? [],
+            regex: settings.data?.regex ?? null
+          };
+          const files = await loadSelectedExportFiles({
+            bridge,
+            catalog,
+            selection,
+            concurrency: 4,
+            onProgress: ({ completed, total, current: current2 }) => {
+              progressText = t("cloudExport.read_progress", "正在读取 {{completed}}/{{total}}：{{current}}", { completed, total, current: current2 });
+              render2();
+            }
+          });
+          await download(files, backupFilename(), ({ percent }) => {
+            progressText = t("cloudExport.compress_progress", "正在压缩 {{percent}}%", { percent: Math.round(percent) });
+            render2();
+          });
+          if (!disposed) ctx.toast("success", t("cloudExport.downloaded", "SillyTavern 标准备份已下载"));
+        } catch (error) {
+          if (!disposed) ctx.toast("error", t("cloudExport.export_failed", "导出失败：{{error}}", { error: String(error) }));
+        } finally {
+          busy = false;
+          progressText = "";
+          render2();
+        }
+      };
       const render2 = () => {
         if (disposed) return;
         const scroller = scrollParent();
         const previousScrollTop = scroller?.scrollTop ?? 0;
+        const active = document.activeElement;
+        const focusKey = active instanceof HTMLElement && container.contains(active) ? active.dataset.exportFocus : void 0;
         tabs.replaceChildren();
-        for (const tab of TABS) {
-          const button2 = appButton(tab.label, () => {
+        const currentTabs = exportTabs();
+        for (const [index, tab] of currentTabs.entries()) {
+          const activate = () => {
             if (busy || activeTab === tab.id) return;
             activeTab = tab.id;
             query = "";
@@ -17080,24 +17168,57 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
             search.value = "";
             render2();
             void ensureActiveTab();
+          };
+          const button2 = document.createElement("button");
+          button2.type = "button";
+          button2.className = "so-app-btn";
+          button2.textContent = tab.label;
+          button2.addEventListener("click", activate);
+          button2.id = `${prefix}-tab-${tab.id}`;
+          button2.dataset.exportFocus = `tab:${tab.id}`;
+          button2.setAttribute("role", "tab");
+          button2.setAttribute("aria-selected", String(activeTab === tab.id));
+          button2.setAttribute("aria-controls", results.id);
+          button2.setAttribute("aria-disabled", String(busy));
+          button2.tabIndex = activeTab === tab.id ? 0 : -1;
+          button2.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.stopPropagation();
+              return;
+            }
+            const next = event.key === "Home" ? 0 : event.key === "End" ? currentTabs.length - 1 : event.key === "ArrowRight" ? (index + 1) % currentTabs.length : event.key === "ArrowLeft" ? (index + currentTabs.length - 1) % currentTabs.length : -1;
+            if (next < 0 || event.isComposing) return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (busy) return;
+            const target = tabs.children[next];
+            target.focus({ preventScroll: true });
+            target.click();
           });
           if (activeTab === tab.id) button2.classList.add("cloud-export-active");
           tabs.append(button2);
         }
-        search.disabled = busy;
+        results.setAttribute("aria-labelledby", `${prefix}-tab-${activeTab}`);
+        search.readOnly = busy;
+        search.setAttribute("aria-disabled", String(busy));
         const visibleCharacters = characters.data.filter((item) => item.name.toLowerCase().includes(query));
         const visibleWorldbooks = worldbooks.data.filter((item) => item.name.toLowerCase().includes(query));
         const visiblePresets = (settings.data?.presets ?? []).filter((item) => item.name.toLowerCase().includes(query));
         const actions = el2("div", "so-app-section");
-        const addAction = (label, action) => actions.append(appButton(label, () => {
-          if (!busy) void action();
-        }));
+        const addAction = (key, label, action) => {
+          const button2 = appButton(label, () => {
+            if (!busy) void action();
+          });
+          button2.dataset.exportFocus = `${activeTab}:${key}`;
+          button2.setAttribute("aria-disabled", String(busy));
+          actions.append(button2);
+        };
         const toggleSet = (items, set) => items.forEach((item) => set.has(item.id) ? set.delete(item.id) : set.add(item.id));
         if (activeTab === "characters" && characters.status === "ready" && visibleCharacters.length) {
-          addAction("全选当前结果", () => {
+          addAction("select-all", t("cloudExport.select_all", "全选当前结果"), () => {
             void selectVisibleBundles(visibleCharacters);
           });
-          addAction("反选当前结果", () => {
+          addAction("invert", t("cloudExport.invert", "反选当前结果"), () => {
             const toAdd = visibleCharacters.filter((item) => !selection.characterIds.has(item.id));
             visibleCharacters.filter((item) => selection.characterIds.has(item.id)).forEach((item) => deselectCharacter(item.id, selection, chats, characters.data, worldbooks.data));
             if (toAdd.length === 0) {
@@ -17106,46 +17227,51 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
             }
             void selectVisibleBundles(toAdd);
           });
-          addAction("清空当前分类", () => {
+          addAction("clear", t("cloudExport.clear", "清空当前分类"), () => {
             selection.characterIds.clear();
             selection.chatIds.clear();
             render2();
           });
         } else if (activeTab === "worldbooks" && worldbooks.status === "ready" && visibleWorldbooks.length) {
-          addAction("全选当前结果", () => {
+          addAction("select-all", t("cloudExport.select_all", "全选当前结果"), () => {
             visibleWorldbooks.forEach((item) => selection.worldbookIds.add(item.id));
             render2();
           });
-          addAction("反选当前结果", () => {
+          addAction("invert", t("cloudExport.invert", "反选当前结果"), () => {
             toggleSet(visibleWorldbooks, selection.worldbookIds);
             render2();
           });
-          addAction("清空当前分类", () => {
+          addAction("clear", t("cloudExport.clear", "清空当前分类"), () => {
             selection.worldbookIds.clear();
             render2();
           });
         } else if (activeTab === "presets" && settings.status === "ready" && visiblePresets.length) {
-          addAction("全选当前结果", () => {
+          addAction("select-all", t("cloudExport.select_all", "全选当前结果"), () => {
             visiblePresets.forEach((item) => selection.presetIds.add(item.id));
             render2();
           });
-          addAction("反选当前结果", () => {
+          addAction("invert", t("cloudExport.invert", "反选当前结果"), () => {
             toggleSet(visiblePresets, selection.presetIds);
             render2();
           });
-          addAction("清空当前分类", () => {
+          addAction("clear", t("cloudExport.clear", "清空当前分类"), () => {
             selection.presetIds.clear();
             render2();
           });
         }
         const list = el2("div", "so-app-section");
         const state2 = activeTab === "characters" ? characters : activeTab === "worldbooks" ? worldbooks : settings;
-        if (state2.status === "idle" || state2.status === "loading") list.textContent = "正在读取当前分类…";
+        const loading = state2.status === "idle" || state2.status === "loading";
+        results.setAttribute("aria-busy", String(busy || loading));
+        if (loading) list.textContent = t("cloudExport.loading_category", "正在读取当前分类…");
         else if (state2.status === "error") {
-          list.textContent = `读取失败：${state2.error ?? "未知错误"}`;
-          list.append(appButton("重试", () => {
-            void ensureActiveTab(true);
-          }));
+          list.textContent = t("cloudExport.read_failed", "读取失败：{{error}}", { error: state2.error ?? t("cloudExport.unknown_error", "未知错误") });
+          const retry = appButton(t("cloudExport.retry", "重试"), () => {
+            if (!busy) void ensureActiveTab(true);
+          });
+          retry.dataset.exportFocus = `${activeTab}:retry`;
+          retry.setAttribute("aria-disabled", String(busy));
+          list.append(retry);
         } else if (activeTab === "characters") {
           for (const character of visibleCharacters) {
             const row = el2("div", "cloud-export-character");
@@ -17156,34 +17282,48 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
                 return;
               }
               void selectCharacterBundle(character);
-            }, "cloud-export-character-name"));
+            }, `character:${character.id}`, busy, "cloud-export-character-name"));
             const bundleNote = el2("div", "cloud-export-bundle-note");
-            const linkedLabel = !character.linkedWorldName ? "没有关联独立世界书" : worldbooks.status !== "ready" ? `关联世界书「${character.linkedWorldName}」按酒馆里的当前内容导出` : findLinkedWorldbook(character, worldbooks.data) ? `关联世界书「${character.linkedWorldName}」按酒馆里的当前内容导出` : `关联世界书「${character.linkedWorldName}」在酒馆世界书清单里没找到`;
-            bundleNote.textContent = `勾选即整体导出：角色卡 + 全部聊天 + ${linkedLabel}`;
+            const linkedLabel = !character.linkedWorldName ? t("cloudExport.no_linked_worldbook", "没有关联独立世界书") : worldbooks.status !== "ready" ? t("cloudExport.linked_current", "关联世界书「{{name}}」按酒馆里的当前内容导出", { name: character.linkedWorldName }) : findLinkedWorldbook(character, worldbooks.data) ? t("cloudExport.linked_current", "关联世界书「{{name}}」按酒馆里的当前内容导出", { name: character.linkedWorldName }) : t("cloudExport.linked_unavailable", "关联世界书「{{name}}」在酒馆世界书清单里没找到", { name: character.linkedWorldName });
+            bundleNote.textContent = t("cloudExport.bundle_note", "勾选即整体导出：角色卡 + 全部聊天 + {{linked}}", { linked: linkedLabel });
             row.append(bundleNote);
             const details = document.createElement("details");
             details.className = "so-app-fold cloud-export-chats";
             details.open = expandedCharacters.has(character.id);
             const summary = document.createElement("summary");
             const chatState = chats.get(character.id);
-            summary.textContent = chatState?.status === "ready" ? `聊天记录（${chatState.data.length}）` : "聊天记录（展开后读取）";
-            details.append(summary);
-            if (chatState?.status === "loading") details.append("正在读取聊天清单…");
-            else if (chatState?.status === "error") details.append(`读取失败：${chatState.error ?? "未知错误"}`);
+            summary.textContent = chatState?.status === "ready" ? t("cloudExport.chats_count", "聊天记录（{{count}}）", { count: chatState.data.length }) : t("cloudExport.chats_expand", "聊天记录（展开后读取）");
+            summary.dataset.exportFocus = `chats:${character.id}`;
+            summary.setAttribute("aria-label", t("cloudExport.character_chats", "{{name}} 的{{chats}}", { name: character.name, chats: summary.textContent }));
+            summary.setAttribute("aria-expanded", String(details.open));
+            const chatBody = el2("div", "cloud-export-chat-list");
+            chatBody.id = `${prefix}-chats-${characters.data.indexOf(character)}`;
+            summary.setAttribute("aria-controls", chatBody.id);
+            chatBody.setAttribute("aria-busy", String(chatState?.status === "loading"));
+            details.append(summary, chatBody);
+            if (chatState?.status === "loading") chatBody.append(t("cloudExport.loading_chats", "正在读取聊天清单…"));
+            else if (chatState?.status === "error") chatBody.append(t("cloudExport.read_failed", "读取失败：{{error}}", { error: chatState.error ?? t("cloudExport.unknown_error", "未知错误") }));
             else if (chatState?.status === "ready") {
-              for (const chat2 of chatState.data) details.append(checkbox(`${chat2.name} · ${formatDate(chat2.updatedAt)}`, selection.chatIds.has(chat2.id), (checked) => {
+              for (const chat2 of chatState.data) chatBody.append(checkbox(`${chat2.name} · ${formatDate(chat2.updatedAt)}`, selection.chatIds.has(chat2.id), (checked) => {
                 if (checked) {
                   selection.chatIds.add(chat2.id);
                   selection.characterIds.add(character.id);
                 } else selection.chatIds.delete(chat2.id);
                 render2();
-              }, "cloud-export-chat"));
+              }, `chat:${chat2.id}`, busy, "cloud-export-chat"));
             }
             details.addEventListener("toggle", () => {
+              if (disposed || !container.contains(details)) return;
+              summary.setAttribute("aria-expanded", String(details.open));
+              if (details.open === expandedCharacters.has(character.id)) return;
               if (details.open) {
                 expandedCharacters.add(character.id);
-                void ensureChats(character);
-              } else expandedCharacters.delete(character.id);
+                void ensureChats(character).catch(() => {
+                });
+              } else {
+                expandedCharacters.delete(character.id);
+                render2();
+              }
             });
             row.append(details);
             list.append(row);
@@ -17193,59 +17333,40 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
             if (checked) selection.worldbookIds.add(worldbook.id);
             else selection.worldbookIds.delete(worldbook.id);
             render2();
-          }));
+          }, `worldbook:${worldbook.id}`, busy));
         } else if (activeTab === "presets") {
           for (const preset of visiblePresets) list.append(checkbox(`${preset.name} · ${formatDate(preset.updatedAt)}`, selection.presetIds.has(preset.id), (checked) => {
             if (checked) selection.presetIds.add(preset.id);
             else selection.presetIds.delete(preset.id);
             render2();
-          }));
+          }, `preset:${preset.id}`, busy));
         } else {
           const regex = settings.data?.regex;
-          list.append(checkbox(regex ? `全局正则（${regex.rules.length} 条）` : "没有发现全局正则", selection.regex, (checked) => {
+          list.append(checkbox(regex ? t("cloudExport.regex_count", "全局正则（{{count}} 条）", { count: regex.rules.length }) : t("cloudExport.no_regex", "没有发现全局正则"), selection.regex, (checked) => {
             selection.regex = Boolean(regex) && checked;
             render2();
-          }));
+          }, "regex", busy || !regex));
         }
+        if (state2.status === "ready" && !list.childNodes.length) list.textContent = t("cloudExport.no_matches", "没有匹配的项目");
         results.replaceChildren(...actions.childElementCount ? [actions, list] : [list]);
-        footer.replaceChildren();
-        const count = el2("div", "so-app-desc");
-        count.textContent = `已选 ${selection.characterIds.size} 个角色、${selection.chatIds.size} 段聊天、${selection.worldbookIds.size} 本世界书、${selection.presetIds.size} 个预设${selection.regex ? "、1 组正则" : ""}`;
-        footer.append(count);
-        if (progressText) {
-          const progress = el2("div", "so-app-desc");
-          progress.textContent = progressText;
-          footer.append(progress);
+        const countText = t("cloudExport.count", "已选 {{characters}} 个角色、{{chats}} 段聊天、{{worldbooks}} 本世界书、{{presets}} 个预设{{regex}}", {
+          characters: selection.characterIds.size,
+          chats: selection.chatIds.size,
+          worldbooks: selection.worldbookIds.size,
+          presets: selection.presetIds.size,
+          regex: selection.regex ? t("cloudExport.regex_selected", "、1 组正则") : ""
+        });
+        if (count.textContent !== countText) count.textContent = countText;
+        const chatStatus = activeTab === "characters" ? visibleCharacters.filter((character) => expandedCharacters.has(character.id)).map((character) => chats.get(character.id)).find((state3) => state3?.status === "loading" || state3?.status === "error") : void 0;
+        const statusText = progressText || (loading ? t("cloudExport.loading_category", "正在读取当前分类…") : state2.status === "error" ? t("cloudExport.read_failed", "读取失败：{{error}}", { error: state2.error ?? t("cloudExport.unknown_error", "未知错误") }) : chatStatus?.status === "loading" ? t("cloudExport.loading_chats", "正在读取聊天清单…") : chatStatus?.status === "error" ? t("cloudExport.read_failed", "读取失败：{{error}}", { error: chatStatus.error ?? t("cloudExport.unknown_error", "未知错误") }) : countText);
+        if (status.textContent !== statusText) status.textContent = statusText;
+        count.hidden = statusText === countText;
+        exportButton.textContent = busy ? t("cloudExport.processing", "正在处理…") : t("cloudExport.export", "导出所选备份");
+        exportButton.setAttribute("aria-disabled", String(busy));
+        if (focusKey && active !== document.activeElement && container.isConnected && document.activeElement === document.body) {
+          const target = [...container.querySelectorAll("[data-export-focus]")].find((node) => node.dataset.exportFocus === focusKey);
+          (target ?? results).focus({ preventScroll: true });
         }
-        footer.append(appButton(busy ? "正在处理…" : "导出所选备份", async () => {
-          if (busy) return;
-          if (!hasSelection(selection)) {
-            ctx.toast("warning", "请先选择要导出的内容");
-            return;
-          }
-          ;
-          busy = true;
-          progressText = "正在准备所选数据…";
-          render2();
-          try {
-            const catalog = { characters: characters.data.map((character) => ({ ...character, chats: chats.get(character.id)?.data ?? [] })), worldbooks: worldbooks.data, presets: settings.data?.presets ?? [], regex: settings.data?.regex ?? null };
-            const files = await loadSelectedExportFiles({ bridge, catalog, selection, concurrency: 4, onProgress: ({ completed, total, current: current2 }) => {
-              progressText = `正在读取 ${completed}/${total}：${current2}`;
-              render2();
-            } });
-            await download(files, backupFilename(), ({ percent }) => {
-              progressText = `正在压缩 ${Math.round(percent)}%`;
-              render2();
-            });
-            ctx.toast("success", "SillyTavern 标准备份已下载");
-          } catch (error) {
-            ctx.toast("error", `导出失败：${String(error)}`);
-          } finally {
-            busy = false;
-            progressText = "";
-            render2();
-          }
-        }));
         if (scroller && previousScrollTop > 0) scroller.scrollTop = previousScrollTop;
       };
       render2();
@@ -20880,7 +21001,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-10-07 02:10"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-10-07 03:57"}`;
   console.log(`[sprite-overlay] 百工（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);
