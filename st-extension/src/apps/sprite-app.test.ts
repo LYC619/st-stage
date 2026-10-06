@@ -1,17 +1,66 @@
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildActiveSpritePrompt } from '../../../core/active-prompt'
 import type { PhoneAppContext } from '../../../core/phone-registry'
 import { getPresetPacks } from '../../../core/presets'
 import { createDefaultSettings } from '../../../core/types'
 import { spriteApp } from './sprite-app'
+import { loadTranslations, resetI18n, setLocale } from '../../../core/i18n'
+import { BUILTIN_TEMPLATE } from '../../../core/prompt-builder'
+import en from '../../locales/en-US.json'
+
+afterEach(() => { resetI18n(); vi.restoreAllMocks() })
 
 beforeEach(() => {
   document.body.innerHTML = ''
 })
 
 describe('spriteApp', () => {
+  it('renders English settings while preserving user content, stored values and prompt syntax', () => {
+    loadTranslations('en-US', en); setLocale('en-US')
+    const settings = { ...createDefaultSettings(), promptTemplate: '私人 Prompt {清单} {数量} [立绘:图名]', apps: { custom: { message: '原样' } } }
+    const updateSettings = vi.fn()
+    const container = document.createElement('div')
+    document.body.append(container)
+    const app = spriteApp()
+    expect(app.name).toBe('Sprites')
+    app.mount(container, { getSettings: () => settings, getCharacterName: () => '<b>角色甲</b>', updateSettings } as unknown as PhoneAppContext)
+    expect(container.textContent).toContain('Current character: <b>角色甲</b>')
+    expect(container.querySelector('b')).toBeNull()
+    expect(container.textContent).toContain('Display')
+    expect(container.textContent).toContain('Slideshow interval (seconds)')
+    expect(container.textContent).toContain('[立绘:xxx]')
+    expect(container.textContent).toContain('[立绘:服装/图名]')
+    const template = container.querySelector('textarea')!
+    expect(template.value).toBe(settings.promptTemplate)
+    expect(template.placeholder).toContain('{清单}')
+    expect(template.placeholder).toContain('{数量}')
+    expect(template.labels?.[0].textContent).toBe('Custom prompt (blank = built-in)')
+    const location = container.querySelector('select')!
+    expect([...location.options].map(o => o.value)).toEqual(['overlay', 'inline', 'both'])
+    location.value = 'inline'; location.dispatchEvent(new Event('change'))
+    expect(updateSettings).toHaveBeenCalledWith({ ...settings, spriteDisplayMode: 'inline' })
+    expect(settings.promptTemplate).toBe('私人 Prompt {清单} {数量} [立绘:图名]')
+  })
+
+  it('translates overwrite confirmation without changing the built-in prompt', () => {
+    loadTranslations('en-US', en); setLocale('en-US')
+    const settings = { ...createDefaultSettings(), promptTemplate: 'My original {清单}' }
+    const updateSettings = vi.fn()
+    const container = document.createElement('div')
+    spriteApp().mount(container, { getSettings: () => settings, getCharacterName: () => '', updateSettings } as unknown as PhoneAppContext)
+    const fill = [...container.querySelectorAll<HTMLElement>('[role="button"]')].find(b => b.textContent?.startsWith('Use built-in draft'))!
+    expect(fill).toBeDefined()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    fill.click()
+    expect(confirm).toHaveBeenCalledWith('Replace the current custom prompt with the built-in draft?')
+    expect(updateSettings).not.toHaveBeenCalled()
+    confirm.mockReturnValue(true); fill.click()
+    expect(updateSettings).toHaveBeenLastCalledWith({ ...settings, promptTemplate: BUILTIN_TEMPLATE })
+    expect(container.querySelector('textarea')?.value).toBe(BUILTIN_TEMPLATE)
+  })
+
   it('Prompt 预览与包含场景备注的真实注入内容长度一致', () => {
     const packs = getPresetPacks()
     const characterName = '塞拉菲娜'

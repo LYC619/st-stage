@@ -12,7 +12,7 @@ const confirmText = t('common.confirm')  // "确认" 或 "Confirm"
 const greeting = t('welcome.message', '你好，{{name}}', { name: 'Alice' })
 
 // 嵌套路径
-const title = t('sprite.manager.title')  // "立绘图库管理"
+const title = t('sprite.manager.title', '立绘包管理')
 ```
 
 ## 添加新的翻译
@@ -39,7 +39,7 @@ const title = t('sprite.manager.title')  // "立绘图库管理"
 
 3. 在代码中使用：
 ```typescript
-const title = t('myFeature.title')
+const title = t('myFeature.title', '我的功能')
 ```
 
 ## 切换语言
@@ -70,13 +70,18 @@ setLocale('en-US')
 
 ## 当前覆盖范围
 
-手机壳导航、立绘悬浮窗按钮与占位提示、扩展设置、图库管理头部及新建/导入入口已接入。App 内部、图库详情、深层提示与其他工具仍待逐批翻译；本轮没有完成整个 Phase 2 或完整无障碍支持。
+手机壳导航、立绘悬浮窗按钮与占位提示、扩展设置、图库管理头部及新建/导入入口已接入。立绘 App 与图库 App 的名称、设置、状态、确认和提示，以及共用 App 弹窗也支持中英文。图库管理详情、导出、MVU、新变量与其他工具仍待逐批翻译；这些工作不等于整个 Phase 2 已完成。
+
+用户创建的名称、提示词内容、持久化选项值和协议文字（如 `[立绘:xxx]`、`{清单}`）保持原样。只翻译它们周围的界面说明。
 
 ## 验证
 
 ```powershell
+node scripts/verify-i18n-completeness.mjs
 node scripts/verify-runtime-parity.mjs --root . --distribution st-distribution
 # 独立发布时增加 --release <发布仓库目录>，检查 README 与两份语言文件。
 ```
 
-CI 在构建前检查必需产物都受 Git 跟踪，构建后检查字节一致性和已提交产物差异。真实 ST 浏览器验收使用独立测试实例与新建浏览器上下文，不能指向日常数据目录。
+CI 检查双语键与 `{{参数}}` 一致性、非空词条、源代码静态键、中文 fallback 和直接传入的参数对象。无法静态核对的 fallback、变量参数对象或展开属性会报错；参数值本身可以是变量或表达式。参数使用单层 `{{name}}`；保留给 Prompt 的单花括号不参与替换。检查器跟踪从 i18n 模块导入的 `t`（含别名），不把其他同名函数或测试用例当成产品引用。
+
+CI 在构建前检查必需产物都受 Git 跟踪，构建后检查字节一致性和已提交产物差异。真实 ST 浏览器验收使用独立测试实例与新建浏览器上下文，不能指向日常数据目录。键盘操作与验证范围见 [ACCESSIBILITY.md](ACCESSIBILITY.md)。

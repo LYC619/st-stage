@@ -2,7 +2,7 @@
 // Example: node scripts/verify-i18n-browser.mjs --url http://127.0.0.1:18769 --isolated-data
 // No host fixtures are substituted. Only named locale-failure scenarios intercept locale files.
 import assert from 'node:assert/strict'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from '@playwright/test'
@@ -27,7 +27,8 @@ mkdirSync(output, { recursive: true })
 const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || 'msedge', headless: true })
 const report = {
   target: url.href, isolatedDataAcknowledged: true, extension, browser: browser.version(), startedAt: new Date().toISOString(),
-  scope: 'Real ST host + emitted extension; synthetic test persona/settings only. External assets are blocked. Deeper App/gallery content is intentionally untranslated. Mobile is browser emulation, not physical-device acceptance.',
+  scope: 'Real ST host + emitted extension; synthetic test persona/settings only. Phone, Sprites and Gallery Apps are translated; deeper gallery-manager content and other Apps remain outside this batch. External assets are blocked. Mobile is browser emulation, not physical-device acceptance.',
+  buildVersion: JSON.parse(readFileSync(path.join(root, 'st-distribution/version.json'), 'utf8')).v,
   scenarios: [],
 }
 const desktop = { width: 1365, height: 900 }
@@ -48,6 +49,9 @@ const labels = {
   en: { phone: 'Open phone panel', collapse: 'Collapse phone', back: 'Return home', gallery: 'Manage sprite packs', close: 'Close', overlayClose: 'Close sprite overlay', sprites: 'Open Sprites App', new: 'New', create: 'Create', newTitle: 'New sprite pack', newName: 'Enter pack name…', import: 'Import', share: 'Import a share string', json: 'Choose JSON file…' },
   zh: { phone: '打开手机面板', collapse: '收起手机', back: '返回主屏', gallery: '立绘包管理', close: '关闭', overlayClose: '关闭悬浮窗', sprites: '打开立绘 App', new: '新建', create: '创建', newTitle: '新建立绘包', newName: '输入新包名称…', import: '导入', share: '从分享字符串导入', json: '选择 JSON 文件…' },
 }
+const dictionaries = Object.fromEntries(['en', 'zh'].map(language => [language,
+  JSON.parse(readFileSync(path.join(root, 'st-extension/locales', language === 'en' ? 'en-US.json' : 'zh-CN.json'), 'utf8')),
+]))
 
 async function settle(page) {
   await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))))
@@ -103,20 +107,89 @@ async function saveTestSettings(page) {
   await page.evaluate(() => window.SillyTavern.getContext().saveSettingsDebounced())
   await saved
 }
-async function restoreOverlay(page) {
+async function restoreOverlay(page, language) {
+  const strings = dictionaries[language].apps.sprites
   if (!await page.locator('.so-phone-shell').isVisible()) await page.locator('.so-phone-fab').click()
   await page.locator('.so-phone-homebtn').click()
-  await page.locator('.so-phone-app-icon').filter({ has: page.locator('.so-phone-app-label', { hasText: /^立绘$/ }) }).click()
-  const display = page.locator('.so-phone-shell details').filter({ has: page.locator('summary', { hasText: /^显示$/ }) })
+  await page.locator('.so-phone-app-icon[data-app-id="sprites"]').click()
+  const display = page.locator('.so-phone-shell details').filter({ has: page.getByText(strings.display, { exact: true }) })
   if (!await display.getAttribute('open').then(value => value !== null)) await display.locator('summary').click()
-  await page.getByText('把悬浮窗拉回视口', { exact: true }).click()
+  await page.getByText(strings.reset_overlay, { exact: true }).click()
   assert.equal(await page.locator('#sprite-overlay-root').isVisible(), true)
+  await page.locator('.so-phone-close').click()
+  await saveTestSettings(page)
+}
+async function checkApps(page, scenario, entry) {
+  const strings = dictionaries[scenario.expected]
+  const sprite = strings.apps.sprites
+  const gallery = strings.apps.gallery
+  await page.locator('.so-phone-fab').click()
+  for (const [id, name] of [['sprites', sprite.name], ['gallery', gallery.name]]) {
+    const icon = page.locator(`.so-phone-app-icon[data-app-id="${id}"]`)
+    assert.equal(await icon.locator('.so-phone-app-label').textContent(), name)
+    assert.equal(await icon.getAttribute('aria-label'), strings.phone.open_app.replace('{{name}}', name))
+  }
+  await page.locator('.so-phone-app-icon[data-app-id="sprites"]').press('Enter')
+  assert.equal(await page.locator('.so-phone-status-title').textContent(), sprite.name)
+  const display = page.locator('.so-phone-shell details').filter({ has: page.getByText(sprite.display, { exact: true }) })
+  if (await display.getAttribute('open') === null) await display.locator('summary').click()
+  const location = page.getByLabel(sprite.location, { exact: true })
+  const original = await location.inputValue()
+  await location.focus()
+  const changed = original === 'both' ? 'overlay' : 'both'
+  await location.selectOption(changed)
+  await settle(page)
+  assert.equal(await location.inputValue(), changed)
+  assert.ok(await location.evaluate(node => node === document.activeElement), 'Display selector lost focus on settings remount')
+  await location.selectOption(original)
+  assert.ok(await location.evaluate(node => node === document.activeElement), 'Display selector lost focus after restoration')
+  entry.spritesApp = { name: sprite.name, displayFocusRetained: true, originalLocation: original }
+  await screenshot(page, scenario.name + '-sprites-display')
+  const help = page.getByRole('button', { name: strings.common.help, exact: true })
+  await help.scrollIntoViewIfNeeded()
+  await help.click()
+  assert.equal(await help.getAttribute('aria-expanded'), 'true')
+  const controls = await help.getAttribute('aria-controls')
+  assert.ok(controls)
+  const helpDetail = page.locator(`[id="${controls}"]`)
+  assert.equal(await helpDetail.textContent(), sprite.images_hint)
+  assert.equal(await page.getByLabel(sprite.parse_images, { exact: true }).getAttribute('aria-describedby'), controls)
+  await helpDetail.scrollIntoViewIfNeeded()
+  await screenshot(page, scenario.name + '-sprites-help')
+  await bounded(page, `.so-phone-shell, .so-phone-screen, .so-app-hint-badge, [id="${controls}"]`)
+  await help.press('Enter')
+  assert.equal(await help.getAttribute('aria-expanded'), 'false')
+  entry.spritesApp.helpLinkedAndKeyboardToggled = true
+  const prompt = page.locator('.so-phone-shell details').filter({ has: page.getByText(sprite.prompt, { exact: true }) })
+  if (await prompt.getAttribute('open') === null) await prompt.locator('summary').click()
+  const template = page.getByLabel(sprite.custom_prompt, { exact: true })
+  assert.equal(await template.getAttribute('placeholder'), sprite.template_placeholder)
+  await template.scrollIntoViewIfNeeded()
+  await screenshot(page, scenario.name + '-sprites-prompt')
+  await page.locator('.so-phone-homebtn').click()
+  await page.locator('.so-phone-app-icon[data-app-id="gallery"]').press('Enter')
+  assert.equal(await page.locator('.so-phone-status-title').textContent(), gallery.name)
+  assert.equal(await page.getByRole('button', { name: gallery.open_manager, exact: true }).count(), 1)
+  await screenshot(page, scenario.name + '-gallery-app')
+  const key = page.getByLabel(gallery.api_key, { exact: true })
+  assert.equal(await key.inputValue(), '', 'Missing-key scenario requires an isolated user without an API key')
+  const auto = page.getByLabel(gallery.auto_upload, { exact: true })
+  const originalAuto = await auto.isChecked()
+  if (originalAuto) await auto.uncheck()
+  await auto.scrollIntoViewIfNeeded()
+  await auto.click()
+  assert.equal(await auto.isChecked(), false)
+  assert.equal(await page.locator('.so-phone-shell [role="status"]').textContent(), gallery.key_required)
+  assert.ok(await auto.evaluate(node => node === document.activeElement), 'Rejected upload toggle lost focus')
+  await screenshot(page, scenario.name + '-gallery-key-required')
+  await bounded(page, '.so-phone-shell, .so-phone-screen')
+  entry.galleryApp = { name: gallery.name, missingKeyFeedbackRetained: true, rejectedToggleRetainsFocus: true }
   await page.locator('.so-phone-close').click()
   await saveTestSettings(page)
 }
 async function checkLayout(page, scenario, entry) {
   const t = labels[scenario.expected]
-  if (!await page.locator('#sprite-overlay-root').isVisible()) await restoreOverlay(page)
+  if (!await page.locator('#sprite-overlay-root').isVisible()) await restoreOverlay(page, scenario.expected)
   if (await page.locator('.so-phone-shell').isVisible()) await page.locator('.so-phone-close').click()
   await page.locator('.so-phone-fab').click()
   await settle(page)
@@ -159,8 +232,9 @@ async function checkLayout(page, scenario, entry) {
   // Check overlay close through the keyboard, then restore through the real Sprites App.
   await page.locator('.sprite-overlay-close').press('Enter')
   assert.equal(await page.locator('#sprite-overlay-root').isVisible(), false)
-  await restoreOverlay(page)
+  await restoreOverlay(page, scenario.expected)
   entry.keyboard = ['phone-close Enter', 'overlay-gear Enter', 'gallery-new Enter', 'gallery-close Space', 'overlay-close Enter', 'Sprites App restore']
+  await checkApps(page, scenario, entry)
 }
 
 try {

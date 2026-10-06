@@ -2708,6 +2708,12 @@
   cursor: grabbing;
 }
 
+.so-phone-fab:focus-visible,
+.so-app-btn:focus-visible {
+  outline: 2px solid #87bfff;
+  outline-offset: 3px;
+}
+
 /* 手机外壳 */
 .so-phone-shell {
   position: fixed;

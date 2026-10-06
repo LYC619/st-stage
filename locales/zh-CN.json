@@ -9,7 +9,8 @@
     "loading": "加载中...",
     "success": "成功",
     "error": "错误",
-    "warning": "警告"
+    "warning": "警告",
+    "help": "说明"
   },
   "sprite": {
     "overlay": {
@@ -61,5 +62,77 @@
     "sprites_help": "总开关：注入立绘清单给 AI 并展示回复中的立绘。关闭后清空注入、停止解析、隐藏悬浮窗并把楼层恢复原文；手机与其他工具不受影响。",
     "phone_help": "屏幕上显示可拖动的 📱 图标，点击展开小手机——所有功能 App 的统一入口。",
     "hint": "酒馆里的事，百工都做。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。"
+  },
+  "modal": {
+    "title": "App 弹窗",
+    "close": "关闭弹窗",
+    "render_error": "弹窗渲染失败，详见控制台"
+  },
+  "apps": {
+    "sprites": {
+      "current_character": "当前角色：{{name}}",
+      "no_character": "尚未打开角色聊天",
+      "active_packs": "立绘功能运行中 — 已启用 {{packs}} 个包（{{images}} 张）",
+      "active_pack": "立绘功能运行中 — 已绑定「{{name}}」（{{images}} 张）",
+      "unbound": "立绘功能已开启，但当前角色未绑定立绘包（到「图库」绑定）",
+      "disabled": "立绘功能已关闭：不注入 Prompt、不解析标签，旧楼层已恢复原文",
+      "approx_hint": "开启后，[立绘:...] 里写的不是准确地址时，会拿它当描述去找最像的一张（如「穿连衣裙逛街」命中 连衣裙/逛街）。只在准确地址找不到时才生效，同分打平就放弃，所以不会改变原本能命中的结果。",
+      "budget_count": "预计注入 {{count}} 字符",
+      "budget_trimmed": "（超预算，已从 {{count}} 字符每场景均衡截取，保留排前的图名）",
+      "budget_empty": "预计注入：无（当前角色没有可用立绘地址）",
+      "prompt_hint": "同角色多服装时，默认服装可写 [立绘:图名]，其他服装写 [立绘:服装/图名]；完整三级地址仍兼容。自动精简会抽取基础图名池和服装增量；适合相对地址时优先使用角色级格式（只要比全量短），否则在旧场景压缩和全量格式中取更短者。",
+      "name": "立绘",
+      "enable": "启用立绘功能",
+      "display": "显示",
+      "location": "显示位置",
+      "overlay": "悬浮窗",
+      "inline": "仅楼层",
+      "both": "两者",
+      "show_overlay": "显示悬浮窗",
+      "reset_overlay": "把悬浮窗拉回视口",
+      "recent_messages": "最近渲染楼层数",
+      "opacity": "悬浮窗立绘不透明度（%）",
+      "hide_tags": "隐藏 [立绘:xxx] 标签",
+      "parse_images": "解析 <img>编码</img> 插图标签",
+      "images_hint": "把 AI 正文中的 <img>文件编码</img> 按图床前缀渲染为剧情插图。它与 [立绘:图名] 的悬浮窗/楼层显示位置互相独立。",
+      "fold_roles": "同角色图包折叠",
+      "display_hint": "「仅楼层」把 [立绘:xxx] 原位替换为图片且不弹悬浮窗；楼层数限制加载聊天时补渲染的范围（新回复不受限）。不透明度只调悬浮窗，楼层立绘始终清晰显示。",
+      "slideshow": "多立绘轮播",
+      "auto_switch": "自动轮播（一条回复多张立绘时）",
+      "interval": "轮播间隔（秒）",
+      "prompt": "Prompt",
+      "sprite_count": "每次回复立绘数量",
+      "injection_depth": "注入深度（距末尾楼层数）",
+      "prompt_mode": "Prompt 模式",
+      "compact_mode": "自动精简（默认：重合图名列一次）",
+      "full_mode": "全量（枚举全部地址）",
+      "prompt_budget": "Prompt 预算（字符，0=不限）",
+      "approx_match": "近似匹配（实验，默认关闭）",
+      "custom_prompt": "自定义提示词（留空=用内置）",
+      "template_placeholder": "整体替换内置提示词。占位符：{清单}=按场景分组的立绘清单，{数量}=每次回复立绘数",
+      "fill_builtin": "填入内置底稿（未修改时仍自动精简）",
+      "overwrite_confirm": "用内置底稿覆盖当前已填写的自定义提示词？"
+    },
+    "gallery": {
+      "pack_count": "共 {{count}} 个立绘包",
+      "pack_row": "· {{name}}（{{count}} 张）",
+      "in_use": "　使用中",
+      "more_packs": "…还有 {{count}} 个，全部在「立绘包管理」查看",
+      "host_intro": "两条通道各管一件事，按需要配，不用都配：要把自己的图变成能分享的链接 → 配 ①；只是想用别人给的图包/编号 → 什么都不用配，② 已有默认值。",
+      "auto_description": "① 自动直传（imgbb，需要 Key）：上传/替换图片时自动传到 imgbb 并绑定编号，本地图保留作显示保底，直链用于分享串。别人才能看到你分享的图，靠的是这条。",
+      "auto_why": "为什么是 imgbb 而不是 catbox：浏览器里只能传 imgbb。catbox 的接口不返回 CORS 头，网页无法直接上传，所以它只能用在下面那条「按编号还原地址」的通道上。",
+      "manual_description": "② 按编号还原地址（默认 catbox，不需要 Key）：「按编码添加」以及解析分享串和插图编码时，把编号接在下面这个前缀后面拼成完整地址。它只读不写，不会上传任何东西。",
+      "name": "图库",
+      "description": "立绘包管理：新建/上传/导入导出/分享串/角色绑定。",
+      "open_manager": "打开立绘包管理",
+      "hosting": "图床",
+      "key_storage_hint": "Key 明文保存在 ST 扩展设置里（随 ST 服务端 settings.json 落盘），不会写入分享串或导出文件；上传失败时图片仍保留本地，可稍后补传。",
+      "api_key": "imgbb API Key（存 ST 设置，明文）",
+      "key_placeholder": "免费申请：api.imgbb.com",
+      "auto_upload": "上传时自动直传 imgbb 并绑定编号",
+      "key_required": "请先填写 imgbb API Key（免费申请：https://api.imgbb.com/）",
+      "manual_when": "只有当对方的图不在 catbox 上时才需要改前缀——改成他们用的图床域名即可。",
+      "host_prefix": "图床前缀"
+    }
   }
 }

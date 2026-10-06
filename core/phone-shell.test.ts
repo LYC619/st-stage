@@ -60,6 +60,86 @@ beforeEach(() => {
 })
 
 describe('手机壳交互', () => {
+  it('opens from the keyboard, returns to the App icon and collapses back to the launcher', () => {
+    const { shell } = setup([makeApp('gallery')])
+    const fab = document.querySelector('.so-phone-fab') as HTMLElement
+    expect(fab.tabIndex).toBe(0)
+    fab.focus()
+    fab.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    const icon = document.querySelector('.so-phone-app-icon') as HTMLElement
+    expect(document.activeElement).toBe(icon)
+    icon.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(document.activeElement).toBe(document.querySelector('.so-phone-app-container'))
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(document.activeElement).toBe(document.querySelector('.so-phone-app-icon'))
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(document.activeElement).toBe(fab)
+    shell.destroy()
+  })
+
+  it('keeps native input behavior without forwarding Enter to the host', () => {
+    const host = vi.fn()
+    document.body.addEventListener('keydown', host)
+    const { shell } = setup([{ id: 'aa', name: 'A', icon: 'A', mount: container => { container.innerHTML = '<input>' } }])
+    shell.openApp('aa')
+    const input = document.querySelector('.so-phone-app-container input')!
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    input.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(host).not.toHaveBeenCalled()
+    document.body.removeEventListener('keydown', host)
+    shell.destroy()
+  })
+
+  it('keeps focus and text selection on a settings-driven remount of the same App', () => {
+    const { shell } = setup([{ id: 'aa', name: 'A', icon: 'A', mount: container => { container.innerHTML = '<label>Name<input value="sample"></label>' } }])
+    shell.openApp('aa')
+    const input = document.querySelector('.so-phone-app-container input') as HTMLInputElement
+    input.focus()
+    input.setSelectionRange(2, 4)
+    shell.setState({ x: 20, y: 20, open: true })
+    const replacement = document.querySelector('.so-phone-app-container input') as HTMLInputElement
+    expect(replacement).not.toBe(input)
+    expect(document.activeElement).toBe(replacement)
+    expect([replacement.selectionStart, replacement.selectionEnd]).toEqual([2, 4])
+    shell.destroy()
+  })
+
+  it('does not transfer focus and selection to a new field inserted at the same DOM position', () => {
+    let extra = false
+    const { shell } = setup([{ id: 'dynamic', name: 'Dynamic', icon: 'D', mount(container) {
+      container.innerHTML = (extra ? '<label for="new">New optional field</label><input id="new" value="different">' : '')
+        + '<label for="original">Original name</label><input id="original" value="sample">'
+    } }])
+    shell.openApp('dynamic')
+    const input = document.querySelector('#original') as HTMLInputElement
+    input.focus()
+    input.setSelectionRange(1, 4)
+    extra = true
+    shell.setState({ x: 20, y: 20, open: true })
+    expect(document.activeElement).toBe(document.querySelector('.so-phone-app-container'))
+    const replacement = document.querySelector('#new') as HTMLInputElement
+    expect(replacement.selectionStart).not.toBe(1)
+    shell.destroy()
+  })
+
+  it('matches aria-labelledby text across regenerated IDs and rejects a changed label', () => {
+    let revision = 0
+    let label = 'Original name'
+    const { shell } = setup([{ id: 'dynamic', name: 'Dynamic', icon: 'D', mount(container) {
+      const labelId = `label-${++revision}`
+      container.innerHTML = `<span id="${labelId}">${label}</span><input aria-labelledby="${labelId}" value="sample">`
+    } }])
+    shell.openApp('dynamic')
+    ;(document.querySelector('.so-phone-app-container input') as HTMLElement).focus()
+    shell.setState({ x: 20, y: 20, open: true })
+    expect(document.activeElement).toBe(document.querySelector('.so-phone-app-container input'))
+    label = 'Different field'
+    shell.setState({ x: 20, y: 20, open: true })
+    expect(document.activeElement).toBe(document.querySelector('.so-phone-app-container'))
+    shell.destroy()
+  })
+
   it('手机内交互不会冒泡到后方聊天控件', () => {
     const app: PhoneApp = {
       id: 'settings',

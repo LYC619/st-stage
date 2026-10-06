@@ -28,6 +28,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Verify translations and interpolation parameters
+        run: node scripts/verify-i18n-completeness.mjs
+
       - name: Unit tests
         run: pnpm test
 

@@ -9,7 +9,8 @@
     "loading": "Loading...",
     "success": "Success",
     "error": "Error",
-    "warning": "Warning"
+    "warning": "Warning",
+    "help": "Help"
   },
   "sprite": {
     "overlay": {
@@ -61,5 +62,77 @@
     "sprites_help": "Send sprite lists to the AI and display sprites from replies. Turning this off clears the prompt, stops parsing, hides the overlay and restores original messages. The phone and other tools remain available.",
     "phone_help": "Show a draggable 📱 icon. Open it to access all Apps.",
     "hint": "Baigong tools for SillyTavern. Configure sprite display, playback and prompts in the Sprites App; manage packs and image hosting in the Gallery App."
+  },
+  "modal": {
+    "title": "App dialog",
+    "close": "Close dialog",
+    "render_error": "Could not render dialog. See the console for details."
+  },
+  "apps": {
+    "sprites": {
+      "current_character": "Current character: {{name}}",
+      "no_character": "No character chat is open",
+      "active_packs": "Sprites active — {{packs}} packs enabled (images: {{images}})",
+      "active_pack": "Sprites active — bound to “{{name}}” (images: {{images}})",
+      "unbound": "Sprites are enabled, but this character has no bound pack. Bind one in Gallery.",
+      "disabled": "Sprites are disabled: prompts are not injected, tags are not parsed, and existing messages show their original text.",
+      "approx_hint": "If a [立绘:...] tag does not match an exact address, use it as a description to find the closest sprite. For example, “穿连衣裙逛街” may match 连衣裙/逛街. Matching runs only when the exact address is missing and rejects ties, so existing exact matches stay unchanged.",
+      "budget_count": "Estimated injection: {{count}} characters",
+      "budget_trimmed": " (over budget: trimmed from {{count}} characters across scenes, keeping earlier sprite names)",
+      "budget_empty": "Estimated injection: none (this character has no usable sprite addresses)",
+      "prompt_hint": "For characters with multiple outfits, use [立绘:图名] for the default outfit and [立绘:服装/图名] for others. Full three-part addresses also work. Auto-compact extracts shared sprite names and outfit differences. It prefers relative character-level addresses when shorter; otherwise it chooses the shorter of scene-based compression and the full list.",
+      "name": "Sprites",
+      "enable": "Enable sprites",
+      "display": "Display",
+      "location": "Display location",
+      "overlay": "Overlay",
+      "inline": "Chat only",
+      "both": "Both",
+      "show_overlay": "Show overlay",
+      "reset_overlay": "Bring overlay back into view",
+      "recent_messages": "Recent messages to render",
+      "opacity": "Overlay opacity (%)",
+      "hide_tags": "Hide [立绘:xxx] tags",
+      "parse_images": "Parse <img>编码</img> illustration tags",
+      "images_hint": "Render <img>文件编码</img> tags in AI replies as illustrations using the image-host prefix. This is independent of the overlay or chat placement of [立绘:图名] sprites.",
+      "fold_roles": "Group packs by character",
+      "display_hint": "Chat only replaces [立绘:xxx] tags with images in the message and hides the overlay. The message limit applies when loading chat history, not to new replies. Opacity affects only the overlay; sprites in messages remain fully visible.",
+      "slideshow": "Sprite slideshow",
+      "auto_switch": "Auto-advance when a reply has multiple sprites",
+      "interval": "Slideshow interval (seconds)",
+      "prompt": "Prompt",
+      "sprite_count": "Sprites per reply",
+      "injection_depth": "Injection depth (messages from the end)",
+      "prompt_mode": "Prompt mode",
+      "compact_mode": "Auto-compact (default: list duplicate names once)",
+      "full_mode": "Full (list every address)",
+      "prompt_budget": "Prompt budget (characters, 0 = unlimited)",
+      "approx_match": "Approximate matching (experimental, off by default)",
+      "custom_prompt": "Custom prompt (blank = built-in)",
+      "template_placeholder": "Replaces the entire built-in prompt. Placeholders: {清单} = sprites grouped by scene; {数量} = sprites per reply.",
+      "fill_builtin": "Use built-in draft (auto-compact until edited)",
+      "overwrite_confirm": "Replace the current custom prompt with the built-in draft?"
+    },
+    "gallery": {
+      "pack_count": "Sprite packs: {{count}}",
+      "pack_row": "· {{name}} · Images: {{count}}",
+      "in_use": " · In use",
+      "more_packs": "…{{count}} more packs. View all in the sprite pack manager.",
+      "host_intro": "Configure only what you need: to turn your own images into shareable links, set up ①. To use someone else’s packs or image IDs, no setup is needed; ② already has a default.",
+      "auto_description": "① Automatic upload (imgbb, API key required): when you add or replace images, upload them to imgbb and bind their IDs. Keep local copies for display and use direct links in share strings so others can see the images.",
+      "auto_why": "Why imgbb instead of catbox? This browser upload flow supports imgbb. The catbox API does not return the CORS headers needed for direct browser uploads, so catbox is used only to resolve image IDs below.",
+      "manual_description": "② Resolve image IDs (catbox by default, no API key): when adding images by ID or reading share strings and illustration tags, append the ID to the prefix below to make the full URL. This only resolves addresses; it does not upload images.",
+      "name": "Gallery",
+      "description": "Manage sprite packs: create, upload, import, export, share, and bind to characters.",
+      "open_manager": "Open sprite pack manager",
+      "hosting": "Image hosting",
+      "key_storage_hint": "The API key is stored as plain text in ST extension settings (settings.json on the ST server). It is excluded from share strings and exports. If upload fails, the local image is kept so you can retry later.",
+      "api_key": "imgbb API key (stored as plain text in ST settings)",
+      "key_placeholder": "Get a free key: api.imgbb.com",
+      "auto_upload": "Automatically upload to imgbb and bind image IDs",
+      "key_required": "Enter an imgbb API key first (free: https://api.imgbb.com/).",
+      "manual_when": "Change the prefix only if the shared images use a host other than catbox. Enter that host’s domain instead.",
+      "host_prefix": "Image-host prefix"
+    }
   }
 }

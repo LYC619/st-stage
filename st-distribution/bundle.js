@@ -4202,6 +4202,10 @@ function createVariableHud(deps) {
 }
 
 // st-extension/src/apps/widgets.ts
+var controlId = 0;
+function nextControlId() {
+  return `so-app-control-${++controlId}`;
+}
 function el2(tag, className) {
   const node = document.createElement(tag);
   node.className = className;
@@ -4216,6 +4220,7 @@ function appButton(label, onClick) {
   btn.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
+      e.stopPropagation();
       onClick();
     }
   });
@@ -4237,6 +4242,9 @@ function selectRow(label, value, options, onChange) {
   const span = document.createElement("span");
   span.textContent = label;
   const select = document.createElement("select");
+  select.id = nextControlId();
+  span.id = `${select.id}-label`;
+  select.setAttribute("aria-labelledby", span.id);
   select.className = "text_pole so-app-input";
   for (const opt of options) {
     const o = document.createElement("option");
@@ -4276,17 +4284,23 @@ function rangeRow(label, value, min, max, onInput, onCommit, format = String) {
   const controls = el2("span", "so-app-range-controls");
   const input = document.createElement("input");
   input.type = "range";
+  input.id = nextControlId();
+  span.id = `${input.id}-label`;
+  input.setAttribute("aria-labelledby", span.id);
   input.min = String(min);
   input.max = String(max);
   input.step = "1";
   input.value = String(Math.min(max, Math.max(min, Math.round(value))));
   const output = document.createElement("output");
+  output.htmlFor.value = input.id;
+  output.setAttribute("aria-hidden", "true");
   const read = () => {
     const parsed = Math.round(Number(input.value));
     const clamped = Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : min;
     input.value = String(clamped);
     output.value = format(clamped);
     output.textContent = output.value;
+    input.setAttribute("aria-valuetext", output.value);
     return clamped;
   };
   read();
@@ -4311,9 +4325,12 @@ function foldSection(title2, open = false, key = "") {
 }
 function textareaRow(label, value, placeholder, onCommit) {
   const wrap = el2("div", "so-app-field");
-  const title2 = el2("div", "so-app-title");
+  const title2 = document.createElement("label");
+  title2.className = "so-app-title";
   title2.textContent = label;
   const input = document.createElement("textarea");
+  input.id = nextControlId();
+  title2.htmlFor = input.id;
   input.className = "text_pole so-app-input";
   input.rows = 5;
   input.value = value;
@@ -4331,13 +4348,24 @@ function hintField(row, hint) {
   badge.className = "so-app-hint-badge";
   badge.textContent = "ⓘ";
   badge.title = hint;
-  badge.setAttribute("aria-label", "说明");
+  badge.setAttribute("aria-label", t("common.help", "说明"));
   badge.setAttribute("aria-expanded", "false");
   const detail = el2("div", "so-app-hint");
+  detail.id = `${nextControlId()}-help`;
   detail.textContent = hint;
   detail.hidden = true;
+  badge.setAttribute("aria-controls", detail.id);
+  badge.setAttribute("aria-describedby", detail.id);
+  for (const control2 of row.querySelectorAll("input, textarea, select")) {
+    const descriptions = control2.getAttribute("aria-describedby")?.split(/\s+/).filter(Boolean) ?? [];
+    control2.setAttribute("aria-describedby", [...descriptions, detail.id].join(" "));
+  }
+  badge.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+  });
   badge.addEventListener("click", (e) => {
     e.preventDefault();
+    e.stopPropagation();
     detail.hidden = !detail.hidden;
     badge.classList.toggle("so-app-hint-badge-on", !detail.hidden);
     badge.setAttribute("aria-expanded", String(!detail.hidden));
@@ -4348,9 +4376,12 @@ function hintField(row, hint) {
 }
 function textRow(label, value, placeholder, onCommit, type = "text") {
   const wrap = el2("div", "so-app-field");
-  const title2 = el2("div", "so-app-title");
+  const title2 = document.createElement("label");
+  title2.className = "so-app-title";
   title2.textContent = label;
   const input = document.createElement("input");
+  input.id = nextControlId();
+  title2.htmlFor = input.id;
   input.type = type;
   input.className = "text_pole so-app-input";
   input.value = value;
@@ -5227,21 +5258,123 @@ function installRegisterQueue(prev, register) {
   return shim;
 }
 
+// core/dialog-focus.ts
+var dialogs = [];
+var selector = "button, a[href], input, select, textarea, summary, [contenteditable], [tabindex]";
+function isVisible(element2) {
+  if (!element2.isConnected || element2.closest("[hidden], [inert]")) return false;
+  for (let node = element2; node; node = node.parentElement) {
+    const style = getComputedStyle(node);
+    if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") return false;
+    if (node.tagName === "DETAILS" && !node.hasAttribute("open")) {
+      const summary = node.querySelector(":scope > summary");
+      if (!summary?.contains(element2)) return false;
+    }
+  }
+  return true;
+}
+function focusable(container) {
+  const candidates = Array.from(container.querySelectorAll(selector)).filter((element2) => {
+    const editable = element2.getAttribute("contenteditable");
+    const parentEditable = element2.parentElement?.closest("[contenteditable]")?.getAttribute("contenteditable");
+    const editingHost = editable !== null && ["", "true", "plaintext-only"].includes(editable) && (parentEditable === void 0 || parentEditable === "false");
+    return (element2.tabIndex >= 0 || editingHost && !element2.hasAttribute("tabindex")) && !element2.matches(":disabled") && isVisible(element2);
+  });
+  return candidates.filter((element2) => {
+    if (!(element2 instanceof HTMLInputElement) || element2.type !== "radio" || !element2.name) return true;
+    const group = candidates.filter((candidate) => candidate instanceof HTMLInputElement && candidate.type === "radio" && candidate.name === element2.name && candidate.form === element2.form);
+    return element2 === (group.find((radio) => radio.checked) ?? group[0]);
+  }).sort((a, b) => (a.tabIndex > 0 ? a.tabIndex : Infinity) - (b.tabIndex > 0 ? b.tabIndex : Infinity));
+}
+function topDialog() {
+  return dialogs.findLast((entry) => entry.container.isConnected);
+}
+function manageDialogFocus(container, options) {
+  const opener = options.opener === void 0 ? document.activeElement instanceof HTMLElement ? document.activeElement : null : options.opener;
+  const originalTabIndex = container.getAttribute("tabindex");
+  if (originalTabIndex === null) container.tabIndex = -1;
+  let disposed = false;
+  let restoreAllowed = false;
+  let lastFocused = null;
+  const entry = { container, focusInitial };
+  dialogs.push(entry);
+  function focusInitial() {
+    if (disposed || topDialog() !== entry) return;
+    const target = lastFocused && container.contains(lastFocused) && isVisible(lastFocused) && !lastFocused.matches(":disabled") ? lastFocused : focusable(container)[0] ?? container;
+    target.focus({ preventScroll: true });
+  }
+  function onFocus(event) {
+    if (disposed || topDialog() !== entry) return;
+    if (event.target instanceof HTMLElement && container.contains(event.target)) {
+      lastFocused = event.target;
+    } else {
+      focusInitial();
+    }
+  }
+  function onKey(event) {
+    if (disposed || topDialog() !== entry || event.isComposing) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      options.onEscape();
+    } else if (event.key === "Tab") {
+      const items = focusable(container);
+      const first = items[0] ?? container;
+      const last = items[items.length - 1] ?? container;
+      const active = document.activeElement;
+      if (!items.includes(active) || (event.shiftKey ? active === first : active === last)) {
+        event.preventDefault();
+        event.stopPropagation();
+        (event.shiftKey ? last : first).focus({ preventScroll: true });
+      }
+    }
+  }
+  document.addEventListener("keydown", onKey, true);
+  document.addEventListener("focusin", onFocus, true);
+  return {
+    focusInitial,
+    dispose() {
+      if (disposed) return;
+      restoreAllowed = topDialog() === entry;
+      disposed = true;
+      dialogs.splice(dialogs.indexOf(entry), 1);
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("focusin", onFocus, true);
+      if (originalTabIndex === null) container.removeAttribute("tabindex");
+    },
+    /** Call after removing the dialog and reopening/remounting its source App. */
+    restoreFocus() {
+      if (!disposed || !restoreAllowed) return;
+      restoreAllowed = false;
+      const parent = topDialog();
+      if (opener && isVisible(opener) && !opener.matches(":disabled") && (!parent || parent.container.contains(opener))) {
+        opener.focus({ preventScroll: true });
+      } else {
+        parent?.focusInitial();
+      }
+    }
+  };
+}
+
 // core/app-modal.ts
 function openAppModal(build, hooks) {
+  const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   hooks.onOpen();
   const backdrop = document.createElement("div");
   backdrop.className = "so-app-modal-backdrop";
   const box = document.createElement("div");
   box.className = "so-app-modal";
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-modal", "true");
+  box.setAttribute("aria-label", t("modal.title", "App 弹窗"));
   const head = document.createElement("div");
   head.className = "so-app-modal-head";
   const closeBtn = document.createElement("div");
   closeBtn.className = "so-app-modal-close";
   closeBtn.textContent = "✕";
-  closeBtn.title = "关闭";
+  closeBtn.title = t("common.close", "关闭");
   closeBtn.setAttribute("role", "button");
-  closeBtn.setAttribute("aria-label", "关闭弹窗");
+  closeBtn.setAttribute("aria-label", t("modal.close", "关闭弹窗"));
   closeBtn.tabIndex = 0;
   const body = document.createElement("div");
   body.className = "so-app-modal-body";
@@ -5263,22 +5396,21 @@ function openAppModal(build, hooks) {
   const close = () => {
     if (closed) return;
     closed = true;
-    document.removeEventListener("keydown", onKey, true);
+    focus.dispose();
     runCleanup();
     backdrop.remove();
-    hooks.onClose();
-  };
-  const onKey = (e) => {
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      close();
+    try {
+      hooks.onClose();
+    } finally {
+      focus.restoreFocus();
     }
   };
-  document.addEventListener("keydown", onKey, true);
+  const focus = manageDialogFocus(box, { onEscape: close, opener });
   closeBtn.addEventListener("click", close);
   closeBtn.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
+      e.stopPropagation();
       close();
     }
   });
@@ -5287,8 +5419,10 @@ function openAppModal(build, hooks) {
     if (closed) runCleanup();
   } catch (err) {
     console.error("[sprite-overlay] App 弹窗渲染失败", err);
-    body.textContent = "弹窗渲染失败，详见控制台";
+    body.setAttribute("role", "alert");
+    body.textContent = t("modal.render_error", "弹窗渲染失败，详见控制台");
   }
+  if (!closed) focus.focusInitial();
   return close;
 }
 function openTrackedAppModal(build, hooks, track) {
@@ -5326,13 +5460,32 @@ function createPhoneShell(initialState, deps) {
   fab.textContent = "📱";
   fab.setAttribute("role", "button");
   fab.setAttribute("aria-label", t("phone.open_panel", "打开手机面板"));
+  fab.tabIndex = 0;
+  fab.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopPropagation();
+    commitState({ ...state2, open: true });
+    renderScreen();
+    focusHome();
+  });
   const shell = document.createElement("div");
   shell.className = "so-phone-shell";
+  shell.setAttribute("role", "region");
+  shell.setAttribute("aria-label", HOME_TITLE);
   shell.style.display = "none";
   const stopShellEvent = (event) => event.stopPropagation();
   for (const type of ["pointerdown", "touchstart", "click"]) {
     shell.addEventListener(type, stopShellEvent);
   }
+  shell.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (event.key === "Escape" && !event.defaultPrevented && !event.isComposing) {
+      event.preventDefault();
+      if (activeApp) goHome();
+      else collapse();
+    }
+  });
   const statusBar2 = document.createElement("div");
   statusBar2.className = "so-phone-status";
   const backBtn = document.createElement("div");
@@ -5364,6 +5517,7 @@ function createPhoneShell(initialState, deps) {
   const collapse = () => {
     leaveApp();
     commitState({ ...state2, open: false });
+    if (!hidden) fab.focus({ preventScroll: true });
   };
   closeBtn.addEventListener("click", collapse);
   closeBtn.addEventListener("keydown", (e) => {
@@ -5477,10 +5631,7 @@ function createPhoneShell(initialState, deps) {
     window.addEventListener("pointercancel", onCancel);
   });
   const onHomePress = () => {
-    if (activeApp) {
-      leaveApp();
-      renderScreen();
-    }
+    if (activeApp) goHome();
   };
   homeBtn.addEventListener("click", onHomePress);
   homeBtn.addEventListener("keydown", (e) => {
@@ -5507,12 +5658,16 @@ function createPhoneShell(initialState, deps) {
   function renderScreen() {
     const prevScrollAppId = screenScrollAppId;
     const prevScrollTop = screen.scrollTop;
+    const restore = prevScrollAppId === activeApp?.id ? captureScreenFocus() : null;
     screen.innerHTML = "";
     backBtn.style.display = activeApp ? "flex" : "none";
     if (activeApp) {
       statusTitle.textContent = activeApp.name;
       const container = document.createElement("div");
       container.className = "so-phone-app-container";
+      container.tabIndex = -1;
+      container.setAttribute("role", "group");
+      container.setAttribute("aria-label", activeApp.name);
       screen.append(container);
       try {
         const mounted = deps.createAppContext(activeApp.id, goHome);
@@ -5528,6 +5683,7 @@ function createPhoneShell(initialState, deps) {
       }
       if (prevScrollAppId === activeApp.id && prevScrollTop > 0) screen.scrollTop = prevScrollTop;
       screenScrollAppId = activeApp.id;
+      restore?.();
       return;
     }
     screenScrollAppId = null;
@@ -5542,6 +5698,7 @@ function createPhoneShell(initialState, deps) {
   function renderAppIcon(app) {
     const cell = document.createElement("div");
     cell.className = "so-phone-app-icon";
+    cell.dataset.appId = app.id;
     cell.setAttribute("role", "button");
     cell.tabIndex = 0;
     cell.setAttribute("aria-label", t("phone.open_app", "打开 {{name}}", { name: app.name }));
@@ -5555,6 +5712,7 @@ function createPhoneShell(initialState, deps) {
     const openThis = () => {
       activeApp = app;
       renderScreen();
+      focusApp();
     };
     cell.addEventListener("click", openThis);
     cell.addEventListener("keydown", (e) => {
@@ -5566,8 +5724,54 @@ function createPhoneShell(initialState, deps) {
     return cell;
   }
   function goHome() {
+    const appId = activeApp?.id;
     leaveApp();
     renderScreen();
+    focusHome(appId);
+  }
+  function focusHome(appId) {
+    const icons = Array.from(screen.querySelectorAll(".so-phone-app-icon"));
+    (icons.find((icon) => icon.dataset.appId === appId) ?? icons[0] ?? closeBtn).focus({ preventScroll: true });
+  }
+  function focusApp() {
+    screen.querySelector(".so-phone-app-container")?.focus({ preventScroll: true });
+  }
+  function focusIdentity(element2) {
+    const labelledBy = element2.getAttribute("aria-labelledby")?.split(/\s+/).map((id) => document.getElementById(id)?.textContent ?? "").join(" ").trim();
+    const labels = element2 instanceof HTMLInputElement || element2 instanceof HTMLTextAreaElement || element2 instanceof HTMLSelectElement || element2 instanceof HTMLButtonElement ? Array.from(element2.labels ?? []).map((label) => {
+      const copy = label.cloneNode(true);
+      copy.querySelectorAll("input, select, textarea, button, output").forEach((node) => node.remove());
+      return copy.textContent ?? "";
+    }).join(" ") : "";
+    const name = (labelledBy || element2.getAttribute("aria-label") || labels || (element2.matches('button, [role="button"]') ? element2.textContent : "") || "").replace(/\s+/g, " ").trim();
+    const key = element2.dataset.focusKey || element2.getAttribute("name") || "";
+    return name || key ? JSON.stringify([name, key, element2.getAttribute("role")]) : "";
+  }
+  function captureScreenFocus() {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || !screen.contains(active)) return null;
+    const identity = focusIdentity(active);
+    const path = [];
+    for (let node = active; node !== screen && node.parentElement; node = node.parentElement) {
+      path.unshift(Array.from(node.parentElement.children).indexOf(node));
+    }
+    const selection = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ? [active.selectionStart, active.selectionEnd, active.selectionDirection] : null;
+    return () => {
+      let replacement = screen;
+      for (const index of path) replacement = replacement?.children[index];
+      if (!(replacement instanceof HTMLElement) || replacement.tagName !== active.tagName || replacement.getAttribute("type") !== active.getAttribute("type") || !identity || focusIdentity(replacement) !== identity || replacement.closest("[hidden], [inert]") || replacement.matches(":disabled")) {
+        focusApp();
+        return;
+      }
+      replacement.focus({ preventScroll: true });
+      if (document.activeElement !== replacement) {
+        focusApp();
+        return;
+      }
+      if (selection && selection[0] !== null && selection[1] !== null && (replacement instanceof HTMLInputElement || replacement instanceof HTMLTextAreaElement)) {
+        replacement.setSelectionRange(selection[0], selection[1], selection[2] ?? void 0);
+      }
+    };
   }
   return {
     setState(next) {
@@ -5586,6 +5790,7 @@ function createPhoneShell(initialState, deps) {
       activeApp = app;
       if (!state2.open) commitState({ ...state2, open: true });
       renderScreen();
+      focusApp();
     },
     setVisible(visible) {
       if (destroyed) return;
@@ -8585,9 +8790,9 @@ function openImageStorageDialog(deps) {
       close();
     }
     if (event.key !== "Tab") return;
-    const focusable = [...dialog.querySelectorAll("button:not(:disabled), input:not(:disabled), summary")].filter((node) => node.getClientRects().length > 0);
-    const first = focusable[0];
-    const last = focusable.at(-1);
+    const focusable2 = [...dialog.querySelectorAll("button:not(:disabled), input:not(:disabled), summary")].filter((node) => node.getClientRects().length > 0);
+    const first = focusable2[0];
+    const last = focusable2.at(-1);
     if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
       event.preventDefault();
       last?.focus();
@@ -11803,7 +12008,7 @@ function isEligible(image) {
 function spriteApp(deps = {}) {
   return {
     id: "sprites",
-    name: "立绘",
+    name: t("apps.sprites.name", "立绘"),
     icon: "🎭",
     order: 1,
     mount(container, ctx) {
@@ -11813,27 +12018,27 @@ function spriteApp(deps = {}) {
       const pack = packs[0] ?? null;
       const stateSection = el2("div", "so-app-section");
       const title2 = el2("div", "so-app-title");
-      title2.textContent = characterName ? `当前角色：${characterName}` : "尚未打开角色聊天";
+      title2.textContent = characterName ? t("apps.sprites.current_character", "当前角色：{{name}}", { name: characterName }) : t("apps.sprites.no_character", "尚未打开角色聊天");
       const detail = el2("div", "so-app-desc");
-      detail.textContent = settings.enabled ? pack ? packs.length > 1 ? `立绘功能运行中 — 已启用 ${packs.length} 个包（${packs.reduce((n, p) => n + p.sprites.length, 0)} 张）` : `立绘功能运行中 — 已绑定「${pack.name}」（${pack.sprites.length} 张）` : "立绘功能已开启，但当前角色未绑定立绘包（到「图库」绑定）" : "立绘功能已关闭：不注入 Prompt、不解析标签，旧楼层已恢复原文";
+      detail.textContent = settings.enabled ? pack ? packs.length > 1 ? t("apps.sprites.active_packs", "立绘功能运行中 — 已启用 {{packs}} 个包（{{images}} 张）", { packs: packs.length, images: packs.reduce((n, p) => n + p.sprites.length, 0) }) : t("apps.sprites.active_pack", "立绘功能运行中 — 已绑定「{{name}}」（{{images}} 张）", { name: pack.name, images: pack.sprites.length }) : t("apps.sprites.unbound", "立绘功能已开启，但当前角色未绑定立绘包（到「图库」绑定）") : t("apps.sprites.disabled", "立绘功能已关闭：不注入 Prompt、不解析标签，旧楼层已恢复原文");
       stateSection.append(
         title2,
         toggleRow(
-          "启用立绘功能",
+          t("apps.sprites.enable", "启用立绘功能"),
           settings.enabled,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), enabled: v })
         ),
         detail
       );
-      const displaySection = foldSection("显示", false, "sprites:display");
+      const displaySection = foldSection(t("apps.sprites.display", "显示"), false, "sprites:display");
       displaySection.body.append(
         selectRow(
-          "显示位置",
+          t("apps.sprites.location", "显示位置"),
           settings.spriteDisplayMode,
           [
-            { value: "overlay", label: "悬浮窗" },
-            { value: "inline", label: "仅楼层" },
-            { value: "both", label: "两者" }
+            { value: "overlay", label: t("apps.sprites.overlay", "悬浮窗") },
+            { value: "inline", label: t("apps.sprites.inline", "仅楼层") },
+            { value: "both", label: t("apps.sprites.both", "两者") }
           ],
           (v) => ctx.updateSettings({
             ...ctx.getSettings(),
@@ -11841,11 +12046,11 @@ function spriteApp(deps = {}) {
           })
         ),
         toggleRow(
-          "显示悬浮窗",
+          t("apps.sprites.show_overlay", "显示悬浮窗"),
           !settings.overlayHidden,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), overlayHidden: !v })
         ),
-        appButton("把悬浮窗拉回视口", () => {
+        appButton(t("apps.sprites.reset_overlay", "把悬浮窗拉回视口"), () => {
           const cur = ctx.getSettings();
           if (cur.spriteDisplayMode === "inline") return;
           ctx.updateSettings({
@@ -11855,14 +12060,14 @@ function spriteApp(deps = {}) {
           });
         }),
         numberRow(
-          "最近渲染楼层数",
+          t("apps.sprites.recent_messages", "最近渲染楼层数"),
           settings.recentFloors,
           RECENT_FLOORS_MIN,
           RECENT_FLOORS_MAX,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), recentFloors: v })
         ),
         rangeRow(
-          "悬浮窗立绘不透明度（%）",
+          t("apps.sprites.opacity", "悬浮窗立绘不透明度（%）"),
           settings.spriteOpacity,
           SPRITE_OPACITY_MIN,
           SPRITE_OPACITY_MAX,
@@ -11871,64 +12076,64 @@ function spriteApp(deps = {}) {
           (v) => `${v}%`
         ),
         toggleRow(
-          "隐藏 [立绘:xxx] 标签",
+          t("apps.sprites.hide_tags", "隐藏 [立绘:xxx] 标签"),
           settings.hideTagInMessage,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), hideTagInMessage: v })
         ),
         hintField(
           toggleRow(
-            "解析 <img>编码</img> 插图标签",
+            t("apps.sprites.parse_images", "解析 <img>编码</img> 插图标签"),
             settings.renderInlineImages,
             (v) => ctx.updateSettings({ ...ctx.getSettings(), renderInlineImages: v })
           ),
-          "把 AI 正文中的 <img>文件编码</img> 按图床前缀渲染为剧情插图。它与 [立绘:图名] 的悬浮窗/楼层显示位置互相独立。"
+          t("apps.sprites.images_hint", "把 AI 正文中的 <img>文件编码</img> 按图床前缀渲染为剧情插图。它与 [立绘:图名] 的悬浮窗/楼层显示位置互相独立。")
         ),
         toggleRow(
-          "同角色图包折叠",
+          t("apps.sprites.fold_roles", "同角色图包折叠"),
           settings.galleryFoldByRole,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), galleryFoldByRole: v })
         )
       );
       const displayHint = el2("div", "so-app-desc");
-      displayHint.textContent = "「仅楼层」把 [立绘:xxx] 原位替换为图片且不弹悬浮窗；楼层数限制加载聊天时补渲染的范围（新回复不受限）。不透明度只调悬浮窗，楼层立绘始终清晰显示。";
+      displayHint.textContent = t("apps.sprites.display_hint", "「仅楼层」把 [立绘:xxx] 原位替换为图片且不弹悬浮窗；楼层数限制加载聊天时补渲染的范围（新回复不受限）。不透明度只调悬浮窗，楼层立绘始终清晰显示。");
       displaySection.body.append(displayHint);
-      const autoSection = foldSection("多立绘轮播", false, "sprites:auto");
+      const autoSection = foldSection(t("apps.sprites.slideshow", "多立绘轮播"), false, "sprites:auto");
       autoSection.body.append(
         toggleRow(
-          "自动轮播（一条回复多张立绘时）",
+          t("apps.sprites.auto_switch", "自动轮播（一条回复多张立绘时）"),
           settings.autoSwitch,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), autoSwitch: v })
         ),
         numberRow(
-          "轮播间隔（秒）",
+          t("apps.sprites.interval", "轮播间隔（秒）"),
           settings.autoSwitchSeconds,
           1,
           60,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), autoSwitchSeconds: v })
         )
       );
-      const promptSection = foldSection("Prompt", false, "sprites:prompt");
+      const promptSection = foldSection(t("apps.sprites.prompt", "Prompt"), false, "sprites:prompt");
       promptSection.body.append(
         numberRow(
-          "每次回复立绘数量",
+          t("apps.sprites.sprite_count", "每次回复立绘数量"),
           settings.spriteCount,
           SPRITE_COUNT_MIN,
           SPRITE_COUNT_MAX,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), spriteCount: v })
         ),
         numberRow(
-          "注入深度（距末尾楼层数）",
+          t("apps.sprites.injection_depth", "注入深度（距末尾楼层数）"),
           settings.injectionDepth,
           INJECTION_DEPTH_MIN,
           INJECTION_DEPTH_MAX,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), injectionDepth: v })
         ),
         selectRow(
-          "Prompt 模式",
+          t("apps.sprites.prompt_mode", "Prompt 模式"),
           settings.multiRolePromptMode,
           [
-            { value: "repeat", label: "自动精简（默认：重合图名列一次）" },
-            { value: "full", label: "全量（枚举全部地址）" }
+            { value: "repeat", label: t("apps.sprites.compact_mode", "自动精简（默认：重合图名列一次）") },
+            { value: "full", label: t("apps.sprites.full_mode", "全量（枚举全部地址）") }
           ],
           (v) => ctx.updateSettings({
             ...ctx.getSettings(),
@@ -11936,40 +12141,40 @@ function spriteApp(deps = {}) {
           })
         ),
         numberRow(
-          "Prompt 预算（字符，0=不限）",
+          t("apps.sprites.prompt_budget", "Prompt 预算（字符，0=不限）"),
           settings.promptBudget,
           PROMPT_BUDGET_MIN,
           PROMPT_BUDGET_MAX,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), promptBudget: v })
         ),
         toggleRow(
-          "近似匹配（实验，默认关闭）",
+          t("apps.sprites.approx_match", "近似匹配（实验，默认关闭）"),
           settings.approxMatch,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), approxMatch: v })
         )
       );
       const approxHint = el2("div", "so-app-desc");
-      approxHint.textContent = "开启后，[立绘:...] 里写的不是准确地址时，会拿它当描述去找最像的一张（如「穿连衣裙逛街」命中 连衣裙/逛街）。只在准确地址找不到时才生效，同分打平就放弃，所以不会改变原本能命中的结果。";
+      approxHint.textContent = t("apps.sprites.approx_hint", "开启后，[立绘:...] 里写的不是准确地址时，会拿它当描述去找最像的一张（如「穿连衣裙逛街」命中 连衣裙/逛街）。只在准确地址找不到时才生效，同分打平就放弃，所以不会改变原本能命中的结果。");
       promptSection.body.append(approxHint);
       const budgeted = buildActiveSpritePrompt(settings, characterName);
       const unlimited = settings.promptBudget > 0 ? buildActiveSpritePrompt(settings, characterName, 0) : budgeted;
       const budgetHint = el2("div", "so-app-desc");
-      budgetHint.textContent = budgeted ? `预计注入 ${budgeted.length} 字符` + (budgeted.length < unlimited.length ? `（超预算，已从 ${unlimited.length} 字符每场景均衡截取，保留排前的图名）` : "") : "预计注入：无（当前角色没有可用立绘地址）";
+      budgetHint.textContent = budgeted ? t("apps.sprites.budget_count", "预计注入 {{count}} 字符", { count: budgeted.length }) + (budgeted.length < unlimited.length ? t("apps.sprites.budget_trimmed", "（超预算，已从 {{count}} 字符每场景均衡截取，保留排前的图名）", { count: unlimited.length }) : "") : t("apps.sprites.budget_empty", "预计注入：无（当前角色没有可用立绘地址）");
       promptSection.body.append(budgetHint);
       const promptHint = el2("div", "so-app-desc");
-      promptHint.textContent = "同角色多服装时，默认服装可写 [立绘:图名]，其他服装写 [立绘:服装/图名]；完整三级地址仍兼容。自动精简会抽取基础图名池和服装增量；适合相对地址时优先使用角色级格式（只要比全量短），否则在旧场景压缩和全量格式中取更短者。";
+      promptHint.textContent = t("apps.sprites.prompt_hint", "同角色多服装时，默认服装可写 [立绘:图名]，其他服装写 [立绘:服装/图名]；完整三级地址仍兼容。自动精简会抽取基础图名池和服装增量；适合相对地址时优先使用角色级格式（只要比全量短），否则在旧场景压缩和全量格式中取更短者。");
       promptSection.body.append(promptHint);
       const tplRow = textareaRow(
-        "自定义提示词（留空=用内置）",
+        t("apps.sprites.custom_prompt", "自定义提示词（留空=用内置）"),
         settings.promptTemplate,
-        "整体替换内置提示词。占位符：{清单}=按场景分组的立绘清单，{数量}=每次回复立绘数",
+        t("apps.sprites.template_placeholder", "整体替换内置提示词。占位符：{清单}=按场景分组的立绘清单，{数量}=每次回复立绘数"),
         (v) => ctx.updateSettings({ ...ctx.getSettings(), promptTemplate: v })
       );
       const tplInput = tplRow.querySelector("textarea");
       promptSection.body.append(
         tplRow,
-        appButton("填入内置底稿（未修改时仍自动精简）", () => {
-          if (tplInput.value.trim() && !window.confirm("用内置底稿覆盖当前已填写的自定义提示词？")) return;
+        appButton(t("apps.sprites.fill_builtin", "填入内置底稿（未修改时仍自动精简）"), () => {
+          if (tplInput.value.trim() && !window.confirm(t("apps.sprites.overwrite_confirm", "用内置底稿覆盖当前已填写的自定义提示词？"))) return;
           tplInput.value = BUILTIN_TEMPLATE;
           ctx.updateSettings({ ...ctx.getSettings(), promptTemplate: BUILTIN_TEMPLATE });
         })
@@ -11983,19 +12188,19 @@ function spriteApp(deps = {}) {
 function galleryApp(deps) {
   return {
     id: "gallery",
-    name: "图库",
+    name: t("apps.gallery.name", "图库"),
     icon: "🗂",
     order: 2,
     mount(container, ctx) {
       const settings = ctx.getSettings();
       const section2 = el2("div", "so-app-section");
       const desc = el2("div", "so-app-desc");
-      desc.textContent = "立绘包管理：新建/上传/导入导出/分享串/角色绑定。";
-      section2.append(desc, appButton("打开立绘包管理", () => deps.openManager()));
+      desc.textContent = t("apps.gallery.description", "立绘包管理：新建/上传/导入导出/分享串/角色绑定。");
+      section2.append(desc, appButton(t("apps.gallery.open_manager", "打开立绘包管理"), () => deps.openManager()));
       container.append(section2);
       const list = el2("div", "so-app-section");
       const title2 = el2("div", "so-app-title");
-      title2.textContent = `共 ${settings.packs.length} 个立绘包`;
+      title2.textContent = t("apps.gallery.pack_count", "共 {{count}} 个立绘包", { count: settings.packs.length });
       list.append(title2);
       const boundIds = new Set(settings.bindings.flatMap((b) => b.packIds));
       const sorted = [...settings.packs].sort(
@@ -12004,57 +12209,60 @@ function galleryApp(deps) {
       const MAX_SHOWN = 5;
       for (const pack of sorted.slice(0, MAX_SHOWN)) {
         const row = el2("div", "so-app-desc");
-        row.textContent = `· ${pack.name}（${pack.sprites.length} 张）${boundIds.has(pack.id) ? "　使用中" : ""}`;
+        row.textContent = t("apps.gallery.pack_row", "· {{name}}（{{count}} 张）", { name: pack.name, count: pack.sprites.length }) + (boundIds.has(pack.id) ? t("apps.gallery.in_use", "　使用中") : "");
         list.append(row);
       }
       if (settings.packs.length > MAX_SHOWN) {
         const more = el2("div", "so-app-desc");
-        more.textContent = `…还有 ${settings.packs.length - MAX_SHOWN} 个，全部在「立绘包管理」查看`;
+        more.textContent = t("apps.gallery.more_packs", "…还有 {{count}} 个，全部在「立绘包管理」查看", { count: settings.packs.length - MAX_SHOWN });
         list.append(more);
       }
       container.append(list);
       const hostSection = el2("div", "so-app-section");
       const hostTitle = el2("div", "so-app-title");
-      hostTitle.textContent = "图床";
+      hostTitle.textContent = t("apps.gallery.hosting", "图床");
       hostSection.append(hostTitle);
       const hostIntro = el2("div", "so-app-desc");
-      hostIntro.textContent = "两条通道各管一件事，按需要配，不用都配：要把自己的图变成能分享的链接 → 配 ①；只是想用别人给的图包/编号 → 什么都不用配，② 已有默认值。";
+      hostIntro.textContent = t("apps.gallery.host_intro", "两条通道各管一件事，按需要配，不用都配：要把自己的图变成能分享的链接 → 配 ①；只是想用别人给的图包/编号 → 什么都不用配，② 已有默认值。");
       hostSection.append(hostIntro);
       const autoDesc = el2("div", "so-app-desc");
-      autoDesc.textContent = "① 自动直传（imgbb，需要 Key）：上传/替换图片时自动传到 imgbb 并绑定编号，本地图保留作显示保底，直链用于分享串。别人才能看到你分享的图，靠的是这条。";
+      autoDesc.textContent = t("apps.gallery.auto_description", "① 自动直传（imgbb，需要 Key）：上传/替换图片时自动传到 imgbb 并绑定编号，本地图保留作显示保底，直链用于分享串。别人才能看到你分享的图，靠的是这条。");
       const autoWhy = el2("div", "so-app-desc");
-      autoWhy.textContent = "为什么是 imgbb 而不是 catbox：浏览器里只能传 imgbb。catbox 的接口不返回 CORS 头，网页无法直接上传，所以它只能用在下面那条「按编号还原地址」的通道上。";
+      autoWhy.textContent = t("apps.gallery.auto_why", "为什么是 imgbb 而不是 catbox：浏览器里只能传 imgbb。catbox 的接口不返回 CORS 头，网页无法直接上传，所以它只能用在下面那条「按编号还原地址」的通道上。");
       const hint = el2("div", "so-app-desc");
-      hint.textContent = "Key 明文保存在 ST 扩展设置里（随 ST 服务端 settings.json 落盘），不会写入分享串或导出文件；上传失败时图片仍保留本地，可稍后补传。";
+      hint.setAttribute("role", "status");
+      hint.setAttribute("aria-live", "polite");
+      hint.textContent = t("apps.gallery.key_storage_hint", "Key 明文保存在 ST 扩展设置里（随 ST 服务端 settings.json 落盘），不会写入分享串或导出文件；上传失败时图片仍保留本地，可稍后补传。");
+      const autoUploadRow = toggleRow(t("apps.gallery.auto_upload", "上传时自动直传 imgbb 并绑定编号"), settings.autoUpload, (v) => {
+        const cur = ctx.getSettings();
+        if (v && !cur.imgbbApiKey.trim()) {
+          hint.textContent = t("apps.gallery.key_required", "请先填写 imgbb API Key（免费申请：https://api.imgbb.com/）");
+          autoUploadRow.querySelector("input").checked = false;
+          return;
+        }
+        ctx.updateSettings({ ...cur, autoUpload: v });
+      });
       hostSection.append(
         autoDesc,
         autoWhy,
         textRow(
-          "imgbb API Key（存 ST 设置，明文）",
+          t("apps.gallery.api_key", "imgbb API Key（存 ST 设置，明文）"),
           settings.imgbbApiKey,
-          "免费申请：api.imgbb.com",
+          t("apps.gallery.key_placeholder", "免费申请：api.imgbb.com"),
           (raw) => ctx.updateSettings({ ...ctx.getSettings(), imgbbApiKey: raw.trim() }),
           "password"
         ),
-        toggleRow("上传时自动直传 imgbb 并绑定编号", settings.autoUpload, (v) => {
-          const cur = ctx.getSettings();
-          if (v && !cur.imgbbApiKey.trim()) {
-            hint.textContent = "请先填写 imgbb API Key（免费申请：https://api.imgbb.com/）";
-            ctx.updateSettings({ ...cur, autoUpload: false });
-            return;
-          }
-          ctx.updateSettings({ ...cur, autoUpload: v });
-        }),
+        autoUploadRow,
         hint
       );
       const manualDesc = el2("div", "so-app-desc");
-      manualDesc.textContent = "② 按编号还原地址（默认 catbox，不需要 Key）：「按编码添加」以及解析分享串和插图编码时，把编号接在下面这个前缀后面拼成完整地址。它只读不写，不会上传任何东西。";
+      manualDesc.textContent = t("apps.gallery.manual_description", "② 按编号还原地址（默认 catbox，不需要 Key）：「按编码添加」以及解析分享串和插图编码时，把编号接在下面这个前缀后面拼成完整地址。它只读不写，不会上传任何东西。");
       const manualWhen = el2("div", "so-app-desc");
-      manualWhen.textContent = "只有当对方的图不在 catbox 上时才需要改前缀——改成他们用的图床域名即可。";
+      manualWhen.textContent = t("apps.gallery.manual_when", "只有当对方的图不在 catbox 上时才需要改前缀——改成他们用的图床域名即可。");
       hostSection.append(
         manualDesc,
         manualWhen,
-        textRow("图床前缀", settings.imageHost, DEFAULT_IMAGE_HOST, (raw) => {
+        textRow(t("apps.gallery.host_prefix", "图床前缀"), settings.imageHost, DEFAULT_IMAGE_HOST, (raw) => {
           const v = raw.trim() || DEFAULT_IMAGE_HOST;
           const value = /^https?:\/\/.+/.test(v) ? v.endsWith("/") ? v : `${v}/` : DEFAULT_IMAGE_HOST;
           ctx.updateSettings({ ...ctx.getSettings(), imageHost: value });
@@ -14039,8 +14247,8 @@ function summarizeMedia(root, viewport) {
   const result = {};
   let visible = 0;
   let offscreen = 0;
-  for (const [key, selector] of Object.entries(kinds)) {
-    const nodes = [...root.querySelectorAll(selector)];
+  for (const [key, selector2] of Object.entries(kinds)) {
+    const nodes = [...root.querySelectorAll(selector2)];
     result[key] = nodes.length;
     for (const node of nodes) {
       const rect = node.getBoundingClientRect();
@@ -14328,7 +14536,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-09-30 00:18"}`;
+  return `${"0.9.0"}+${"2026-10-06 20:32"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -15458,10 +15666,10 @@ function dispatchValue(element2, value) {
   element2.dispatchEvent(new Event("change", { bubbles: true }));
 }
 var sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-async function waitFor(selector, timeout = 2500) {
+async function waitFor(selector2, timeout = 2500) {
   const start = Date.now();
   while (Date.now() - start < timeout) {
-    const element2 = document.querySelector(selector);
+    const element2 = document.querySelector(selector2);
     if (element2) return element2;
     await sleep(50);
   }
@@ -20341,7 +20549,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-09-30 00:18"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-10-06 20:32"}`;
   console.log(`[sprite-overlay] 百工（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);
