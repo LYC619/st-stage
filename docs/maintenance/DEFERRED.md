@@ -4,6 +4,8 @@ Known follow-ups and pending review repairs are recorded here. Older sections re
 
 ## 2026-09-30 i18n Continuation and Release Gates
 
+Updated October 6: `d55fd4c` completes Sprite/Gallery App display translation and shared App-dialog/phone focus support. All 10 real-ST scenarios remain passing with new App/keyboard checks; 7 native Edge focus scenarios also pass. Deep gallery, Export, MVU, New Variables/designer and other tools remain open. Gallery's own dialogs, image viewer and migration dialogs have not yet adopted the shared modal focus lifecycle. Full reader/device/contrast acceptance is not claimed. See `history/2026-10-06-ui-focus.md`.
+
 - `e11cd3d` repairs locale loading, adds the first translated UI controls and fixes real-ST gallery toolbar/keyboard issues. Real ST 1.18.0 i18n acceptance passes 10 scenarios; full App/deep gallery translation, focus management and screen-reader support remain pending.
 - Mobile browser emulation is separate from physical-phone/OS-keyboard acceptance. External sprite hosts were blocked; the isolated copied ST runtime logged thumbnail-conversion dependency-path errors. Cloud images and image conversion were not validated by this run.
 - September 7 real-ST image migration/save/reload/restore, fault handling and standard ZIP-import checks below remain open. Only their existing synthetic maintenance browser regressions were rerun.
