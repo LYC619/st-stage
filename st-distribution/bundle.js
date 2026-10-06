@@ -5292,11 +5292,17 @@ function topDialog() {
 function manageDialogFocus(container, options) {
   const opener = options.opener === void 0 ? document.activeElement instanceof HTMLElement ? document.activeElement : null : options.opener;
   const originalTabIndex = container.getAttribute("tabindex");
+  const layer = options.layer ?? container;
+  const originalZIndex = layer.style.getPropertyValue("z-index");
+  const originalZPriority = layer.style.getPropertyPriority("z-index");
+  const zIndex = (node) => Number.parseInt(getComputedStyle(node).zIndex, 10) || 0;
+  const highestLayer = Math.max(9999, zIndex(layer), ...dialogs.filter((entry2) => entry2.container.isConnected).map((entry2) => zIndex(entry2.layer)));
+  layer.style.setProperty("z-index", String(highestLayer + 1));
   if (originalTabIndex === null) container.tabIndex = -1;
   let disposed = false;
   let restoreAllowed = false;
   let lastFocused = null;
-  const entry = { container, focusInitial };
+  const entry = { container, layer, focusInitial };
   dialogs.push(entry);
   function focusInitial() {
     if (disposed || topDialog() !== entry) return;
@@ -5333,6 +5339,7 @@ function manageDialogFocus(container, options) {
   document.addEventListener("focusin", onFocus, true);
   return {
     focusInitial,
+    isTop: () => !disposed && topDialog() === entry,
     dispose() {
       if (disposed) return;
       restoreAllowed = topDialog() === entry;
@@ -5341,6 +5348,8 @@ function manageDialogFocus(container, options) {
       document.removeEventListener("keydown", onKey, true);
       document.removeEventListener("focusin", onFocus, true);
       if (originalTabIndex === null) container.removeAttribute("tabindex");
+      if (originalZIndex) layer.style.setProperty("z-index", originalZIndex, originalZPriority);
+      else layer.style.removeProperty("z-index");
     },
     /** Call after removing the dialog and reopening/remounting its source App. */
     restoreFocus() {
@@ -5405,7 +5414,7 @@ function openAppModal(build, hooks) {
       focus.restoreFocus();
     }
   };
-  const focus = manageDialogFocus(box, { onEscape: close, opener });
+  const focus = manageDialogFocus(box, { onEscape: close, opener, layer: backdrop });
   closeBtn.addEventListener("click", close);
   closeBtn.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -5867,7 +5876,7 @@ function decodeShareStringV1(raw) {
   const text4 = raw.trim();
   const prefixIndex = text4.indexOf(SHARE_PREFIX);
   if (prefixIndex === -1) {
-    throw new Error(`导入失败：没有找到 ${SHARE_PREFIX} 开头的分享串`);
+    throw new Error(t("sprite.manager.content.error.share_prefix", "导入失败：没有找到 {{p0}} 开头的分享串", { p0: SHARE_PREFIX }));
   }
   const body = text4.slice(prefixIndex + SHARE_PREFIX.length).trim();
   const segments = body.split("|");
@@ -5900,7 +5909,7 @@ function decodeShareStringV1(raw) {
     sprites.push({ tag, url: host + code, code });
   }
   if (sprites.length === 0) {
-    throw new Error("导入失败：分享串中没有可用的「表情=编码」条目");
+    throw new Error(t("sprite.manager.content.error.share_no_codes", "导入失败：分享串中没有可用的「表情=编码」条目"));
   }
   const finalSprites = sprites.map((s) => ({ ...s, url: host + s.code }));
   return { id: genId(), name, author, sprites: finalSprites, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
@@ -5943,7 +5952,7 @@ function decodeShareStringV2(raw) {
   const text4 = raw.trim();
   const prefixIndex = text4.indexOf(SHARE_PREFIX_V2);
   if (prefixIndex === -1) {
-    throw new Error(`导入失败：没有找到 ${SHARE_PREFIX_V2} 开头的分享串`);
+    throw new Error(t("sprite.manager.content.error.share_prefix", "导入失败：没有找到 {{p0}} 开头的分享串", { p0: SHARE_PREFIX_V2 }));
   }
   const body = text4.slice(prefixIndex + SHARE_PREFIX_V2.length).trim();
   const segments = body.split("|");
@@ -5996,7 +6005,7 @@ function decodeShareStringV2(raw) {
     });
   }
   if (sprites.length === 0) {
-    throw new Error("导入失败：分享串中没有可用的「地址=URL」条目");
+    throw new Error(t("sprite.manager.content.error.share_no_urls", "导入失败：分享串中没有可用的「地址=URL」条目"));
   }
   const commonRole = sprites.every((s) => (s.group ?? "") === (sprites[0].group ?? "")) ? sprites[0].group ?? "" : "";
   const commonOutfit = sprites.every((s) => (s.outfit ?? "") === (sprites[0].outfit ?? "")) ? sprites[0].outfit ?? "" : "";
@@ -6612,7 +6621,7 @@ var IMAGE_FORMATS = {
 function uniqueImageName() {
   const cryptoApi = globalThis.crypto;
   if (!cryptoApi || typeof cryptoApi.getRandomValues !== "function") {
-    throw new Error("当前环境不支持安全随机图片命名");
+    throw new Error(t("storage.errors.random_image", "当前环境不支持安全随机图片命名"));
   }
   const bytes = new Uint8Array(16);
   cryptoApi.getRandomValues(bytes);
@@ -6620,18 +6629,18 @@ function uniqueImageName() {
 }
 function parseImageData(dataUri) {
   const match = /^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/]+={0,2})$/i.exec(dataUri);
-  if (!match || match[2].length % 4 !== 0) throw new Error("图片数据格式不正确");
+  if (!match || match[2].length % 4 !== 0) throw new Error(t("storage.errors.image_data", "图片数据格式不正确"));
   const format = IMAGE_FORMATS[match[1].toLowerCase()];
-  if (!format) throw new Error("不支持的图片格式，请转换为 PNG、WebP 或 GIF 后重试");
+  if (!format) throw new Error(t("storage.errors.image_format", "不支持的图片格式，请转换为 PNG、WebP 或 GIF 后重试"));
   const binarySize = match[2].length * 3 / 4 - (match[2].endsWith("==") ? 2 : match[2].endsWith("=") ? 1 : 0);
-  if (binarySize > ST_IMAGE_MAX_BYTES) throw new Error("单张图片不能超过 20 MiB");
+  if (binarySize > ST_IMAGE_MAX_BYTES) throw new Error(t("storage.errors.image_size", "单张图片不能超过 20 MiB"));
   let binary;
   try {
     binary = atob(match[2]);
   } catch (error) {
-    throw new Error("图片数据格式不正确", { cause: error });
+    throw new Error(t("storage.errors.image_data", "图片数据格式不正确"), { cause: error });
   }
-  if (!binary.length) throw new Error("图片数据为空");
+  if (!binary.length) throw new Error(t("storage.errors.image_empty", "图片数据为空"));
   return {
     image: match[2],
     format,
@@ -6646,13 +6655,13 @@ function sameBytes(actual, expected) {
   return true;
 }
 async function persistSTImage(dataUri, deps, options = {}) {
-  if (typeof deps.fetch !== "function") throw new Error("当前环境不支持图片保存请求能力");
+  if (typeof deps.fetch !== "function") throw new Error(t("storage.errors.fetch_missing", "当前环境不支持图片保存请求能力"));
   if (typeof deps.getRequestHeaders !== "function") {
-    throw new Error("当前酒馆未提供图片保存所需的请求头能力");
+    throw new Error(t("storage.errors.headers_missing", "当前酒馆未提供图片保存所需的请求头能力"));
   }
   const headers = deps.getRequestHeaders();
   if (!headers || typeof headers !== "object" || Object.keys(headers).length === 0) {
-    throw new Error("当前酒馆未提供图片保存所需的请求头能力");
+    throw new Error(t("storage.errors.headers_missing", "当前酒馆未提供图片保存所需的请求头能力"));
   }
   const data = parseImageData(dataUri);
   const filename = uniqueImageName();
@@ -6661,7 +6670,7 @@ async function persistSTImage(dataUri, deps, options = {}) {
   const onAbort = () => controller.abort(options.signal?.reason);
   options.signal?.addEventListener("abort", onAbort, { once: true });
   if (options.signal?.aborted) onAbort();
-  const timer = setTimeout(() => controller.abort(new Error("图片保存超时")), ST_IMAGE_SAVE_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(new Error(t("storage.errors.timeout", "图片保存超时"))), ST_IMAGE_SAVE_TIMEOUT_MS);
   try {
     const response = await deps.fetch("/api/images/upload", {
       method: "POST",
@@ -6674,20 +6683,20 @@ async function persistSTImage(dataUri, deps, options = {}) {
         filename
       })
     });
-    if (!response.ok) throw new Error(`图片上传失败：HTTP ${response.status}`);
+    if (!response.ok) throw new Error(t("storage.errors.upload_http", "图片上传失败：HTTP {{status}}", { status: response.status }));
     const result = await response.json();
     const path = result && typeof result === "object" && "path" in result ? result.path : void 0;
     if (typeof path !== "string" || path !== expectedPath || localUserImagePath(path) !== expectedPath) {
-      throw new Error("图片上传响应未返回本次保存的安全本地路径");
+      throw new Error(t("storage.errors.response_path", "图片上传响应未返回本次保存的安全本地路径"));
     }
     const readback = await deps.fetch(path, {
       cache: "no-store",
       credentials: "same-origin",
       signal: controller.signal
     });
-    if (!readback.ok) throw new Error(`图片保存后校验失败：HTTP ${readback.status}`);
+    if (!readback.ok) throw new Error(t("storage.errors.readback_http", "图片保存后校验失败：HTTP {{status}}", { status: readback.status }));
     const actual = new Uint8Array(await readback.arrayBuffer());
-    if (!sameBytes(actual, data.bytes)) throw new Error("图片保存后校验失败：文件内容不一致");
+    if (!sameBytes(actual, data.bytes)) throw new Error(t("storage.errors.content_mismatch", "图片保存后校验失败：文件内容不一致"));
     return path;
   } finally {
     clearTimeout(timer);
@@ -7312,19 +7321,19 @@ function validateChoicesForGroups(groups, choices) {
   for (const choice of choices) {
     const group = conflictByKey.get(choice.key);
     if (!group) {
-      throw new PackMergeChoiceError(`未知冲突选择 key：${choice.key}`);
+      throw new PackMergeChoiceError(t("galleryErrors.merge_unknown", "未知冲突选择 key：{{key}}", { key: choice.key }));
     }
     if (choiceByKey.has(choice.key)) {
-      throw new PackMergeChoiceError(`地址「${group.address.tag}」存在重复选择`);
+      throw new PackMergeChoiceError(t("galleryErrors.merge_duplicate", "地址「{{tag}}」存在重复选择", { tag: group.address.tag }));
     }
     if (!Number.isSafeInteger(choice.candidateIndex) || choice.candidateIndex < 0 || choice.candidateIndex >= group.candidates.length) {
-      throw new PackMergeChoiceError(`地址「${group.address.tag}」的候选序号无效`);
+      throw new PackMergeChoiceError(t("galleryErrors.merge_invalid", "地址「{{tag}}」的候选序号无效", { tag: group.address.tag }));
     }
     choiceByKey.set(choice.key, choice.candidateIndex);
   }
   for (const group of conflicts) {
     if (!choiceByKey.has(group.key)) {
-      throw new PackMergeChoiceError(`地址「${group.address.tag}」的冲突图片尚未选择`);
+      throw new PackMergeChoiceError(t("galleryErrors.merge_missing", "地址「{{tag}}」的冲突图片尚未选择", { tag: group.address.tag }));
     }
   }
   return choiceByKey;
@@ -7434,14 +7443,14 @@ function importPack(jsonText) {
   try {
     raw = JSON.parse(jsonText);
   } catch {
-    throw new Error("导入失败：不是合法的 JSON 文件");
+    throw new Error(t("sprite.manager.content.error.invalid_json", "导入失败：不是合法的 JSON 文件"));
   }
   const file = raw;
   if (file.format !== "sprite-pack@3" && file.format !== "sprite-pack@2" && file.format !== "sprite-pack@1") {
-    throw new Error("导入失败：不是 sprite-pack@1 / @2 / @3 格式的立绘包");
+    throw new Error(t("sprite.manager.content.error.pack_format", "导入失败：不是 sprite-pack@1 / @2 / @3 格式的立绘包"));
   }
   if (typeof file.name !== "string" || !file.name || !Array.isArray(file.sprites) || file.sprites.length === 0) {
-    throw new Error("导入失败：立绘包缺少名称或立绘列表为空");
+    throw new Error(t("sprite.manager.content.error.empty_pack", "导入失败：立绘包缺少名称或立绘列表为空"));
   }
   const seen = /* @__PURE__ */ new Set();
   const sprites = [];
@@ -7470,7 +7479,7 @@ function importPack(jsonText) {
     });
   }
   if (sprites.length === 0) {
-    throw new Error("导入失败：没有可用的立绘条目（表情名可能全部为空或重复）");
+    throw new Error(t("sprite.manager.content.error.no_entries", "导入失败：没有可用的立绘条目（表情名可能全部为空或重复）"));
   }
   const normalizedCover = typeof file.coverTag === "string" ? normalizeTag(file.coverTag) : "";
   const coverTag = sprites.some((s) => s.tag === normalizedCover) ? normalizedCover : void 0;
@@ -7503,7 +7512,7 @@ function importPack(jsonText) {
 }
 async function urlToDataUri(url) {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`fetch ${url} failed: ${res.status}`);
+  if (!res.ok) throw new Error(t("sprite.manager.content.error.image_fetch", "读取图片失败：{{url}}（HTTP {{status}}）", { url, status: res.status }));
   const blob = await res.blob();
   return await new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -7627,7 +7636,7 @@ function isValidImgbbResult(result) {
 }
 async function uploadToImgbb(apiKey, base64DataUri, fetchImpl = fetch) {
   const key = apiKey.trim();
-  if (!key) throw new Error("未配置 imgbb API Key");
+  if (!key) throw new Error(t("galleryErrors.imgbb_key", "未配置 imgbb API Key"));
   const rawBase64 = base64DataUri.replace(/^data:[^;]*;base64,/, "");
   const form = new FormData();
   form.append("key", key);
@@ -7635,11 +7644,11 @@ async function uploadToImgbb(apiKey, base64DataUri, fetchImpl = fetch) {
   const res = await fetchImpl("https://api.imgbb.com/1/upload", { method: "POST", body: form });
   const json = await res.json().catch(() => null);
   if (!json?.success || !json.data?.image) {
-    throw new Error(`imgbb 上传失败：${json?.error?.message ?? `HTTP ${res.status}`}`);
+    throw new Error(t("galleryErrors.imgbb_upload", "imgbb 上传失败：{{error}}", { error: json?.error?.message ?? `HTTP ${res.status}` }));
   }
   const result = { url: json.data.url ?? "", code: json.data.image.filename ?? "" };
   if (!isValidImgbbResult(result)) {
-    throw new Error("imgbb 返回无效：缺少合法的 HTTPS 直链或文件名");
+    throw new Error(t("galleryErrors.imgbb_response", "imgbb 返回无效：缺少合法的 HTTPS 直链或文件名"));
   }
   return result;
 }
@@ -7739,12 +7748,12 @@ function createSpriteActions(context) {
   return [
     {
       id: "rename",
-      label: "重命名",
+      label: t("sprite.manager.content.action.rename", "重命名"),
       icon: "✎",
       run() {
         const state2 = current(context);
         if (!state2) return;
-        const next = window.prompt(`「${state2.sprite.tag}」改名为：`, state2.sprite.tag);
+        const next = window.prompt(t("sprite.manager.content.action.rename_prompt", "「{{p0}}」改名为：", { p0: state2.sprite.tag }), state2.sprite.tag);
         if (next === null) return;
         commitAndRefresh(
           context,
@@ -7760,13 +7769,13 @@ function createSpriteActions(context) {
     },
     {
       id: "labels",
-      label: "标签",
+      label: t("sprite.manager.content.action.labels", "标签"),
       icon: "#",
       run() {
         const state2 = current(context);
         if (!state2) return;
         const raw = window.prompt(
-          `「${state2.sprite.tag}」的标签（逗号分隔，留空=清除）：`,
+          t("sprite.manager.content.action.labels_prompt", "「{{p0}}」的标签（逗号分隔，留空=清除）：", { p0: state2.sprite.tag }),
           state2.sprite.labels?.join(", ") ?? ""
         );
         if (raw === null) return;
@@ -7779,13 +7788,13 @@ function createSpriteActions(context) {
     },
     {
       id: "group",
-      label: "设分组",
+      label: t("sprite.manager.content.action.group", "设分组"),
       icon: "🏷",
       run() {
         const state2 = current(context);
         if (!state2) return;
         const group = spriteGroup(state2.sprite);
-        const next = window.prompt(`「${state2.sprite.tag}」的分组（留空=移出分组）：`, group);
+        const next = window.prompt(t("sprite.manager.content.action.group_prompt", "「{{p0}}」的分组（留空=移出分组）：", { p0: state2.sprite.tag }), group);
         if (next === null) return;
         commitAndRefresh(
           context,
@@ -7795,7 +7804,7 @@ function createSpriteActions(context) {
     },
     {
       id: "replace",
-      label: "重新上传 / 替换图片",
+      label: t("sprite.manager.content.action.replace", "重新上传 / 替换图片"),
       icon: "🖼",
       run() {
         if (!current(context)) return;
@@ -7804,9 +7813,9 @@ function createSpriteActions(context) {
     },
     {
       id: "localize",
-      label: "保存到本地",
+      label: t("sprite.manager.content.action.localize", "保存到本地"),
       icon: "↓",
-      hint: "把图床上的图片下载成本地文件再引用，之后不再依赖外链。预设包不会被改写，只记一条同 ID 的本地覆盖，随时可以删掉回到原图。",
+      hint: t("sprite.manager.content.action.localize_hint", "把图床上的图片下载成本地文件再引用，之后不再依赖外链。") + t("sprite.manager.content.action.preset_localize_hint", "预设包不会被改写，只记一条同 ID 的本地覆盖，随时可以删掉回到原图。"),
       // 预设包只读，但本地化是记覆盖而不是改包，所以只读态下也应当放行——
       // 这是预设立绘唯一的本地化入口。
       allowedInReadonly: true,
@@ -7819,25 +7828,24 @@ function createSpriteActions(context) {
     },
     {
       id: "remote",
-      label: "远程地址",
+      label: t("sprite.manager.content.action.remote", "远程地址"),
       icon: "🔗",
       run() {
         const state2 = current(context);
         if (!state2) return;
         const remote = state2.sprite.remoteUrl || (getSpriteSource(state2.sprite) === "hosted" ? state2.sprite.url : "");
         if (!remote) {
-          throw new Error(`「${state2.sprite.tag}」还没有远程地址（未上传图床，分享时对方看不到）`);
+          throw new Error(t("sprite.manager.content.action.no_remote", "「{{p0}}」还没有远程地址（未上传图床，分享时对方看不到）", { p0: state2.sprite.tag }));
         }
         window.prompt(
-          `「${state2.sprite.tag}」编号：${state2.sprite.code || "无"}
-远程地址（Ctrl+C 复制）：`,
+          t("sprite.manager.content.action.remote_prompt", "「{{p0}}」编号：{{p1}}\n远程地址（Ctrl+C 复制）：", { p0: state2.sprite.tag, p1: state2.sprite.code || t("sprite.manager.content.action.none", "无") }),
           remote
         );
       }
     },
     {
       id: "cover",
-      label: "设为封面",
+      label: t("sprite.manager.content.action.cover", "设为封面"),
       icon: "★",
       run() {
         const state2 = current(context);
@@ -7847,12 +7855,12 @@ function createSpriteActions(context) {
     },
     {
       id: "delete",
-      label: "删除",
+      label: t("common.delete", "删除"),
       icon: "✕",
       destructive: true,
       run() {
         const state2 = current(context);
-        if (!state2 || !window.confirm(`删除立绘「${state2.sprite.tag}」？`)) return;
+        if (!state2 || !window.confirm(t("sprite.manager.content.action.confirm_delete", "删除立绘「{{p0}}」？", { p0: state2.sprite.tag }))) return;
         const next = removeSprite(
           state2.pack,
           state2.sprite.tag,
@@ -7873,21 +7881,24 @@ function openSpriteLightbox(options) {
   let currentIndex = clampIndex(options.index, currentPack.sprites.length);
   let currentActions = options.actions;
   let closed = false;
+  let focus = null;
   const layer = element("div", "so-lightbox");
   layer.setAttribute("role", "dialog");
   layer.setAttribute("aria-modal", "true");
-  layer.setAttribute("aria-label", "立绘预览");
+  layer.setAttribute("aria-label", t("lightbox.title", "立绘预览"));
   layer.dataset.readonly = String(options.readonly);
   const stage = element("div", "so-lightbox-stage");
   const image = document.createElement("img");
   image.className = "so-lightbox-image";
   const caption = element("div", "so-lightbox-caption");
-  const previous = control("◀", "上一张（← 方向键）", "so-lightbox-nav so-lightbox-prev");
-  const next = control("▶", "下一张（→ 方向键）", "so-lightbox-nav so-lightbox-next");
-  const closeButton = control("✕", "关闭（Esc）", "so-lightbox-close");
+  caption.setAttribute("role", "status");
+  caption.setAttribute("aria-atomic", "true");
+  const previous = control("◀", t("lightbox.previous", "上一张（← 方向键）"), "so-lightbox-nav so-lightbox-prev");
+  const next = control("▶", t("lightbox.next", "下一张（→ 方向键）"), "so-lightbox-nav so-lightbox-next");
+  const closeButton = control("✕", t("lightbox.close", "关闭（Esc）"), "so-lightbox-close");
   const actionRail = element("div", "so-lightbox-actions");
-  actionRail.setAttribute("role", "toolbar");
-  actionRail.setAttribute("aria-label", "立绘操作");
+  actionRail.setAttribute("role", "group");
+  actionRail.setAttribute("aria-label", t("lightbox.actions", "立绘操作"));
   stage.append(image);
   layer.append(stage, caption, previous, next, closeButton, actionRail);
   const visualViewport = window.visualViewport;
@@ -7902,6 +7913,8 @@ function openSpriteLightbox(options) {
     layer.style.height = `${height}px`;
   };
   const renderActions = () => {
+    const active = document.activeElement;
+    const activeAction = active instanceof HTMLElement && actionRail.contains(active) ? active.dataset.actionId : void 0;
     actionRail.replaceChildren();
     const visibleActions = options.readonly ? currentActions.filter((action) => action.allowedInReadonly) : currentActions;
     const hidden = visibleActions.length === 0;
@@ -7937,13 +7950,22 @@ function openSpriteLightbox(options) {
       });
       actionRail.append(button2);
     }
+    if (activeAction && focus?.isTop()) {
+      const replacement = Array.from(actionRail.querySelectorAll("button")).find((button2) => button2.dataset.actionId === activeAction && !button2.disabled);
+      if (replacement) replacement.focus({ preventScroll: true });
+      else focus.focusInitial();
+    }
   };
   const render2 = () => {
     const sprite = currentPack.sprites[currentIndex];
     if (sprite) {
       image.src = sprite.url;
       image.alt = sprite.tag;
-      caption.textContent = `${sprite.tag}（${currentIndex + 1}/${currentPack.sprites.length}）`;
+      caption.textContent = t("lightbox.caption", "{{tag}}（{{index}}/{{count}}）", {
+        tag: sprite.tag,
+        index: currentIndex + 1,
+        count: currentPack.sprites.length
+      });
     } else {
       image.removeAttribute("src");
       image.alt = "";
@@ -7964,6 +7986,7 @@ function openSpriteLightbox(options) {
   const close = () => {
     if (closed) return;
     closed = true;
+    focus?.dispose();
     document.removeEventListener("keydown", onKeyDown, true);
     if (visualViewport) {
       visualViewport.removeEventListener("resize", applyViewport);
@@ -7972,19 +7995,23 @@ function openSpriteLightbox(options) {
       window.removeEventListener("resize", applyViewport);
     }
     layer.remove();
-    options.onClose();
+    try {
+      options.onClose();
+    } finally {
+      focus?.restoreFocus();
+    }
   };
   const onKeyDown = (event) => {
+    if (!focus?.isTop() || event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.target instanceof HTMLElement && event.target.closest("input, textarea, select, [contenteditable]")) return;
     if (event.key === "ArrowLeft") {
       event.preventDefault();
+      event.stopPropagation();
       navigate(-1);
     } else if (event.key === "ArrowRight") {
       event.preventDefault();
-      navigate(1);
-    } else if (event.key === "Escape") {
-      event.preventDefault();
       event.stopPropagation();
-      close();
+      navigate(1);
     }
   };
   previous.addEventListener("click", (event) => {
@@ -8028,6 +8055,8 @@ function openSpriteLightbox(options) {
   applyViewport();
   render2();
   document.body.append(layer);
+  focus = manageDialogFocus(layer, { onEscape: close });
+  focus.focusInitial();
   return controller;
 }
 function clampIndex(index, count) {
@@ -8054,65 +8083,65 @@ var LOCALIZE_MAX_BYTES = 20 * 1024 * 1024;
 var LOCALIZE_TIMEOUT_MS = 3e4;
 async function localizeSprite(sprite, fileName, deps) {
   if (getSpriteSource(sprite) !== "hosted") {
-    throw new Error("这张立绘已经是本地图片");
+    throw new Error(t("galleryErrors.already_local", "这张立绘已经是本地图片"));
   }
   let response;
   try {
     response = await deps.fetch(sprite.url, requestInit());
   } catch (error) {
-    throw new Error(`下载远程图片失败：${downloadFailure(error)}`, { cause: error });
+    throw new Error(t("galleryErrors.download", "下载远程图片失败：{{error}}", { error: downloadFailure(error) }), { cause: error });
   }
   if (!response.ok) {
-    throw new Error(`下载远程图片失败：HTTP ${response.status}`);
+    throw new Error(t("galleryErrors.download_http", "下载远程图片失败：HTTP {{status}}", { status: response.status }));
   }
   const declaredBytes = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredBytes) && declaredBytes > LOCALIZE_MAX_BYTES) {
-    throw new Error(`远程图片过大，不能超过 ${formatLimit()}`);
+    throw new Error(t("galleryErrors.size_limit", "远程图片过大，不能超过 {{limit}}", { limit: formatLimit() }));
   }
   let blob;
   try {
     blob = await response.blob();
   } catch (error) {
-    throw new Error(`下载远程图片失败：${downloadFailure(error)}`, { cause: error });
+    throw new Error(t("galleryErrors.download", "下载远程图片失败：{{error}}", { error: downloadFailure(error) }), { cause: error });
   }
   if (blob.size > LOCALIZE_MAX_BYTES) {
-    throw new Error(`远程图片过大，不能超过 ${formatLimit()}`);
+    throw new Error(t("galleryErrors.size_limit", "远程图片过大，不能超过 {{limit}}", { limit: formatLimit() }));
   }
   if (!blob.type.startsWith("image/")) {
-    throw new Error("远程地址没有返回图片");
+    throw new Error(t("galleryErrors.not_image", "远程地址没有返回图片"));
   }
   let compressed;
   try {
     compressed = await (deps.compress ?? compressImage)(blob);
   } catch (error) {
-    throw new Error(`压缩远程图片失败：${errorMessage(error)}`, { cause: error });
+    throw new Error(t("galleryErrors.compress", "压缩远程图片失败：{{error}}", { error: errorMessage(error) }), { cause: error });
   }
   let localUrl;
   try {
     localUrl = await deps.saveImage(dataUriToFile(compressed.dataUri, fileName), fileName);
   } catch (error) {
-    throw new Error(`保存本地图片失败：${errorMessage(error)}`, { cause: error });
+    throw new Error(t("galleryErrors.save", "保存本地图片失败：{{error}}", { error: errorMessage(error) }), { cause: error });
   }
   const safeLocalUrl = localUserImagePath(localUrl);
   if (!safeLocalUrl) {
-    throw new Error("保存本地图片失败：平台未返回安全的本地用户图片地址");
+    throw new Error(t("galleryErrors.unsafe_local", "保存本地图片失败：平台未返回安全的本地用户图片地址"));
   }
   return { ...sprite, url: localUrl, remoteUrl: sprite.url };
 }
 function dataUriToFile(dataUri, fileName) {
   const match = /^data:(image\/[^;,]+);base64,([A-Za-z0-9+/]*={0,2})$/.exec(dataUri);
-  if (!match) throw new Error("压缩后的图片数据格式不正确");
+  if (!match) throw new Error(t("galleryErrors.compressed_data", "压缩后的图片数据格式不正确"));
   const binary = atob(match[2]);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
   return new File([bytes], fileName, { type: match[1] });
 }
 function errorMessage(error) {
-  return error instanceof Error && error.message ? error.message : "未知错误";
+  return error instanceof Error && error.message ? error.message : t("storage.unknown_error", "未知错误");
 }
 function downloadFailure(error) {
   const name = typeof error?.name === "string" ? error.name : "";
-  return name === "TimeoutError" || name === "AbortError" ? `超过 ${LOCALIZE_TIMEOUT_MS / 1e3} 秒没有响应` : errorMessage(error);
+  return name === "TimeoutError" || name === "AbortError" ? t("galleryErrors.download_timeout", "超过 {{seconds}} 秒没有响应", { seconds: LOCALIZE_TIMEOUT_MS / 1e3 }) : errorMessage(error);
 }
 function requestInit() {
   return typeof AbortSignal?.timeout === "function" ? { signal: AbortSignal.timeout(LOCALIZE_TIMEOUT_MS) } : void 0;
@@ -8214,7 +8243,7 @@ async function stageEmbeddedImages(candidates, deps, options = {}) {
       let saved = savedByUri.get(candidate.sourceUrl);
       if (!saved) {
         saved = deps.save(candidate.sourceUrl, { signal: options.signal }).then((url) => {
-          if (!localUserImagePath(url)) throw new Error("保存失败：平台未返回本地图片路径");
+          if (!localUserImagePath(url)) throw new Error(t("storage.errors.local_path_missing", "保存失败：平台未返回本地图片路径"));
           return url;
         });
         savedByUri.set(candidate.sourceUrl, saved);
@@ -8236,7 +8265,7 @@ async function stageEmbeddedImages(candidates, deps, options = {}) {
       }
       result.failed.push({
         candidate,
-        message: error instanceof Error ? error.message : "保存失败"
+        message: error instanceof Error ? error.message : t("storage.errors.save_failed", "保存失败")
       });
     }
     options.onProgress?.(index + 1, candidates.length);
@@ -8250,23 +8279,23 @@ async function stageEmbeddedImages(candidates, deps, options = {}) {
   return result;
 }
 async function prepareImportedPack(pack, deps, options = {}) {
-  if (isPresetPack(pack.id)) throw new Error("内置预设不能作为导入目标");
-  if (options.signal?.aborted) throw new Error("内嵌图片准备未完成，图包未安装（已取消）");
+  if (isPresetPack(pack.id)) throw new Error(t("storage.errors.preset_target", "内置预设不能作为导入目标"));
+  if (options.signal?.aborted) throw new Error(t("storage.errors.import_cancelled", "内嵌图片准备未完成，图包未安装（已取消）"));
   const staging = {
     ...createDefaultSettings(),
     packs: [pack]
   };
   const scan = scanEmbeddedImages(staging);
-  if (scan.ambiguous.length > 0) throw new Error("图包包含重复图片身份，未安装");
+  if (scan.ambiguous.length > 0) throw new Error(t("storage.errors.pack_duplicates", "图包包含重复图片身份，未安装"));
   if (scan.candidates.length === 0) return pack;
   const staged = await stageEmbeddedImages(scan.candidates, deps, options);
   if (staged.cancelled || staged.failed.length > 0 || staged.unprocessed.length > 0) {
-    throw new Error(`内嵌图片准备未完成，图包未安装（失败 ${staged.failed.length}）`);
+    throw new Error(t("storage.errors.prepare_failed", "内嵌图片准备未完成，图包未安装（失败 {{count}}）", { count: staged.failed.length }));
   }
   const applied = applyImageChanges(staging, staged.ready);
   const prepared = applied.settings.packs[0];
   if (!prepared || applied.conflicts.length > 0 || prepared.sprites.some((sprite) => /^data:/i.test(sprite.url))) {
-    throw new Error("图包仍有未落盘图片，未安装");
+    throw new Error(t("storage.errors.pack_unsaved", "图包仍有未落盘图片，未安装"));
   }
   return prepared;
 }
@@ -8326,8 +8355,8 @@ function findUnmappedEmbeddedImages(rawSettings, settings) {
   return result;
 }
 function createStorageBackup(settings, rawSettings, backupId, createdAt) {
-  if (!validId(backupId)) throw new Error("备份 ID 不合法");
-  if (!createdAt) throw new Error("备份时间不合法");
+  if (!validId(backupId)) throw new Error(t("storage.errors.backup_id", "备份 ID 不合法"));
+  if (!createdAt) throw new Error(t("storage.errors.backup_time", "备份时间不合法"));
   const persisted = { ...settings, packs: settings.packs.filter((pack) => !isPresetPack(pack.id)) };
   const backup = { format: "st-stage-storage-backup@1", backupId, createdAt, settings: persisted, unmappedEmbedded: findUnmappedEmbeddedImages(rawSettings, persisted) };
   return JSON.parse(JSON.stringify(backup));
@@ -8337,31 +8366,31 @@ function parseStorageBackup(text4) {
   try {
     parsed = JSON.parse(text4);
   } catch (error) {
-    throw new Error("存储备份不是有效 JSON", { cause: error });
+    throw new Error(t("storage.errors.backup_json", "存储备份不是有效 JSON"), { cause: error });
   }
   const raw = object(parsed);
-  if (!raw || raw.format !== "st-stage-storage-backup@1" || !validId(raw.backupId) || typeof raw.createdAt !== "string" || !raw.createdAt || !Array.isArray(raw.unmappedEmbedded)) throw new Error("存储备份格式或版本不支持");
+  if (!raw || raw.format !== "st-stage-storage-backup@1" || !validId(raw.backupId) || typeof raw.createdAt !== "string" || !raw.createdAt || !Array.isArray(raw.unmappedEmbedded)) throw new Error(t("storage.errors.backup_format", "存储备份格式或版本不支持"));
   if (raw.unmappedEmbedded.some((item) => {
     const entry = object(item);
     return typeof entry?.location !== "string" || typeof entry.value !== "string" || !/^data:/i.test(entry.value);
-  })) throw new Error("存储备份附录不合法");
+  })) throw new Error(t("storage.errors.backup_appendix", "存储备份附录不合法"));
   const rawSettings = object(raw.settings);
   const defaults = createDefaultSettings();
   if (!rawSettings || !Array.isArray(rawSettings.packs) || rawSettings.settingsVersion !== SETTINGS_VERSION || !hasFields(rawSettings, Object.keys(defaults)) || !hasFields(rawSettings.overlay, Object.keys(defaults.overlay)) || !hasFields(rawSettings.phone, Object.keys(defaults.phone)) || !Array.isArray(rawSettings.bindings) || rawSettings.bindings.some((binding) => !hasFields(binding, ["characterName", "packIds", "enabled"]))) {
-    throw new Error("存储备份设置不合法");
+    throw new Error(t("storage.errors.backup_settings", "存储备份设置不合法"));
   }
   const settings = migrateSettings(rawSettings);
   if (settings.packs.some((pack) => isPresetPack(pack.id)) || !preservesFields(rawSettings, settings)) {
-    throw new Error("存储备份设置不合法");
+    throw new Error(t("storage.errors.backup_settings", "存储备份设置不合法"));
   }
   const packIds = /* @__PURE__ */ new Set();
   const refs = /* @__PURE__ */ new Set();
   for (const pack of settings.packs) {
-    if (packIds.has(pack.id)) throw new Error("存储备份包含重复图片身份");
+    if (packIds.has(pack.id)) throw new Error(t("storage.errors.backup_duplicates", "存储备份包含重复图片身份"));
     packIds.add(pack.id);
     for (const sprite of pack.sprites) {
       const key = imageRefKey(spriteImageRef(pack, sprite));
-      if (refs.has(key)) throw new Error("存储备份包含重复图片身份");
+      if (refs.has(key)) throw new Error(t("storage.errors.backup_duplicates", "存储备份包含重复图片身份"));
       refs.add(key);
     }
   }
@@ -8371,20 +8400,20 @@ function assertLocalUrl(url) {
   const normalized = localUserImagePath(url);
   const hasControl = Array.from(url).some((char) => char.charCodeAt(0) < 32);
   if (!normalized || !url.startsWith("/user/images/") || /[?#\\]/.test(url) || hasControl || /%(?:2f|5c)/i.test(url) || normalized.endsWith("/") || normalized.includes("//")) {
-    throw new Error("迁移回执包含不安全的本地图片路径");
+    throw new Error(t("storage.errors.receipt_path", "迁移回执包含不安全的本地图片路径"));
   }
   return url;
 }
 function createMigrationReceipt(backup, ready) {
   const scan = scanEmbeddedImages(backup.settings);
-  if (scan.ambiguous.length > 0) throw new Error("迁移回执与备份不匹配");
+  if (scan.ambiguous.length > 0) throw new Error(t("storage.errors.receipt_mismatch", "迁移回执与备份不匹配"));
   const sourceByRef = new Map(scan.candidates.map((item) => [imageRefKey(item.ref), item]));
   const keys = /* @__PURE__ */ new Set();
   const entries = ready.map((change) => {
     const key = imageRefKey(change.ref);
     const source = sourceByRef.get(key);
-    if (keys.has(key)) throw new Error("迁移回执包含重复图片身份");
-    if (!source || source.sourceUrl !== change.expectedUrl) throw new Error("迁移回执与备份不匹配");
+    if (keys.has(key)) throw new Error(t("storage.errors.receipt_duplicates", "迁移回执包含重复图片身份"));
+    if (!source || source.sourceUrl !== change.expectedUrl) throw new Error(t("storage.errors.receipt_mismatch", "迁移回执与备份不匹配"));
     keys.add(key);
     return { ref: change.ref, localUrl: assertLocalUrl(change.nextUrl) };
   });
@@ -8395,21 +8424,21 @@ function parseMigrationReceipt(text4, backup) {
   try {
     parsed = JSON.parse(text4);
   } catch (error) {
-    throw new Error("迁移回执不是有效 JSON", { cause: error });
+    throw new Error(t("storage.errors.receipt_json", "迁移回执不是有效 JSON"), { cause: error });
   }
   const raw = object(parsed);
-  if (!raw || raw.format !== "st-stage-image-migration-receipt@1" || raw.backupId !== backup.backupId || !Array.isArray(raw.entries)) throw new Error("迁移回执与备份不匹配");
+  if (!raw || raw.format !== "st-stage-image-migration-receipt@1" || raw.backupId !== backup.backupId || !Array.isArray(raw.entries)) throw new Error(t("storage.errors.receipt_mismatch", "迁移回执与备份不匹配"));
   const scan = scanEmbeddedImages(backup.settings);
-  if (scan.ambiguous.length > 0) throw new Error("迁移回执与备份不匹配");
+  if (scan.ambiguous.length > 0) throw new Error(t("storage.errors.receipt_mismatch", "迁移回执与备份不匹配"));
   const sourceByRef = new Map(scan.candidates.map((item) => [imageRefKey(item.ref), item]));
   const keys = /* @__PURE__ */ new Set();
   const entries = raw.entries.map((item) => {
     const entry = object(item);
     const ref = object(entry?.ref);
-    if (!ref || typeof ref.packId !== "string" || typeof ref.group !== "string" || typeof ref.outfit !== "string" || typeof ref.tag !== "string" || typeof entry?.localUrl !== "string") throw new Error("迁移回执条目不合法");
+    if (!ref || typeof ref.packId !== "string" || typeof ref.group !== "string" || typeof ref.outfit !== "string" || typeof ref.tag !== "string" || typeof entry?.localUrl !== "string") throw new Error(t("storage.errors.receipt_entry", "迁移回执条目不合法"));
     const normalized = { packId: ref.packId, group: ref.group, outfit: ref.outfit, tag: ref.tag };
     const key = imageRefKey(normalized);
-    if (keys.has(key) || !sourceByRef.has(key)) throw new Error("迁移回执与备份不匹配");
+    if (keys.has(key) || !sourceByRef.has(key)) throw new Error(t("storage.errors.receipt_mismatch", "迁移回执与备份不匹配"));
     keys.add(key);
     assertLocalUrl(entry.localUrl);
     return { ref: normalized, localUrl: entry.localUrl };
@@ -8417,16 +8446,16 @@ function parseMigrationReceipt(text4, backup) {
   return { format: "st-stage-image-migration-receipt@1", backupId: backup.backupId, entries };
 }
 function restoreMigratedImages(latest, backup, receipt) {
-  if (receipt.backupId !== backup.backupId) throw new Error("迁移回执与备份不匹配");
-  if (receipt.format !== "st-stage-image-migration-receipt@1") throw new Error("迁移回执格式不支持");
+  if (receipt.backupId !== backup.backupId) throw new Error(t("storage.errors.receipt_mismatch", "迁移回执与备份不匹配"));
+  if (receipt.format !== "st-stage-image-migration-receipt@1") throw new Error(t("storage.errors.receipt_format", "迁移回执格式不支持"));
   const scan = scanEmbeddedImages(backup.settings);
-  if (scan.ambiguous.length > 0) throw new Error("迁移回执与备份不匹配");
+  if (scan.ambiguous.length > 0) throw new Error(t("storage.errors.receipt_mismatch", "迁移回执与备份不匹配"));
   const sourceByRef = new Map(scan.candidates.map((item) => [imageRefKey(item.ref), item]));
   const keys = /* @__PURE__ */ new Set();
   const changes = receipt.entries.map((entry) => {
     const key = imageRefKey(entry.ref);
     const source = sourceByRef.get(imageRefKey(entry.ref));
-    if (keys.has(key) || !source) throw new Error("迁移回执与备份不匹配");
+    if (keys.has(key) || !source) throw new Error(t("storage.errors.receipt_mismatch", "迁移回执与备份不匹配"));
     keys.add(key);
     const localUrl = assertLocalUrl(entry.localUrl);
     return { ref: entry.ref, expectedUrl: localUrl, nextUrl: source.sourceUrl };
@@ -8450,7 +8479,7 @@ function actionButton(label, action) {
 }
 function randomId() {
   const bytes = new Uint8Array(16);
-  if (!globalThis.crypto?.getRandomValues) throw new Error("当前环境不支持安全随机备份 ID");
+  if (!globalThis.crypto?.getRandomValues) throw new Error(t("storage.errors.random_backup", "当前环境不支持安全随机备份 ID"));
   globalThis.crypto.getRandomValues(bytes);
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -8493,7 +8522,6 @@ function openImageStorageDialog(deps) {
   let restoreSource = null;
   const downloads = /* @__PURE__ */ new Set();
   let scan = scanEmbeddedImages(deps.getSettings());
-  const previousFocus = document.activeElement;
   function download(name, data) {
     let dispose = () => {
     };
@@ -8506,20 +8534,20 @@ function openImageStorageDialog(deps) {
   dialog.className = "so-storage-dialog";
   dialog.setAttribute("role", "dialog");
   dialog.setAttribute("aria-modal", "true");
-  dialog.setAttribute("aria-label", "存储检查与迁移");
+  dialog.setAttribute("aria-label", t("storage.title", "存储检查与迁移"));
   dialog.tabIndex = -1;
   const heading = document.createElement("h3");
-  heading.textContent = "存储检查与迁移";
+  heading.textContent = t("storage.title", "存储检查与迁移");
   const summary = document.createElement("div");
-  summary.textContent = "发现 " + scan.embeddedReferenceCount + " 个内嵌图片引用，" + scan.uniqueEmbeddedCount + " 张不同图片，约 " + scan.embeddedTextBytes + " 字节文本";
+  summary.textContent = t("storage.summary", "发现 {{refs}} 个内嵌图片引用，{{images}} 张不同图片，约 {{bytes}} 字节文本", { refs: scan.embeddedReferenceCount, images: scan.uniqueEmbeddedCount, bytes: scan.embeddedTextBytes });
   const status = document.createElement("div");
   status.className = "so-storage-status";
   status.setAttribute("role", "status");
   const privacy = document.createElement("p");
   privacy.className = "so-storage-warning";
-  privacy.textContent = "备份可能包含私人提示词和 API Key，仅保存在自己的设备，不要公开上传。";
+  privacy.textContent = t("storage.privacy", "备份可能包含私人提示词和 API Key，仅保存在自己的设备，不要公开上传。");
   const progress = document.createElement("progress");
-  progress.setAttribute("aria-label", "图片上传校验进度");
+  progress.setAttribute("aria-label", t("storage.progress_label", "图片上传校验进度"));
   const errors = document.createElement("ul");
   errors.className = "so-storage-errors";
   const controls = document.createElement("div");
@@ -8527,8 +8555,8 @@ function openImageStorageDialog(deps) {
   const confirmBackup = document.createElement("input");
   confirmBackup.type = "checkbox";
   const confirmLabel = document.createElement("label");
-  confirmLabel.append(confirmBackup, document.createTextNode("我已确认备份文件已保存在本机"));
-  const backupButton = actionButton("下载当前插件状态备份", () => {
+  confirmLabel.append(confirmBackup, document.createTextNode(t("storage.confirm_backup", "我已确认备份文件已保存在本机")));
+  const backupButton = actionButton(t("storage.download_backup", "下载当前插件状态备份"), () => {
     if (phase !== "inspect" && phase !== "restore-ready") return;
     invalidateBackup();
     try {
@@ -8541,55 +8569,55 @@ function openImageStorageDialog(deps) {
       );
       download("sprite-overlay-storage-backup-" + backup.backupId + ".json", backup);
       backupDownloaded = true;
-      status.textContent = scan.ambiguous.length > 0 || backup.unmappedEmbedded.length > 0 ? "备份已下载，但存在未能唯一映射的内嵌图片，不能自动迁移。请先整理为明确的自定义图包后重新下载备份。" : "备份下载请求已完成，请确认文件已保存后开始迁移。";
+      status.textContent = scan.ambiguous.length > 0 || backup.unmappedEmbedded.length > 0 ? t("storage.backup_unmapped", "备份已下载，但存在未能唯一映射的内嵌图片，不能自动迁移。请先整理为明确的自定义图包后重新下载备份。") : t("storage.backup_downloaded", "备份下载请求已完成，请确认文件已保存后开始迁移。");
     } catch (error) {
       invalidateBackup();
-      status.textContent = error instanceof Error ? error.message : "备份失败";
+      status.textContent = error instanceof Error ? error.message : t("storage.backup_failed", "备份失败");
     }
     render2();
   });
-  const startButton = actionButton("开始迁移内嵌图片", () => {
+  const startButton = actionButton(t("storage.start", "开始迁移内嵌图片"), () => {
     void stage();
   });
   const receiptConfirmation = document.createElement("input");
   receiptConfirmation.type = "checkbox";
   receiptConfirmation.dataset.confirm = "receipt";
   const receiptLabel = document.createElement("label");
-  receiptLabel.append(receiptConfirmation, document.createTextNode("我已确认迁移回执已保存在本机"));
-  const receiptButton = actionButton("下载迁移回执", () => {
+  receiptLabel.append(receiptConfirmation, document.createTextNode(t("storage.confirm_receipt", "我已确认迁移回执已保存在本机")));
+  const receiptButton = actionButton(t("storage.download_receipt", "下载迁移回执"), () => {
     if (!receipt || phase !== "staged") return;
     receiptDownloaded = false;
     receiptConfirmation.checked = false;
     try {
       download("sprite-overlay-image-migration-receipt-" + receipt.backupId + ".json", receipt);
       receiptDownloaded = true;
-      status.textContent = "回执下载请求已完成，请确认文件已保存后应用成功项。";
+      status.textContent = t("storage.receipt_downloaded", "回执下载请求已完成，请确认文件已保存后应用成功项。");
     } catch (error) {
-      status.textContent = error instanceof Error ? error.message : "回执下载失败";
+      status.textContent = error instanceof Error ? error.message : t("storage.receipt_failed", "回执下载失败");
     }
     render2();
   });
-  const applyButton = actionButton("确认应用成功项", () => {
+  const applyButton = actionButton(t("storage.apply", "确认应用成功项"), () => {
     if (!receipt || !receiptDownloaded || !receiptConfirmation.checked || phase !== "staged") return;
     const result = applyImageChanges(deps.getSettings(), staged);
-    finishApply(result, "应用");
+    finishApply(result, t("storage.applied_action", "应用"));
   });
-  const cancelButton = actionButton("取消暂存", () => {
+  const cancelButton = actionButton(t("storage.cancel", "取消暂存"), () => {
     if (phase !== "staging") return;
     ++runToken;
     controller?.abort();
     controller = null;
     reset();
-    status.textContent = "暂存已取消，原设置未改变；已上传的新文件未自动删除。";
+    status.textContent = t("storage.cancelled", "暂存已取消，原设置未改变；已上传的新文件未自动删除。");
   });
-  const retryButton = actionButton("重新检查", () => reset());
+  const retryButton = actionButton(t("storage.recheck", "重新检查"), () => reset());
   const restorePanel = document.createElement("details");
   restorePanel.className = "so-storage-restore";
   const restoreHeading = document.createElement("summary");
-  restoreHeading.textContent = "恢复迁移前图片";
+  restoreHeading.textContent = t("storage.restore_title", "恢复迁移前图片");
   const restoreWarning = document.createElement("p");
   restoreWarning.className = "so-storage-warning";
-  restoreWarning.textContent = "恢复会重新写入内嵌图片，增大 settings。仅回退仍与回执匹配的图片，其他设置和后续编辑不变。";
+  restoreWarning.textContent = t("storage.restore_warning", "恢复会重新写入内嵌图片，增大 settings。仅回退仍与回执匹配的图片，其他设置和后续编辑不变。");
   function fileInput(label) {
     const input = document.createElement("input");
     input.type = "file";
@@ -8610,15 +8638,15 @@ function openImageStorageDialog(deps) {
     return input;
   }
   restorePanel.append(restoreHeading, restoreWarning);
-  const restoreBackup = fileInput("迁移前备份");
-  const restoreReceipt = fileInput("迁移回执");
-  const inspectRestoreButton = actionButton("检查恢复文件", () => {
+  const restoreBackup = fileInput(t("storage.backup_file", "迁移前备份"));
+  const restoreReceipt = fileInput(t("storage.receipt_file", "迁移回执"));
+  const inspectRestoreButton = actionButton(t("storage.inspect_restore", "检查恢复文件"), () => {
     void inspectRestore();
   });
-  const restoreButton = actionButton("确认恢复图片", () => {
+  const restoreButton = actionButton(t("storage.restore", "确认恢复图片"), () => {
     if (phase !== "restore-ready" || !restoreSource || !backupDownloaded || !confirmBackup.checked) return;
     const result = restoreMigratedImages(deps.getSettings(), restoreSource.backup, restoreSource.receipt);
-    finishApply(result, "恢复");
+    finishApply(result, t("storage.restored_action", "恢复"));
   });
   restorePanel.append(inspectRestoreButton, restoreButton);
   function finishApply(result, action) {
@@ -8626,9 +8654,9 @@ function openImageStorageDialog(deps) {
     phase = "applied";
     try {
       if (result.applied.length > 0) deps.updateSettings(result.settings);
-      status.textContent = "已" + action + " " + result.applied.length + " 项，冲突 " + result.conflicts.length + " 项未修改。" + (result.applied.length ? "宿主已请求保存，请重载后复查。" : "原设置未改变。");
+      status.textContent = t("storage.finished", "已{{action}} {{count}} 项，冲突 {{conflicts}} 项未修改。{{notice}}", { action, count: result.applied.length, conflicts: result.conflicts.length, notice: result.applied.length ? t("storage.save_requested", "宿主已请求保存，请重载后复查。") : t("storage.unchanged", "原设置未改变。") });
     } catch (error) {
-      status.textContent = "设置更新或界面刷新失败，请保留备份和回执，重载后复查：" + (error instanceof Error ? error.message : "未知错误");
+      status.textContent = t("storage.update_failed", "设置更新或界面刷新失败，请保留备份和回执，重载后复查：{{error}}", { error: error instanceof Error ? error.message : t("storage.unknown_error", "未知错误") });
     }
     staged = [];
     receipt = null;
@@ -8636,7 +8664,7 @@ function openImageStorageDialog(deps) {
     backup = null;
     render2();
   }
-  const closeButton = actionButton("关闭", () => close());
+  const closeButton = actionButton(t("common.close", "关闭"), () => close());
   controls.append(backupButton, confirmLabel, startButton, cancelButton, receiptButton, receiptLabel, applyButton, retryButton);
   const footer = document.createElement("div");
   footer.className = "so-storage-footer";
@@ -8644,7 +8672,7 @@ function openImageStorageDialog(deps) {
   dialog.append(heading, summary, privacy, status, progress, errors, controls, restorePanel, footer);
   backdrop.append(dialog);
   document.body.append(backdrop);
-  dialog.focus();
+  const focus = manageDialogFocus(dialog, { onEscape: close, layer: backdrop });
   function invalidateBackup() {
     backup = null;
     backupDownloaded = false;
@@ -8668,12 +8696,12 @@ function openImageStorageDialog(deps) {
   function checkRawImages() {
     if (!findUnmappedEmbeddedImages(deps.adapter.getStoredSettingsForBackup(), deps.getSettings()).length) return true;
     reset();
-    status.textContent = "当前原始设置有未能映射的内嵌图片，操作已停止。请重新下载备份并整理图片后再继续。";
+    status.textContent = t("storage.raw_unmapped", "当前原始设置有未能映射的内嵌图片，操作已停止。请重新下载备份并整理图片后再继续。");
     return false;
   }
   function render2() {
     if (phase === "closed") return;
-    summary.textContent = "发现 " + scan.embeddedReferenceCount + " 个内嵌图片引用，" + scan.uniqueEmbeddedCount + " 张不同图片，约 " + scan.embeddedTextBytes + " 字节文本";
+    summary.textContent = t("storage.summary", "发现 {{refs}} 个内嵌图片引用，{{images}} 张不同图片，约 {{bytes}} 字节文本", { refs: scan.embeddedReferenceCount, images: scan.uniqueEmbeddedCount, bytes: scan.embeddedTextBytes });
     startButton.disabled = !backupDownloaded || !confirmBackup.checked || scan.candidates.length === 0 || scan.ambiguous.length > 0 || (backup?.unmappedEmbedded.length ?? 0) > 0 || phase !== "inspect";
     receiptButton.disabled = !receipt || phase !== "staged";
     applyButton.disabled = !receipt || !receiptDownloaded || !receiptConfirmation.checked || phase !== "staged";
@@ -8706,12 +8734,12 @@ function openImageStorageDialog(deps) {
       restoreSource = { backup: sourceBackup, receipt: sourceReceipt };
       phase = "restore-ready";
       restoreButton.hidden = false;
-      status.textContent = "可恢复 " + result.applied.length + " 项，冲突 " + result.conflicts.length + " 项。请先下载并确认当前插件状态备份。";
+      status.textContent = t("storage.restore_ready", "可恢复 {{count}} 项，冲突 {{conflicts}} 项。请先下载并确认当前插件状态备份。", { count: result.applied.length, conflicts: result.conflicts.length });
     } catch (error) {
       if (token !== runToken) return;
       phase = "inspect";
       restoreSource = null;
-      status.textContent = error instanceof Error ? error.message : "恢复文件校验失败";
+      status.textContent = error instanceof Error ? error.message : t("storage.restore_invalid", "恢复文件校验失败");
     }
     render2();
   }
@@ -8722,7 +8750,7 @@ function openImageStorageDialog(deps) {
     if (!sameCandidates(scanEmbeddedImages(backup.settings), latestScan)) {
       scan = latestScan;
       invalidateBackup();
-      status.textContent = "备份后设置已变化，请重新下载备份并扫描后再迁移。";
+      status.textContent = t("storage.settings_changed", "备份后设置已变化，请重新下载备份并扫描后再迁移。");
       render2();
       return;
     }
@@ -8742,7 +8770,7 @@ function openImageStorageDialog(deps) {
       }, { signal: runController.signal, onProgress: (completed, total) => {
         if (token !== runToken) return;
         progress.value = completed;
-        status.textContent = "校验进度 " + completed + "/" + total;
+        status.textContent = t("storage.progress", "校验进度 {{completed}}/{{total}}", { completed, total });
       } });
       if (token !== runToken || runController.signal.aborted || result.cancelled) return;
       staged = result.ready;
@@ -8750,13 +8778,13 @@ function openImageStorageDialog(deps) {
       phase = staged.length ? "staged" : "inspect";
       for (const failure of result.failed) {
         const item = document.createElement("li");
-        item.textContent = failure.candidate.ref.tag + "：" + failure.message;
+        item.textContent = t("storage.item_error", "{{tag}}：{{message}}", { tag: failure.candidate.ref.tag, message: failure.message });
         errors.append(item);
       }
-      status.textContent = (staged.length ? "暂存完成" : "迁移未完成") + "：成功 " + staged.length + " 项，失败 " + result.failed.length + " 项，未处理 " + result.unprocessed.length + " 项，未支持 " + sourceBackup.unmappedEmbedded.length + " 项。原设置未改变。";
+      status.textContent = t("storage.stage_result", "{{status}}：成功 {{ready}} 项，失败 {{failed}} 项，未处理 {{unprocessed}} 项，未支持 {{unsupported}} 项。原设置未改变。", { status: staged.length ? t("storage.staged", "暂存完成") : t("storage.not_migrated", "迁移未完成"), ready: staged.length, failed: result.failed.length, unprocessed: result.unprocessed.length, unsupported: sourceBackup.unmappedEmbedded.length });
     } catch (error) {
       if (token === runToken && !runController.signal.aborted) {
-        status.textContent = error instanceof Error ? error.message : "迁移失败，原设置未改变";
+        status.textContent = error instanceof Error ? error.message : t("storage.migration_failed", "迁移失败，原设置未改变");
         phase = "inspect";
       }
     } finally {
@@ -8767,6 +8795,7 @@ function openImageStorageDialog(deps) {
   function close() {
     if (phase === "closed") return;
     phase = "closed";
+    focus.dispose();
     ++runToken;
     controller?.abort();
     controller = null;
@@ -8778,35 +8807,26 @@ function openImageStorageDialog(deps) {
     restoreSource = null;
     scan = { candidates: [], ambiguous: [], embeddedReferenceCount: 0, uniqueEmbeddedCount: 0, embeddedTextBytes: 0 };
     backdrop.remove();
-    if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
-    deps.onClosed();
+    try {
+      deps.onClosed();
+    } finally {
+      focus.restoreFocus();
+    }
   }
   confirmBackup.addEventListener("change", render2);
   receiptConfirmation.addEventListener("change", render2);
   dialog.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      close();
-    }
-    if (event.key !== "Tab") return;
-    const focusable2 = [...dialog.querySelectorAll("button:not(:disabled), input:not(:disabled), summary")].filter((node) => node.getClientRects().length > 0);
-    const first = focusable2[0];
-    const last = focusable2.at(-1);
-    if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
-      event.preventDefault();
-      last?.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first?.focus();
-    }
+    event.stopPropagation();
   });
   render2();
+  focus.focusInitial();
   return { close };
 }
 
 // st-extension/src/sprite-manager.ts
 var SPRITE_PAGE_SIZE = 60;
+var managerControlId = 0;
+var nextManagerId = () => `so-manager-control-${++managerControlId}`;
 function createSpriteManager(deps) {
   let backdrop = null;
   let destroyed = false;
@@ -8829,6 +8849,10 @@ function createSpriteManager(deps) {
   let activeLightbox = null;
   let storageDialog = null;
   let importController = null;
+  let dialogFocus = null;
+  const childDialogs = /* @__PURE__ */ new Set();
+  const popoverListeners = /* @__PURE__ */ new Set();
+  let popoverOpener = null;
   function applyBackdropSize() {
     if (!backdrop) return;
     backdrop.style.left = "0";
@@ -8857,11 +8881,11 @@ function createSpriteManager(deps) {
     batchMode = false;
     selectedPackIds.clear();
     backdrop = el3("div", "so-manager-backdrop");
-    document.addEventListener("keydown", onEscape);
     window.addEventListener("resize", applyBackdropSize);
     applyBackdropSize();
     const dialog = el3("div", "so-manager");
     dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
     dialog.setAttribute("aria-label", t("sprite.manager.title", "立绘包管理"));
     const header = el3("div", "so-manager-header");
     const backBtn = el3("div", "menu_button so-manager-back");
@@ -8870,14 +8894,12 @@ function createSpriteManager(deps) {
     backBtn.textContent = "‹";
     backBtn.setAttribute("role", "button");
     backBtn.tabIndex = 0;
-    const goBack = () => {
-      view = { kind: "list" };
-      render2();
-    };
+    const goBack = () => returnToList();
     backBtn.addEventListener("click", goBack);
     backBtn.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
+        e.stopPropagation();
         goBack();
       }
     });
@@ -8892,6 +8914,7 @@ function createSpriteManager(deps) {
     closeBtn.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
+        event.stopPropagation();
         close();
       }
     });
@@ -8901,20 +8924,20 @@ function createSpriteManager(deps) {
     dialog.append(header, body);
     backdrop.append(dialog);
     document.body.append(backdrop);
+    dialogFocus = manageDialogFocus(dialog, { onEscape, layer: backdrop });
     render2();
+    dialogFocus.focusInitial();
   }
-  function onEscape(e) {
-    if (e.key !== "Escape") return;
-    if (e.defaultPrevented) return;
-    if (backdrop?.querySelector(".so-lightbox")) return;
+  function onEscape() {
     if (backdrop?.querySelector(".so-popover")) {
+      const opener = popoverOpener ?? backdrop.querySelector(".so-enable-btn");
       closeEnableList();
       closePopovers();
+      opener?.focus();
       return;
     }
     if (view.kind === "pack") {
-      view = { kind: "list" };
-      render2();
+      returnToList();
     } else {
       close();
     }
@@ -8923,15 +8946,44 @@ function createSpriteManager(deps) {
     if (!backdrop) return;
     activeLightbox?.controller?.close();
     closeEnableList();
+    closePopovers();
     importController?.abort();
     importController = null;
     storageDialog?.close();
     storageDialog = null;
-    document.removeEventListener("keydown", onEscape);
+    for (const closeChild of [...childDialogs].reverse()) closeChild();
+    const focus = dialogFocus;
+    dialogFocus = null;
+    focus?.dispose();
     window.removeEventListener("resize", applyBackdropSize);
     backdrop.remove();
     backdrop = null;
     deps.onClosed?.(openedFrom);
+    focus?.restoreFocus();
+  }
+  function returnToList() {
+    const packId = view.kind === "pack" ? view.packId : null;
+    view = { kind: "list" };
+    render2();
+    const origin = [...backdrop?.querySelectorAll(".so-pack-card") ?? []].find((card) => card.dataset.managerFocus === `pack:${packId}`);
+    if (origin) origin.focus({ preventScroll: true });
+    else dialogFocus?.focusInitial();
+  }
+  function manageChildDialog(modal, canEscape = () => true, opener) {
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    const closeChild = () => {
+      focus.dispose();
+      childDialogs.delete(closeChild);
+      modal.remove();
+      focus.restoreFocus();
+    };
+    const focus = manageDialogFocus(modal, { opener, onEscape: () => {
+      if (canEscape()) closeChild();
+    } });
+    childDialogs.add(closeChild);
+    focus.focusInitial();
+    return closeChild;
   }
   function refreshIfOpen() {
     if (backdrop) {
@@ -8950,7 +9002,7 @@ function createSpriteManager(deps) {
     ).join("；");
   }
   function showConflicts(conflicts) {
-    const message = `操作未生效，存在地址冲突：${conflictText(conflicts)}`;
+    const message = t("sprite.manager.content.conflict.address", "操作未生效，存在地址冲突：{{p0}}", { p0: conflictText(conflicts) });
     const body = backdrop?.querySelector(".so-manager-body");
     if (body) toast(body, message);
     else window.alert(message);
@@ -8980,11 +9032,11 @@ function createSpriteManager(deps) {
   }
   function rejectPackMergeError(error, body) {
     if (error instanceof PackMergeChoiceError) {
-      toast(body, `合并已取消：选择无效（${error.message}）`);
+      toast(body, t("sprite.manager.content.merge.invalid", "合并已取消：选择无效（{{p0}}）", { p0: error.message }));
       return null;
     }
     console.error("合并立绘包失败", error);
-    toast(body, "合并失败，请查看控制台日志");
+    toast(body, t("sprite.manager.content.merge.failed", "合并失败，请查看控制台日志"));
     return null;
   }
   function mergeWithPrompts(packs, defaultName, body) {
@@ -8993,8 +9045,7 @@ function createSpriteManager(deps) {
     for (const conflict of preview.conflicts) {
       const options = conflict.candidates.map((candidate, index) => `${index + 1}. ${candidate.sourcePackName} — ${candidate.sprite.url}`).join("\n");
       const raw = window.prompt(
-        `地址「${formatAddress(conflict.address)}」有不同图片，请输入要保留的序号：
-${options}`,
+        t("sprite.manager.content.merge.choose_image", "地址「{{p0}}」有不同图片，请输入要保留的序号：\n{{p1}}", { p0: formatAddress(conflict.address), p1: options }),
         "1"
       );
       if (raw === null) return null;
@@ -9005,11 +9056,11 @@ ${options}`,
     } catch (error) {
       return rejectPackMergeError(error, body);
     }
-    const rawName = window.prompt("合并结果的包名：", defaultName);
+    const rawName = window.prompt(t("sprite.manager.content.merge.name", "合并结果的包名："), defaultName);
     if (rawName === null) return null;
     const name = sanitizePackName(rawName);
     if (!name) {
-      toast(body, "合并已取消：包名不能为空");
+      toast(body, t("sprite.manager.content.merge.empty_name", "合并已取消：包名不能为空"));
       return null;
     }
     try {
@@ -9026,21 +9077,17 @@ ${options}`,
     });
     if (related.length === 0) {
       if (!updateChecked(upsertPack(settings, pack))) return false;
-      toast(body, `已导入立绘包「${pack.name}」（${pack.sprites.length} 张）`);
+      toast(body, t("sprite.manager.content.import.installed", "已导入立绘包「{{p0}}」（{{p1}} 张）", { p0: pack.name, p1: pack.sprites.length }));
       return true;
     }
     const answer = window.prompt(
-      `检测到同名或地址重叠：${related.map((item) => item.name).join("、")}
-输入 1 合并进现有包，2 重命名后安装，3 仅安装（之后可按需启用）；其他输入取消。`,
+      t("sprite.manager.content.import.overlap", "检测到同名或地址重叠：{{p0}}\n", { p0: related.map((item) => item.name).join("、") }) + t("sprite.manager.content.import.choices", "输入 1 合并进现有包，2 重命名后安装，3 仅安装（之后可按需启用）；其他输入取消。"),
       "1"
     );
     if (answer === "1") {
       const target = related[0];
       const mode = window.prompt(
-        `合并到哪里？
-1 并入旧包「${target.name}」（推荐：角色绑定不变，重叠源包移除）
-2 合并为新包（所有源包保留）
-其他输入取消。`,
+        t("sprite.manager.content.merge.destination", "合并到哪里？\n1 并入旧包「{{p0}}」（推荐：角色绑定不变，重叠源包移除）\n2 合并为新包（所有源包保留）\n其他输入取消。", { p0: target.name }),
         "1"
       );
       if (mode === "1") {
@@ -9049,32 +9096,32 @@ ${options}`,
         let next = settings;
         for (const other of related.slice(1)) next = removePack(next, other.id);
         if (!updateChecked(upsertPack(next, { ...merged, id: target.id }))) return false;
-        toast(body, `已合并进「${merged.name}」（${merged.sprites.length} 张）`);
+        toast(body, t("sprite.manager.content.merge.into_existing", "已合并进「{{p0}}」（{{p1}} 张）", { p0: merged.name, p1: merged.sprites.length }));
         return true;
       }
       if (mode === "2") {
         const merged = mergeWithPrompts([...related, pack], `${target.name} 合并`, body);
         if (!merged || !updateChecked(upsertPack(settings, merged))) return false;
-        toast(body, `已生成合并包「${merged.name}」（${merged.sprites.length} 张），源包仍保留`);
+        toast(body, t("sprite.manager.content.merge.created", "已生成合并包「{{p0}}」（{{p1}} 张），源包仍保留", { p0: merged.name, p1: merged.sprites.length }));
         return true;
       }
       return false;
     }
     if (answer === "2") {
-      const rawName = window.prompt("请输入新的包名：", `${pack.name} 新`);
+      const rawName = window.prompt(t("sprite.manager.content.import.new_name", "请输入新的包名："), `${pack.name} 新`);
       if (rawName === null) return false;
       const name = sanitizePackName(rawName);
       if (!name || settings.packs.some((existing) => existing.name === name)) {
-        toast(body, "未安装：新包名为空或仍与现有包同名");
+        toast(body, t("sprite.manager.content.import.invalid_name", "未安装：新包名为空或仍与现有包同名"));
         return false;
       }
       if (!updateChecked(upsertPack(settings, { ...pack, name }))) return false;
-      toast(body, `已重命名并安装「${name}」（未启用）`);
+      toast(body, t("sprite.manager.content.import.renamed", "已重命名并安装「{{p0}}」（未启用）", { p0: name }));
       return true;
     }
     if (answer === "3") {
       if (!updateChecked(upsertPack(settings, pack))) return false;
-      toast(body, `已安装「${pack.name}」，未加入当前角色`);
+      toast(body, t("sprite.manager.content.import.not_enabled", "已安装「{{p0}}」，未加入当前角色", { p0: pack.name }));
       return true;
     }
     return false;
@@ -9082,24 +9129,24 @@ ${options}`,
   async function prepareAndInstall(pack, body) {
     if (destroyed || !backdrop || currentManagerBody() !== body) return;
     if (storageDialog) {
-      toast(body, "请先关闭存储检查与迁移窗口");
+      toast(body, t("sprite.manager.content.import.close_storage", "请先关闭存储检查与迁移窗口"));
       return;
     }
     if (importController) {
-      toast(body, "已有导入任务正在处理");
+      toast(body, t("sprite.manager.content.import.busy", "已有导入任务正在处理"));
       return;
     }
     const controller = new AbortController();
     importController = controller;
     try {
-      toast(body, "正在准备导入图片");
+      toast(body, t("sprite.manager.content.import.preparing", "正在准备导入图片"));
       const prepared = await prepareImportedPack(pack, {
         save: (dataUri, options) => deps.saveDataUri ? deps.saveDataUri(dataUri, options) : deps.adapter.saveDataUri(dataUri, options)
       }, {
         signal: controller.signal,
         onProgress: (completed, total) => {
           if (!destroyed && !controller.signal.aborted && currentManagerBody() === body) {
-            toast(body, `导入图片校验 ${completed}/${total}`);
+            toast(body, t("sprite.manager.content.import.progress", "导入图片校验 {{p0}}/{{p1}}", { p0: completed, p1: total }));
           }
         }
       });
@@ -9111,7 +9158,7 @@ ${options}`,
       if (installed) view = { kind: "pack", packId: installed.id };
       render2();
     } catch (error) {
-      if (!controller.signal.aborted && !destroyed) toast(body, error instanceof Error ? error.message : "导入失败");
+      if (!controller.signal.aborted && !destroyed) toast(body, error instanceof Error ? error.message : t("sprite.manager.content.import.failed", "导入失败"));
     } finally {
       if (importController === controller) importController = null;
     }
@@ -9122,16 +9169,13 @@ ${options}`,
     if (result.ok) {
       const changes = previewBindingAddressChanges(settings, result.settings, characterName);
       if (changes.removed.length > 0 && !window.confirm(
-        `启用后以下旧地址将变化：${changes.removed.slice(0, 6).join("、")}
-新地址示例：${changes.added.slice(0, 6).join("、")}
-仍要继续吗？`
+        t("sprite.manager.content.binding.address_changes", "启用后以下旧地址将变化：{{p0}}\n", { p0: changes.removed.slice(0, 6).join("、") }) + t("sprite.manager.content.binding.new_addresses", "新地址示例：{{p0}}\n仍要继续吗？", { p0: changes.added.slice(0, 6).join("、") })
       )) return;
       commit(result.settings);
       return;
     }
     const answer = window.prompt(
-      `启用会产生地址冲突：${conflictText(result.conflicts)}
-输入 1 替换当前冲突包，2 合并为新包后启用；其他输入取消。`,
+      t("sprite.manager.content.binding.conflict", "启用会产生地址冲突：{{p0}}\n", { p0: conflictText(result.conflicts) }) + t("sprite.manager.content.binding.choices", "输入 1 替换当前冲突包，2 合并为新包后启用；其他输入取消。"),
       "1"
     );
     const sourceIds = new Set(result.conflicts.flatMap((conflict) => conflict.owners.map((owner) => owner.packId)));
@@ -9163,17 +9207,22 @@ ${options}`,
         return;
       }
       commit(rebound.settings);
-      toast(body, `已生成并启用合并包「${merged.name}」；源包仍保留`);
+      toast(body, t("sprite.manager.content.binding.merged", "已生成并启用合并包「{{p0}}」；源包仍保留", { p0: merged.name }));
     }
   }
   function commitPack(pack) {
     commitChecked(upsertPack(deps.getSettings(), pack));
   }
   function closePopovers() {
+    for (const dispose of popoverListeners) dispose();
+    popoverListeners.clear();
     backdrop?.querySelectorAll(".so-popover").forEach((n) => n.remove());
+    backdrop?.querySelectorAll('[aria-haspopup="dialog"]').forEach((node) => node.setAttribute("aria-expanded", "false"));
+    popoverOpener = null;
   }
   function closeEnableList() {
     enableListOpen = false;
+    backdrop?.querySelector(".so-enable-btn")?.setAttribute("aria-expanded", "false");
     backdrop?.querySelectorAll('.so-popover[data-pop="启用包"]').forEach((n) => n.remove());
     if (enableListDocHandler) {
       document.removeEventListener("click", enableListDocHandler, true);
@@ -9183,6 +9232,9 @@ ${options}`,
   function renderEnableList() {
     const header = backdrop?.querySelector(".so-manager-header");
     if (!header) return;
+    const previousPanel = header.querySelector(".so-enable-pop");
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusKey = active && previousPanel?.contains(active) ? active.dataset.managerFocus : void 0;
     header.querySelectorAll('.so-popover[data-pop="启用包"]').forEach((n) => n.remove());
     if (!enableListOpen) return;
     const characterName = deps.adapter.getCurrentCharacterName();
@@ -9194,25 +9246,35 @@ ${options}`,
     const settings = deps.getSettings();
     const boundIds = settings.bindings.find((b) => b.characterName === characterName)?.packIds ?? [];
     const panel = el3("div", "so-popover so-enable-pop");
+    const trigger = backdrop?.querySelector(".so-enable-btn");
+    panel.id = trigger?.getAttribute("aria-controls") || nextManagerId();
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-label", trigger?.getAttribute("aria-label") ?? "");
+    trigger?.setAttribute("aria-expanded", "true");
     panel.dataset.pop = "启用包";
     const heading = el3("div", "so-popover-title");
-    heading.textContent = `勾选启用（${characterName}，即时生效）`;
+    heading.textContent = t("sprite.manager.content.binding.enable_heading", "勾选启用（{{p0}}，即时生效）", { p0: characterName });
     panel.append(heading);
     if (settings.packs.length === 0) {
       const tip = el3("div", "so-status");
-      tip.textContent = "还没有立绘包，先用「新建」或「导入」。";
+      tip.textContent = t("sprite.manager.content.empty.packs", "还没有立绘包，先用「新建」或「导入」。");
       panel.append(tip);
     }
     for (const p of settings.packs) {
-      panel.append(
-        checkboxRow(`${p.name}（${p.sprites.length} 张）`, boundIds.includes(p.id), (v) => {
-          if (v) bindPackWithChoices(characterName, p.id, body);
-          else commit(unbindPack(deps.getSettings(), characterName, p.id));
-          renderEnableList();
-        })
-      );
+      const row = checkboxRow(t("sprite.manager.content.pack.image_count", "{{p0}}（{{p1}} 张）", { p0: p.name, p1: p.sprites.length }), boundIds.includes(p.id), (v) => {
+        if (v) bindPackWithChoices(characterName, p.id, body);
+        else commit(unbindPack(deps.getSettings(), characterName, p.id));
+        renderEnableList();
+      });
+      row.querySelector("input").dataset.managerFocus = `enable:${p.id}`;
+      panel.append(row);
     }
     header.append(panel);
+    if (focusKey) {
+      [...panel.querySelectorAll("[data-manager-focus]")].find((node) => node.dataset.managerFocus === focusKey)?.focus({ preventScroll: true });
+    } else if (active === trigger) {
+      panel.querySelector("input")?.focus({ preventScroll: true });
+    }
     if (!enableListDocHandler) {
       enableListDocHandler = (e) => {
         const current2 = backdrop?.querySelector('.so-popover[data-pop="启用包"]');
@@ -9224,24 +9286,37 @@ ${options}`,
     }
   }
   function dropdownButton(label, build) {
+    const panelId = nextManagerId();
     const btn = button(`${label} ▾`, () => {
       const header = backdrop?.querySelector(".so-manager-header");
       if (!header) return;
       const existing = header.querySelector(`.so-popover[data-pop="${label}"]`);
+      closeEnableList();
       closePopovers();
       if (existing) return;
       const panel = el3("div", "so-popover");
+      panel.id = panelId;
+      panel.setAttribute("role", "dialog");
+      panel.setAttribute("aria-label", label);
       panel.dataset.pop = label;
       build(panel);
+      panel.querySelectorAll("input, textarea").forEach((input) => {
+        if (!input.getAttribute("aria-label") && input.placeholder) input.setAttribute("aria-label", input.placeholder);
+      });
       header.append(panel);
+      popoverOpener = btn;
+      btn.setAttribute("aria-expanded", "true");
       panel.querySelector("input, textarea")?.focus();
       const onDocClick = (e) => {
         if (panel.contains(e.target) || btn.contains(e.target)) return;
-        panel.remove();
-        document.removeEventListener("click", onDocClick, true);
+        closePopovers();
       };
       document.addEventListener("click", onDocClick, true);
+      popoverListeners.add(() => document.removeEventListener("click", onDocClick, true));
     });
+    btn.setAttribute("aria-haspopup", "dialog");
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-controls", panelId);
     return btn;
   }
   function render2() {
@@ -9250,6 +9325,9 @@ ${options}`,
     const title2 = backdrop.querySelector(".so-manager-title");
     const actions = backdrop.querySelector(".so-manager-actions");
     const body = backdrop.querySelector(".so-manager-body");
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const restoreAfterRender = Boolean(active && (body.contains(active) || actions.contains(active) || active.closest(".so-popover")));
+    const focusKey = restoreAfterRender ? active?.dataset.managerFocus : void 0;
     body.innerHTML = "";
     actions.innerHTML = "";
     backdrop.querySelector(".so-manager")?.classList.toggle("so-manager-batch-mode", batchMode);
@@ -9272,8 +9350,14 @@ ${options}`,
     } catch (err) {
       console.error("[sprite-overlay] 管理弹窗渲染失败", err);
       const msg = el3("div", "so-status");
-      msg.textContent = `界面渲染出错：${err instanceof Error ? err.message : String(err)}`;
+      msg.textContent = t("sprite.manager.content.error.render", "界面渲染出错：{{p0}}", { p0: err instanceof Error ? err.message : String(err) });
       body.append(msg);
+    } finally {
+      if (restoreAfterRender && dialogFocus?.isTop()) {
+        const candidates = focusKey ? [...backdrop.querySelectorAll("[data-manager-focus]")].filter((node) => node.dataset.managerFocus === focusKey && !node.matches(":disabled")) : [];
+        if (candidates.length === 1) candidates[0].focus({ preventScroll: true });
+        else dialogFocus.focusInitial();
+      }
     }
   }
   function collapsible(titleText, open2 = false, key = "") {
@@ -9305,7 +9389,7 @@ ${options}`,
         (pack) => selectedPackIds.has(pack.id) && !isPresetPack(pack.id)
       );
       actions.append(
-        button("全选", () => {
+        button(t("sprite.manager.content.batch.select_all", "全选"), () => {
           const all = filteredPacks;
           if (all.length > 0 && all.every((p) => selectedPackIds.has(p.id))) {
             selectedPackIds.clear();
@@ -9315,26 +9399,26 @@ ${options}`,
           }
           render2();
         }),
-        button(`上传云端（${selectedCount}）`, () => {
+        button(t("sprite.manager.content.batch.upload", "上传云端（{{p0}}）", { p0: selectedCount }), () => {
           void uploadSelectedPacks();
         }),
-        button(`保存本地（${selectedCount}）`, () => {
+        button(t("sprite.manager.content.batch.localize", "保存本地（{{p0}}）", { p0: selectedCount }), () => {
           void localizeSelectedPacks();
         }),
-        button(`复制分享串（${selectedCount}）`, () => {
+        button(t("sprite.manager.content.batch.share", "复制分享串（{{p0}}）", { p0: selectedCount }), () => {
           void copySelectedPackShares();
         }),
-        button(`删除所选（${deletablePacks.length}）`, () => {
+        button(t("sprite.manager.content.batch.delete", "删除所选（{{p0}}）", { p0: deletablePacks.length }), () => {
           if (deletablePacks.length === 0) {
-            toast(body, selectedPackIds.size > 0 ? "预设包不可删除；可保存本地、上传云端或复制分享串" : "先点卡片勾选要删除的包");
+            toast(body, selectedPackIds.size > 0 ? t("sprite.manager.content.batch.preset_hint", "预设包不可删除；可保存本地、上传云端或复制分享串") : t("sprite.manager.content.batch.delete_hint", "先点卡片勾选要删除的包"));
             return;
           }
           const names = deletablePacks.map((pack) => pack.name);
-          const preview = names.slice(0, 8).join("、") + (names.length > 8 ? ` 等 ${names.length} 个` : "");
+          const preview = names.slice(0, 8).join("、") + (names.length > 8 ? t("sprite.manager.content.batch.more", " 等 {{p0}} 个", { p0: names.length }) : "");
           const ids = deletablePacks.map((pack) => pack.id);
           void deletePacksWithChoice(ids, names, preview);
         }, "so-btn-danger"),
-        button("完成", () => {
+        button(t("sprite.manager.content.batch.done", "完成"), () => {
           batchMode = false;
           selectedPackIds.clear();
           render2();
@@ -9355,13 +9439,16 @@ ${options}`,
           }
         );
         enableBtn.classList.add("so-enable-btn");
+        enableBtn.setAttribute("aria-haspopup", "dialog");
+        enableBtn.setAttribute("aria-expanded", String(enableListOpen));
+        enableBtn.setAttribute("aria-controls", nextManagerId());
         enableBtn.setAttribute("aria-label", t("sprite.manager.enable_for", "为「{{name}}」勾选启用立绘包", { name: characterName }));
         actions.append(enableBtn);
       }
       actions.append(
         button(t("sprite.manager.storage", "存储检查与迁移"), () => {
           if (importController) {
-            toast(body, "已有导入任务正在处理");
+            toast(body, t("sprite.manager.content.import.busy", "已有导入任务正在处理"));
             return;
           }
           storageDialog?.close();
@@ -9383,7 +9470,7 @@ ${options}`,
           const createBtn = button(t("sprite.manager.create", "创建"), () => {
             const name = sanitizePackName(nameInput.value);
             if (!name) {
-              toast(body, "包名不能为空（| = @ < > 等符号会被剔除）");
+              toast(body, t("sprite.manager.content.pack.invalid_name", "包名不能为空（| = @ < > 等符号会被剔除）"));
               return;
             }
             const pack = { id: genId(), name, author: "我", sprites: [] };
@@ -9409,7 +9496,7 @@ ${options}`,
               const pack = decodeShareString(shareInput.value);
               void prepareAndInstall(pack, body);
             } catch (err) {
-              toast(body, err instanceof Error ? err.message : "分享串解析失败");
+              toast(body, err instanceof Error ? err.message : t("sprite.manager.content.import.share_failed", "分享串解析失败"));
             }
           });
           const jsonHeading = el3("div", "so-popover-title");
@@ -9420,13 +9507,13 @@ ${options}`,
                 if (destroyed || currentManagerBody() !== body || !files[0]) return;
                 const file = files[0];
                 if (file.size > 2 * 1024 * 1024 && !window.confirm(
-                  `这个 JSON 有 ${(file.size / 1024 / 1024).toFixed(1)} MiB。读取会占用临时内存，内嵌图片需要逐张上传到酒馆本地文件。继续导入吗？`
+                  t("sprite.manager.content.import.large_json", "这个 JSON 有 {{p0}} MiB。读取会占用临时内存，内嵌图片需要逐张上传到酒馆本地文件。继续导入吗？", { p0: (file.size / 1024 / 1024).toFixed(1) })
                 )) return;
                 const text4 = await file.text();
                 const pack = importPack(text4);
                 void prepareAndInstall(pack, body);
               } catch (err) {
-                toast(body, err instanceof Error ? err.message : "导入失败");
+                toast(body, err instanceof Error ? err.message : t("sprite.manager.content.import.failed", "导入失败"));
               }
             });
           });
@@ -9448,26 +9535,26 @@ ${options}`,
     const strip = el3("div", "so-row so-bind-strip");
     if (characterName) {
       const label = el3("span", "so-bind-label");
-      label.textContent = boundIds.length > 0 ? `${characterName} · 已启用 ${boundIds.length} 个：` : `${characterName} · 尚未启用立绘包（用右上角选择启用）`;
+      label.textContent = boundIds.length > 0 ? t("sprite.manager.content.binding.enabled", "{{p0}} · 已启用 {{p1}} 个：", { p0: characterName, p1: boundIds.length }) : t("sprite.manager.content.binding.none", "{{p0}} · 尚未启用立绘包（用右上角选择启用）", { p0: characterName });
       strip.append(label);
       boundIds.forEach((id, index) => {
         const pack = settings.packs.find((p) => p.id === id);
         const chip = el3("span", "so-chip");
         const name = el3("span", "so-chip-name");
-        name.textContent = pack ? `${index + 1}. ${pack.name}（${pack.sprites.length} 张）` : `（已删除的包 ${id}）`;
+        name.textContent = pack ? t("sprite.manager.content.binding.pack", "{{p0}}. {{p1}}（{{p2}} 张）", { p0: index + 1, p1: pack.name, p2: pack.sprites.length }) : t("sprite.manager.content.binding.deleted", "（已删除的包 {{p0}}）", { p0: id });
         chip.append(name);
         if (boundIds.length > 1) {
           chip.append(
-            iconButton("◀", "前移（多包寻址优先级更高）", () => {
+            iconButton("◀", t("sprite.manager.content.binding.move_first", "前移（多包寻址优先级更高）"), () => {
               if (index > 0) commit(reorderBinding(deps.getSettings(), characterName, index, index - 1));
             }, "so-chip-btn"),
-            iconButton("▶", "后移", () => {
+            iconButton("▶", t("sprite.manager.content.move_later", "后移"), () => {
               commit(reorderBinding(deps.getSettings(), characterName, index, index + 1));
             }, "so-chip-btn")
           );
         }
         chip.append(
-          iconButton("✕", "停用此包", () => {
+          iconButton("✕", t("sprite.manager.content.binding.disable", "停用此包"), () => {
             commit(unbindPack(deps.getSettings(), characterName, id));
           }, "so-chip-btn")
         );
@@ -9477,7 +9564,7 @@ ${options}`,
         strip.append(
           el3("span", "so-spacer"),
           checkboxRow(
-            "全部启用",
+            t("sprite.manager.content.binding.enable_all", "全部启用"),
             binding.enabled,
             (v) => commitChecked(toggleBinding(deps.getSettings(), characterName, v))
           )
@@ -9485,14 +9572,14 @@ ${options}`,
       }
     } else {
       const tip = el3("span", "so-status");
-      tip.textContent = "请先打开一个角色聊天，再回来启用立绘包。";
+      tip.textContent = t("sprite.manager.content.binding.open_chat", "请先打开一个角色聊天，再回来启用立绘包。");
       strip.append(tip);
     }
     body.append(strip);
     body.append(renderPackFilters(settings, filteredPacks.length));
     if (batchMode) {
       const tip = el3("div", "so-status so-batch-tip");
-      tip.textContent = "批量管理：先勾选图包，再统一设置类型或标签；资源操作和排序仍可在上方完成。预设包可保存本地或分享，但不可删除。";
+      tip.textContent = t("sprite.manager.content.batch.hint", "批量管理：先勾选图包，再统一设置类型或标签；资源操作和排序仍可在上方完成。预设包可保存本地或分享，但不可删除。");
       body.append(tip);
       body.append(renderBatchClassificationTools(body));
     }
@@ -9516,17 +9603,21 @@ ${options}`,
           section2.classList.add("so-role-pack-group-expanded");
           const row = el3("button", "so-role-pack-row");
           row.type = "button";
+          row.dataset.managerFocus = `role:${group.key}`;
           row.setAttribute("aria-expanded", "true");
           const title2 = el3("b");
           title2.textContent = group.role;
           const counts = el3("span");
-          counts.textContent = `${group.packCount} 个图包 · ${group.spriteCount} 张`;
+          counts.textContent = t("sprite.manager.content.pack.counts", "{{p0}} 个图包 · {{p1}} 张", { p0: group.packCount, p1: group.spriteCount });
           const arrow = el3("span", "so-role-pack-arrow");
           arrow.textContent = "▾";
           row.append(title2, counts, arrow);
           row.addEventListener("click", toggle);
+          addCardNavigation(row, ".so-pack-card, .so-role-pack-stack, .so-role-pack-row");
           const packs = el3("div", "so-role-pack-strip");
-          packs.setAttribute("aria-label", `${group.role}的图包`);
+          packs.id = nextManagerId();
+          row.setAttribute("aria-controls", packs.id);
+          packs.setAttribute("aria-label", t("sprite.manager.content.pack.role_packs", "{{p0}}的图包", { p0: group.role }));
           for (const pack of group.packs) packs.append(renderPackCard(pack, boundState(pack)));
           section2.append(row, packs);
         } else {
@@ -9540,7 +9631,7 @@ ${options}`,
     body.append(grid);
     if (filteredPacks.length === 0) {
       const empty = el3("div", "so-status so-pack-filter-empty");
-      empty.textContent = "没有符合当前筛选条件的图包";
+      empty.textContent = t("sprite.manager.content.empty.filtered_packs", "没有符合当前筛选条件的图包");
       body.append(empty);
     }
     body.append(statusBar());
@@ -9548,7 +9639,7 @@ ${options}`,
   }
   function renderPackFilters(settings, visibleCount) {
     const panel = el3("div", "so-pack-filters");
-    const search = textInput("搜索包名、角色、服装或标签");
+    const search = textInput(t("sprite.manager.content.filter.packs_placeholder", "搜索包名、角色、服装或标签"));
     search.classList.add("so-pack-filter-search");
     search.value = packFilterQuery;
     const applySearch = () => {
@@ -9565,6 +9656,8 @@ ${options}`,
     const selectFilter = (className, options, current2, apply) => {
       const select = document.createElement("select");
       select.className = `text_pole ${className}`;
+      select.dataset.managerFocus = className;
+      select.setAttribute("aria-label", options[0]?.[1] ?? "");
       for (const [value, label] of options) {
         const option = document.createElement("option");
         option.value = value;
@@ -9583,7 +9676,7 @@ ${options}`,
     const tags = normalizeLabels(settings.packs.flatMap((pack) => pack.customTags ?? []));
     const role = selectFilter(
       "so-pack-filter-role",
-      [["", "全部角色"], ...roles.map((item) => [item, item])],
+      [["", t("sprite.manager.content.filter.all_roles", "全部角色")], ...roles.map((item) => [item, item === "其他" ? t("sprite.manager.content.group.other", "其他") : item])],
       packFilterRole,
       (value) => {
         packFilterRole = value;
@@ -9591,7 +9684,7 @@ ${options}`,
     );
     const kind = selectFilter(
       "so-pack-filter-kind",
-      [["", "全部类型"], ["sprite", "立绘"], ["illustration", "插图"]],
+      [["", t("sprite.manager.content.filter.all_types", "全部类型")], ["sprite", t("sprite.manager.content.kind.sprite", "立绘")], ["illustration", t("sprite.manager.content.kind.illustration", "插图")]],
       packFilterKind,
       (value) => {
         packFilterKind = value;
@@ -9599,17 +9692,17 @@ ${options}`,
     );
     const tag = selectFilter(
       "so-pack-filter-tag",
-      [["", "全部标签"], ...tags.map((item) => [item, item])],
+      [["", t("sprite.manager.content.filter.all_tags", "全部标签")], ...tags.map((item) => [item, item])],
       packFilterTag,
       (value) => {
         packFilterTag = value;
       }
     );
     const status = el3("span", "so-pack-filter-count");
-    status.textContent = `${visibleCount}/${settings.packs.length} 个图包`;
+    status.textContent = t("sprite.manager.content.filter.pack_count", "{{p0}}/{{p1}} 个图包", { p0: visibleCount, p1: settings.packs.length });
     panel.append(search, role, kind, tag, status);
     if (packFilterQuery || packFilterRole || packFilterKind || packFilterTag) {
-      panel.append(button("清除筛选", () => {
+      panel.append(button(t("sprite.manager.content.filter.clear", "清除筛选"), () => {
         packFilterQuery = packFilterRole = packFilterKind = packFilterTag = "";
         expandedRoleGroupKey = "";
         render2();
@@ -9620,14 +9713,14 @@ ${options}`,
   function openTagManager() {
     const modal = el3("div", "so-upload-modal so-tag-manager");
     modal.setAttribute("role", "dialog");
-    modal.setAttribute("aria-label", "图包标签管理");
+    modal.setAttribute("aria-label", t("sprite.manager.content.tag.dialog_title", "图包标签管理"));
     const panel = el3("div", "so-upload-panel so-tag-manager-panel");
     const heading = el3("div", "so-tag-manager-heading");
     const title2 = el3("b");
-    title2.textContent = "标签管理";
-    heading.append(title2, button("关闭", () => modal.remove()));
+    title2.textContent = t("sprite.manager.tags", "标签管理");
+    heading.append(title2, button(t("common.close", "关闭"), () => closeModal()));
     const help = el3("div", "so-status");
-    help.textContent = "角色和类型由图包信息自动生成，只能在包信息或批量管理中修改。这里管理自定义标签。";
+    help.textContent = t("sprite.manager.content.tag.help", "角色和类型由图包信息自动生成，只能在包信息或批量管理中修改。这里管理自定义标签。");
     const settings = deps.getSettings();
     const addRow = el3("div", "so-row so-tag-manager-add");
     const packSelect = document.createElement("select");
@@ -9638,19 +9731,19 @@ ${options}`,
       option.textContent = pack.name;
       packSelect.append(option);
     }
-    const newTag = textInput("输入新标签");
+    const newTag = textInput(t("sprite.manager.content.tag.new_placeholder", "输入新标签"));
     newTag.classList.add("so-tag-manager-new");
     const commitTags = (next) => {
-      modal.remove();
+      closeModal();
       commit(persistSelectedPresetMetadata(next, next.packs.map((pack) => pack.id)));
     };
     addRow.append(
-      labeled("添加到图包", packSelect),
-      labeled("新标签", newTag),
-      button("添加到图包", () => {
+      labeled(t("sprite.manager.content.tag.add_to_pack", "添加到图包"), packSelect),
+      labeled(t("sprite.manager.content.tag.new", "新标签"), newTag),
+      button(t("sprite.manager.content.tag.add_to_pack", "添加到图包"), () => {
         const tag = normalizeLabels([newTag.value])[0];
         if (!packSelect.value || !tag) {
-          toast(currentManagerBody(), "请选择图包并输入标签");
+          toast(currentManagerBody(), t("sprite.manager.content.tag.select_pack", "请选择图包并输入标签"));
           return;
         }
         commitTags(addPackCustomTag(deps.getSettings(), [packSelect.value], tag));
@@ -9660,30 +9753,30 @@ ${options}`,
     const tags = normalizeLabels(settings.packs.flatMap((pack) => pack.customTags ?? []));
     if (tags.length === 0) {
       const empty = el3("div", "so-status");
-      empty.textContent = "还没有自定义标签";
+      empty.textContent = t("sprite.manager.content.tag.empty", "还没有自定义标签");
       list.append(empty);
     }
     for (const tag of tags) {
       const row = el3("div", "so-tag-manager-row");
       row.dataset.tag = tag;
-      const input = textInput("标签名称");
+      const input = textInput(t("sprite.manager.content.tag.name", "标签名称"));
       input.value = tag;
       const count = settings.packs.filter((pack) => normalizeLabels(pack.customTags).includes(tag)).length;
       const usage = el3("span", "so-status");
-      usage.textContent = `${count} 个图包`;
+      usage.textContent = t("sprite.manager.content.pack.count", "{{p0}} 个图包", { p0: count });
       row.append(
         input,
         usage,
-        button("重命名", () => {
+        button(t("sprite.manager.content.action.rename", "重命名"), () => {
           const renamed = normalizeLabels([input.value])[0];
           if (!renamed) {
-            toast(currentManagerBody(), "标签名称不能为空");
+            toast(currentManagerBody(), t("sprite.manager.content.tag.empty_name", "标签名称不能为空"));
             return;
           }
           commitTags(renamePackCustomTag(deps.getSettings(), tag, renamed));
         }),
-        button("删除", () => {
-          if (!window.confirm(`从 ${count} 个图包删除标签「${tag}」吗？`)) return;
+        button(t("common.delete", "删除"), () => {
+          if (!window.confirm(t("sprite.manager.content.tag.confirm_delete", "从 {{p0}} 个图包删除标签「{{p1}}」吗？", { p0: count, p1: tag }))) return;
           commitTags(deletePackCustomTag(deps.getSettings(), tag));
         }, "so-btn-danger")
       );
@@ -9692,6 +9785,7 @@ ${options}`,
     panel.append(heading, help, addRow, list);
     modal.append(panel);
     (backdrop ?? document.body).append(modal);
+    const closeModal = manageChildDialog(modal);
   }
   function selectedPacks() {
     return deps.getSettings().packs.filter((pack) => selectedPackIds.has(pack.id));
@@ -9724,7 +9818,7 @@ ${options}`,
     const ids = [...selectedPackIds];
     const kindSelect = document.createElement("select");
     kindSelect.className = "text_pole so-batch-kind-select";
-    for (const [value, label] of [["sprite", "立绘"], ["illustration", "插图"]]) {
+    for (const [value, label] of [["sprite", t("sprite.manager.content.kind.sprite", "立绘")], ["illustration", t("sprite.manager.content.kind.illustration", "插图")]]) {
       const option = document.createElement("option");
       option.value = value;
       option.textContent = label;
@@ -9732,10 +9826,10 @@ ${options}`,
     }
     const kindRow = el3("div", "so-row");
     kindRow.append(
-      labeled("类型", kindSelect),
-      button("设置类型", () => {
+      labeled(t("sprite.manager.content.kind.label", "类型"), kindSelect),
+      button(t("sprite.manager.content.kind.set", "设置类型"), () => {
         if (selectedPackIds.size === 0) {
-          toast(body, "请先勾选要设置的图包");
+          toast(body, t("sprite.manager.content.batch.select_first", "请先勾选要设置的图包"));
           return;
         }
         const selected = [...selectedPackIds];
@@ -9745,36 +9839,36 @@ ${options}`,
           kindSelect.value === "illustration" ? "illustration" : "sprite"
         );
         commit(persistSelectedPresetMetadata(changed, selected));
-        toast(body, `已设置 ${selected.length} 个图包的类型`);
+        toast(body, t("sprite.manager.content.kind.updated", "已设置 {{p0}} 个图包的类型", { p0: selected.length }));
       })
     );
-    const tagInput = textInput("输入自定义标签");
+    const tagInput = textInput(t("sprite.manager.content.tag.custom_placeholder", "输入自定义标签"));
     tagInput.classList.add("so-batch-tag-input");
     tagInput.maxLength = 32;
     const addRow = el3("div", "so-row");
     addRow.append(
-      labeled("自定义标签", tagInput),
-      button("添加标签", () => {
+      labeled(t("sprite.manager.content.tag.custom", "自定义标签"), tagInput),
+      button(t("sprite.manager.content.tag.add", "添加标签"), () => {
         const tag = normalizeLabels([tagInput.value])[0];
         if (selectedPackIds.size === 0) {
-          toast(body, "请先勾选要设置的图包");
+          toast(body, t("sprite.manager.content.batch.select_first", "请先勾选要设置的图包"));
           return;
         }
         if (!tag) {
-          toast(body, "请输入标签");
+          toast(body, t("sprite.manager.content.tag.enter", "请输入标签"));
           return;
         }
         const selected = [...selectedPackIds];
         const changed = addPackCustomTag(deps.getSettings(), selected, tag);
         commit(persistSelectedPresetMetadata(changed, selected));
-        toast(body, `已为 ${selected.length} 个图包添加「${tag}」`);
+        toast(body, t("sprite.manager.content.tag.added", "已为 {{p0}} 个图包添加「{{p1}}」", { p0: selected.length, p1: tag }));
       })
     );
     const removeSelect = document.createElement("select");
     removeSelect.className = "text_pole so-batch-tag-remove-select";
     const emptyOption = document.createElement("option");
     emptyOption.value = "";
-    emptyOption.textContent = ids.length === 0 ? "先勾选图包" : "选择要移除的标签";
+    emptyOption.textContent = ids.length === 0 ? t("sprite.manager.content.tag.select_packs_first", "先勾选图包") : t("sprite.manager.content.tag.choose_remove", "选择要移除的标签");
     removeSelect.append(emptyOption);
     const selectedTags = normalizeLabels(selectedPacks().flatMap((pack) => pack.customTags ?? []));
     for (const tag of selectedTags) {
@@ -9785,20 +9879,20 @@ ${options}`,
     }
     const removeRow = el3("div", "so-row");
     removeRow.append(
-      labeled("移除标签", removeSelect),
-      button("移除标签", () => {
+      labeled(t("sprite.manager.content.tag.remove", "移除标签"), removeSelect),
+      button(t("sprite.manager.content.tag.remove", "移除标签"), () => {
         if (selectedPackIds.size === 0) {
-          toast(body, "请先勾选要设置的图包");
+          toast(body, t("sprite.manager.content.batch.select_first", "请先勾选要设置的图包"));
           return;
         }
         if (!removeSelect.value) {
-          toast(body, "请选择要移除的标签");
+          toast(body, t("sprite.manager.content.tag.select_remove", "请选择要移除的标签"));
           return;
         }
         const selected = [...selectedPackIds];
         const changed = removePackCustomTag(deps.getSettings(), selected, removeSelect.value);
         commit(persistSelectedPresetMetadata(changed, selected));
-        toast(body, `已从 ${selected.length} 个图包移除「${removeSelect.value}」`);
+        toast(body, t("sprite.manager.content.tag.removed", "已从 {{p0}} 个图包移除「{{p1}}」", { p0: selected.length, p1: removeSelect.value }));
       })
     );
     panel.append(kindRow, addRow, removeRow);
@@ -9813,12 +9907,12 @@ ${options}`,
     if (batchResourceBusy) return;
     const packs = selectedPacks();
     if (packs.length === 0) {
-      toast(currentManagerBody(), "先勾选要上传云端的图包");
+      toast(currentManagerBody(), t("sprite.manager.content.upload.select_first", "先勾选要上传云端的图包"));
       return;
     }
     const apiKey = deps.getSettings().imgbbApiKey.trim();
     if (!apiKey) {
-      toast(currentManagerBody(), "请先在「图库」App 配置 imgbb API Key");
+      toast(currentManagerBody(), t("sprite.manager.content.upload.api_key", "请先在「图库」App 配置 imgbb API Key"));
       return;
     }
     batchResourceBusy = true;
@@ -9834,16 +9928,16 @@ ${options}`,
           try {
             const dataUri = beforeUrl.startsWith("data:") ? beforeUrl : await urlToDataUri(beforeUrl);
             const result = await uploadToImgbb(apiKey, dataUri);
-            if (!isValidImgbbResult(result)) throw new Error("图床响应无效");
+            if (!isValidImgbbResult(result)) throw new Error(t("sprite.manager.content.upload.invalid_response", "图床响应无效"));
             const latestPack = deps.getSettings().packs.find((candidate) => candidate.id === pack.id);
             const latestSprite = latestPack ? sameSprite(latestPack, sprite) : null;
             if (!latestPack || !latestSprite || latestSprite.url !== beforeUrl) {
-              throw new Error("目标已更改，本次结果未应用");
+              throw new Error(t("sprite.manager.content.error.target_changed", "目标已更改，本次结果未应用"));
             }
             if (!updateChecked(upsertPack(
               deps.getSettings(),
               upsertSprite(latestPack, { ...latestSprite, code: result.code, remoteUrl: result.url })
-            ))) throw new Error("更新图包失败");
+            ))) throw new Error(t("sprite.manager.content.error.pack_update", "更新图包失败"));
             uploaded++;
           } catch (error) {
             console.warn("[sprite-overlay] 批量上传云端失败", { packId: pack.id, tag: sprite.tag, error });
@@ -9854,14 +9948,14 @@ ${options}`,
     } finally {
       batchResourceBusy = false;
       render2();
-      toast(currentManagerBody(), `上传云端完成：成功 ${uploaded} 张，失败 ${failed} 张${failed > 0 ? "（可再次点击重试）" : ""}`);
+      toast(currentManagerBody(), t("sprite.manager.content.upload.complete", "上传云端完成：成功 {{p0}} 张，失败 {{p1}} 张{{p2}}", { p0: uploaded, p1: failed, p2: failed > 0 ? t("sprite.manager.content.retry_hint", "（可再次点击重试）") : "" }));
     }
   }
   async function localizeSelectedPacks() {
     if (batchResourceBusy) return;
     const packs = selectedPacks();
     if (packs.length === 0) {
-      toast(currentManagerBody(), "先勾选要保存到本地的图包");
+      toast(currentManagerBody(), t("sprite.manager.content.localize.select_first", "先勾选要保存到本地的图包"));
       return;
     }
     batchResourceBusy = true;
@@ -9888,17 +9982,17 @@ ${options}`,
             const latestPack = latestSettings.packs.find((candidate) => candidate.id === pack.id);
             const latestSprite = latestPack ? sameSprite(latestPack, sprite) : null;
             if (!latestPack || !latestSprite || latestSprite.url !== sprite.url) {
-              throw new Error("立绘在保存期间已变化");
+              throw new Error(t("sprite.manager.content.error.sprite_changed", "立绘在保存期间已变化"));
             }
             if (preset) {
               const next = setPresetLocalSprite(latestSettings, pack.id, latestSprite, localized.url);
-              if (next === latestSettings) throw new Error("更新预设覆盖失败");
+              if (next === latestSettings) throw new Error(t("sprite.manager.content.error.preset_update", "更新预设覆盖失败"));
               deps.updateSettings(next);
             } else if (!updateChecked(upsertPack(
               latestSettings,
               upsertSprite(latestPack, { ...latestSprite, url: localized.url, remoteUrl: localized.remoteUrl })
             ))) {
-              throw new Error("更新图包失败");
+              throw new Error(t("sprite.manager.content.error.pack_update", "更新图包失败"));
             }
             localizedCount++;
           } catch (error) {
@@ -9910,50 +10004,45 @@ ${options}`,
     } finally {
       batchResourceBusy = false;
       render2();
-      toast(currentManagerBody(), `保存本地完成：成功 ${localizedCount} 张，失败 ${failed} 张${failed > 0 ? "（可再次点击重试）" : ""}`);
+      toast(currentManagerBody(), t("sprite.manager.content.localize.complete", "保存本地完成：成功 {{p0}} 张，失败 {{p1}} 张{{p2}}", { p0: localizedCount, p1: failed, p2: failed > 0 ? t("sprite.manager.content.retry_hint", "（可再次点击重试）") : "" }));
     }
   }
   async function copySelectedPackShares() {
     if (batchResourceBusy) return;
     const packs = selectedPacks();
     if (packs.length === 0) {
-      toast(currentManagerBody(), "先勾选要复制分享串的图包");
+      toast(currentManagerBody(), t("sprite.manager.content.share.select_first", "先勾选要复制分享串的图包"));
       return;
     }
     const encoded = packs.map((pack) => ({ pack, result: encodeShareStringV2(pack) })).filter((entry) => entry.result !== null);
     if (encoded.length === 0) {
-      toast(currentManagerBody(), "所选图包都没有可分享的远程图片");
+      toast(currentManagerBody(), t("sprite.manager.content.share.no_remote", "所选图包都没有可分享的远程图片"));
       return;
     }
     const missingCount = encoded.reduce((count, entry) => count + entry.result.missing.length, 0);
     if (missingCount > 0 && !window.confirm(
-      `所选图包中还有 ${missingCount} 张图片没有远程地址，不会进入分享串。仍要复制吗？`
+      t("sprite.manager.content.share.confirm_missing", "所选图包中还有 {{p0}} 张图片没有远程地址，不会进入分享串。仍要复制吗？", { p0: missingCount })
     )) return;
     const text4 = encoded.map((entry) => entry.result.text).join("\n\n");
     const ok = await copyText(text4);
     toast(
       currentManagerBody(),
-      ok ? `已复制 ${encoded.length} 个图包的分享串${missingCount > 0 ? `，缺少 ${missingCount} 张` : ""}` : "复制失败，请手动复制弹出的文本"
+      ok ? t("sprite.manager.content.share.copied_packs", "已复制 {{p0}} 个图包的分享串{{p1}}", { p0: encoded.length, p1: missingCount > 0 ? t("sprite.manager.content.share.missing_suffix", "，缺少 {{p0}} 张", { p0: missingCount }) : "" }) : t("sprite.manager.content.share.copy_failed", "复制失败，请手动复制弹出的文本")
     );
-    if (!ok) window.prompt("手动复制分享串：", text4);
+    if (!ok) window.prompt(t("sprite.manager.content.share.copy_prompt", "手动复制分享串："), text4);
   }
   async function deletePacksWithChoice(packIds, names, preview) {
-    if (!window.confirm(`确定删除 ${names.length} 个立绘包？
-${preview}
-绑定关系会一并清除。`)) return;
+    if (!window.confirm(t("sprite.manager.content.delete.confirm_packs", "确定删除 {{p0}} 个立绘包？\n{{p1}}\n绑定关系会一并清除。", { p0: names.length, p1: preview }))) return;
     const current2 = deps.getSettings();
     const localPaths = deletableLocalSpritePaths(current2, packIds);
     const deleteLocal = localPaths.length > 0 && window.confirm(
-      `检测到 ${localPaths.length} 个仅由这些包使用的本地图片文件。
-同时从 SillyTavern 服务器删除它们吗？
-
-选择“取消”将只删除图包记录，文件继续保留。`
+      t("sprite.manager.content.delete.local_detected", "检测到 {{p0}} 个仅由这些包使用的本地图片文件。\n", { p0: localPaths.length }) + t("sprite.manager.content.delete.local_confirm", "同时从 SillyTavern 服务器删除它们吗？\n\n选择“取消”将只删除图包记录，文件继续保留。")
     );
     if (!deleteLocal) {
       selectedPackIds.clear();
       view = { kind: "list" };
       commit(removePacks(current2, packIds));
-      toast(currentManagerBody(), `已删除 ${names.length} 个立绘包，本地文件未删除`);
+      toast(currentManagerBody(), t("sprite.manager.content.delete.packs_kept_files", "已删除 {{p0}} 个立绘包，本地文件未删除", { p0: names.length }));
       return;
     }
     let deleted = 0;
@@ -9970,21 +10059,22 @@ ${preview}
     if (failed > 0) {
       toast(
         currentManagerBody(),
-        `本地文件删除成功 ${deleted} 张，失败 ${failed} 张；图包尚未删除，可再次重试`
+        t("sprite.manager.content.delete.files_partial", "本地文件删除成功 {{p0}} 张，失败 {{p1}} 张；图包尚未删除，可再次重试", { p0: deleted, p1: failed })
       );
       return;
     }
     selectedPackIds.clear();
     view = { kind: "list" };
     commit(removePacks(deps.getSettings(), packIds));
-    toast(currentManagerBody(), `已删除 ${names.length} 个立绘包及 ${deleted} 张本地文件`);
+    toast(currentManagerBody(), t("sprite.manager.content.delete.packs_and_files", "已删除 {{p0}} 个立绘包及 {{p1}} 张本地文件", { p0: names.length, p1: deleted }));
   }
   function renderRolePackStack(role, roleKey, packs, spriteCount, boundState, expand) {
     const stack = el3("button", "so-role-pack-stack");
     stack.type = "button";
+    stack.dataset.managerFocus = `role:${roleKey}`;
     stack.dataset.roleKey = roleKey;
     stack.setAttribute("aria-expanded", "false");
-    stack.setAttribute("aria-label", `展开「${role}」的 ${packs.length} 个图包`);
+    stack.setAttribute("aria-label", t("sprite.manager.content.pack.expand_role", "展开「{{p0}}」的 {{p1}} 个图包", { p0: role, p1: packs.length }));
     for (let index = 2; index >= 1; index -= 1) {
       const layer = el3("span", `so-role-stack-layer so-role-stack-layer-${index}`);
       layer.setAttribute("aria-hidden", "true");
@@ -10001,33 +10091,35 @@ ${preview}
       image.loading = "lazy";
       coverBox.append(image);
     } else {
-      coverBox.textContent = "暂无立绘";
+      coverBox.textContent = t("sprite.manager.content.empty.sprites", "暂无立绘");
     }
     const activeCount = packs.filter((pack) => boundState(pack) === "active").length;
     if (activeCount > 0) {
       const badge = el3("span", "so-card-badge");
-      badge.textContent = activeCount === 1 ? "使用中" : `使用中 ${activeCount}`;
+      badge.textContent = activeCount === 1 ? t("sprite.manager.content.pack.active", "使用中") : t("sprite.manager.content.pack.active_count", "使用中 {{p0}}", { p0: activeCount });
       coverBox.append(badge);
     }
     const info = el3("span", "so-card-info");
     const title2 = el3("b");
     title2.textContent = role;
     const detail = el3("small");
-    detail.textContent = `${packs.length} 个图包 · ${spriteCount} 张`;
+    detail.textContent = t("sprite.manager.content.pack.counts", "{{p0}} 个图包 · {{p1}} 张", { p0: packs.length, p1: spriteCount });
     const count = el3("span", "so-role-stack-count");
-    count.textContent = `${packs.length} 个图包`;
+    count.textContent = t("sprite.manager.content.pack.count", "{{p0}} 个图包", { p0: packs.length });
     info.append(title2, detail);
     face.append(coverBox, count, info);
     stack.append(face);
     stack.addEventListener("click", expand);
+    addCardNavigation(stack, ".so-pack-card, .so-role-pack-stack, .so-role-pack-row");
     return stack;
   }
   function renderPackCard(pack, bound) {
     const card = el3("div", "so-pack-card");
+    card.dataset.managerFocus = `pack:${pack.id}`;
     card.tabIndex = 0;
     card.setAttribute("role", "button");
-    card.setAttribute("aria-label", `打开立绘包「${pack.name}」`);
-    card.title = "点击进入管理";
+    card.setAttribute("aria-label", t("sprite.manager.content.pack.open", "打开立绘包「{{p0}}」", { p0: pack.name }));
+    card.title = t("sprite.manager.content.pack.open_hint", "点击进入管理");
     const coverBox = el3("div", "so-card-cover");
     const cover = getPackCover(pack);
     if (cover) {
@@ -10037,18 +10129,18 @@ ${preview}
       img.loading = "lazy";
       coverBox.append(img);
     } else {
-      coverBox.textContent = "暂无立绘";
+      coverBox.textContent = t("sprite.manager.content.empty.sprites", "暂无立绘");
     }
     if (bound) {
       if (bound === "active") card.classList.add("so-card-active");
       const badge = el3("span", bound === "active" ? "so-card-badge" : "so-card-badge so-card-badge-off");
-      badge.textContent = bound === "active" ? "使用中" : "已停用";
+      badge.textContent = bound === "active" ? t("sprite.manager.content.pack.active", "使用中") : t("sprite.manager.content.pack.disabled", "已停用");
       badge.dataset.corner = "bottom-left";
       coverBox.append(badge);
     }
     if (isPresetPack(pack.id)) {
       const chip = el3("span", "so-card-chip");
-      chip.textContent = "预设";
+      chip.textContent = t("sprite.manager.content.pack.preset", "预设");
       coverBox.append(chip);
     }
     const resources = summarizePackResources(pack);
@@ -10062,27 +10154,31 @@ ${preview}
         chip.textContent = count === resources.total ? label : `${label} ${count}/${resources.total}`;
         status.append(chip);
       };
-      resourceLabel("local", "本地");
-      resourceLabel("cloud", "云端");
+      resourceLabel("local", t("sprite.manager.content.pack.local", "本地"));
+      resourceLabel("cloud", t("sprite.manager.content.pack.cloud", "云端"));
       coverBox.append(status);
     }
     const info = el3("div", "so-card-info");
     const nameEl = el3("b");
     nameEl.textContent = pack.name;
     const metaEl = el3("small");
-    metaEl.textContent = `${pack.sprites.length} 张 · ${pack.author ?? "未知作者"}`;
+    metaEl.textContent = t("sprite.manager.content.pack.metadata", "{{p0}} 张 · {{p1}}", { p0: pack.sprites.length, p1: pack.author ?? t("sprite.manager.content.pack.unknown_author", "未知作者") });
     const labels = packLabels(pack);
     const labelRow = el3("div", "so-pack-labels");
-    for (const text4 of [`角色：${labels.role}`, `类型：${labels.type}`, ...labels.custom]) {
+    const displayRole = pack.roleName?.trim() || t("sprite.manager.content.group.other", "其他");
+    const displayKind = pack.kind === "illustration" ? t("sprite.manager.content.kind.illustration", "插图") : t("sprite.manager.content.kind.sprite", "立绘");
+    for (const text4 of [t("sprite.manager.content.pack.role_label", "角色：{{p0}}", { p0: displayRole }), t("sprite.manager.content.pack.kind_label", "类型：{{p0}}", { p0: displayKind }), ...labels.custom]) {
       const chip = el3("span");
       chip.textContent = text4;
       labelRow.append(chip);
     }
     info.append(nameEl, metaEl, labelRow);
     card.append(coverBox, info);
+    addCardNavigation(card, ".so-pack-card, .so-role-pack-stack, .so-role-pack-row");
     if (batchMode) {
       const preset = isPresetPack(pack.id);
       const selected = selectedPackIds.has(pack.id);
+      card.setAttribute("aria-pressed", String(selected));
       card.classList.add("so-card-batch");
       if (selected) card.classList.add("so-card-selected");
       const check = el3("span", `so-card-check${selected ? " so-card-check-on" : ""}`);
@@ -10091,16 +10187,16 @@ ${preview}
       coverBox.append(check);
       const orderRow = el3("div", "so-row so-card-order");
       orderRow.append(
-        iconButton("◀", "前移", () => {
+        iconButton("◀", t("sprite.manager.content.move_earlier", "前移"), () => {
           commit(movePack(deps.getSettings(), pack.id, -1));
         }, "so-chip-btn"),
-        iconButton("▶", "后移", () => {
+        iconButton("▶", t("sprite.manager.content.move_later", "后移"), () => {
           commit(movePack(deps.getSettings(), pack.id, 1));
         }, "so-chip-btn")
       );
       card.append(orderRow);
-      card.title = preset ? "点击勾选资源操作；预设包不可删除，可拖拽排序" : "点击勾选；可拖拽排序";
-      card.setAttribute("aria-label", `选择立绘包「${pack.name}」`);
+      card.title = preset ? t("sprite.manager.content.batch.preset_select_hint", "点击勾选资源操作；预设包不可删除，可拖拽排序") : t("sprite.manager.content.batch.select_hint", "点击勾选；可拖拽排序");
+      card.setAttribute("aria-label", t("sprite.manager.content.batch.select_pack", "选择立绘包「{{p0}}」", { p0: pack.name }));
       const toggleSelect = () => {
         if (selectedPackIds.has(pack.id)) selectedPackIds.delete(pack.id);
         else selectedPackIds.add(pack.id);
@@ -10108,8 +10204,9 @@ ${preview}
       };
       card.addEventListener("click", toggleSelect);
       card.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
+        if (e.target === card && !e.isComposing && (e.key === "Enter" || e.key === " ")) {
           e.preventDefault();
+          e.stopPropagation();
           toggleSelect();
         }
       });
@@ -10145,8 +10242,9 @@ ${preview}
     };
     card.addEventListener("click", enter);
     card.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
+      if (e.target === card && !e.isComposing && (e.key === "Enter" || e.key === " ")) {
         e.preventDefault();
+        e.stopPropagation();
         enter();
       }
     });
@@ -10156,29 +10254,30 @@ ${preview}
     const readonly = isPresetPack(pack.id);
     if (!readonly) {
       actions.append(
-        dropdownButton("添加立绘", (panel) => {
+        dropdownButton(t("sprite.manager.content.add.title", "添加立绘"), (panel) => {
           const upHeading = el3("div", "so-popover-title");
-          upHeading.textContent = "直接上传";
-          const upBtn = button("选择图片（自动压缩+解析预览）", () => {
+          upHeading.textContent = t("sprite.manager.content.add.upload_title", "直接上传");
+          const upBtn = button(t("sprite.manager.content.add.choose_images", "选择图片（自动压缩+解析预览）"), () => {
+            const opener = popoverOpener;
             closePopovers();
-            pickFile("image/*", true, (files) => openUploadPreview(pack.id, files));
+            pickFile("image/*", true, (files) => openUploadPreview(pack.id, files, opener));
           });
           const upHint = el3("div", "so-status");
-          upHint.textContent = "默认整个文件名作图名、落入当前包；预览里勾选「自动拆分」可按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png）并按前缀拆分成包。";
+          upHint.textContent = t("sprite.manager.content.add.upload_hint", "默认整个文件名作图名、落入当前包；预览里勾选「自动拆分」可按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png）并按前缀拆分成包。");
           const codeHeading = el3("div", "so-popover-title");
-          codeHeading.textContent = "按编码添加";
+          codeHeading.textContent = t("sprite.manager.content.add.codes_title", "按编码添加");
           const codeInput = document.createElement("textarea");
           codeInput.className = "text_pole";
           codeInput.rows = 3;
-          codeInput.placeholder = "粘贴编码，或「图名 编码」，可多个（空格/逗号/换行分隔）";
-          const codeBtn = button("添加", () => {
+          codeInput.placeholder = t("sprite.manager.content.add.codes_placeholder", "粘贴编码，或「图名 编码」，可多个（空格/逗号/换行分隔）");
+          const codeBtn = button(t("sprite.manager.content.add.button", "添加"), () => {
             const { entries, invalid } = parseImageCodeEntries(codeInput.value);
             if (entries.length === 0 && invalid.length === 0) {
-              toast(body, "请填写图床编码，如 ab12cd.png，或「微笑 ab12cd.png」（可一次粘贴多个）");
+              toast(body, t("sprite.manager.content.add.enter_code", "请填写图床编码，如 ab12cd.png，或「微笑 ab12cd.png」（可一次粘贴多个）"));
               return;
             }
             if (invalid.length > 0) {
-              toast(body, `认不出编码：${invalid.slice(0, 3).join("、")}${invalid.length > 3 ? " 等" : ""}`);
+              toast(body, t("sprite.manager.content.add.invalid_codes", "认不出编码：{{p0}}{{p1}}", { p0: invalid.slice(0, 3).join("、"), p1: invalid.length > 3 ? t("sprite.manager.content.add.more", " 等") : "" }));
               return;
             }
             const current2 = deps.getSettings();
@@ -10199,80 +10298,77 @@ ${preview}
             commitPack(next);
             toast(
               body,
-              named > 0 ? `已添加 ${added} 张，其中 ${named} 张用了你给的图名` : `已按编码添加 ${added} 张（图名取编码名，可在图卡上改名）`
+              named > 0 ? t("sprite.manager.content.add.named_result", "已添加 {{p0}} 张，其中 {{p1}} 张用了你给的图名", { p0: added, p1: named }) : t("sprite.manager.content.add.code_result", "已按编码添加 {{p0}} 张（图名取编码名，可在图卡上改名）", { p0: added })
             );
           });
           const codeHint = el3("div", "so-status");
-          codeHint.textContent = `编码拼接图床前缀 ${deps.getSettings().imageHost} 成直链。写「微笑 ab12cd.png」就用「微笑」当图名，连写「微笑ab12cd.png」也认；只给编码时图名取编码名。改名/分组用图卡上的 ✎ / 🏷。`;
+          codeHint.textContent = t("sprite.manager.content.add.code_prefix", "编码拼接图床前缀 {{p0}} 成直链。", { p0: deps.getSettings().imageHost }) + t("sprite.manager.content.add.code_named_hint", "写「微笑 ab12cd.png」就用「微笑」当图名，连写「微笑ab12cd.png」也认；") + t("sprite.manager.content.add.code_rename_hint", "只给编码时图名取编码名。改名/分组用图卡上的 ✎ / 🏷。");
           panel.append(upHeading, upBtn, upHint, codeHeading, codeInput, codeBtn, codeHint);
         })
       );
     }
     const topRow = el3("div", "so-row so-detail-top");
     topRow.append(
-      button("导出 JSON", async () => {
+      button(t("sprite.manager.content.export.json", "导出 JSON"), async () => {
         const file = await exportPack(pack);
         downloadJson2(file, `${pack.name}.sprite-pack.json`);
-        toast(body, `已导出「${pack.name}」`);
+        toast(body, t("sprite.manager.content.export.saved", "已导出「{{p0}}」", { p0: pack.name }));
       }),
-      button("复制分享串", async () => {
+      button(t("sprite.manager.content.share.copy", "复制分享串"), async () => {
         const result = encodeShareStringV2(pack);
         if (!result) {
-          toast(body, "该包没有可分享的远程图片（本地/内嵌图请用「导出 JSON」，或先上传 imgbb）");
+          toast(body, t("sprite.manager.content.share.pack_no_remote", "该包没有可分享的远程图片（本地/内嵌图请用「导出 JSON」，或先上传 imgbb）"));
           return;
         }
         if (result.missing.length > 0) {
           const preview = result.missing.slice(0, 8).join("、");
-          const more = result.missing.length > 8 ? ` 等 ${result.missing.length} 项` : "";
+          const more = result.missing.length > 8 ? t("sprite.manager.content.share.more_items", " 等 {{p0}} 项", { p0: result.missing.length }) : "";
           const go = window.confirm(
-            `分享串不完整：${result.included}/${result.total} 张有远程地址。
-缺少远程地址（不会包含在分享串里）：${preview}${more}
-
-这些图片对方将看不到。仍要复制残缺分享串吗？`
+            t("sprite.manager.content.share.incomplete", "分享串不完整：{{p0}}/{{p1}} 张有远程地址。\n", { p0: result.included, p1: result.total }) + t("sprite.manager.content.share.missing_list", "缺少远程地址（不会包含在分享串里）：{{p0}}{{p1}}\n\n", { p0: preview, p1: more }) + t("sprite.manager.content.share.confirm_incomplete", "这些图片对方将看不到。仍要复制残缺分享串吗？")
           );
           if (!go) return;
         }
         const ok = await copyText(result.text);
-        const note = result.missing.length > 0 ? `（${result.included}/${result.total} 张，缺 ${result.missing.length} 张）` : `（${result.included} 张，完整）`;
-        toast(body, ok ? `已复制分享串${note}` : "复制失败，请手动复制弹出的文本");
-        if (!ok) window.prompt("手动复制分享串：", result.text);
+        const note = result.missing.length > 0 ? t("sprite.manager.content.share.partial_count", "（{{p0}}/{{p1}} 张，缺 {{p2}} 张）", { p0: result.included, p1: result.total, p2: result.missing.length }) : t("sprite.manager.content.share.complete_count", "（{{p0}} 张，完整）", { p0: result.included });
+        toast(body, ok ? t("sprite.manager.content.share.copied", "已复制分享串{{p0}}", { p0: note }) : t("sprite.manager.content.share.copy_failed", "复制失败，请手动复制弹出的文本"));
+        if (!ok) window.prompt(t("sprite.manager.content.share.copy_prompt", "手动复制分享串："), result.text);
       })
     );
     const spacer = el3("div", "so-spacer");
     topRow.append(spacer);
     if (!readonly) {
       topRow.append(
-        button("删除立绘包", () => {
+        button(t("sprite.manager.content.delete.pack", "删除立绘包"), () => {
           void deletePacksWithChoice([pack.id], [pack.name], pack.name);
         }, "so-btn-danger")
       );
     }
     body.append(topRow);
     {
-      const metaPanel = collapsible("包信息", false, `pack-meta:${pack.id}`);
+      const metaPanel = collapsible(t("sprite.manager.content.info.title", "包信息"), false, `pack-meta:${pack.id}`);
       const metaRow = el3("div", "so-row so-meta-row");
-      const nameInput = textInput("包名");
+      const nameInput = textInput(t("sprite.manager.content.info.name", "包名"));
       nameInput.value = pack.name;
-      const authorInput = textInput("作者");
+      const authorInput = textInput(t("sprite.manager.content.info.author", "作者"));
       authorInput.value = pack.author ?? "";
-      const descInput = textInput("描述（可选）");
+      const descInput = textInput(t("sprite.manager.content.info.description_placeholder", "描述（可选）"));
       descInput.value = pack.description ?? "";
-      const roleInput = textInput("人名（可空）");
+      const roleInput = textInput(t("sprite.manager.content.info.role_placeholder", "人名（可空）"));
       roleInput.value = pack.roleName ?? "";
-      const outfitInput = textInput("服装（可空）");
+      const outfitInput = textInput(t("sprite.manager.content.info.outfit_placeholder", "服装（可空）"));
       outfitInput.value = pack.outfit ?? "";
       const promptNoteInput = document.createElement("textarea");
       promptNoteInput.className = "text_pole so-pack-prompt-note";
-      promptNoteInput.placeholder = "图包备注（可选）";
+      promptNoteInput.placeholder = t("sprite.manager.content.info.note_placeholder", "图包备注（可选）");
       promptNoteInput.rows = 3;
       promptNoteInput.maxLength = MAX_NOTE_CODE_POINTS;
       promptNoteInput.value = pack.promptNote ?? "";
       const placementSelect = document.createElement("select");
       placementSelect.className = "text_pole so-pack-prompt-placement";
-      placementSelect.setAttribute("aria-label", "图包备注插入位置");
+      placementSelect.setAttribute("aria-label", t("sprite.manager.content.info.note_placement", "图包备注插入位置"));
       for (const [value, label] of [
-        ["before-list", "立绘清单前"],
-        ["after-list", "立绘清单后"]
+        ["before-list", t("sprite.manager.content.info.before_list", "立绘清单前")],
+        ["after-list", t("sprite.manager.content.info.after_list", "立绘清单后")]
       ]) {
         const option = document.createElement("option");
         option.value = value;
@@ -10282,7 +10378,7 @@ ${preview}
       placementSelect.value = pack.promptNotePlacement ?? DEFAULT_PROMPT_NOTE_PLACEMENT;
       const inventoryPromptInput = document.createElement("textarea");
       inventoryPromptInput.className = "text_pole so-pack-inventory-prompt";
-      inventoryPromptInput.placeholder = "自定义清单提示词（可选，替换默认的表情列表）";
+      inventoryPromptInput.placeholder = t("sprite.manager.content.info.inventory_placeholder", "自定义清单提示词（可选，替换默认的表情列表）");
       inventoryPromptInput.rows = 4;
       inventoryPromptInput.maxLength = MAX_INVENTORY_PROMPT_CODE_POINTS;
       inventoryPromptInput.value = pack.inventoryPrompt ?? "";
@@ -10303,13 +10399,13 @@ ${preview}
         outfitNotesBox.replaceChildren();
         if (outfits.length === 0) return;
         const title2 = el3("div", "so-section-title");
-        title2.textContent = "服装备注";
+        title2.textContent = t("sprite.manager.content.info.outfit_notes", "服装备注");
         outfitNotesBox.append(title2);
         for (const outfit of outfits) {
           const input = document.createElement("textarea");
           input.className = "text_pole so-outfit-note-input";
           input.dataset.outfit = outfit;
-          input.placeholder = `${outfit}的使用场景（可选）`;
+          input.placeholder = t("sprite.manager.content.info.outfit_note_placeholder", "{{p0}}的使用场景（可选）", { p0: outfit });
           input.rows = 2;
           input.maxLength = MAX_NOTE_CODE_POINTS;
           input.value = outfitNoteDrafts.get(outfit) ?? "";
@@ -10323,28 +10419,28 @@ ${preview}
       renderOutfitNotes();
       const promptRow = el3("div", "so-row so-pack-note-row");
       promptRow.append(
-        labeled("图包备注", promptNoteInput),
-        labeled("插入位置", placementSelect)
+        labeled(t("sprite.manager.content.info.note", "图包备注"), promptNoteInput),
+        labeled(t("sprite.manager.content.info.placement", "插入位置"), placementSelect)
       );
       const inventoryRow = el3("div", "so-row so-pack-inventory-row");
       const inventoryHint = el3("div", "so-status so-pack-inventory-hint");
-      inventoryHint.textContent = "填了就用它替换这个包在清单里的表情列表；留空走默认列表。多个包同场景时两段都会出现，不会互相覆盖。";
-      const inventoryCell = labeled("自定义清单提示词", inventoryPromptInput);
+      inventoryHint.textContent = t("sprite.manager.content.info.inventory_hint", "填了就用它替换这个包在清单里的表情列表；留空走默认列表。") + t("sprite.manager.content.info.multiple_packs_hint", "多个包同场景时两段都会出现，不会互相覆盖。");
+      const inventoryCell = labeled(t("sprite.manager.content.info.inventory", "自定义清单提示词"), inventoryPromptInput);
       inventoryCell.append(inventoryHint);
       inventoryRow.append(inventoryCell);
       metaRow.append(
-        labeled("包名", nameInput),
-        labeled("作者", authorInput),
-        labeled("人名", roleInput),
-        labeled("服装", outfitInput),
-        labeled("描述", descInput)
+        labeled(t("sprite.manager.content.info.name", "包名"), nameInput),
+        labeled(t("sprite.manager.content.info.author", "作者"), authorInput),
+        labeled(t("sprite.manager.content.info.role", "人名"), roleInput),
+        labeled(t("sprite.manager.content.info.outfit", "服装"), outfitInput),
+        labeled(t("sprite.manager.content.info.description", "描述"), descInput)
       );
       const saveRow = el3("div", "so-row so-meta-save-row");
       saveRow.append(
-        button("保存包信息", () => {
+        button(t("sprite.manager.content.info.save", "保存包信息"), () => {
           const name = sanitizePackName(nameInput.value);
           if (!name) {
-            toast(body, "包名不能为空");
+            toast(body, t("sprite.manager.content.info.empty_name", "包名不能为空"));
             return;
           }
           const roleName = normalizeTag(roleInput.value);
@@ -10370,7 +10466,7 @@ ${preview}
             const materialized = next.packs.find((candidate) => candidate.id === pack.id);
             if (!materialized || !checkedSettings(upsertPack(current2, materialized))) return;
             commit(next);
-            toast(body, "已保存包信息");
+            toast(body, t("sprite.manager.content.info.saved", "已保存包信息"));
             return;
           }
           const nextPack = {
@@ -10393,44 +10489,44 @@ ${preview}
           if (Object.keys(outfitNotes).length > 0) nextPack.outfitNotes = outfitNotes;
           else delete nextPack.outfitNotes;
           if (commitChecked(upsertPack(deps.getSettings(), nextPack))) {
-            toast(body, "已保存包信息");
+            toast(body, t("sprite.manager.content.info.saved", "已保存包信息"));
           }
         }, "so-btn-primary so-meta-save")
       );
       if (readonly) {
-        saveRow.append(button("恢复内置信息", () => {
-          if (!window.confirm("确定恢复扩展内置的包信息吗？已保存的本地图片会保留。")) return;
+        saveRow.append(button(t("sprite.manager.content.info.restore", "恢复内置信息"), () => {
+          if (!window.confirm(t("sprite.manager.content.info.confirm_restore", "确定恢复扩展内置的包信息吗？已保存的本地图片会保留。"))) return;
           const current2 = deps.getSettings();
           const next = clearPresetMetadata(current2, pack.id);
           const materialized = next.packs.find((candidate) => candidate.id === pack.id);
           if (!materialized || !checkedSettings(upsertPack(current2, materialized))) return;
           commit(next);
-          toast(body, "已恢复内置信息，本地图片保持不变");
+          toast(body, t("sprite.manager.content.info.restored", "已恢复内置信息，本地图片保持不变"));
         }));
       }
       const metaHint = el3("div", "so-status");
-      metaHint.textContent = readonly ? "可覆盖预设包信息；立绘图片本身仍不可添加、改名或删除。" : "人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。";
+      metaHint.textContent = readonly ? t("sprite.manager.content.info.preset_hint", "可覆盖预设包信息；立绘图片本身仍不可添加、改名或删除。") : t("sprite.manager.content.info.address_hint", "人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。");
       metaPanel.body.append(metaRow, promptRow, inventoryRow, outfitNotesBox, metaHint, saveRow);
       body.append(metaPanel.box);
     }
     if (pack.sprites.length === 0) {
       const empty = el3("div", "so-status");
-      empty.textContent = "还没有立绘：点右上角「添加立绘」上传图片或粘贴编码。";
+      empty.textContent = t("sprite.manager.content.empty.pack_detail", "还没有立绘：点右上角「添加立绘」上传图片或粘贴编码。");
       body.append(empty);
     } else {
       const filters = el3("div", "so-gallery-filters");
       const search = document.createElement("input");
       search.type = "search";
       search.className = "text_pole so-gallery-search";
-      search.placeholder = "搜索图名、角色、服装或标签";
-      search.setAttribute("aria-label", "搜索立绘");
+      search.placeholder = t("sprite.manager.content.filter.sprites_placeholder", "搜索图名、角色、服装或标签");
+      search.setAttribute("aria-label", t("sprite.manager.content.filter.sprites", "搜索立绘"));
       search.value = spriteFilterQuery;
       const labelSelect = document.createElement("select");
       labelSelect.className = "text_pole so-gallery-label-select";
-      labelSelect.setAttribute("aria-label", "添加标签筛选");
+      labelSelect.setAttribute("aria-label", t("sprite.manager.content.filter.add_tag", "添加标签筛选"));
       const placeholder = document.createElement("option");
       placeholder.value = "";
-      placeholder.textContent = "按标签筛选…";
+      placeholder.textContent = t("sprite.manager.content.filter.by_tag", "按标签筛选…");
       labelSelect.append(placeholder);
       const availableLabels = [...new Set(pack.sprites.flatMap((sprite) => sprite.labels ?? []))];
       for (const label of availableLabels) {
@@ -10456,7 +10552,7 @@ ${preview}
         const section2 = el3("div", "so-sprite-section");
         if (groups.length > 0) {
           const head = el3("div", "so-group-head");
-          head.textContent = group === "" ? "未分组" : group;
+          head.textContent = group === "" ? t("sprite.manager.content.group.none", "未分组") : group;
           section2.append(head);
         }
         const grid = el3("div", "so-sprite-grid");
@@ -10479,10 +10575,10 @@ ${preview}
       };
       const updatePaging = () => {
         const visibleCount = Math.min(spriteVisibleCount, filteredEntries.length);
-        count.textContent = `已显示 ${visibleCount}/${filteredEntries.length}`;
+        count.textContent = t("sprite.manager.content.filter.shown", "已显示 {{p0}}/{{p1}}", { p0: visibleCount, p1: filteredEntries.length });
         paging.replaceChildren();
         if (visibleCount < filteredEntries.length) {
-          paging.append(button("加载更多", () => {
+          paging.append(button(t("sprite.manager.content.filter.load_more", "加载更多"), () => {
             const previousCount = spriteVisibleCount;
             spriteVisibleCount = Math.min(filteredEntries.length, previousCount + SPRITE_PAGE_SIZE);
             appendSprites(previousCount, spriteVisibleCount);
@@ -10504,7 +10600,7 @@ ${preview}
         grids.clear();
         if (filteredEntries.length === 0) {
           const empty = el3("div", "so-status so-gallery-empty");
-          empty.textContent = "没有符合筛选条件的立绘。";
+          empty.textContent = t("sprite.manager.content.empty.filtered_sprites", "没有符合筛选条件的立绘。");
           gallery.append(empty);
         } else {
           appendSprites(0, Math.min(spriteVisibleCount, filteredEntries.length));
@@ -10518,7 +10614,7 @@ ${preview}
           chip.type = "button";
           chip.className = "so-gallery-filter-chip";
           chip.textContent = `${label} ×`;
-          chip.title = `移除标签筛选「${label}」`;
+          chip.title = t("sprite.manager.content.filter.remove_tag", "移除标签筛选「{{p0}}」", { p0: label });
           chip.addEventListener("click", () => {
             spriteFilterLabels = spriteFilterLabels.filter((current2) => current2 !== label);
             spriteVisibleCount = SPRITE_PAGE_SIZE;
@@ -10557,13 +10653,13 @@ ${preview}
       if (pending.length > 0 && imgbbApiKey.trim()) {
         const upSection = el3("div", "so-section");
         const upTitle = el3("div", "so-section-title");
-        upTitle.textContent = "图床补传";
+        upTitle.textContent = t("sprite.manager.content.upload.retry_title", "图床补传");
         const upDesc = el3("div", "so-status");
-        upDesc.textContent = `${pending.length} 张立绘还没有远程地址（分享时对方看不到）。补传到 imgbb 后本地图仍保留。`;
+        upDesc.textContent = t("sprite.manager.content.upload.pending_hint", "{{p0}} 张立绘还没有远程地址（分享时对方看不到）。补传到 imgbb 后本地图仍保留。", { p0: pending.length });
         upSection.append(
           upTitle,
           upDesc,
-          button(`补传 ${pending.length} 张到 imgbb（失败可重试）`, () => {
+          button(t("sprite.manager.content.upload.retry", "补传 {{p0}} 张到 imgbb（失败可重试）", { p0: pending.length }), () => {
             void retryPendingUploads(body, pack.id);
           })
         );
@@ -10571,17 +10667,14 @@ ${preview}
       }
       const splitPreview = previewGroupSplit(pack);
       if (splitPreview.length >= 2) {
-        const splitPanel = collapsible("按分组拆成立绘包", false, `pack-split:${pack.id}`);
+        const splitPanel = collapsible(t("sprite.manager.content.split.title", "按分组拆成立绘包"), false, `pack-split:${pack.id}`);
         const splitDesc = el3("div", "so-status");
-        splitDesc.textContent = `检测到 ${splitPreview.length} 个分组：${splitPreview.map((s) => `${s.roleName}(${s.count})`).join("、")}。拆分会新建这些包（原包与绑定保留，可稍后自行删除）。`;
+        splitDesc.textContent = t("sprite.manager.content.split.preview", "检测到 {{p0}} 个分组：{{p1}}。拆分会新建这些包（原包与绑定保留，可稍后自行删除）。", { p0: splitPreview.length, p1: splitPreview.map((s) => `${s.roleName}(${s.count})`).join("、") });
         splitPanel.body.append(
           splitDesc,
-          button("拆分（保留原包）", () => {
-            const preview = splitPreview.map((s) => `${s.roleName}：${s.count} 张`).join("\n");
-            if (!window.confirm(`将新建以下立绘包（原包保留）：
-${preview}
-
-确认拆分？`)) return;
+          button(t("sprite.manager.content.split.button", "拆分（保留原包）"), () => {
+            const preview = splitPreview.map((s) => t("sprite.manager.content.split.pack_count", "{{p0}}：{{p1}} 张", { p0: s.roleName, p1: s.count })).join("\n");
+            if (!window.confirm(t("sprite.manager.content.split.confirm", "将新建以下立绘包（原包保留）：\n{{p0}}\n\n确认拆分？", { p0: preview }))) return;
             const newPacks = splitPackByGroup(pack);
             let next = deps.getSettings();
             for (const np of newPacks) {
@@ -10590,7 +10683,7 @@ ${preview}
               next = updated;
             }
             commit(next);
-            toast(body, `已拆出 ${newPacks.length} 个新包（原包「${pack.name}」保留）`);
+            toast(body, t("sprite.manager.content.split.complete", "已拆出 {{p0}} 个新包（原包「{{p1}}」保留）", { p0: newPacks.length, p1: pack.name }));
           })
         );
         body.append(splitPanel.box);
@@ -10634,7 +10727,7 @@ ${preview}
   }
   function commitActionPack(pack) {
     const result = upsertPack(deps.getSettings(), pack);
-    if (!result.ok) throw new Error(`操作未生效，存在地址冲突：${conflictText(result.conflicts)}`);
+    if (!result.ok) throw new Error(t("sprite.manager.content.conflict.address", "操作未生效，存在地址冲突：{{p0}}", { p0: conflictText(result.conflicts) }));
     deps.updateSettings(result.settings);
   }
   function currentManagerBody() {
@@ -10642,7 +10735,7 @@ ${preview}
   }
   function runSpriteAction(action) {
     const report = (error) => {
-      toast(currentManagerBody(), error instanceof Error ? error.message : "立绘操作失败");
+      toast(currentManagerBody(), error instanceof Error ? error.message : t("sprite.manager.content.action.failed", "立绘操作失败"));
       refreshLightbox();
     };
     try {
@@ -10678,10 +10771,10 @@ ${preview}
           result.dataUri,
           deps.adapter.getCurrentCharacterName() || beforeSave.pack.name
         );
-        if (!localUserImagePath(url)) throw new Error("保存失败：平台未返回安全的本地用户图片地址");
+        if (!localUserImagePath(url)) throw new Error(t("sprite.manager.content.error.unsafe_local", "保存失败：平台未返回安全的本地用户图片地址"));
         const target = latestTarget();
         if (!target || target.sprite.url !== beforeUrl) {
-          throw new Error("目标已更改，本次结果未应用");
+          throw new Error(t("sprite.manager.content.error.target_changed", "目标已更改，本次结果未应用"));
         }
         const base = {
           tag: target.sprite.tag,
@@ -10703,22 +10796,22 @@ ${preview}
                   code: uploaded.code,
                   remoteUrl: uploaded.url
                 }));
-                toast(currentManagerBody(), `已替换「${identity.tag}」并重传图床（${formatBytes(result.bytes)}）`);
+                toast(currentManagerBody(), t("sprite.manager.content.replace.hosted", "已替换「{{p0}}」并重传图床（{{p1}}）", { p0: identity.tag, p1: formatBytes(result.bytes) }));
                 return;
               } else {
-                toast(currentManagerBody(), "目标已更改，本次图床结果未应用；已保留本地文件");
+                toast(currentManagerBody(), t("sprite.manager.content.replace.target_changed", "目标已更改，本次图床结果未应用；已保留本地文件"));
                 return;
               }
             }
-            toast(currentManagerBody(), `已替换「${identity.tag}」，但图床响应无效，标记为待上传`);
+            toast(currentManagerBody(), t("sprite.manager.content.replace.invalid_response", "已替换「{{p0}}」，但图床响应无效，标记为待上传", { p0: identity.tag }));
           } catch {
-            toast(currentManagerBody(), `已替换「${identity.tag}」，图床上传失败，标记为待上传`);
+            toast(currentManagerBody(), t("sprite.manager.content.replace.upload_failed", "已替换「{{p0}}」，图床上传失败，标记为待上传", { p0: identity.tag }));
           }
         } else {
-          toast(currentManagerBody(), `已替换「${identity.tag}」（${formatBytes(result.bytes)}），远程地址待上传`);
+          toast(currentManagerBody(), t("sprite.manager.content.replace.local", "已替换「{{p0}}」（{{p1}}），远程地址待上传", { p0: identity.tag, p1: formatBytes(result.bytes) }));
         }
       } catch (error) {
-        toast(currentManagerBody(), error instanceof Error ? error.message : "替换失败");
+        toast(currentManagerBody(), error instanceof Error ? error.message : t("sprite.manager.content.replace.failed", "替换失败"));
       } finally {
         refreshLightbox();
       }
@@ -10754,7 +10847,7 @@ ${preview}
           (candidate) => candidate.tag === identity.tag && spriteGroup(candidate) === identity.group && (candidate.outfit ?? "") === identity.outfit
         );
         if (!pack || !latest || latest.url !== source.url) {
-          throw new Error("立绘在保存期间已发生变化，请重试");
+          throw new Error(t("sprite.manager.content.localize.changed", "立绘在保存期间已发生变化，请重试"));
         }
         if (isPresetPack(packId)) {
           deps.updateSettings(setPresetLocalSprite(
@@ -10771,7 +10864,7 @@ ${preview}
           }));
         }
         context.refresh();
-        toast(currentManagerBody(), `已将「${source.tag}」保存到本地`);
+        toast(currentManagerBody(), t("sprite.manager.content.localize.saved", "已将「{{p0}}」保存到本地", { p0: source.tag }));
       },
       refresh: () => {
         render2();
@@ -10805,6 +10898,11 @@ ${preview}
   }
   function renderSpriteCell(body, pack, sprite, index, readonly) {
     const cell = el3("div", "so-sprite-cell");
+    cell.tabIndex = 0;
+    cell.setAttribute("role", "button");
+    cell.setAttribute("aria-label", t("sprite.manager.content.pack.open_image", "查看立绘「{{name}}」", { name: sprite.tag }));
+    cell.dataset.managerFocus = `sprite:${pack.id}:${spriteGroup(sprite)}:${sprite.outfit ?? ""}:${sprite.tag}`;
+    addCardNavigation(cell, ".so-sprite-cell");
     if (pack.coverTag === sprite.tag) cell.classList.add("so-cover");
     const img = document.createElement("img");
     img.src = sprite.url;
@@ -10816,6 +10914,12 @@ ${preview}
     tagEl.title = sprite.tag;
     cell.append(img, tagEl);
     cell.addEventListener("click", () => openLightbox(pack.id, index));
+    cell.addEventListener("keydown", (event) => {
+      if (event.target !== cell || event.isComposing || !["Enter", " "].includes(event.key)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openLightbox(pack.id, index);
+    });
     if (readonly) return cell;
     const bar = el3("div", "so-sprite-actions");
     const identity = {
@@ -10835,21 +10939,23 @@ ${preview}
     );
     const sharedActions = createSpriteActions(context);
     for (const action of sharedActions) {
-      bar.append(iconButton(
+      const actionButton3 = iconButton(
         action.icon ?? action.label,
-        action.hint ?? action.label,
+        action.label,
         () => runSpriteAction(action),
         "so-icon-btn",
         Boolean(action.disabled)
-      ));
+      );
+      actionButton3.title = action.hint ?? action.label;
+      bar.append(actionButton3);
     }
     bar.append(
-      iconButton("◀", "前移", () => {
+      iconButton("◀", t("sprite.manager.content.move_earlier", "前移"), () => {
         const target = context.getPack();
         if (!target) return;
         commitPack(moveSprite(target, index, index - 1));
       }),
-      iconButton("▶", "后移", () => {
+      iconButton("▶", t("sprite.manager.content.move_later", "后移"), () => {
         const target = context.getPack();
         if (!target) return;
         commitPack(moveSprite(target, index, index + 1));
@@ -10858,7 +10964,7 @@ ${preview}
     cell.append(bar);
     return cell;
   }
-  function openUploadPreview(currentPackId, files) {
+  function openUploadPreview(currentPackId, files, opener) {
     const fileArr = Array.from(files);
     const parsed = fileArr.map((f) => parseSpriteFileName(f.name));
     let autoSplit = false;
@@ -10868,7 +10974,9 @@ ${preview}
     const panel = el3("div", "so-upload-panel");
     const head = el3("div", "so-upload-head");
     const title2 = el3("b");
-    title2.textContent = `批量上传预览（${fileArr.length} 张）`;
+    title2.textContent = t("sprite.manager.content.upload.preview_title", "批量上传预览（{{p0}} 张）", { p0: fileArr.length });
+    title2.id = nextManagerId();
+    modal.setAttribute("aria-labelledby", title2.id);
     head.append(title2);
     const rows = el3("div", "so-upload-rows");
     const inputs = [];
@@ -10880,9 +10988,9 @@ ${preview}
         const name = el3("div", "so-upload-fname");
         name.textContent = file.name;
         name.title = file.name;
-        const roleIn = textInput("人名");
-        const outfitIn = textInput("服装");
-        const tagIn = textInput("图名");
+        const roleIn = textInput(t("sprite.manager.content.info.role", "人名"));
+        const outfitIn = textInput(t("sprite.manager.content.info.outfit", "服装"));
+        const tagIn = textInput(t("sprite.manager.content.info.image_name", "图名"));
         if (autoSplit) {
           roleIn.value = parsed[i].role;
           outfitIn.value = parsed[i].outfit;
@@ -10897,9 +11005,9 @@ ${preview}
         inputs.push({ role: roleIn, outfit: outfitIn, tag: tagIn });
         row.append(
           name,
-          labeled("人名", roleIn),
-          labeled("服装", outfitIn),
-          labeled("图名", tagIn)
+          labeled(t("sprite.manager.content.info.role", "人名"), roleIn),
+          labeled(t("sprite.manager.content.info.outfit", "服装"), outfitIn),
+          labeled(t("sprite.manager.content.info.image_name", "图名"), tagIn)
         );
         rows.append(row);
       });
@@ -10907,20 +11015,22 @@ ${preview}
     buildRows();
     const opts = el3("div", "so-upload-opts");
     opts.append(
-      checkboxRow("按文件名前缀自动拆分人名/服装（勾选后在下方预览拆分结果，可拆出新包）", autoSplit, (v) => {
+      checkboxRow(t("sprite.manager.content.upload.auto_split", "按文件名前缀自动拆分人名/服装（勾选后在下方预览拆分结果，可拆出新包）"), autoSplit, (v) => {
         autoSplit = v;
         buildRows();
       })
     );
     const stratWrap = el3("div", "so-row");
     const stratLabel = el3("span");
-    stratLabel.textContent = "重名时：";
+    stratLabel.textContent = t("sprite.manager.content.upload.conflict_label", "重名时：");
+    stratLabel.id = nextManagerId();
     const stratSel = document.createElement("select");
     stratSel.className = "text_pole";
+    stratSel.setAttribute("aria-labelledby", stratLabel.id);
     for (const [val, lab] of [
-      ["skip", "跳过（默认）"],
-      ["rename", "自动改名"],
-      ["overwrite", "覆盖"]
+      ["skip", t("sprite.manager.content.upload.skip", "跳过（默认）")],
+      ["rename", t("sprite.manager.content.upload.rename", "自动改名")],
+      ["overwrite", t("sprite.manager.content.upload.overwrite", "覆盖")]
     ]) {
       const o = document.createElement("option");
       o.value = val;
@@ -10931,8 +11041,9 @@ ${preview}
     stratWrap.append(stratLabel, stratSel);
     opts.append(stratWrap);
     const status = el3("div", "so-upload-status");
+    status.setAttribute("role", "status");
     const actions = el3("div", "so-row so-upload-actions");
-    const confirmBtn = button("开始上传", () => {
+    const confirmBtn = button(t("sprite.manager.content.upload.start", "开始上传"), () => {
       if (uploading) return;
       uploading = true;
       confirmBtn.setAttribute("aria-disabled", "true");
@@ -10943,7 +11054,7 @@ ${preview}
         outfit: autoSplit ? inputs[i].outfit.value : "",
         tag: inputs[i].tag.value
       }));
-      void applyUploadPlan(currentPackId, fileArr, entries, strategy, status, () => modal.remove()).finally(
+      void applyUploadPlan(currentPackId, fileArr, entries, strategy, status, () => closeModal()).finally(
         () => {
           uploading = false;
           confirmBtn.removeAttribute("aria-disabled");
@@ -10952,9 +11063,9 @@ ${preview}
       );
     });
     const cancelBtn = button(
-      "取消",
+      t("common.cancel", "取消"),
       () => {
-        if (!uploading) modal.remove();
+        if (!uploading) closeModal();
       },
       "so-btn-danger"
     );
@@ -10965,6 +11076,7 @@ ${preview}
     panel.append(head, opts, actions, status, rows);
     modal.append(panel);
     (backdrop ?? document.body).append(modal);
+    const closeModal = manageChildDialog(modal, () => !uploading, opener);
   }
   async function applyUploadPlan(currentPackId, files, entries, strategy, status, done) {
     const { autoUpload, imgbbApiKey } = deps.getSettings();
@@ -11009,7 +11121,7 @@ ${preview}
       for (let i = 0; i < plans.length; i++) {
         const plan = plans[i];
         const file = files[i];
-        status.textContent = `处理中 ${i + 1}/${plans.length}：${file.name}`;
+        status.textContent = t("sprite.manager.content.upload.progress", "处理中 {{p0}}/{{p1}}：{{p2}}", { p0: i + 1, p1: plans.length, p2: file.name });
         if (plan.action === "skip" || !plan.finalTag) {
           skipped++;
           continue;
@@ -11018,7 +11130,7 @@ ${preview}
           const batchKey = JSON.stringify([plan.entry.role, plan.entry.outfit, plan.targetPackName]);
           const beforeId = plan.targetPackId ?? newPackIds.get(batchKey);
           const beforeTarget = deps.getSettings().packs.find((pack) => pack.id === beforeId);
-          if (beforeId && !beforeTarget) throw new Error("目标已更改，本次结果未应用");
+          if (beforeId && !beforeTarget) throw new Error(t("sprite.manager.content.error.target_changed", "目标已更改，本次结果未应用"));
           const beforeUrl = beforeTarget ? sameSprite(beforeTarget, { tag: plan.finalTag, url: "" })?.url : void 0;
           const result = await compressImage(file);
           if (result.transparency === "opaque-checkerboard") checkerboardImages += 1;
@@ -11029,7 +11141,7 @@ ${preview}
             plan.targetPackName
             // 显示提示；物理文件身份由适配器独立生成
           );
-          if (!localUserImagePath(url)) throw new Error("保存失败：平台未返回安全的本地用户图片地址");
+          if (!localUserImagePath(url)) throw new Error(t("sprite.manager.content.error.unsafe_local", "保存失败：平台未返回安全的本地用户图片地址"));
           let targetId = plan.targetPackId;
           if (!targetId) {
             const role = plan.entry.role;
@@ -11063,7 +11175,7 @@ ${preview}
             continue;
           }
           const latestSprite = sameSprite(target, { tag: plan.finalTag, url: "" });
-          if (latestSprite?.url !== beforeUrl) throw new Error("目标已更改，本次结果未应用");
+          if (latestSprite?.url !== beforeUrl) throw new Error(t("sprite.manager.content.error.target_changed", "目标已更改，本次结果未应用"));
           const sprite = { ...latestSprite, tag: plan.finalTag, url };
           delete sprite.code;
           delete sprite.remoteUrl;
@@ -11121,18 +11233,18 @@ ${preview}
         console.error("[sprite-overlay] 上传后刷新失败", error);
       }
       const parts = [
-        `成功 ${added} 张`,
-        `冲突 ${conflicts} 张`,
-        `失败 ${failed} 张`,
-        `未处理 ${unprocessed} 张`
+        t("sprite.manager.content.upload.result_success", "成功 {{p0}} 张", { p0: added }),
+        t("sprite.manager.content.upload.result_conflict", "冲突 {{p0}} 张", { p0: conflicts }),
+        t("sprite.manager.content.upload.result_failed", "失败 {{p0}} 张", { p0: failed }),
+        t("sprite.manager.content.upload.result_unprocessed", "未处理 {{p0}} 张", { p0: unprocessed })
       ];
-      if (skipped > 0) parts.push(`跳过 ${skipped} 张（重名/无效）`);
-      if (useImgbb) parts.push(`imgbb 成功 ${hosted}${hostFailed > 0 ? `、失败 ${hostFailed}` : ""}`);
+      if (skipped > 0) parts.push(t("sprite.manager.content.upload.result_skipped", "跳过 {{p0}} 张（重名/无效）", { p0: skipped }));
+      if (useImgbb) parts.push(t("sprite.manager.content.upload.result_hosted", "imgbb 成功 {{p0}}{{p1}}", { p0: hosted, p1: hostFailed > 0 ? t("sprite.manager.content.upload.host_failed_suffix", "、失败 {{p0}}", { p0: hostFailed }) : "" }));
       if (checkerboardImages > 0) {
-        parts.push(`警告：${checkerboardImages} 张疑似把棋盘格烤进图片，插件无法安全自动去除`);
+        parts.push(t("sprite.manager.content.upload.checkerboard_warning", "警告：{{p0}} 张疑似把棋盘格烤进图片，插件无法安全自动去除", { p0: checkerboardImages }));
       }
       if (opaqueImages > 0) {
-        parts.push(`提示：${opaqueImages} 张没有透明像素，作为立绘时会显示完整背景`);
+        parts.push(t("sprite.manager.content.upload.opaque_notice", "提示：{{p0}} 张没有透明像素，作为立绘时会显示完整背景", { p0: opaqueImages }));
       }
       try {
         toast(backdrop?.querySelector(".so-manager-body"), parts.join("，"));
@@ -11144,7 +11256,7 @@ ${preview}
   async function retryPendingUploads(body, packId) {
     const { imgbbApiKey } = deps.getSettings();
     if (!imgbbApiKey.trim()) {
-      toast(body, "请先在「图库」App 配置 imgbb API Key");
+      toast(body, t("sprite.manager.content.upload.api_key", "请先在「图库」App 配置 imgbb API Key"));
       return;
     }
     const pack = deps.getSettings().packs.find((p) => p.id === packId);
@@ -11157,7 +11269,7 @@ ${preview}
     for (let i = 0; i < pending.length; i++) {
       const sprite = pending[i];
       const beforeUrl = sprite.url;
-      toast(body, `补传中 ${i + 1}/${pending.length}：${sprite.tag}`);
+      toast(body, t("sprite.manager.content.upload.retry_progress", "补传中 {{p0}}/{{p1}}：{{p2}}", { p0: i + 1, p1: pending.length, p2: sprite.tag }));
       try {
         const dataUri = beforeUrl.startsWith("data:") ? beforeUrl : await urlToDataUri(beforeUrl);
         const up = await uploadToImgbb(imgbbApiKey, dataUri);
@@ -11188,7 +11300,7 @@ ${preview}
     render2();
     toast(
       backdrop?.querySelector(".so-manager-body"),
-      `补传完成：成功 ${ok} 张${fail > 0 ? `，失败 ${fail} 张（可再次点击重试）` : ""}`
+      t("sprite.manager.content.upload.retry_complete", "补传完成：成功 {{p0}} 张{{p1}}", { p0: ok, p1: fail > 0 ? t("sprite.manager.content.upload.retry_failed_suffix", "，失败 {{p0}} 张（可再次点击重试）", { p0: fail }) : "" })
     );
   }
   function destroy() {
@@ -11208,12 +11320,17 @@ function textInput(placeholder) {
   input.type = "text";
   input.className = "text_pole";
   input.placeholder = placeholder;
+  input.setAttribute("aria-label", placeholder);
+  input.dataset.managerFocus = `input:${placeholder}`;
   return input;
 }
 function labeled(label, input) {
   const wrap = el3("label", "so-labeled");
   const span = el3("span", "so-labeled-text");
+  span.id = nextManagerId();
   span.textContent = label;
+  input.setAttribute("aria-labelledby", span.id);
+  input.dataset.managerFocus = `field:${label}`;
   wrap.append(span, input);
   return wrap;
 }
@@ -11222,6 +11339,7 @@ function checkboxRow(label, checked, onChange) {
   const input = document.createElement("input");
   input.type = "checkbox";
   input.checked = checked;
+  input.dataset.managerFocus = `checkbox:${label}`;
   input.addEventListener("change", () => onChange(input.checked));
   const span = document.createElement("span");
   span.textContent = label;
@@ -11233,9 +11351,10 @@ function button(label, onClick, extraClass = "") {
   btn.setAttribute("role", "button");
   btn.tabIndex = 0;
   btn.textContent = label;
+  btn.dataset.managerFocus = `button:${label}`;
   btn.addEventListener("click", onClick);
   btn.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
+    if (!e.isComposing && (e.key === "Enter" || e.key === " ")) {
       e.preventDefault();
       e.stopPropagation();
       onClick();
@@ -11250,14 +11369,46 @@ function iconButton(icon, title2, onClick, className = "so-icon-btn", disabled =
   btn.setAttribute("role", "button");
   btn.setAttribute("aria-label", title2);
   btn.setAttribute("aria-disabled", String(disabled));
+  btn.tabIndex = disabled ? -1 : 0;
+  btn.dataset.managerFocus = `icon:${title2}`;
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
+    if (!disabled) onClick();
+  });
+  btn.addEventListener("keydown", (event) => {
+    if (event.isComposing || !["Enter", " "].includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
     if (!disabled) onClick();
   });
   return btn;
 }
 function statusBar() {
-  return el3("div", "so-status so-toast");
+  const status = el3("div", "so-status so-toast");
+  status.setAttribute("role", "status");
+  return status;
+}
+function addCardNavigation(card, selector2) {
+  card.addEventListener("keydown", (event) => {
+    if (event.target !== card || event.isComposing || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+    const cards = [...card.closest(".so-manager-body")?.querySelectorAll(selector2) ?? []];
+    const index = cards.indexOf(card);
+    if (index < 0) return;
+    let target = index;
+    if (event.key === "Home") target = 0;
+    else if (event.key === "End") target = cards.length - 1;
+    else if (event.key === "ArrowLeft") target--;
+    else if (event.key === "ArrowRight") target++;
+    else {
+      const rect = card.getBoundingClientRect();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      const candidates = cards.map((node, i) => ({ i, rect: node.getBoundingClientRect() })).filter((item) => direction * (item.rect.top - rect.top) > 1).sort((a, b) => Math.abs(a.rect.top - rect.top) - Math.abs(b.rect.top - rect.top) || Math.abs(a.rect.left - rect.left) - Math.abs(b.rect.left - rect.left));
+      target = candidates[0]?.i ?? index + direction;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    cards[Math.max(0, Math.min(cards.length - 1, target))]?.focus();
+  });
 }
 function toast(scope, msg) {
   const bar = scope?.querySelector(".so-toast");
@@ -11291,18 +11442,24 @@ async function copyText(text4) {
     await navigator.clipboard.writeText(text4);
     return true;
   } catch {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const container = opener?.closest('[role="dialog"]') ?? document.body;
+    const ta = document.createElement("textarea");
     try {
-      const ta = document.createElement("textarea");
       ta.value = text4;
       ta.style.position = "fixed";
       ta.style.opacity = "0";
-      document.body.append(ta);
+      ta.tabIndex = -1;
+      container.append(ta);
+      ta.focus({ preventScroll: true });
       ta.select();
-      const ok = document.execCommand("copy");
-      ta.remove();
-      return ok;
+      if (document.activeElement !== ta || ta.selectionStart !== 0 || ta.selectionEnd !== text4.length) return false;
+      return document.execCommand("copy");
     } catch {
       return false;
+    } finally {
+      ta.remove();
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
     }
   }
 }
@@ -14536,7 +14693,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-10-06 20:32"}`;
+  return `${"0.9.0"}+${"2026-10-06 23:41"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -20549,7 +20706,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-10-06 20:32"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-10-06 23:41"}`;
   console.log(`[sprite-overlay] 百工（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

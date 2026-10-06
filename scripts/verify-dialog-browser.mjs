@@ -14,12 +14,72 @@ const built = await build({ stdin: { contents: `
   import { openAppModal } from './core/app-modal.ts'
   import { createPhoneShell } from './core/phone-shell.ts'
   import { PhoneAppRegistry } from './core/phone-registry.ts'
-  globalThis.audit = { manageDialogFocus, openAppModal, createPhoneShell, PhoneAppRegistry }
+  import { openSpriteLightbox } from './st-extension/src/sprite-lightbox.ts'
+  import { openImageStorageDialog } from './st-extension/src/image-storage-dialog.ts'
+  import { createDefaultSettings } from './core/types.ts'
+  import { loadTranslations, setLocale } from './core/i18n.ts'
+  import en from './st-extension/locales/en-US.json'
+  globalThis.audit = { manageDialogFocus, openAppModal, createPhoneShell, PhoneAppRegistry, openSpriteLightbox, openImageStorageDialog, createDefaultSettings,
+    setEnglish: () => { loadTranslations('en-US', en); setLocale('en-US') } }
 `, resolveDir: root, loader: 'ts' }, bundle: true, platform: 'browser', format: 'iife', write: false })
 const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || 'msedge', headless: true })
 const context = await browser.newContext({ viewport: { width: 900, height: 700 } })
 const report = { browser: browser.version(), scope: 'Production DOM modules with synthetic fixtures; native Edge keyboard, not screen-reader or physical-device certification.', scenarios: [] }
 const scenarios = [
+  ['storage-transformed-mobile-root', async page => {
+    await page.setViewportSize({ width: 375, height: 667 })
+    // ST's mobile host has a transformed, zero-height root; fixed inset alone collapses here.
+    await page.addStyleTag({ content: 'html { height: 0; transform: translateZ(0); perspective: 1000px } body { position: fixed; width: 100vw; height: 100vh; margin: 0 } .menu_button { width: min-content }' })
+    await page.evaluate(() => {
+      window.audit.setEnglish()
+      const settings = window.audit.createDefaultSettings()
+      window.audit.openImageStorageDialog({ adapter: { getStoredSettingsForBackup: () => settings }, getSettings: () => settings, updateSettings() {}, saveDataUri: async () => '', onClosed() {} })
+    })
+    for (const viewport of [{ width: 375, height: 667 }, { width: 667, height: 375 }]) {
+      await page.setViewportSize(viewport)
+      const r = await page.locator('.so-storage-dialog').boundingBox()
+      assert.ok(r && r.height > 150 && r.y >= 0 && r.y + r.height <= viewport.height && r.x >= 0 && r.x + r.width <= viewport.width, `Storage collapsed/outside viewport: ${JSON.stringify(r)}`)
+      const action = await page.locator('.so-storage-actions button').first().boundingBox()
+      assert.ok(action && action.width >= 100 && action.height < 100, `Storage action squeezed to a vertical column: ${JSON.stringify(action)}`)
+      await page.locator('.so-storage-footer button').focus()
+      await hittable(page, '.so-storage-footer button')
+    }
+    await page.keyboard.press('Escape')
+    assert.equal(await page.locator('.so-storage-dialog').count(), 0)
+  }],
+  ['preview-storage-nested-focus', async page => {
+    await page.locator('#opener').focus()
+    await page.evaluate(() => {
+      window.audit.setEnglish()
+      window.navigation = []
+      window.audit.openSpriteLightbox({ pack: { id: 'synthetic', name: 'Synthetic', sprites: [{ tag: 'One', url: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>' }, { tag: 'Two', url: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>' }] }, index: 0, readonly: false,
+        actions: [{ id: 'storage', label: 'Storage', run() {
+          const settings = window.audit.createDefaultSettings()
+          window.audit.openImageStorageDialog({ adapter: { getStoredSettingsForBackup: () => settings }, getSettings: () => settings, updateSettings() {}, saveDataUri: async () => '', onClosed() {} })
+        } }], onNavigate(index) { window.navigation.push(index) }, onClose() {} })
+    })
+    await focused(page, '.so-lightbox-prev')
+    await page.keyboard.press('ArrowRight')
+    assert.deepEqual(await page.evaluate(() => window.navigation), [1])
+    await page.getByRole('button', { name: 'Storage', exact: true }).click()
+    await focused(page, '.so-storage-actions button:first-child')
+    await hittable(page, '.so-storage-actions button:first-child')
+    await page.keyboard.press('ArrowLeft')
+    assert.deepEqual(await page.evaluate(() => window.navigation), [1], 'A nested dialog must suspend preview arrow navigation')
+    await page.getByRole('button', { name: 'Close', exact: true }).focus()
+    await page.keyboard.press('Tab'); await focused(page, '.so-storage-actions button:first-child')
+    await page.keyboard.press('Shift+Tab'); await focused(page, '.so-storage-footer button')
+    await page.keyboard.press('Escape')
+    assert.equal(await page.locator('.so-storage-dialog').count(), 0)
+    await focused(page, '[data-action-id="storage"]')
+    await page.evaluate(() => window.audit.openAppModal(body => { body.innerHTML = '<button id="nested-action">Nested action</button>' }, { onOpen() {}, onClose() {} }))
+    await hittable(page, '#nested-action')
+    await page.keyboard.press('Escape')
+    await focused(page, '[data-action-id="storage"]')
+    await page.keyboard.press('Escape')
+    assert.equal(await page.locator('.so-lightbox').count(), 0)
+    await focused(page, '#opener')
+  }],
   ['radio-native-tab', async page => {
     await fixture(page, '<button id="first">First</button><input id="selected" type="radio" name="mode" checked><input id="tail" type="radio" name="mode">')
     await page.keyboard.press('Tab'); await focused(page, '#selected')
@@ -133,6 +193,12 @@ const scenarios = [
 async function focused(page, selector) {
   assert.equal(await page.locator(selector).evaluate(element => document.activeElement === element), true, `Expected focus on ${selector}; got ${await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 200))}`)
 }
+async function hittable(page, selector) {
+  assert.equal(await page.locator(selector).evaluate(element => {
+    const rect = element.getBoundingClientRect()
+    return element.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2))
+  }), true, `${selector} is covered by another layer`)
+}
 async function fixture(page, html) {
   await page.locator('#opener').focus()
   await page.evaluate(html => {
@@ -152,6 +218,7 @@ try {
     try {
       await page.setContent('<!doctype html><html lang="en"><body><button id="opener">Open</button><button id="outside">Outside</button></body></html>')
       await page.addStyleTag({ content: readFileSync(path.join(root, 'core/phone-shell.css'), 'utf8') })
+      await page.addStyleTag({ content: readFileSync(path.join(root, 'st-extension/style.css'), 'utf8') })
       await page.addScriptTag({ content: built.outputFiles[0].text })
       await run(page)
       assert.deepEqual(entry.errors, [])

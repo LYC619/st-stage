@@ -69,7 +69,7 @@ export function openAppModal(build: ModalBuild, hooks: AppModalHooks): () => voi
       focus.restoreFocus()
     }
   }
-  const focus = manageDialogFocus(box, { onEscape: close, opener })
+  const focus = manageDialogFocus(box, { onEscape: close, opener, layer: backdrop })
   closeBtn.addEventListener('click', close)
   closeBtn.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {

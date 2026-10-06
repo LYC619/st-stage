@@ -29,6 +29,22 @@ function key(target: Element | Document, key: string, shiftKey = false) {
 }
 
 describe('dialog focus', () => {
+  it('keeps the visual layer above earlier dialogs and restores its original inline z-index', () => {
+    const outer = setup()
+    outer.dialog.style.zIndex = '10005'
+    const backdrop = document.createElement('div')
+    backdrop.style.zIndex = '10001'
+    const inner = document.createElement('section')
+    inner.innerHTML = '<button>Inner</button>'
+    backdrop.append(inner)
+    document.body.append(backdrop)
+    const focus = manageDialogFocus(inner, { onEscape() {}, layer: backdrop })
+    disposers.push(focus.dispose)
+    expect(Number(backdrop.style.zIndex)).toBeGreaterThan(Number(outer.dialog.style.zIndex))
+    focus.dispose()
+    expect(backdrop.style.zIndex).toBe('10001')
+  })
+
   it('uses only the selected radio in each named group as a Tab stop', () => {
     const { dialog } = setup('<button>First</button><input type="radio" name="mode" checked><input type="radio" name="mode">')
     const selected = dialog.querySelector<HTMLInputElement>('input:checked')!

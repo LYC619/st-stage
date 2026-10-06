@@ -1,6 +1,7 @@
 import type { Sprite } from '../../core/types'
 import { getSpriteSource } from '../../core/types'
 import { localUserImagePath } from '../../core/sprite-store'
+import { t } from '../../core/i18n'
 import {
   compressImage,
   type CompressResult,
@@ -23,53 +24,53 @@ export async function localizeSprite(
   deps: LocalizeSpriteDeps,
 ): Promise<Sprite> {
   if (getSpriteSource(sprite) !== 'hosted') {
-    throw new Error('这张立绘已经是本地图片')
+    throw new Error(t('galleryErrors.already_local', '这张立绘已经是本地图片'))
   }
 
   let response: Response
   try {
     response = await deps.fetch(sprite.url, requestInit())
   } catch (error) {
-    throw new Error(`下载远程图片失败：${downloadFailure(error)}`, { cause: error })
+    throw new Error(t('galleryErrors.download', '下载远程图片失败：{{error}}', { error: downloadFailure(error) }), { cause: error })
   }
   if (!response.ok) {
-    throw new Error(`下载远程图片失败：HTTP ${response.status}`)
+    throw new Error(t('galleryErrors.download_http', '下载远程图片失败：HTTP {{status}}', { status: response.status }))
   }
 
   const declaredBytes = Number(response.headers.get('content-length'))
   if (Number.isFinite(declaredBytes) && declaredBytes > LOCALIZE_MAX_BYTES) {
-    throw new Error(`远程图片过大，不能超过 ${formatLimit()}`)
+    throw new Error(t('galleryErrors.size_limit', '远程图片过大，不能超过 {{limit}}', { limit: formatLimit() }))
   }
 
   let blob: Blob
   try {
     blob = await response.blob()
   } catch (error) {
-    throw new Error(`下载远程图片失败：${downloadFailure(error)}`, { cause: error })
+    throw new Error(t('galleryErrors.download', '下载远程图片失败：{{error}}', { error: downloadFailure(error) }), { cause: error })
   }
   if (blob.size > LOCALIZE_MAX_BYTES) {
-    throw new Error(`远程图片过大，不能超过 ${formatLimit()}`)
+    throw new Error(t('galleryErrors.size_limit', '远程图片过大，不能超过 {{limit}}', { limit: formatLimit() }))
   }
   if (!blob.type.startsWith('image/')) {
-    throw new Error('远程地址没有返回图片')
+    throw new Error(t('galleryErrors.not_image', '远程地址没有返回图片'))
   }
 
   let compressed: CompressResult
   try {
     compressed = await (deps.compress ?? compressImage)(blob)
   } catch (error) {
-    throw new Error(`压缩远程图片失败：${errorMessage(error)}`, { cause: error })
+    throw new Error(t('galleryErrors.compress', '压缩远程图片失败：{{error}}', { error: errorMessage(error) }), { cause: error })
   }
 
   let localUrl: string
   try {
     localUrl = await deps.saveImage(dataUriToFile(compressed.dataUri, fileName), fileName)
   } catch (error) {
-    throw new Error(`保存本地图片失败：${errorMessage(error)}`, { cause: error })
+    throw new Error(t('galleryErrors.save', '保存本地图片失败：{{error}}', { error: errorMessage(error) }), { cause: error })
   }
   const safeLocalUrl = localUserImagePath(localUrl)
   if (!safeLocalUrl) {
-    throw new Error('保存本地图片失败：平台未返回安全的本地用户图片地址')
+    throw new Error(t('galleryErrors.unsafe_local', '保存本地图片失败：平台未返回安全的本地用户图片地址'))
   }
 
   return { ...sprite, url: localUrl, remoteUrl: sprite.url }
@@ -77,7 +78,7 @@ export async function localizeSprite(
 
 function dataUriToFile(dataUri: string, fileName: string): File {
   const match = /^data:(image\/[^;,]+);base64,([A-Za-z0-9+/]*={0,2})$/.exec(dataUri)
-  if (!match) throw new Error('压缩后的图片数据格式不正确')
+  if (!match) throw new Error(t('galleryErrors.compressed_data', '压缩后的图片数据格式不正确'))
   const binary = atob(match[2])
   const bytes = new Uint8Array(binary.length)
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
@@ -85,7 +86,7 @@ function dataUriToFile(dataUri: string, fileName: string): File {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : '未知错误'
+  return error instanceof Error && error.message ? error.message : t('storage.unknown_error', '未知错误')
 }
 
 /**
@@ -98,7 +99,7 @@ function downloadFailure(error: unknown): string {
     ? (error as { name: string }).name
     : ''
   return name === 'TimeoutError' || name === 'AbortError'
-    ? `超过 ${LOCALIZE_TIMEOUT_MS / 1000} 秒没有响应`
+    ? t('galleryErrors.download_timeout', '超过 {{seconds}} 秒没有响应', { seconds: LOCALIZE_TIMEOUT_MS / 1000 })
     : errorMessage(error)
 }
 

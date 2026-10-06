@@ -3,10 +3,13 @@ export interface DialogFocusOptions {
   onEscape(): void
   /** Capture before an onOpen hook removes the originating App. */
   opener?: HTMLElement | null
+  /** The positioned backdrop/layer that establishes this dialog's stacking context. */
+  layer?: HTMLElement
 }
 
 interface DialogEntry {
   container: HTMLElement
+  layer: HTMLElement
   focusInitial(): void
 }
 
@@ -55,11 +58,17 @@ export function manageDialogFocus(container: HTMLElement, options: DialogFocusOp
     ? document.activeElement instanceof HTMLElement ? document.activeElement : null
     : options.opener
   const originalTabIndex = container.getAttribute('tabindex')
+  const layer = options.layer ?? container
+  const originalZIndex = layer.style.getPropertyValue('z-index')
+  const originalZPriority = layer.style.getPropertyPriority('z-index')
+  const zIndex = (node: HTMLElement) => Number.parseInt(getComputedStyle(node).zIndex, 10) || 0
+  const highestLayer = Math.max(9999, zIndex(layer), ...dialogs.filter(entry => entry.container.isConnected).map(entry => zIndex(entry.layer)))
+  layer.style.setProperty('z-index', String(highestLayer + 1))
   if (originalTabIndex === null) container.tabIndex = -1
   let disposed = false
   let restoreAllowed = false
   let lastFocused: HTMLElement | null = null
-  const entry: DialogEntry = { container, focusInitial }
+  const entry: DialogEntry = { container, layer, focusInitial }
   dialogs.push(entry)
 
   function focusInitial(): void {
@@ -102,6 +111,7 @@ export function manageDialogFocus(container: HTMLElement, options: DialogFocusOp
   document.addEventListener('focusin', onFocus, true)
   return {
     focusInitial,
+    isTop: () => !disposed && topDialog() === entry,
     dispose(): void {
       if (disposed) return
       restoreAllowed = topDialog() === entry
@@ -110,6 +120,8 @@ export function manageDialogFocus(container: HTMLElement, options: DialogFocusOp
       document.removeEventListener('keydown', onKey, true)
       document.removeEventListener('focusin', onFocus, true)
       if (originalTabIndex === null) container.removeAttribute('tabindex')
+      if (originalZIndex) layer.style.setProperty('z-index', originalZIndex, originalZPriority)
+      else layer.style.removeProperty('z-index')
     },
     /** Call after removing the dialog and reopening/remounting its source App. */
     restoreFocus(): void {

@@ -1,3 +1,4 @@
+import { t } from './i18n'
 /**
  * 紧凑分享串（stpack1）：把「图床编码型立绘包」压成一行文本，方便聊天窗口粘贴分享。
  *
@@ -161,7 +162,7 @@ export function decodeShareStringV1(raw: string): SpritePack {
   const text = raw.trim()
   const prefixIndex = text.indexOf(SHARE_PREFIX)
   if (prefixIndex === -1) {
-    throw new Error(`导入失败：没有找到 ${SHARE_PREFIX} 开头的分享串`)
+    throw new Error(t("sprite.manager.content.error.share_prefix", "导入失败：没有找到 {{p0}} 开头的分享串", { p0: SHARE_PREFIX }))
   }
   const body = text.slice(prefixIndex + SHARE_PREFIX.length).trim()
   const segments = body.split('|')
@@ -199,7 +200,7 @@ export function decodeShareStringV1(raw: string): SpritePack {
   }
 
   if (sprites.length === 0) {
-    throw new Error('导入失败：分享串中没有可用的「表情=编码」条目')
+    throw new Error(t("sprite.manager.content.error.share_no_codes", "导入失败：分享串中没有可用的「表情=编码」条目"))
   }
 
   // host 出现在 tag=code 之后也要生效：统一按最终 host 重建 URL
@@ -276,7 +277,7 @@ export function decodeShareStringV2(raw: string): SpritePack {
   const text = raw.trim()
   const prefixIndex = text.indexOf(SHARE_PREFIX_V2)
   if (prefixIndex === -1) {
-    throw new Error(`导入失败：没有找到 ${SHARE_PREFIX_V2} 开头的分享串`)
+    throw new Error(t("sprite.manager.content.error.share_prefix", "导入失败：没有找到 {{p0}} 开头的分享串", { p0: SHARE_PREFIX_V2 }))
   }
   const body = text.slice(prefixIndex + SHARE_PREFIX_V2.length).trim()
   const segments = body.split('|')
@@ -332,7 +333,7 @@ export function decodeShareStringV2(raw: string): SpritePack {
   }
 
   if (sprites.length === 0) {
-    throw new Error('导入失败：分享串中没有可用的「地址=URL」条目')
+    throw new Error(t("sprite.manager.content.error.share_no_urls", "导入失败：分享串中没有可用的「地址=URL」条目"))
   }
 
   // 全部条目共享同一非空人名/服装时压回包级：包信息 UI 可见，且有效地址不变

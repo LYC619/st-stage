@@ -1,3 +1,4 @@
+import { t } from './i18n'
 /**
  * 立绘包导入导出（sprite-pack@3 JSON 格式，导入兼容 @1 / @2）。
  * 导出时本地图片（ST 用户目录/扩展目录路径）自动内嵌 base64 —— 本地路径只在导出者
@@ -96,7 +97,7 @@ export function importPack(jsonText: string): SpritePack {
   try {
     raw = JSON.parse(jsonText)
   } catch {
-    throw new Error('导入失败：不是合法的 JSON 文件')
+    throw new Error(t("sprite.manager.content.error.invalid_json", "导入失败：不是合法的 JSON 文件"))
   }
   // 各版本字段是超集关系，按宽结构收窄后统一处理
   const file = raw as {
@@ -121,10 +122,10 @@ export function importPack(jsonText: string): SpritePack {
     file.format !== 'sprite-pack@2' &&
     file.format !== 'sprite-pack@1'
   ) {
-    throw new Error('导入失败：不是 sprite-pack@1 / @2 / @3 格式的立绘包')
+    throw new Error(t("sprite.manager.content.error.pack_format", "导入失败：不是 sprite-pack@1 / @2 / @3 格式的立绘包"))
   }
   if (typeof file.name !== 'string' || !file.name || !Array.isArray(file.sprites) || file.sprites.length === 0) {
-    throw new Error('导入失败：立绘包缺少名称或立绘列表为空')
+    throw new Error(t("sprite.manager.content.error.empty_pack", "导入失败：立绘包缺少名称或立绘列表为空"))
   }
 
   const seen = new Set<string>()
@@ -165,7 +166,7 @@ export function importPack(jsonText: string): SpritePack {
     })
   }
   if (sprites.length === 0) {
-    throw new Error('导入失败：没有可用的立绘条目（表情名可能全部为空或重复）')
+    throw new Error(t("sprite.manager.content.error.no_entries", "导入失败：没有可用的立绘条目（表情名可能全部为空或重复）"))
   }
 
   const normalizedCover = typeof file.coverTag === 'string' ? normalizeTag(file.coverTag) : ''
@@ -208,7 +209,7 @@ export function importPack(jsonText: string): SpritePack {
 /** 把远程/本地 URL 图片转为 data URI（补传图床、离线内嵌导出等复用） */
 export async function urlToDataUri(url: string): Promise<string> {
   const res = await fetch(url)
-  if (!res.ok) throw new Error(`fetch ${url} failed: ${res.status}`)
+  if (!res.ok) throw new Error(t('sprite.manager.content.error.image_fetch', '读取图片失败：{{url}}（HTTP {{status}}）', { url, status: res.status }))
   const blob = await res.blob()
   return await new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
