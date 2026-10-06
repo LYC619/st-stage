@@ -4,7 +4,10 @@ Known follow-ups and pending review repairs are recorded here. Older sections re
 
 ## 2026-09-30 i18n Continuation and Release Gates
 
-Updated October 7: `21fa402` completes MVU/New Variables/designer and HUD display/keyboard work after the gallery batches. Current build passes 10 real-ST i18n scenarios, 4 variable layouts and 10 native Edge scenarios. Actual third-party MVU is absent; a separate controlled native fixture passes 5 read/write/focus cases. Cloud Export and remaining shared validation messages remain open. Full reader/device/contrast acceptance is not claimed. See `history/2026-10-07-variables.md` and prior gallery history.
+Updated October 7: `cec4e8d` completes the authorized core UI/five-main-App translation and practical keyboard/focus scope, including Cloud Export and common validation/image actions. Final evidence is 1321 tests, 10 real-ST i18n scenarios, 4 Export layouts/ZIP-content checks, 12 native regressions and 6 actual-host-script tab checks. Gallery and variables have prior accepted 4-layout batches. See `history/2026-10-07-export-final.md` and prior histories.
+
+- Actual third-party MVU is absent; only its unavailable UI and a controlled native fixture (5 read/write/focus cases) were checked. Full readers, physical devices/OS keyboards, WAVE and contrast/WCAG AA acceptance remain unverified.
+- The September 12 plan's bundle-size warning is implemented. Named nonmodal regions intentionally replace its `role=application` suggestion, and the translation guide is `docs/i18n-usage.md`. License choice and license/CI badges await a maintainer/publication decision; this functional completion is not a claim that every historical plan checkbox is closed.
 
 - `e11cd3d` repairs locale loading, adds the first translated UI controls and fixes real-ST gallery toolbar/keyboard issues. Real ST 1.18.0 i18n acceptance passes 10 scenarios; full App/deep gallery translation, focus management and screen-reader support remain pending.
 - Mobile browser emulation is separate from physical-phone/OS-keyboard acceptance. External sprite hosts were blocked; the isolated copied ST runtime logged thumbnail-conversion dependency-path errors. Cloud images and image conversion were not validated by this run.
