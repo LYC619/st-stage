@@ -29,7 +29,7 @@ Updated October 7: `cec4e8d` completes the authorized core UI/five-main-App tran
 - `e11cd3d` repairs locale loading, adds the first translated UI controls and fixes real-ST gallery toolbar/keyboard issues. Real ST 1.18.0 i18n acceptance passes 10 scenarios; full App/deep gallery translation, focus management and screen-reader support remain pending.
 - Mobile browser emulation is separate from physical-phone/OS-keyboard acceptance. External sprite hosts were blocked; the isolated copied ST runtime logged thumbnail-conversion dependency-path errors. Cloud images and image conversion were not validated by this run.
 - September 7 real-ST image migration/save/reload/restore, fault handling and standard ZIP-import checks below remain open. Only their existing synthetic maintenance browser regressions were rerun.
-- The reviewed branch was merged into local `main` at `7866559`. Publication must still reconcile README, include both locale JSON files alongside the original six root files and pass three-way parity; final remote commits are recorded in CURRENT.md and the merge/release history once pushed. Historical six-file instructions are superseded by CURRENT.md.
+- The reviewed branch was merged into `main` at `7866559`. The development repository was pushed through `131f1e3`; the reconciled README, both locale JSON files, original six root files and 50 WeChat assets passed three-way parity and were published to the installation repository at `0b24014`. Historical six-file instructions are superseded by CURRENT.md.
 
 ## 2026-09-05 Review Queue — Code Committed, Acceptance Pending
 

@@ -4,9 +4,9 @@ project: st-stage
 base_branch: main
 working_branch: main
 verified_code_head: 78665593bbe72631713b3babea1cd6bc14fd8e1e
-remote_code_head_at_update: 1989c2fab99a28b8b204073bcb32f59b73800079
+remote_code_head_at_update: 131f1e32e209ef610bcefce85267fa4955866087
 build_version: 0.9.0+202610261121
-phase: merged-development-push-pending
+phase: merged-and-dual-repositories-published
 updated_at: 2026-10-26
 updated_by: Codex
 verification_source: merged-suite-100files-1352tests-tsc-lint-next-build-i18n-runtime-parity-2026-10-26
@@ -24,9 +24,9 @@ previous_history: docs/maintenance/history/2026-10-26-wechat-fifth-review.md
 
 | 位置 | 状态 |
 | --- | --- |
-| 开发仓库 `D:\8.Project\0_0_维护\st-stage` | `main` / 代码 HEAD `7866559`；构建 `0.9.0+202610261121`；等待开发远端推送 |
-| 安装仓库 `D:\8.Project\0_0_维护\st-stage-ext` | 尚待从 `st-distribution` 同步、哈希验证、提交与推送 |
-| 已合入本地分支 | `codex/i18n-acceptance` 及其余历史维护分支均已包含在 `main`，可在推送后清理 |
+| 开发仓库 `D:\8.Project\0_0_维护\st-stage` | `main` / 代码 HEAD `7866559`；首轮维护记录随 `131f1e3` 推送；构建 `0.9.0+202610261121` |
+| 安装仓库 `D:\8.Project\0_0_维护\st-stage-ext` | `main` / `0b24014` 已推送；8 个基础文件、README 与 50 个微信素材均通过三方哈希/清单校验 |
+| 已合入本地分支 | `codex/i18n-acceptance` 及其余历史维护分支均已包含在 `main`；发布后执行清理 |
 | 保留远端旧分支 | `origin/v0/2405142193-6702-70a2066c` 含 `main` 尚未包含的独有提交，暂不删除 |
 
 详细合并与发布记录见 [2026-10-26 合并与发布](history/2026-10-26-merge-and-release.md)。微信审查边界见 [第五次审查](history/2026-10-26-wechat-fifth-review.md)，翻译/键盘验收边界见 [导出最终验收](history/2026-10-07-export-final.md)。运行和维护入口见 [维护指南](MAINTAINER.md)。
@@ -43,4 +43,4 @@ previous_history: docs/maintenance/history/2026-10-26-wechat-fifth-review.md
 - 开发仓库保持 `st-stage`，新安装渠道保持 `st-stage-ext`；不重命名仓库、不重写或嫁接安装仓库历史。
 - 安装包包含 8 个基础文件：`manifest.json`、`index.js`、`bundle.js`、`style.css`、`version.json`、`README.md`、`locales/zh-CN.json`、`locales/en-US.json`，以及 `assets/wechat/` 的 50 个素材文件。
 - README 从 `st-extension/distribution-readme.md` 生成并同步；不以开发仓库首页覆盖安装仓库 README。
-- 发布顺序为开发仓库先推送，随后同步并推送安装仓库；完成后再在本文件记录两个远端提交。
+- 发布顺序已完成：开发仓库先推送至 `131f1e3`，随后安装仓库推送至 `0b24014`；本文件的最终状态提交是纯维护文档提交。
