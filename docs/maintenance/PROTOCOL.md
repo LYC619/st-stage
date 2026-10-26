@@ -18,10 +18,12 @@ The maintenance document cannot contain the hash of the commit that contains its
 
 ```powershell
 git merge-base --is-ancestor <verified_code_head> HEAD
-git diff --quiet <verified_code_head>..HEAD -- . ':(exclude)docs/maintenance/**' ':(exclude)AGENTS.md' ':(exclude)CLAUDE.md'
+git diff --quiet <verified_code_head>..HEAD -- . ':(exclude,glob)docs/**/*.md' ':(exclude)README.md' ':(exclude)AGENTS.md' ':(exclude)CLAUDE.md'
 ```
 
 Both commands must exit zero. Otherwise reconcile `CURRENT.md` before relying on it.
+
+The documentation exclusions cover Markdown guides and the project README; inspect their diff separately. Executable templates and other non-Markdown files under docs remain in the product check. These commands check committed changes only: also inspect `git status` and uncommitted product changes. Passing them does not prove generated artifacts match each other; compare runtime files and locale assets separately.
 
 ## Start-of-Task Checklist
 
@@ -45,12 +47,12 @@ Then:
 
 At a completed batch, review boundary, merge, or push:
 
-1. Commit all intended source, test, documentation, and generated artifact changes.
+1. Commit intended changes only when the task authorizes a commit. For a documentation-only or no-commit handoff, retain the changes uncommitted and record the branch, baseline HEAD and changed files; do not infer commit/push permission from this checklist.
 2. Record fresh verification evidence; distinguish automated evidence from real SillyTavern manual checks.
-3. Update `CURRENT.md` to the committed HEAD, current build version, phase, completed work, and next actions.
+3. Update `CURRENT.md` with the code/build commit represented by the document, actual build version, phase, completed work, and next actions. Keep branch-local state distinct from newer unmerged branches and released artifacts.
 4. Add or update a dated history record when the change materially alters delivered behavior or closes a review cycle.
 5. Add intentionally postponed findings to `DEFERRED.md`; remove entries only when a commit resolves them.
-6. Keep the worktree clean and report whether merge and push occurred.
+6. Report remaining worktree changes and whether merge, commit and push occurred. Preserve unrelated pre-existing changes.
 
 ## CURRENT.md Contract
 

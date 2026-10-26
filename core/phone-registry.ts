@@ -49,6 +49,24 @@ export interface AppHost {
   injectPrompt(text: string, depth?: number): void
   /** 通知：真 ST 走 toastr，模拟器降级 console */
   toast(kind: ToastKind, message: string): void
+  /** 当前角色卡详情（卡设、性格、场景等；无则 undefined） */
+  getCharacterCard?(): {
+    name?: string
+    description?: string
+    personality?: string
+    scenario?: string
+    mes_example?: string
+    avatar?: string
+  } | undefined
+  /** 当前聊天会话上下文（chatId、characterId、ST 对话历史等；无则 undefined） */
+  getChatContext?(): {
+    characterId?: string | number
+    chatId?: string | number
+    characterName?: string
+    chat?: Array<{ mes: string; is_user: boolean }>
+  } | undefined
+  /** 读取外部状态变量（如 MVU / 酒馆助手 stat_data；无则 undefined） */
+  getVariables?(): Record<string, unknown> | Promise<Record<string, unknown> | undefined> | undefined
 }
 
 /** App 收到的运行时上下文（mount）：= AppHost + UI 专属；订阅/定时器随 unmount 自动回收 */
@@ -77,6 +95,8 @@ export interface PhoneApp {
   icon: string
   /** Home 屏排序权重，小的在前；缺省 100 */
   order?: number
+  /** 是否启用全屏无内边距沉浸模式（适合聊天/全高应用） */
+  fullbleed?: boolean
   /** 常驻初始化（可选）：注册成功后调用一次；返回的清理函数在平台销毁时执行 */
   setup?(host: AppHost): void | (() => void)
   /** 打开 App：向 container 渲染内容 */
@@ -104,6 +124,21 @@ export interface AppHostDeps extends PlatformCapabilityDeps {
   saveSettingsOnly(next: PluginSettings): void
   /** 当前对话角色名（无对话为空串） */
   getCharacterName(): string
+  getCharacterCard?(): {
+    name?: string
+    description?: string
+    personality?: string
+    scenario?: string
+    mes_example?: string
+    avatar?: string
+  } | undefined
+  getChatContext?(): {
+    characterId?: string | number
+    chatId?: string | number
+    characterName?: string
+    chat?: Array<{ mes: string; is_user: boolean }>
+  } | undefined
+  getVariables?(): Record<string, unknown> | Promise<Record<string, unknown> | undefined> | undefined
 }
 
 /** 构造 PhoneAppContext 的依赖（把「核心设置」与「App 私有数据」两条持久化路径分开） */
@@ -145,6 +180,9 @@ export function createAppHost(deps: AppHostDeps, tracker: CapabilityTracker): Ap
     injectPrompt: (text, depth) =>
       deps.injectPrompt(deps.appId, capInjectionText(deps.appId, text), depth),
     toast: (kind, message) => deps.toast(kind, message),
+    getCharacterCard: deps.getCharacterCard ? () => deps.getCharacterCard!() : undefined,
+    getChatContext: deps.getChatContext ? () => deps.getChatContext!() : undefined,
+    getVariables: deps.getVariables ? () => deps.getVariables!() : undefined,
   }
 }
 

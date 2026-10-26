@@ -216,4 +216,21 @@ describe('extension build integration', () => {
     expect(readdirSync(outputRoot, { withFileTypes: true }).some((entry) => entry.name === 'public')).toBe(false)
     expect(readdirSync(outputRoot, { withFileTypes: true }).some((entry) => entry.name === 'reference')).toBe(false)
   })
+
+  it('copies extension assets to distribution output when present (W5 / P2)', async () => {
+    const root = createBuildFixture()
+    mkdirSync(join(root, 'assets', 'wechat'), { recursive: true })
+    writeFileSync(join(root, 'assets', 'wechat', 'emoji.png'), 'test-image-bytes')
+    const outputRoot = join(root, 'st-distribution')
+
+    await buildExtension({
+      sourceRoot: root,
+      outputRoot,
+      env: fixedEnv,
+      logLevel: 'silent',
+      log: () => {},
+    })
+
+    expect(readFileSync(join(outputRoot, 'assets', 'wechat', 'emoji.png'), 'utf8')).toBe('test-image-bytes')
+  })
 })

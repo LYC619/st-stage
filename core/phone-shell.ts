@@ -107,7 +107,10 @@ export function createPhoneShell(
       collapse()
     }
   })
-  statusBar.append(backBtn, statusTitle, clock, closeBtn)
+  const indicators = document.createElement('span')
+  indicators.className = 'so-phone-indicators'
+  indicators.textContent = '5G 🔋'
+  statusBar.append(backBtn, statusTitle, indicators, clock, closeBtn)
 
   const screen = document.createElement('div')
   screen.className = 'so-phone-screen'
@@ -253,6 +256,7 @@ export function createPhoneShell(
   /* ---- 屏幕渲染 ---- */
   function leaveApp(): void {
     if (activeApp) {
+      screen.classList.remove('so-phone-screen-fullbleed')
       try {
         activeApp.unmount?.()
       } catch (err) {
@@ -273,8 +277,16 @@ export function createPhoneShell(
     backBtn.style.display = activeApp ? 'flex' : 'none'
     if (activeApp) {
       statusTitle.textContent = activeApp.name
+      if (activeApp.fullbleed) {
+        screen.classList.add('so-phone-screen-fullbleed')
+      } else {
+        screen.classList.remove('so-phone-screen-fullbleed')
+      }
       const container = document.createElement('div')
       container.className = 'so-phone-app-container'
+      if (activeApp.fullbleed) {
+        container.classList.add('so-phone-app-fullbleed')
+      }
       screen.append(container)
       try {
         const mounted = deps.createAppContext(activeApp.id, goHome)
@@ -295,6 +307,7 @@ export function createPhoneShell(
     }
 
     screenScrollAppId = null
+    screen.classList.remove('so-phone-screen-fullbleed')
     statusTitle.textContent = HOME_TITLE
     const grid = document.createElement('div')
     grid.className = 'so-phone-home-grid'

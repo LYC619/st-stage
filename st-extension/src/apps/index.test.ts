@@ -15,6 +15,13 @@ describe('builtin app assembly', () => {
     const apps = createBuiltinApps(deps)
 
     expect(apps.map((app) => app.id)).toContain('cloud-export')
+    expect(apps.map((app) => app.id)).toContain('wechat-sister')
+    expect(apps.find((app) => app.id === 'wechat-sister')).toMatchObject({
+      name: '微信',
+      icon: '💬',
+      order: 25,
+      fullbleed: true,
+    })
     expect(apps.find((app) => app.id === 'cloud-export')).toMatchObject({
       name: '导出',
       icon: '📦',

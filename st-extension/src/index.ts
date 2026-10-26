@@ -156,6 +156,35 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
       getSettings: () => settings,
       saveSettingsOnly,
       getCharacterName: () => adapter.getCurrentCharacterName(),
+      getCharacterCard: () => {
+        try {
+          const ctx = window.SillyTavern?.getContext()
+          const id = ctx?.characterId
+          if (id !== undefined && id !== null && String(id) !== '') {
+            return ctx?.characters?.[Number(id)]
+          }
+        } catch { /* 忽略异常 */ }
+        return undefined
+      },
+      getChatContext: () => {
+        try {
+          const ctx = window.SillyTavern?.getContext()
+          return {
+            characterId: ctx?.characterId,
+            chatId: ctx?.chatId ?? ctx?.chatMetadata?.file_name,
+            characterName: adapter.getCurrentCharacterName(),
+            chat: ctx?.chat,
+          }
+        } catch { /* 忽略异常 */ }
+        return undefined
+      },
+      getVariables: async () => {
+        try {
+          const res = await readVariables({ type: 'message', message_id: 'latest' }, getLastMessageId())
+          if (res.status === 'ready') return res.data
+        } catch { /* 忽略异常 */ }
+        return undefined
+      },
       ...platformCaps,
     }
   }

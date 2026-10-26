@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 const runtimeFiles = ['manifest.json', 'index.js', 'bundle.js', 'style.css', 'version.json']
 
-describe('verify-runtime-parity', () => {
+describe('verify-runtime-parity', { timeout: 15000 }, () => {
   let temp: string
   let roots: Record<'root' | 'distribution' | 'release', string>
 

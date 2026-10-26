@@ -24,6 +24,7 @@ import { openAppModal } from '@/core/app-modal'
 import { webAppEvents } from '@/lib/web-app-events'
 import { createPhoneShell, type PhoneShellController } from '@/core/phone-shell'
 import { getActivePacks } from '@/core/sprite-store'
+import { createWeChatApp } from '@/st-extension/src/apps/wechat/wechat-app'
 
 interface PhoneMountProps {
   settings: PluginSettings
@@ -210,7 +211,7 @@ function createWebApps(
     },
   }
 
-  return [spritesApp, galleryApp]
+  return [spritesApp, galleryApp, createWeChatApp()]
 }
 
 /* ---- 小构件（原生 DOM，类名与 ST 端共用样式） ---- */

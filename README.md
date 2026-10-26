@@ -2,6 +2,8 @@
 
 > 酒馆里的事，百工都做。
 
+**维护者入口：**先读 [当前状态与成果位置](docs/maintenance/CURRENT.md)，再按 [维护指南](docs/maintenance/MAINTAINER.md)准备环境、定位模块和完成小修改。2026-10-24 核对：本页所在 `main` 是 i18n 基础版本；较新的翻译与键盘验收成果在尚未合并的 `codex/i18n-acceptance`，独立安装仓库仍为旧版。版本、产物差异和验收边界以 CURRENT 为准。
+
 「百工」是一个 SillyTavern 扩展形态的**功能平台**（扩展列表里显示为「百工」，安装目录 `st-stage-ext`）：装好后聊天界面出现一个可拖动的 **📱 图标**，展开是一部带状态栏、返回键和 Home 键的小手机——所有功能都是手机里的 **App**。
 
 **装一个扩展 = 一套会持续长大的工具箱**：
@@ -22,7 +24,7 @@
 | 🧮 **新变量** | 内置轻量变量追踪：任何普通卡 GUI 定义变量，AI 自动维护，模板一键起步（[说明](docs/VARIABLES.md)） |
 | 📡 **API** | 版本化连接档案快切：常用 Chat 渠道、自定义 OpenAI 兼容、Text Completion 与专用后端 |
 | 🎬 **渲染** | 结构化回复渲染：Galgame 分镜、卡片选择、本地战斗面板（见下） |
-| 📦 **导出** | 云端导出备份：立绘包与设置打包下载，可选整套或按项 |
+| 📦 **导出** | 按项下载角色卡、聊天、世界书、OpenAI 预设与全局正则的标准 ZIP（[范围与限制](st-extension/src/apps/cloud-export/README.md)） |
 
 > 🔐 **密钥存储说明**：「图库」的 imgbb Key 和「API」的站点密钥都**明文**保存在 ST 扩展设置里（随 ST 服务端 `settings.json` 落盘）。扩展自己的导出文件和分享串不含任何密钥，但请不要把 ST 的 `settings.json` 或完整备份直接发给别人。
 
@@ -127,7 +129,7 @@ Renderer 是手机里的「🎬 渲染」App。第一次使用时：
 
 > 按 `.claude/skills/st-app` 里的流程，给 st-stage 写一个「骰子」App：掷 d20 并在页内记录最近 10 次结果
 
-Claude Code 会自动发现这个 skill；其他工具就在提示词开头加一句「先读 `.claude/skills/st-app/SKILL.md`」。把引号里的功能换成你要的即可，从写代码、装配到构建提交它都会照流程走完。
+Claude Code 会自动发现这个 skill；其他工具就在提示词开头加一句「先读 `.claude/skills/st-app/SKILL.md`」。把引号里的功能换成你要的即可；实施范围、提交和发布仍按当次授权执行。
 
 手写也一样：照 skill 的三步 + **[docs/APP-SPEC.md](docs/APP-SPEC.md)**（App 契约、ctx 能力、样式套件与安全红线）。
 
@@ -150,8 +152,10 @@ pnpm typecheck  # tsc --noEmit
 pnpm build      # Next.js 生产构建（网页模拟器，CI 用作类型/构建门禁）
 pnpm start      # 跑上一步的生产构建
 pnpm build:ext  # 重新打包根目录 ST 兼容产物（index.js / bundle.js / version.json / style.css）
-pnpm build:st   # 生成 st-distribution/，供未来独立 ST 仓库或发布流程使用
+pnpm build:st   # 生成 st-distribution/，后续需另行同步到独立安装仓库
 ```
+
+环境版本、双端差异和同时间戳构建方法见 [维护指南](docs/maintenance/MAINTAINER.md)。独立发布仓库已存在；生成 `st-distribution/` 不会自动同步或发布它。
 
 ### 目录结构（平台 / 功能 App / 产物）
 

@@ -2,35 +2,34 @@
   "common": {
     "confirm": "Confirm",
     "cancel": "Cancel",
-    "close": "Close",
     "save": "Save",
     "delete": "Delete",
-    "edit": "Edit",
-    "add": "Add",
-    "remove": "Remove",
-    "back": "Back",
-    "next": "Next",
-    "previous": "Previous",
-    "ok": "OK",
-    "yes": "Yes",
-    "no": "No",
+    "close": "Close",
+    "search": "Search",
     "loading": "Loading...",
-    "error": "Error",
     "success": "Success",
-    "warning": "Warning",
-    "info": "Info"
+    "error": "Error",
+    "warning": "Warning"
+  },
+  "sprite": {
+    "overlay": {
+      "placeholder_no_pack": "No sprite pack bound\nClick ⚙ to bind",
+      "placeholder_no_character": "Open a character chat\nthen click ⚙ to bind sprite pack"
+    },
+    "manager": {
+      "title": "Sprite Gallery Manager",
+      "bind_pack": "Bind Pack",
+      "upload_image": "Upload Image",
+      "settings": "Settings"
+    }
   },
   "phone": {
     "home": "Home",
-    "back": "Back",
-    "collapse": "Collapse",
-    "settings": "Settings"
+    "apps": "Apps"
   },
-  "extension": {
-    "name": "Baigong",
-    "enableSprite": "Enable Sprite Overlay",
-    "showPhone": "Show Phone",
-    "version": "Version",
-    "build": "Build"
+  "settings": {
+    "general": "General",
+    "display": "Display",
+    "advanced": "Advanced"
   }
 }

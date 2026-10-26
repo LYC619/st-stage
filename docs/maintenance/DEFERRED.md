@@ -2,6 +2,24 @@
 
 Known follow-ups and pending review repairs are recorded here. Older sections retain their original non-blocking decisions; the review queue below is **not** a declaration that its risks are acceptable for a new release. Remove or resolve entries only with an actual fixing commit and fresh verification.
 
+## 2026-10-26 WeChat Review Queue — Fifth Review Passed, Worktree Uncommitted
+
+Round-4 repairs for the five remaining findings (W9 test callback typing, W4 same-scope refresh ordering, W1c ownership re-evaluation after stat impact await, W1c external money snapshot protection, W1a valid alias traversal) passed independent re-review in the uncommitted `0.9.0+202610260159` worktree. No new blocking finding was identified within this scoped review; see [Fifth Review](history/2026-10-26-wechat-fifth-review.md) and [Round-4 Repairs](history/2026-10-26-wechat-round4-repairs.md). Entries remain until a fixing commit. Live SillyTavern browser and physical-device acceptance remain open.
+
+| ID | Priority | Code repair status and remaining verification |
+| --- | --- | --- |
+| W1 | P1 | Code repair complete in uncommitted worktree: W1a (valid alias traversal in character pool without masking), W1b (live event subscription & pre-send refresh), W1c (authoritative external snapshot, post-await ownership re-evaluation, and red packet money protection), W1d (non-enum location preserved in prompt) verified by unit tests; real-ST live acceptance pending. |
+| W2 | P1 | Code repair confirmed: scoped by composite key `${characterId\|\|avatar\|\|charName}::${chatId}` with synchronous view switching and clean legacy key removal; real-ST live multi-chat acceptance pending. |
+| W3 | P1 | Code repair confirmed in uncommitted worktree: resource-ID validation and safe native DOM construction prevent HTML injection; real-ST acceptance pending. |
+| W4 | P1 | Code repair complete in uncommitted worktree: immutable session tokens (`mountSessionId`, `activeScopeSessionId`, `scopeKey`) prevent cross-character/unmount leaks; monotonic refresh counter (`latestRefreshReq` / `latestAppliedRefresh`) drops stale in-flight reads within same scope; real-ST live acceptance pending. |
+| W5 | P2 | Code repair confirmed: build copies assets; all 50 files match SHA-256 across source/preview/distribution, and distribution fixture serves asset with 200. Keep until fixing commit and real-ST acceptance. |
+| W6 | P2 | Code repair confirmed in uncommitted worktree: composition state, isComposing and keyCode 229 block sending, normal Enter resumes after composition; physical OS IME acceptance pending. |
+| W7 | P2 | Code repair confirmed in uncommitted worktree: responsive input flex shrinking prevents send button clipping at 320px viewport; physical-device acceptance pending. |
+| W8 | P2 | Code repair complete in uncommitted worktree: character avatar filename resolved via ST thumbnail/character route (`resolveCharacterAvatarUrl`) with `avatar.onerror` graceful fallback to default avatar; real-ST acceptance pending. |
+| W9 | P1 | Code repair complete in uncommitted worktree: aligned deferred resolver and message callback types with AppHost contracts; `tsc --noEmit --incremental false` passes with 0 errors. |
+
+Fresh fifth-review evidence: 91 files / 1219 tests pass in one full run, including 29 WeChat tests; tsc with incremental false and lint both exit 0. Controlled source fixtures retain mood 96 after an old read returns 82, preserve external mood/interest 82/35 when ownership changes during a genuinely pending stat evaluation, retain external wallet 1000 after a red packet, and select valid same-character aliases before root values. All 7 runtime files match between root and `st-distribution`; all 50 assets match across root, preview and distribution. No extension/Next rebuild or real-ST/device acceptance was performed in this review. A fixing commit does not itself close live acceptance.
+
 ## 2026-09-05 Review Queue — Code Committed, Acceptance Pending
 
 Updated 2026-09-07 after explicit commit/push authorization: fixing code/build commit `81b4286bb68c6f42badc5ca52b39ac1fbf79c72e` is pushed to development main. This updates the legacy install channel, but not the independent `st-stage-ext` repository. Code fixes are traceable and local gates pass; applicable real-ST/device acceptance and independent release parity remain outstanding. Evidence and remaining checks are in history/2026-09-07-maintenance-repairs.md; original provenance is in history/2026-09-05-maintenance-review.md.

@@ -1388,3 +1388,58 @@
   font-size: 12px;
   padding-top: 2px;
 }
+
+
+/* ==================== 全屏沉浸式 App 支持与界面微动效 ==================== */
+
+.so-phone-indicators {
+  font-size: 10px;
+  opacity: 0.75;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.so-phone-screen.so-phone-screen-fullbleed,
+.so-phone-screen:has(.so-phone-app-fullbleed) {
+  padding: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.so-phone-app-container.so-phone-app-fullbleed {
+  flex: 1 !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  gap: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+@keyframes wtPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+@keyframes wtSlideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.so-phone-shell {
+  animation: soPhonePop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes soPhonePop {
+  0% {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

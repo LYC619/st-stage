@@ -18,7 +18,7 @@
  */
 
 import { build } from 'esbuild'
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { buildVersion, resolveBuildTime } from './build-time.mjs'
@@ -150,6 +150,11 @@ export async function buildExtension({
         readFileSync(path.join(extensionDir, 'distribution-readme.md'), 'utf8'),
       ),
     )
+    // 复制 assets 静态资源目录（如 assets/wechat 表情与图片）
+    const sourceAssetsDir = path.join(sourceRoot, 'assets')
+    if (existsSync(sourceAssetsDir)) {
+      cpSync(sourceAssetsDir, path.join(outputRoot, 'assets'), { recursive: true })
+    }
   }
 
   log(`[build] ${version} → index.js(stub) / bundle.js / version.json / style.css（全部需提交 git）`)

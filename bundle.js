@@ -5055,7 +5055,10 @@ function createAppHost(deps, tracker) {
     onMessageReceived: (handler) => tracker.track(deps.onMessageReceived(handler)),
     onCharacterChanged: (handler) => tracker.track(deps.onCharacterChanged(handler)),
     injectPrompt: (text4, depth) => deps.injectPrompt(deps.appId, capInjectionText(deps.appId, text4), depth),
-    toast: (kind, message) => deps.toast(kind, message)
+    toast: (kind, message) => deps.toast(kind, message),
+    getCharacterCard: deps.getCharacterCard ? () => deps.getCharacterCard() : void 0,
+    getChatContext: deps.getChatContext ? () => deps.getChatContext() : void 0,
+    getVariables: deps.getVariables ? () => deps.getVariables() : void 0
   };
 }
 function createPhoneAppContext(deps) {
@@ -5317,7 +5320,10 @@ function createPhoneShell(initialState, deps) {
       collapse();
     }
   });
-  statusBar2.append(backBtn, statusTitle, clock, closeBtn);
+  const indicators = document.createElement("span");
+  indicators.className = "so-phone-indicators";
+  indicators.textContent = "5G 🔋";
+  statusBar2.append(backBtn, statusTitle, indicators, clock, closeBtn);
   const screen = document.createElement("div");
   screen.className = "so-phone-screen";
   const homeBar = document.createElement("div");
@@ -5439,6 +5445,7 @@ function createPhoneShell(initialState, deps) {
   });
   function leaveApp() {
     if (activeApp) {
+      screen.classList.remove("so-phone-screen-fullbleed");
       try {
         activeApp.unmount?.();
       } catch (err) {
@@ -5456,8 +5463,16 @@ function createPhoneShell(initialState, deps) {
     backBtn.style.display = activeApp ? "flex" : "none";
     if (activeApp) {
       statusTitle.textContent = activeApp.name;
+      if (activeApp.fullbleed) {
+        screen.classList.add("so-phone-screen-fullbleed");
+      } else {
+        screen.classList.remove("so-phone-screen-fullbleed");
+      }
       const container = document.createElement("div");
       container.className = "so-phone-app-container";
+      if (activeApp.fullbleed) {
+        container.classList.add("so-phone-app-fullbleed");
+      }
       screen.append(container);
       try {
         const mounted = deps.createAppContext(activeApp.id, goHome);
@@ -5476,6 +5491,7 @@ function createPhoneShell(initialState, deps) {
       return;
     }
     screenScrollAppId = null;
+    screen.classList.remove("so-phone-screen-fullbleed");
     statusTitle.textContent = HOME_TITLE;
     const grid = document.createElement("div");
     grid.className = "so-phone-home-grid";
@@ -14248,7 +14264,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-09-12 18:08"}`;
+  return `${"0.9.0"}+${"2026-10-26 01:59"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -16718,6 +16734,1676 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
   };
 }
 
+// st-extension/src/apps/wechat/avatars-data.ts
+var DEFAULT_PLAYER_AVATAR = "data:image/png;base64,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";
+var DEFAULT_SISTER_AVATAR = "data:image/png;base64,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";
+
+// st-extension/src/apps/wechat/manifest-data.ts
+var SISTER_LOCATIONS = {
+  TOILET: "厕所，妹妹正在上厕所",
+  SCHOOL: "妹妹正在学校上课",
+  LIVING_ROOM: "客厅，妹妹正在和玩家待在一起，会吐槽为什么还用微信发消息",
+  SISTER_ROOM: "妹妹正在自己的卧室"
+};
+var PLAYER_LOCATIONS = {
+  LIVING_ROOM: "玩家此时在客厅",
+  COMPANY: "玩家此时在公司"
+};
+var PLAYER_EMOJIS = {
+  simper: { id: "simper", name: "傻笑", description: "傻笑的熊猫头表情包，代表搞怪，沙雕的傻笑。", file: "emojies/player/simper.png" },
+  angry: { id: "angry", name: "生气", description: "熊猫头愤怒表情，代表有点搞怪的生气含义。", file: "emojies/player/angry.png" },
+  dislike: { id: "dislike", name: "嫌弃", description: "捏着鼻子的熊猫头龙图，代表有点搞怪的嫌弃含义。", file: "emojies/player/dislike.png" },
+  a_sexy_pic: { id: "a_sexy_pic", name: "来张涩图", description: "二次元美少女在说“来一份色图”的表情包，代表“给我发张色图”的含义。", file: "emojies/player/a_sexy_pic.png" },
+  embrace_arm: { id: "embrace_arm", name: "抱胸", description: "双手抱胸的熊猫头龙图，代表有点搞怪的“抱臂旁观、冷眼看戏、略带嘲讽地看你表演”的含义。", file: "emojies/player/embrace_arm.png" },
+  point: { id: "point", name: "指", description: "拿手指着的熊猫头龙图，代表有点搞怪的“点名你、看穿你、调侃你，带一点警告和揶揄”的含义。", file: "emojies/player/point.png" },
+  frown: { id: "frown", name: "皱眉", description: "双手抱胸，皱着眉头的熊猫头表情包，代表有点搞怪的怀疑态度。", file: "emojies/player/frown.png" },
+  grin: { id: "grin", name: "坏笑", description: "一个动漫玩偶的傻笑表情包，代表有点意味深长，坏笑的含义。", file: "emojies/player/grin.png" },
+  happy: { id: "happy", name: "高兴", description: "黄色橘猫的笑脸，代表有点搞怪的开心含义。", file: "emojies/player/happy.png" },
+  huge: { id: "huge", name: "惊鸿一瞥", description: "虎哥的惊鸿一瞥表情包，代表有点搞怪的“注视着你”含义。", file: "emojies/player/huge.png" },
+  laugh: { id: "laugh", name: "乐", description: "黄豆爆笑的表情包，代表着幸灾乐祸的爆笑。", file: "emojies/player/laugh.png" },
+  laugh2: { id: "laugh2", name: "乐2", description: "憋笑的熊猫头龙图，代表着幸灾乐祸的憋不住笑了。", file: "emojies/player/laugh2.png" },
+  lusful: { id: "lusful", name: "色", description: "猫和老鼠中汤姆的夸张颜艺表情包，代表着看见色图时露出的好色表情。", file: "emojies/player/lusful.png" },
+  cry: { id: "cry", name: "哭", description: "熊猫头捂嘴哭表情包，代表着有点搞怪，沙雕的哭。", file: "emojies/player/cry.png" },
+  shock: { id: "shock", name: "惊讶", description: "黄色橘猫惊讶的表情，表示有点搞怪的惊讶。", file: "emojies/player/shock.png" }
+};
+var SISTER_EMOJIS = {
+  angry: { id: "angry", name: "生气", description: "妹妹Q版形象的生气表情，代表有点赌气含义。", file: "emojies/sister/angry.png" },
+  confuseed: { id: "confuseed", name: "疑惑", description: "妹妹Q版形象的疑惑表情。", file: "emojies/sister/confused.png" },
+  frown: { id: "frown", name: "皱眉", description: "双手抱胸，皱着眉头的熊猫头表情包，代表有点搞怪的怀疑态度。", file: "emojies/sister/frown.png" },
+  furious: { id: "furious", name: "愤怒", description: "妹妹Q版形象的愤怒表情，代表有点萌的愤怒含义。", file: "emojies/sister/furious.png" },
+  gloomy: { id: "gloomy", name: "阴沉", description: "妹妹Q版形象的阴沉表情，代表有点心情不好的含义。", file: "emojies/sister/gloomy.png" },
+  great: { id: "great", name: "伟大", description: "小猫激动地张开双臂，下面写着“伟大”的表情包，代表有点搞怪的感激态度。", file: "emojies/sister/great.png" },
+  grin: { id: "grin", name: "坏笑", description: "玩偶奇怪笑容的表情包，代表有点搞怪的，不怀好意的坏笑。", file: "emojies/sister/grin.png" },
+  happy: { id: "happy", name: "高兴", description: "妹妹Q版形象的高兴表情，代表有心情好。", file: "emojies/sister/happy.png" },
+  laugh: { id: "laugh", name: "大笑", description: "黄豆表情大笑的表情包，代表幸灾乐祸的嘲笑态度。", file: "emojies/sister/laugh.png" },
+  look: { id: "look", name: "看", description: "萌系人物意味深长看着的表情，代表讨好的态度，可用于要好处的后面。", file: "emojies/sister/look.png" },
+  omg: { id: "omg", name: "omg", description: "萌系人物夸张的表情，代表“我的天”的意思。", file: "emojies/sister/omg.png" },
+  shy: { id: "shy", name: "害羞", description: "妹妹Q版形象害羞的表情。", file: "emojies/sister/shy.png" },
+  simper: { id: "simper", name: "傻笑", description: "傻笑的熊猫头表情包，代表搞怪，沙雕的傻笑。", file: "emojies/sister/simper.png" },
+  smile: { id: "smile", name: "微笑", description: "妹妹Q版形象微笑的表情。", file: "emojies/sister/smile.png" },
+  speechless: { id: "speechless", name: "无语", description: "妹妹Q版形象无语的表情。", file: "emojies/sister/speechless.png" },
+  surprise: { id: "surprise", name: "惊讶", description: "妹妹Q版形象惊讶的表情。", file: "emojies/sister/surprise.png" },
+  wronged: { id: "wronged", name: "委屈", description: "妹妹Q版形象委屈的表情。", file: "emojies/sister/wronged.png" },
+  surprise_cat: { id: "surprise_cat", name: "惊讶猫1", description: "小猫夸张的表情，代表有点搞怪的惊讶含义。", file: "emojies/sister/surprise_cat.png" },
+  surprise_cat_2: { id: "surprise_cat_2", name: "惊讶猫2", description: "一只橘猫夸张的表情，代表有点搞怪的惊讶含义。", file: "emojies/sister/surprise_cat_2.png" }
+};
+var SISTER_PHOTOS = {
+  bedroom1: { id: "bedroom1", name: "卧室自拍1", description: "妹妹在卧室的自拍：撩起卫衣，露出内衣，表情害羞", file: "photos/bedroom1.png" },
+  bedroom2: { id: "bedroom2", name: "卧室自拍2", description: "妹妹在卧室的自拍：撩起卫衣和内衣，用手遮住胸部，表情平静", file: "photos/bedroom2.png" },
+  bedroom3: { id: "bedroom3", name: "卧室自拍3", description: "妹妹在卧室的自拍：上半身裸体，露出胸部，一只手比着“耶”，坏笑表情", file: "photos/bedroom3.png" },
+  bedroom4: { id: "bedroom4", name: "卧室自拍4", description: "妹妹在卧室的自拍：脱掉长裤，露出内裤", file: "photos/bedroom4.png" },
+  bedroom5: { id: "bedroom5", name: "卧室自拍5", description: "妹妹在卧室的自拍：脱掉长裤和内裤，用手遮住小穴", file: "photos/bedroom5.png" },
+  bedroom6: { id: "bedroom6", name: "卧室自拍6", description: "妹妹在卧室的自拍：脱掉长裤和内裤，用衣服拉链挡住了一部分小穴", file: "photos/bedroom6.png" },
+  bedroom7: { id: "bedroom7", name: "卧室自拍7", description: "妹妹在卧室的自拍：脱掉长裤和内裤，主动分开小穴", file: "photos/bedroom7.png" },
+  pee1: { id: "pee1", name: "上厕所自拍1", description: "尿尿时的俯视自拍", file: "photos/pee1.png" },
+  pee2: { id: "pee2", name: "上厕所自拍2", description: "尿尿时正对小穴的自拍", file: "photos/pee2.png" }
+};
+var FALLBACK_DIALOGUES = {
+  keywords: [
+    { pattern: "爱你|喜欢", branches: [{ min_mood: 50, reply: "我也爱你，哥哥~" }, { min_mood: 20, reply: "哥哥真好~" }, { min_mood: 0, reply: "嗯..." }] },
+    { pattern: "吃", branches: [{ min_mood: 30, reply: "我想吃你做的菜~" }, { min_mood: 0, reply: "我还没想好呢，要不你给我带点？" }] },
+    { pattern: "在吗", reply: "有事说事" },
+    { pattern: "回来带杯可乐|可乐", reply: "打钱" },
+    { pattern: "想你", branches: [{ min_mood: 40, reply: "我也想你...♡" }, { min_mood: 0, reply: "嗯，我也是。" }] },
+    { pattern: "照片|涩图|看", reply: "photo:bedroom1" }
+  ],
+  default_text: "嗯嗯，知道了。",
+  red_packet_reply: "谢谢老板，老板大气！"
+};
+
+// st-extension/src/apps/wechat/assets.ts
+function resolveWeChatAssetUrl(subpath) {
+  if (!subpath) return "";
+  if (/^(?:https?:|data:)/.test(subpath)) return subpath;
+  let clean2 = subpath.replace(/^\/+/, "");
+  if (clean2.startsWith("assets/wechat/")) {
+    clean2 = clean2.slice("assets/wechat/".length);
+  }
+  try {
+    if (typeof import.meta !== "undefined" && import.meta.url) {
+      const url = new URL(import.meta.url);
+      if (url.protocol === "http:" || url.protocol === "https:") {
+        const baseDir = url.pathname.replace(/\/[^/]*$/, "");
+        return `${baseDir}/assets/wechat/${clean2}`;
+      }
+    }
+  } catch {
+  }
+  return `/assets/wechat/${clean2}`;
+}
+
+// st-extension/src/apps/wechat/rag.ts
+function normalizeRagText(text4) {
+  let res = text4.toLowerCase();
+  const removePunct = ["，", "。", "！", "？", "：", "“", "”", " ", ",", ".", "!", "?", ":", '"'];
+  for (const p of removePunct) {
+    res = res.split(p).join("");
+  }
+  return res;
+}
+function getRagTokens(text4) {
+  const norm = normalizeRagText(text4);
+  const tokens = [];
+  for (let i = 0; i < norm.length; i++) {
+    const one = norm.charAt(i);
+    if (one) tokens.push(one);
+    if (i + 1 < norm.length) {
+      tokens.push(norm.substring(i, i + 2));
+    }
+  }
+  const words = norm.split(" ").filter(Boolean);
+  for (const w of words) {
+    tokens.push(w);
+  }
+  return tokens;
+}
+function messageToRagText(msg, playerEmojis, sisterEmojis, sisterPhotos) {
+  const { sender, content, type } = msg;
+  switch (type) {
+    case "text":
+      return content;
+    case "emoji":
+      if (sender === "player" && playerEmojis[content]) {
+        return `玩家发送了一个表情包：id=${content}，名称=${playerEmojis[content].name}，含义=${playerEmojis[content].description}`;
+      }
+      if (sender === "sister" && sisterEmojis[content]) {
+        return `${sisterEmojis[content].name} ${sisterEmojis[content].description}`;
+      }
+      return content;
+    case "red_packet":
+      return `红包 金额 ${content}`;
+    case "image":
+      if (sender === "sister" && sisterPhotos[content]) {
+        return `${sisterPhotos[content].name} ${sisterPhotos[content].description}`;
+      }
+      return "图片";
+    default:
+      return content;
+  }
+}
+function calculateRagScore(query, msg, index, playerEmojis, sisterEmojis, sisterPhotos) {
+  const msgText = messageToRagText(msg, playerEmojis, sisterEmojis, sisterPhotos);
+  if (!msgText) return 0;
+  const queryTokens = getRagTokens(query);
+  const msgTokens = getRagTokens(msgText);
+  if (queryTokens.length === 0 || msgTokens.length === 0) return 0;
+  const msgTokenSet = new Set(msgTokens);
+  let sameCount = 0;
+  for (const token of queryTokens) {
+    if (msgTokenSet.has(token)) {
+      sameCount++;
+    }
+  }
+  if (sameCount <= 0) return 0;
+  let score = sameCount / queryTokens.length;
+  score += index * 1e-4;
+  return score;
+}
+function getRagMessages(query, allMessages, today, playerEmojis, sisterEmojis, sisterPhotos, maxCount = 3) {
+  const scored = [];
+  for (let i = 0; i < allMessages.length; i++) {
+    const msg = allMessages[i];
+    if (msg.time.day === today || i === allMessages.length - 1) {
+      continue;
+    }
+    const score = calculateRagScore(query, msg, i, playerEmojis, sisterEmojis, sisterPhotos);
+    if (score > 0) {
+      scored.push({ score, message: msg });
+    }
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, maxCount).map((s) => s.message);
+}
+function buildRagPrompt(query, allMessages, today, playerEmojis, sisterEmojis, sisterPhotos, maxCount = 3) {
+  const ragMessages = getRagMessages(query, allMessages, today, playerEmojis, sisterEmojis, sisterPhotos, maxCount);
+  if (ragMessages.length === 0) return "";
+  let text4 = "\n以下是从过去聊天记录中检索出的可能相关内容。\n这些内容仅供参考，不一定与当前问题有关。\n不要直接提及“历史记录”“RAG”或“检索”。\n请结合妹妹当前的人设和当天上下文自然回复。\n\n相关历史：\n";
+  for (const msg of ragMessages) {
+    const senderName = msg.sender === "player" ? "玩家" : "妹妹";
+    const content = messageToRagText(msg, playerEmojis, sisterEmojis, sisterPhotos);
+    text4 += `[第${msg.time.day}天][${senderName}] ${content}
+`;
+  }
+  return text4;
+}
+
+// st-extension/src/apps/wechat/pipeline.ts
+var WeChatPipeline = class {
+  constructor(config, playerEmojis, sisterEmojis, sisterPhotos, fallbackDialogues) {
+    this.config = config;
+    this.playerEmojis = playerEmojis;
+    this.sisterEmojis = sisterEmojis;
+    this.sisterPhotos = sisterPhotos;
+    this.fallbackDialogues = fallbackDialogues;
+  }
+  updateConfig(newConfig) {
+    this.config = { ...this.config, ...newConfig };
+  }
+  /**
+   * 构建微信系统提示词（根据当前 ST 对话角色动态适配）
+   */
+  buildSystemPrompt(state2, timeStr, characterNameOrScope = "妹妹") {
+    const isScope = typeof characterNameOrScope === "object" && characterNameOrScope !== null;
+    const characterName = isScope ? characterNameOrScope.characterName : characterNameOrScope || "妹妹";
+    const card = isScope ? characterNameOrScope.card : void 0;
+    const stRecentMessages = isScope ? characterNameOrScope.stRecentMessages : void 0;
+    let emojiListStr = "可用表情包：\n";
+    for (const [id, item] of Object.entries(this.sisterEmojis)) {
+      emojiListStr += `- id: ${id}，名称: ${item.name}，含义: ${item.description}
+`;
+    }
+    let picListStr = "可用图片：\n";
+    for (const [id, item] of Object.entries(this.sisterPhotos)) {
+      picListStr += `- id: ${id}，名称: ${item.name}，含义: ${item.description}
+`;
+    }
+    let cardSection = "";
+    if (card?.description || card?.personality || card?.scenario) {
+      cardSection = `
+【当前角色人设（来自 SillyTavern 角色卡）】
+角色姓名：${characterName}
+`;
+      if (card.description) cardSection += `设定描述：${card.description}
+`;
+      if (card.personality) cardSection += `性格特质：${card.personality}
+`;
+      if (card.scenario) cardSection += `所处场景：${card.scenario}
+`;
+    }
+    let stChatSection = "";
+    if (stRecentMessages && stRecentMessages.length > 0) {
+      stChatSection = `
+【近期酒馆对话背景】
+以下是你与用户在酒馆日常交流的近期片段，请以此为连贯记忆背景：
+`;
+      for (const m of stRecentMessages) {
+        stChatSection += `- ${m.sender === "user" ? "用户" : characterName}: ${m.text}
+`;
+      }
+    }
+    const roleIntro = cardSection ? `你正在扮演角色卡设定的「${characterName}」，此时通过手机微信与用户对话，请完全忠实于上方角色人设与性格，保持自然、生活感的微信聊天语气。` : characterName === "妹妹" || characterName.includes("妹") ? "你正在扮演玩家的妹妹，妹妹的人物设定是在校学生，性格比较平淡，真实系，具有生活感的人设。" : `你正在扮演当前对话角色「${characterName}」，此时通过手机微信与用户对话，保持自然真实生活感的微信聊天语气。`;
+    const premiseStr = !cardSection && (characterName === "妹妹" || characterName.includes("妹")) ? `玩家的设定是上班社畜，并且家中只有玩家和${characterName}两人。
+` : "";
+    const stateDesc = (() => {
+      const moodNum = typeof state2.mood === "number" && !isNaN(state2.mood) ? state2.mood : 60;
+      const interestNum = typeof state2.interest === "number" && !isNaN(state2.interest) ? state2.interest : 15;
+      if (state2.hasExternalState) {
+        const extParts = [];
+        const indParts = [];
+        if (state2.externalFields?.mood) {
+          extParts.push(`心情 ${moodNum.toFixed(1)}`);
+        } else {
+          indParts.push(`心情参考 ${moodNum.toFixed(1)}`);
+        }
+        if (state2.externalFields?.interest) {
+          extParts.push(`态度/好感度 ${interestNum.toFixed(1)}`);
+        } else {
+          indParts.push(`好感度参考 ${interestNum.toFixed(1)}`);
+        }
+        let desc = `当前外部状态（源自 ${state2.externalSource || "ST/MVU"}）：${extParts.join("，")}`;
+        if (indParts.length > 0) {
+          desc += `
+独立模拟状态（未从外部映射）：${indParts.join("，")}`;
+        }
+        return desc;
+      }
+      return `当前会话状态（未连接外部状态源）：心情参考 ${moodNum.toFixed(1)}，好感度参考 ${interestNum.toFixed(1)}`;
+    })();
+    const sisterLoc = state2.sisterLocation && SISTER_LOCATIONS[state2.sisterLocation] ? SISTER_LOCATIONS[state2.sisterLocation] : state2.sisterLocation || `${characterName}当前位置`;
+    const playerLoc = state2.playerLocation && PLAYER_LOCATIONS[state2.playerLocation] ? PLAYER_LOCATIONS[state2.playerLocation] : state2.playerLocation || "玩家此时在客厅";
+    return `
+不要试图以任何方式作为AI回答，你的目标是作为要求的角色来进行对话！
+明确自己的身份后，接下来我们将继续在虚拟世界中进行角色扮演，${roleIntro}
+说话自然、简短、像微信聊天。
+你需要根据当前时间，态度/好感，心情以及所处场景来对玩家的话和表情做出回应。
+${cardSection}${stChatSection}${premiseStr}
+好感态度 / 性趣阶梯参考：
+0-25时反应带有嫌弃或生疏感，参考回复[“你在对我说什么呢”，“无聊，别烦我”]
+25-50时态度平淡，带有一点傲娇或距离感，偶尔会要零花钱。参考回复[“哦哦，知道了”，“想看？打钱”]
+50-75时关系亲近，半推半就，不再回避亲昵话题。参考回复[“你怎么一天到晚找我聊天”，“哎呀你烦死了！待会儿再说”]
+75-100时关系非常亲密，会主动接梗或主动分享日常。参考回复[“在干嘛？今天有没有想我？”，“晚上要不要一起出去？”]
+
+心情阶梯参考：
+0-40时是心情不好的状态
+40-80时是普通心情状态
+80-100是比较高兴的状态
+
+你需要根据好感与心情的组合来做出对应的回复。
+${emojiListStr}
+${picListStr}
+${stateDesc}
+当前时间：${timeStr}
+当前所处场景：${sisterLoc}
+玩家当前所处场景：${playerLoc}
+
+你必须返回一个合法 JSON 对象, 禁止连续输出多个 JSON, 如果有多条消息，必须放在同一个 messages 数组中。
+不要使用 Markdown。不要输出 JSON 之外的任何内容。
+最外层必须是 {"messages": [...]}。
+messages中最多只有两条消息，只能使用以下组合[文本+表情]，[表情+文本],[文本+图片],[图片+文本],[表情+图片],[图片+表情],[文本],[表情],[图片]。
+
+格式示例：
+{
+  "messages": [
+    {
+      "type": "text",
+      "content": "回复文字"
+    },
+    {
+      "type": "emoji",
+      "emoji_id": "happy"
+    }
+  ]
+}
+规则：
+1. type 只能是 "text" 或 "emoji" 或 "image"。
+2. text 必须有 content，且不超过20字。
+3. emoji 必须有 emoji_id，且必须从可用列表中选取。
+4. image 必须有 pic_id，且必须从可用列表中选取。
+`;
+  }
+  /**
+   * 组装完整的对话上下文消息
+   */
+  buildContextMessages(history, state2, today, timeStr, characterNameOrScope = "妹妹") {
+    const result = [];
+    result.push({ role: "system", content: this.buildSystemPrompt(state2, timeStr, characterNameOrScope) });
+    const todayMessages = history.filter((m) => m.time.day === today).slice(-60);
+    let latestPlayerText = "";
+    for (let i = todayMessages.length - 1; i >= 0; i--) {
+      if (todayMessages[i].sender === "player") {
+        latestPlayerText = messageToRagText(
+          todayMessages[i],
+          this.playerEmojis,
+          this.sisterEmojis,
+          this.sisterPhotos
+        );
+        break;
+      }
+    }
+    if (latestPlayerText) {
+      const ragPrompt = buildRagPrompt(
+        latestPlayerText,
+        history,
+        today,
+        this.playerEmojis,
+        this.sisterEmojis,
+        this.sisterPhotos
+      );
+      if (ragPrompt) {
+        result.push({ role: "system", content: ragPrompt });
+      }
+    }
+    let sisterBuffer = [];
+    for (const msg of todayMessages) {
+      if (msg.sender === "sister") {
+        sisterBuffer.push(this.formatSisterMessageForLLM(msg));
+        continue;
+      }
+      if (sisterBuffer.length > 0) {
+        result.push({
+          role: "assistant",
+          content: JSON.stringify({ messages: sisterBuffer })
+        });
+        sisterBuffer = [];
+      }
+      result.push(this.formatPlayerMessageForLLM(msg));
+    }
+    if (sisterBuffer.length > 0) {
+      result.push({
+        role: "assistant",
+        content: JSON.stringify({ messages: sisterBuffer })
+      });
+    }
+    return result;
+  }
+  formatPlayerMessageForLLM(msg) {
+    switch (msg.type) {
+      case "text":
+        return { role: "user", content: msg.content };
+      case "emoji": {
+        const item = this.playerEmojis[msg.content];
+        const desc = item ? `id=${msg.content}，名称=${item.name}，含义=${item.description}` : msg.content;
+        return { role: "user", content: `玩家发送了一个表情包：${desc}` };
+      }
+      case "red_packet":
+        return { role: "user", content: `玩家发送了一个红包，金额：${msg.content}` };
+      case "image":
+        return { role: "user", content: `玩家发送了一张图片：${msg.content}` };
+      default:
+        return { role: "user", content: msg.content };
+    }
+  }
+  formatSisterMessageForLLM(msg) {
+    switch (msg.type) {
+      case "text":
+        return { type: "text", content: msg.content };
+      case "emoji":
+        return { type: "emoji", emoji_id: msg.content };
+      case "image":
+        return { type: "image", pic_id: msg.content };
+      default:
+        return { type: "text", content: msg.content };
+    }
+  }
+  /**
+   * 阶段一：请求角色回复
+   */
+  async requestSisterReply(history, state2, today, timeStr, characterNameOrScope = "妹妹") {
+    const apiKey = this.config.apiKey;
+    if (!apiKey) {
+      return this.getLocalFallbackReply(history, state2);
+    }
+    const url = this.config.apiUrl || "https://api.deepseek.com/chat/completions";
+    const model = this.config.model || "deepseek-chat";
+    const messages = this.buildContextMessages(history, state2, today, timeStr, characterNameOrScope);
+    try {
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.5,
+          stream: false,
+          response_format: { type: "json_object" }
+        })
+      });
+      if (!resp.ok) {
+        console.warn(`WeChat API error: ${resp.status} ${resp.statusText}`);
+        return this.getLocalFallbackReply(history, state2);
+      }
+      const data = await resp.json();
+      const rawText = data?.choices?.[0]?.message?.content || "";
+      return this.parseReplyJson(rawText, state2);
+    } catch (err) {
+      console.error("WeChat request failed:", err);
+      return this.getLocalFallbackReply(history, state2);
+    }
+  }
+  /**
+   * 阶段二：评估好感/心情状态变化
+   */
+  async requestStatImpact(playerMessageText, sisterReplySummary, state2) {
+    const apiKey = this.config.apiKey;
+    if (!apiKey) {
+      if (playerMessageText.includes("红包")) {
+        return { mood: 0.3, interest: 0.1 };
+      }
+      if (playerMessageText.includes("喜欢") || playerMessageText.includes("爱你")) {
+        return { mood: 0.2, interest: 0.2 };
+      }
+      return { mood: 0.05, interest: 0.05 };
+    }
+    const statPrompt = `
+你是一个聊天状态分析器，只负责判断在收到本次消息后，心情和性趣的变化。
+
+请注意：
+1. 只分析玩家本次发送的消息，不要根据历史消息改变结果。
+2. mood 表示心情变化。
+3. interest 表示对暧昧、色情、性话题的接受度变化。
+4. 普通聊天通常返回较小变化，例如 -0.1 到 0.1。
+5. 明显让对方开心的内容，mood 可以增加。
+6. 冒犯、骚扰、让人不舒服的内容，mood 可以减少。
+7. 每个数值绝对不能超过 0.4 或低于 -0.4。
+8. 必须返回合法 JSON。
+9. 不要输出 Markdown，不要输出 JSON 之外的任何内容。
+
+返回格式：
+{
+  "mood": 0.0,
+  "interest": 0.0
+}
+
+玩家本次消息：
+${playerMessageText}
+
+本次回复：
+${sisterReplySummary}
+
+当前心情：${state2.mood.toFixed(1)}
+当前性趣：${state2.interest.toFixed(1)}
+`;
+    const url = this.config.apiUrl || "https://api.deepseek.com/chat/completions";
+    const model = this.config.model || "deepseek-chat";
+    try {
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: "你只返回状态变化 JSON，不要输出任何其他内容。" },
+            { role: "user", content: statPrompt }
+          ],
+          temperature: 0.2,
+          stream: false,
+          response_format: { type: "json_object" }
+        })
+      });
+      if (!resp.ok) return { mood: 0, interest: 0 };
+      const data = await resp.json();
+      const content = data?.choices?.[0]?.message?.content || "";
+      const parsed = JSON.parse(this.cleanJsonString(content));
+      const rawMood = typeof parsed.mood === "number" ? parsed.mood : 0;
+      const rawInterest = typeof parsed.interest === "number" ? parsed.interest : 0;
+      return {
+        mood: Math.max(-0.4, Math.min(0.4, rawMood)),
+        interest: Math.max(-0.4, Math.min(0.4, rawInterest))
+      };
+    } catch {
+      return { mood: 0, interest: 0 };
+    }
+  }
+  cleanJsonString(str2) {
+    let res = str2.trim();
+    if (res.startsWith("```json")) res = res.substring(7);
+    if (res.startsWith("```")) res = res.substring(3);
+    if (res.endsWith("```")) res = res.substring(0, res.length - 3);
+    return res.trim();
+  }
+  /**
+   * 解析模型返回的回复 JSON 并进行严格白名单过滤与安全校验
+   */
+  parseReplyJson(rawText, _state) {
+    const cleaned = this.cleanJsonString(rawText);
+    try {
+      const parsed = JSON.parse(cleaned);
+      if (Array.isArray(parsed.messages)) {
+        const valid2 = [];
+        for (const m of parsed.messages) {
+          if (!m || typeof m !== "object") continue;
+          if (m.type === "text" && typeof m.content === "string") {
+            valid2.push({ type: "text", content: m.content });
+          } else if (m.type === "emoji" && typeof m.emoji_id === "string") {
+            const safeEmojiId = m.emoji_id.trim();
+            if (this.sisterEmojis[safeEmojiId]) {
+              valid2.push({ type: "emoji", emoji_id: safeEmojiId });
+            } else {
+              valid2.push({ type: "text", content: "[表情]" });
+            }
+          } else if (m.type === "image" && typeof m.pic_id === "string") {
+            const safePicId = m.pic_id.trim();
+            if (this.sisterPhotos[safePicId]) {
+              valid2.push({ type: "image", pic_id: safePicId });
+            } else {
+              valid2.push({ type: "text", content: "[自拍]" });
+            }
+          }
+        }
+        if (valid2.length > 0) {
+          return { messages: valid2 };
+        }
+      }
+    } catch {
+    }
+    if (rawText && !rawText.startsWith("{")) {
+      return { messages: [{ type: "text", content: rawText }] };
+    }
+    return { messages: [{ type: "text", content: "嗯嗯。" }] };
+  }
+  /**
+   * 本地分支离线回复（Fallback 词库）
+   */
+  getLocalFallbackReply(history, state2) {
+    const lastPlayerMsg = [...history].reverse().find((m) => m.sender === "player");
+    const text4 = lastPlayerMsg?.content || "";
+    if (lastPlayerMsg?.type === "red_packet") {
+      return {
+        messages: [
+          { type: "text", content: this.fallbackDialogues?.red_packet_reply || "谢谢老板，老板大气！" },
+          { type: "emoji", emoji_id: "great" }
+        ]
+      };
+    }
+    if (lastPlayerMsg?.type === "emoji") {
+      const map = {
+        happy: { messages: [{ type: "emoji", emoji_id: "happy" }] },
+        angry: { messages: [{ type: "text", content: "别生气啦~" }] },
+        cry: { messages: [{ type: "text", content: "不哭不哭，摸摸头" }] },
+        laugh: { messages: [{ type: "emoji", emoji_id: "laugh" }] },
+        a_sexy_pic: state2 && state2.interest >= 50 ? { messages: [{ type: "image", pic_id: "bedroom1" }] } : { messages: [{ type: "text", content: "想看？打钱~" }] }
+      };
+      return map[text4] || { messages: [{ type: "emoji", emoji_id: "smile" }] };
+    }
+    const curMood = state2 ? state2.mood : 50;
+    const curInterest = state2 ? state2.interest : 15;
+    for (const item of this.fallbackDialogues?.keywords || []) {
+      const reg = new RegExp(item.pattern);
+      if (reg.test(text4)) {
+        if (item.reply && item.reply.startsWith("photo:")) {
+          const photoId = item.reply.replace("photo:", "");
+          if (curInterest >= 40) {
+            return { messages: [{ type: "text", content: "只许你看哦..." }, { type: "image", pic_id: photoId }] };
+          }
+          return { messages: [{ type: "text", content: "变态！不给看。" }, { type: "emoji", emoji_id: "angry" }] };
+        }
+        if (item.branches) {
+          for (const br of item.branches) {
+            if (curMood >= br.min_mood) {
+              return { messages: [{ type: "text", content: br.reply }] };
+            }
+          }
+        }
+        if (item.reply) {
+          return { messages: [{ type: "text", content: item.reply }] };
+        }
+      }
+    }
+    return { messages: [{ type: "text", content: this.fallbackDialogues?.default_text || "嗯嗯，知道了。" }] };
+  }
+};
+
+// st-extension/src/apps/wechat/typing.ts
+function planTypingSimulation(replyText) {
+  const len = replyText.length;
+  let baseSeconds = len * 0.08;
+  if (baseSeconds < 0.6) baseSeconds = 0.6;
+  if (baseSeconds > 2) baseSeconds = 2;
+  const baseTimeMs = Math.round(baseSeconds * 1e3);
+  const pauseCount = Math.floor(Math.random() * 3);
+  const pauses = [];
+  let totalPauseMs = 0;
+  for (let i = 0; i < pauseCount; i++) {
+    const pauseMs = Math.round((0.25 + Math.random() * 0.65) * 1e3);
+    pauses.push(pauseMs);
+    totalPauseMs += pauseMs;
+  }
+  return {
+    baseTimeMs,
+    pauses,
+    totalDurationMs: baseTimeMs + totalPauseMs
+  };
+}
+async function simulateTypingDelay(replyText, onTypingStateChange) {
+  const plan = planTypingSimulation(replyText);
+  if (onTypingStateChange) onTypingStateChange(true);
+  await new Promise((r) => setTimeout(r, plan.baseTimeMs));
+  for (const pauseMs of plan.pauses) {
+    await new Promise((r) => setTimeout(r, pauseMs));
+  }
+  if (onTypingStateChange) onTypingStateChange(false);
+}
+
+// st-extension/src/apps/wechat/bridge.ts
+var MOOD_KEYS = ["mood", "心情", "好感", "favor", "favorability", "emotion", "happiness"];
+var INTEREST_KEYS = ["interest", "好感度", "兴趣", "affinity", "intimacy", "love"];
+var MONEY_KEYS = ["money", "金钱", "余额", "cash", "coin", "coins", "wallet", "gold"];
+var LOCATION_KEYS = ["location", "地点", "当前位置", "place", "scene"];
+function unpackValue(val) {
+  if (isTupleLeaf2(val)) {
+    return val[0];
+  }
+  if (Array.isArray(val) && val.length === 2 && typeof val[1] === "string") {
+    return val[0];
+  }
+  return val;
+}
+function numOrUndef(raw) {
+  const val = unpackValue(raw);
+  if (typeof val === "number" && !isNaN(val)) return val;
+  if (typeof val === "string" && /^-?\d+(?:\.\d+)?$/.test(val.trim())) {
+    const parsed = Number(val.trim());
+    if (!isNaN(parsed)) return parsed;
+  }
+  return void 0;
+}
+function strOrUndef(raw) {
+  const val = unpackValue(raw);
+  if (typeof val === "string" && val.trim()) return val.trim();
+  return void 0;
+}
+function findValidNumberInPool(pool, keys) {
+  for (const k of keys) {
+    if (k in pool && pool[k] !== void 0 && pool[k] !== null) {
+      const val = numOrUndef(pool[k]);
+      if (val !== void 0) {
+        return val;
+      }
+    }
+  }
+  return void 0;
+}
+function findValidStringInPool(pool, keys) {
+  for (const k of keys) {
+    if (k in pool && pool[k] !== void 0 && pool[k] !== null) {
+      const val = strOrUndef(pool[k]);
+      if (val !== void 0) {
+        return val;
+      }
+    }
+  }
+  return void 0;
+}
+function extractFieldsFromObject(obj, charName) {
+  if (!obj || typeof obj !== "object") {
+    return { hasAny: false, mappedFields: {} };
+  }
+  const raw = obj;
+  const pools = [];
+  const trimmedName = charName?.trim();
+  if (trimmedName && raw[trimmedName] && typeof raw[trimmedName] === "object" && !Array.isArray(raw[trimmedName])) {
+    pools.push(raw[trimmedName]);
+  }
+  if (raw.stat_data && typeof raw.stat_data === "object" && !Array.isArray(raw.stat_data)) {
+    const sd = raw.stat_data;
+    if (trimmedName && sd[trimmedName] && typeof sd[trimmedName] === "object" && !Array.isArray(sd[trimmedName])) {
+      pools.push(sd[trimmedName]);
+    }
+    pools.push(sd);
+  }
+  pools.push(raw);
+  let mood;
+  let interest;
+  let money;
+  let location;
+  for (const pool of pools) {
+    if (mood === void 0) mood = findValidNumberInPool(pool, MOOD_KEYS);
+    if (interest === void 0) interest = findValidNumberInPool(pool, INTEREST_KEYS);
+    if (money === void 0) money = findValidNumberInPool(pool, MONEY_KEYS);
+    if (location === void 0) location = findValidStringInPool(pool, LOCATION_KEYS);
+  }
+  const mappedFields = {
+    mood: mood !== void 0,
+    interest: interest !== void 0,
+    money: money !== void 0,
+    location: location !== void 0
+  };
+  const hasAny = Boolean(mappedFields.mood || mappedFields.interest || mappedFields.money || mappedFields.location);
+  return { mood, interest, money, location, hasAny, mappedFields };
+}
+function resolveCharacterAvatarUrl(avatar) {
+  if (!avatar || typeof avatar !== "string") return void 0;
+  const trimmed = avatar.trim();
+  if (!trimmed) return void 0;
+  if (/^(?:https?:|\/|data:|blob:)/i.test(trimmed)) {
+    return trimmed;
+  }
+  try {
+    const w = typeof window !== "undefined" ? window : void 0;
+    const getThumb = w?.getThumbnailUrl || w?.SillyTavern?.getContext?.()?.getThumbnailUrl;
+    if (typeof getThumb === "function") {
+      const url = getThumb("avatar", trimmed);
+      if (url && typeof url === "string") return url;
+    }
+  } catch {
+  }
+  return `/characters/${encodeURIComponent(trimmed)}`;
+}
+async function readExternalCharacterState(host, charName) {
+  try {
+    if (host && typeof host.getVariables === "function") {
+      const vars = await Promise.resolve(host.getVariables());
+      const extracted = extractFieldsFromObject(vars, charName);
+      if (extracted.hasAny) {
+        return {
+          source: "host",
+          mood: extracted.mood,
+          interest: extracted.interest,
+          money: extracted.money,
+          location: extracted.location,
+          mappedFields: extracted.mappedFields,
+          raw: vars && typeof vars === "object" ? vars : void 0
+        };
+      }
+    }
+  } catch {
+  }
+  try {
+    const w = typeof window !== "undefined" ? window : void 0;
+    if (w?.Mvu && typeof w.Mvu.getMvuData === "function") {
+      const mvuRes = w.Mvu.getMvuData({ type: "message", message_id: "latest" });
+      const stat = mvuRes?.stat_data;
+      const extracted = extractFieldsFromObject(stat, charName);
+      if (extracted.hasAny) {
+        return {
+          source: "mvu",
+          mood: extracted.mood,
+          interest: extracted.interest,
+          money: extracted.money,
+          location: extracted.location,
+          mappedFields: extracted.mappedFields,
+          raw: stat
+        };
+      }
+    }
+    if (w?.TavernHelper && typeof w.TavernHelper.getVariables === "function") {
+      const helperVars = await Promise.resolve(w.TavernHelper.getVariables({ type: "message", message_id: "latest" }));
+      const extracted = extractFieldsFromObject(helperVars, charName);
+      if (extracted.hasAny) {
+        return {
+          source: "tavern-helper",
+          mood: extracted.mood,
+          interest: extracted.interest,
+          money: extracted.money,
+          location: extracted.location,
+          mappedFields: extracted.mappedFields,
+          raw: helperVars
+        };
+      }
+    }
+  } catch {
+  }
+  try {
+    const res = await readVariables({ type: "message", message_id: "latest" }, getLastMessageId());
+    if (res.status === "ready" && res.data) {
+      const extracted = extractFieldsFromObject(res.data, charName);
+      if (extracted.hasAny) {
+        return {
+          source: res.isMvu ? "mvu" : "tavern-helper",
+          mood: extracted.mood,
+          interest: extracted.interest,
+          money: extracted.money,
+          location: extracted.location,
+          mappedFields: extracted.mappedFields,
+          raw: res.data
+        };
+      }
+    }
+  } catch {
+  }
+  return { source: "none" };
+}
+function extractRecentSTMessages(host) {
+  let chatCtx = void 0;
+  if (host && typeof host.getChatContext === "function") {
+    chatCtx = host.getChatContext();
+  }
+  if (!chatCtx) {
+    try {
+      const w = typeof window !== "undefined" ? window : void 0;
+      const chat2 = w?.SillyTavern?.getContext?.()?.chat;
+      if (Array.isArray(chat2)) {
+        chatCtx = { chat: chat2 };
+      }
+    } catch {
+    }
+  }
+  if (Array.isArray(chatCtx?.chat) && chatCtx.chat.length > 0) {
+    return chatCtx.chat.slice(-6).filter((m) => typeof m.mes === "string" && m.mes.trim().length > 0).map((m) => ({
+      sender: m.is_user ? "user" : "character",
+      text: m.mes.trim()
+    }));
+  }
+  return void 0;
+}
+function subscribeExternalContextEvents(host, onUpdate) {
+  const offs = [];
+  try {
+    const unbindVar = subscribeVarEvents(onUpdate);
+    offs.push(unbindVar);
+  } catch {
+  }
+  try {
+    if (typeof host.onMessageReceived === "function") {
+      const offMsg = host.onMessageReceived(onUpdate);
+      if (typeof offMsg === "function") {
+        offs.push(offMsg);
+      }
+    }
+  } catch {
+  }
+  return () => {
+    for (const off of offs) {
+      try {
+        off();
+      } catch {
+      }
+    }
+  };
+}
+function resolveConversationScopeSync(host) {
+  const charName = host.getCharacterName() || "妹妹";
+  let card = void 0;
+  let chatCtx = void 0;
+  if (typeof host.getCharacterCard === "function") {
+    card = host.getCharacterCard();
+  }
+  if (typeof host.getChatContext === "function") {
+    chatCtx = host.getChatContext();
+  }
+  try {
+    const w = typeof window !== "undefined" ? window : void 0;
+    const stCtx = w?.SillyTavern?.getContext?.();
+    if (stCtx) {
+      if (!card) {
+        const id = stCtx.characterId;
+        if (id !== void 0 && id !== null && String(id) !== "") {
+          card = stCtx.characters?.[Number(id)];
+        }
+      }
+      if (!chatCtx) {
+        chatCtx = {
+          characterId: stCtx.characterId,
+          chatId: stCtx.chatId ?? stCtx.chatMetadata?.file_name,
+          characterName: charName,
+          chat: stCtx.chat
+        };
+      }
+    }
+  } catch {
+  }
+  const stableCharId = card?.avatar || (chatCtx?.characterId !== void 0 && String(chatCtx.characterId) !== "" ? String(chatCtx.characterId) : "") || charName.trim();
+  const stableChatId = chatCtx?.chatId !== void 0 && String(chatCtx.chatId) !== "" ? String(chatCtx.chatId) : "";
+  const scopeKey = stableChatId ? `${stableCharId}::${stableChatId}` : stableCharId;
+  const stRecentMessages = extractRecentSTMessages(host);
+  return {
+    scopeKey,
+    characterName: charName,
+    characterId: chatCtx?.characterId !== void 0 ? String(chatCtx.characterId) : void 0,
+    chatId: stableChatId || void 0,
+    card,
+    stRecentMessages,
+    externalState: { source: "none" }
+  };
+}
+
+// st-extension/src/apps/wechat/wechat-app.ts
+function createDefaultSisterState() {
+  return {
+    hasExternalState: false,
+    mood: 60,
+    interest: 15,
+    sisterLocation: "SISTER_ROOM",
+    playerLocation: "COMPANY",
+    money: 5200
+  };
+}
+function getScopedConversation(appData, scopeOrName) {
+  if (!appData.conversations) {
+    appData.conversations = {};
+  }
+  const isScope = typeof scopeOrName === "object" && scopeOrName !== null;
+  const characterName = isScope ? scopeOrName.characterName : scopeOrName || "妹妹";
+  const scopeKey = isScope ? scopeOrName.scopeKey : characterName.trim() || "default";
+  const externalState = isScope ? scopeOrName.externalState : void 0;
+  const characterId = isScope ? scopeOrName.characterId : void 0;
+  const chatId = isScope ? scopeOrName.chatId : void 0;
+  let conv = appData.conversations[scopeKey];
+  if (!conv && characterName && appData.conversations[characterName]) {
+    conv = appData.conversations[characterName];
+    delete appData.conversations[characterName];
+    conv.scopeKey = scopeKey;
+    conv.characterName = characterName;
+    if (characterId) conv.characterId = characterId;
+    if (chatId) conv.chatId = chatId;
+    appData.conversations[scopeKey] = conv;
+  }
+  if (!conv && appData.messages && appData.messages.length > 0) {
+    conv = {
+      characterName,
+      characterId,
+      chatId,
+      scopeKey,
+      messages: [...appData.messages],
+      state: appData.state ? { ...appData.state } : createDefaultSisterState(),
+      currentDay: appData.currentDay || 1
+    };
+    appData.conversations[scopeKey] = conv;
+    delete appData.messages;
+    delete appData.state;
+    delete appData.currentDay;
+  }
+  if (!conv) {
+    const isSister = !characterName || characterName === "妹妹";
+    conv = {
+      characterName,
+      characterId,
+      chatId,
+      scopeKey,
+      messages: [
+        {
+          sender: "sister",
+          content: isSister ? "哥，下班没？今天晚上想吃什么呀？" : "在吗？发个微信聊聊。",
+          type: "text",
+          time: { day: 1, hour: 18, minute: 30 }
+        }
+      ],
+      state: createDefaultSisterState(),
+      currentDay: 1
+    };
+    appData.conversations[scopeKey] = conv;
+  }
+  if (externalState && externalState.source !== "none" && externalState.mappedFields && Object.values(externalState.mappedFields).some(Boolean)) {
+    conv.state.hasExternalState = true;
+    conv.state.externalSource = externalState.source;
+    conv.state.externalFields = { ...externalState.mappedFields };
+    if (externalState.mood !== void 0) conv.state.mood = externalState.mood;
+    if (externalState.interest !== void 0) conv.state.interest = externalState.interest;
+    if (externalState.money !== void 0) conv.state.money = externalState.money;
+    if (externalState.location !== void 0) conv.state.sisterLocation = externalState.location;
+  } else if (externalState && externalState.source === "none") {
+    conv.state.hasExternalState = false;
+    conv.state.externalSource = void 0;
+    conv.state.externalFields = void 0;
+  }
+  return conv;
+}
+function createWeChatApp() {
+  let pipeline = null;
+  let mountSessionId = 0;
+  let activeScopeSessionId = 0;
+  let unbindEvents = null;
+  return {
+    id: "wechat-sister",
+    name: "微信",
+    icon: "💬",
+    order: 25,
+    fullbleed: true,
+    setup(host) {
+      const existing = host.getAppData();
+      if (!existing || !existing.conversations) {
+        const initialConversations = {};
+        const initial = {
+          config: {
+            apiKey: "",
+            apiUrl: "https://api.deepseek.com/chat/completions",
+            model: "deepseek-chat"
+          },
+          conversations: initialConversations
+        };
+        const syncScope = resolveConversationScopeSync(host);
+        const initialKey = syncScope.scopeKey;
+        if (existing?.messages && existing.messages.length > 0) {
+          initialConversations[initialKey] = {
+            characterName: syncScope.characterName,
+            characterId: syncScope.characterId,
+            chatId: syncScope.chatId,
+            scopeKey: initialKey,
+            messages: existing.messages,
+            state: existing.state || createDefaultSisterState(),
+            currentDay: existing.currentDay || 1
+          };
+          if (existing.config) initial.config = existing.config;
+        } else {
+          getScopedConversation(initial, syncScope);
+        }
+        host.setAppData(initial);
+      }
+    },
+    mount(container, ctx) {
+      const currentMountSession = ++mountSessionId;
+      const isCurrent = () => currentMountSession === mountSessionId && pipeline !== null;
+      activeScopeSessionId++;
+      let latestRefreshReq = 0;
+      let latestAppliedRefresh = 0;
+      const appData = ctx.getAppData() || {
+        config: {
+          apiKey: "",
+          apiUrl: "https://api.deepseek.com/chat/completions",
+          model: "deepseek-chat"
+        },
+        conversations: {}
+      };
+      if (!appData.conversations) {
+        appData.conversations = {};
+      }
+      const conversations = appData.conversations;
+      let currentScope = resolveConversationScopeSync(ctx);
+      let activeConv = getScopedConversation(appData, currentScope);
+      pipeline = new WeChatPipeline(
+        appData.config,
+        PLAYER_EMOJIS,
+        SISTER_EMOJIS,
+        SISTER_PHOTOS,
+        FALLBACK_DIALOGUES
+      );
+      container.classList.add("so-phone-app-fullbleed");
+      container.innerHTML = `
+        <div class="wechat-root" style="display:flex; flex-direction:column; height:100%; width:100%; background:#ededed; font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif; color:#181818; box-sizing:border-box; overflow:hidden; position:relative;">
+
+          <!-- 微信顶部导航栏 -->
+          <div class="wechat-nav" style="display:flex; align-items:center; justify-content:space-between; height:46px; padding:0 12px; background:#ededed; border-bottom:1px solid #dcdcdc; flex-shrink:0; z-index:10;">
+            <div style="font-weight:600; font-size:15px; display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
+              <span id="wt-contact-name" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:120px;"></span>
+              <span id="wt-typing-badge" style="display:none; font-size:11px; font-weight:normal; color:#07c160; flex-shrink:0; animation:wtPulse 1.2s infinite ease-in-out;">(对方正在输入...)</span>
+            </div>
+
+            <!-- 状态胶囊：心情与好感监控 -->
+            <div id="wt-status-pill" style="display:flex; align-items:center; gap:6px; font-size:11px; color:#444; background:#e0e0e0; padding:4px 9px; border-radius:12px; cursor:pointer; flex-shrink:0; transition:background 0.15s ease;" title="点击打开状态面板与 API 设置">
+              <span id="wt-pill-mood">😊 <b id="val-mood">--</b></span>
+              <span id="wt-pill-divider" style="opacity:0.4;">|</span>
+              <span id="wt-pill-interest">💖 <b id="val-interest">--</b></span>
+              <span id="wt-pill-badge" style="font-size:10px; color:#666; display:none;"></span>
+              <span style="font-size:10px; opacity:0.6;">⚙️</span>
+            </div>
+          </div>
+
+          <!-- 消息流区域 -->
+          <div id="wt-scroll" style="flex:1; overflow-y:auto; padding:12px 10px; display:flex; flex-direction:column; gap:12px; min-height:0; -webkit-overflow-scrolling:touch;"></div>
+
+          <!-- 表情包抽屉 (默认收起) -->
+          <div id="wt-emoji-drawer" style="display:none; flex-direction:column; height:180px; background:#f7f7f7; border-top:1px solid #d9d9d9; flex-shrink:0; z-index:20;">
+            <div style="display:flex; border-bottom:1px solid #e0e0e0; background:#eeeeee;">
+              <button id="wt-tab-player" style="flex:1; padding:6px; font-size:12px; font-weight:600; border:none; background:#f7f7f7; color:#07c160; cursor:pointer;">沙雕熊猫头 (15)</button>
+              <button id="wt-tab-sister" style="flex:1; padding:6px; font-size:12px; font-weight:normal; border:none; background:#eeeeee; color:#666; cursor:pointer;">妹妹专属 (19)</button>
+            </div>
+            <div id="wt-emoji-grid" style="flex:1; overflow-y:auto; padding:8px; display:grid; grid-template-columns:repeat(5, 1fr); gap:6px;"></div>
+          </div>
+
+          <!-- 底部输入栏 (W7: min-width:0 杜绝窄屏裁切) -->
+          <div class="wechat-input-bar" style="display:flex; align-items:center; gap:6px; padding:7px 10px; background:#f7f7f7; border-top:1px solid #dcdcdc; flex-shrink:0; z-index:15;">
+            <button id="wt-emoji-btn" style="background:none; border:none; font-size:20px; cursor:pointer; padding:2px; line-height:1; opacity:0.85; flex-shrink:0;" title="表情包">😀</button>
+            <button id="wt-packet-btn" style="background:none; border:none; font-size:19px; cursor:pointer; padding:2px; line-height:1; opacity:0.85; flex-shrink:0;" title="发红包">🧧</button>
+            <input id="wt-input-text" type="text" placeholder="发消息..." style="flex:1; min-width:0; height:34px; padding:0 10px; border:1px solid #d0d0d0; border-radius:5px; background:#fff; font-size:13px; outline:none; box-sizing:border-box;" />
+            <button id="wt-send-btn" style="background:#07c160; color:#fff; border:none; border-radius:5px; height:34px; padding:0 12px; font-size:13px; font-weight:500; cursor:pointer; white-space:nowrap; flex-shrink:0; transition:opacity 0.15s ease;">发送</button>
+          </div>
+
+          <!-- 状态面板 & API 配置弹窗 -->
+          <div id="wt-settings-modal" style="display:none; position:absolute; inset:0; background:rgba(0,0,0,0.55); z-index:50; backdrop-filter:blur(3px); align-items:flex-end; justify-content:center;">
+            <div style="background:#fff; width:100%; border-radius:16px 16px 0 0; padding:16px 16px 20px; box-sizing:border-box; max-height:88%; overflow-y:auto; display:flex; flex-direction:column; gap:14px; animation:wtSlideUp 0.2s ease;">
+
+              <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding-bottom:8px;">
+                <span id="wt-modal-title" style="font-weight:600; font-size:15px; color:#222;">角色状态监控与设置</span>
+                <button id="wt-close-settings" style="border:none; background:#eee; border-radius:50%; width:26px; height:26px; cursor:pointer; font-size:13px; color:#666;">✕</button>
+              </div>
+
+              <!-- 状态源展示 (W1: 明确区分外部变量 vs 独立数值) -->
+              <div id="wt-modal-state-source" style="font-size:11px; color:#666; background:#f0f2f5; padding:6px 10px; border-radius:6px;">
+                状态来源：检测中...
+              </div>
+
+              <!-- 数值调节 -->
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px;">
+                  <span>😊 当前心情：<b id="wt-set-mood-val">60</b> / 100</span>
+                  <span id="wt-set-mood-tag" style="font-size:11px; color:#07c160; font-weight:500;">普通</span>
+                </div>
+                <input id="wt-set-mood-range" type="range" min="0" max="100" value="60" style="width:100%; accent-color:#07c160;" />
+
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; margin-top:4px;">
+                  <span>💖 当前好感/性趣：<b id="wt-set-interest-val">15</b> / 100</span>
+                  <span id="wt-set-interest-tag" style="font-size:11px; color:#fa5151; font-weight:500;">嫌弃警告</span>
+                </div>
+                <input id="wt-set-interest-range" type="range" min="0" max="100" value="15" style="width:100%; accent-color:#fa5151;" />
+              </div>
+
+              <!-- 场景与钱包 -->
+              <div style="background:#f9f9f9; padding:10px; border-radius:8px; font-size:12px; display:flex; flex-direction:column; gap:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span>📍 角色位置：</span>
+                  <select id="wt-set-sister-loc" style="padding:3px 6px; border:1px solid #ccc; border-radius:4px; font-size:12px; background:#fff;">
+                    <option value="SISTER_ROOM">卧室</option>
+                    <option value="TOILET">厕所</option>
+                    <option value="LIVING_ROOM">客厅</option>
+                    <option value="SCHOOL">学校</option>
+                  </select>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span>💰 钱包余额：</span>
+                  <span>¥ <b id="wt-wallet-bal">5200</b></span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span>📅 当前天数：</span>
+                  <span>第 <b id="wt-day-num">1</b> 天</span>
+                </div>
+              </div>
+
+              <!-- API 设置 -->
+              <div style="display:flex; flex-direction:column; gap:6px;">
+                <span style="font-size:12px; font-weight:600; color:#333;">DeepSeek / OpenAI API 配置</span>
+                <input id="wt-cfg-key" type="password" placeholder="API Key (留空使用离线智能词库)" value="" style="height:32px; padding:0 8px; border:1px solid #ddd; border-radius:4px; font-size:12px;" />
+                <input id="wt-cfg-url" type="text" placeholder="API URL" value="" style="height:32px; padding:0 8px; border:1px solid #ddd; border-radius:4px; font-size:12px;" />
+                <input id="wt-cfg-model" type="text" placeholder="Model" value="" style="height:32px; padding:0 8px; border:1px solid #ddd; border-radius:4px; font-size:12px;" />
+              </div>
+
+              <!-- 快捷操作按钮 -->
+              <div style="display:flex; gap:8px;">
+                <button id="wt-btn-next-day" style="flex:1; background:#f0f0f0; border:1px solid #ccc; border-radius:6px; padding:8px 0; font-size:12px; cursor:pointer;">进入下一天 ☀️</button>
+                <button id="wt-btn-clear-chat" style="flex:1; background:#f0f0f0; border:1px solid #ccc; border-radius:6px; padding:8px 0; font-size:12px; color:#c00; cursor:pointer;">清空记录 🗑️</button>
+                <button id="wt-btn-save-settings" style="flex:1.2; background:#07c160; color:#fff; border:none; border-radius:6px; padding:8px 0; font-size:12px; font-weight:600; cursor:pointer;">保存设置</button>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- 发红包弹窗 -->
+          <div id="wt-packet-modal" style="display:none; position:absolute; inset:0; background:rgba(0,0,0,0.6); z-index:50; backdrop-filter:blur(3px); align-items:center; justify-content:center; padding:16px;">
+            <div style="background:#cf3b35; width:260px; border-radius:14px; padding:20px 16px; box-sizing:border-box; color:#fff; display:flex; flex-direction:column; align-items:center; gap:12px; position:relative; box-shadow:0 12px 30px rgba(0,0,0,0.4);">
+              <button id="wt-packet-close" style="position:absolute; top:8px; right:8px; background:none; border:none; color:rgba(255,255,255,0.7); font-size:16px; cursor:pointer;">✕</button>
+              <div style="font-size:32px;">🧧</div>
+              <div style="font-weight:600; font-size:15px; color:#fde3b3;">给<span id="wt-packet-target">妹妹</span>发微信红包</div>
+              <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; width:100%; margin-top:4px;">
+                <button class="wt-amt-pill" data-amt="20" style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); border-radius:6px; padding:8px 0; color:#fff; font-size:13px; font-weight:bold; cursor:pointer;">¥20</button>
+                <button class="wt-amt-pill" data-amt="50" style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); border-radius:6px; padding:8px 0; color:#fff; font-size:13px; font-weight:bold; cursor:pointer;">¥50</button>
+                <button class="wt-amt-pill" data-amt="200" style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); border-radius:6px; padding:8px 0; color:#fff; font-size:13px; font-weight:bold; cursor:pointer;">¥200</button>
+              </div>
+              <input id="wt-custom-amt" type="number" placeholder="自定义金额 (¥)" style="width:100%; height:32px; border-radius:6px; border:none; padding:0 10px; font-size:13px; box-sizing:border-box; color:#333;" />
+              <button id="wt-confirm-packet" style="background:#fde3b3; color:#a12621; border:none; border-radius:6px; width:100%; height:36px; font-weight:bold; font-size:14px; cursor:pointer; margin-top:4px;">塞钱进红包</button>
+            </div>
+          </div>
+
+          <!-- 查看大图灯箱 -->
+          <div id="wt-photo-lightbox" style="display:none; position:absolute; inset:0; background:rgba(0,0,0,0.88); z-index:100; flex-direction:column; align-items:center; justify-content:center; padding:16px;">
+            <button id="wt-close-lightbox" style="position:absolute; top:12px; right:12px; background:none; border:none; color:#fff; font-size:24px; cursor:pointer;">✕</button>
+            <img id="wt-lightbox-img" src="" alt="Photo" style="max-width:92%; max-height:80%; border-radius:8px; object-fit:contain; box-shadow:0 10px 30px rgba(0,0,0,0.5);" />
+            <div id="wt-lightbox-desc" style="color:#eee; font-size:13px; margin-top:12px; text-align:center;"></div>
+          </div>
+
+        </div>
+      `;
+      const contactNameEl = container.querySelector("#wt-contact-name");
+      const scrollEl = container.querySelector("#wt-scroll");
+      const inputEl = container.querySelector("#wt-input-text");
+      const sendBtn = container.querySelector("#wt-send-btn");
+      const emojiBtn = container.querySelector("#wt-emoji-btn");
+      const packetBtn = container.querySelector("#wt-packet-btn");
+      const emojiDrawer = container.querySelector("#wt-emoji-drawer");
+      const emojiGrid = container.querySelector("#wt-emoji-grid");
+      const tabPlayer = container.querySelector("#wt-tab-player");
+      const tabSister = container.querySelector("#wt-tab-sister");
+      const typingBadge = container.querySelector("#wt-typing-badge");
+      const statusPill = container.querySelector("#wt-status-pill");
+      const valMood = container.querySelector("#val-mood");
+      const valInterest = container.querySelector("#val-interest");
+      const pillBadge = container.querySelector("#wt-pill-badge");
+      const modalStateSource = container.querySelector("#wt-modal-state-source");
+      const settingsModal = container.querySelector("#wt-settings-modal");
+      const closeSettings = container.querySelector("#wt-close-settings");
+      const setMoodRange = container.querySelector("#wt-set-mood-range");
+      const setMoodVal = container.querySelector("#wt-set-mood-val");
+      const setMoodTag = container.querySelector("#wt-set-mood-tag");
+      const setInterestRange = container.querySelector("#wt-set-interest-range");
+      const setInterestVal = container.querySelector("#wt-set-interest-val");
+      const setInterestTag = container.querySelector("#wt-set-interest-tag");
+      const setSisterLoc = container.querySelector("#wt-set-sister-loc");
+      const cfgKey = container.querySelector("#wt-cfg-key");
+      const cfgUrl = container.querySelector("#wt-cfg-url");
+      const cfgModel = container.querySelector("#wt-cfg-model");
+      const btnSaveSettings = container.querySelector("#wt-btn-save-settings");
+      const btnNextDay = container.querySelector("#wt-btn-next-day");
+      const btnClearChat = container.querySelector("#wt-btn-clear-chat");
+      const modalTitle = container.querySelector("#wt-modal-title");
+      const packetModal = container.querySelector("#wt-packet-modal");
+      const packetClose = container.querySelector("#wt-packet-close");
+      const customAmt = container.querySelector("#wt-custom-amt");
+      const confirmPacket = container.querySelector("#wt-confirm-packet");
+      const packetTarget = container.querySelector("#wt-packet-target");
+      const photoLightbox = container.querySelector("#wt-photo-lightbox");
+      const closeLightbox = container.querySelector("#wt-close-lightbox");
+      const lightboxImg = container.querySelector("#wt-lightbox-img");
+      const lightboxDesc = container.querySelector("#wt-lightbox-desc");
+      const syncActiveView = () => {
+        contactNameEl.textContent = activeConv.characterName;
+        packetTarget.textContent = activeConv.characterName;
+        modalTitle.textContent = `${activeConv.characterName} 状态监控与设置`;
+        valMood.textContent = activeConv.state.mood.toFixed(0);
+        valInterest.textContent = activeConv.state.interest.toFixed(0);
+        setMoodRange.value = String(activeConv.state.mood);
+        setInterestRange.value = String(activeConv.state.interest);
+        setSisterLoc.value = String(activeConv.state.sisterLocation);
+        container.querySelector("#wt-wallet-bal").textContent = String(activeConv.state.money);
+        container.querySelector("#wt-day-num").textContent = String(activeConv.currentDay);
+        if (activeConv.state.hasExternalState) {
+          if (pillBadge) pillBadge.style.display = "none";
+          if (modalStateSource) {
+            const fields = activeConv.state.externalFields;
+            const fieldLabels = [];
+            if (fields?.mood) fieldLabels.push("心情");
+            if (fields?.interest) fieldLabels.push("好感");
+            if (fields?.money) fieldLabels.push("金钱");
+            if (fields?.location) fieldLabels.push("地点");
+            const fieldsStr = fieldLabels.length > 0 ? ` [${fieldLabels.join("/")}]` : "";
+            modalStateSource.textContent = `状态来源：已连接外部变量（${activeConv.state.externalSource || "ST/MVU"}${fieldsStr}）`;
+          }
+        } else {
+          if (pillBadge) {
+            pillBadge.style.display = "inline";
+            pillBadge.textContent = "独立";
+          }
+          if (modalStateSource) {
+            modalStateSource.textContent = "状态来源：未接入外部状态（使用独立会话数值）";
+          }
+        }
+        updateLadderTags();
+        renderMessages();
+      };
+      const updateLadderTags = () => {
+        const mood = parseFloat(setMoodRange.value);
+        const interest = parseFloat(setInterestRange.value);
+        setMoodVal.textContent = mood.toFixed(0);
+        setInterestVal.textContent = interest.toFixed(0);
+        if (mood < 40) setMoodTag.textContent = "心情低落 🌧️";
+        else if (mood < 80) setMoodTag.textContent = "平淡普通 ⛅";
+        else setMoodTag.textContent = "心情愉悦 ☀️";
+        if (interest < 25) setInterestTag.textContent = "嫌弃警告 🚫";
+        else if (interest < 50) setInterestTag.textContent = "要零花钱 💸";
+        else if (interest < 75) setInterestTag.textContent = "半推半就 🌸";
+        else setInterestTag.textContent = "老夫老妻 🔥";
+      };
+      setMoodRange.oninput = updateLadderTags;
+      setInterestRange.oninput = updateLadderTags;
+      const switchScope = (nextScope) => {
+        if (!isCurrent()) return;
+        activeScopeSessionId++;
+        latestRefreshReq++;
+        latestAppliedRefresh = latestRefreshReq;
+        currentScope = nextScope;
+        activeConv = getScopedConversation(appData, currentScope);
+        syncActiveView();
+      };
+      const refreshContextAndState = async (targetScope) => {
+        const reqMountId = mountSessionId;
+        const reqScopeId = activeScopeSessionId;
+        const reqScopeKey = (targetScope || currentScope).scopeKey;
+        const reqCharName = (targetScope || currentScope).characterName;
+        const reqRefreshSeq = ++latestRefreshReq;
+        const latestMsgs = extractRecentSTMessages(ctx);
+        const extState = await readExternalCharacterState(ctx, reqCharName);
+        if (!isCurrent() || reqMountId !== mountSessionId || reqScopeId !== activeScopeSessionId || reqScopeKey !== currentScope.scopeKey) {
+          return;
+        }
+        if (reqRefreshSeq < latestAppliedRefresh) {
+          return;
+        }
+        latestAppliedRefresh = reqRefreshSeq;
+        if (latestMsgs) {
+          currentScope.stRecentMessages = latestMsgs;
+        }
+        currentScope.externalState = extState;
+        activeConv = getScopedConversation(appData, currentScope);
+        syncActiveView();
+      };
+      refreshContextAndState();
+      ctx.onCharacterChanged(() => {
+        if (!isCurrent()) return;
+        const syncScope = resolveConversationScopeSync(ctx);
+        if (syncScope.scopeKey !== currentScope.scopeKey) {
+          switchScope(syncScope);
+        }
+        refreshContextAndState(syncScope);
+      });
+      unbindEvents = subscribeExternalContextEvents(ctx, () => {
+        if (!isCurrent()) return;
+        refreshContextAndState();
+      });
+      const renderMessages = () => {
+        scrollEl.replaceChildren();
+        for (const msg of activeConv.messages) {
+          const isPlayer = msg.sender === "player";
+          const row = document.createElement("div");
+          row.style.cssText = `display:flex; gap:9px; align-items:flex-start; ${isPlayer ? "flex-direction:row-reverse;" : ""}`;
+          const avatar = document.createElement("img");
+          avatar.style.cssText = "width:38px; height:38px; border-radius:5px; object-fit:cover; flex-shrink:0; background:#ddd;";
+          const resolvedAvatar = isPlayer ? DEFAULT_PLAYER_AVATAR : resolveCharacterAvatarUrl(currentScope.card?.avatar) || DEFAULT_SISTER_AVATAR;
+          avatar.src = resolvedAvatar;
+          avatar.onerror = () => {
+            avatar.src = isPlayer ? DEFAULT_PLAYER_AVATAR : DEFAULT_SISTER_AVATAR;
+          };
+          avatar.alt = isPlayer ? "User" : activeConv.characterName;
+          const bubble = document.createElement("div");
+          if (msg.type === "text") {
+            bubble.style.cssText = `padding:9px 12px; font-size:14px; line-height:1.4; border-radius:5px; max-width:72%; word-break:break-word; box-shadow:0 1px 2px rgba(0,0,0,0.05); ${isPlayer ? "background:#95ec69; color:#000;" : "background:#fff; color:#181818;"}`;
+            bubble.textContent = msg.content;
+          } else if (msg.type === "emoji") {
+            bubble.style.cssText = "background:none; border:none; padding:2px;";
+            const emojiItem = (isPlayer ? PLAYER_EMOJIS : SISTER_EMOJIS)[msg.content];
+            if (emojiItem) {
+              const img = document.createElement("img");
+              img.src = resolveWeChatAssetUrl(emojiItem.file);
+              img.alt = emojiItem.name;
+              img.style.cssText = "width:110px; height:110px; object-fit:contain; border-radius:4px;";
+              bubble.appendChild(img);
+            } else {
+              bubble.style.cssText = "background:#fff; border-radius:5px; padding:8px 12px; font-size:13px; color:#666;";
+              bubble.textContent = `[表情: ${msg.content}]`;
+            }
+          } else if (msg.type === "image") {
+            bubble.style.cssText = "background:#fff; border-radius:6px; padding:4px; max-width:65%; box-shadow:0 1px 3px rgba(0,0,0,0.1); cursor:pointer;";
+            const photo = SISTER_PHOTOS[msg.content];
+            if (photo) {
+              const photoUrl = resolveWeChatAssetUrl(photo.file);
+              const img = document.createElement("img");
+              img.src = photoUrl;
+              img.alt = photo.name;
+              img.style.cssText = "width:100%; max-height:220px; border-radius:4px; object-fit:cover; display:block;";
+              bubble.appendChild(img);
+              bubble.onclick = () => {
+                lightboxImg.src = photoUrl;
+                lightboxDesc.textContent = `${photo.name}：${photo.description}`;
+                photoLightbox.style.display = "flex";
+              };
+            } else {
+              bubble.textContent = `[图片: ${msg.content}]`;
+            }
+          } else if (msg.type === "red_packet") {
+            bubble.style.cssText = "background:#fa9d3b; color:#fff; border-radius:7px; padding:10px 14px; width:160px; box-shadow:0 2px 6px rgba(250,157,59,0.3);";
+            const rowDiv = document.createElement("div");
+            rowDiv.style.cssText = "display:flex; align-items:center; gap:10px;";
+            const iconSpan = document.createElement("span");
+            iconSpan.style.fontSize = "24px";
+            iconSpan.textContent = "🧧";
+            const textWrap = document.createElement("div");
+            const amtDiv = document.createElement("div");
+            amtDiv.style.cssText = "font-size:15px; font-weight:bold;";
+            amtDiv.textContent = `¥ ${msg.content}`;
+            const subDiv = document.createElement("div");
+            subDiv.style.cssText = "font-size:10px; opacity:0.85;";
+            subDiv.textContent = "微信红包 · 已存入钱包";
+            textWrap.append(amtDiv, subDiv);
+            rowDiv.append(iconSpan, textWrap);
+            bubble.append(rowDiv);
+          }
+          row.appendChild(avatar);
+          row.appendChild(bubble);
+          scrollEl.appendChild(row);
+        }
+        scrollEl.scrollTop = scrollEl.scrollHeight;
+      };
+      let activeTab = "player";
+      const renderEmojiDrawer = () => {
+        emojiGrid.replaceChildren();
+        const emojis = activeTab === "player" ? PLAYER_EMOJIS : SISTER_EMOJIS;
+        for (const [id, item] of Object.entries(emojis)) {
+          const btn = document.createElement("div");
+          btn.style.cssText = "background:#fff; border:1px solid #ddd; border-radius:6px; padding:4px; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; gap:2px; transition:transform 0.1s ease;";
+          btn.title = item.description;
+          const imgPath = resolveWeChatAssetUrl(item.file);
+          const img = document.createElement("img");
+          img.src = imgPath;
+          img.alt = item.name;
+          img.style.cssText = "width:34px; height:34px; object-fit:contain;";
+          const lbl = document.createElement("span");
+          lbl.style.cssText = "font-size:10px; color:#555; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:44px;";
+          lbl.textContent = item.name;
+          btn.append(img, lbl);
+          btn.onclick = () => {
+            emojiDrawer.style.display = "none";
+            handleSendMessage(id, "emoji");
+          };
+          emojiGrid.appendChild(btn);
+        }
+      };
+      tabPlayer.onclick = () => {
+        activeTab = "player";
+        tabPlayer.style.background = "#f7f7f7";
+        tabPlayer.style.color = "#07c160";
+        tabSister.style.background = "#eeeeee";
+        tabSister.style.color = "#666";
+        renderEmojiDrawer();
+      };
+      tabSister.onclick = () => {
+        activeTab = "sister";
+        tabSister.style.background = "#f7f7f7";
+        tabSister.style.color = "#07c160";
+        tabPlayer.style.background = "#eeeeee";
+        tabPlayer.style.color = "#666";
+        renderEmojiDrawer();
+      };
+      emojiBtn.onclick = () => {
+        const isHidden = emojiDrawer.style.display === "none";
+        emojiDrawer.style.display = isHidden ? "flex" : "none";
+        if (isHidden) renderEmojiDrawer();
+      };
+      packetBtn.onclick = () => {
+        packetModal.style.display = "flex";
+      };
+      packetClose.onclick = () => {
+        packetModal.style.display = "none";
+      };
+      container.querySelectorAll(".wt-amt-pill").forEach((pill) => {
+        pill.addEventListener("click", () => {
+          const amt = pill.dataset.amt || "50";
+          sendRedPacket(parseInt(amt, 10));
+        });
+      });
+      confirmPacket.onclick = () => {
+        const amt = parseInt(customAmt.value, 10);
+        if (isNaN(amt) || amt <= 0) {
+          ctx.toast("error", "请输入有效的红包金额");
+          return;
+        }
+        sendRedPacket(amt);
+      };
+      const sendRedPacket = (amt) => {
+        if (activeConv.state.money < amt) {
+          ctx.toast("error", `钱包余额不足（当前余额：¥${activeConv.state.money}）`);
+          return;
+        }
+        const hasExternalMoney = Boolean(activeConv.state.hasExternalState && activeConv.state.externalFields?.money);
+        if (!hasExternalMoney) {
+          activeConv.state.money -= amt;
+        }
+        packetModal.style.display = "none";
+        customAmt.value = "";
+        handleSendMessage(String(amt), "red_packet");
+      };
+      closeLightbox.onclick = () => {
+        photoLightbox.style.display = "none";
+      };
+      photoLightbox.onclick = (e) => {
+        if (e.target === photoLightbox) photoLightbox.style.display = "none";
+      };
+      const handleSendMessage = async (content, type = "text") => {
+        if (!content.trim() || !isCurrent()) return;
+        const targetMountSession = mountSessionId;
+        const targetScopeSession = activeScopeSessionId;
+        const targetScopeKey = currentScope.scopeKey;
+        const targetConv = activeConv;
+        const targetScopeObj = currentScope;
+        const isRequestValid = () => isCurrent() && targetMountSession === mountSessionId && targetScopeSession === activeScopeSessionId && targetScopeKey === currentScope.scopeKey;
+        const latestMsgs = extractRecentSTMessages(ctx);
+        if (latestMsgs) {
+          targetScopeObj.stRecentMessages = latestMsgs;
+        }
+        const playerMsg = {
+          sender: "player",
+          content,
+          type,
+          time: { day: targetConv.currentDay, hour: 19, minute: 0 }
+        };
+        targetConv.messages.push(playerMsg);
+        if (currentScope.scopeKey === targetScopeKey) {
+          renderMessages();
+          typingBadge.style.display = "inline";
+        }
+        if (type === "text") inputEl.value = "";
+        const replyPayload = await pipeline.requestSisterReply(
+          targetConv.messages,
+          targetConv.state,
+          targetConv.currentDay,
+          "19:00",
+          targetScopeObj
+        );
+        if (!isRequestValid()) return;
+        const firstText = replyPayload.messages.find((m) => m.type === "text")?.content || "嗯嗯。";
+        await simulateTypingDelay(firstText);
+        if (!isRequestValid()) return;
+        if (currentScope.scopeKey === targetScopeKey) {
+          typingBadge.style.display = "none";
+        }
+        for (const item of replyPayload.messages) {
+          targetConv.messages.push({
+            sender: "sister",
+            content: item.content || item.emoji_id || item.pic_id || "",
+            type: item.type,
+            time: { day: targetConv.currentDay, hour: 19, minute: 1 }
+          });
+        }
+        conversations[targetScopeKey] = targetConv;
+        ctx.setAppData(appData);
+        if (currentScope.scopeKey === targetScopeKey) {
+          renderMessages();
+        }
+        const preMoodExternal = Boolean(targetConv.state.hasExternalState && targetConv.state.externalFields?.mood);
+        const preInterestExternal = Boolean(targetConv.state.hasExternalState && targetConv.state.externalFields?.interest);
+        if (!preMoodExternal || !preInterestExternal) {
+          const impact = await pipeline.requestStatImpact(
+            type === "text" ? content : `[${type}] ${content}`,
+            firstText,
+            targetConv.state
+          );
+          if (!isRequestValid()) return;
+          const curMoodExternal = Boolean(targetConv.state.hasExternalState && targetConv.state.externalFields?.mood);
+          const curInterestExternal = Boolean(targetConv.state.hasExternalState && targetConv.state.externalFields?.interest);
+          let stateChanged = false;
+          if (!curMoodExternal) {
+            targetConv.state.mood = Math.max(0, Math.min(100, targetConv.state.mood + impact.mood));
+            stateChanged = true;
+          }
+          if (!curInterestExternal) {
+            targetConv.state.interest = Math.max(0, Math.min(100, targetConv.state.interest + impact.interest));
+            stateChanged = true;
+          }
+          if (stateChanged) {
+            conversations[targetScopeKey] = targetConv;
+            ctx.setAppData(appData);
+            if (currentScope.scopeKey === targetScopeKey) {
+              syncActiveView();
+            }
+          }
+        }
+      };
+      sendBtn.onclick = () => handleSendMessage(inputEl.value, "text");
+      let isComposing = false;
+      inputEl.addEventListener("compositionstart", () => {
+        isComposing = true;
+      });
+      inputEl.addEventListener("compositionend", () => {
+        isComposing = false;
+      });
+      inputEl.onkeydown = (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          if (isComposing || e.isComposing || e.keyCode === 229) {
+            return;
+          }
+          e.preventDefault();
+          handleSendMessage(inputEl.value, "text");
+        }
+      };
+      statusPill.onclick = () => {
+        cfgKey.value = appData.config.apiKey || "";
+        cfgUrl.value = appData.config.apiUrl || "https://api.deepseek.com/chat/completions";
+        cfgModel.value = appData.config.model || "deepseek-chat";
+        settingsModal.style.display = "flex";
+      };
+      closeSettings.onclick = () => {
+        settingsModal.style.display = "none";
+      };
+      btnSaveSettings.onclick = () => {
+        appData.config.apiKey = cfgKey.value.trim();
+        appData.config.apiUrl = cfgUrl.value.trim() || "https://api.deepseek.com/chat/completions";
+        appData.config.model = cfgModel.value.trim() || "deepseek-chat";
+        activeConv.state.mood = parseFloat(setMoodRange.value);
+        activeConv.state.interest = parseFloat(setInterestRange.value);
+        activeConv.state.sisterLocation = setSisterLoc.value;
+        if (activeConv.state.hasExternalState) {
+          activeConv.state.hasExternalState = false;
+          activeConv.state.externalSource = void 0;
+          activeConv.state.externalFields = void 0;
+          currentScope.externalState = { source: "none" };
+        }
+        conversations[currentScope.scopeKey] = activeConv;
+        ctx.setAppData(appData);
+        pipeline = new WeChatPipeline(
+          appData.config,
+          PLAYER_EMOJIS,
+          SISTER_EMOJIS,
+          SISTER_PHOTOS,
+          FALLBACK_DIALOGUES
+        );
+        settingsModal.style.display = "none";
+        syncActiveView();
+        ctx.toast("success", "微信设置与数值已保存");
+      };
+      btnNextDay.onclick = () => {
+        activeConv.currentDay += 1;
+        const hasExternalMoney = Boolean(activeConv.state.hasExternalState && activeConv.state.externalFields?.money);
+        if (!hasExternalMoney) {
+          activeConv.state.money += 200;
+        }
+        conversations[currentScope.scopeKey] = activeConv;
+        ctx.setAppData(appData);
+        syncActiveView();
+        ctx.toast("info", `已进入第 ${activeConv.currentDay} 天${!hasExternalMoney ? "，发放生活费 ¥200" : ""}`);
+      };
+      btnClearChat.onclick = () => {
+        activeConv.messages = [];
+        conversations[currentScope.scopeKey] = activeConv;
+        ctx.setAppData(appData);
+        renderMessages();
+        settingsModal.style.display = "none";
+        ctx.toast("info", "微信聊天记录已清空");
+      };
+      syncActiveView();
+    },
+    unmount() {
+      mountSessionId++;
+      activeScopeSessionId++;
+      pipeline = null;
+      if (unbindEvents) {
+        unbindEvents();
+        unbindEvents = null;
+      }
+    }
+  };
+}
+
 // st-extension/src/apps/index.ts
 function createBuiltinApps(deps) {
   return [
@@ -16728,7 +18414,8 @@ function createBuiltinApps(deps) {
     newvarApp({ runtime: deps.newvarRuntime, openDesigner: deps.openNewvarDesigner }),
     apiApp({ openManager: deps.openApiManager }),
     rendererApp({ runtime: deps.rendererRuntime }),
-    cloudExportApp()
+    cloudExportApp(),
+    createWeChatApp()
   ];
 }
 
@@ -19943,6 +21630,38 @@ async function init(lifecycle) {
       getSettings: () => settings,
       saveSettingsOnly,
       getCharacterName: () => adapter.getCurrentCharacterName(),
+      getCharacterCard: () => {
+        try {
+          const ctx = window.SillyTavern?.getContext();
+          const id = ctx?.characterId;
+          if (id !== void 0 && id !== null && String(id) !== "") {
+            return ctx?.characters?.[Number(id)];
+          }
+        } catch {
+        }
+        return void 0;
+      },
+      getChatContext: () => {
+        try {
+          const ctx = window.SillyTavern?.getContext();
+          return {
+            characterId: ctx?.characterId,
+            chatId: ctx?.chatId ?? ctx?.chatMetadata?.file_name,
+            characterName: adapter.getCurrentCharacterName(),
+            chat: ctx?.chat
+          };
+        } catch {
+        }
+        return void 0;
+      },
+      getVariables: async () => {
+        try {
+          const res = await readVariables({ type: "message", message_id: "latest" }, getLastMessageId());
+          if (res.status === "ready") return res.data;
+        } catch {
+        }
+        return void 0;
+      },
       ...platformCaps
     };
   }
@@ -20261,7 +21980,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-09-12 18:08"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-10-26 01:59"}`;
   console.log(`[sprite-overlay] 百工（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);
