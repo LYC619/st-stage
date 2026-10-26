@@ -19,6 +19,9 @@ const runId = Date.now()
 const cases = ['en', 'zh'].flatMap(language => ['desktop', 'mobile'].map(size => ({ name: `${size}-${language}`, language, size })))
 async function ready(page) {
   await page.waitForFunction(async () => (await import('/script.js')).settingsReady)
+  // settingsReady can precede the host's asynchronous character-list hydration.
+  // This suite relies on the default fixture character before it creates its own.
+  await page.waitForFunction(() => window.SillyTavern.getContext().characters.length > 0)
   await page.waitForSelector('.so-phone-fab', { state: 'attached' })
 }
 async function saved(page, action, endpoint = '/api/settings/save') {
