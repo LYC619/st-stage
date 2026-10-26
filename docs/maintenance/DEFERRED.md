@@ -2,9 +2,9 @@
 
 Known follow-ups and pending review repairs are recorded here. Older sections retain their original non-blocking decisions; the review queue below is **not** a declaration that its risks are acceptable for a new release. Remove or resolve entries only with an actual fixing commit and fresh verification.
 
-## 2026-10-26 WeChat Review Queue — Fifth Review Passed, Worktree Uncommitted
+## 2026-10-26 WeChat Review Queue — Code Merged, Live Acceptance Pending
 
-Round-4 repairs for the five remaining findings (W9 test callback typing, W4 same-scope refresh ordering, W1c ownership re-evaluation after stat impact await, W1c external money snapshot protection, W1a valid alias traversal) passed independent re-review in the uncommitted `0.9.0+202610260159` worktree. No new blocking finding was identified within this scoped review; see [Fifth Review](history/2026-10-26-wechat-fifth-review.md) and [Round-4 Repairs](history/2026-10-26-wechat-round4-repairs.md). Entries remain until a fixing commit. Live SillyTavern browser and physical-device acceptance remain open.
+Round-4 repairs for the five remaining findings (W9 test callback typing, W4 same-scope refresh ordering, W1c ownership re-evaluation after stat impact await, W1c external money snapshot protection, W1a valid alias traversal) passed independent re-review and are now committed in `752678d`, then included in the merged `main` code head `7866559` and build `0.9.0+202610261121`. No new blocking finding was identified within this scoped review; see [Fifth Review](history/2026-10-26-wechat-fifth-review.md), [Round-4 Repairs](history/2026-10-26-wechat-round4-repairs.md), and [Merge and Release](history/2026-10-26-merge-and-release.md). Live SillyTavern browser and physical-device acceptance remain open.
 
 | ID | Priority | Code repair status and remaining verification |
 | --- | --- | --- |
@@ -29,7 +29,7 @@ Updated October 7: `cec4e8d` completes the authorized core UI/five-main-App tran
 - `e11cd3d` repairs locale loading, adds the first translated UI controls and fixes real-ST gallery toolbar/keyboard issues. Real ST 1.18.0 i18n acceptance passes 10 scenarios; full App/deep gallery translation, focus management and screen-reader support remain pending.
 - Mobile browser emulation is separate from physical-phone/OS-keyboard acceptance. External sprite hosts were blocked; the isolated copied ST runtime logged thumbnail-conversion dependency-path errors. Cloud images and image conversion were not validated by this run.
 - September 7 real-ST image migration/save/reload/restore, fault handling and standard ZIP-import checks below remain open. Only their existing synthetic maintenance browser regressions were rerun.
-- The reviewed branch has not been merged or pushed. Development remote lookup requires authentication. Independent release remains `d6e8a89`; publication must reconcile README, include both locale JSON files alongside the original six root files and pass three-way parity. Historical six-file instructions are superseded by CURRENT.md.
+- The reviewed branch was merged into local `main` at `7866559`. Publication must still reconcile README, include both locale JSON files alongside the original six root files and pass three-way parity; final remote commits are recorded in CURRENT.md and the merge/release history once pushed. Historical six-file instructions are superseded by CURRENT.md.
 
 ## 2026-09-05 Review Queue — Code Committed, Acceptance Pending
 
