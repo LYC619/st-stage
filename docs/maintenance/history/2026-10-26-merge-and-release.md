@@ -27,4 +27,7 @@
 - 开发仓库按顺序先发布，`origin/main` 到达 `131f1e32e209ef610bcefce85267fa4955866087`。
 - 安装仓库随后从 `st-distribution` 同步并提交为 `0b2401417b42a7b87bc41e86be7dc7fb4d0f081e`，已推送到 `st-stage-ext/main`。
 - 发布前三方校验覆盖 7 个运行文件与 README；安装仓库的 `assets/wechat` 与分发目录 50 个文件清单和 SHA-256 一致。
-- `origin/v0/2405142193-6702-70a2066c` 因含有 `main` 未包含的独有提交而保留；其余确认已合入的本地维护分支及两个旧远端分支在最终维护记录提交后清理。
+- `codex/acceptance-round2`、`codex/acceptance-round5`、`codex/i18n-acceptance`、`codex/renderer-onboarding-density`、`codex/review-fixes`、`codex/sts-update` 均已确认包含于 `main` 并删除。
+- i18n 工作树由 Git 注销；残留的依赖、测试输出与半清理目录约 704 MB，已移入 Windows 回收站，可恢复。
+- 已完全包含于 `main` 的远端分支 `v0/2405142193-6702-cbfc46a0`、`v0/2405142193-6702-e5395cd9` 已删除。
+- `origin/v0/2405142193-6702-70a2066c` 含有 `main` 未包含的独有提交，继续保留。
