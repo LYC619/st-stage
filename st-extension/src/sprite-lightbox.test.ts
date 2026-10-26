@@ -7,6 +7,9 @@ import {
   type SpriteLightboxController,
 } from './sprite-lightbox'
 import type { SpriteAction } from './sprite-actions'
+import { openAppModal } from '../../core/app-modal'
+import { loadTranslations, resetI18n, setLocale } from '../../core/i18n'
+import en from '../locales/en-US.json'
 
 interface MutableVisualViewport extends EventTarget {
   offsetLeft: number
@@ -61,6 +64,7 @@ function getLayer(): HTMLElement {
 
 describe('openSpriteLightbox', () => {
   afterEach(() => {
+    resetI18n()
     controllers.splice(0).forEach((controller) => controller.close())
     document.body.innerHTML = ''
     vi.restoreAllMocks()
@@ -69,6 +73,50 @@ describe('openSpriteLightbox', () => {
     } else {
       Reflect.deleteProperty(window, 'visualViewport')
     }
+  })
+
+  it('translates preview controls and announces navigation without translating user tags', () => {
+    loadTranslations('en-US', en)
+    setLocale('en-US')
+    open({ pack: pack('translated', ['用户标签', 'Second']) })
+    expect(getLayer().getAttribute('aria-label')).toBe('Sprite preview')
+    expect(getLayer().querySelector('.so-lightbox-prev')?.getAttribute('aria-label')).toBe('Previous image (Left arrow)')
+    const caption = getLayer().querySelector('[role="status"]')!
+    expect(caption.textContent).toBe('用户标签 (1/2)')
+    getLayer().querySelector<HTMLElement>('.so-lightbox-next')!.click()
+    expect(caption.textContent).toBe('Second (2/2)')
+  })
+
+  it('contains keyboard focus and restores the opener after closing', () => {
+    const opener = document.createElement('button')
+    document.body.append(opener)
+    opener.focus()
+    const controller = open()
+    const layer = getLayer()
+    expect(layer.contains(document.activeElement)).toBe(true)
+    const close = layer.querySelector<HTMLElement>('.so-lightbox-close')!
+    close.focus()
+    close.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(layer.querySelector('.so-lightbox-prev'))
+    controller.close()
+    expect(document.activeElement).toBe(opener)
+  })
+
+  it('does not navigate or close behind a nested dialog, and preserves action focus on updates', () => {
+    const onNavigate = vi.fn()
+    const controller = open({ onNavigate, actions: [{ id: 'edit', label: 'Edit', run() {} }] })
+    const action = getLayer().querySelector<HTMLElement>('[data-action-id="edit"]')!
+    action.focus()
+    controller.update(pack('a', ['one', 'two']), 0)
+    expect(document.activeElement).toBe(getLayer().querySelector('[data-action-id="edit"]'))
+    const closeNested = openAppModal(body => { body.innerHTML = '<input aria-label="Name">' }, { onOpen() {}, onClose() {} })
+    document.querySelector<HTMLElement>('.so-app-modal input')!.focus()
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }))
+    expect(onNavigate).not.toHaveBeenCalled()
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(document.querySelector('.so-app-modal')).toBeNull()
+    expect(document.querySelector('.so-lightbox')).not.toBeNull()
+    closeNested()
   })
 
   it('mounts every lightbox surface in one body-level visual viewport layer', () => {

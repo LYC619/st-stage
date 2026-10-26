@@ -1,7 +1,5 @@
 # i18n 使用指南
 
-本页按当前 `main` 的 `core/i18n.ts` 核对（2026-10-24）。这里只是基础设施，尚未代表界面已全面接入；较新的翻译、参数插值和键盘成果在 `codex/i18n-acceptance`，请读该分支自己的同名指南。[当前状态](maintenance/CURRENT.md) 记录位置和验收边界。
-
 ## 基本用法
 
 ```typescript
@@ -10,11 +8,11 @@ import { t } from '../core/i18n'
 // 简单翻译
 const confirmText = t('common.confirm')  // "确认" 或 "Confirm"
 
-// 第二个参数是缺失键的回退文本，不是插值参数对象
-const fallback = t('missing.key', '默认文本')
+// 带参数的翻译
+const greeting = t('welcome.message', '你好，{{name}}', { name: 'Alice' })
 
 // 嵌套路径
-const title = t('sprite.manager.title')  // "立绘图库管理"
+const title = t('sprite.manager.title', '立绘包管理')
 ```
 
 ## 添加新的翻译
@@ -41,10 +39,14 @@ const title = t('sprite.manager.title')  // "立绘图库管理"
 
 3. 在代码中使用：
 ```typescript
-const title = t('myFeature.title')
+const title = t('myFeature.title', '我的功能')
 ```
 
 ## 切换语言
+
+用户在 SillyTavern 的语言设置里切换，刷新后生效。百工读取宿主保存在浏览器 `localStorage.language` 中的选择；未设置时使用浏览器语言。英文系列使用 `en-US`，其余语言暂时使用 `zh-CN`。扩展不会修改这项偏好。
+
+以下接口供代码使用：它影响后续的 `t()` 调用，不会自动重绘已经挂载的 DOM。
 
 ```typescript
 import { setLocale, getLocale } from '../core/i18n'
@@ -56,11 +58,32 @@ const current = getLocale()  // 'zh-CN' 或 'en-US'
 setLocale('en-US')
 ```
 
-切换前必须通过 `loadTranslations(locale, dict)` 加载非空字典，否则 `setLocale` 抛错。main 的 ST 初始化入口是 `st-extension/src/st-adapter.ts` 的 `initI18n()`，按浏览器语言选择；当前加载路径和错误降级仍需真实宿主验证，不要把后续分支的宿主语言检测结论套用到这里。
-
 ## 注意事项
 
 - 所有翻译键使用点分隔的路径（如 `common.confirm`）
-- 当前语言缺失时先查回退语言（默认中文），仍缺失则返回传入的回退文本，最后才返回键本身
-- 运行 `pnpm build:ext` 或 `pnpm build:st` 会自动复制 locale 文件到产物目录
+- 用户可见文案始终保留原中文 fallback。缺失键优先查中文词典，然后使用 fallback；两者都没有时返回键本身。
+- `{{name}}` 参数接受字符串或数字，未提供的参数保留占位符。返回值通过 `textContent` 或属性写入，不能作为用户输入的 HTML 使用。
+- 运行 `pnpm build:all` 用同一构建时间生成根目录与 `st-distribution/`，同时复制两份语言文件。单独调试仍可使用 `build:ext` 或 `build:st`。
+- 发布清单是原有六个根文件，加上 `locales/zh-CN.json` 和 `locales/en-US.json`；不要漏拷贝语言目录。
+- 语言文件相对于运行中的 `bundle.js` 加载，支持安装目录改名与代理路径前缀。请求和响应体共用 3 秒时限；加载失败或格式错误不阻止扩展启动。
 - locale 文件使用 UTF-8 编码，支持所有 Unicode 字符
+
+## 当前覆盖范围
+
+手机壳导航、立绘悬浮窗、扩展设置、共用 App 弹窗，以及计划中的五个主要 App（立绘、图库、导出、MVU、新变量）支持中英文。覆盖图库筛选／详情／标签／批量操作、预览与存储界面，导出分类／选择／进度／错误，变量树／设计器／解析诊断／速查浮窗，以及聊天图片保存、失败重试和相关图库校验提示。
+
+管家与渲染已翻译主页名称，其他非核心工具内部不属于本轮五个 App 的覆盖承诺。控制台和开发者 API 诊断也不计入用户界面翻译。
+
+用户创建的名称、提示词内容、持久化选项值和协议文字（如 `[立绘:xxx]`、`{清单}`）保持原样。内置预设、已保存模板内容和备份路径／文件数据也保留原值；变量模板目录只翻译显示名称与简介。只翻译它们周围的界面说明，不能让语言偏好改变存档身份。
+
+## 验证
+
+```powershell
+node scripts/verify-i18n-completeness.mjs
+node scripts/verify-runtime-parity.mjs --root . --distribution st-distribution
+# 独立发布时增加 --release <发布仓库目录>，检查 README 与两份语言文件。
+```
+
+CI 检查双语键与 `{{参数}}` 一致性、非空词条、源代码静态键、中文 fallback 和直接传入的参数对象。无法静态核对的 fallback、变量参数对象或展开属性会报错；参数值本身可以是变量或表达式。参数使用单层 `{{name}}`；保留给 Prompt 的单花括号不参与替换。检查器跟踪从 i18n 模块导入的 `t`（含别名），不把其他同名函数或测试用例当成产品引用。
+
+CI 在构建前检查必需产物都受 Git 跟踪，构建后检查字节一致性和已提交产物差异。真实 ST 浏览器验收使用独立测试实例与新建浏览器上下文，不能指向日常数据目录。键盘操作与验证范围见 [ACCESSIBILITY.md](ACCESSIBILITY.md)。

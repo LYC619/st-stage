@@ -4,6 +4,9 @@ import { createDefaultSettings, type PluginSettings } from '../../core/types'
 import { openImageStorageDialog } from './image-storage-dialog'
 import { createMigrationReceipt, createStorageBackup } from '../../core/image-storage-backup'
 import { scanEmbeddedImages } from '../../core/image-storage'
+import { openAppModal } from '../../core/app-modal'
+import { loadTranslations, resetI18n, setLocale } from '../../core/i18n'
+import en from '../locales/en-US.json'
 
 const embedded = 'data:image/png;base64,QUFB'
 function findButton(text: string): HTMLButtonElement {
@@ -32,12 +35,57 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  resetI18n()
   document.body.innerHTML = ''
   vi.restoreAllMocks()
   vi.useRealTimers()
 })
 
 describe('image storage migration dialog', () => {
+  it('translates backup, staged migration and apply feedback while preserving confirmation gates', async () => {
+    loadTranslations('en-US', en)
+    setLocale('en-US')
+    let settings = { ...createDefaultSettings(), packs: [{ id: 'p', name: '用户名称', sprites: [{ tag: '一', url: embedded }] }] }
+    const updateSettings = vi.fn((next: PluginSettings) => { settings = next })
+    const controller = openImageStorageDialog({ adapter: { getStoredSettingsForBackup: () => settings } as never,
+      getSettings: () => settings, updateSettings, saveDataUri: async () => '/user/images/migrated.png', onClosed: vi.fn() })
+    expect(document.querySelector('.so-storage-dialog')?.getAttribute('aria-label')).toBe('Storage check & migration')
+    expect(document.querySelector('.so-storage-dialog')?.textContent).toContain('1 embedded image references')
+    findButton('Download current plugin backup').click()
+    expect(findButton('Migrate embedded images').disabled).toBe(true)
+    confirmBackup()
+    findButton('Migrate embedded images').click()
+    await vi.waitFor(() => expect(findButton('Download migration receipt').disabled).toBe(false))
+    expect(updateSettings).not.toHaveBeenCalled()
+    findButton('Download migration receipt').click()
+    confirmReceipt()
+    findButton('Apply successful items').click()
+    expect(document.querySelector('.so-storage-status')?.textContent).toContain('Applied 1 item(s)')
+    expect(settings.packs[0].name).toBe('用户名称')
+    controller.close()
+  })
+
+  it('owns focus above an App dialog and handles only one Escape layer at a time', () => {
+    const settings = createDefaultSettings()
+    const closeOuter = openAppModal(body => { body.innerHTML = '<button id="storage-opener">Storage</button>' }, { onOpen() {}, onClose() {} })
+    const opener = document.querySelector<HTMLElement>('#storage-opener')!
+    opener.focus()
+    const controller = openImageStorageDialog({ adapter: { getStoredSettingsForBackup: () => settings } as never,
+      getSettings: () => settings, updateSettings: vi.fn(), saveDataUri: vi.fn(), onClosed: vi.fn() })
+    const dialog = document.querySelector('.so-storage-dialog')!
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    const close = findButton('关闭')
+    close.focus()
+    close.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(findButton('下载当前插件状态备份'))
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(document.querySelector('.so-storage-dialog')).toBeNull()
+    expect(document.querySelector('.so-app-modal')).not.toBeNull()
+    expect(document.activeElement).toBe(opener)
+    controller.close()
+    closeOuter()
+  })
+
   it.each(['before staging', 'before applying'])('blocks newly unmapped raw images %s', async (when) => {
     const settings = { ...createDefaultSettings(), packs: [{ id: 'p', name: 'pack', sprites: [{ tag: 'a', url: embedded }] }] }
     let raw: unknown = settings

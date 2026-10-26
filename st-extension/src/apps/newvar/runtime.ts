@@ -15,6 +15,8 @@
  * App UI 据 isSTAvailable() 显示只读提示。
  */
 
+import { t } from '../../../../core/i18n'
+
 import type { PluginSettings } from '../../../../core/types'
 import { setNested, deleteNested } from '../path-utils'
 import { initStateFromSchema, parseUpdateBlock, applyOps, buildInjection, fillDefaults, validateValue } from './engine'
@@ -287,11 +289,11 @@ export function createNewvarRuntime(deps: NewvarRuntimeDeps): NewvarRuntime {
     getPrevState,
     setManualValue(path, value) {
       const def = getData().schema.variables.find((item) => item.key === path)
-      if (!def) return { ok: false, error: `未定义的变量路径：${path}` }
+      if (!def) return { ok: false, error: t('apps.newvar.errors.undefined_path', "未定义的变量路径：{{path}}", { path }) }
       const validated = validateValue(def, value)
-      if (!validated.ok) return { ok: false, error: validated.error ?? '输入值不符合变量定义。' }
+      if (!validated.ok) return { ok: false, error: validated.error ?? t('apps.newvar.errors.invalid_value', "输入值不符合变量定义。") }
       if (!mutateCurrent((state) => setNested(state, path, validated.value))) {
-        return { ok: false, error: '当前环境没有可写入的聊天楼层。' }
+        return { ok: false, error: t('apps.newvar.errors.no_message', "当前环境没有可写入的聊天楼层。") }
       }
       return { ok: true, value: validated.value }
     },

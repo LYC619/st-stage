@@ -17,6 +17,8 @@ import {
 import type { PluginSettings } from '../../core/types'
 import { createDefaultSettings } from '../../core/types'
 import { NEWVAR_APP_ID } from './apps/newvar/config'
+import { loadTranslations, resetI18n, setLocale } from '../../core/i18n'
+import english from '../locales/en-US.json'
 
 interface MsgDef {
   text?: string
@@ -70,11 +72,38 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  resetI18n()
   vi.useRealTimers()
   delete window.SillyTavern
 })
 
 describe('mountMessagePostprocess lifecycle', () => {
+  it('provides a translated keyboard retry action only while an inline image has failed', () => {
+    loadTranslations('en-US', english)
+    setLocale('en-US')
+    buildChat([{ text: '[立绘:微笑]' }])
+    processMessages(baseSettings({ spriteDisplayMode: 'inline' }), 0)
+    const wrap = mesText(0).querySelector<HTMLElement>('.so-inline-image')!
+    const img = wrap.querySelector('img')!
+    expect(wrap.hasAttribute('tabindex')).toBe(false)
+    img.dispatchEvent(new Event('error'))
+    expect(wrap.getAttribute('role')).toBe('button')
+    expect(wrap.getAttribute('aria-label')).toContain('Image failed to load')
+    expect(wrap.tabIndex).toBe(0)
+    wrap.focus()
+    expect(document.activeElement).toBe(wrap)
+    const click = vi.fn()
+    wrap.addEventListener('click', click)
+    for (const key of ['Enter', ' ']) wrap.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    expect(click).toHaveBeenCalledTimes(2)
+    expect(img.src).toContain('so_retry=')
+    img.dispatchEvent(new Event('load'))
+    expect(wrap.hasAttribute('role')).toBe(false)
+    expect(wrap.hasAttribute('tabindex')).toBe(false)
+    expect(wrap.hasAttribute('aria-label')).toBe(false)
+    expect(img.alt).toBe('微笑')
+  })
+
   it('重新处理 ST 编辑完成后发出的 MESSAGE_UPDATED 楼层', async () => {
     const handlers = new Map<string, (...args: unknown[]) => void>()
     const processMessage = vi.fn()

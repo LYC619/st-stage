@@ -1,10 +1,11 @@
 import { archiveSegment } from './archive-path'
+import { t } from '../../../../core/i18n'
 import type { ExportFile, ExportSelection, ExportSnapshot } from './types'
 
 function characterArchiveIdentity(avatar: string): { avatar: string; stem: string } {
-  const name = archiveSegment(avatar, '角色头像')
-  if (!/\.png$/i.test(name)) throw new Error('无法确定角色聊天目录：头像文件必须为 PNG')
-  return { avatar: name, stem: archiveSegment(name.slice(0, -4), '角色目录') }
+  const name = archiveSegment(avatar, t('cloudExport.kind_avatar', '角色头像'))
+  if (!/\.png$/i.test(name)) throw new Error(t('cloudExport.avatar_png_required', '无法确定角色聊天目录：头像文件必须为 PNG'))
+  return { avatar: name, stem: archiveSegment(name.slice(0, -4), t('cloudExport.kind_directory', '角色目录')) }
 }
 
 /**
@@ -41,13 +42,13 @@ export function buildExportFiles(snapshot: ExportSnapshot, selection: ExportSele
   for (const worldbook of snapshot.worldbooks) {
     if (selection.worldbookIds.has(worldbook.id)) {
       if (worldbook.content !== undefined) {
-        files.push({ path: `worlds/${archiveSegment(worldbook.fileName, '世界书')}`, data: JSON.stringify(worldbook.content, null, 2), updatedAt: worldbook.updatedAt })
+        files.push({ path: `worlds/${archiveSegment(worldbook.fileName, t('cloudExport.kind_worldbook', '世界书'))}`, data: JSON.stringify(worldbook.content, null, 2), updatedAt: worldbook.updatedAt })
       }
     }
   }
   for (const preset of snapshot.presets) {
     if (selection.presetIds.has(preset.id)) {
-      files.push({ path: `OpenAI Settings/${archiveSegment(preset.fileName, '预设')}`, data: JSON.stringify(preset.content, null, 2), updatedAt: preset.updatedAt })
+      files.push({ path: `OpenAI Settings/${archiveSegment(preset.fileName, t('cloudExport.kind_preset', '预设'))}`, data: JSON.stringify(preset.content, null, 2), updatedAt: preset.updatedAt })
     }
   }
   return files
@@ -75,7 +76,7 @@ export function buildCharacterFiles(
     const data = chats.get(chat.id)
     if (!selection.chatIds.has(chat.id) || data === undefined) continue
     files.push({
-      path: `chats/${identity.stem}/${archiveSegment((chat.path || chat.name).replace(/\.jsonl$/i, ''), '聊天')}.jsonl`,
+      path: `chats/${identity.stem}/${archiveSegment((chat.path || chat.name).replace(/\.jsonl$/i, ''), t('cloudExport.kind_chat', '聊天'))}.jsonl`,
       data,
       updatedAt: chat.updatedAt,
     })

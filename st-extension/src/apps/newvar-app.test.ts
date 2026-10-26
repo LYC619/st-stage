@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { loadTranslations, resetI18n, setLocale } from '../../../core/i18n'
+import en from '../../locales/en-US.json'
 import type { PhoneAppContext } from '../../../core/phone-registry'
 import type { PluginSettings } from '../../../core/types'
 import { defaultNewvarData, type NewvarData } from './newvar/config'
@@ -46,8 +48,26 @@ function mountApp(initial: Partial<NewvarData> = {}, initialHud = false) {
 beforeEach(() => {
   document.body.innerHTML = ''
 })
+afterEach(resetI18n)
 
 describe('newvarApp', () => {
+  it('renders English settings and keeps focus when toggling the update-block display', () => {
+    loadTranslations('en-US', en)
+    setLocale('en-US')
+    const mounted = mountApp({ enabled: true, hideUpdateBlocks: true })
+    document.body.append(mounted.container)
+    expect(mounted.container.textContent).toContain('Built-in tracking · Enabled')
+    expect(mounted.container.textContent).toContain('<UpdateVariable>...</UpdateVariable>')
+    const toggle = findToggle(mounted.container, 'Hide variable updates in messages')
+    toggle.focus()
+    toggle.checked = false
+    toggle.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(document.activeElement).toBe(toggle)
+    expect(mounted.toast).toHaveBeenCalledWith('success', expect.stringContaining('ST Regex'))
+    expect(mounted.getData().hideUpdateBlocks).toBe(false)
+    expect(mounted.getData().schema).toEqual(defaultNewvarData().schema)
+  })
+
   it('关闭变量记录隐藏时明确提示已恢复以及 ST Regex 的独立影响', () => {
     const mounted = mountApp({ enabled: true, hideUpdateBlocks: true })
     const toggle = findToggle(mounted.container, '隐藏正文中的变量更新记录')

@@ -6,6 +6,8 @@
  * 引擎/存储/事件在 newvar/runtime（随扩展常驻）；本文件只是开关与展示。
  */
 
+import { t } from '../../../core/i18n'
+
 import type { PhoneApp } from '../../../core/phone-registry'
 import { el, appButton, toggleRow, hintField } from './widgets'
 import { createVariableTreeView, computeDelta, type VariableTreeModel } from './variable-tree'
@@ -22,7 +24,7 @@ export function newvarApp(deps: NewvarAppDeps): PhoneApp {
 
   return {
     id: 'newvar',
-    name: '新变量',
+    name: t('apps.newvar.name', "新变量"),
     icon: '🧮',
     order: 5,
     mount(container, ctx) {
@@ -39,34 +41,31 @@ export function newvarApp(deps: NewvarAppDeps): PhoneApp {
         const section = el('div', 'so-app-section')
         section.append(
           hintField(
-            toggleRow('启用变量追踪', d.enabled, (v) => {
+            toggleRow(t('apps.newvar.enable', "启用变量追踪"), d.enabled, (v) => {
               ctx.setAppData({ ...runtime.getData(), enabled: v })
               runtime.onConfigChanged()
-              renderCfg()
             }),
-            '不依赖 MVU/酒馆助手：按你的变量定义自动向 AI 注入当前状态与更新规则，解析回复末尾的 <UpdateVariable> 并逐楼保存快照，任何角色卡都能用。变量定义、模板、注入预览都在「变量设计」里。',
+            t('apps.newvar.enable_help', "不依赖 MVU/酒馆助手：按你的变量定义自动向 AI 注入当前状态与更新规则，解析回复末尾的 <UpdateVariable> 并逐楼保存快照，任何角色卡都能用。变量定义、模板、注入预览都在「变量设计」里。"),
           ),
           hintField(
-            toggleRow('隐藏正文中的变量更新记录', d.hideUpdateBlocks, (v) => {
+            toggleRow(t('apps.newvar.hide_updates', "隐藏正文中的变量更新记录"), d.hideUpdateBlocks, (v) => {
               ctx.setAppData({ ...runtime.getData(), hideUpdateBlocks: v })
               ctx.toast(
                 'success',
                 v
-                  ? '已隐藏变量更新记录；原始回复和变量快照保持不变。'
-                  : '变量更新记录已恢复（此前由百工隐藏）。若仍不可见，请检查 ST Regex 中删除 UpdateVariable 的规则。',
+                  ? t('apps.newvar.updates_hidden', "已隐藏变量更新记录；原始回复和变量快照保持不变。")
+                  : t('apps.newvar.updates_restored', "变量更新记录已恢复（此前由百工隐藏）。若仍不可见，请检查 ST Regex 中删除 UpdateVariable 的规则。"),
               )
-              renderCfg()
             }),
-            '只隐藏消息气泡里完整的 <UpdateVariable>...</UpdateVariable> 区块，不修改 SillyTavern 保存的原始回复，也不影响变量解析和楼层快照。关闭后只能恢复本扩展隐藏的内容；ST Regex 等外部规则仍会独立生效。',
+            t('apps.newvar.hide_help', "只隐藏消息气泡里完整的 <UpdateVariable>...</UpdateVariable> 区块，不修改 SillyTavern 保存的原始回复，也不影响变量解析和楼层快照。关闭后只能恢复本扩展隐藏的内容；ST Regex 等外部规则仍会独立生效。"),
           ),
           hintField(
-            toggleRow('变量速查悬浮窗', ctx.getSettings().variableHud, (v) => {
+            toggleRow(t('apps.newvar.hud', "变量速查悬浮窗"), ctx.getSettings().variableHud, (v) => {
               ctx.updateSettings({ ...ctx.getSettings(), variableHud: v })
-              renderCfg()
             }),
-            '在聊天界面常驻一个可拖动的小圆钮，点开就能看到全部变量的当前值，省掉「开手机→开 App→翻找」。只读速查，改值仍在下方变量面板里；MVU 与「新变量」两边的变量会分段列出。这个开关是全局的，两个变量 App 里改哪个都一样。',
+            t('apps.newvar.hud_help', "在聊天界面常驻一个可拖动的小圆钮，点开就能看到全部变量的当前值，省掉「开手机→开 App→翻找」。只读速查，改值仍在下方变量面板里；MVU 与「新变量」两边的变量会分段列出。这个开关是全局的，两个变量 App 里改哪个都一样。"),
           ),
-          appButton('打开变量设计', openDesigner),
+          appButton(t('apps.newvar.open_designer', "打开变量设计"), openDesigner),
         )
         cfgBox.append(section)
       }
@@ -82,14 +81,14 @@ export function newvarApp(deps: NewvarAppDeps): PhoneApp {
             isMvu: false,
             delta: computeDelta(state, runtime.getPrevState(), false),
             status: st ? 'ready' : 'unavailable',
-            statusText: st ? `内置追踪 · ${d.enabled ? '已启用' : '未启用'}` : '内置追踪 · 模拟器',
-            emptyText: '暂无变量。点上方「打开变量设计」定义或导入模板，启用后 AI 回复会逐楼更新这里。',
+            statusText: st ? t('apps.newvar.status', "内置追踪 · {{state}}", { state: d.enabled ? t('apps.newvar.enabled', '已启用') : t('apps.newvar.disabled', '未启用') }) : t('apps.newvar.simulator', "内置追踪 · 模拟器"),
+            emptyText: t('apps.newvar.empty', "暂无变量。点上方「打开变量设计」定义或导入模板，启用后 AI 回复会逐楼更新这里。"),
             noticeText: st
               ? undefined
-              : '未检测到 SillyTavern：模拟器中可打开变量设计编辑定义与预览注入，状态快照在 ST 内才会产生。',
+              : t('apps.newvar.unavailable', "未检测到 SillyTavern：模拟器中可打开变量设计编辑定义与预览注入，状态快照在 ST 内才会产生。"),
             canWrite: st,
             allowAdd: false,
-            addHint: '这里只能修改变量设计中已有的路径；新增变量请先在「变量设计」中添加定义。',
+            addHint: t('apps.newvar.add_hint', "这里只能修改变量设计中已有的路径；新增变量请先在「变量设计」中添加定义。"),
           }
         },
         commitSet: (path, value) => runtime.setManualValue(path, value),

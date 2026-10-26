@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createVariableHud, type HudSectionSnapshot, type VariableHudController } from './variable-hud'
+import { loadTranslations, resetI18n, setLocale } from '../../core/i18n'
+import en from '../locales/en-US.json'
 
 describe('variable HUD viewport bounds and lifecycle', () => {
   const controllers: VariableHudController[] = []
@@ -21,6 +23,7 @@ describe('variable HUD viewport bounds and lifecycle', () => {
   })
 
   afterEach(() => {
+    resetI18n()
     controllers.splice(0).forEach((controller) => controller.dispose())
     frames.clear()
     document.body.replaceChildren()
@@ -61,6 +64,39 @@ describe('variable HUD viewport bounds and lifecycle', () => {
     Object.assign(event, { pointerId: 1, pointerType: 'mouse' })
     target.dispatchEvent(event)
   }
+
+  it('opens on an assistive click, labels the region, and returns focus after Escape', () => {
+    const { root } = setup({ x: 20, y: 20, open: false })
+    const button = root.querySelector<HTMLButtonElement>('.so-varhud-btn')!
+    const panel = root.querySelector<HTMLElement>('.so-varhud-panel')!
+    const close = root.querySelector<HTMLButtonElement>('.so-varhud-close')!
+    button.focus(); button.click()
+    expect(root.classList.contains('so-varhud-open')).toBe(true)
+    expect(button.getAttribute('aria-expanded')).toBe('true')
+    expect(button.getAttribute('aria-controls')).toBe(panel.id)
+    expect(panel.getAttribute('role')).toBe('region')
+    expect(document.activeElement).toBe(close)
+    close.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(root.classList.contains('so-varhud-open')).toBe(false)
+    expect(document.activeElement).toBe(button)
+  })
+
+  it('translates HUD chrome and notices while preserving variable keys, values and descriptions', async () => {
+    loadTranslations('en-US', en); setLocale('en-US')
+    const { root, controller } = setup({ x: 20, y: 20, open: true }, async () => [
+      { source: 'MVU', root: { '好感': [42, '原始描述'], '称呼': '原始称呼' }, notice: '' },
+      { source: 'External', root: null, notice: '' },
+    ])
+    await Promise.resolve()
+    expect(root.querySelector('.so-varhud-title')?.textContent).toBe('Variables at a glance')
+    expect(root.querySelector('.so-varhud-close')?.getAttribute('aria-label')).toBe('Collapse')
+    expect(root.querySelector('.so-varhud-source')?.textContent).toBe('MVU (2)')
+    expect(root.textContent).toContain('Currently unavailable')
+    expect(root.textContent).toContain('好感42')
+    expect(root.textContent).toContain('原始称呼')
+    expect(root.querySelector('.so-varhud-row')?.getAttribute('title')).toBe('原始描述')
+    controller.dispose()
+  })
 
   it('clamps the expanded panel using its complete rendered rectangle', async () => {
     const { root, writeState } = setup()

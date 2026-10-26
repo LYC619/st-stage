@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import path from 'node:path'
 
-const runtimeFiles = ['manifest.json', 'index.js', 'bundle.js', 'style.css', 'version.json']
+const runtimeFiles = ['manifest.json', 'index.js', 'bundle.js', 'style.css', 'version.json', 'locales/zh-CN.json', 'locales/en-US.json']
 const errors = []
 
 function option(name) {
@@ -12,7 +12,11 @@ function option(name) {
 }
 
 function fileInfo(root, relative) {
-  if (!readdirSync(root).includes(relative)) throw new Error('missing or incorrectly cased file: ' + path.join(root, relative))
+  let parent = root
+  for (const segment of relative.split('/')) {
+    if (!readdirSync(parent).includes(segment)) throw new Error('missing or incorrectly cased file: ' + path.join(root, relative))
+    parent = path.join(parent, segment)
+  }
   const file = path.resolve(root, relative)
   const relativeResolved = path.relative(realpathSync(root), realpathSync(file))
   if (relativeResolved.startsWith('..' + path.sep) || path.isAbsolute(relativeResolved)) {
@@ -42,10 +46,12 @@ function compareRoots(leftRoot, rightRoot, rightLabel, files = runtimeFiles) {
 
 const root = option('--root')
 const distribution = option('--distribution')
-const release = option('--release')
 compareRoots(root, distribution, 'distribution')
-compareRoots(distribution, release, 'release')
-compareRoots(distribution, release, 'release README', ['README.md'])
+if (process.argv.includes('--release')) {
+  const release = option('--release')
+  compareRoots(distribution, release, 'release')
+  compareRoots(distribution, release, 'release README', ['README.md'])
+}
 if (errors.length) {
   console.error(errors.join('\n'))
   process.exitCode = 1

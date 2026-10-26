@@ -47,7 +47,7 @@ https://github.com/LYC619/st-stage-ext
 >
 > | 仓库 | 用途 | 体积 | 粘到 ST 安装框？ |
 > | --- | --- | --- | --- |
-> | [`st-stage-ext`](https://github.com/LYC619/st-stage-ext) | **扩展仓库**，只放 6 个成品文件；ST 的自动更新也走它 | 约 1 MB | 就填这个 |
+> | [`st-stage-ext`](https://github.com/LYC619/st-stage-ext) | **扩展仓库**，只放成品文件与语言包；ST 的自动更新也走它 | 约 1 MB | 就填这个 |
 > | `st-stage`（你正在看的） | **源码仓库**：开发环境、测试、文档，用来改代码和提 issue | 几十 MB | 不要 |
 >
 > 装成源码仓库的话，ST 会拉几十 MB 却找不到扩展入口。装完可以在 `extensions/third-party/` 下确认目录名是 **`st-stage-ext`**——ST 按仓库名建目录，这就是默认名字。加载路径和管家的自我保护都在运行时按实际目录名推导，所以手动改名不会坏掉，但也没有改的必要。
@@ -139,6 +139,10 @@ Claude Code 会自动发现这个 skill；其他工具就在提示词开头加�
 
 ## 本地开发
 
+### 界面语言
+
+百工跟随 SillyTavern 的语言设置，切换后刷新页面生效。手机导航、立绘悬浮窗、扩展设置，以及立绘、图库、导出、MVU、新变量五个主要 App 支持中英文，包含图库详情、变量设计器和相关提示。用户数据、预设内容、备份路径和提示词保持原样。其他非核心工具内部、真实读屏软件与实体设备验收仍有后续工作。翻译贡献见 [docs/i18n-usage.md](docs/i18n-usage.md)，键盘操作与当前支持范围见 [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md)。
+
 网页版是仿 ST 的聊天模拟器，用于本地开发和测试核心链路（注入 → 模拟 AI 回复 → 提取标签 → 切换立绘）：
 
 ```bash
@@ -153,6 +157,7 @@ pnpm build      # Next.js 生产构建（网页模拟器，CI 用作类型/构�
 pnpm start      # 跑上一步的生产构建
 pnpm build:ext  # 重新打包根目录 ST 兼容产物（index.js / bundle.js / version.json / style.css）
 pnpm build:st   # 生成 st-distribution/，后续需另行同步到独立安装仓库
+pnpm build:all  # 发布前使用：同一时间戳生成根目录与 st-distribution，并复制语言文件
 ```
 
 环境版本、双端差异和同时间戳构建方法见 [维护指南](docs/maintenance/MAINTAINER.md)。独立发布仓库已存在；生成 `st-distribution/` 不会自动同步或发布它。
@@ -173,7 +178,8 @@ st-distribution/           可选生成的 ST 安装产物（不存放源码、�
 ├─ manifest.json           从根目录清单复制
 ├─ index.js / bundle.js    稳定加载器与扩展代码
 ├─ style.css / version.json
-└─ README.md               生成边界说明
+├─ README.md               生成边界说明
+└─ locales/                中英文界面词典（必须随产物发布）
 
 core/                     平台无关核心逻辑（双端共用，vitest 单测在旁边）
 │  ── 手机平台框架 ──

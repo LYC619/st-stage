@@ -1,5 +1,7 @@
 import type { SpritePack } from '../../core/types'
 import type { SpriteAction } from './sprite-actions'
+import { manageDialogFocus } from '../../core/dialog-focus'
+import { t } from '../../core/i18n'
 
 export type SpriteLightboxAction = SpriteAction
 
@@ -20,23 +22,26 @@ export function openSpriteLightbox(options: {
   let currentIndex = clampIndex(options.index, currentPack.sprites.length)
   let currentActions = options.actions
   let closed = false
+  let focus: ReturnType<typeof manageDialogFocus> | null = null
 
   const layer = element('div', 'so-lightbox')
   layer.setAttribute('role', 'dialog')
   layer.setAttribute('aria-modal', 'true')
-  layer.setAttribute('aria-label', '立绘预览')
+  layer.setAttribute('aria-label', t('lightbox.title', '立绘预览'))
   layer.dataset.readonly = String(options.readonly)
 
   const stage = element('div', 'so-lightbox-stage')
   const image = document.createElement('img')
   image.className = 'so-lightbox-image'
   const caption = element('div', 'so-lightbox-caption')
-  const previous = control('◀', '上一张（← 方向键）', 'so-lightbox-nav so-lightbox-prev')
-  const next = control('▶', '下一张（→ 方向键）', 'so-lightbox-nav so-lightbox-next')
-  const closeButton = control('✕', '关闭（Esc）', 'so-lightbox-close')
+  caption.setAttribute('role', 'status')
+  caption.setAttribute('aria-atomic', 'true')
+  const previous = control('◀', t('lightbox.previous', '上一张（← 方向键）'), 'so-lightbox-nav so-lightbox-prev')
+  const next = control('▶', t('lightbox.next', '下一张（→ 方向键）'), 'so-lightbox-nav so-lightbox-next')
+  const closeButton = control('✕', t('lightbox.close', '关闭（Esc）'), 'so-lightbox-close')
   const actionRail = element('div', 'so-lightbox-actions')
-  actionRail.setAttribute('role', 'toolbar')
-  actionRail.setAttribute('aria-label', '立绘操作')
+  actionRail.setAttribute('role', 'group')
+  actionRail.setAttribute('aria-label', t('lightbox.actions', '立绘操作'))
   stage.append(image)
   layer.append(stage, caption, previous, next, closeButton, actionRail)
 
@@ -53,6 +58,8 @@ export function openSpriteLightbox(options: {
   }
 
   const renderActions = (): void => {
+    const active = document.activeElement
+    const activeAction = active instanceof HTMLElement && actionRail.contains(active) ? active.dataset.actionId : undefined
     actionRail.replaceChildren()
     const visibleActions = options.readonly
       ? currentActions.filter((action) => action.allowedInReadonly)
@@ -91,6 +98,12 @@ export function openSpriteLightbox(options: {
       })
       actionRail.append(button)
     }
+    if (activeAction && focus?.isTop()) {
+      const replacement = Array.from(actionRail.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.dataset.actionId === activeAction && !button.disabled)
+      if (replacement) replacement.focus({ preventScroll: true })
+      else focus.focusInitial()
+    }
   }
 
   const render = (): void => {
@@ -98,7 +111,9 @@ export function openSpriteLightbox(options: {
     if (sprite) {
       image.src = sprite.url
       image.alt = sprite.tag
-      caption.textContent = `${sprite.tag}（${currentIndex + 1}/${currentPack.sprites.length}）`
+      caption.textContent = t('lightbox.caption', '{{tag}}（{{index}}/{{count}}）', {
+        tag: sprite.tag, index: currentIndex + 1, count: currentPack.sprites.length,
+      })
     } else {
       image.removeAttribute('src')
       image.alt = ''
@@ -121,6 +136,7 @@ export function openSpriteLightbox(options: {
   const close = (): void => {
     if (closed) return
     closed = true
+    focus?.dispose()
     document.removeEventListener('keydown', onKeyDown, true)
     if (visualViewport) {
       visualViewport.removeEventListener('resize', applyViewport)
@@ -129,20 +145,20 @@ export function openSpriteLightbox(options: {
       window.removeEventListener('resize', applyViewport)
     }
     layer.remove()
-    options.onClose()
+    try { options.onClose() } finally { focus?.restoreFocus() }
   }
 
   const onKeyDown = (event: KeyboardEvent): void => {
+    if (!focus?.isTop() || event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return
+    if (event.target instanceof HTMLElement && event.target.closest('input, textarea, select, [contenteditable]')) return
     if (event.key === 'ArrowLeft') {
       event.preventDefault()
+      event.stopPropagation()
       navigate(-1)
     } else if (event.key === 'ArrowRight') {
       event.preventDefault()
-      navigate(1)
-    } else if (event.key === 'Escape') {
-      event.preventDefault()
       event.stopPropagation()
-      close()
+      navigate(1)
     }
   }
 
@@ -189,6 +205,8 @@ export function openSpriteLightbox(options: {
   applyViewport()
   render()
   document.body.append(layer)
+  focus = manageDialogFocus(layer, { onEscape: close })
+  focus.focusInitial()
   return controller
 }
 

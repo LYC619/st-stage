@@ -14,6 +14,7 @@
  */
 
 import { countLeafRows, flattenVariables, type HudRow } from '../../core/variable-hud'
+import { t } from '../../core/i18n'
 
 /** 一个数据源在某一时刻的快照 */
 export interface HudSectionSnapshot {
@@ -44,6 +45,7 @@ export interface VariableHudController {
 
 const DRAG_THRESHOLD = 4
 const BUTTON_SIZE = 44
+let hudId = 0
 
 function clampPosition(x: number, y: number, width = BUTTON_SIZE, height = BUTTON_SIZE): { x: number; y: number } {
   const maxX = Math.max(0, window.innerWidth - width)
@@ -71,16 +73,21 @@ export function createVariableHud(deps: VariableHudDeps): VariableHudController 
 
   const button = el('button', 'so-varhud-btn')
   button.setAttribute('type', 'button')
-  button.setAttribute('aria-label', '变量速查')
+  button.setAttribute('aria-label', t('variableHud.title', '变量速查'))
   button.textContent = '🔢'
 
   const panel = el('div', 'so-varhud-panel')
+  panel.id = `so-varhud-panel-${++hudId}`
+  panel.setAttribute('role', 'region')
+  button.setAttribute('aria-controls', panel.id)
   const panelHead = el('div', 'so-varhud-head')
   const panelTitle = el('span', 'so-varhud-title')
-  panelTitle.textContent = '变量速查'
+  panelTitle.id = `${panel.id}-title`
+  panelTitle.textContent = t('variableHud.title', '变量速查')
+  panel.setAttribute('aria-labelledby', panelTitle.id)
   const closeBtn = el('button', 'so-varhud-close')
   closeBtn.setAttribute('type', 'button')
-  closeBtn.setAttribute('aria-label', '收起')
+  closeBtn.setAttribute('aria-label', t('variableHud.collapse', '收起'))
   closeBtn.textContent = '✕'
   panelHead.append(panelTitle, closeBtn)
   const panelBody = el('div', 'so-varhud-body')
@@ -96,6 +103,7 @@ export function createVariableHud(deps: VariableHudDeps): VariableHudController 
 
   function applyOpen(): void {
     root.classList.toggle('so-varhud-open', open)
+    button.setAttribute('aria-expanded', String(open))
     // 展开时按钮让位给面板：两者不同时出现，省得在小屏上互相遮挡
     button.style.display = open ? 'none' : 'flex'
     panel.style.display = open ? 'flex' : 'none'
@@ -152,7 +160,8 @@ export function createVariableHud(deps: VariableHudDeps): VariableHudController 
       if (token !== renderToken || disposed || !open) return
       panelBody.textContent = ''
       const fail = el('div', 'so-varhud-notice')
-      fail.textContent = `读取失败：${err instanceof Error ? err.message : String(err)}`
+      fail.setAttribute('role', 'status')
+      fail.textContent = t('variableHud.read_failed', '读取失败：{{message}}', { message: err instanceof Error ? err.message : String(err) })
       panelBody.append(fail)
       scheduleMeasure()
       return
@@ -167,16 +176,16 @@ export function createVariableHud(deps: VariableHudDeps): VariableHudController 
       const label = el('div', 'so-varhud-source')
       const rows = section.root ? flattenVariables(section.root) : []
       label.textContent = section.root
-        ? `${section.source}（${countLeafRows(rows)}）`
+        ? t('variableHud.source_count', '{{source}}（{{count}}）', { source: section.source, count: countLeafRows(rows) })
         : section.source
       block.append(label)
       if (!section.root) {
         const notice = el('div', 'so-varhud-notice')
-        notice.textContent = section.notice || '当前不可用'
+        notice.textContent = section.notice || t('variableHud.unavailable', '当前不可用')
         block.append(notice)
       } else if (rows.length === 0) {
         const empty = el('div', 'so-varhud-notice')
-        empty.textContent = '暂无变量'
+        empty.textContent = t('variableHud.no_variables', '暂无变量')
         block.append(empty)
       } else {
         anyRow = true
@@ -186,10 +195,10 @@ export function createVariableHud(deps: VariableHudDeps): VariableHudController 
     }
     if (sections.length === 0) {
       const empty = el('div', 'so-varhud-notice')
-      empty.textContent = '没有可用的变量来源'
+      empty.textContent = t('variableHud.no_sources', '没有可用的变量来源')
       panelBody.append(empty)
     }
-    panelTitle.textContent = anyRow ? '变量速查' : '变量速查（空）'
+    panelTitle.textContent = anyRow ? t('variableHud.title', '变量速查') : t('variableHud.empty_title', '变量速查（空）')
     scheduleMeasure()
   }
 
@@ -200,6 +209,8 @@ export function createVariableHud(deps: VariableHudDeps): VariableHudController 
     scheduleMeasure()
     deps.writeState({ ...position, open })
     if (open) void render()
+    if (open) closeBtn.focus({ preventScroll: true })
+    else button.focus({ preventScroll: true })
   }
 
   // —— 拖动：按下起测位移，超过阈值才算拖，否则抬起时当点击 ——
@@ -248,6 +259,22 @@ export function createVariableHud(deps: VariableHudDeps): VariableHudController 
   button.addEventListener('pointerdown', (event) => {
     event.stopPropagation()
     startDrag(event)
+  })
+  // Native keyboard and assistive clicks have no pointer sequence; pointer clicks already toggle on release.
+  button.addEventListener('click', (event) => {
+    event.stopPropagation()
+    if (event.detail === 0) setOpen(!open)
+  })
+  root.addEventListener('keydown', (event) => {
+    if (event.isComposing) return
+    if (event.key === 'Escape' && open) {
+      event.preventDefault()
+      event.stopPropagation()
+      setOpen(false)
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      // Keep native activation; stop ST from synthesizing a second click.
+      event.stopPropagation()
+    }
   })
   panelHead.addEventListener('pointerdown', (event) => {
     if (event.target === closeBtn) return

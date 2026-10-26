@@ -1,3 +1,4 @@
+import { t } from './i18n'
 import { applyImageChanges, imageRefKey, scanEmbeddedImages, spriteImageRef, type ImageChange, type ImageRef } from './image-storage'
 import { isPresetPack } from './presets'
 import { migrateSettings } from './migrate'
@@ -80,8 +81,8 @@ export function findUnmappedEmbeddedImages(rawSettings: unknown, settings: Plugi
 }
 
 export function createStorageBackup(settings: PluginSettings, rawSettings: unknown, backupId: string, createdAt: string): StorageBackupV1 {
-  if (!validId(backupId)) throw new Error('备份 ID 不合法')
-  if (!createdAt) throw new Error('备份时间不合法')
+  if (!validId(backupId)) throw new Error(t('storage.errors.backup_id', '备份 ID 不合法'))
+  if (!createdAt) throw new Error(t('storage.errors.backup_time', '备份时间不合法'))
   const persisted = { ...settings, packs: settings.packs.filter((pack) => !isPresetPack(pack.id)) }
   const backup: StorageBackupV1 = { format: 'st-stage-storage-backup@1', backupId, createdAt, settings: persisted, unmappedEmbedded: findUnmappedEmbeddedImages(rawSettings, persisted) }
   return JSON.parse(JSON.stringify(backup)) as StorageBackupV1
@@ -89,10 +90,10 @@ export function createStorageBackup(settings: PluginSettings, rawSettings: unkno
 
 export function parseStorageBackup(text: string): StorageBackupV1 {
   let parsed: unknown
-  try { parsed = JSON.parse(text) } catch (error) { throw new Error('存储备份不是有效 JSON', { cause: error }) }
+  try { parsed = JSON.parse(text) } catch (error) { throw new Error(t('storage.errors.backup_json', '存储备份不是有效 JSON'), { cause: error }) }
   const raw = object(parsed)
-  if (!raw || raw.format !== 'st-stage-storage-backup@1' || !validId(raw.backupId) || typeof raw.createdAt !== 'string' || !raw.createdAt || !Array.isArray(raw.unmappedEmbedded)) throw new Error('存储备份格式或版本不支持')
-  if (raw.unmappedEmbedded.some((item) => { const entry = object(item); return typeof entry?.location !== 'string' || typeof entry.value !== 'string' || !/^data:/i.test(entry.value) })) throw new Error('存储备份附录不合法')
+  if (!raw || raw.format !== 'st-stage-storage-backup@1' || !validId(raw.backupId) || typeof raw.createdAt !== 'string' || !raw.createdAt || !Array.isArray(raw.unmappedEmbedded)) throw new Error(t('storage.errors.backup_format', '存储备份格式或版本不支持'))
+  if (raw.unmappedEmbedded.some((item) => { const entry = object(item); return typeof entry?.location !== 'string' || typeof entry.value !== 'string' || !/^data:/i.test(entry.value) })) throw new Error(t('storage.errors.backup_appendix', '存储备份附录不合法'))
   const rawSettings = object(raw.settings)
   const defaults = createDefaultSettings()
   if (!rawSettings || !Array.isArray(rawSettings.packs) || rawSettings.settingsVersion !== SETTINGS_VERSION ||
@@ -101,23 +102,23 @@ export function parseStorageBackup(text: string): StorageBackupV1 {
     !hasFields(rawSettings.phone, Object.keys(defaults.phone)) ||
     !Array.isArray(rawSettings.bindings) ||
     rawSettings.bindings.some((binding) => !hasFields(binding, ['characterName', 'packIds', 'enabled']))) {
-    throw new Error('存储备份设置不合法')
+    throw new Error(t('storage.errors.backup_settings', '存储备份设置不合法'))
   }
   const settings = migrateSettings(rawSettings)
   if (
     settings.packs.some((pack) => isPresetPack(pack.id)) ||
     !preservesFields(rawSettings, settings)
   ) {
-    throw new Error('存储备份设置不合法')
+    throw new Error(t('storage.errors.backup_settings', '存储备份设置不合法'))
   }
   const packIds = new Set<string>()
   const refs = new Set<string>()
   for (const pack of settings.packs) {
-    if (packIds.has(pack.id)) throw new Error('存储备份包含重复图片身份')
+    if (packIds.has(pack.id)) throw new Error(t('storage.errors.backup_duplicates', '存储备份包含重复图片身份'))
     packIds.add(pack.id)
     for (const sprite of pack.sprites) {
       const key = imageRefKey(spriteImageRef(pack, sprite))
-      if (refs.has(key)) throw new Error('存储备份包含重复图片身份')
+      if (refs.has(key)) throw new Error(t('storage.errors.backup_duplicates', '存储备份包含重复图片身份'))
       refs.add(key)
     }
   }
@@ -129,21 +130,21 @@ function assertLocalUrl(url: string): string {
   const hasControl = Array.from(url).some((char) => char.charCodeAt(0) < 32)
   if (!normalized || !url.startsWith('/user/images/') || /[?#\\]/.test(url) || hasControl ||
     /%(?:2f|5c)/i.test(url) || normalized.endsWith('/') || normalized.includes('//')) {
-    throw new Error('迁移回执包含不安全的本地图片路径')
+    throw new Error(t('storage.errors.receipt_path', '迁移回执包含不安全的本地图片路径'))
   }
   return url
 }
 
 export function createMigrationReceipt(backup: StorageBackupV1, ready: ImageChange[]): MigrationReceiptV1 {
   const scan = scanEmbeddedImages(backup.settings)
-  if (scan.ambiguous.length > 0) throw new Error('迁移回执与备份不匹配')
+  if (scan.ambiguous.length > 0) throw new Error(t('storage.errors.receipt_mismatch', '迁移回执与备份不匹配'))
   const sourceByRef = new Map(scan.candidates.map((item) => [imageRefKey(item.ref), item]))
   const keys = new Set<string>()
   const entries = ready.map((change) => {
     const key = imageRefKey(change.ref)
     const source = sourceByRef.get(key)
-    if (keys.has(key)) throw new Error('迁移回执包含重复图片身份')
-    if (!source || source.sourceUrl !== change.expectedUrl) throw new Error('迁移回执与备份不匹配')
+    if (keys.has(key)) throw new Error(t('storage.errors.receipt_duplicates', '迁移回执包含重复图片身份'))
+    if (!source || source.sourceUrl !== change.expectedUrl) throw new Error(t('storage.errors.receipt_mismatch', '迁移回执与备份不匹配'))
     keys.add(key)
     return { ref: change.ref, localUrl: assertLocalUrl(change.nextUrl) }
   })
@@ -152,20 +153,20 @@ export function createMigrationReceipt(backup: StorageBackupV1, ready: ImageChan
 
 export function parseMigrationReceipt(text: string, backup: StorageBackupV1): MigrationReceiptV1 {
   let parsed: unknown
-  try { parsed = JSON.parse(text) } catch (error) { throw new Error('迁移回执不是有效 JSON', { cause: error }) }
+  try { parsed = JSON.parse(text) } catch (error) { throw new Error(t('storage.errors.receipt_json', '迁移回执不是有效 JSON'), { cause: error }) }
   const raw = object(parsed)
-  if (!raw || raw.format !== 'st-stage-image-migration-receipt@1' || raw.backupId !== backup.backupId || !Array.isArray(raw.entries)) throw new Error('迁移回执与备份不匹配')
+  if (!raw || raw.format !== 'st-stage-image-migration-receipt@1' || raw.backupId !== backup.backupId || !Array.isArray(raw.entries)) throw new Error(t('storage.errors.receipt_mismatch', '迁移回执与备份不匹配'))
   const scan = scanEmbeddedImages(backup.settings)
-  if (scan.ambiguous.length > 0) throw new Error('迁移回执与备份不匹配')
+  if (scan.ambiguous.length > 0) throw new Error(t('storage.errors.receipt_mismatch', '迁移回执与备份不匹配'))
   const sourceByRef = new Map(scan.candidates.map((item) => [imageRefKey(item.ref), item]))
   const keys = new Set<string>()
   const entries = raw.entries.map((item) => {
     const entry = object(item)
     const ref = object(entry?.ref)
-    if (!ref || typeof ref.packId !== 'string' || typeof ref.group !== 'string' || typeof ref.outfit !== 'string' || typeof ref.tag !== 'string' || typeof entry?.localUrl !== 'string') throw new Error('迁移回执条目不合法')
+    if (!ref || typeof ref.packId !== 'string' || typeof ref.group !== 'string' || typeof ref.outfit !== 'string' || typeof ref.tag !== 'string' || typeof entry?.localUrl !== 'string') throw new Error(t('storage.errors.receipt_entry', '迁移回执条目不合法'))
     const normalized: ImageRef = { packId: ref.packId, group: ref.group, outfit: ref.outfit, tag: ref.tag }
     const key = imageRefKey(normalized)
-    if (keys.has(key) || !sourceByRef.has(key)) throw new Error('迁移回执与备份不匹配')
+    if (keys.has(key) || !sourceByRef.has(key)) throw new Error(t('storage.errors.receipt_mismatch', '迁移回执与备份不匹配'))
     keys.add(key)
     assertLocalUrl(entry.localUrl)
     return { ref: normalized, localUrl: entry.localUrl }
@@ -174,16 +175,16 @@ export function parseMigrationReceipt(text: string, backup: StorageBackupV1): Mi
 }
 
 export function restoreMigratedImages(latest: PluginSettings, backup: StorageBackupV1, receipt: MigrationReceiptV1) {
-  if (receipt.backupId !== backup.backupId) throw new Error('迁移回执与备份不匹配')
-  if (receipt.format !== 'st-stage-image-migration-receipt@1') throw new Error('迁移回执格式不支持')
+  if (receipt.backupId !== backup.backupId) throw new Error(t('storage.errors.receipt_mismatch', '迁移回执与备份不匹配'))
+  if (receipt.format !== 'st-stage-image-migration-receipt@1') throw new Error(t('storage.errors.receipt_format', '迁移回执格式不支持'))
   const scan = scanEmbeddedImages(backup.settings)
-  if (scan.ambiguous.length > 0) throw new Error('迁移回执与备份不匹配')
+  if (scan.ambiguous.length > 0) throw new Error(t('storage.errors.receipt_mismatch', '迁移回执与备份不匹配'))
   const sourceByRef = new Map(scan.candidates.map((item) => [imageRefKey(item.ref), item]))
   const keys = new Set<string>()
   const changes = receipt.entries.map((entry) => {
     const key = imageRefKey(entry.ref)
     const source = sourceByRef.get(imageRefKey(entry.ref))
-    if (keys.has(key) || !source) throw new Error('迁移回执与备份不匹配')
+    if (keys.has(key) || !source) throw new Error(t('storage.errors.receipt_mismatch', '迁移回执与备份不匹配'))
     keys.add(key)
     const localUrl = assertLocalUrl(entry.localUrl)
     return { ref: entry.ref, expectedUrl: localUrl, nextUrl: source.sourceUrl }

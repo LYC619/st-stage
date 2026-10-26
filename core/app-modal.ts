@@ -5,6 +5,9 @@
  * 收起手机（onOpen）与回到 App（onClose）由平台钩子完成，弹窗寿命独立于 App 的 mount。
  */
 
+import { t } from './i18n'
+import { manageDialogFocus } from './dialog-focus'
+
 /** 弹窗内容构造器：往 body 渲染 DOM；返回的清理函数在关闭时执行 */
 export type ModalBuild = (body: HTMLElement, close: () => void) => void | (() => void)
 
@@ -17,20 +20,24 @@ export interface AppModalHooks {
 
 /** 打开弹窗，返回幂等的 close（平台销毁时兜底关闭用） */
 export function openAppModal(build: ModalBuild, hooks: AppModalHooks): () => void {
+  const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
   hooks.onOpen()
 
   const backdrop = document.createElement('div')
   backdrop.className = 'so-app-modal-backdrop'
   const box = document.createElement('div')
   box.className = 'so-app-modal'
+  box.setAttribute('role', 'dialog')
+  box.setAttribute('aria-modal', 'true')
+  box.setAttribute('aria-label', t('modal.title', 'App 弹窗'))
   const head = document.createElement('div')
   head.className = 'so-app-modal-head'
   const closeBtn = document.createElement('div')
   closeBtn.className = 'so-app-modal-close'
   closeBtn.textContent = '✕'
-  closeBtn.title = '关闭'
+  closeBtn.title = t('common.close', '关闭')
   closeBtn.setAttribute('role', 'button')
-  closeBtn.setAttribute('aria-label', '关闭弹窗')
+  closeBtn.setAttribute('aria-label', t('modal.close', '关闭弹窗'))
   closeBtn.tabIndex = 0
   const body = document.createElement('div')
   body.className = 'so-app-modal-body'
@@ -53,22 +60,21 @@ export function openAppModal(build: ModalBuild, hooks: AppModalHooks): () => voi
   const close = () => {
     if (closed) return
     closed = true
-    document.removeEventListener('keydown', onKey, true)
+    focus.dispose()
     runCleanup()
     backdrop.remove()
-    hooks.onClose()
-  }
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      e.stopPropagation()
-      close()
+    try {
+      hooks.onClose()
+    } finally {
+      focus.restoreFocus()
     }
   }
-  document.addEventListener('keydown', onKey, true)
+  const focus = manageDialogFocus(box, { onEscape: close, opener, layer: backdrop })
   closeBtn.addEventListener('click', close)
   closeBtn.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
+      e.stopPropagation()
       close()
     }
   })
@@ -78,8 +84,10 @@ export function openAppModal(build: ModalBuild, hooks: AppModalHooks): () => voi
     if (closed) runCleanup()
   } catch (err) {
     console.error('[sprite-overlay] App 弹窗渲染失败', err)
-    body.textContent = '弹窗渲染失败，详见控制台'
+    body.setAttribute('role', 'alert')
+    body.textContent = t('modal.render_error', '弹窗渲染失败，详见控制台')
   }
+  if (!closed) focus.focusInitial()
   return close
 }
 

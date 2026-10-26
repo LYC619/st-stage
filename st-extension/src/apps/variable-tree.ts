@@ -11,6 +11,9 @@
  * 安全：所有键/值一律 textContent，绝不拼 innerHTML。
  */
 
+import { t } from '../../../core/i18n'
+import { captureVariableFocus, variableButton } from './newvar/ui-focus'
+
 import { el, appButton } from './widgets'
 import { splitPath, getNested, setNested, deleteNested } from './path-utils'
 
@@ -98,9 +101,9 @@ function editKind(v: unknown, definition?: VariableEditDefinition): EditKind {
 export function valueTypeLabel(v: unknown, tuple: boolean): string {
   const inner = tuple ? (v as [unknown, string])[0] : v
   if (inner === null) return 'null'
-  if (Array.isArray(inner)) return `数组[${inner.length}]`
-  if (typeof inner === 'object') return '对象'
-  return typeof inner === 'number' ? '数字' : typeof inner === 'boolean' ? '布尔' : '文本'
+  if (Array.isArray(inner)) return t('variableTree.array', "数组[{{count}}]", { count: inner.length })
+  if (typeof inner === 'object') return t('variableTree.object', "对象")
+  return typeof inner === 'number' ? t('variableTree.number', "数字") : typeof inner === 'boolean' ? t('variableTree.boolean', "布尔") : t('variableTree.text', "文本")
 }
 
 // —— 变化高亮（相邻状态 deep-diff） —— //
@@ -201,22 +204,33 @@ export interface VariableTreeView {
 
 export function createVariableTreeView(container: HTMLElement, handlers: VariableTreeHandlers): VariableTreeView {
   let editingPath: string | null = null
+  let focusRequest: { path: string; editor?: HTMLElement } | null = null
   // 分组展开状态跨渲染保留（进入编辑/自动刷新会整树重渲染，不记就会折叠回默认——用户实测反馈）
   const groupOpen = new Map<string, boolean>()
   let addOpen = false
 
   function render(): void {
     const model = handlers.getModel()
+    const restore = captureVariableFocus(container)
+    // A write may finish after the user has moved elsewhere. Resolve ownership
+    // before removing the old editor, which would itself move focus to body.
+    const request = focusRequest
+    focusRequest = null
+    const active = document.activeElement
+    const focusPath = request && (!request.editor || request.editor.contains(active)
+      || (!request.editor.isConnected && active === document.body)) ? request.path : null
     container.textContent = ''
 
     // 顶栏：状态 + 刷新
     const head = el('div', 'so-app-section vm-head')
     const line = el('div', 'vm-statusrow')
     const status = el('div', 'so-app-desc vm-status')
+    status.setAttribute('role', 'status')
     status.textContent = model.statusText
-    const refreshBtn = el('button', 'menu_button vm-refresh')
+    const refreshBtn = variableButton('menu_button vm-refresh')
     refreshBtn.setAttribute('role', 'button')
-    refreshBtn.textContent = '刷新'
+    refreshBtn.textContent = t('variableTree.refresh', "刷新")
+    refreshBtn.dataset.variableFocus = 'refresh'
     refreshBtn.addEventListener('click', () => handlers.requestRefresh())
     line.append(status, refreshBtn)
     head.append(line)
@@ -224,7 +238,10 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
 
     if (model.noticeText) {
       appendNotice(model.noticeText)
-      if (model.status === 'unavailable') return
+      if (model.status === 'unavailable') {
+        restore?.()
+        return
+      }
     }
 
     const keys = Object.keys(model.data)
@@ -237,6 +254,14 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
     }
 
     if (model.allowAdd !== false) container.append(buildAddSection(model))
+    if (focusPath !== null) {
+      const target = editingPath === focusPath
+        ? container.querySelector<HTMLElement>('.vm-editing input, .vm-editing select, .vm-editing textarea')
+        : [...container.querySelectorAll<HTMLElement>('.vm-leaf-main')]
+          .find(node => node.dataset.variableFocus === `leaf:${focusPath}`)
+      if (target) target.focus({ preventScroll: true })
+      else restore?.()
+    } else restore?.()
   }
 
   function appendNotice(text: string): void {
@@ -264,6 +289,7 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
       details.addEventListener('toggle', () => groupOpen.set(path, details.open))
       const summary = document.createElement('summary')
       summary.className = 'so-app-title vm-group-title'
+      summary.dataset.variableFocus = `group:${path}`
       summary.textContent = `${key}（${Object.keys(value).length}）`
       const body = el('div', 'so-app-fold-body vm-group-body')
       for (const childKey of Object.keys(value)) {
@@ -290,12 +316,13 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
     }
     const card = el('div', 'vm-leaf')
     const main = el('div', 'vm-leaf-main')
+    main.dataset.variableFocus = `leaf:${path}`
     const keyEl = el('span', 'vm-key')
     keyEl.textContent = key
     const valEl = el('span', 'vm-val')
     const shown = formatValue(tuple ? (value as [unknown, string])[0] : value)
     valEl.textContent = shown.length > 80 ? `${shown.slice(0, 80)}…` : shown
-    valEl.title = `类型：${valueTypeLabel(value, tuple)}`
+    valEl.title = t('variableTree.type', "类型：{{type}}", { type: valueTypeLabel(value, tuple) })
     main.append(keyEl, valEl)
 
     const d = model.delta.get(path)
@@ -312,12 +339,14 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
       main.tabIndex = 0
       const enterEdit = () => {
         editingPath = path
+        focusRequest = { path }
         render()
       }
       main.addEventListener('click', enterEdit)
       main.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
+          e.stopPropagation()
           enterEdit()
         }
       })
@@ -326,13 +355,14 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
     card.append(main)
 
     if (model.canWrite) {
-      const del = el('button', 'vm-del')
-      del.setAttribute('aria-label', '删除变量')
-      del.title = '删除该变量'
+      const del = variableButton('vm-del')
+      del.setAttribute('aria-label', t('variableTree.delete_path', '删除变量 {{path}}', { path }))
+      del.dataset.variableFocus = `delete:${path}`
+      del.title = t('variableTree.delete_title', "删除该变量")
       del.textContent = '✕'
       del.addEventListener('click', (e) => {
         e.stopPropagation()
-        if (!window.confirm(`删除变量「${path}」？此操作不可撤销。`)) return
+        if (!window.confirm(t('variableTree.delete_confirm', "删除变量「{{path}}」？此操作不可撤销。", { path }))) return
         editingPath = null
         handlers.commitDelete(path)
       })
@@ -350,7 +380,7 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
       const shown = Number.isInteger(n) ? String(n) : String(Number(n.toFixed(2)))
       badge.textContent = `${n > 0 ? '+' : ''}${shown}`
     } else {
-      badge.textContent = d.kind === 'added' ? '新' : '改'
+      badge.textContent = d.kind === 'added' ? t('variableTree.added', "新") : t('variableTree.changed', "改")
     }
     return badge
   }
@@ -372,12 +402,13 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
     wrap.append(title)
     if (tuple) {
       const desc = el('div', 'vm-desc')
-      desc.textContent = `描述：${(value as [unknown, string])[1]}（保留不变，仅编辑值）`
+      desc.textContent = t('variableTree.description', "描述：{{description}}（保留不变，仅编辑值）", { description: (value as [unknown, string])[1] })
       wrap.append(desc)
     }
 
     const err = el('div', 'so-app-desc vm-add-err')
     err.hidden = true
+    err.setAttribute('role', 'alert')
 
     let readValue: () => { ok: boolean; value?: unknown; msg?: string }
     if (kind === 'boolean') {
@@ -386,7 +417,7 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
       input.type = 'checkbox'
       input.checked = inner === true
       const label = document.createElement('span')
-      label.textContent = '启用（true）'
+      label.textContent = t('variableTree.true', "启用（true）")
       row.append(input, label)
       wrap.append(row)
       readValue = () => ({ ok: true, value: input.checked })
@@ -414,11 +445,10 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
       }
       wrap.append(input)
       readValue = () => {
-        if (input.value.trim() === '') return { ok: false, msg: '请输入有效数字。' }
+        if (input.value.trim() === '') return { ok: false, msg: t('variableTree.invalid_number', "请输入有效数字。") }
         const value = Number(input.value)
-        return Number.isFinite(value) ? { ok: true, value } : { ok: false, msg: '请输入有效数字。' }
+        return Number.isFinite(value) ? { ok: true, value } : { ok: false, msg: t('variableTree.invalid_number', "请输入有效数字。") }
       }
-      setTimeout(() => input.focus(), 0)
     } else if (kind === 'json') {
       const ta = document.createElement('textarea')
       ta.className = 'text_pole so-app-input vm-edit-input'
@@ -429,10 +459,9 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
         try {
           return { ok: true, value: JSON.parse(ta.value) }
         } catch (e) {
-          return { ok: false, msg: `JSON 格式错误：${e instanceof Error ? e.message : String(e)}` }
+          return { ok: false, msg: t('variableTree.json_error', "JSON 格式错误：{{error}}", { error: e instanceof Error ? e.message : String(e) }) }
         }
       }
-      setTimeout(() => ta.focus(), 0)
     } else {
       const input = document.createElement('input')
       input.type = 'text'
@@ -441,32 +470,39 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
       input.autocomplete = 'off'
       wrap.append(input)
       readValue = () => ({ ok: true, value: definition?.type === 'string' ? input.value : parseInputValue(input.value) })
-      setTimeout(() => input.focus(), 0)
     }
+    const input = wrap.querySelector<HTMLElement>('input, select, textarea')
+    input?.setAttribute('aria-label', t('variableTree.edit_value', '编辑 {{path}} 的值', { path }))
+    if (input) input.dataset.variableFocus = `value:${path}`
     wrap.append(err)
 
     const actions = el('div', 'vm-actions')
-    const save = el('button', 'menu_button vm-act')
-    save.textContent = '保存'
+    const save = variableButton('menu_button vm-act')
+    save.textContent = t('variableTree.save', "保存")
+    save.dataset.variableFocus = `save:${path}`
     save.addEventListener('click', () => {
       const r = readValue()
       if (!r.ok) {
-        err.textContent = r.msg ?? '输入无效。'
+        err.textContent = r.msg ?? t('variableTree.invalid', "输入无效。")
         err.hidden = false
         return
       }
       editingPath = null
+      focusRequest = { path, editor: wrap }
       const committed = handlers.commitSet(path, r.value)
       if (committed && !committed.ok) {
         editingPath = path
+        focusRequest = null
         err.textContent = committed.error
         err.hidden = false
       }
     })
-    const cancel = el('button', 'menu_button vm-act vm-act-ghost')
-    cancel.textContent = '取消'
+    const cancel = variableButton('menu_button vm-act vm-act-ghost')
+    cancel.textContent = t('variableTree.cancel', "取消")
+    cancel.dataset.variableFocus = `cancel:${path}`
     cancel.addEventListener('click', () => {
       editingPath = null
+      focusRequest = { path }
       render()
     })
     actions.append(save, cancel)
@@ -481,7 +517,8 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
     box.addEventListener('toggle', () => (addOpen = box.open))
     const summary = document.createElement('summary')
     summary.className = 'so-app-title'
-    summary.textContent = '＋ 新增变量'
+    summary.textContent = t('variableTree.add_variable', "＋ 新增变量")
+    summary.dataset.variableFocus = 'add-section'
     const body = el('div', 'so-app-fold-body')
 
     const hint = el('div', 'so-app-desc')
@@ -491,29 +528,34 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
     const pathInput = document.createElement('input')
     pathInput.type = 'text'
     pathInput.className = 'text_pole so-app-input'
-    pathInput.placeholder = '变量路径（如 状态.体力）'
+    pathInput.placeholder = t('variableTree.path_placeholder', "变量路径（如 状态.体力）")
+    pathInput.setAttribute('aria-label', t('variableTree.path', '变量路径'))
+    pathInput.dataset.variableFocus = 'new-path'
     pathInput.autocomplete = 'off'
     const valInput = document.createElement('input')
     valInput.type = 'text'
     valInput.className = 'text_pole so-app-input'
-    valInput.placeholder = '值（如 80 / 健康 / true）'
+    valInput.placeholder = t('variableTree.value_placeholder', "值（如 80 / 健康 / true）")
+    valInput.setAttribute('aria-label', t('variableTree.value', '变量值'))
+    valInput.dataset.variableFocus = 'new-value'
     valInput.autocomplete = 'off'
     body.append(pathInput, valInput)
 
     const err = el('div', 'so-app-desc vm-add-err')
     err.hidden = true
+    err.setAttribute('role', 'alert')
     body.append(err)
 
     body.append(
-      appButton('添加', () => {
+      appButton(t('variableTree.add', "添加"), () => {
         const path = pathInput.value.trim()
         if (!path) {
-          err.textContent = '请填写变量路径。'
+          err.textContent = t('variableTree.path_required', "请填写变量路径。")
           err.hidden = false
           return
         }
         if (!model.canWrite) {
-          err.textContent = '当前环境不可写入变量。'
+          err.textContent = t('variableTree.cannot_write', "当前环境不可写入变量。")
           err.hidden = false
           return
         }
@@ -532,6 +574,9 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
   return {
     render,
     resetEditing() {
+      if (editingPath && container.contains(document.activeElement)) {
+        focusRequest = { path: editingPath, editor: container.querySelector<HTMLElement>('.vm-editing') ?? undefined }
+      }
       editingPath = null
     },
     isEditing() {

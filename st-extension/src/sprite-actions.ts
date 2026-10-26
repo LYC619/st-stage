@@ -1,3 +1,4 @@
+import { t } from '../../core/i18n'
 import type { Sprite, SpritePack } from '../../core/types'
 import { getSpriteSource } from '../../core/types'
 import { removeSprite, renameSprite, setSpriteGroup, spriteGroup, upsertSprite } from '../../core/sprite-store'
@@ -44,12 +45,12 @@ export function createSpriteActions(context: SpriteActionContext): SpriteAction[
   return [
     {
       id: 'rename',
-      label: '重命名',
+      label: t("sprite.manager.content.action.rename", "重命名"),
       icon: '✎',
       run() {
         const state = current(context)
         if (!state) return
-        const next = window.prompt(`「${state.sprite.tag}」改名为：`, state.sprite.tag)
+        const next = window.prompt(t("sprite.manager.content.action.rename_prompt", "「{{p0}}」改名为：", { p0: state.sprite.tag }), state.sprite.tag)
         if (next === null) return
         commitAndRefresh(
           context,
@@ -65,13 +66,13 @@ export function createSpriteActions(context: SpriteActionContext): SpriteAction[
     },
     {
       id: 'labels',
-      label: '标签',
+      label: t("sprite.manager.content.action.labels", "标签"),
       icon: '#',
       run() {
         const state = current(context)
         if (!state) return
         const raw = window.prompt(
-          `「${state.sprite.tag}」的标签（逗号分隔，留空=清除）：`,
+          t("sprite.manager.content.action.labels_prompt", "「{{p0}}」的标签（逗号分隔，留空=清除）：", { p0: state.sprite.tag }),
           state.sprite.labels?.join(', ') ?? '',
         )
         if (raw === null) return
@@ -84,13 +85,13 @@ export function createSpriteActions(context: SpriteActionContext): SpriteAction[
     },
     {
       id: 'group',
-      label: '设分组',
+      label: t("sprite.manager.content.action.group", "设分组"),
       icon: '🏷',
       run() {
         const state = current(context)
         if (!state) return
         const group = spriteGroup(state.sprite)
-        const next = window.prompt(`「${state.sprite.tag}」的分组（留空=移出分组）：`, group)
+        const next = window.prompt(t("sprite.manager.content.action.group_prompt", "「{{p0}}」的分组（留空=移出分组）：", { p0: state.sprite.tag }), group)
         if (next === null) return
         commitAndRefresh(
           context,
@@ -100,7 +101,7 @@ export function createSpriteActions(context: SpriteActionContext): SpriteAction[
     },
     {
       id: 'replace',
-      label: '重新上传 / 替换图片',
+      label: t("sprite.manager.content.action.replace", "重新上传 / 替换图片"),
       icon: '🖼',
       run() {
         if (!current(context)) return
@@ -109,10 +110,10 @@ export function createSpriteActions(context: SpriteActionContext): SpriteAction[
     },
     {
       id: 'localize',
-      label: '保存到本地',
+      label: t("sprite.manager.content.action.localize", "保存到本地"),
       icon: '↓',
-      hint: '把图床上的图片下载成本地文件再引用，之后不再依赖外链。'
-        + '预设包不会被改写，只记一条同 ID 的本地覆盖，随时可以删掉回到原图。',
+      hint: t("sprite.manager.content.action.localize_hint", "把图床上的图片下载成本地文件再引用，之后不再依赖外链。")
+        + t("sprite.manager.content.action.preset_localize_hint", "预设包不会被改写，只记一条同 ID 的本地覆盖，随时可以删掉回到原图。"),
       // 预设包只读，但本地化是记覆盖而不是改包，所以只读态下也应当放行——
       // 这是预设立绘唯一的本地化入口。
       allowedInReadonly: true,
@@ -125,7 +126,7 @@ export function createSpriteActions(context: SpriteActionContext): SpriteAction[
     },
     {
       id: 'remote',
-      label: '远程地址',
+      label: t("sprite.manager.content.action.remote", "远程地址"),
       icon: '🔗',
       run() {
         const state = current(context)
@@ -133,17 +134,17 @@ export function createSpriteActions(context: SpriteActionContext): SpriteAction[
         const remote = state.sprite.remoteUrl ||
           (getSpriteSource(state.sprite) === 'hosted' ? state.sprite.url : '')
         if (!remote) {
-          throw new Error(`「${state.sprite.tag}」还没有远程地址（未上传图床，分享时对方看不到）`)
+          throw new Error(t("sprite.manager.content.action.no_remote", "「{{p0}}」还没有远程地址（未上传图床，分享时对方看不到）", { p0: state.sprite.tag }))
         }
         window.prompt(
-          `「${state.sprite.tag}」编号：${state.sprite.code || '无'}\n远程地址（Ctrl+C 复制）：`,
+          t("sprite.manager.content.action.remote_prompt", "「{{p0}}」编号：{{p1}}\n远程地址（Ctrl+C 复制）：", { p0: state.sprite.tag, p1: state.sprite.code || t("sprite.manager.content.action.none", "无") }),
           remote,
         )
       },
     },
     {
       id: 'cover',
-      label: '设为封面',
+      label: t("sprite.manager.content.action.cover", "设为封面"),
       icon: '★',
       run() {
         const state = current(context)
@@ -153,12 +154,12 @@ export function createSpriteActions(context: SpriteActionContext): SpriteAction[
     },
     {
       id: 'delete',
-      label: '删除',
+      label: t("common.delete", "删除"),
       icon: '✕',
       destructive: true,
       run() {
         const state = current(context)
-        if (!state || !window.confirm(`删除立绘「${state.sprite.tag}」？`)) return
+        if (!state || !window.confirm(t("sprite.manager.content.action.confirm_delete", "删除立绘「{{p0}}」？", { p0: state.sprite.tag }))) return
         const next = removeSprite(
           state.pack,
           state.sprite.tag,

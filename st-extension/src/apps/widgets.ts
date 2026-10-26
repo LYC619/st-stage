@@ -3,6 +3,13 @@
  * 样式类名沿用 so-app-*（core/phone-shell.css）。
  */
 
+import { t } from '../../../core/i18n'
+
+let controlId = 0
+function nextControlId(): string {
+  return `so-app-control-${++controlId}`
+}
+
 export function el(tag: string, className: string): HTMLElement {
   const node = document.createElement(tag)
   node.className = className
@@ -18,6 +25,8 @@ export function appButton(label: string, onClick: () => void): HTMLElement {
   btn.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
+      // The ST host also converts bubbling Enter on .menu_button to click.
+      e.stopPropagation()
       onClick()
     }
   })
@@ -51,6 +60,9 @@ export function selectRow(
   const span = document.createElement('span')
   span.textContent = label
   const select = document.createElement('select')
+  select.id = nextControlId()
+  span.id = `${select.id}-label`
+  select.setAttribute('aria-labelledby', span.id)
   select.className = 'text_pole so-app-input'
   for (const opt of options) {
     const o = document.createElement('option')
@@ -108,11 +120,16 @@ export function rangeRow(
   const controls = el('span', 'so-app-range-controls')
   const input = document.createElement('input')
   input.type = 'range'
+  input.id = nextControlId()
+  span.id = `${input.id}-label`
+  input.setAttribute('aria-labelledby', span.id)
   input.min = String(min)
   input.max = String(max)
   input.step = '1'
   input.value = String(Math.min(max, Math.max(min, Math.round(value))))
   const output = document.createElement('output')
+  output.htmlFor.value = input.id
+  output.setAttribute('aria-hidden', 'true')
 
   const read = (): number => {
     const parsed = Math.round(Number(input.value))
@@ -120,6 +137,7 @@ export function rangeRow(
     input.value = String(clamped)
     output.value = format(clamped)
     output.textContent = output.value
+    input.setAttribute('aria-valuetext', output.value)
     return clamped
   }
 
@@ -159,9 +177,12 @@ export function textareaRow(
   onCommit: (v: string) => void,
 ): HTMLElement {
   const wrap = el('div', 'so-app-field')
-  const title = el('div', 'so-app-title')
+  const title = document.createElement('label')
+  title.className = 'so-app-title'
   title.textContent = label
   const input = document.createElement('textarea')
+  input.id = nextControlId()
+  title.htmlFor = input.id
   input.className = 'text_pole so-app-input'
   input.rows = 5
   input.value = value
@@ -187,15 +208,27 @@ export function hintField(row: HTMLElement, hint: string): HTMLElement {
   badge.className = 'so-app-hint-badge'
   badge.textContent = 'ⓘ'
   badge.title = hint
-  badge.setAttribute('aria-label', '说明')
+  badge.setAttribute('aria-label', t('common.help', '说明'))
   badge.setAttribute('aria-expanded', 'false')
 
   const detail = el('div', 'so-app-hint')
+  detail.id = `${nextControlId()}-help`
   detail.textContent = hint
   detail.hidden = true
+  badge.setAttribute('aria-controls', detail.id)
+  badge.setAttribute('aria-describedby', detail.id)
+  for (const control of row.querySelectorAll('input, textarea, select')) {
+    const descriptions = control.getAttribute('aria-describedby')?.split(/\s+/).filter(Boolean) ?? []
+    control.setAttribute('aria-describedby', [...descriptions, detail.id].join(' '))
+  }
+  badge.addEventListener('keydown', (e) => {
+    // Keep native button activation, but do not also activate a host ancestor.
+    if (e.key === 'Enter' || e.key === ' ') e.stopPropagation()
+  })
 
   badge.addEventListener('click', (e) => {
     e.preventDefault()
+    e.stopPropagation()
     detail.hidden = !detail.hidden
     badge.classList.toggle('so-app-hint-badge-on', !detail.hidden)
     badge.setAttribute('aria-expanded', String(!detail.hidden))
@@ -215,9 +248,12 @@ export function textRow(
   type: 'text' | 'password' = 'text',
 ): HTMLElement {
   const wrap = el('div', 'so-app-field')
-  const title = el('div', 'so-app-title')
+  const title = document.createElement('label')
+  title.className = 'so-app-title'
   title.textContent = label
   const input = document.createElement('input')
+  input.id = nextControlId()
+  title.htmlFor = input.id
   input.type = type
   input.className = 'text_pole so-app-input'
   input.value = value

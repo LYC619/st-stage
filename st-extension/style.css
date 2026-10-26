@@ -316,16 +316,6 @@
     gap: 8px;
   }
 
-  /* 头部工具栏挤不下：操作区整体换到第二行，右对齐 */
-  .so-manager-header {
-    flex-wrap: wrap;
-  }
-
-  .so-manager .so-manager-actions {
-    flex: 1 1 100%;
-    justify-content: flex-end;
-  }
-
   .so-manager .so-header-select {
     flex: 1 1 auto;
   }
@@ -425,6 +415,20 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Keep mobile overrides after the base rules: title/close on row one, wrapping actions below. */
+@media (max-width: 767.98px) {
+  .so-manager-header {
+    flex-wrap: wrap;
+  }
+
+  .so-manager .so-manager-actions {
+    order: 1;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
 }
 
 .so-manager-back {
@@ -1782,6 +1786,19 @@
   box-sizing: border-box;
 }
 
+#chat .so-inline-image-error:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+@media (max-width: 720px) {
+  /* Keep English labels from squeezing the editable preview values to one character. */
+  .so-manager-backdrop .so-upload-row .so-labeled {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 .so-upload-opts {
   display: flex;
   flex-direction: column;
@@ -2442,6 +2459,10 @@
   box-sizing: border-box;
   position: fixed;
   inset: 0;
+  /* ST mobile transforms a zero-height html root; use the viewport, not that containing block. */
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
   z-index: 10001;
   display: flex;
   align-items: center;
@@ -2493,7 +2514,10 @@
 }
 
 .so-storage-dialog button {
+  /* Override ST's min-content menu buttons so long translations wrap by words. */
+  width: auto;
   max-width: 100%;
+  flex-shrink: 0;
   white-space: normal;
   overflow-wrap: anywhere;
 }

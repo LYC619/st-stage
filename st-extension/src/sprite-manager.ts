@@ -11,6 +11,8 @@
  * 预设包的图片内容只读，包信息和本地图片通过 same-ID 覆盖层持久化。
  */
 
+import { t } from '../../core/i18n'
+import { manageDialogFocus } from '../../core/dialog-focus'
 import type { PluginSettings, Sprite, SpritePack } from '../../core/types'
 import {
   DEFAULT_PROMPT_NOTE_PLACEMENT,
@@ -122,6 +124,8 @@ export interface ManagerController {
 
 type View = { kind: 'list' } | { kind: 'pack'; packId: string }
 const SPRITE_PAGE_SIZE = 60
+let managerControlId = 0
+const nextManagerId = () => `so-manager-control-${++managerControlId}`
 
 interface ActiveLightbox {
   controller: SpriteLightboxController | null
@@ -156,6 +160,10 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   let activeLightbox: ActiveLightbox | null = null
   let storageDialog: ImageStorageDialogController | null = null
   let importController: AbortController | null = null
+  let dialogFocus: ReturnType<typeof manageDialogFocus> | null = null
+  const childDialogs = new Set<() => void>()
+  const popoverListeners = new Set<() => void>()
+  let popoverOpener: HTMLElement | null = null
 
   /** 遮罩尺寸用 JS 按 innerWidth/Height 写死 px（与手机壳同一套定位路径）：
       移动端浏览器对 fixed+四边锚点/视口单位的解释五花八门，内联 px 最稳 */
@@ -189,29 +197,28 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     selectedPackIds.clear()
     backdrop = el('div', 'so-manager-backdrop')
     // 点空白不再关闭（用户实测：误触退出后要重新逐层进入，受挫感强）；关闭走 ✕ 按钮或 Esc
-    document.addEventListener('keydown', onEscape)
     window.addEventListener('resize', applyBackdropSize)
     applyBackdropSize()
 
     const dialog = el('div', 'so-manager')
     dialog.setAttribute('role', 'dialog')
-    dialog.setAttribute('aria-label', '立绘包管理')
+    dialog.setAttribute('aria-modal', 'true')
+    dialog.setAttribute('aria-label', t('sprite.manager.title', '立绘包管理'))
 
     const header = el('div', 'so-manager-header')
     // 详情页专用返回键：放在固定头部，滚到哪都能返回（移动端全屏时尤其重要）
     const backBtn = el('div', 'menu_button so-manager-back')
-    backBtn.title = '返回列表'
+    backBtn.title = t('sprite.manager.back', '返回列表')
+    backBtn.setAttribute('aria-label', backBtn.title)
     backBtn.textContent = '‹'
     backBtn.setAttribute('role', 'button')
     backBtn.tabIndex = 0
-    const goBack = () => {
-      view = { kind: 'list' }
-      render()
-    }
+    const goBack = () => returnToList()
     backBtn.addEventListener('click', goBack)
     backBtn.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault()
+        e.stopPropagation()
         goBack()
       }
     })
@@ -219,8 +226,18 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     // 头部操作区（列表页放启用选择 + 新建/导入下拉；详情页留空自动隐藏）
     const actions = el('div', 'so-manager-actions')
     const closeBtn = el('div', 'menu_button so-manager-close')
-    closeBtn.title = '关闭'
+    closeBtn.title = t('common.close', '关闭')
     closeBtn.textContent = '✕'
+    closeBtn.setAttribute('role', 'button')
+    closeBtn.setAttribute('aria-label', closeBtn.title)
+    closeBtn.tabIndex = 0
+    closeBtn.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        event.stopPropagation()
+        close()
+      }
+    })
     closeBtn.addEventListener('click', () => close())
     header.append(backBtn, title, actions, closeBtn)
 
@@ -228,23 +245,22 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     dialog.append(header, body)
     backdrop.append(dialog)
     document.body.append(backdrop)
+    dialogFocus = manageDialogFocus(dialog, { onEscape, layer: backdrop })
     render()
+    dialogFocus.focusInitial()
   }
 
-  function onEscape(e: KeyboardEvent): void {
-    if (e.key !== 'Escape') return
-    if (e.defaultPrevented) return
-    // 放大查看器自己处理 Esc（capture + stopPropagation），这里兜底不动视图
-    if (backdrop?.querySelector('.so-lightbox')) return
+  function onEscape(): void {
     // 先关下拉浮层，再谈返回/关闭
     if (backdrop?.querySelector('.so-popover')) {
+      const opener = popoverOpener ?? backdrop.querySelector<HTMLElement>('.so-enable-btn')
       closeEnableList()
       closePopovers()
+      opener?.focus()
       return
     }
     if (view.kind === 'pack') {
-      view = { kind: 'list' }
-      render()
+      returnToList()
     } else {
       close()
     }
@@ -254,15 +270,46 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     if (!backdrop) return
     activeLightbox?.controller?.close()
     closeEnableList()
+    closePopovers()
     importController?.abort()
     importController = null
     storageDialog?.close()
     storageDialog = null
-    document.removeEventListener('keydown', onEscape)
+    for (const closeChild of [...childDialogs].reverse()) closeChild()
+    const focus = dialogFocus
+    dialogFocus = null
+    focus?.dispose()
     window.removeEventListener('resize', applyBackdropSize)
     backdrop.remove()
     backdrop = null
     deps.onClosed?.(openedFrom)
+    focus?.restoreFocus()
+  }
+
+  function returnToList(): void {
+    const packId = view.kind === 'pack' ? view.packId : null
+    view = { kind: 'list' }
+    render()
+    const origin = [...(backdrop?.querySelectorAll<HTMLElement>('.so-pack-card') ?? [])]
+      .find(card => card.dataset.managerFocus === `pack:${packId}`)
+    if (origin) origin.focus({ preventScroll: true })
+    else dialogFocus?.focusInitial()
+  }
+
+  /** Register the nested layer before moving focus; every exit path disposes it. */
+  function manageChildDialog(modal: HTMLElement, canEscape: () => boolean = () => true, opener?: HTMLElement | null): () => void {
+    modal.setAttribute('role', 'dialog')
+    modal.setAttribute('aria-modal', 'true')
+    const closeChild = () => {
+      focus.dispose()
+      childDialogs.delete(closeChild)
+      modal.remove()
+      focus.restoreFocus()
+    }
+    const focus = manageDialogFocus(modal, { opener, onEscape: () => { if (canEscape()) closeChild() } })
+    childDialogs.add(closeChild)
+    focus.focusInitial()
+    return closeChild
   }
 
   function refreshIfOpen(): void {
@@ -289,7 +336,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   }
 
   function showConflicts(conflicts: BindingConflict[]): void {
-    const message = `操作未生效，存在地址冲突：${conflictText(conflicts)}`
+    const message = t("sprite.manager.content.conflict.address", "操作未生效，存在地址冲突：{{p0}}", { p0: conflictText(conflicts) })
     const body = backdrop?.querySelector('.so-manager-body') as HTMLElement | null
     if (body) toast(body, message)
     else window.alert(message)
@@ -324,11 +371,11 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
   function rejectPackMergeError(error: unknown, body: HTMLElement): null {
     if (error instanceof PackMergeChoiceError) {
-      toast(body, `合并已取消：选择无效（${error.message}）`)
+      toast(body, t("sprite.manager.content.merge.invalid", "合并已取消：选择无效（{{p0}}）", { p0: error.message }))
       return null
     }
     console.error('合并立绘包失败', error)
-    toast(body, '合并失败，请查看控制台日志')
+    toast(body, t("sprite.manager.content.merge.failed", "合并失败，请查看控制台日志"))
     return null
   }
 
@@ -344,7 +391,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         .map((candidate, index) => `${index + 1}. ${candidate.sourcePackName} — ${candidate.sprite.url}`)
         .join('\n')
       const raw = window.prompt(
-        `地址「${formatAddress(conflict.address)}」有不同图片，请输入要保留的序号：\n${options}`,
+        t("sprite.manager.content.merge.choose_image", "地址「{{p0}}」有不同图片，请输入要保留的序号：\n{{p1}}", { p0: formatAddress(conflict.address), p1: options }),
         '1',
       )
       if (raw === null) return null
@@ -355,11 +402,11 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     } catch (error) {
       return rejectPackMergeError(error, body)
     }
-    const rawName = window.prompt('合并结果的包名：', defaultName)
+    const rawName = window.prompt(t("sprite.manager.content.merge.name", "合并结果的包名："), defaultName)
     if (rawName === null) return null
     const name = sanitizePackName(rawName)
     if (!name) {
-      toast(body, '合并已取消：包名不能为空')
+      toast(body, t("sprite.manager.content.merge.empty_name", "合并已取消：包名不能为空"))
       return null
     }
     try {
@@ -377,20 +424,20 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     })
     if (related.length === 0) {
       if (!updateChecked(upsertPack(settings, pack))) return false
-      toast(body, `已导入立绘包「${pack.name}」（${pack.sprites.length} 张）`)
+      toast(body, t("sprite.manager.content.import.installed", "已导入立绘包「{{p0}}」（{{p1}} 张）", { p0: pack.name, p1: pack.sprites.length }))
       return true
     }
 
     const answer = window.prompt(
-      `检测到同名或地址重叠：${related.map((item) => item.name).join('、')}\n` +
-        '输入 1 合并进现有包，2 重命名后安装，3 仅安装（之后可按需启用）；其他输入取消。',
+      t("sprite.manager.content.import.overlap", "检测到同名或地址重叠：{{p0}}\n", { p0: related.map((item) => item.name).join('、') }) +
+        t("sprite.manager.content.import.choices", "输入 1 合并进现有包，2 重命名后安装，3 仅安装（之后可按需启用）；其他输入取消。"),
       '1',
     )
     if (answer === '1') {
       const target = related[0]
       // 二级选择：一级菜单保持 3 项防用户懵，合并去向在这里细分
       const mode = window.prompt(
-        `合并到哪里？\n1 并入旧包「${target.name}」（推荐：角色绑定不变，重叠源包移除）\n2 合并为新包（所有源包保留）\n其他输入取消。`,
+        t("sprite.manager.content.merge.destination", "合并到哪里？\n1 并入旧包「{{p0}}」（推荐：角色绑定不变，重叠源包移除）\n2 合并为新包（所有源包保留）\n其他输入取消。", { p0: target.name }),
         '1',
       )
       if (mode === '1') {
@@ -399,32 +446,32 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         let next = settings
         for (const other of related.slice(1)) next = removePack(next, other.id)
         if (!updateChecked(upsertPack(next, { ...merged, id: target.id }))) return false
-        toast(body, `已合并进「${merged.name}」（${merged.sprites.length} 张）`)
+        toast(body, t("sprite.manager.content.merge.into_existing", "已合并进「{{p0}}」（{{p1}} 张）", { p0: merged.name, p1: merged.sprites.length }))
         return true
       }
       if (mode === '2') {
         const merged = mergeWithPrompts([...related, pack], `${target.name} 合并`, body)
         if (!merged || !updateChecked(upsertPack(settings, merged))) return false
-        toast(body, `已生成合并包「${merged.name}」（${merged.sprites.length} 张），源包仍保留`)
+        toast(body, t("sprite.manager.content.merge.created", "已生成合并包「{{p0}}」（{{p1}} 张），源包仍保留", { p0: merged.name, p1: merged.sprites.length }))
         return true
       }
       return false
     }
     if (answer === '2') {
-      const rawName = window.prompt('请输入新的包名：', `${pack.name} 新`)
+      const rawName = window.prompt(t("sprite.manager.content.import.new_name", "请输入新的包名："), `${pack.name} 新`)
       if (rawName === null) return false
       const name = sanitizePackName(rawName)
       if (!name || settings.packs.some((existing) => existing.name === name)) {
-        toast(body, '未安装：新包名为空或仍与现有包同名')
+        toast(body, t("sprite.manager.content.import.invalid_name", "未安装：新包名为空或仍与现有包同名"))
         return false
       }
       if (!updateChecked(upsertPack(settings, { ...pack, name }))) return false
-      toast(body, `已重命名并安装「${name}」（未启用）`)
+      toast(body, t("sprite.manager.content.import.renamed", "已重命名并安装「{{p0}}」（未启用）", { p0: name }))
       return true
     }
     if (answer === '3') {
       if (!updateChecked(upsertPack(settings, pack))) return false
-      toast(body, `已安装「${pack.name}」，未加入当前角色`)
+      toast(body, t("sprite.manager.content.import.not_enabled", "已安装「{{p0}}」，未加入当前角色", { p0: pack.name }))
       return true
     }
     return false
@@ -433,17 +480,17 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   async function prepareAndInstall(pack: SpritePack, body: HTMLElement): Promise<void> {
     if (destroyed || !backdrop || currentManagerBody() !== body) return
     if (storageDialog) {
-      toast(body, '请先关闭存储检查与迁移窗口')
+      toast(body, t("sprite.manager.content.import.close_storage", "请先关闭存储检查与迁移窗口"))
       return
     }
     if (importController) {
-      toast(body, '已有导入任务正在处理')
+      toast(body, t("sprite.manager.content.import.busy", "已有导入任务正在处理"))
       return
     }
     const controller = new AbortController()
     importController = controller
     try {
-      toast(body, '正在准备导入图片')
+      toast(body, t("sprite.manager.content.import.preparing", "正在准备导入图片"))
       const prepared = await prepareImportedPack(pack, {
         save: (dataUri, options) => deps.saveDataUri
           ? deps.saveDataUri(dataUri, options)
@@ -452,7 +499,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         signal: controller.signal,
         onProgress: (completed, total) => {
           if (!destroyed && !controller.signal.aborted && currentManagerBody() === body) {
-            toast(body, `导入图片校验 ${completed}/${total}`)
+            toast(body, t("sprite.manager.content.import.progress", "导入图片校验 {{p0}}/{{p1}}", { p0: completed, p1: total }))
           }
         },
       })
@@ -464,7 +511,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       if (installed) view = { kind: 'pack', packId: installed.id }
       render()
     } catch (error) {
-      if (!controller.signal.aborted && !destroyed) toast(body, error instanceof Error ? error.message : '导入失败')
+      if (!controller.signal.aborted && !destroyed) toast(body, error instanceof Error ? error.message : t("sprite.manager.content.import.failed", "导入失败"))
     } finally {
       if (importController === controller) importController = null
     }
@@ -478,16 +525,16 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       if (
         changes.removed.length > 0 &&
         !window.confirm(
-          `启用后以下旧地址将变化：${changes.removed.slice(0, 6).join('、')}\n` +
-            `新地址示例：${changes.added.slice(0, 6).join('、')}\n仍要继续吗？`,
+          t("sprite.manager.content.binding.address_changes", "启用后以下旧地址将变化：{{p0}}\n", { p0: changes.removed.slice(0, 6).join('、') }) +
+            t("sprite.manager.content.binding.new_addresses", "新地址示例：{{p0}}\n仍要继续吗？", { p0: changes.added.slice(0, 6).join('、') }),
         )
       ) return
       commit(result.settings)
       return
     }
     const answer = window.prompt(
-      `启用会产生地址冲突：${conflictText(result.conflicts)}\n` +
-        '输入 1 替换当前冲突包，2 合并为新包后启用；其他输入取消。',
+      t("sprite.manager.content.binding.conflict", "启用会产生地址冲突：{{p0}}\n", { p0: conflictText(result.conflicts) }) +
+        t("sprite.manager.content.binding.choices", "输入 1 替换当前冲突包，2 合并为新包后启用；其他输入取消。"),
       '1',
     )
     const sourceIds = new Set(result.conflicts.flatMap((conflict) => conflict.owners.map((owner) => owner.packId)))
@@ -519,7 +566,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         return
       }
       commit(rebound.settings)
-      toast(body, `已生成并启用合并包「${merged.name}」；源包仍保留`)
+      toast(body, t("sprite.manager.content.binding.merged", "已生成并启用合并包「{{p0}}」；源包仍保留", { p0: merged.name }))
     }
   }
 
@@ -529,11 +576,16 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   }
 
   function closePopovers(): void {
+    for (const dispose of popoverListeners) dispose()
+    popoverListeners.clear()
     backdrop?.querySelectorAll('.so-popover').forEach((n) => n.remove())
+    backdrop?.querySelectorAll('[aria-haspopup="dialog"]').forEach(node => node.setAttribute('aria-expanded', 'false'))
+    popoverOpener = null
   }
 
   function closeEnableList(): void {
     enableListOpen = false
+    backdrop?.querySelector('.so-enable-btn')?.setAttribute('aria-expanded', 'false')
     backdrop?.querySelectorAll('.so-popover[data-pop="启用包"]').forEach((n) => n.remove())
     if (enableListDocHandler) {
       document.removeEventListener('click', enableListDocHandler, true)
@@ -549,6 +601,9 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   function renderEnableList(): void {
     const header = backdrop?.querySelector('.so-manager-header') as HTMLElement | null
     if (!header) return
+    const previousPanel = header.querySelector('.so-enable-pop')
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const focusKey = active && previousPanel?.contains(active) ? active.dataset.managerFocus : undefined
     header.querySelectorAll('.so-popover[data-pop="启用包"]').forEach((n) => n.remove())
     if (!enableListOpen) return
     const characterName = deps.adapter.getCurrentCharacterName()
@@ -560,26 +615,37 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     const settings = deps.getSettings()
     const boundIds = settings.bindings.find((b) => b.characterName === characterName)?.packIds ?? []
     const panel = el('div', 'so-popover so-enable-pop')
+    const trigger = backdrop?.querySelector<HTMLElement>('.so-enable-btn')
+    panel.id = trigger?.getAttribute('aria-controls') || nextManagerId()
+    panel.setAttribute('role', 'dialog')
+    panel.setAttribute('aria-label', trigger?.getAttribute('aria-label') ?? '')
+    trigger?.setAttribute('aria-expanded', 'true')
     panel.dataset.pop = '启用包'
     const heading = el('div', 'so-popover-title')
-    heading.textContent = `勾选启用（${characterName}，即时生效）`
+    heading.textContent = t("sprite.manager.content.binding.enable_heading", "勾选启用（{{p0}}，即时生效）", { p0: characterName })
     panel.append(heading)
     if (settings.packs.length === 0) {
       const tip = el('div', 'so-status')
-      tip.textContent = '还没有立绘包，先用「新建」或「导入」。'
+      tip.textContent = t("sprite.manager.content.empty.packs", "还没有立绘包，先用「新建」或「导入」。")
       panel.append(tip)
     }
     for (const p of settings.packs) {
-      panel.append(
-        checkboxRow(`${p.name}（${p.sprites.length} 张）`, boundIds.includes(p.id), (v) => {
+      const row = checkboxRow(t("sprite.manager.content.pack.image_count", "{{p0}}（{{p1}} 张）", { p0: p.name, p1: p.sprites.length }), boundIds.includes(p.id), (v) => {
           if (v) bindPackWithChoices(characterName, p.id, body)
           else commit(unbindPack(deps.getSettings(), characterName, p.id))
           // 启用被用户取消（冲突确认框选了否）时没有 commit 重渲染，勾选框会与实际不符——按真实状态重建
           renderEnableList()
-        }),
-      )
+        })
+      row.querySelector<HTMLInputElement>('input')!.dataset.managerFocus = `enable:${p.id}`
+      panel.append(row)
     }
     header.append(panel)
+    if (focusKey) {
+      [...panel.querySelectorAll<HTMLElement>('[data-manager-focus]')]
+        .find(node => node.dataset.managerFocus === focusKey)?.focus({ preventScroll: true })
+    } else if (active === trigger) {
+      panel.querySelector<HTMLElement>('input')?.focus({ preventScroll: true })
+    }
     if (!enableListDocHandler) {
       enableListDocHandler = (e: MouseEvent) => {
         const current = backdrop?.querySelector('.so-popover[data-pop="启用包"]')
@@ -593,25 +659,38 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
   /** 头部下拉：按钮 + 锚在头部下方靠右的浮层；同时只开一个，Esc/点外部/重渲染关闭 */
   function dropdownButton(label: string, build: (panel: HTMLElement) => void): HTMLElement {
+    const panelId = nextManagerId()
     const btn = button(`${label} ▾`, () => {
       const header = backdrop?.querySelector('.so-manager-header')
       if (!header) return
       const existing = header.querySelector(`.so-popover[data-pop="${label}"]`)
+      closeEnableList()
       closePopovers()
       if (existing) return
       const panel = el('div', 'so-popover')
+      panel.id = panelId
+      panel.setAttribute('role', 'dialog')
+      panel.setAttribute('aria-label', label)
       panel.dataset.pop = label
       build(panel)
+      panel.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea').forEach(input => {
+        if (!input.getAttribute('aria-label') && input.placeholder) input.setAttribute('aria-label', input.placeholder)
+      })
       header.append(panel)
+      popoverOpener = btn
+      btn.setAttribute('aria-expanded', 'true')
       ;(panel.querySelector('input, textarea') as HTMLElement | null)?.focus()
       const onDocClick = (e: MouseEvent) => {
         // 点开关按钮本身交给按钮的 toggle 逻辑处理
         if (panel.contains(e.target as Node) || btn.contains(e.target as Node)) return
-        panel.remove()
-        document.removeEventListener('click', onDocClick, true)
+        closePopovers()
       }
       document.addEventListener('click', onDocClick, true)
+      popoverListeners.add(() => document.removeEventListener('click', onDocClick, true))
     })
+    btn.setAttribute('aria-haspopup', 'dialog')
+    btn.setAttribute('aria-expanded', 'false')
+    btn.setAttribute('aria-controls', panelId)
     return btn
   }
 
@@ -621,6 +700,9 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     const title = backdrop.querySelector('.so-manager-title') as HTMLElement
     const actions = backdrop.querySelector('.so-manager-actions') as HTMLElement
     const body = backdrop.querySelector('.so-manager-body') as HTMLElement
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const restoreAfterRender = Boolean(active && (body.contains(active) || actions.contains(active) || active.closest('.so-popover')))
+    const focusKey = restoreAfterRender ? active?.dataset.managerFocus : undefined
     body.innerHTML = ''
     actions.innerHTML = ''
     backdrop.querySelector('.so-manager')?.classList.toggle('so-manager-batch-mode', batchMode)
@@ -640,13 +722,20 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         view = { kind: 'list' }
       }
       backBtn.style.display = 'none'
-      title.textContent = '立绘包管理'
+      title.textContent = t('sprite.manager.title', '立绘包管理')
       renderList(body, actions)
     } catch (err) {
       console.error('[sprite-overlay] 管理弹窗渲染失败', err)
       const msg = el('div', 'so-status')
-      msg.textContent = `界面渲染出错：${err instanceof Error ? err.message : String(err)}`
+      msg.textContent = t("sprite.manager.content.error.render", "界面渲染出错：{{p0}}", { p0: err instanceof Error ? err.message : String(err) })
       body.append(msg)
+    } finally {
+      if (restoreAfterRender && dialogFocus?.isTop()) {
+        const candidates = focusKey ? [...backdrop.querySelectorAll<HTMLElement>('[data-manager-focus]')]
+          .filter(node => node.dataset.managerFocus === focusKey && !node.matches(':disabled')) : []
+        if (candidates.length === 1) candidates[0].focus({ preventScroll: true })
+        else dialogFocus.focusInitial()
+      }
     }
   }
 
@@ -687,7 +776,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         (pack) => selectedPackIds.has(pack.id) && !isPresetPack(pack.id),
       )
       actions.append(
-        button('全选', () => {
+        button(t("sprite.manager.content.batch.select_all", "全选"), () => {
           const all = filteredPacks
           if (all.length > 0 && all.every((p) => selectedPackIds.has(p.id))) {
             selectedPackIds.clear()
@@ -697,28 +786,28 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           }
           render()
         }),
-        button(`上传云端（${selectedCount}）`, () => {
+        button(t("sprite.manager.content.batch.upload", "上传云端（{{p0}}）", { p0: selectedCount }), () => {
           void uploadSelectedPacks()
         }),
-        button(`保存本地（${selectedCount}）`, () => {
+        button(t("sprite.manager.content.batch.localize", "保存本地（{{p0}}）", { p0: selectedCount }), () => {
           void localizeSelectedPacks()
         }),
-        button(`复制分享串（${selectedCount}）`, () => {
+        button(t("sprite.manager.content.batch.share", "复制分享串（{{p0}}）", { p0: selectedCount }), () => {
           void copySelectedPackShares()
         }),
-        button(`删除所选（${deletablePacks.length}）`, () => {
+        button(t("sprite.manager.content.batch.delete", "删除所选（{{p0}}）", { p0: deletablePacks.length }), () => {
           if (deletablePacks.length === 0) {
             toast(body, selectedPackIds.size > 0
-              ? '预设包不可删除；可保存本地、上传云端或复制分享串'
-              : '先点卡片勾选要删除的包')
+              ? t("sprite.manager.content.batch.preset_hint", "预设包不可删除；可保存本地、上传云端或复制分享串")
+              : t("sprite.manager.content.batch.delete_hint", "先点卡片勾选要删除的包"))
             return
           }
           const names = deletablePacks.map((pack) => pack.name)
-          const preview = names.slice(0, 8).join('、') + (names.length > 8 ? ` 等 ${names.length} 个` : '')
+          const preview = names.slice(0, 8).join('、') + (names.length > 8 ? t("sprite.manager.content.batch.more", " 等 {{p0}} 个", { p0: names.length }) : '')
           const ids = deletablePacks.map((pack) => pack.id)
           void deletePacksWithChoice(ids, names, preview)
         }, 'so-btn-danger'),
-        button('完成', () => {
+        button(t("sprite.manager.content.batch.done", "完成"), () => {
           batchMode = false
           selectedPackIds.clear()
           render()
@@ -727,7 +816,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     } else {
       if (characterName) {
         const enableBtn = button(
-          boundIds.length > 0 ? `启用包（${boundIds.length}） ▾` : '启用包 ▾',
+          boundIds.length > 0 ? t('sprite.manager.enabled_count', '启用包（{{count}}） ▾', { count: boundIds.length }) : t('sprite.manager.enable', '启用包 ▾'),
           () => {
             if (enableListOpen) {
               closeEnableList()
@@ -739,13 +828,16 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           },
         )
         enableBtn.classList.add('so-enable-btn')
-        enableBtn.setAttribute('aria-label', `为「${characterName}」勾选启用立绘包`)
+        enableBtn.setAttribute('aria-haspopup', 'dialog')
+        enableBtn.setAttribute('aria-expanded', String(enableListOpen))
+        enableBtn.setAttribute('aria-controls', nextManagerId())
+        enableBtn.setAttribute('aria-label', t('sprite.manager.enable_for', '为「{{name}}」勾选启用立绘包', { name: characterName }))
         actions.append(enableBtn)
       }
       actions.append(
-        button('存储检查与迁移', () => {
+        button(t('sprite.manager.storage', '存储检查与迁移'), () => {
           if (importController) {
-            toast(body, '已有导入任务正在处理')
+            toast(body, t("sprite.manager.content.import.busy", "已有导入任务正在处理"))
             return
           }
           storageDialog?.close()
@@ -757,15 +849,15 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
             onClosed: () => { storageDialog = null },
           })
         }),
-        dropdownButton('新建', (panel) => {
+        dropdownButton(t('sprite.manager.new', '新建'), (panel) => {
         const heading = el('div', 'so-popover-title')
-        heading.textContent = '新建立绘包'
-        const nameInput = textInput('输入新包名称…')
+        heading.textContent = t('sprite.manager.new_title', '新建立绘包')
+        const nameInput = textInput(t('sprite.manager.new_name', '输入新包名称…'))
         nameInput.maxLength = 40
-        const createBtn = button('创建', () => {
+        const createBtn = button(t('sprite.manager.create', '创建'), () => {
           const name = sanitizePackName(nameInput.value)
           if (!name) {
-            toast(body, '包名不能为空（| = @ < > 等符号会被剔除）')
+            toast(body, t("sprite.manager.content.pack.invalid_name", "包名不能为空（| = @ < > 等符号会被剔除）"))
             return
           }
           const pack: SpritePack = { id: genId(), name, author: '我', sprites: [] }
@@ -778,37 +870,37 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         })
         panel.append(heading, nameInput, createBtn)
       }),
-      dropdownButton('导入', (panel) => {
+      dropdownButton(t('sprite.manager.import', '导入'), (panel) => {
         const shareHeading = el('div', 'so-popover-title')
-        shareHeading.textContent = '从分享字符串导入'
+        shareHeading.textContent = t('sprite.manager.import_share', '从分享字符串导入')
         const shareInput = document.createElement('textarea')
         shareInput.className = 'text_pole'
         shareInput.rows = 3
-        shareInput.placeholder = '粘贴 stpack2:/stpack1: 分享串…'
-        const shareBtn = button('导入', () => {
+        shareInput.placeholder = t('sprite.manager.share_placeholder', '粘贴 stpack2:/stpack1: 分享串…')
+        const shareBtn = button(t('sprite.manager.import', '导入'), () => {
           if (!shareInput.value.trim()) return
           try {
             const pack = decodeShareString(shareInput.value)
             void prepareAndInstall(pack, body)
           } catch (err) {
-            toast(body, err instanceof Error ? err.message : '分享串解析失败')
+            toast(body, err instanceof Error ? err.message : t("sprite.manager.content.import.share_failed", "分享串解析失败"))
           }
         })
         const jsonHeading = el('div', 'so-popover-title')
-        jsonHeading.textContent = '从 JSON 文件导入'
-        const jsonBtn = button('选择 JSON 文件…', () => {
+        jsonHeading.textContent = t('sprite.manager.import_json', '从 JSON 文件导入')
+        const jsonBtn = button(t('sprite.manager.choose_json', '选择 JSON 文件…'), () => {
           pickFile('.json,application/json', false, async (files) => {
             try {
               if (destroyed || currentManagerBody() !== body || !files[0]) return
               const file = files[0]
               if (file.size > 2 * 1024 * 1024 && !window.confirm(
-                `这个 JSON 有 ${(file.size / 1024 / 1024).toFixed(1)} MiB。读取会占用临时内存，内嵌图片需要逐张上传到酒馆本地文件。继续导入吗？`,
+                t("sprite.manager.content.import.large_json", "这个 JSON 有 {{p0}} MiB。读取会占用临时内存，内嵌图片需要逐张上传到酒馆本地文件。继续导入吗？", { p0: (file.size / 1024 / 1024).toFixed(1) }),
               )) return
               const text = await file.text()
               const pack = importPack(text)
               void prepareAndInstall(pack, body)
             } catch (err) {
-              toast(body, err instanceof Error ? err.message : '导入失败')
+              toast(body, err instanceof Error ? err.message : t("sprite.manager.content.import.failed", "导入失败"))
             }
           })
         })
@@ -817,8 +909,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       )
       if (settings.packs.length > 0) {
         actions.append(
-          button('标签管理', () => openTagManager()),
-          button('批量管理', () => {
+          button(t('sprite.manager.tags', '标签管理'), () => openTagManager()),
+          button(t('sprite.manager.batch', '批量管理'), () => {
             closeEnableList()
             batchMode = true
             selectedPackIds.clear()
@@ -834,29 +926,29 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       const label = el('span', 'so-bind-label')
       label.textContent =
         boundIds.length > 0
-          ? `${characterName} · 已启用 ${boundIds.length} 个：`
-          : `${characterName} · 尚未启用立绘包（用右上角选择启用）`
+          ? t("sprite.manager.content.binding.enabled", "{{p0}} · 已启用 {{p1}} 个：", { p0: characterName, p1: boundIds.length })
+          : t("sprite.manager.content.binding.none", "{{p0}} · 尚未启用立绘包（用右上角选择启用）", { p0: characterName })
       strip.append(label)
       boundIds.forEach((id, index) => {
         const pack = settings.packs.find((p) => p.id === id)
         const chip = el('span', 'so-chip')
         const name = el('span', 'so-chip-name')
         name.textContent = pack
-          ? `${index + 1}. ${pack.name}（${pack.sprites.length} 张）`
-          : `（已删除的包 ${id}）`
+          ? t("sprite.manager.content.binding.pack", "{{p0}}. {{p1}}（{{p2}} 张）", { p0: index + 1, p1: pack.name, p2: pack.sprites.length })
+          : t("sprite.manager.content.binding.deleted", "（已删除的包 {{p0}}）", { p0: id })
         chip.append(name)
         if (boundIds.length > 1) {
           chip.append(
-            iconButton('◀', '前移（多包寻址优先级更高）', () => {
+            iconButton('◀', t("sprite.manager.content.binding.move_first", "前移（多包寻址优先级更高）"), () => {
               if (index > 0) commit(reorderBinding(deps.getSettings(), characterName, index, index - 1))
             }, 'so-chip-btn'),
-            iconButton('▶', '后移', () => {
+            iconButton('▶', t("sprite.manager.content.move_later", "后移"), () => {
               commit(reorderBinding(deps.getSettings(), characterName, index, index + 1))
             }, 'so-chip-btn'),
           )
         }
         chip.append(
-          iconButton('✕', '停用此包', () => {
+          iconButton('✕', t("sprite.manager.content.binding.disable", "停用此包"), () => {
             commit(unbindPack(deps.getSettings(), characterName, id))
           }, 'so-chip-btn'),
         )
@@ -865,14 +957,14 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       if (binding) {
         strip.append(
           el('span', 'so-spacer'),
-          checkboxRow('全部启用', binding.enabled, (v) =>
+          checkboxRow(t("sprite.manager.content.binding.enable_all", "全部启用"), binding.enabled, (v) =>
             commitChecked(toggleBinding(deps.getSettings(), characterName, v)),
           ),
         )
       }
     } else {
       const tip = el('span', 'so-status')
-      tip.textContent = '请先打开一个角色聊天，再回来启用立绘包。'
+      tip.textContent = t("sprite.manager.content.binding.open_chat", "请先打开一个角色聊天，再回来启用立绘包。")
       strip.append(tip)
     }
     body.append(strip)
@@ -882,7 +974,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     // 批量管理模式强制平铺网格：拖拽排序调整的是包列表的整体顺序，折叠分组下无法直观呈现
     if (batchMode) {
       const tip = el('div', 'so-status so-batch-tip')
-      tip.textContent = '批量管理：先勾选图包，再统一设置类型或标签；资源操作和排序仍可在上方完成。预设包可保存本地或分享，但不可删除。'
+      tip.textContent = t("sprite.manager.content.batch.hint", "批量管理：先勾选图包，再统一设置类型或标签；资源操作和排序仍可在上方完成。预设包可保存本地或分享，但不可删除。")
       body.append(tip)
       body.append(renderBatchClassificationTools(body))
     }
@@ -907,17 +999,21 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           section.classList.add('so-role-pack-group-expanded')
           const row = el('button', 'so-role-pack-row') as HTMLButtonElement
           row.type = 'button'
+          row.dataset.managerFocus = `role:${group.key}`
           row.setAttribute('aria-expanded', 'true')
           const title = el('b')
           title.textContent = group.role
           const counts = el('span')
-          counts.textContent = `${group.packCount} 个图包 · ${group.spriteCount} 张`
+          counts.textContent = t("sprite.manager.content.pack.counts", "{{p0}} 个图包 · {{p1}} 张", { p0: group.packCount, p1: group.spriteCount })
           const arrow = el('span', 'so-role-pack-arrow')
           arrow.textContent = '▾'
           row.append(title, counts, arrow)
           row.addEventListener('click', toggle)
+          addCardNavigation(row, '.so-pack-card, .so-role-pack-stack, .so-role-pack-row')
           const packs = el('div', 'so-role-pack-strip')
-          packs.setAttribute('aria-label', `${group.role}的图包`)
+          packs.id = nextManagerId()
+          row.setAttribute('aria-controls', packs.id)
+          packs.setAttribute('aria-label', t("sprite.manager.content.pack.role_packs", "{{p0}}的图包", { p0: group.role }))
           for (const pack of group.packs) packs.append(renderPackCard(pack, boundState(pack)))
           section.append(row, packs)
         } else {
@@ -931,7 +1027,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     body.append(grid)
     if (filteredPacks.length === 0) {
       const empty = el('div', 'so-status so-pack-filter-empty')
-      empty.textContent = '没有符合当前筛选条件的图包'
+      empty.textContent = t("sprite.manager.content.empty.filtered_packs", "没有符合当前筛选条件的图包")
       body.append(empty)
     }
 
@@ -941,7 +1037,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
   function renderPackFilters(settings: PluginSettings, visibleCount: number): HTMLElement {
     const panel = el('div', 'so-pack-filters')
-    const search = textInput('搜索包名、角色、服装或标签')
+    const search = textInput(t("sprite.manager.content.filter.packs_placeholder", "搜索包名、角色、服装或标签"))
     search.classList.add('so-pack-filter-search')
     search.value = packFilterQuery
     const applySearch = () => {
@@ -964,6 +1060,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     ) => {
       const select = document.createElement('select')
       select.className = `text_pole ${className}`
+      select.dataset.managerFocus = className
+      select.setAttribute('aria-label', options[0]?.[1] ?? '')
       for (const [value, label] of options) {
         const option = document.createElement('option')
         option.value = value
@@ -982,27 +1080,27 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     const tags = normalizeLabels(settings.packs.flatMap((pack) => pack.customTags ?? []))
     const role = selectFilter(
       'so-pack-filter-role',
-      [['', '全部角色'], ...roles.map((item): [string, string] => [item, item])],
+      [['', t("sprite.manager.content.filter.all_roles", "全部角色")], ...roles.map((item): [string, string] => [item, item === '其他' ? t('sprite.manager.content.group.other', '其他') : item])],
       packFilterRole,
       (value) => { packFilterRole = value },
     )
     const kind = selectFilter(
       'so-pack-filter-kind',
-      [['', '全部类型'], ['sprite', '立绘'], ['illustration', '插图']],
+      [['', t("sprite.manager.content.filter.all_types", "全部类型")], ['sprite', t("sprite.manager.content.kind.sprite", "立绘")], ['illustration', t("sprite.manager.content.kind.illustration", "插图")]],
       packFilterKind,
       (value) => { packFilterKind = value },
     )
     const tag = selectFilter(
       'so-pack-filter-tag',
-      [['', '全部标签'], ...tags.map((item): [string, string] => [item, item])],
+      [['', t("sprite.manager.content.filter.all_tags", "全部标签")], ...tags.map((item): [string, string] => [item, item])],
       packFilterTag,
       (value) => { packFilterTag = value },
     )
     const status = el('span', 'so-pack-filter-count')
-    status.textContent = `${visibleCount}/${settings.packs.length} 个图包`
+    status.textContent = t("sprite.manager.content.filter.pack_count", "{{p0}}/{{p1}} 个图包", { p0: visibleCount, p1: settings.packs.length })
     panel.append(search, role, kind, tag, status)
     if (packFilterQuery || packFilterRole || packFilterKind || packFilterTag) {
-      panel.append(button('清除筛选', () => {
+      panel.append(button(t("sprite.manager.content.filter.clear", "清除筛选"), () => {
         packFilterQuery = packFilterRole = packFilterKind = packFilterTag = ''
         expandedRoleGroupKey = ''
         render()
@@ -1014,14 +1112,14 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   function openTagManager(): void {
     const modal = el('div', 'so-upload-modal so-tag-manager')
     modal.setAttribute('role', 'dialog')
-    modal.setAttribute('aria-label', '图包标签管理')
+    modal.setAttribute('aria-label', t("sprite.manager.content.tag.dialog_title", "图包标签管理"))
     const panel = el('div', 'so-upload-panel so-tag-manager-panel')
     const heading = el('div', 'so-tag-manager-heading')
     const title = el('b')
-    title.textContent = '标签管理'
-    heading.append(title, button('关闭', () => modal.remove()))
+    title.textContent = t("sprite.manager.tags", "标签管理")
+    heading.append(title, button(t("common.close", "关闭"), () => closeModal()))
     const help = el('div', 'so-status')
-    help.textContent = '角色和类型由图包信息自动生成，只能在包信息或批量管理中修改。这里管理自定义标签。'
+    help.textContent = t("sprite.manager.content.tag.help", "角色和类型由图包信息自动生成，只能在包信息或批量管理中修改。这里管理自定义标签。")
 
     const settings = deps.getSettings()
     const addRow = el('div', 'so-row so-tag-manager-add')
@@ -1033,19 +1131,19 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       option.textContent = pack.name
       packSelect.append(option)
     }
-    const newTag = textInput('输入新标签')
+    const newTag = textInput(t("sprite.manager.content.tag.new_placeholder", "输入新标签"))
     newTag.classList.add('so-tag-manager-new')
     const commitTags = (next: PluginSettings) => {
-      modal.remove()
+      closeModal()
       commit(persistSelectedPresetMetadata(next, next.packs.map((pack) => pack.id)))
     }
     addRow.append(
-      labeled('添加到图包', packSelect),
-      labeled('新标签', newTag),
-      button('添加到图包', () => {
+      labeled(t("sprite.manager.content.tag.add_to_pack", "添加到图包"), packSelect),
+      labeled(t("sprite.manager.content.tag.new", "新标签"), newTag),
+      button(t("sprite.manager.content.tag.add_to_pack", "添加到图包"), () => {
         const tag = normalizeLabels([newTag.value])[0]
         if (!packSelect.value || !tag) {
-          toast(currentManagerBody(), '请选择图包并输入标签')
+          toast(currentManagerBody(), t("sprite.manager.content.tag.select_pack", "请选择图包并输入标签"))
           return
         }
         commitTags(addPackCustomTag(deps.getSettings(), [packSelect.value], tag))
@@ -1056,30 +1154,30 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     const tags = normalizeLabels(settings.packs.flatMap((pack) => pack.customTags ?? []))
     if (tags.length === 0) {
       const empty = el('div', 'so-status')
-      empty.textContent = '还没有自定义标签'
+      empty.textContent = t("sprite.manager.content.tag.empty", "还没有自定义标签")
       list.append(empty)
     }
     for (const tag of tags) {
       const row = el('div', 'so-tag-manager-row')
       row.dataset.tag = tag
-      const input = textInput('标签名称')
+      const input = textInput(t("sprite.manager.content.tag.name", "标签名称"))
       input.value = tag
       const count = settings.packs.filter((pack) => normalizeLabels(pack.customTags).includes(tag)).length
       const usage = el('span', 'so-status')
-      usage.textContent = `${count} 个图包`
+      usage.textContent = t("sprite.manager.content.pack.count", "{{p0}} 个图包", { p0: count })
       row.append(
         input,
         usage,
-        button('重命名', () => {
+        button(t("sprite.manager.content.action.rename", "重命名"), () => {
           const renamed = normalizeLabels([input.value])[0]
           if (!renamed) {
-            toast(currentManagerBody(), '标签名称不能为空')
+            toast(currentManagerBody(), t("sprite.manager.content.tag.empty_name", "标签名称不能为空"))
             return
           }
           commitTags(renamePackCustomTag(deps.getSettings(), tag, renamed))
         }),
-        button('删除', () => {
-          if (!window.confirm(`从 ${count} 个图包删除标签「${tag}」吗？`)) return
+        button(t("common.delete", "删除"), () => {
+          if (!window.confirm(t("sprite.manager.content.tag.confirm_delete", "从 {{p0}} 个图包删除标签「{{p1}}」吗？", { p0: count, p1: tag }))) return
           commitTags(deletePackCustomTag(deps.getSettings(), tag))
         }, 'so-btn-danger'),
       )
@@ -1088,6 +1186,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     panel.append(heading, help, addRow, list)
     modal.append(panel)
     ;(backdrop ?? document.body).append(modal)
+    const closeModal = manageChildDialog(modal)
   }
 
   function selectedPacks(): SpritePack[] {
@@ -1127,7 +1226,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
     const kindSelect = document.createElement('select')
     kindSelect.className = 'text_pole so-batch-kind-select'
-    for (const [value, label] of [['sprite', '立绘'], ['illustration', '插图']] as const) {
+    for (const [value, label] of [['sprite', t("sprite.manager.content.kind.sprite", "立绘")], ['illustration', t("sprite.manager.content.kind.illustration", "插图")]] as const) {
       const option = document.createElement('option')
       option.value = value
       option.textContent = label
@@ -1135,10 +1234,10 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     }
     const kindRow = el('div', 'so-row')
     kindRow.append(
-      labeled('类型', kindSelect),
-      button('设置类型', () => {
+      labeled(t("sprite.manager.content.kind.label", "类型"), kindSelect),
+      button(t("sprite.manager.content.kind.set", "设置类型"), () => {
         if (selectedPackIds.size === 0) {
-          toast(body, '请先勾选要设置的图包')
+          toast(body, t("sprite.manager.content.batch.select_first", "请先勾选要设置的图包"))
           return
         }
         const selected = [...selectedPackIds]
@@ -1148,30 +1247,30 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           kindSelect.value === 'illustration' ? 'illustration' : 'sprite',
         )
         commit(persistSelectedPresetMetadata(changed, selected))
-        toast(body, `已设置 ${selected.length} 个图包的类型`)
+        toast(body, t("sprite.manager.content.kind.updated", "已设置 {{p0}} 个图包的类型", { p0: selected.length }))
       }),
     )
 
-    const tagInput = textInput('输入自定义标签')
+    const tagInput = textInput(t("sprite.manager.content.tag.custom_placeholder", "输入自定义标签"))
     tagInput.classList.add('so-batch-tag-input')
     tagInput.maxLength = 32
     const addRow = el('div', 'so-row')
     addRow.append(
-      labeled('自定义标签', tagInput),
-      button('添加标签', () => {
+      labeled(t("sprite.manager.content.tag.custom", "自定义标签"), tagInput),
+      button(t("sprite.manager.content.tag.add", "添加标签"), () => {
         const tag = normalizeLabels([tagInput.value])[0]
         if (selectedPackIds.size === 0) {
-          toast(body, '请先勾选要设置的图包')
+          toast(body, t("sprite.manager.content.batch.select_first", "请先勾选要设置的图包"))
           return
         }
         if (!tag) {
-          toast(body, '请输入标签')
+          toast(body, t("sprite.manager.content.tag.enter", "请输入标签"))
           return
         }
         const selected = [...selectedPackIds]
         const changed = addPackCustomTag(deps.getSettings(), selected, tag)
         commit(persistSelectedPresetMetadata(changed, selected))
-        toast(body, `已为 ${selected.length} 个图包添加「${tag}」`)
+        toast(body, t("sprite.manager.content.tag.added", "已为 {{p0}} 个图包添加「{{p1}}」", { p0: selected.length, p1: tag }))
       }),
     )
 
@@ -1179,7 +1278,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     removeSelect.className = 'text_pole so-batch-tag-remove-select'
     const emptyOption = document.createElement('option')
     emptyOption.value = ''
-    emptyOption.textContent = ids.length === 0 ? '先勾选图包' : '选择要移除的标签'
+    emptyOption.textContent = ids.length === 0 ? t("sprite.manager.content.tag.select_packs_first", "先勾选图包") : t("sprite.manager.content.tag.choose_remove", "选择要移除的标签")
     removeSelect.append(emptyOption)
     const selectedTags = normalizeLabels(selectedPacks().flatMap((pack) => pack.customTags ?? []))
     for (const tag of selectedTags) {
@@ -1190,20 +1289,20 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     }
     const removeRow = el('div', 'so-row')
     removeRow.append(
-      labeled('移除标签', removeSelect),
-      button('移除标签', () => {
+      labeled(t("sprite.manager.content.tag.remove", "移除标签"), removeSelect),
+      button(t("sprite.manager.content.tag.remove", "移除标签"), () => {
         if (selectedPackIds.size === 0) {
-          toast(body, '请先勾选要设置的图包')
+          toast(body, t("sprite.manager.content.batch.select_first", "请先勾选要设置的图包"))
           return
         }
         if (!removeSelect.value) {
-          toast(body, '请选择要移除的标签')
+          toast(body, t("sprite.manager.content.tag.select_remove", "请选择要移除的标签"))
           return
         }
         const selected = [...selectedPackIds]
         const changed = removePackCustomTag(deps.getSettings(), selected, removeSelect.value)
         commit(persistSelectedPresetMetadata(changed, selected))
-        toast(body, `已从 ${selected.length} 个图包移除「${removeSelect.value}」`)
+        toast(body, t("sprite.manager.content.tag.removed", "已从 {{p0}} 个图包移除「{{p1}}」", { p0: selected.length, p1: removeSelect.value }))
       }),
     )
 
@@ -1223,12 +1322,12 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     if (batchResourceBusy) return
     const packs = selectedPacks()
     if (packs.length === 0) {
-      toast(currentManagerBody(), '先勾选要上传云端的图包')
+      toast(currentManagerBody(), t("sprite.manager.content.upload.select_first", "先勾选要上传云端的图包"))
       return
     }
     const apiKey = deps.getSettings().imgbbApiKey.trim()
     if (!apiKey) {
-      toast(currentManagerBody(), '请先在「图库」App 配置 imgbb API Key')
+      toast(currentManagerBody(), t("sprite.manager.content.upload.api_key", "请先在「图库」App 配置 imgbb API Key"))
       return
     }
     batchResourceBusy = true
@@ -1245,16 +1344,16 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           try {
             const dataUri = beforeUrl.startsWith('data:') ? beforeUrl : await urlToDataUri(beforeUrl)
             const result = await uploadToImgbb(apiKey, dataUri)
-            if (!isValidImgbbResult(result)) throw new Error('图床响应无效')
+            if (!isValidImgbbResult(result)) throw new Error(t("sprite.manager.content.upload.invalid_response", "图床响应无效"))
             const latestPack = deps.getSettings().packs.find((candidate) => candidate.id === pack.id)
             const latestSprite = latestPack ? sameSprite(latestPack, sprite) : null
             if (!latestPack || !latestSprite || latestSprite.url !== beforeUrl) {
-              throw new Error('目标已更改，本次结果未应用')
+              throw new Error(t("sprite.manager.content.error.target_changed", "目标已更改，本次结果未应用"))
             }
             if (!updateChecked(upsertPack(
               deps.getSettings(),
               upsertSprite(latestPack, { ...latestSprite, code: result.code, remoteUrl: result.url }),
-            ))) throw new Error('更新图包失败')
+            ))) throw new Error(t("sprite.manager.content.error.pack_update", "更新图包失败"))
             uploaded++
           } catch (error) {
             console.warn('[sprite-overlay] 批量上传云端失败', { packId: pack.id, tag: sprite.tag, error })
@@ -1265,7 +1364,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     } finally {
       batchResourceBusy = false
       render()
-      toast(currentManagerBody(), `上传云端完成：成功 ${uploaded} 张，失败 ${failed} 张${failed > 0 ? '（可再次点击重试）' : ''}`)
+      toast(currentManagerBody(), t("sprite.manager.content.upload.complete", "上传云端完成：成功 {{p0}} 张，失败 {{p1}} 张{{p2}}", { p0: uploaded, p1: failed, p2: failed > 0 ? t("sprite.manager.content.retry_hint", "（可再次点击重试）") : '' }))
     }
   }
 
@@ -1273,7 +1372,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     if (batchResourceBusy) return
     const packs = selectedPacks()
     if (packs.length === 0) {
-      toast(currentManagerBody(), '先勾选要保存到本地的图包')
+      toast(currentManagerBody(), t("sprite.manager.content.localize.select_first", "先勾选要保存到本地的图包"))
       return
     }
     batchResourceBusy = true
@@ -1300,17 +1399,17 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
             const latestPack = latestSettings.packs.find((candidate) => candidate.id === pack.id)
             const latestSprite = latestPack ? sameSprite(latestPack, sprite) : null
             if (!latestPack || !latestSprite || latestSprite.url !== sprite.url) {
-              throw new Error('立绘在保存期间已变化')
+              throw new Error(t("sprite.manager.content.error.sprite_changed", "立绘在保存期间已变化"))
             }
             if (preset) {
               const next = setPresetLocalSprite(latestSettings, pack.id, latestSprite, localized.url)
-              if (next === latestSettings) throw new Error('更新预设覆盖失败')
+              if (next === latestSettings) throw new Error(t("sprite.manager.content.error.preset_update", "更新预设覆盖失败"))
               deps.updateSettings(next)
             } else if (!updateChecked(upsertPack(
               latestSettings,
               upsertSprite(latestPack, { ...latestSprite, url: localized.url, remoteUrl: localized.remoteUrl }),
             ))) {
-              throw new Error('更新图包失败')
+              throw new Error(t("sprite.manager.content.error.pack_update", "更新图包失败"))
             }
             localizedCount++
           } catch (error) {
@@ -1322,7 +1421,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     } finally {
       batchResourceBusy = false
       render()
-      toast(currentManagerBody(), `保存本地完成：成功 ${localizedCount} 张，失败 ${failed} 张${failed > 0 ? '（可再次点击重试）' : ''}`)
+      toast(currentManagerBody(), t("sprite.manager.content.localize.complete", "保存本地完成：成功 {{p0}} 张，失败 {{p1}} 张{{p2}}", { p0: localizedCount, p1: failed, p2: failed > 0 ? t("sprite.manager.content.retry_hint", "（可再次点击重试）") : '' }))
     }
   }
 
@@ -1330,45 +1429,45 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     if (batchResourceBusy) return
     const packs = selectedPacks()
     if (packs.length === 0) {
-      toast(currentManagerBody(), '先勾选要复制分享串的图包')
+      toast(currentManagerBody(), t("sprite.manager.content.share.select_first", "先勾选要复制分享串的图包"))
       return
     }
     const encoded = packs
       .map((pack) => ({ pack, result: encodeShareStringV2(pack) }))
       .filter((entry): entry is { pack: SpritePack; result: NonNullable<ReturnType<typeof encodeShareStringV2>> } => entry.result !== null)
     if (encoded.length === 0) {
-      toast(currentManagerBody(), '所选图包都没有可分享的远程图片')
+      toast(currentManagerBody(), t("sprite.manager.content.share.no_remote", "所选图包都没有可分享的远程图片"))
       return
     }
     const missingCount = encoded.reduce((count, entry) => count + entry.result.missing.length, 0)
     if (missingCount > 0 && !window.confirm(
-      `所选图包中还有 ${missingCount} 张图片没有远程地址，不会进入分享串。仍要复制吗？`,
+      t("sprite.manager.content.share.confirm_missing", "所选图包中还有 {{p0}} 张图片没有远程地址，不会进入分享串。仍要复制吗？", { p0: missingCount }),
     )) return
     const text = encoded.map((entry) => entry.result.text).join('\n\n')
     const ok = await copyText(text)
     toast(
       currentManagerBody(),
       ok
-        ? `已复制 ${encoded.length} 个图包的分享串${missingCount > 0 ? `，缺少 ${missingCount} 张` : ''}`
-        : '复制失败，请手动复制弹出的文本',
+        ? t("sprite.manager.content.share.copied_packs", "已复制 {{p0}} 个图包的分享串{{p1}}", { p0: encoded.length, p1: missingCount > 0 ? t("sprite.manager.content.share.missing_suffix", "，缺少 {{p0}} 张", { p0: missingCount }) : '' })
+        : t("sprite.manager.content.share.copy_failed", "复制失败，请手动复制弹出的文本"),
     )
-    if (!ok) window.prompt('手动复制分享串：', text)
+    if (!ok) window.prompt(t("sprite.manager.content.share.copy_prompt", "手动复制分享串："), text)
   }
 
   async function deletePacksWithChoice(packIds: string[], names: string[], preview: string): Promise<void> {
-    if (!window.confirm(`确定删除 ${names.length} 个立绘包？\n${preview}\n绑定关系会一并清除。`)) return
+    if (!window.confirm(t("sprite.manager.content.delete.confirm_packs", "确定删除 {{p0}} 个立绘包？\n{{p1}}\n绑定关系会一并清除。", { p0: names.length, p1: preview }))) return
     const current = deps.getSettings()
     const localPaths = deletableLocalSpritePaths(current, packIds)
     const deleteLocal = localPaths.length > 0 && window.confirm(
-      `检测到 ${localPaths.length} 个仅由这些包使用的本地图片文件。\n` +
-      '同时从 SillyTavern 服务器删除它们吗？\n\n选择“取消”将只删除图包记录，文件继续保留。',
+      t("sprite.manager.content.delete.local_detected", "检测到 {{p0}} 个仅由这些包使用的本地图片文件。\n", { p0: localPaths.length }) +
+      t("sprite.manager.content.delete.local_confirm", "同时从 SillyTavern 服务器删除它们吗？\n\n选择“取消”将只删除图包记录，文件继续保留。"),
     )
 
     if (!deleteLocal) {
       selectedPackIds.clear()
       view = { kind: 'list' }
       commit(removePacks(current, packIds))
-      toast(currentManagerBody(), `已删除 ${names.length} 个立绘包，本地文件未删除`)
+      toast(currentManagerBody(), t("sprite.manager.content.delete.packs_kept_files", "已删除 {{p0}} 个立绘包，本地文件未删除", { p0: names.length }))
       return
     }
 
@@ -1386,14 +1485,14 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     if (failed > 0) {
       toast(
         currentManagerBody(),
-        `本地文件删除成功 ${deleted} 张，失败 ${failed} 张；图包尚未删除，可再次重试`,
+        t("sprite.manager.content.delete.files_partial", "本地文件删除成功 {{p0}} 张，失败 {{p1}} 张；图包尚未删除，可再次重试", { p0: deleted, p1: failed }),
       )
       return
     }
     selectedPackIds.clear()
     view = { kind: 'list' }
     commit(removePacks(deps.getSettings(), packIds))
-    toast(currentManagerBody(), `已删除 ${names.length} 个立绘包及 ${deleted} 张本地文件`)
+    toast(currentManagerBody(), t("sprite.manager.content.delete.packs_and_files", "已删除 {{p0}} 个立绘包及 {{p1}} 张本地文件", { p0: names.length, p1: deleted }))
   }
 
   function renderRolePackStack(
@@ -1406,9 +1505,10 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   ): HTMLElement {
     const stack = el('button', 'so-role-pack-stack') as HTMLButtonElement
     stack.type = 'button'
+    stack.dataset.managerFocus = `role:${roleKey}`
     stack.dataset.roleKey = roleKey
     stack.setAttribute('aria-expanded', 'false')
-    stack.setAttribute('aria-label', `展开「${role}」的 ${packs.length} 个图包`)
+    stack.setAttribute('aria-label', t("sprite.manager.content.pack.expand_role", "展开「{{p0}}」的 {{p1}} 个图包", { p0: role, p1: packs.length }))
     for (let index = 2; index >= 1; index -= 1) {
       const layer = el('span', `so-role-stack-layer so-role-stack-layer-${index}`)
       layer.setAttribute('aria-hidden', 'true')
@@ -1426,34 +1526,36 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       image.loading = 'lazy'
       coverBox.append(image)
     } else {
-      coverBox.textContent = '暂无立绘'
+      coverBox.textContent = t("sprite.manager.content.empty.sprites", "暂无立绘")
     }
     const activeCount = packs.filter((pack) => boundState(pack) === 'active').length
     if (activeCount > 0) {
       const badge = el('span', 'so-card-badge')
-      badge.textContent = activeCount === 1 ? '使用中' : `使用中 ${activeCount}`
+      badge.textContent = activeCount === 1 ? t("sprite.manager.content.pack.active", "使用中") : t("sprite.manager.content.pack.active_count", "使用中 {{p0}}", { p0: activeCount })
       coverBox.append(badge)
     }
     const info = el('span', 'so-card-info')
     const title = el('b')
     title.textContent = role
     const detail = el('small')
-    detail.textContent = `${packs.length} 个图包 · ${spriteCount} 张`
+    detail.textContent = t("sprite.manager.content.pack.counts", "{{p0}} 个图包 · {{p1}} 张", { p0: packs.length, p1: spriteCount })
     const count = el('span', 'so-role-stack-count')
-    count.textContent = `${packs.length} 个图包`
+    count.textContent = t("sprite.manager.content.pack.count", "{{p0}} 个图包", { p0: packs.length })
     info.append(title, detail)
     face.append(coverBox, count, info)
     stack.append(face)
     stack.addEventListener('click', expand)
+    addCardNavigation(stack, '.so-pack-card, .so-role-pack-stack, .so-role-pack-row')
     return stack
   }
 
   function renderPackCard(pack: SpritePack, bound: 'active' | 'off' | null): HTMLElement {
     const card = el('div', 'so-pack-card')
+    card.dataset.managerFocus = `pack:${pack.id}`
     card.tabIndex = 0
     card.setAttribute('role', 'button')
-    card.setAttribute('aria-label', `打开立绘包「${pack.name}」`)
-    card.title = '点击进入管理'
+    card.setAttribute('aria-label', t("sprite.manager.content.pack.open", "打开立绘包「{{p0}}」", { p0: pack.name }))
+    card.title = t("sprite.manager.content.pack.open_hint", "点击进入管理")
 
     // 封面区：大图 + 角标（使用中 / 预设）
     const coverBox = el('div', 'so-card-cover')
@@ -1465,19 +1567,19 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       img.loading = 'lazy'
       coverBox.append(img)
     } else {
-      coverBox.textContent = '暂无立绘'
+      coverBox.textContent = t("sprite.manager.content.empty.sprites", "暂无立绘")
     }
     if (bound) {
       // 使用中：角标 + 卡片绿色描边双重标识（概念图）
       if (bound === 'active') card.classList.add('so-card-active')
       const badge = el('span', bound === 'active' ? 'so-card-badge' : 'so-card-badge so-card-badge-off')
-      badge.textContent = bound === 'active' ? '使用中' : '已停用'
+      badge.textContent = bound === 'active' ? t("sprite.manager.content.pack.active", "使用中") : t("sprite.manager.content.pack.disabled", "已停用")
       badge.dataset.corner = 'bottom-left'
       coverBox.append(badge)
     }
     if (isPresetPack(pack.id)) {
       const chip = el('span', 'so-card-chip')
-      chip.textContent = '预设'
+      chip.textContent = t("sprite.manager.content.pack.preset", "预设")
       coverBox.append(chip)
     }
     const resources = summarizePackResources(pack)
@@ -1491,8 +1593,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         chip.textContent = count === resources.total ? label : `${label} ${count}/${resources.total}`
         status.append(chip)
       }
-      resourceLabel('local', '本地')
-      resourceLabel('cloud', '云端')
+      resourceLabel('local', t("sprite.manager.content.pack.local", "本地"))
+      resourceLabel('cloud', t("sprite.manager.content.pack.cloud", "云端"))
       coverBox.append(status)
     }
 
@@ -1500,10 +1602,12 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     const nameEl = el('b')
     nameEl.textContent = pack.name
     const metaEl = el('small')
-    metaEl.textContent = `${pack.sprites.length} 张 · ${pack.author ?? '未知作者'}`
+    metaEl.textContent = t("sprite.manager.content.pack.metadata", "{{p0}} 张 · {{p1}}", { p0: pack.sprites.length, p1: pack.author ?? t("sprite.manager.content.pack.unknown_author", "未知作者") })
     const labels = packLabels(pack)
     const labelRow = el('div', 'so-pack-labels')
-    for (const text of [`角色：${labels.role}`, `类型：${labels.type}`, ...labels.custom]) {
+    const displayRole = pack.roleName?.trim() || t('sprite.manager.content.group.other', '其他')
+    const displayKind = pack.kind === 'illustration' ? t('sprite.manager.content.kind.illustration', '插图') : t('sprite.manager.content.kind.sprite', '立绘')
+    for (const text of [t("sprite.manager.content.pack.role_label", "角色：{{p0}}", { p0: displayRole }), t("sprite.manager.content.pack.kind_label", "类型：{{p0}}", { p0: displayKind }), ...labels.custom]) {
       const chip = el('span')
       chip.textContent = text
       labelRow.append(chip)
@@ -1511,11 +1615,13 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     info.append(nameEl, metaEl, labelRow)
 
     card.append(coverBox, info)
+    addCardNavigation(card, '.so-pack-card, .so-role-pack-stack, .so-role-pack-row')
 
     if (batchMode) {
       // 批量管理：点卡片勾选资源操作；删除动作单独过滤只读预设。
       const preset = isPresetPack(pack.id)
       const selected = selectedPackIds.has(pack.id)
+      card.setAttribute('aria-pressed', String(selected))
       card.classList.add('so-card-batch')
       if (selected) card.classList.add('so-card-selected')
       const check = el('span', `so-card-check${selected ? ' so-card-check-on' : ''}`)
@@ -1524,19 +1630,19 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       coverBox.append(check)
       const orderRow = el('div', 'so-row so-card-order')
       orderRow.append(
-        iconButton('◀', '前移', () => {
+        iconButton('◀', t("sprite.manager.content.move_earlier", "前移"), () => {
           commit(movePack(deps.getSettings(), pack.id, -1))
         }, 'so-chip-btn'),
-        iconButton('▶', '后移', () => {
+        iconButton('▶', t("sprite.manager.content.move_later", "后移"), () => {
           commit(movePack(deps.getSettings(), pack.id, 1))
         }, 'so-chip-btn'),
       )
       card.append(orderRow)
 
       card.title = preset
-        ? '点击勾选资源操作；预设包不可删除，可拖拽排序'
-        : '点击勾选；可拖拽排序'
-      card.setAttribute('aria-label', `选择立绘包「${pack.name}」`)
+        ? t("sprite.manager.content.batch.preset_select_hint", "点击勾选资源操作；预设包不可删除，可拖拽排序")
+        : t("sprite.manager.content.batch.select_hint", "点击勾选；可拖拽排序")
+      card.setAttribute('aria-label', t("sprite.manager.content.batch.select_pack", "选择立绘包「{{p0}}」", { p0: pack.name }))
       const toggleSelect = () => {
         if (selectedPackIds.has(pack.id)) selectedPackIds.delete(pack.id)
         else selectedPackIds.add(pack.id)
@@ -1544,8 +1650,9 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       }
       card.addEventListener('click', toggleSelect)
       card.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        if (e.target === card && !e.isComposing && (e.key === 'Enter' || e.key === ' ')) {
           e.preventDefault()
+          e.stopPropagation()
           toggleSelect()
         }
       })
@@ -1583,8 +1690,9 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     }
     card.addEventListener('click', enter)
     card.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (e.target === card && !e.isComposing && (e.key === 'Enter' || e.key === ' ')) {
         e.preventDefault()
+        e.stopPropagation()
         enter()
       }
     })
@@ -1599,31 +1707,32 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     // 添加立绘：头部下拉（两种方式——直接上传 / 粘贴编码），不占正文空间
     if (!readonly) {
       actions.append(
-        dropdownButton('添加立绘', (panel) => {
+        dropdownButton(t("sprite.manager.content.add.title", "添加立绘"), (panel) => {
           const upHeading = el('div', 'so-popover-title')
-          upHeading.textContent = '直接上传'
-          const upBtn = button('选择图片（自动压缩+解析预览）', () => {
+          upHeading.textContent = t("sprite.manager.content.add.upload_title", "直接上传")
+          const upBtn = button(t("sprite.manager.content.add.choose_images", "选择图片（自动压缩+解析预览）"), () => {
+            const opener = popoverOpener
             closePopovers()
-            pickFile('image/*', true, (files) => openUploadPreview(pack.id, files))
+            pickFile('image/*', true, (files) => openUploadPreview(pack.id, files, opener))
           })
           const upHint = el('div', 'so-status')
           upHint.textContent =
-            '默认整个文件名作图名、落入当前包；预览里勾选「自动拆分」可按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png）并按前缀拆分成包。'
+            t("sprite.manager.content.add.upload_hint", "默认整个文件名作图名、落入当前包；预览里勾选「自动拆分」可按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png）并按前缀拆分成包。")
 
           const codeHeading = el('div', 'so-popover-title')
-          codeHeading.textContent = '按编码添加'
+          codeHeading.textContent = t("sprite.manager.content.add.codes_title", "按编码添加")
           const codeInput = document.createElement('textarea')
           codeInput.className = 'text_pole'
           codeInput.rows = 3
-          codeInput.placeholder = '粘贴编码，或「图名 编码」，可多个（空格/逗号/换行分隔）'
-          const codeBtn = button('添加', () => {
+          codeInput.placeholder = t("sprite.manager.content.add.codes_placeholder", "粘贴编码，或「图名 编码」，可多个（空格/逗号/换行分隔）")
+          const codeBtn = button(t("sprite.manager.content.add.button", "添加"), () => {
             const { entries, invalid } = parseImageCodeEntries(codeInput.value)
             if (entries.length === 0 && invalid.length === 0) {
-              toast(body, '请填写图床编码，如 ab12cd.png，或「微笑 ab12cd.png」（可一次粘贴多个）')
+              toast(body, t("sprite.manager.content.add.enter_code", "请填写图床编码，如 ab12cd.png，或「微笑 ab12cd.png」（可一次粘贴多个）"))
               return
             }
             if (invalid.length > 0) {
-              toast(body, `认不出编码：${invalid.slice(0, 3).join('、')}${invalid.length > 3 ? ' 等' : ''}`)
+              toast(body, t("sprite.manager.content.add.invalid_codes", "认不出编码：{{p0}}{{p1}}", { p0: invalid.slice(0, 3).join('、'), p1: invalid.length > 3 ? t("sprite.manager.content.add.more", " 等") : '' }))
               return
             }
             const current = deps.getSettings()
@@ -1646,15 +1755,15 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
             toast(
               body,
               named > 0
-                ? `已添加 ${added} 张，其中 ${named} 张用了你给的图名`
-                : `已按编码添加 ${added} 张（图名取编码名，可在图卡上改名）`,
+                ? t("sprite.manager.content.add.named_result", "已添加 {{p0}} 张，其中 {{p1}} 张用了你给的图名", { p0: added, p1: named })
+                : t("sprite.manager.content.add.code_result", "已按编码添加 {{p0}} 张（图名取编码名，可在图卡上改名）", { p0: added }),
             )
           })
           const codeHint = el('div', 'so-status')
           codeHint.textContent =
-            `编码拼接图床前缀 ${deps.getSettings().imageHost} 成直链。`
-            + '写「微笑 ab12cd.png」就用「微笑」当图名，连写「微笑ab12cd.png」也认；'
-            + '只给编码时图名取编码名。改名/分组用图卡上的 ✎ / 🏷。'
+            t("sprite.manager.content.add.code_prefix", "编码拼接图床前缀 {{p0}} 成直链。", { p0: deps.getSettings().imageHost })
+            + t("sprite.manager.content.add.code_named_hint", "写「微笑 ab12cd.png」就用「微笑」当图名，连写「微笑ab12cd.png」也认；")
+            + t("sprite.manager.content.add.code_rename_hint", "只给编码时图名取编码名。改名/分组用图卡上的 ✎ / 🏷。")
           panel.append(upHeading, upBtn, upHint, codeHeading, codeInput, codeBtn, codeHint)
         }),
       )
@@ -1663,43 +1772,43 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     // 顶部操作（返回键在固定头部）：导出/分享靠左，删除靠右与其隔开
     const topRow = el('div', 'so-row so-detail-top')
     topRow.append(
-      button('导出 JSON', async () => {
+      button(t("sprite.manager.content.export.json", "导出 JSON"), async () => {
         // 本地/预设图片自动内嵌 base64（别人导入才能看到图）；图床 URL 保持轻量
         const file = await exportPack(pack)
         downloadJson(file, `${pack.name}.sprite-pack.json`)
-        toast(body, `已导出「${pack.name}」`)
+        toast(body, t("sprite.manager.content.export.saved", "已导出「{{p0}}」", { p0: pack.name }))
       }),
-      button('复制分享串', async () => {
+      button(t("sprite.manager.content.share.copy", "复制分享串"), async () => {
         const result = encodeShareStringV2(pack)
         if (!result) {
-          toast(body, '该包没有可分享的远程图片（本地/内嵌图请用「导出 JSON」，或先上传 imgbb）')
+          toast(body, t("sprite.manager.content.share.pack_no_remote", "该包没有可分享的远程图片（本地/内嵌图请用「导出 JSON」，或先上传 imgbb）"))
           return
         }
         // 完整性预检：残缺时显示 N/M 与缺失项，必须显式确认才复制，绝不静默复制残缺串
         if (result.missing.length > 0) {
           const preview = result.missing.slice(0, 8).join('、')
-          const more = result.missing.length > 8 ? ` 等 ${result.missing.length} 项` : ''
+          const more = result.missing.length > 8 ? t("sprite.manager.content.share.more_items", " 等 {{p0}} 项", { p0: result.missing.length }) : ''
           const go = window.confirm(
-            `分享串不完整：${result.included}/${result.total} 张有远程地址。\n` +
-              `缺少远程地址（不会包含在分享串里）：${preview}${more}\n\n` +
-              '这些图片对方将看不到。仍要复制残缺分享串吗？',
+            t("sprite.manager.content.share.incomplete", "分享串不完整：{{p0}}/{{p1}} 张有远程地址。\n", { p0: result.included, p1: result.total }) +
+              t("sprite.manager.content.share.missing_list", "缺少远程地址（不会包含在分享串里）：{{p0}}{{p1}}\n\n", { p0: preview, p1: more }) +
+              t("sprite.manager.content.share.confirm_incomplete", "这些图片对方将看不到。仍要复制残缺分享串吗？"),
           )
           if (!go) return
         }
         const ok = await copyText(result.text)
         const note =
           result.missing.length > 0
-            ? `（${result.included}/${result.total} 张，缺 ${result.missing.length} 张）`
-            : `（${result.included} 张，完整）`
-        toast(body, ok ? `已复制分享串${note}` : '复制失败，请手动复制弹出的文本')
-        if (!ok) window.prompt('手动复制分享串：', result.text)
+            ? t("sprite.manager.content.share.partial_count", "（{{p0}}/{{p1}} 张，缺 {{p2}} 张）", { p0: result.included, p1: result.total, p2: result.missing.length })
+            : t("sprite.manager.content.share.complete_count", "（{{p0}} 张，完整）", { p0: result.included })
+        toast(body, ok ? t("sprite.manager.content.share.copied", "已复制分享串{{p0}}", { p0: note }) : t("sprite.manager.content.share.copy_failed", "复制失败，请手动复制弹出的文本"))
+        if (!ok) window.prompt(t("sprite.manager.content.share.copy_prompt", "手动复制分享串："), result.text)
       }),
     )
     const spacer = el('div', 'so-spacer')
     topRow.append(spacer)
     if (!readonly) {
       topRow.append(
-        button('删除立绘包', () => {
+        button(t("sprite.manager.content.delete.pack", "删除立绘包"), () => {
           void deletePacksWithChoice([pack.id], [pack.name], pack.name)
         }, 'so-btn-danger'),
       )
@@ -1708,30 +1817,30 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
     // 包信息：折叠面板（默认收起——顶部留给图墙；展开后输入框均分一行、窄屏自动换行）
     {
-      const metaPanel = collapsible('包信息', false, `pack-meta:${pack.id}`)
+      const metaPanel = collapsible(t("sprite.manager.content.info.title", "包信息"), false, `pack-meta:${pack.id}`)
       const metaRow = el('div', 'so-row so-meta-row')
-      const nameInput = textInput('包名')
+      const nameInput = textInput(t("sprite.manager.content.info.name", "包名"))
       nameInput.value = pack.name
-      const authorInput = textInput('作者')
+      const authorInput = textInput(t("sprite.manager.content.info.author", "作者"))
       authorInput.value = pack.author ?? ''
-      const descInput = textInput('描述（可选）')
+      const descInput = textInput(t("sprite.manager.content.info.description_placeholder", "描述（可选）"))
       descInput.value = pack.description ?? ''
-      const roleInput = textInput('人名（可空）')
+      const roleInput = textInput(t("sprite.manager.content.info.role_placeholder", "人名（可空）"))
       roleInput.value = pack.roleName ?? ''
-      const outfitInput = textInput('服装（可空）')
+      const outfitInput = textInput(t("sprite.manager.content.info.outfit_placeholder", "服装（可空）"))
       outfitInput.value = pack.outfit ?? ''
       const promptNoteInput = document.createElement('textarea')
       promptNoteInput.className = 'text_pole so-pack-prompt-note'
-      promptNoteInput.placeholder = '图包备注（可选）'
+      promptNoteInput.placeholder = t("sprite.manager.content.info.note_placeholder", "图包备注（可选）")
       promptNoteInput.rows = 3
       promptNoteInput.maxLength = MAX_NOTE_CODE_POINTS
       promptNoteInput.value = pack.promptNote ?? ''
       const placementSelect = document.createElement('select')
       placementSelect.className = 'text_pole so-pack-prompt-placement'
-      placementSelect.setAttribute('aria-label', '图包备注插入位置')
+      placementSelect.setAttribute('aria-label', t("sprite.manager.content.info.note_placement", "图包备注插入位置"))
       for (const [value, label] of [
-        ['before-list', '立绘清单前'],
-        ['after-list', '立绘清单后'],
+        ['before-list', t("sprite.manager.content.info.before_list", "立绘清单前")],
+        ['after-list', t("sprite.manager.content.info.after_list", "立绘清单后")],
       ] as const) {
         const option = document.createElement('option')
         option.value = value
@@ -1742,7 +1851,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
       const inventoryPromptInput = document.createElement('textarea')
       inventoryPromptInput.className = 'text_pole so-pack-inventory-prompt'
-      inventoryPromptInput.placeholder = '自定义清单提示词（可选，替换默认的表情列表）'
+      inventoryPromptInput.placeholder = t("sprite.manager.content.info.inventory_placeholder", "自定义清单提示词（可选，替换默认的表情列表）")
       inventoryPromptInput.rows = 4
       inventoryPromptInput.maxLength = MAX_INVENTORY_PROMPT_CODE_POINTS
       inventoryPromptInput.value = pack.inventoryPrompt ?? ''
@@ -1768,13 +1877,13 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         if (outfits.length === 0) return
 
         const title = el('div', 'so-section-title')
-        title.textContent = '服装备注'
+        title.textContent = t("sprite.manager.content.info.outfit_notes", "服装备注")
         outfitNotesBox.append(title)
         for (const outfit of outfits) {
           const input = document.createElement('textarea')
           input.className = 'text_pole so-outfit-note-input'
           input.dataset.outfit = outfit
-          input.placeholder = `${outfit}的使用场景（可选）`
+          input.placeholder = t("sprite.manager.content.info.outfit_note_placeholder", "{{p0}}的使用场景（可选）", { p0: outfit })
           input.rows = 2
           input.maxLength = MAX_NOTE_CODE_POINTS
           input.value = outfitNoteDrafts.get(outfit) ?? ''
@@ -1789,32 +1898,32 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
       const promptRow = el('div', 'so-row so-pack-note-row')
       promptRow.append(
-        labeled('图包备注', promptNoteInput),
-        labeled('插入位置', placementSelect),
+        labeled(t("sprite.manager.content.info.note", "图包备注"), promptNoteInput),
+        labeled(t("sprite.manager.content.info.placement", "插入位置"), placementSelect),
       )
 
       const inventoryRow = el('div', 'so-row so-pack-inventory-row')
       const inventoryHint = el('div', 'so-status so-pack-inventory-hint')
       inventoryHint.textContent =
-        '填了就用它替换这个包在清单里的表情列表；留空走默认列表。'
-        + '多个包同场景时两段都会出现，不会互相覆盖。'
-      const inventoryCell = labeled('自定义清单提示词', inventoryPromptInput)
+        t("sprite.manager.content.info.inventory_hint", "填了就用它替换这个包在清单里的表情列表；留空走默认列表。")
+        + t("sprite.manager.content.info.multiple_packs_hint", "多个包同场景时两段都会出现，不会互相覆盖。")
+      const inventoryCell = labeled(t("sprite.manager.content.info.inventory", "自定义清单提示词"), inventoryPromptInput)
       inventoryCell.append(inventoryHint)
       inventoryRow.append(inventoryCell)
       metaRow.append(
-        labeled('包名', nameInput),
-        labeled('作者', authorInput),
-        labeled('人名', roleInput),
-        labeled('服装', outfitInput),
-        labeled('描述', descInput),
+        labeled(t("sprite.manager.content.info.name", "包名"), nameInput),
+        labeled(t("sprite.manager.content.info.author", "作者"), authorInput),
+        labeled(t("sprite.manager.content.info.role", "人名"), roleInput),
+        labeled(t("sprite.manager.content.info.outfit", "服装"), outfitInput),
+        labeled(t("sprite.manager.content.info.description", "描述"), descInput),
       )
       // 保存独占一行、主按钮样式：混在输入框里会被挤到换行尾部，窄屏上几乎看不见（用户实测反馈）
       const saveRow = el('div', 'so-row so-meta-save-row')
       saveRow.append(
-        button('保存包信息', () => {
+        button(t("sprite.manager.content.info.save", "保存包信息"), () => {
           const name = sanitizePackName(nameInput.value)
           if (!name) {
-            toast(body, '包名不能为空')
+            toast(body, t("sprite.manager.content.info.empty_name", "包名不能为空"))
             return
           }
           const roleName = normalizeTag(roleInput.value)
@@ -1842,7 +1951,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
             const materialized = next.packs.find((candidate) => candidate.id === pack.id)
             if (!materialized || !checkedSettings(upsertPack(current, materialized))) return
             commit(next)
-            toast(body, '已保存包信息')
+            toast(body, t("sprite.manager.content.info.saved", "已保存包信息"))
             return
           }
           const nextPack: SpritePack = {
@@ -1867,26 +1976,26 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           if (Object.keys(outfitNotes).length > 0) nextPack.outfitNotes = outfitNotes
           else delete nextPack.outfitNotes
           if (commitChecked(upsertPack(deps.getSettings(), nextPack))) {
-            toast(body, '已保存包信息')
+            toast(body, t("sprite.manager.content.info.saved", "已保存包信息"))
           }
         }, 'so-btn-primary so-meta-save'),
       )
       if (readonly) {
-        saveRow.append(button('恢复内置信息', () => {
-          if (!window.confirm('确定恢复扩展内置的包信息吗？已保存的本地图片会保留。')) return
+        saveRow.append(button(t("sprite.manager.content.info.restore", "恢复内置信息"), () => {
+          if (!window.confirm(t("sprite.manager.content.info.confirm_restore", "确定恢复扩展内置的包信息吗？已保存的本地图片会保留。"))) return
           const current = deps.getSettings()
           const next = clearPresetMetadata(current, pack.id)
           const materialized = next.packs.find((candidate) => candidate.id === pack.id)
           if (!materialized || !checkedSettings(upsertPack(current, materialized))) return
           commit(next)
-          toast(body, '已恢复内置信息，本地图片保持不变')
+          toast(body, t("sprite.manager.content.info.restored", "已恢复内置信息，本地图片保持不变"))
         }))
       }
       const metaHint = el('div', 'so-status')
       metaHint.textContent =
         readonly
-          ? '可覆盖预设包信息；立绘图片本身仍不可添加、改名或删除。'
-          : '人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。'
+          ? t("sprite.manager.content.info.preset_hint", "可覆盖预设包信息；立绘图片本身仍不可添加、改名或删除。")
+          : t("sprite.manager.content.info.address_hint", "人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。")
       metaPanel.body.append(metaRow, promptRow, inventoryRow, outfitNotesBox, metaHint, saveRow)
       body.append(metaPanel.box)
     }
@@ -1894,22 +2003,22 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     // 搜索和标签过滤只改变图库视图，不修改包内容；分页仍按每次 60 张追加。
     if (pack.sprites.length === 0) {
       const empty = el('div', 'so-status')
-      empty.textContent = '还没有立绘：点右上角「添加立绘」上传图片或粘贴编码。'
+      empty.textContent = t("sprite.manager.content.empty.pack_detail", "还没有立绘：点右上角「添加立绘」上传图片或粘贴编码。")
       body.append(empty)
     } else {
       const filters = el('div', 'so-gallery-filters')
       const search = document.createElement('input')
       search.type = 'search'
       search.className = 'text_pole so-gallery-search'
-      search.placeholder = '搜索图名、角色、服装或标签'
-      search.setAttribute('aria-label', '搜索立绘')
+      search.placeholder = t("sprite.manager.content.filter.sprites_placeholder", "搜索图名、角色、服装或标签")
+      search.setAttribute('aria-label', t("sprite.manager.content.filter.sprites", "搜索立绘"))
       search.value = spriteFilterQuery
       const labelSelect = document.createElement('select')
       labelSelect.className = 'text_pole so-gallery-label-select'
-      labelSelect.setAttribute('aria-label', '添加标签筛选')
+      labelSelect.setAttribute('aria-label', t("sprite.manager.content.filter.add_tag", "添加标签筛选"))
       const placeholder = document.createElement('option')
       placeholder.value = ''
-      placeholder.textContent = '按标签筛选…'
+      placeholder.textContent = t("sprite.manager.content.filter.by_tag", "按标签筛选…")
       labelSelect.append(placeholder)
       const availableLabels = [...new Set(pack.sprites.flatMap((sprite) => sprite.labels ?? []))]
       for (const label of availableLabels) {
@@ -1938,7 +2047,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         const section = el('div', 'so-sprite-section')
         if (groups.length > 0) {
           const head = el('div', 'so-group-head')
-          head.textContent = group === '' ? '未分组' : group
+          head.textContent = group === '' ? t('sprite.manager.content.group.none', '未分组') : group
           section.append(head)
         }
         const grid = el('div', 'so-sprite-grid')
@@ -1966,10 +2075,10 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
       const updatePaging = (): void => {
         const visibleCount = Math.min(spriteVisibleCount, filteredEntries.length)
-        count.textContent = `已显示 ${visibleCount}/${filteredEntries.length}`
+        count.textContent = t("sprite.manager.content.filter.shown", "已显示 {{p0}}/{{p1}}", { p0: visibleCount, p1: filteredEntries.length })
         paging.replaceChildren()
         if (visibleCount < filteredEntries.length) {
-          paging.append(button('加载更多', () => {
+          paging.append(button(t("sprite.manager.content.filter.load_more", "加载更多"), () => {
             const previousCount = spriteVisibleCount
             spriteVisibleCount = Math.min(filteredEntries.length, previousCount + SPRITE_PAGE_SIZE)
             appendSprites(previousCount, spriteVisibleCount)
@@ -1994,7 +2103,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         grids.clear()
         if (filteredEntries.length === 0) {
           const empty = el('div', 'so-status so-gallery-empty')
-          empty.textContent = '没有符合筛选条件的立绘。'
+          empty.textContent = t("sprite.manager.content.empty.filtered_sprites", "没有符合筛选条件的立绘。")
           gallery.append(empty)
         } else {
           appendSprites(0, Math.min(spriteVisibleCount, filteredEntries.length))
@@ -2009,7 +2118,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           chip.type = 'button'
           chip.className = 'so-gallery-filter-chip'
           chip.textContent = `${label} ×`
-          chip.title = `移除标签筛选「${label}」`
+          chip.title = t("sprite.manager.content.filter.remove_tag", "移除标签筛选「{{p0}}」", { p0: label })
           chip.addEventListener('click', () => {
             spriteFilterLabels = spriteFilterLabels.filter((current) => current !== label)
             spriteVisibleCount = SPRITE_PAGE_SIZE
@@ -2052,13 +2161,13 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       if (pending.length > 0 && imgbbApiKey.trim()) {
         const upSection = el('div', 'so-section')
         const upTitle = el('div', 'so-section-title')
-        upTitle.textContent = '图床补传'
+        upTitle.textContent = t("sprite.manager.content.upload.retry_title", "图床补传")
         const upDesc = el('div', 'so-status')
-        upDesc.textContent = `${pending.length} 张立绘还没有远程地址（分享时对方看不到）。补传到 imgbb 后本地图仍保留。`
+        upDesc.textContent = t("sprite.manager.content.upload.pending_hint", "{{p0}} 张立绘还没有远程地址（分享时对方看不到）。补传到 imgbb 后本地图仍保留。", { p0: pending.length })
         upSection.append(
           upTitle,
           upDesc,
-          button(`补传 ${pending.length} 张到 imgbb（失败可重试）`, () => {
+          button(t("sprite.manager.content.upload.retry", "补传 {{p0}} 张到 imgbb（失败可重试）", { p0: pending.length }), () => {
             void retryPendingUploads(body, pack.id)
           }),
         )
@@ -2067,16 +2176,16 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       // 旧分组拆包：包内有 ≥2 个分组时提供「按分组拆成立绘包」
       const splitPreview = previewGroupSplit(pack)
       if (splitPreview.length >= 2) {
-        const splitPanel = collapsible('按分组拆成立绘包', false, `pack-split:${pack.id}`)
+        const splitPanel = collapsible(t("sprite.manager.content.split.title", "按分组拆成立绘包"), false, `pack-split:${pack.id}`)
         const splitDesc = el('div', 'so-status')
-        splitDesc.textContent = `检测到 ${splitPreview.length} 个分组：${splitPreview
+        splitDesc.textContent = t("sprite.manager.content.split.preview", "检测到 {{p0}} 个分组：{{p1}}。拆分会新建这些包（原包与绑定保留，可稍后自行删除）。", { p0: splitPreview.length, p1: splitPreview
           .map((s) => `${s.roleName}(${s.count})`)
-          .join('、')}。拆分会新建这些包（原包与绑定保留，可稍后自行删除）。`
+          .join('、') })
         splitPanel.body.append(
           splitDesc,
-          button('拆分（保留原包）', () => {
-            const preview = splitPreview.map((s) => `${s.roleName}：${s.count} 张`).join('\n')
-            if (!window.confirm(`将新建以下立绘包（原包保留）：\n${preview}\n\n确认拆分？`)) return
+          button(t("sprite.manager.content.split.button", "拆分（保留原包）"), () => {
+            const preview = splitPreview.map((s) => t("sprite.manager.content.split.pack_count", "{{p0}}：{{p1}} 张", { p0: s.roleName, p1: s.count })).join('\n')
+            if (!window.confirm(t("sprite.manager.content.split.confirm", "将新建以下立绘包（原包保留）：\n{{p0}}\n\n确认拆分？", { p0: preview }))) return
             const newPacks = splitPackByGroup(pack)
             let next = deps.getSettings()
             for (const np of newPacks) {
@@ -2085,7 +2194,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
               next = updated
             }
             commit(next)
-            toast(body, `已拆出 ${newPacks.length} 个新包（原包「${pack.name}」保留）`)
+            toast(body, t("sprite.manager.content.split.complete", "已拆出 {{p0}} 个新包（原包「{{p1}}」保留）", { p0: newPacks.length, p1: pack.name }))
           }),
         )
         body.append(splitPanel.box)
@@ -2134,7 +2243,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
   function commitActionPack(pack: SpritePack): void {
     const result = upsertPack(deps.getSettings(), pack)
-    if (!result.ok) throw new Error(`操作未生效，存在地址冲突：${conflictText(result.conflicts)}`)
+    if (!result.ok) throw new Error(t("sprite.manager.content.conflict.address", "操作未生效，存在地址冲突：{{p0}}", { p0: conflictText(result.conflicts) }))
     deps.updateSettings(result.settings)
   }
 
@@ -2144,7 +2253,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
   function runSpriteAction(action: SpriteAction): void {
     const report = (error: unknown) => {
-      toast(currentManagerBody(), error instanceof Error ? error.message : '立绘操作失败')
+      toast(currentManagerBody(), error instanceof Error ? error.message : t("sprite.manager.content.action.failed", "立绘操作失败"))
       refreshLightbox()
     }
     try {
@@ -2187,10 +2296,10 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           result.dataUri,
           deps.adapter.getCurrentCharacterName() || beforeSave.pack.name,
         )
-        if (!localUserImagePath(url)) throw new Error('保存失败：平台未返回安全的本地用户图片地址')
+        if (!localUserImagePath(url)) throw new Error(t("sprite.manager.content.error.unsafe_local", "保存失败：平台未返回安全的本地用户图片地址"))
         const target = latestTarget()
         if (!target || target.sprite.url !== beforeUrl) {
-          throw new Error('目标已更改，本次结果未应用')
+          throw new Error(t("sprite.manager.content.error.target_changed", "目标已更改，本次结果未应用"))
         }
         const base: Sprite = {
           tag: target.sprite.tag,
@@ -2213,22 +2322,22 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
                   code: uploaded.code,
                   remoteUrl: uploaded.url,
                 }))
-                toast(currentManagerBody(), `已替换「${identity.tag}」并重传图床（${formatBytes(result.bytes)}）`)
+                toast(currentManagerBody(), t("sprite.manager.content.replace.hosted", "已替换「{{p0}}」并重传图床（{{p1}}）", { p0: identity.tag, p1: formatBytes(result.bytes) }))
                 return
               } else {
-                toast(currentManagerBody(), '目标已更改，本次图床结果未应用；已保留本地文件')
+                toast(currentManagerBody(), t("sprite.manager.content.replace.target_changed", "目标已更改，本次图床结果未应用；已保留本地文件"))
                 return
               }
             }
-            toast(currentManagerBody(), `已替换「${identity.tag}」，但图床响应无效，标记为待上传`)
+            toast(currentManagerBody(), t("sprite.manager.content.replace.invalid_response", "已替换「{{p0}}」，但图床响应无效，标记为待上传", { p0: identity.tag }))
           } catch {
-            toast(currentManagerBody(), `已替换「${identity.tag}」，图床上传失败，标记为待上传`)
+            toast(currentManagerBody(), t("sprite.manager.content.replace.upload_failed", "已替换「{{p0}}」，图床上传失败，标记为待上传", { p0: identity.tag }))
           }
         } else {
-          toast(currentManagerBody(), `已替换「${identity.tag}」（${formatBytes(result.bytes)}），远程地址待上传`)
+          toast(currentManagerBody(), t("sprite.manager.content.replace.local", "已替换「{{p0}}」（{{p1}}），远程地址待上传", { p0: identity.tag, p1: formatBytes(result.bytes) }))
         }
       } catch (error) {
-        toast(currentManagerBody(), error instanceof Error ? error.message : '替换失败')
+        toast(currentManagerBody(), error instanceof Error ? error.message : t("sprite.manager.content.replace.failed", "替换失败"))
       } finally {
         refreshLightbox()
       }
@@ -2271,7 +2380,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           (candidate.outfit ?? '') === identity.outfit,
         )
         if (!pack || !latest || latest.url !== source.url) {
-          throw new Error('立绘在保存期间已发生变化，请重试')
+          throw new Error(t("sprite.manager.content.localize.changed", "立绘在保存期间已发生变化，请重试"))
         }
         // 预设包是只读的，改不了 sprites 本身，只能记一条同 ID 覆盖：
         // 这是「本地化预设立绘」唯一的落地方式，去掉棋盘格功能时必须保住这条路。
@@ -2290,7 +2399,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           }))
         }
         context.refresh()
-        toast(currentManagerBody(), `已将「${source.tag}」保存到本地`)
+        toast(currentManagerBody(), t("sprite.manager.content.localize.saved", "已将「{{p0}}」保存到本地", { p0: source.tag }))
       },
       refresh: () => {
         render()
@@ -2340,6 +2449,11 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     readonly: boolean,
   ): HTMLElement {
     const cell = el('div', 'so-sprite-cell')
+    cell.tabIndex = 0
+    cell.setAttribute('role', 'button')
+    cell.setAttribute('aria-label', t('sprite.manager.content.pack.open_image', '查看立绘「{{name}}」', { name: sprite.tag }))
+    cell.dataset.managerFocus = `sprite:${pack.id}:${spriteGroup(sprite)}:${sprite.outfit ?? ''}:${sprite.tag}`
+    addCardNavigation(cell, '.so-sprite-cell')
     if (pack.coverTag === sprite.tag) cell.classList.add('so-cover')
 
     const img = document.createElement('img')
@@ -2355,6 +2469,12 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     cell.append(img, tagEl)
     // 点击放大查看（操作按钮自带 stopPropagation，互不干扰）
     cell.addEventListener('click', () => openLightbox(pack.id, index))
+    cell.addEventListener('keydown', event => {
+      if (event.target !== cell || event.isComposing || !['Enter', ' '].includes(event.key)) return
+      event.preventDefault()
+      event.stopPropagation()
+      openLightbox(pack.id, index)
+    })
     if (readonly) return cell
 
     const bar = el('div', 'so-sprite-actions')
@@ -2377,21 +2497,23 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     )
     const sharedActions = createSpriteActions(context)
     for (const action of sharedActions) {
-      bar.append(iconButton(
+      const actionButton = iconButton(
         action.icon ?? action.label,
-        action.hint ?? action.label,
+        action.label,
         () => runSpriteAction(action),
         'so-icon-btn',
         Boolean(action.disabled),
-      ))
+      )
+      actionButton.title = action.hint ?? action.label
+      bar.append(actionButton)
     }
     bar.append(
-      iconButton('◀', '前移', () => {
+      iconButton('◀', t("sprite.manager.content.move_earlier", "前移"), () => {
         const target = context.getPack()
         if (!target) return
         commitPack(moveSprite(target, index, index - 1))
       }),
-      iconButton('▶', '后移', () => {
+      iconButton('▶', t("sprite.manager.content.move_later", "后移"), () => {
         const target = context.getPack()
         if (!target) return
         commitPack(moveSprite(target, index, index + 1))
@@ -2405,7 +2527,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
    * 批量上传预览弹窗（八期）：解析文件名 → 让用户修正/选择不拆分/选重名策略 → 确认后执行。
    * 上传前必须预览，不静默落库。
    */
-  function openUploadPreview(currentPackId: string, files: FileList): void {
+  function openUploadPreview(currentPackId: string, files: FileList, opener?: HTMLElement | null): void {
     const fileArr = Array.from(files)
     // 每个文件解析出的可编辑条目（人名/服装/图名）
     const parsed = fileArr.map((f) => parseSpriteFileName(f.name))
@@ -2418,7 +2540,9 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     const panel = el('div', 'so-upload-panel')
     const head = el('div', 'so-upload-head')
     const title = el('b')
-    title.textContent = `批量上传预览（${fileArr.length} 张）`
+    title.textContent = t("sprite.manager.content.upload.preview_title", "批量上传预览（{{p0}} 张）", { p0: fileArr.length })
+    title.id = nextManagerId()
+    modal.setAttribute('aria-labelledby', title.id)
     head.append(title)
 
     const rows = el('div', 'so-upload-rows')
@@ -2432,9 +2556,9 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         const name = el('div', 'so-upload-fname')
         name.textContent = file.name
         name.title = file.name
-        const roleIn = textInput('人名')
-        const outfitIn = textInput('服装')
-        const tagIn = textInput('图名')
+        const roleIn = textInput(t("sprite.manager.content.info.role", "人名"))
+        const outfitIn = textInput(t("sprite.manager.content.info.outfit", "服装"))
+        const tagIn = textInput(t("sprite.manager.content.info.image_name", "图名"))
         if (autoSplit) {
           roleIn.value = parsed[i].role
           outfitIn.value = parsed[i].outfit
@@ -2450,9 +2574,9 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         inputs.push({ role: roleIn, outfit: outfitIn, tag: tagIn })
         row.append(
           name,
-          labeled('人名', roleIn),
-          labeled('服装', outfitIn),
-          labeled('图名', tagIn),
+          labeled(t("sprite.manager.content.info.role", "人名"), roleIn),
+          labeled(t("sprite.manager.content.info.outfit", "服装"), outfitIn),
+          labeled(t("sprite.manager.content.info.image_name", "图名"), tagIn),
         )
         rows.append(row)
       })
@@ -2461,20 +2585,22 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
 
     const opts = el('div', 'so-upload-opts')
     opts.append(
-      checkboxRow('按文件名前缀自动拆分人名/服装（勾选后在下方预览拆分结果，可拆出新包）', autoSplit, (v) => {
+      checkboxRow(t("sprite.manager.content.upload.auto_split", "按文件名前缀自动拆分人名/服装（勾选后在下方预览拆分结果，可拆出新包）"), autoSplit, (v) => {
         autoSplit = v
         buildRows()
       }),
     )
     const stratWrap = el('div', 'so-row')
     const stratLabel = el('span')
-    stratLabel.textContent = '重名时：'
+    stratLabel.textContent = t("sprite.manager.content.upload.conflict_label", "重名时：")
+    stratLabel.id = nextManagerId()
     const stratSel = document.createElement('select')
     stratSel.className = 'text_pole'
+    stratSel.setAttribute('aria-labelledby', stratLabel.id)
     for (const [val, lab] of [
-      ['skip', '跳过（默认）'],
-      ['rename', '自动改名'],
-      ['overwrite', '覆盖'],
+      ['skip', t("sprite.manager.content.upload.skip", "跳过（默认）")],
+      ['rename', t("sprite.manager.content.upload.rename", "自动改名")],
+      ['overwrite', t("sprite.manager.content.upload.overwrite", "覆盖")],
     ] as const) {
       const o = document.createElement('option')
       o.value = val
@@ -2486,8 +2612,9 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     opts.append(stratWrap)
 
     const status = el('div', 'so-upload-status')
+    status.setAttribute('role', 'status')
     const actions = el('div', 'so-row so-upload-actions')
-    const confirmBtn = button('开始上传', () => {
+    const confirmBtn = button(t("sprite.manager.content.upload.start", "开始上传"), () => {
       if (uploading) return
       uploading = true
       confirmBtn.setAttribute('aria-disabled', 'true')
@@ -2498,7 +2625,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         outfit: autoSplit ? inputs[i].outfit.value : '',
         tag: inputs[i].tag.value,
       }))
-      void applyUploadPlan(currentPackId, fileArr, entries, strategy, status, () => modal.remove()).finally(
+      void applyUploadPlan(currentPackId, fileArr, entries, strategy, status, () => closeModal()).finally(
         () => {
           uploading = false
           confirmBtn.removeAttribute('aria-disabled')
@@ -2507,9 +2634,9 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       )
     })
     const cancelBtn = button(
-      '取消',
+      t("common.cancel", "取消"),
       () => {
-        if (!uploading) modal.remove()
+        if (!uploading) closeModal()
       },
       'so-btn-danger',
     )
@@ -2522,6 +2649,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     panel.append(head, opts, actions, status, rows)
     modal.append(panel)
     ;(backdrop ?? document.body).append(modal)
+    const closeModal = manageChildDialog(modal, () => !uploading, opener)
   }
 
   /** 执行上传计划：压缩 → saveImage 本地保底 → 落入目标包（按需新建）→ 可选 imgbb */
@@ -2591,7 +2719,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       for (let i = 0; i < plans.length; i++) {
         const plan = plans[i]
         const file = files[i]
-        status.textContent = `处理中 ${i + 1}/${plans.length}：${file.name}`
+        status.textContent = t("sprite.manager.content.upload.progress", "处理中 {{p0}}/{{p1}}：{{p2}}", { p0: i + 1, p1: plans.length, p2: file.name })
         if (plan.action === 'skip' || !plan.finalTag) {
           skipped++
           continue
@@ -2600,7 +2728,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           const batchKey = JSON.stringify([plan.entry.role, plan.entry.outfit, plan.targetPackName])
           const beforeId = plan.targetPackId ?? newPackIds.get(batchKey)
           const beforeTarget = deps.getSettings().packs.find(pack => pack.id === beforeId)
-          if (beforeId && !beforeTarget) throw new Error('目标已更改，本次结果未应用')
+          if (beforeId && !beforeTarget) throw new Error(t("sprite.manager.content.error.target_changed", "目标已更改，本次结果未应用"))
           const beforeUrl = beforeTarget ? sameSprite(beforeTarget, { tag: plan.finalTag, url: '' })?.url : undefined
           const result = await compressImage(file)
           if (result.transparency === 'opaque-checkerboard') checkerboardImages += 1
@@ -2611,7 +2739,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
             plan.targetPackName, // 显示提示；物理文件身份由适配器独立生成
           )
 
-          if (!localUserImagePath(url)) throw new Error('保存失败：平台未返回安全的本地用户图片地址')
+          if (!localUserImagePath(url)) throw new Error(t("sprite.manager.content.error.unsafe_local", "保存失败：平台未返回安全的本地用户图片地址"))
 
           // 解析/新建目标包
           let targetId = plan.targetPackId
@@ -2648,7 +2776,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
           }
           // 自动拆分的包用 roleName/outfit，立绘只存图名；不拆分则可能带 group（此处 role 落到包级）
           const latestSprite = sameSprite(target, { tag: plan.finalTag, url: '' })
-          if (latestSprite?.url !== beforeUrl) throw new Error('目标已更改，本次结果未应用')
+          if (latestSprite?.url !== beforeUrl) throw new Error(t("sprite.manager.content.error.target_changed", "目标已更改，本次结果未应用"))
           const sprite: Sprite = { ...latestSprite, tag: plan.finalTag, url }
           delete sprite.code
           delete sprite.remoteUrl
@@ -2706,18 +2834,18 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         console.error('[sprite-overlay] 上传后刷新失败', error)
       }
       const parts = [
-        `成功 ${added} 张`,
-        `冲突 ${conflicts} 张`,
-        `失败 ${failed} 张`,
-        `未处理 ${unprocessed} 张`,
+        t("sprite.manager.content.upload.result_success", "成功 {{p0}} 张", { p0: added }),
+        t("sprite.manager.content.upload.result_conflict", "冲突 {{p0}} 张", { p0: conflicts }),
+        t("sprite.manager.content.upload.result_failed", "失败 {{p0}} 张", { p0: failed }),
+        t("sprite.manager.content.upload.result_unprocessed", "未处理 {{p0}} 张", { p0: unprocessed }),
       ]
-      if (skipped > 0) parts.push(`跳过 ${skipped} 张（重名/无效）`)
-      if (useImgbb) parts.push(`imgbb 成功 ${hosted}${hostFailed > 0 ? `、失败 ${hostFailed}` : ''}`)
+      if (skipped > 0) parts.push(t("sprite.manager.content.upload.result_skipped", "跳过 {{p0}} 张（重名/无效）", { p0: skipped }))
+      if (useImgbb) parts.push(t("sprite.manager.content.upload.result_hosted", "imgbb 成功 {{p0}}{{p1}}", { p0: hosted, p1: hostFailed > 0 ? t("sprite.manager.content.upload.host_failed_suffix", "、失败 {{p0}}", { p0: hostFailed }) : '' }))
       if (checkerboardImages > 0) {
-        parts.push(`警告：${checkerboardImages} 张疑似把棋盘格烤进图片，插件无法安全自动去除`)
+        parts.push(t("sprite.manager.content.upload.checkerboard_warning", "警告：{{p0}} 张疑似把棋盘格烤进图片，插件无法安全自动去除", { p0: checkerboardImages }))
       }
       if (opaqueImages > 0) {
-        parts.push(`提示：${opaqueImages} 张没有透明像素，作为立绘时会显示完整背景`)
+        parts.push(t("sprite.manager.content.upload.opaque_notice", "提示：{{p0}} 张没有透明像素，作为立绘时会显示完整背景", { p0: opaqueImages }))
       }
       try {
         toast(backdrop?.querySelector('.so-manager-body') as HTMLElement, parts.join('，'))
@@ -2731,7 +2859,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   async function retryPendingUploads(body: HTMLElement, packId: string): Promise<void> {
     const { imgbbApiKey } = deps.getSettings()
     if (!imgbbApiKey.trim()) {
-      toast(body, '请先在「图库」App 配置 imgbb API Key')
+      toast(body, t("sprite.manager.content.upload.api_key", "请先在「图库」App 配置 imgbb API Key"))
       return
     }
     const pack = deps.getSettings().packs.find((p) => p.id === packId)
@@ -2744,7 +2872,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     for (let i = 0; i < pending.length; i++) {
       const sprite = pending[i]
       const beforeUrl = sprite.url
-      toast(body, `补传中 ${i + 1}/${pending.length}：${sprite.tag}`)
+      toast(body, t("sprite.manager.content.upload.retry_progress", "补传中 {{p0}}/{{p1}}：{{p2}}", { p0: i + 1, p1: pending.length, p2: sprite.tag }))
       try {
         const dataUri = beforeUrl.startsWith('data:') ? beforeUrl : await urlToDataUri(beforeUrl)
         const up = await uploadToImgbb(imgbbApiKey, dataUri)
@@ -2781,7 +2909,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     render()
     toast(
       backdrop?.querySelector('.so-manager-body') as HTMLElement,
-      `补传完成：成功 ${ok} 张${fail > 0 ? `，失败 ${fail} 张（可再次点击重试）` : ''}`,
+      t("sprite.manager.content.upload.retry_complete", "补传完成：成功 {{p0}} 张{{p1}}", { p0: ok, p1: fail > 0 ? t("sprite.manager.content.upload.retry_failed_suffix", "，失败 {{p0}} 张（可再次点击重试）", { p0: fail }) : '' }),
     )
   }
 
@@ -2807,13 +2935,18 @@ function textInput(placeholder: string): HTMLInputElement {
   input.type = 'text'
   input.className = 'text_pole'
   input.placeholder = placeholder
+  input.setAttribute('aria-label', placeholder)
+  input.dataset.managerFocus = `input:${placeholder}`
   return input
 }
 
 function labeled(label: string, input: HTMLElement): HTMLElement {
   const wrap = el('label', 'so-labeled')
   const span = el('span', 'so-labeled-text')
+  span.id = nextManagerId()
   span.textContent = label
+  input.setAttribute('aria-labelledby', span.id)
+  input.dataset.managerFocus = `field:${label}`
   wrap.append(span, input)
   return wrap
 }
@@ -2823,6 +2956,7 @@ function checkboxRow(label: string, checked: boolean, onChange: (v: boolean) => 
   const input = document.createElement('input')
   input.type = 'checkbox'
   input.checked = checked
+  input.dataset.managerFocus = `checkbox:${label}`
   input.addEventListener('change', () => onChange(input.checked))
   const span = document.createElement('span')
   span.textContent = label
@@ -2835,10 +2969,13 @@ function button(label: string, onClick: () => void, extraClass = ''): HTMLElemen
   btn.setAttribute('role', 'button')
   btn.tabIndex = 0
   btn.textContent = label
+  btn.dataset.managerFocus = `button:${label}`
   btn.addEventListener('click', onClick)
   btn.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
+    if (!e.isComposing && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault()
+      // ST also turns bubbling Enter on .menu_button into a click.
+      e.stopPropagation()
       onClick()
     }
   })
@@ -2858,8 +2995,16 @@ function iconButton(
   btn.setAttribute('role', 'button')
   btn.setAttribute('aria-label', title)
   btn.setAttribute('aria-disabled', String(disabled))
+  btn.tabIndex = disabled ? -1 : 0
+  btn.dataset.managerFocus = `icon:${title}`
   btn.addEventListener('click', (e) => {
     e.stopPropagation()
+    if (!disabled) onClick()
+  })
+  btn.addEventListener('keydown', event => {
+    if (event.isComposing || !['Enter', ' '].includes(event.key)) return
+    event.preventDefault()
+    event.stopPropagation()
     if (!disabled) onClick()
   })
   return btn
@@ -2867,7 +3012,36 @@ function iconButton(
 
 /** 状态提示条（toast 输出目标） */
 function statusBar(): HTMLElement {
-  return el('div', 'so-status so-toast')
+  const status = el('div', 'so-status so-toast')
+  status.setAttribute('role', 'status')
+  return status
+}
+
+/** Arrow keys follow the rendered rows; Home/End visit the first/last card. */
+function addCardNavigation(card: HTMLElement, selector: string): void {
+  card.addEventListener('keydown', event => {
+    if (event.target !== card || event.isComposing || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
+    const cards = [...(card.closest('.so-manager-body')?.querySelectorAll<HTMLElement>(selector) ?? [])]
+    const index = cards.indexOf(card)
+    if (index < 0) return
+    let target = index
+    if (event.key === 'Home') target = 0
+    else if (event.key === 'End') target = cards.length - 1
+    else if (event.key === 'ArrowLeft') target--
+    else if (event.key === 'ArrowRight') target++
+    else {
+      const rect = card.getBoundingClientRect()
+      const direction = event.key === 'ArrowDown' ? 1 : -1
+      const candidates = cards.map((node, i) => ({ i, rect: node.getBoundingClientRect() }))
+        .filter(item => direction * (item.rect.top - rect.top) > 1)
+        .sort((a, b) => Math.abs(a.rect.top - rect.top) - Math.abs(b.rect.top - rect.top)
+          || Math.abs(a.rect.left - rect.left) - Math.abs(b.rect.left - rect.left))
+      target = candidates[0]?.i ?? index + direction
+    }
+    event.preventDefault()
+    event.stopPropagation()
+    cards[Math.max(0, Math.min(cards.length - 1, target))]?.focus()
+  })
 }
 
 function toast(scope: HTMLElement | null, msg: string): void {
@@ -2906,18 +3080,25 @@ async function copyText(text: string): Promise<boolean> {
     return true
   } catch {
     // 非安全上下文（http 直连 ST）没有 clipboard API，走隐藏 textarea 兜底
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const container = opener?.closest('[role="dialog"]') ?? document.body
+    const ta = document.createElement('textarea')
     try {
-      const ta = document.createElement('textarea')
       ta.value = text
       ta.style.position = 'fixed'
       ta.style.opacity = '0'
-      document.body.append(ta)
+      ta.tabIndex = -1
+      container.append(ta)
+      ta.focus({ preventScroll: true })
       ta.select()
-      const ok = document.execCommand('copy')
-      ta.remove()
-      return ok
+      // A nested dialog may own focus; never claim a copy when selection moved away.
+      if (document.activeElement !== ta || ta.selectionStart !== 0 || ta.selectionEnd !== text.length) return false
+      return document.execCommand('copy')
     } catch {
       return false
+    } finally {
+      ta.remove()
+      if (opener?.isConnected) opener.focus({ preventScroll: true })
     }
   }
 }

@@ -19,6 +19,17 @@ Round-4 repairs for the five remaining findings (W9 test callback typing, W4 sam
 | W9 | P1 | Code repair complete in uncommitted worktree: aligned deferred resolver and message callback types with AppHost contracts; `tsc --noEmit --incremental false` passes with 0 errors. |
 
 Fresh fifth-review evidence: 91 files / 1219 tests pass in one full run, including 29 WeChat tests; tsc with incremental false and lint both exit 0. Controlled source fixtures retain mood 96 after an old read returns 82, preserve external mood/interest 82/35 when ownership changes during a genuinely pending stat evaluation, retain external wallet 1000 after a red packet, and select valid same-character aliases before root values. All 7 runtime files match between root and `st-distribution`; all 50 assets match across root, preview and distribution. No extension/Next rebuild or real-ST/device acceptance was performed in this review. A fixing commit does not itself close live acceptance.
+## 2026-09-30 i18n Continuation and Release Gates
+
+Updated October 7: `cec4e8d` completes the authorized core UI/five-main-App translation and practical keyboard/focus scope, including Cloud Export and common validation/image actions. Final evidence is 1321 tests, 10 real-ST i18n scenarios, 4 Export layouts/ZIP-content checks, 12 native regressions and 6 actual-host-script tab checks. Gallery and variables have prior accepted 4-layout batches. See `history/2026-10-07-export-final.md` and prior histories.
+
+- Actual third-party MVU is absent; only its unavailable UI and a controlled native fixture (5 read/write/focus cases) were checked. Full readers, physical devices/OS keyboards, WAVE and contrast/WCAG AA acceptance remain unverified.
+- The September 12 plan's bundle-size warning is implemented. Named nonmodal regions intentionally replace its `role=application` suggestion, and the translation guide is `docs/i18n-usage.md`. License choice and license/CI badges await a maintainer/publication decision; this functional completion is not a claim that every historical plan checkbox is closed.
+
+- `e11cd3d` repairs locale loading, adds the first translated UI controls and fixes real-ST gallery toolbar/keyboard issues. Real ST 1.18.0 i18n acceptance passes 10 scenarios; full App/deep gallery translation, focus management and screen-reader support remain pending.
+- Mobile browser emulation is separate from physical-phone/OS-keyboard acceptance. External sprite hosts were blocked; the isolated copied ST runtime logged thumbnail-conversion dependency-path errors. Cloud images and image conversion were not validated by this run.
+- September 7 real-ST image migration/save/reload/restore, fault handling and standard ZIP-import checks below remain open. Only their existing synthetic maintenance browser regressions were rerun.
+- The reviewed branch has not been merged or pushed. Development remote lookup requires authentication. Independent release remains `d6e8a89`; publication must reconcile README, include both locale JSON files alongside the original six root files and pass three-way parity. Historical six-file instructions are superseded by CURRENT.md.
 
 ## 2026-09-05 Review Queue — Code Committed, Acceptance Pending
 

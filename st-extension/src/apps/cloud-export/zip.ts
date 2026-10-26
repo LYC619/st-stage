@@ -1,4 +1,5 @@
 import JSZip from 'jszip'
+import { t } from '../../../../core/i18n'
 import { isArchiveSegment } from './archive-path'
 import type { ExportFile } from './types'
 
@@ -22,16 +23,16 @@ export interface DownloadSchedulers {
 export function assertUniqueArchivePaths(files: Pick<ExportFile, 'path'>[]): void {
   const seen = new Map<string, string>()
   for (const { path } of files) {
-    if (!path.split('/').every(isArchiveSegment)) throw new Error('备份路径不合法：' + path)
+    if (!path.split('/').every(isArchiveSegment)) throw new Error(t('cloudExport.invalid_path', '备份路径不合法：{{path}}', { path }))
     const canonical = path.normalize('NFC').toLowerCase()
-    if (seen.has(canonical)) throw new Error('备份路径冲突：' + seen.get(canonical) + ' 与 ' + path)
+    if (seen.has(canonical)) throw new Error(t('cloudExport.path_collision', '备份路径冲突：{{first}} 与 {{second}}', { first: seen.get(canonical)!, second: path }))
     seen.set(canonical, path)
   }
   for (const [canonical, path] of seen) {
     const parts = canonical.split('/')
     for (let length = 1; length < parts.length; length += 1) {
       const parent = parts.slice(0, length).join('/')
-      if (seen.has(parent)) throw new Error('备份路径冲突：' + seen.get(parent) + ' 与 ' + path)
+      if (seen.has(parent)) throw new Error(t('cloudExport.path_collision', '备份路径冲突：{{first}} 与 {{second}}', { first: seen.get(parent)!, second: path }))
     }
   }
 }
@@ -42,7 +43,7 @@ export async function downloadSTBackup(
   onProgress: (progress: ZipProgress) => void,
   schedulers: DownloadSchedulers = {},
 ): Promise<void> {
-  if (!files.length) throw new Error('没有选择任何可导出的资产')
+  if (!files.length) throw new Error(t('cloudExport.no_assets', '没有选择任何可导出的资产'))
   assertUniqueArchivePaths(files)
   const zip = new JSZip()
   for (const file of files) {

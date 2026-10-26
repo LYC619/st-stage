@@ -11,6 +11,8 @@
 /style.css      text eol=lf
 /version.json   text eol=lf
 /manifest.json  text eol=lf
+/locales/*.json text eol=lf
+st-distribution/locales/*.json text eol=lf
 st-distribution/*.js    text eol=lf
 st-distribution/*.css   text eol=lf
 st-distribution/*.json  text eol=lf

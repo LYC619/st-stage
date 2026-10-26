@@ -1,3 +1,4 @@
+import { t } from '../../core/i18n'
 import { isPresetPack } from '../../core/presets'
 import { applyImageChanges, scanEmbeddedImages, type EmbeddedImageCandidate, type ImageChange } from '../../core/image-storage'
 import { localUserImagePath } from '../../core/sprite-store'
@@ -37,7 +38,7 @@ export async function stageEmbeddedImages(
       let saved = savedByUri.get(candidate.sourceUrl)
       if (!saved) {
         saved = deps.save(candidate.sourceUrl, { signal: options.signal }).then((url) => {
-          if (!localUserImagePath(url)) throw new Error('保存失败：平台未返回本地图片路径')
+          if (!localUserImagePath(url)) throw new Error(t('storage.errors.local_path_missing', '保存失败：平台未返回本地图片路径'))
           return url
         })
         savedByUri.set(candidate.sourceUrl, saved)
@@ -59,7 +60,7 @@ export async function stageEmbeddedImages(
       }
       result.failed.push({
         candidate,
-        message: error instanceof Error ? error.message : '保存失败',
+        message: error instanceof Error ? error.message : t('storage.errors.save_failed', '保存失败'),
       })
     }
     options.onProgress?.(index + 1, candidates.length)
@@ -78,23 +79,23 @@ export async function prepareImportedPack(
   deps: ImageStorageDeps,
   options: ImageStageOptions = {},
 ): Promise<SpritePack> {
-  if (isPresetPack(pack.id)) throw new Error('内置预设不能作为导入目标')
-  if (options.signal?.aborted) throw new Error('内嵌图片准备未完成，图包未安装（已取消）')
+  if (isPresetPack(pack.id)) throw new Error(t('storage.errors.preset_target', '内置预设不能作为导入目标'))
+  if (options.signal?.aborted) throw new Error(t('storage.errors.import_cancelled', '内嵌图片准备未完成，图包未安装（已取消）'))
   const staging: PluginSettings = {
     ...createDefaultSettings(),
     packs: [pack],
   }
   const scan = scanEmbeddedImages(staging)
-  if (scan.ambiguous.length > 0) throw new Error('图包包含重复图片身份，未安装')
+  if (scan.ambiguous.length > 0) throw new Error(t('storage.errors.pack_duplicates', '图包包含重复图片身份，未安装'))
   if (scan.candidates.length === 0) return pack
   const staged = await stageEmbeddedImages(scan.candidates, deps, options)
   if (staged.cancelled || staged.failed.length > 0 || staged.unprocessed.length > 0) {
-    throw new Error(`内嵌图片准备未完成，图包未安装（失败 ${staged.failed.length}）`)
+    throw new Error(t('storage.errors.prepare_failed', '内嵌图片准备未完成，图包未安装（失败 {{count}}）', { count: staged.failed.length }))
   }
   const applied = applyImageChanges(staging, staged.ready)
   const prepared = applied.settings.packs[0]
   if (!prepared || applied.conflicts.length > 0 || prepared.sprites.some((sprite) => /^data:/i.test(sprite.url))) {
-    throw new Error('图包仍有未落盘图片，未安装')
+    throw new Error(t('storage.errors.pack_unsaved', '图包仍有未落盘图片，未安装'))
   }
   return prepared
 }

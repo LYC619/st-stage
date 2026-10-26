@@ -1,4 +1,5 @@
 import type { CloudExportBridge } from './bridge'
+import { t } from '../../../../core/i18n'
 import { buildCharacterFiles, buildExportFiles } from './manifest'
 import type { ExportFile, ExportSelection, ExportSnapshot, ExportWorldbook } from './types'
 
@@ -39,7 +40,7 @@ async function runTasks(
       try {
         await task.run()
       } catch (error) {
-        failed = new Error(`读取${task.label}失败：${error instanceof Error ? error.message : String(error)}`)
+        failed = new Error(t('cloudExport.asset_read_failed', '读取{{label}}失败：{{error}}', { label: task.label, error: error instanceof Error ? error.message : String(error) }))
         return
       }
       completed += 1
@@ -66,14 +67,14 @@ export async function loadSelectedExportFiles({
   for (const character of catalog.characters) {
     if (selection.characterIds.has(character.id)) {
       tasks.push({
-        label: `角色卡 ${character.name}`,
+        label: t('cloudExport.asset_character', '角色卡 {{name}}', { name: character.name }),
         run: async () => { cardData.set(character.id, await bridge.readCharacterCard(character)) },
       })
     }
     for (const chat of character.chats) {
       if (!selection.chatIds.has(chat.id)) continue
       tasks.push({
-        label: `聊天 ${character.name}/${chat.name}`,
+        label: t('cloudExport.asset_chat', '聊天 {{character}}/{{chat}}', { character: character.name, chat: chat.name }),
         run: async () => { chatData.set(chat.id, await bridge.readChat(character, chat)) },
       })
     }
@@ -81,7 +82,7 @@ export async function loadSelectedExportFiles({
   for (const worldbook of catalog.worldbooks) {
     if (!selection.worldbookIds.has(worldbook.id)) continue
     tasks.push({
-      label: `世界书 ${worldbook.name}`,
+      label: t('cloudExport.asset_worldbook', '世界书 {{name}}', { name: worldbook.name }),
       run: async () => { worldbookContent.set(worldbook.id, await bridge.readWorldbook(worldbook)) },
     })
   }

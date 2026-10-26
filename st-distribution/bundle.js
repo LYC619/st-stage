@@ -48,53 +48,53 @@ var require_jszip_min = __commonJS({
         function u(r, e2) {
           if (!o[r]) {
             if (!a[r]) {
-              var t = "function" == typeof __require && __require;
-              if (!e2 && t) return t(r, true);
+              var t2 = "function" == typeof __require && __require;
+              if (!e2 && t2) return t2(r, true);
               if (l) return l(r, true);
               var n = new Error("Cannot find module '" + r + "'");
               throw n.code = "MODULE_NOT_FOUND", n;
             }
             var i = o[r] = { exports: {} };
             a[r][0].call(i.exports, function(e3) {
-              var t2 = a[r][1][e3];
-              return u(t2 || e3);
+              var t3 = a[r][1][e3];
+              return u(t3 || e3);
             }, i, i.exports, s, a, o, h);
           }
           return o[r].exports;
         }
         for (var l = "function" == typeof __require && __require, e = 0; e < h.length; e++) u(h[e]);
         return u;
-      })({ 1: [function(e, t, r) {
+      })({ 1: [function(e, t2, r) {
         "use strict";
         var d = e("./utils"), c = e("./support"), p = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
         r.encode = function(e2) {
-          for (var t2, r2, n, i, s, a, o, h = [], u = 0, l = e2.length, f = l, c2 = "string" !== d.getTypeOf(e2); u < e2.length; ) f = l - u, n = c2 ? (t2 = e2[u++], r2 = u < l ? e2[u++] : 0, u < l ? e2[u++] : 0) : (t2 = e2.charCodeAt(u++), r2 = u < l ? e2.charCodeAt(u++) : 0, u < l ? e2.charCodeAt(u++) : 0), i = t2 >> 2, s = (3 & t2) << 4 | r2 >> 4, a = 1 < f ? (15 & r2) << 2 | n >> 6 : 64, o = 2 < f ? 63 & n : 64, h.push(p.charAt(i) + p.charAt(s) + p.charAt(a) + p.charAt(o));
+          for (var t3, r2, n, i, s, a, o, h = [], u = 0, l = e2.length, f = l, c2 = "string" !== d.getTypeOf(e2); u < e2.length; ) f = l - u, n = c2 ? (t3 = e2[u++], r2 = u < l ? e2[u++] : 0, u < l ? e2[u++] : 0) : (t3 = e2.charCodeAt(u++), r2 = u < l ? e2.charCodeAt(u++) : 0, u < l ? e2.charCodeAt(u++) : 0), i = t3 >> 2, s = (3 & t3) << 4 | r2 >> 4, a = 1 < f ? (15 & r2) << 2 | n >> 6 : 64, o = 2 < f ? 63 & n : 64, h.push(p.charAt(i) + p.charAt(s) + p.charAt(a) + p.charAt(o));
           return h.join("");
         }, r.decode = function(e2) {
-          var t2, r2, n, i, s, a, o = 0, h = 0, u = "data:";
+          var t3, r2, n, i, s, a, o = 0, h = 0, u = "data:";
           if (e2.substr(0, u.length) === u) throw new Error("Invalid base64 input, it looks like a data url.");
           var l, f = 3 * (e2 = e2.replace(/[^A-Za-z0-9+/=]/g, "")).length / 4;
           if (e2.charAt(e2.length - 1) === p.charAt(64) && f--, e2.charAt(e2.length - 2) === p.charAt(64) && f--, f % 1 != 0) throw new Error("Invalid base64 input, bad content length.");
-          for (l = c.uint8array ? new Uint8Array(0 | f) : new Array(0 | f); o < e2.length; ) t2 = p.indexOf(e2.charAt(o++)) << 2 | (i = p.indexOf(e2.charAt(o++))) >> 4, r2 = (15 & i) << 4 | (s = p.indexOf(e2.charAt(o++))) >> 2, n = (3 & s) << 6 | (a = p.indexOf(e2.charAt(o++))), l[h++] = t2, 64 !== s && (l[h++] = r2), 64 !== a && (l[h++] = n);
+          for (l = c.uint8array ? new Uint8Array(0 | f) : new Array(0 | f); o < e2.length; ) t3 = p.indexOf(e2.charAt(o++)) << 2 | (i = p.indexOf(e2.charAt(o++))) >> 4, r2 = (15 & i) << 4 | (s = p.indexOf(e2.charAt(o++))) >> 2, n = (3 & s) << 6 | (a = p.indexOf(e2.charAt(o++))), l[h++] = t3, 64 !== s && (l[h++] = r2), 64 !== a && (l[h++] = n);
           return l;
         };
-      }, { "./support": 30, "./utils": 32 }], 2: [function(e, t, r) {
+      }, { "./support": 30, "./utils": 32 }], 2: [function(e, t2, r) {
         "use strict";
         var n = e("./external"), i = e("./stream/DataWorker"), s = e("./stream/Crc32Probe"), a = e("./stream/DataLengthProbe");
-        function o(e2, t2, r2, n2, i2) {
-          this.compressedSize = e2, this.uncompressedSize = t2, this.crc32 = r2, this.compression = n2, this.compressedContent = i2;
+        function o(e2, t3, r2, n2, i2) {
+          this.compressedSize = e2, this.uncompressedSize = t3, this.crc32 = r2, this.compression = n2, this.compressedContent = i2;
         }
         o.prototype = { getContentWorker: function() {
-          var e2 = new i(n.Promise.resolve(this.compressedContent)).pipe(this.compression.uncompressWorker()).pipe(new a("data_length")), t2 = this;
+          var e2 = new i(n.Promise.resolve(this.compressedContent)).pipe(this.compression.uncompressWorker()).pipe(new a("data_length")), t3 = this;
           return e2.on("end", function() {
-            if (this.streamInfo.data_length !== t2.uncompressedSize) throw new Error("Bug : uncompressed data size mismatch");
+            if (this.streamInfo.data_length !== t3.uncompressedSize) throw new Error("Bug : uncompressed data size mismatch");
           }), e2;
         }, getCompressedWorker: function() {
           return new i(n.Promise.resolve(this.compressedContent)).withStreamInfo("compressedSize", this.compressedSize).withStreamInfo("uncompressedSize", this.uncompressedSize).withStreamInfo("crc32", this.crc32).withStreamInfo("compression", this.compression);
-        } }, o.createWorkerFrom = function(e2, t2, r2) {
-          return e2.pipe(new s()).pipe(new a("uncompressedSize")).pipe(t2.compressWorker(r2)).pipe(new a("compressedSize")).withStreamInfo("compression", t2);
-        }, t.exports = o;
-      }, { "./external": 6, "./stream/Crc32Probe": 25, "./stream/DataLengthProbe": 26, "./stream/DataWorker": 27 }], 3: [function(e, t, r) {
+        } }, o.createWorkerFrom = function(e2, t3, r2) {
+          return e2.pipe(new s()).pipe(new a("uncompressedSize")).pipe(t3.compressWorker(r2)).pipe(new a("compressedSize")).withStreamInfo("compression", t3);
+        }, t2.exports = o;
+      }, { "./external": 6, "./stream/Crc32Probe": 25, "./stream/DataLengthProbe": 26, "./stream/DataWorker": 27 }], 3: [function(e, t2, r) {
         "use strict";
         var n = e("./stream/GenericWorker");
         r.STORE = { magic: "\0\0", compressWorker: function() {
@@ -102,42 +102,42 @@ var require_jszip_min = __commonJS({
         }, uncompressWorker: function() {
           return new n("STORE decompression");
         } }, r.DEFLATE = e("./flate");
-      }, { "./flate": 7, "./stream/GenericWorker": 28 }], 4: [function(e, t, r) {
+      }, { "./flate": 7, "./stream/GenericWorker": 28 }], 4: [function(e, t2, r) {
         "use strict";
         var n = e("./utils");
         var o = (function() {
-          for (var e2, t2 = [], r2 = 0; r2 < 256; r2++) {
+          for (var e2, t3 = [], r2 = 0; r2 < 256; r2++) {
             e2 = r2;
             for (var n2 = 0; n2 < 8; n2++) e2 = 1 & e2 ? 3988292384 ^ e2 >>> 1 : e2 >>> 1;
-            t2[r2] = e2;
+            t3[r2] = e2;
           }
-          return t2;
+          return t3;
         })();
-        t.exports = function(e2, t2) {
-          return void 0 !== e2 && e2.length ? "string" !== n.getTypeOf(e2) ? (function(e3, t3, r2, n2) {
+        t2.exports = function(e2, t3) {
+          return void 0 !== e2 && e2.length ? "string" !== n.getTypeOf(e2) ? (function(e3, t4, r2, n2) {
             var i = o, s = n2 + r2;
             e3 ^= -1;
-            for (var a = n2; a < s; a++) e3 = e3 >>> 8 ^ i[255 & (e3 ^ t3[a])];
+            for (var a = n2; a < s; a++) e3 = e3 >>> 8 ^ i[255 & (e3 ^ t4[a])];
             return -1 ^ e3;
-          })(0 | t2, e2, e2.length, 0) : (function(e3, t3, r2, n2) {
+          })(0 | t3, e2, e2.length, 0) : (function(e3, t4, r2, n2) {
             var i = o, s = n2 + r2;
             e3 ^= -1;
-            for (var a = n2; a < s; a++) e3 = e3 >>> 8 ^ i[255 & (e3 ^ t3.charCodeAt(a))];
+            for (var a = n2; a < s; a++) e3 = e3 >>> 8 ^ i[255 & (e3 ^ t4.charCodeAt(a))];
             return -1 ^ e3;
-          })(0 | t2, e2, e2.length, 0) : 0;
+          })(0 | t3, e2, e2.length, 0) : 0;
         };
-      }, { "./utils": 32 }], 5: [function(e, t, r) {
+      }, { "./utils": 32 }], 5: [function(e, t2, r) {
         "use strict";
         r.base64 = false, r.binary = false, r.dir = false, r.createFolders = true, r.date = null, r.compression = null, r.compressionOptions = null, r.comment = null, r.unixPermissions = null, r.dosPermissions = null;
-      }, {}], 6: [function(e, t, r) {
+      }, {}], 6: [function(e, t2, r) {
         "use strict";
         var n = null;
-        n = "undefined" != typeof Promise ? Promise : e("lie"), t.exports = { Promise: n };
-      }, { lie: 37 }], 7: [function(e, t, r) {
+        n = "undefined" != typeof Promise ? Promise : e("lie"), t2.exports = { Promise: n };
+      }, { lie: 37 }], 7: [function(e, t2, r) {
         "use strict";
         var n = "undefined" != typeof Uint8Array && "undefined" != typeof Uint16Array && "undefined" != typeof Uint32Array, i = e("pako"), s = e("./utils"), a = e("./stream/GenericWorker"), o = n ? "uint8array" : "array";
-        function h(e2, t2) {
-          a.call(this, "FlateWorker/" + e2), this._pako = null, this._pakoAction = e2, this._pakoOptions = t2, this.meta = {};
+        function h(e2, t3) {
+          a.call(this, "FlateWorker/" + e2), this._pako = null, this._pakoAction = e2, this._pakoOptions = t3, this.meta = {};
         }
         r.magic = "\b\0", s.inherits(h, a), h.prototype.processChunk = function(e2) {
           this.meta = e2.meta, null === this._pako && this._createPako(), this._pako.push(s.transformTo(o, e2.data), false);
@@ -147,31 +147,31 @@ var require_jszip_min = __commonJS({
           a.prototype.cleanUp.call(this), this._pako = null;
         }, h.prototype._createPako = function() {
           this._pako = new i[this._pakoAction]({ raw: true, level: this._pakoOptions.level || -1 });
-          var t2 = this;
+          var t3 = this;
           this._pako.onData = function(e2) {
-            t2.push({ data: e2, meta: t2.meta });
+            t3.push({ data: e2, meta: t3.meta });
           };
         }, r.compressWorker = function(e2) {
           return new h("Deflate", e2);
         }, r.uncompressWorker = function() {
           return new h("Inflate", {});
         };
-      }, { "./stream/GenericWorker": 28, "./utils": 32, pako: 38 }], 8: [function(e, t, r) {
+      }, { "./stream/GenericWorker": 28, "./utils": 32, pako: 38 }], 8: [function(e, t2, r) {
         "use strict";
-        function A(e2, t2) {
+        function A(e2, t3) {
           var r2, n2 = "";
-          for (r2 = 0; r2 < t2; r2++) n2 += String.fromCharCode(255 & e2), e2 >>>= 8;
+          for (r2 = 0; r2 < t3; r2++) n2 += String.fromCharCode(255 & e2), e2 >>>= 8;
           return n2;
         }
-        function n(e2, t2, r2, n2, i2, s2) {
+        function n(e2, t3, r2, n2, i2, s2) {
           var a, o, h = e2.file, u = e2.compression, l = s2 !== O.utf8encode, f = I.transformTo("string", s2(h.name)), c = I.transformTo("string", O.utf8encode(h.name)), d = h.comment, p = I.transformTo("string", s2(d)), m = I.transformTo("string", O.utf8encode(d)), _ = c.length !== h.name.length, g = m.length !== d.length, b = "", v = "", y = "", w = h.dir, k = h.date, x = { crc32: 0, compressedSize: 0, uncompressedSize: 0 };
-          t2 && !r2 || (x.crc32 = e2.crc32, x.compressedSize = e2.compressedSize, x.uncompressedSize = e2.uncompressedSize);
+          t3 && !r2 || (x.crc32 = e2.crc32, x.compressedSize = e2.compressedSize, x.uncompressedSize = e2.uncompressedSize);
           var S = 0;
-          t2 && (S |= 8), l || !_ && !g || (S |= 2048);
+          t3 && (S |= 8), l || !_ && !g || (S |= 2048);
           var z = 0, C = 0;
-          w && (z |= 16), "UNIX" === i2 ? (C = 798, z |= (function(e3, t3) {
+          w && (z |= 16), "UNIX" === i2 ? (C = 798, z |= (function(e3, t4) {
             var r3 = e3;
-            return e3 || (r3 = t3 ? 16893 : 33204), (65535 & r3) << 16;
+            return e3 || (r3 = t4 ? 16893 : 33204), (65535 & r3) << 16;
           })(h.unixPermissions, w)) : (C = 20, z |= (function(e3) {
             return 63 & (e3 || 0);
           })(h.dosPermissions)), a = k.getUTCHours(), a <<= 6, a |= k.getUTCMinutes(), a <<= 5, a |= k.getUTCSeconds() / 2, o = k.getUTCFullYear() - 1980, o <<= 4, o |= k.getUTCMonth() + 1, o <<= 5, o |= k.getUTCDate(), _ && (v = A(1, 1) + A(B(f), 4) + c, b += "up" + A(v.length, 2) + v), g && (y = A(1, 1) + A(B(p), 4) + m, b += "uc" + A(y.length, 2) + y);
@@ -179,152 +179,152 @@ var require_jszip_min = __commonJS({
           return E += "\n\0", E += A(S, 2), E += u.magic, E += A(a, 2), E += A(o, 2), E += A(x.crc32, 4), E += A(x.compressedSize, 4), E += A(x.uncompressedSize, 4), E += A(f.length, 2), E += A(b.length, 2), { fileRecord: R.LOCAL_FILE_HEADER + E + f + b, dirRecord: R.CENTRAL_FILE_HEADER + A(C, 2) + E + A(p.length, 2) + "\0\0\0\0" + A(z, 4) + A(n2, 4) + f + b + p };
         }
         var I = e("../utils"), i = e("../stream/GenericWorker"), O = e("../utf8"), B = e("../crc32"), R = e("../signature");
-        function s(e2, t2, r2, n2) {
-          i.call(this, "ZipFileWorker"), this.bytesWritten = 0, this.zipComment = t2, this.zipPlatform = r2, this.encodeFileName = n2, this.streamFiles = e2, this.accumulate = false, this.contentBuffer = [], this.dirRecords = [], this.currentSourceOffset = 0, this.entriesCount = 0, this.currentFile = null, this._sources = [];
+        function s(e2, t3, r2, n2) {
+          i.call(this, "ZipFileWorker"), this.bytesWritten = 0, this.zipComment = t3, this.zipPlatform = r2, this.encodeFileName = n2, this.streamFiles = e2, this.accumulate = false, this.contentBuffer = [], this.dirRecords = [], this.currentSourceOffset = 0, this.entriesCount = 0, this.currentFile = null, this._sources = [];
         }
         I.inherits(s, i), s.prototype.push = function(e2) {
-          var t2 = e2.meta.percent || 0, r2 = this.entriesCount, n2 = this._sources.length;
-          this.accumulate ? this.contentBuffer.push(e2) : (this.bytesWritten += e2.data.length, i.prototype.push.call(this, { data: e2.data, meta: { currentFile: this.currentFile, percent: r2 ? (t2 + 100 * (r2 - n2 - 1)) / r2 : 100 } }));
+          var t3 = e2.meta.percent || 0, r2 = this.entriesCount, n2 = this._sources.length;
+          this.accumulate ? this.contentBuffer.push(e2) : (this.bytesWritten += e2.data.length, i.prototype.push.call(this, { data: e2.data, meta: { currentFile: this.currentFile, percent: r2 ? (t3 + 100 * (r2 - n2 - 1)) / r2 : 100 } }));
         }, s.prototype.openedSource = function(e2) {
           this.currentSourceOffset = this.bytesWritten, this.currentFile = e2.file.name;
-          var t2 = this.streamFiles && !e2.file.dir;
-          if (t2) {
-            var r2 = n(e2, t2, false, this.currentSourceOffset, this.zipPlatform, this.encodeFileName);
+          var t3 = this.streamFiles && !e2.file.dir;
+          if (t3) {
+            var r2 = n(e2, t3, false, this.currentSourceOffset, this.zipPlatform, this.encodeFileName);
             this.push({ data: r2.fileRecord, meta: { percent: 0 } });
           } else this.accumulate = true;
         }, s.prototype.closedSource = function(e2) {
           this.accumulate = false;
-          var t2 = this.streamFiles && !e2.file.dir, r2 = n(e2, t2, true, this.currentSourceOffset, this.zipPlatform, this.encodeFileName);
-          if (this.dirRecords.push(r2.dirRecord), t2) this.push({ data: (function(e3) {
+          var t3 = this.streamFiles && !e2.file.dir, r2 = n(e2, t3, true, this.currentSourceOffset, this.zipPlatform, this.encodeFileName);
+          if (this.dirRecords.push(r2.dirRecord), t3) this.push({ data: (function(e3) {
             return R.DATA_DESCRIPTOR + A(e3.crc32, 4) + A(e3.compressedSize, 4) + A(e3.uncompressedSize, 4);
           })(e2), meta: { percent: 100 } });
           else for (this.push({ data: r2.fileRecord, meta: { percent: 0 } }); this.contentBuffer.length; ) this.push(this.contentBuffer.shift());
           this.currentFile = null;
         }, s.prototype.flush = function() {
-          for (var e2 = this.bytesWritten, t2 = 0; t2 < this.dirRecords.length; t2++) this.push({ data: this.dirRecords[t2], meta: { percent: 100 } });
-          var r2 = this.bytesWritten - e2, n2 = (function(e3, t3, r3, n3, i2) {
+          for (var e2 = this.bytesWritten, t3 = 0; t3 < this.dirRecords.length; t3++) this.push({ data: this.dirRecords[t3], meta: { percent: 100 } });
+          var r2 = this.bytesWritten - e2, n2 = (function(e3, t4, r3, n3, i2) {
             var s2 = I.transformTo("string", i2(n3));
-            return R.CENTRAL_DIRECTORY_END + "\0\0\0\0" + A(e3, 2) + A(e3, 2) + A(t3, 4) + A(r3, 4) + A(s2.length, 2) + s2;
+            return R.CENTRAL_DIRECTORY_END + "\0\0\0\0" + A(e3, 2) + A(e3, 2) + A(t4, 4) + A(r3, 4) + A(s2.length, 2) + s2;
           })(this.dirRecords.length, r2, e2, this.zipComment, this.encodeFileName);
           this.push({ data: n2, meta: { percent: 100 } });
         }, s.prototype.prepareNextSource = function() {
           this.previous = this._sources.shift(), this.openedSource(this.previous.streamInfo), this.isPaused ? this.previous.pause() : this.previous.resume();
         }, s.prototype.registerPrevious = function(e2) {
           this._sources.push(e2);
-          var t2 = this;
+          var t3 = this;
           return e2.on("data", function(e3) {
-            t2.processChunk(e3);
+            t3.processChunk(e3);
           }), e2.on("end", function() {
-            t2.closedSource(t2.previous.streamInfo), t2._sources.length ? t2.prepareNextSource() : t2.end();
+            t3.closedSource(t3.previous.streamInfo), t3._sources.length ? t3.prepareNextSource() : t3.end();
           }), e2.on("error", function(e3) {
-            t2.error(e3);
+            t3.error(e3);
           }), this;
         }, s.prototype.resume = function() {
           return !!i.prototype.resume.call(this) && (!this.previous && this._sources.length ? (this.prepareNextSource(), true) : this.previous || this._sources.length || this.generatedError ? void 0 : (this.end(), true));
         }, s.prototype.error = function(e2) {
-          var t2 = this._sources;
+          var t3 = this._sources;
           if (!i.prototype.error.call(this, e2)) return false;
-          for (var r2 = 0; r2 < t2.length; r2++) try {
-            t2[r2].error(e2);
+          for (var r2 = 0; r2 < t3.length; r2++) try {
+            t3[r2].error(e2);
           } catch (e3) {
           }
           return true;
         }, s.prototype.lock = function() {
           i.prototype.lock.call(this);
-          for (var e2 = this._sources, t2 = 0; t2 < e2.length; t2++) e2[t2].lock();
-        }, t.exports = s;
-      }, { "../crc32": 4, "../signature": 23, "../stream/GenericWorker": 28, "../utf8": 31, "../utils": 32 }], 9: [function(e, t, r) {
+          for (var e2 = this._sources, t3 = 0; t3 < e2.length; t3++) e2[t3].lock();
+        }, t2.exports = s;
+      }, { "../crc32": 4, "../signature": 23, "../stream/GenericWorker": 28, "../utf8": 31, "../utils": 32 }], 9: [function(e, t2, r) {
         "use strict";
         var u = e("../compressions"), n = e("./ZipFileWorker");
-        r.generateWorker = function(e2, a, t2) {
-          var o = new n(a.streamFiles, t2, a.platform, a.encodeFileName), h = 0;
+        r.generateWorker = function(e2, a, t3) {
+          var o = new n(a.streamFiles, t3, a.platform, a.encodeFileName), h = 0;
           try {
-            e2.forEach(function(e3, t3) {
+            e2.forEach(function(e3, t4) {
               h++;
-              var r2 = (function(e4, t4) {
-                var r3 = e4 || t4, n3 = u[r3];
+              var r2 = (function(e4, t5) {
+                var r3 = e4 || t5, n3 = u[r3];
                 if (!n3) throw new Error(r3 + " is not a valid compression method !");
                 return n3;
-              })(t3.options.compression, a.compression), n2 = t3.options.compressionOptions || a.compressionOptions || {}, i = t3.dir, s = t3.date;
-              t3._compressWorker(r2, n2).withStreamInfo("file", { name: e3, dir: i, date: s, comment: t3.comment || "", unixPermissions: t3.unixPermissions, dosPermissions: t3.dosPermissions }).pipe(o);
+              })(t4.options.compression, a.compression), n2 = t4.options.compressionOptions || a.compressionOptions || {}, i = t4.dir, s = t4.date;
+              t4._compressWorker(r2, n2).withStreamInfo("file", { name: e3, dir: i, date: s, comment: t4.comment || "", unixPermissions: t4.unixPermissions, dosPermissions: t4.dosPermissions }).pipe(o);
             }), o.entriesCount = h;
           } catch (e3) {
             o.error(e3);
           }
           return o;
         };
-      }, { "../compressions": 3, "./ZipFileWorker": 8 }], 10: [function(e, t, r) {
+      }, { "../compressions": 3, "./ZipFileWorker": 8 }], 10: [function(e, t2, r) {
         "use strict";
         function n() {
           if (!(this instanceof n)) return new n();
           if (arguments.length) throw new Error("The constructor with parameters has been removed in JSZip 3.0, please check the upgrade guide.");
           this.files = /* @__PURE__ */ Object.create(null), this.comment = null, this.root = "", this.clone = function() {
             var e2 = new n();
-            for (var t2 in this) "function" != typeof this[t2] && (e2[t2] = this[t2]);
+            for (var t3 in this) "function" != typeof this[t3] && (e2[t3] = this[t3]);
             return e2;
           };
         }
-        (n.prototype = e("./object")).loadAsync = e("./load"), n.support = e("./support"), n.defaults = e("./defaults"), n.version = "3.10.1", n.loadAsync = function(e2, t2) {
-          return new n().loadAsync(e2, t2);
-        }, n.external = e("./external"), t.exports = n;
-      }, { "./defaults": 5, "./external": 6, "./load": 11, "./object": 15, "./support": 30 }], 11: [function(e, t, r) {
+        (n.prototype = e("./object")).loadAsync = e("./load"), n.support = e("./support"), n.defaults = e("./defaults"), n.version = "3.10.1", n.loadAsync = function(e2, t3) {
+          return new n().loadAsync(e2, t3);
+        }, n.external = e("./external"), t2.exports = n;
+      }, { "./defaults": 5, "./external": 6, "./load": 11, "./object": 15, "./support": 30 }], 11: [function(e, t2, r) {
         "use strict";
         var u = e("./utils"), i = e("./external"), n = e("./utf8"), s = e("./zipEntries"), a = e("./stream/Crc32Probe"), l = e("./nodejsUtils");
         function f(n2) {
-          return new i.Promise(function(e2, t2) {
+          return new i.Promise(function(e2, t3) {
             var r2 = n2.decompressed.getContentWorker().pipe(new a());
             r2.on("error", function(e3) {
-              t2(e3);
+              t3(e3);
             }).on("end", function() {
-              r2.streamInfo.crc32 !== n2.decompressed.crc32 ? t2(new Error("Corrupted zip : CRC32 mismatch")) : e2();
+              r2.streamInfo.crc32 !== n2.decompressed.crc32 ? t3(new Error("Corrupted zip : CRC32 mismatch")) : e2();
             }).resume();
           });
         }
-        t.exports = function(e2, o) {
+        t2.exports = function(e2, o) {
           var h = this;
           return o = u.extend(o || {}, { base64: false, checkCRC32: false, optimizedBinaryString: false, createFolders: false, decodeFileName: n.utf8decode }), l.isNode && l.isStream(e2) ? i.Promise.reject(new Error("JSZip can't accept a stream when loading a zip file.")) : u.prepareContent("the loaded zip file", e2, true, o.optimizedBinaryString, o.base64).then(function(e3) {
-            var t2 = new s(o);
-            return t2.load(e3), t2;
+            var t3 = new s(o);
+            return t3.load(e3), t3;
           }).then(function(e3) {
-            var t2 = [i.Promise.resolve(e3)], r2 = e3.files;
-            if (o.checkCRC32) for (var n2 = 0; n2 < r2.length; n2++) t2.push(f(r2[n2]));
-            return i.Promise.all(t2);
+            var t3 = [i.Promise.resolve(e3)], r2 = e3.files;
+            if (o.checkCRC32) for (var n2 = 0; n2 < r2.length; n2++) t3.push(f(r2[n2]));
+            return i.Promise.all(t3);
           }).then(function(e3) {
-            for (var t2 = e3.shift(), r2 = t2.files, n2 = 0; n2 < r2.length; n2++) {
+            for (var t3 = e3.shift(), r2 = t3.files, n2 = 0; n2 < r2.length; n2++) {
               var i2 = r2[n2], s2 = i2.fileNameStr, a2 = u.resolve(i2.fileNameStr);
               h.file(a2, i2.decompressed, { binary: true, optimizedBinaryString: true, date: i2.date, dir: i2.dir, comment: i2.fileCommentStr.length ? i2.fileCommentStr : null, unixPermissions: i2.unixPermissions, dosPermissions: i2.dosPermissions, createFolders: o.createFolders }), i2.dir || (h.file(a2).unsafeOriginalName = s2);
             }
-            return t2.zipComment.length && (h.comment = t2.zipComment), h;
+            return t3.zipComment.length && (h.comment = t3.zipComment), h;
           });
         };
-      }, { "./external": 6, "./nodejsUtils": 14, "./stream/Crc32Probe": 25, "./utf8": 31, "./utils": 32, "./zipEntries": 33 }], 12: [function(e, t, r) {
+      }, { "./external": 6, "./nodejsUtils": 14, "./stream/Crc32Probe": 25, "./utf8": 31, "./utils": 32, "./zipEntries": 33 }], 12: [function(e, t2, r) {
         "use strict";
         var n = e("../utils"), i = e("../stream/GenericWorker");
-        function s(e2, t2) {
-          i.call(this, "Nodejs stream input adapter for " + e2), this._upstreamEnded = false, this._bindStream(t2);
+        function s(e2, t3) {
+          i.call(this, "Nodejs stream input adapter for " + e2), this._upstreamEnded = false, this._bindStream(t3);
         }
         n.inherits(s, i), s.prototype._bindStream = function(e2) {
-          var t2 = this;
+          var t3 = this;
           (this._stream = e2).pause(), e2.on("data", function(e3) {
-            t2.push({ data: e3, meta: { percent: 0 } });
+            t3.push({ data: e3, meta: { percent: 0 } });
           }).on("error", function(e3) {
-            t2.isPaused ? this.generatedError = e3 : t2.error(e3);
+            t3.isPaused ? this.generatedError = e3 : t3.error(e3);
           }).on("end", function() {
-            t2.isPaused ? t2._upstreamEnded = true : t2.end();
+            t3.isPaused ? t3._upstreamEnded = true : t3.end();
           });
         }, s.prototype.pause = function() {
           return !!i.prototype.pause.call(this) && (this._stream.pause(), true);
         }, s.prototype.resume = function() {
           return !!i.prototype.resume.call(this) && (this._upstreamEnded ? this.end() : this._stream.resume(), true);
-        }, t.exports = s;
-      }, { "../stream/GenericWorker": 28, "../utils": 32 }], 13: [function(e, t, r) {
+        }, t2.exports = s;
+      }, { "../stream/GenericWorker": 28, "../utils": 32 }], 13: [function(e, t2, r) {
         "use strict";
         var i = e("readable-stream").Readable;
-        function n(e2, t2, r2) {
-          i.call(this, t2), this._helper = e2;
+        function n(e2, t3, r2) {
+          i.call(this, t3), this._helper = e2;
           var n2 = this;
-          e2.on("data", function(e3, t3) {
-            n2.push(e3) || n2._helper.pause(), r2 && r2(t3);
+          e2.on("data", function(e3, t4) {
+            n2.push(e3) || n2._helper.pause(), r2 && r2(t4);
           }).on("error", function(e3) {
             n2.emit("error", e3);
           }).on("end", function() {
@@ -333,42 +333,42 @@ var require_jszip_min = __commonJS({
         }
         e("../utils").inherits(n, i), n.prototype._read = function() {
           this._helper.resume();
-        }, t.exports = n;
-      }, { "../utils": 32, "readable-stream": 16 }], 14: [function(e, t, r) {
+        }, t2.exports = n;
+      }, { "../utils": 32, "readable-stream": 16 }], 14: [function(e, t2, r) {
         "use strict";
-        t.exports = { isNode: "undefined" != typeof Buffer, newBufferFrom: function(e2, t2) {
-          if (Buffer.from && Buffer.from !== Uint8Array.from) return Buffer.from(e2, t2);
+        t2.exports = { isNode: "undefined" != typeof Buffer, newBufferFrom: function(e2, t3) {
+          if (Buffer.from && Buffer.from !== Uint8Array.from) return Buffer.from(e2, t3);
           if ("number" == typeof e2) throw new Error('The "data" argument must not be a number');
-          return new Buffer(e2, t2);
+          return new Buffer(e2, t3);
         }, allocBuffer: function(e2) {
           if (Buffer.alloc) return Buffer.alloc(e2);
-          var t2 = new Buffer(e2);
-          return t2.fill(0), t2;
+          var t3 = new Buffer(e2);
+          return t3.fill(0), t3;
         }, isBuffer: function(e2) {
           return Buffer.isBuffer(e2);
         }, isStream: function(e2) {
           return e2 && "function" == typeof e2.on && "function" == typeof e2.pause && "function" == typeof e2.resume;
         } };
-      }, {}], 15: [function(e, t, r) {
+      }, {}], 15: [function(e, t2, r) {
         "use strict";
-        function s(e2, t2, r2) {
-          var n2, i2 = u.getTypeOf(t2), s2 = u.extend(r2 || {}, f);
+        function s(e2, t3, r2) {
+          var n2, i2 = u.getTypeOf(t3), s2 = u.extend(r2 || {}, f);
           s2.date = s2.date || /* @__PURE__ */ new Date(), null !== s2.compression && (s2.compression = s2.compression.toUpperCase()), "string" == typeof s2.unixPermissions && (s2.unixPermissions = parseInt(s2.unixPermissions, 8)), s2.unixPermissions && 16384 & s2.unixPermissions && (s2.dir = true), s2.dosPermissions && 16 & s2.dosPermissions && (s2.dir = true), s2.dir && (e2 = g(e2)), s2.createFolders && (n2 = _(e2)) && b.call(this, n2, true);
           var a2 = "string" === i2 && false === s2.binary && false === s2.base64;
-          r2 && void 0 !== r2.binary || (s2.binary = !a2), (t2 instanceof c && 0 === t2.uncompressedSize || s2.dir || !t2 || 0 === t2.length) && (s2.base64 = false, s2.binary = true, t2 = "", s2.compression = "STORE", i2 = "string");
+          r2 && void 0 !== r2.binary || (s2.binary = !a2), (t3 instanceof c && 0 === t3.uncompressedSize || s2.dir || !t3 || 0 === t3.length) && (s2.base64 = false, s2.binary = true, t3 = "", s2.compression = "STORE", i2 = "string");
           var o2 = null;
-          o2 = t2 instanceof c || t2 instanceof l ? t2 : p.isNode && p.isStream(t2) ? new m(e2, t2) : u.prepareContent(e2, t2, s2.binary, s2.optimizedBinaryString, s2.base64);
+          o2 = t3 instanceof c || t3 instanceof l ? t3 : p.isNode && p.isStream(t3) ? new m(e2, t3) : u.prepareContent(e2, t3, s2.binary, s2.optimizedBinaryString, s2.base64);
           var h2 = new d(e2, o2, s2);
           this.files[e2] = h2;
         }
         var i = e("./utf8"), u = e("./utils"), l = e("./stream/GenericWorker"), a = e("./stream/StreamHelper"), f = e("./defaults"), c = e("./compressedObject"), d = e("./zipObject"), o = e("./generate"), p = e("./nodejsUtils"), m = e("./nodejs/NodejsStreamInputAdapter"), _ = function(e2) {
           "/" === e2.slice(-1) && (e2 = e2.substring(0, e2.length - 1));
-          var t2 = e2.lastIndexOf("/");
-          return 0 < t2 ? e2.substring(0, t2) : "";
+          var t3 = e2.lastIndexOf("/");
+          return 0 < t3 ? e2.substring(0, t3) : "";
         }, g = function(e2) {
           return "/" !== e2.slice(-1) && (e2 += "/"), e2;
-        }, b = function(e2, t2) {
-          return t2 = void 0 !== t2 ? t2 : f.createFolders, e2 = g(e2), this.files[e2] || s.call(this, e2, null, { dir: true, createFolders: t2 }), this.files[e2];
+        }, b = function(e2, t3) {
+          return t3 = void 0 !== t3 ? t3 : f.createFolders, e2 = g(e2), this.files[e2] || s.call(this, e2, null, { dir: true, createFolders: t3 }), this.files[e2];
         };
         function h(e2) {
           return "[object RegExp]" === Object.prototype.toString.call(e2);
@@ -376,81 +376,81 @@ var require_jszip_min = __commonJS({
         var n = { load: function() {
           throw new Error("This method has been removed in JSZip 3.0, please check the upgrade guide.");
         }, forEach: function(e2) {
-          var t2, r2, n2;
-          for (t2 in this.files) n2 = this.files[t2], (r2 = t2.slice(this.root.length, t2.length)) && t2.slice(0, this.root.length) === this.root && e2(r2, n2);
+          var t3, r2, n2;
+          for (t3 in this.files) n2 = this.files[t3], (r2 = t3.slice(this.root.length, t3.length)) && t3.slice(0, this.root.length) === this.root && e2(r2, n2);
         }, filter: function(r2) {
           var n2 = [];
-          return this.forEach(function(e2, t2) {
-            r2(e2, t2) && n2.push(t2);
+          return this.forEach(function(e2, t3) {
+            r2(e2, t3) && n2.push(t3);
           }), n2;
-        }, file: function(e2, t2, r2) {
-          if (1 !== arguments.length) return e2 = this.root + e2, s.call(this, e2, t2, r2), this;
+        }, file: function(e2, t3, r2) {
+          if (1 !== arguments.length) return e2 = this.root + e2, s.call(this, e2, t3, r2), this;
           if (h(e2)) {
             var n2 = e2;
-            return this.filter(function(e3, t3) {
-              return !t3.dir && n2.test(e3);
+            return this.filter(function(e3, t4) {
+              return !t4.dir && n2.test(e3);
             });
           }
           var i2 = this.files[this.root + e2];
           return i2 && !i2.dir ? i2 : null;
         }, folder: function(r2) {
           if (!r2) return this;
-          if (h(r2)) return this.filter(function(e3, t3) {
-            return t3.dir && r2.test(e3);
+          if (h(r2)) return this.filter(function(e3, t4) {
+            return t4.dir && r2.test(e3);
           });
-          var e2 = this.root + r2, t2 = b.call(this, e2), n2 = this.clone();
-          return n2.root = t2.name, n2;
+          var e2 = this.root + r2, t3 = b.call(this, e2), n2 = this.clone();
+          return n2.root = t3.name, n2;
         }, remove: function(r2) {
           r2 = this.root + r2;
           var e2 = this.files[r2];
           if (e2 || ("/" !== r2.slice(-1) && (r2 += "/"), e2 = this.files[r2]), e2 && !e2.dir) delete this.files[r2];
-          else for (var t2 = this.filter(function(e3, t3) {
-            return t3.name.slice(0, r2.length) === r2;
-          }), n2 = 0; n2 < t2.length; n2++) delete this.files[t2[n2].name];
+          else for (var t3 = this.filter(function(e3, t4) {
+            return t4.name.slice(0, r2.length) === r2;
+          }), n2 = 0; n2 < t3.length; n2++) delete this.files[t3[n2].name];
           return this;
         }, generate: function() {
           throw new Error("This method has been removed in JSZip 3.0, please check the upgrade guide.");
         }, generateInternalStream: function(e2) {
-          var t2, r2 = {};
+          var t3, r2 = {};
           try {
             if ((r2 = u.extend(e2 || {}, { streamFiles: false, compression: "STORE", compressionOptions: null, type: "", platform: "DOS", comment: null, mimeType: "application/zip", encodeFileName: i.utf8encode })).type = r2.type.toLowerCase(), r2.compression = r2.compression.toUpperCase(), "binarystring" === r2.type && (r2.type = "string"), !r2.type) throw new Error("No output type specified.");
             u.checkSupport(r2.type), "darwin" !== r2.platform && "freebsd" !== r2.platform && "linux" !== r2.platform && "sunos" !== r2.platform || (r2.platform = "UNIX"), "win32" === r2.platform && (r2.platform = "DOS");
             var n2 = r2.comment || this.comment || "";
-            t2 = o.generateWorker(this, r2, n2);
+            t3 = o.generateWorker(this, r2, n2);
           } catch (e3) {
-            (t2 = new l("error")).error(e3);
+            (t3 = new l("error")).error(e3);
           }
-          return new a(t2, r2.type || "string", r2.mimeType);
-        }, generateAsync: function(e2, t2) {
-          return this.generateInternalStream(e2).accumulate(t2);
-        }, generateNodeStream: function(e2, t2) {
-          return (e2 = e2 || {}).type || (e2.type = "nodebuffer"), this.generateInternalStream(e2).toNodejsStream(t2);
+          return new a(t3, r2.type || "string", r2.mimeType);
+        }, generateAsync: function(e2, t3) {
+          return this.generateInternalStream(e2).accumulate(t3);
+        }, generateNodeStream: function(e2, t3) {
+          return (e2 = e2 || {}).type || (e2.type = "nodebuffer"), this.generateInternalStream(e2).toNodejsStream(t3);
         } };
-        t.exports = n;
-      }, { "./compressedObject": 2, "./defaults": 5, "./generate": 9, "./nodejs/NodejsStreamInputAdapter": 12, "./nodejsUtils": 14, "./stream/GenericWorker": 28, "./stream/StreamHelper": 29, "./utf8": 31, "./utils": 32, "./zipObject": 35 }], 16: [function(e, t, r) {
+        t2.exports = n;
+      }, { "./compressedObject": 2, "./defaults": 5, "./generate": 9, "./nodejs/NodejsStreamInputAdapter": 12, "./nodejsUtils": 14, "./stream/GenericWorker": 28, "./stream/StreamHelper": 29, "./utf8": 31, "./utils": 32, "./zipObject": 35 }], 16: [function(e, t2, r) {
         "use strict";
-        t.exports = e("stream");
-      }, { stream: void 0 }], 17: [function(e, t, r) {
+        t2.exports = e("stream");
+      }, { stream: void 0 }], 17: [function(e, t2, r) {
         "use strict";
         var n = e("./DataReader");
         function i(e2) {
           n.call(this, e2);
-          for (var t2 = 0; t2 < this.data.length; t2++) e2[t2] = 255 & e2[t2];
+          for (var t3 = 0; t3 < this.data.length; t3++) e2[t3] = 255 & e2[t3];
         }
         e("../utils").inherits(i, n), i.prototype.byteAt = function(e2) {
           return this.data[this.zero + e2];
         }, i.prototype.lastIndexOfSignature = function(e2) {
-          for (var t2 = e2.charCodeAt(0), r2 = e2.charCodeAt(1), n2 = e2.charCodeAt(2), i2 = e2.charCodeAt(3), s = this.length - 4; 0 <= s; --s) if (this.data[s] === t2 && this.data[s + 1] === r2 && this.data[s + 2] === n2 && this.data[s + 3] === i2) return s - this.zero;
+          for (var t3 = e2.charCodeAt(0), r2 = e2.charCodeAt(1), n2 = e2.charCodeAt(2), i2 = e2.charCodeAt(3), s = this.length - 4; 0 <= s; --s) if (this.data[s] === t3 && this.data[s + 1] === r2 && this.data[s + 2] === n2 && this.data[s + 3] === i2) return s - this.zero;
           return -1;
         }, i.prototype.readAndCheckSignature = function(e2) {
-          var t2 = e2.charCodeAt(0), r2 = e2.charCodeAt(1), n2 = e2.charCodeAt(2), i2 = e2.charCodeAt(3), s = this.readData(4);
-          return t2 === s[0] && r2 === s[1] && n2 === s[2] && i2 === s[3];
+          var t3 = e2.charCodeAt(0), r2 = e2.charCodeAt(1), n2 = e2.charCodeAt(2), i2 = e2.charCodeAt(3), s = this.readData(4);
+          return t3 === s[0] && r2 === s[1] && n2 === s[2] && i2 === s[3];
         }, i.prototype.readData = function(e2) {
           if (this.checkOffset(e2), 0 === e2) return [];
-          var t2 = this.data.slice(this.zero + this.index, this.zero + this.index + e2);
-          return this.index += e2, t2;
-        }, t.exports = i;
-      }, { "../utils": 32, "./DataReader": 18 }], 18: [function(e, t, r) {
+          var t3 = this.data.slice(this.zero + this.index, this.zero + this.index + e2);
+          return this.index += e2, t3;
+        }, t2.exports = i;
+      }, { "../utils": 32, "./DataReader": 18 }], 18: [function(e, t2, r) {
         "use strict";
         var n = e("../utils");
         function i(e2) {
@@ -466,8 +466,8 @@ var require_jszip_min = __commonJS({
           this.setIndex(this.index + e2);
         }, byteAt: function() {
         }, readInt: function(e2) {
-          var t2, r2 = 0;
-          for (this.checkOffset(e2), t2 = this.index + e2 - 1; t2 >= this.index; t2--) r2 = (r2 << 8) + this.byteAt(t2);
+          var t3, r2 = 0;
+          for (this.checkOffset(e2), t3 = this.index + e2 - 1; t3 >= this.index; t3--) r2 = (r2 << 8) + this.byteAt(t3);
           return this.index += e2, r2;
         }, readString: function(e2) {
           return n.transformTo("string", this.readData(e2));
@@ -477,8 +477,8 @@ var require_jszip_min = __commonJS({
         }, readDate: function() {
           var e2 = this.readInt(4);
           return new Date(Date.UTC(1980 + (e2 >> 25 & 127), (e2 >> 21 & 15) - 1, e2 >> 16 & 31, e2 >> 11 & 31, e2 >> 5 & 63, (31 & e2) << 1));
-        } }, t.exports = i;
-      }, { "../utils": 32 }], 19: [function(e, t, r) {
+        } }, t2.exports = i;
+      }, { "../utils": 32 }], 19: [function(e, t2, r) {
         "use strict";
         var n = e("./Uint8ArrayReader");
         function i(e2) {
@@ -486,10 +486,10 @@ var require_jszip_min = __commonJS({
         }
         e("../utils").inherits(i, n), i.prototype.readData = function(e2) {
           this.checkOffset(e2);
-          var t2 = this.data.slice(this.zero + this.index, this.zero + this.index + e2);
-          return this.index += e2, t2;
-        }, t.exports = i;
-      }, { "../utils": 32, "./Uint8ArrayReader": 21 }], 20: [function(e, t, r) {
+          var t3 = this.data.slice(this.zero + this.index, this.zero + this.index + e2);
+          return this.index += e2, t3;
+        }, t2.exports = i;
+      }, { "../utils": 32, "./Uint8ArrayReader": 21 }], 20: [function(e, t2, r) {
         "use strict";
         var n = e("./DataReader");
         function i(e2) {
@@ -503,10 +503,10 @@ var require_jszip_min = __commonJS({
           return e2 === this.readData(4);
         }, i.prototype.readData = function(e2) {
           this.checkOffset(e2);
-          var t2 = this.data.slice(this.zero + this.index, this.zero + this.index + e2);
-          return this.index += e2, t2;
-        }, t.exports = i;
-      }, { "../utils": 32, "./DataReader": 18 }], 21: [function(e, t, r) {
+          var t3 = this.data.slice(this.zero + this.index, this.zero + this.index + e2);
+          return this.index += e2, t3;
+        }, t2.exports = i;
+      }, { "../utils": 32, "./DataReader": 18 }], 21: [function(e, t2, r) {
         "use strict";
         var n = e("./ArrayReader");
         function i(e2) {
@@ -514,20 +514,20 @@ var require_jszip_min = __commonJS({
         }
         e("../utils").inherits(i, n), i.prototype.readData = function(e2) {
           if (this.checkOffset(e2), 0 === e2) return new Uint8Array(0);
-          var t2 = this.data.subarray(this.zero + this.index, this.zero + this.index + e2);
-          return this.index += e2, t2;
-        }, t.exports = i;
-      }, { "../utils": 32, "./ArrayReader": 17 }], 22: [function(e, t, r) {
+          var t3 = this.data.subarray(this.zero + this.index, this.zero + this.index + e2);
+          return this.index += e2, t3;
+        }, t2.exports = i;
+      }, { "../utils": 32, "./ArrayReader": 17 }], 22: [function(e, t2, r) {
         "use strict";
         var n = e("../utils"), i = e("../support"), s = e("./ArrayReader"), a = e("./StringReader"), o = e("./NodeBufferReader"), h = e("./Uint8ArrayReader");
-        t.exports = function(e2) {
-          var t2 = n.getTypeOf(e2);
-          return n.checkSupport(t2), "string" !== t2 || i.uint8array ? "nodebuffer" === t2 ? new o(e2) : i.uint8array ? new h(n.transformTo("uint8array", e2)) : new s(n.transformTo("array", e2)) : new a(e2);
+        t2.exports = function(e2) {
+          var t3 = n.getTypeOf(e2);
+          return n.checkSupport(t3), "string" !== t3 || i.uint8array ? "nodebuffer" === t3 ? new o(e2) : i.uint8array ? new h(n.transformTo("uint8array", e2)) : new s(n.transformTo("array", e2)) : new a(e2);
         };
-      }, { "../support": 30, "../utils": 32, "./ArrayReader": 17, "./NodeBufferReader": 19, "./StringReader": 20, "./Uint8ArrayReader": 21 }], 23: [function(e, t, r) {
+      }, { "../support": 30, "../utils": 32, "./ArrayReader": 17, "./NodeBufferReader": 19, "./StringReader": 20, "./Uint8ArrayReader": 21 }], 23: [function(e, t2, r) {
         "use strict";
         r.LOCAL_FILE_HEADER = "PK", r.CENTRAL_FILE_HEADER = "PK", r.CENTRAL_DIRECTORY_END = "PK", r.ZIP64_CENTRAL_DIRECTORY_LOCATOR = "PK\x07", r.ZIP64_CENTRAL_DIRECTORY_END = "PK", r.DATA_DESCRIPTOR = "PK\x07\b";
-      }, {}], 24: [function(e, t, r) {
+      }, {}], 24: [function(e, t2, r) {
         "use strict";
         var n = e("./GenericWorker"), i = e("../utils");
         function s(e2) {
@@ -535,8 +535,8 @@ var require_jszip_min = __commonJS({
         }
         i.inherits(s, n), s.prototype.processChunk = function(e2) {
           this.push({ data: i.transformTo(this.destType, e2.data), meta: e2.meta });
-        }, t.exports = s;
-      }, { "../utils": 32, "./GenericWorker": 28 }], 25: [function(e, t, r) {
+        }, t2.exports = s;
+      }, { "../utils": 32, "./GenericWorker": 28 }], 25: [function(e, t2, r) {
         "use strict";
         var n = e("./GenericWorker"), i = e("../crc32");
         function s() {
@@ -544,8 +544,8 @@ var require_jszip_min = __commonJS({
         }
         e("../utils").inherits(s, n), s.prototype.processChunk = function(e2) {
           this.streamInfo.crc32 = i(e2.data, this.streamInfo.crc32 || 0), this.push(e2);
-        }, t.exports = s;
-      }, { "../crc32": 4, "../utils": 32, "./GenericWorker": 28 }], 26: [function(e, t, r) {
+        }, t2.exports = s;
+      }, { "../crc32": 4, "../utils": 32, "./GenericWorker": 28 }], 26: [function(e, t2, r) {
         "use strict";
         var n = e("../utils"), i = e("./GenericWorker");
         function s(e2) {
@@ -553,21 +553,21 @@ var require_jszip_min = __commonJS({
         }
         n.inherits(s, i), s.prototype.processChunk = function(e2) {
           if (e2) {
-            var t2 = this.streamInfo[this.propName] || 0;
-            this.streamInfo[this.propName] = t2 + e2.data.length;
+            var t3 = this.streamInfo[this.propName] || 0;
+            this.streamInfo[this.propName] = t3 + e2.data.length;
           }
           i.prototype.processChunk.call(this, e2);
-        }, t.exports = s;
-      }, { "../utils": 32, "./GenericWorker": 28 }], 27: [function(e, t, r) {
+        }, t2.exports = s;
+      }, { "../utils": 32, "./GenericWorker": 28 }], 27: [function(e, t2, r) {
         "use strict";
         var n = e("../utils"), i = e("./GenericWorker");
         function s(e2) {
           i.call(this, "DataWorker");
-          var t2 = this;
+          var t3 = this;
           this.dataIsReady = false, this.index = 0, this.max = 0, this.data = null, this.type = "", this._tickScheduled = false, e2.then(function(e3) {
-            t2.dataIsReady = true, t2.data = e3, t2.max = e3 && e3.length || 0, t2.type = n.getTypeOf(e3), t2.isPaused || t2._tickAndRepeat();
+            t3.dataIsReady = true, t3.data = e3, t3.max = e3 && e3.length || 0, t3.type = n.getTypeOf(e3), t3.isPaused || t3._tickAndRepeat();
           }, function(e3) {
-            t2.error(e3);
+            t3.error(e3);
           });
         }
         n.inherits(s, i), s.prototype.cleanUp = function() {
@@ -578,22 +578,22 @@ var require_jszip_min = __commonJS({
           this._tickScheduled = false, this.isPaused || this.isFinished || (this._tick(), this.isFinished || (n.delay(this._tickAndRepeat, [], this), this._tickScheduled = true));
         }, s.prototype._tick = function() {
           if (this.isPaused || this.isFinished) return false;
-          var e2 = null, t2 = Math.min(this.max, this.index + 16384);
+          var e2 = null, t3 = Math.min(this.max, this.index + 16384);
           if (this.index >= this.max) return this.end();
           switch (this.type) {
             case "string":
-              e2 = this.data.substring(this.index, t2);
+              e2 = this.data.substring(this.index, t3);
               break;
             case "uint8array":
-              e2 = this.data.subarray(this.index, t2);
+              e2 = this.data.subarray(this.index, t3);
               break;
             case "array":
             case "nodebuffer":
-              e2 = this.data.slice(this.index, t2);
+              e2 = this.data.slice(this.index, t3);
           }
-          return this.index = t2, this.push({ data: e2, meta: { percent: this.max ? this.index / this.max * 100 : 0 } });
-        }, t.exports = s;
-      }, { "../utils": 32, "./GenericWorker": 28 }], 28: [function(e, t, r) {
+          return this.index = t3, this.push({ data: e2, meta: { percent: this.max ? this.index / this.max * 100 : 0 } });
+        }, t2.exports = s;
+      }, { "../utils": 32, "./GenericWorker": 28 }], 28: [function(e, t2, r) {
         "use strict";
         function n(e2) {
           this.name = e2 || "default", this.streamInfo = {}, this.generatedError = null, this.extraStreamInfo = {}, this.isPaused = true, this.isFinished = false, this.isLocked = false, this._listeners = { data: [], end: [], error: [] }, this.previous = null;
@@ -611,24 +611,24 @@ var require_jszip_min = __commonJS({
           return true;
         }, error: function(e2) {
           return !this.isFinished && (this.isPaused ? this.generatedError = e2 : (this.isFinished = true, this.emit("error", e2), this.previous && this.previous.error(e2), this.cleanUp()), true);
-        }, on: function(e2, t2) {
-          return this._listeners[e2].push(t2), this;
+        }, on: function(e2, t3) {
+          return this._listeners[e2].push(t3), this;
         }, cleanUp: function() {
           this.streamInfo = this.generatedError = this.extraStreamInfo = null, this._listeners = [];
-        }, emit: function(e2, t2) {
-          if (this._listeners[e2]) for (var r2 = 0; r2 < this._listeners[e2].length; r2++) this._listeners[e2][r2].call(this, t2);
+        }, emit: function(e2, t3) {
+          if (this._listeners[e2]) for (var r2 = 0; r2 < this._listeners[e2].length; r2++) this._listeners[e2][r2].call(this, t3);
         }, pipe: function(e2) {
           return e2.registerPrevious(this);
         }, registerPrevious: function(e2) {
           if (this.isLocked) throw new Error("The stream '" + this + "' has already been used.");
           this.streamInfo = e2.streamInfo, this.mergeStreamInfo(), this.previous = e2;
-          var t2 = this;
+          var t3 = this;
           return e2.on("data", function(e3) {
-            t2.processChunk(e3);
+            t3.processChunk(e3);
           }), e2.on("end", function() {
-            t2.end();
+            t3.end();
           }), e2.on("error", function(e3) {
-            t2.error(e3);
+            t3.error(e3);
           }), this;
         }, pause: function() {
           return !this.isPaused && !this.isFinished && (this.isPaused = true, this.previous && this.previous.pause(), true);
@@ -639,8 +639,8 @@ var require_jszip_min = __commonJS({
         }, flush: function() {
         }, processChunk: function(e2) {
           this.push(e2);
-        }, withStreamInfo: function(e2, t2) {
-          return this.extraStreamInfo[e2] = t2, this.mergeStreamInfo(), this;
+        }, withStreamInfo: function(e2, t3) {
+          return this.extraStreamInfo[e2] = t3, this.mergeStreamInfo(), this;
         }, mergeStreamInfo: function() {
           for (var e2 in this.extraStreamInfo) Object.prototype.hasOwnProperty.call(this.extraStreamInfo, e2) && (this.streamInfo[e2] = this.extraStreamInfo[e2]);
         }, lock: function() {
@@ -649,8 +649,8 @@ var require_jszip_min = __commonJS({
         }, toString: function() {
           var e2 = "Worker " + this.name;
           return this.previous ? this.previous + " -> " + e2 : e2;
-        } }, t.exports = n;
-      }, {}], 29: [function(e, t, r) {
+        } }, t2.exports = n;
+      }, {}], 29: [function(e, t2, r) {
         "use strict";
         var h = e("../utils"), i = e("./ConvertWorker"), s = e("./GenericWorker"), u = e("../base64"), n = e("../support"), a = e("../external"), o = null;
         if (n.nodestream) try {
@@ -658,41 +658,41 @@ var require_jszip_min = __commonJS({
         } catch (e2) {
         }
         function l(e2, o2) {
-          return new a.Promise(function(t2, r2) {
+          return new a.Promise(function(t3, r2) {
             var n2 = [], i2 = e2._internalType, s2 = e2._outputType, a2 = e2._mimeType;
-            e2.on("data", function(e3, t3) {
-              n2.push(e3), o2 && o2(t3);
+            e2.on("data", function(e3, t4) {
+              n2.push(e3), o2 && o2(t4);
             }).on("error", function(e3) {
               n2 = [], r2(e3);
             }).on("end", function() {
               try {
-                var e3 = (function(e4, t3, r3) {
+                var e3 = (function(e4, t4, r3) {
                   switch (e4) {
                     case "blob":
-                      return h.newBlob(h.transformTo("arraybuffer", t3), r3);
+                      return h.newBlob(h.transformTo("arraybuffer", t4), r3);
                     case "base64":
-                      return u.encode(t3);
+                      return u.encode(t4);
                     default:
-                      return h.transformTo(e4, t3);
+                      return h.transformTo(e4, t4);
                   }
-                })(s2, (function(e4, t3) {
+                })(s2, (function(e4, t4) {
                   var r3, n3 = 0, i3 = null, s3 = 0;
-                  for (r3 = 0; r3 < t3.length; r3++) s3 += t3[r3].length;
+                  for (r3 = 0; r3 < t4.length; r3++) s3 += t4[r3].length;
                   switch (e4) {
                     case "string":
-                      return t3.join("");
+                      return t4.join("");
                     case "array":
-                      return Array.prototype.concat.apply([], t3);
+                      return Array.prototype.concat.apply([], t4);
                     case "uint8array":
-                      for (i3 = new Uint8Array(s3), r3 = 0; r3 < t3.length; r3++) i3.set(t3[r3], n3), n3 += t3[r3].length;
+                      for (i3 = new Uint8Array(s3), r3 = 0; r3 < t4.length; r3++) i3.set(t4[r3], n3), n3 += t4[r3].length;
                       return i3;
                     case "nodebuffer":
-                      return Buffer.concat(t3);
+                      return Buffer.concat(t4);
                     default:
                       throw new Error("concat : unsupported type '" + e4 + "'");
                   }
                 })(i2, n2), a2);
-                t2(e3);
+                t3(e3);
               } catch (e4) {
                 r2(e4);
               }
@@ -700,9 +700,9 @@ var require_jszip_min = __commonJS({
             }).resume();
           });
         }
-        function f(e2, t2, r2) {
-          var n2 = t2;
-          switch (t2) {
+        function f(e2, t3, r2) {
+          var n2 = t3;
+          switch (t3) {
             case "blob":
             case "arraybuffer":
               n2 = "uint8array";
@@ -711,19 +711,19 @@ var require_jszip_min = __commonJS({
               n2 = "string";
           }
           try {
-            this._internalType = n2, this._outputType = t2, this._mimeType = r2, h.checkSupport(n2), this._worker = e2.pipe(new i(n2)), e2.lock();
+            this._internalType = n2, this._outputType = t3, this._mimeType = r2, h.checkSupport(n2), this._worker = e2.pipe(new i(n2)), e2.lock();
           } catch (e3) {
             this._worker = new s("error"), this._worker.error(e3);
           }
         }
         f.prototype = { accumulate: function(e2) {
           return l(this, e2);
-        }, on: function(e2, t2) {
+        }, on: function(e2, t3) {
           var r2 = this;
           return "data" === e2 ? this._worker.on(e2, function(e3) {
-            t2.call(r2, e3.data, e3.meta);
+            t3.call(r2, e3.data, e3.meta);
           }) : this._worker.on(e2, function() {
-            h.delay(t2, arguments, r2);
+            h.delay(t3, arguments, r2);
           }), this;
         }, resume: function() {
           return h.delay(this._worker.resume, [], this._worker), this;
@@ -732,8 +732,8 @@ var require_jszip_min = __commonJS({
         }, toNodejsStream: function(e2) {
           if (h.checkSupport("nodestream"), "nodebuffer" !== this._outputType) throw new Error(this._outputType + " is not supported by this method");
           return new o(this, { objectMode: "nodebuffer" !== this._outputType }, e2);
-        } }, t.exports = f;
-      }, { "../base64": 1, "../external": 6, "../nodejs/NodejsStreamOutputAdapter": 13, "../support": 30, "../utils": 32, "./ConvertWorker": 24, "./GenericWorker": 28 }], 30: [function(e, t, r) {
+        } }, t2.exports = f;
+      }, { "../base64": 1, "../external": 6, "../nodejs/NodejsStreamOutputAdapter": 13, "../support": 30, "../utils": 32, "./ConvertWorker": 24, "./GenericWorker": 28 }], 30: [function(e, t2, r) {
         "use strict";
         if (r.base64 = true, r.array = true, r.string = true, r.arraybuffer = "undefined" != typeof ArrayBuffer && "undefined" != typeof Uint8Array, r.nodebuffer = "undefined" != typeof Buffer, r.uint8array = "undefined" != typeof Uint8Array, "undefined" == typeof ArrayBuffer) r.blob = false;
         else {
@@ -754,7 +754,7 @@ var require_jszip_min = __commonJS({
         } catch (e2) {
           r.nodestream = false;
         }
-      }, { "readable-stream": 16 }], 31: [function(e, t, s) {
+      }, { "readable-stream": 16 }], 31: [function(e, t2, s) {
         "use strict";
         for (var o = e("./utils"), h = e("./support"), r = e("./nodejsUtils"), n = e("./stream/GenericWorker"), u = new Array(256), i = 0; i < 256; i++) u[i] = 252 <= i ? 6 : 248 <= i ? 5 : 240 <= i ? 4 : 224 <= i ? 3 : 192 <= i ? 2 : 1;
         u[254] = u[254] = 1;
@@ -766,73 +766,73 @@ var require_jszip_min = __commonJS({
         }
         s.utf8encode = function(e2) {
           return h.nodebuffer ? r.newBufferFrom(e2, "utf-8") : (function(e3) {
-            var t2, r2, n2, i2, s2, a2 = e3.length, o2 = 0;
+            var t3, r2, n2, i2, s2, a2 = e3.length, o2 = 0;
             for (i2 = 0; i2 < a2; i2++) 55296 == (64512 & (r2 = e3.charCodeAt(i2))) && i2 + 1 < a2 && 56320 == (64512 & (n2 = e3.charCodeAt(i2 + 1))) && (r2 = 65536 + (r2 - 55296 << 10) + (n2 - 56320), i2++), o2 += r2 < 128 ? 1 : r2 < 2048 ? 2 : r2 < 65536 ? 3 : 4;
-            for (t2 = h.uint8array ? new Uint8Array(o2) : new Array(o2), i2 = s2 = 0; s2 < o2; i2++) 55296 == (64512 & (r2 = e3.charCodeAt(i2))) && i2 + 1 < a2 && 56320 == (64512 & (n2 = e3.charCodeAt(i2 + 1))) && (r2 = 65536 + (r2 - 55296 << 10) + (n2 - 56320), i2++), r2 < 128 ? t2[s2++] = r2 : (r2 < 2048 ? t2[s2++] = 192 | r2 >>> 6 : (r2 < 65536 ? t2[s2++] = 224 | r2 >>> 12 : (t2[s2++] = 240 | r2 >>> 18, t2[s2++] = 128 | r2 >>> 12 & 63), t2[s2++] = 128 | r2 >>> 6 & 63), t2[s2++] = 128 | 63 & r2);
-            return t2;
+            for (t3 = h.uint8array ? new Uint8Array(o2) : new Array(o2), i2 = s2 = 0; s2 < o2; i2++) 55296 == (64512 & (r2 = e3.charCodeAt(i2))) && i2 + 1 < a2 && 56320 == (64512 & (n2 = e3.charCodeAt(i2 + 1))) && (r2 = 65536 + (r2 - 55296 << 10) + (n2 - 56320), i2++), r2 < 128 ? t3[s2++] = r2 : (r2 < 2048 ? t3[s2++] = 192 | r2 >>> 6 : (r2 < 65536 ? t3[s2++] = 224 | r2 >>> 12 : (t3[s2++] = 240 | r2 >>> 18, t3[s2++] = 128 | r2 >>> 12 & 63), t3[s2++] = 128 | r2 >>> 6 & 63), t3[s2++] = 128 | 63 & r2);
+            return t3;
           })(e2);
         }, s.utf8decode = function(e2) {
           return h.nodebuffer ? o.transformTo("nodebuffer", e2).toString("utf-8") : (function(e3) {
-            var t2, r2, n2, i2, s2 = e3.length, a2 = new Array(2 * s2);
-            for (t2 = r2 = 0; t2 < s2; ) if ((n2 = e3[t2++]) < 128) a2[r2++] = n2;
-            else if (4 < (i2 = u[n2])) a2[r2++] = 65533, t2 += i2 - 1;
+            var t3, r2, n2, i2, s2 = e3.length, a2 = new Array(2 * s2);
+            for (t3 = r2 = 0; t3 < s2; ) if ((n2 = e3[t3++]) < 128) a2[r2++] = n2;
+            else if (4 < (i2 = u[n2])) a2[r2++] = 65533, t3 += i2 - 1;
             else {
-              for (n2 &= 2 === i2 ? 31 : 3 === i2 ? 15 : 7; 1 < i2 && t2 < s2; ) n2 = n2 << 6 | 63 & e3[t2++], i2--;
+              for (n2 &= 2 === i2 ? 31 : 3 === i2 ? 15 : 7; 1 < i2 && t3 < s2; ) n2 = n2 << 6 | 63 & e3[t3++], i2--;
               1 < i2 ? a2[r2++] = 65533 : n2 < 65536 ? a2[r2++] = n2 : (n2 -= 65536, a2[r2++] = 55296 | n2 >> 10 & 1023, a2[r2++] = 56320 | 1023 & n2);
             }
             return a2.length !== r2 && (a2.subarray ? a2 = a2.subarray(0, r2) : a2.length = r2), o.applyFromCharCode(a2);
           })(e2 = o.transformTo(h.uint8array ? "uint8array" : "array", e2));
         }, o.inherits(a, n), a.prototype.processChunk = function(e2) {
-          var t2 = o.transformTo(h.uint8array ? "uint8array" : "array", e2.data);
+          var t3 = o.transformTo(h.uint8array ? "uint8array" : "array", e2.data);
           if (this.leftOver && this.leftOver.length) {
             if (h.uint8array) {
-              var r2 = t2;
-              (t2 = new Uint8Array(r2.length + this.leftOver.length)).set(this.leftOver, 0), t2.set(r2, this.leftOver.length);
-            } else t2 = this.leftOver.concat(t2);
+              var r2 = t3;
+              (t3 = new Uint8Array(r2.length + this.leftOver.length)).set(this.leftOver, 0), t3.set(r2, this.leftOver.length);
+            } else t3 = this.leftOver.concat(t3);
             this.leftOver = null;
           }
-          var n2 = (function(e3, t3) {
+          var n2 = (function(e3, t4) {
             var r3;
-            for ((t3 = t3 || e3.length) > e3.length && (t3 = e3.length), r3 = t3 - 1; 0 <= r3 && 128 == (192 & e3[r3]); ) r3--;
-            return r3 < 0 ? t3 : 0 === r3 ? t3 : r3 + u[e3[r3]] > t3 ? r3 : t3;
-          })(t2), i2 = t2;
-          n2 !== t2.length && (h.uint8array ? (i2 = t2.subarray(0, n2), this.leftOver = t2.subarray(n2, t2.length)) : (i2 = t2.slice(0, n2), this.leftOver = t2.slice(n2, t2.length))), this.push({ data: s.utf8decode(i2), meta: e2.meta });
+            for ((t4 = t4 || e3.length) > e3.length && (t4 = e3.length), r3 = t4 - 1; 0 <= r3 && 128 == (192 & e3[r3]); ) r3--;
+            return r3 < 0 ? t4 : 0 === r3 ? t4 : r3 + u[e3[r3]] > t4 ? r3 : t4;
+          })(t3), i2 = t3;
+          n2 !== t3.length && (h.uint8array ? (i2 = t3.subarray(0, n2), this.leftOver = t3.subarray(n2, t3.length)) : (i2 = t3.slice(0, n2), this.leftOver = t3.slice(n2, t3.length))), this.push({ data: s.utf8decode(i2), meta: e2.meta });
         }, a.prototype.flush = function() {
           this.leftOver && this.leftOver.length && (this.push({ data: s.utf8decode(this.leftOver), meta: {} }), this.leftOver = null);
         }, s.Utf8DecodeWorker = a, o.inherits(l, n), l.prototype.processChunk = function(e2) {
           this.push({ data: s.utf8encode(e2.data), meta: e2.meta });
         }, s.Utf8EncodeWorker = l;
-      }, { "./nodejsUtils": 14, "./stream/GenericWorker": 28, "./support": 30, "./utils": 32 }], 32: [function(e, t, a) {
+      }, { "./nodejsUtils": 14, "./stream/GenericWorker": 28, "./support": 30, "./utils": 32 }], 32: [function(e, t2, a) {
         "use strict";
         var o = e("./support"), h = e("./base64"), r = e("./nodejsUtils"), u = e("./external");
         function n(e2) {
           return e2;
         }
-        function l(e2, t2) {
-          for (var r2 = 0; r2 < e2.length; ++r2) t2[r2] = 255 & e2.charCodeAt(r2);
-          return t2;
+        function l(e2, t3) {
+          for (var r2 = 0; r2 < e2.length; ++r2) t3[r2] = 255 & e2.charCodeAt(r2);
+          return t3;
         }
-        e("setimmediate"), a.newBlob = function(t2, r2) {
+        e("setimmediate"), a.newBlob = function(t3, r2) {
           a.checkSupport("blob");
           try {
-            return new Blob([t2], { type: r2 });
+            return new Blob([t3], { type: r2 });
           } catch (e2) {
             try {
               var n2 = new (self.BlobBuilder || self.WebKitBlobBuilder || self.MozBlobBuilder || self.MSBlobBuilder)();
-              return n2.append(t2), n2.getBlob(r2);
+              return n2.append(t3), n2.getBlob(r2);
             } catch (e3) {
               throw new Error("Bug : can't construct the Blob.");
             }
           }
         };
-        var i = { stringifyByChunk: function(e2, t2, r2) {
+        var i = { stringifyByChunk: function(e2, t3, r2) {
           var n2 = [], i2 = 0, s2 = e2.length;
           if (s2 <= r2) return String.fromCharCode.apply(null, e2);
-          for (; i2 < s2; ) "array" === t2 || "nodebuffer" === t2 ? n2.push(String.fromCharCode.apply(null, e2.slice(i2, Math.min(i2 + r2, s2)))) : n2.push(String.fromCharCode.apply(null, e2.subarray(i2, Math.min(i2 + r2, s2)))), i2 += r2;
+          for (; i2 < s2; ) "array" === t3 || "nodebuffer" === t3 ? n2.push(String.fromCharCode.apply(null, e2.slice(i2, Math.min(i2 + r2, s2)))) : n2.push(String.fromCharCode.apply(null, e2.subarray(i2, Math.min(i2 + r2, s2)))), i2 += r2;
           return n2.join("");
         }, stringifyByChar: function(e2) {
-          for (var t2 = "", r2 = 0; r2 < e2.length; r2++) t2 += String.fromCharCode(e2[r2]);
-          return t2;
+          for (var t3 = "", r2 = 0; r2 < e2.length; r2++) t3 += String.fromCharCode(e2[r2]);
+          return t3;
         }, applyCanBeUsed: { uint8array: (function() {
           try {
             return o.uint8array && 1 === String.fromCharCode.apply(null, new Uint8Array(1)).length;
@@ -847,17 +847,17 @@ var require_jszip_min = __commonJS({
           }
         })() } };
         function s(e2) {
-          var t2 = 65536, r2 = a.getTypeOf(e2), n2 = true;
-          if ("uint8array" === r2 ? n2 = i.applyCanBeUsed.uint8array : "nodebuffer" === r2 && (n2 = i.applyCanBeUsed.nodebuffer), n2) for (; 1 < t2; ) try {
-            return i.stringifyByChunk(e2, r2, t2);
+          var t3 = 65536, r2 = a.getTypeOf(e2), n2 = true;
+          if ("uint8array" === r2 ? n2 = i.applyCanBeUsed.uint8array : "nodebuffer" === r2 && (n2 = i.applyCanBeUsed.nodebuffer), n2) for (; 1 < t3; ) try {
+            return i.stringifyByChunk(e2, r2, t3);
           } catch (e3) {
-            t2 = Math.floor(t2 / 2);
+            t3 = Math.floor(t3 / 2);
           }
           return i.stringifyByChar(e2);
         }
-        function f(e2, t2) {
-          for (var r2 = 0; r2 < e2.length; r2++) t2[r2] = e2[r2];
-          return t2;
+        function f(e2, t3) {
+          for (var r2 = 0; r2 < e2.length; r2++) t3[r2] = e2[r2];
+          return t3;
         }
         a.applyFromCharCode = s;
         var c = {};
@@ -895,15 +895,15 @@ var require_jszip_min = __commonJS({
           return c.nodebuffer.uint8array(e2).buffer;
         }, uint8array: function(e2) {
           return f(e2, new Uint8Array(e2.length));
-        }, nodebuffer: n }, a.transformTo = function(e2, t2) {
-          if (t2 = t2 || "", !e2) return t2;
+        }, nodebuffer: n }, a.transformTo = function(e2, t3) {
+          if (t3 = t3 || "", !e2) return t3;
           a.checkSupport(e2);
-          var r2 = a.getTypeOf(t2);
-          return c[r2][e2](t2);
+          var r2 = a.getTypeOf(t3);
+          return c[r2][e2](t3);
         }, a.resolve = function(e2) {
-          for (var t2 = e2.split("/"), r2 = [], n2 = 0; n2 < t2.length; n2++) {
-            var i2 = t2[n2];
-            "." === i2 || "" === i2 && 0 !== n2 && n2 !== t2.length - 1 || (".." === i2 ? r2.pop() : r2.push(i2));
+          for (var t3 = e2.split("/"), r2 = [], n2 = 0; n2 < t3.length; n2++) {
+            var i2 = t3[n2];
+            "." === i2 || "" === i2 && 0 !== n2 && n2 !== t3.length - 1 || (".." === i2 ? r2.pop() : r2.push(i2));
           }
           return r2.join("/");
         }, a.getTypeOf = function(e2) {
@@ -911,39 +911,39 @@ var require_jszip_min = __commonJS({
         }, a.checkSupport = function(e2) {
           if (!o[e2.toLowerCase()]) throw new Error(e2 + " is not supported by this platform");
         }, a.MAX_VALUE_16BITS = 65535, a.MAX_VALUE_32BITS = -1, a.pretty = function(e2) {
-          var t2, r2, n2 = "";
-          for (r2 = 0; r2 < (e2 || "").length; r2++) n2 += "\\x" + ((t2 = e2.charCodeAt(r2)) < 16 ? "0" : "") + t2.toString(16).toUpperCase();
+          var t3, r2, n2 = "";
+          for (r2 = 0; r2 < (e2 || "").length; r2++) n2 += "\\x" + ((t3 = e2.charCodeAt(r2)) < 16 ? "0" : "") + t3.toString(16).toUpperCase();
           return n2;
-        }, a.delay = function(e2, t2, r2) {
+        }, a.delay = function(e2, t3, r2) {
           setImmediate(function() {
-            e2.apply(r2 || null, t2 || []);
+            e2.apply(r2 || null, t3 || []);
           });
-        }, a.inherits = function(e2, t2) {
+        }, a.inherits = function(e2, t3) {
           function r2() {
           }
-          r2.prototype = t2.prototype, e2.prototype = new r2();
+          r2.prototype = t3.prototype, e2.prototype = new r2();
         }, a.extend = function() {
-          var e2, t2, r2 = {};
-          for (e2 = 0; e2 < arguments.length; e2++) for (t2 in arguments[e2]) Object.prototype.hasOwnProperty.call(arguments[e2], t2) && void 0 === r2[t2] && (r2[t2] = arguments[e2][t2]);
+          var e2, t3, r2 = {};
+          for (e2 = 0; e2 < arguments.length; e2++) for (t3 in arguments[e2]) Object.prototype.hasOwnProperty.call(arguments[e2], t3) && void 0 === r2[t3] && (r2[t3] = arguments[e2][t3]);
           return r2;
         }, a.prepareContent = function(r2, e2, n2, i2, s2) {
           return u.Promise.resolve(e2).then(function(n3) {
-            return o.blob && (n3 instanceof Blob || -1 !== ["[object File]", "[object Blob]"].indexOf(Object.prototype.toString.call(n3))) && "undefined" != typeof FileReader ? new u.Promise(function(t2, r3) {
+            return o.blob && (n3 instanceof Blob || -1 !== ["[object File]", "[object Blob]"].indexOf(Object.prototype.toString.call(n3))) && "undefined" != typeof FileReader ? new u.Promise(function(t3, r3) {
               var e3 = new FileReader();
               e3.onload = function(e4) {
-                t2(e4.target.result);
+                t3(e4.target.result);
               }, e3.onerror = function(e4) {
                 r3(e4.target.error);
               }, e3.readAsArrayBuffer(n3);
             }) : n3;
           }).then(function(e3) {
-            var t2 = a.getTypeOf(e3);
-            return t2 ? ("arraybuffer" === t2 ? e3 = a.transformTo("uint8array", e3) : "string" === t2 && (s2 ? e3 = h.decode(e3) : n2 && true !== i2 && (e3 = (function(e4) {
+            var t3 = a.getTypeOf(e3);
+            return t3 ? ("arraybuffer" === t3 ? e3 = a.transformTo("uint8array", e3) : "string" === t3 && (s2 ? e3 = h.decode(e3) : n2 && true !== i2 && (e3 = (function(e4) {
               return l(e4, o.uint8array ? new Uint8Array(e4.length) : new Array(e4.length));
             })(e3))), e3) : u.Promise.reject(new Error("Can't read the data of '" + r2 + "'. Is it in a supported JavaScript type (String, Blob, ArrayBuffer, etc) ?"));
           });
         };
-      }, { "./base64": 1, "./external": 6, "./nodejsUtils": 14, "./support": 30, setimmediate: 54 }], 33: [function(e, t, r) {
+      }, { "./base64": 1, "./external": 6, "./nodejsUtils": 14, "./support": 30, setimmediate: 54 }], 33: [function(e, t2, r) {
         "use strict";
         var n = e("./reader/readerFor"), i = e("./utils"), s = e("./signature"), a = e("./zipEntry"), o = e("./support");
         function h(e2) {
@@ -952,26 +952,26 @@ var require_jszip_min = __commonJS({
         h.prototype = { checkSignature: function(e2) {
           if (!this.reader.readAndCheckSignature(e2)) {
             this.reader.index -= 4;
-            var t2 = this.reader.readString(4);
-            throw new Error("Corrupted zip or bug: unexpected signature (" + i.pretty(t2) + ", expected " + i.pretty(e2) + ")");
+            var t3 = this.reader.readString(4);
+            throw new Error("Corrupted zip or bug: unexpected signature (" + i.pretty(t3) + ", expected " + i.pretty(e2) + ")");
           }
-        }, isSignature: function(e2, t2) {
+        }, isSignature: function(e2, t3) {
           var r2 = this.reader.index;
           this.reader.setIndex(e2);
-          var n2 = this.reader.readString(4) === t2;
+          var n2 = this.reader.readString(4) === t3;
           return this.reader.setIndex(r2), n2;
         }, readBlockEndOfCentral: function() {
           this.diskNumber = this.reader.readInt(2), this.diskWithCentralDirStart = this.reader.readInt(2), this.centralDirRecordsOnThisDisk = this.reader.readInt(2), this.centralDirRecords = this.reader.readInt(2), this.centralDirSize = this.reader.readInt(4), this.centralDirOffset = this.reader.readInt(4), this.zipCommentLength = this.reader.readInt(2);
-          var e2 = this.reader.readData(this.zipCommentLength), t2 = o.uint8array ? "uint8array" : "array", r2 = i.transformTo(t2, e2);
+          var e2 = this.reader.readData(this.zipCommentLength), t3 = o.uint8array ? "uint8array" : "array", r2 = i.transformTo(t3, e2);
           this.zipComment = this.loadOptions.decodeFileName(r2);
         }, readBlockZip64EndOfCentral: function() {
           this.zip64EndOfCentralSize = this.reader.readInt(8), this.reader.skip(4), this.diskNumber = this.reader.readInt(4), this.diskWithCentralDirStart = this.reader.readInt(4), this.centralDirRecordsOnThisDisk = this.reader.readInt(8), this.centralDirRecords = this.reader.readInt(8), this.centralDirSize = this.reader.readInt(8), this.centralDirOffset = this.reader.readInt(8), this.zip64ExtensibleData = {};
-          for (var e2, t2, r2, n2 = this.zip64EndOfCentralSize - 44; 0 < n2; ) e2 = this.reader.readInt(2), t2 = this.reader.readInt(4), r2 = this.reader.readData(t2), this.zip64ExtensibleData[e2] = { id: e2, length: t2, value: r2 };
+          for (var e2, t3, r2, n2 = this.zip64EndOfCentralSize - 44; 0 < n2; ) e2 = this.reader.readInt(2), t3 = this.reader.readInt(4), r2 = this.reader.readData(t3), this.zip64ExtensibleData[e2] = { id: e2, length: t3, value: r2 };
         }, readBlockZip64EndOfCentralLocator: function() {
           if (this.diskWithZip64CentralDirStart = this.reader.readInt(4), this.relativeOffsetEndOfZip64CentralDir = this.reader.readInt(8), this.disksCount = this.reader.readInt(4), 1 < this.disksCount) throw new Error("Multi-volumes zip are not supported");
         }, readLocalFiles: function() {
-          var e2, t2;
-          for (e2 = 0; e2 < this.files.length; e2++) t2 = this.files[e2], this.reader.setIndex(t2.localHeaderOffset), this.checkSignature(s.LOCAL_FILE_HEADER), t2.readLocalPart(this.reader), t2.handleUTF8(), t2.processAttributes();
+          var e2, t3;
+          for (e2 = 0; e2 < this.files.length; e2++) t3 = this.files[e2], this.reader.setIndex(t3.localHeaderOffset), this.checkSignature(s.LOCAL_FILE_HEADER), t3.readLocalPart(this.reader), t3.handleUTF8(), t3.processAttributes();
         }, readCentralDir: function() {
           var e2;
           for (this.reader.setIndex(this.centralDirOffset); this.reader.readAndCheckSignature(s.CENTRAL_FILE_HEADER); ) (e2 = new a({ zip64: this.zip64 }, this.loadOptions)).readCentralPart(this.reader), this.files.push(e2);
@@ -980,7 +980,7 @@ var require_jszip_min = __commonJS({
           var e2 = this.reader.lastIndexOfSignature(s.CENTRAL_DIRECTORY_END);
           if (e2 < 0) throw !this.isSignature(0, s.LOCAL_FILE_HEADER) ? new Error("Can't find end of central directory : is this a zip file ? If it is, see https://stuk.github.io/jszip/documentation/howto/read_zip.html") : new Error("Corrupted zip: can't find end of central directory");
           this.reader.setIndex(e2);
-          var t2 = e2;
+          var t3 = e2;
           if (this.checkSignature(s.CENTRAL_DIRECTORY_END), this.readBlockEndOfCentral(), this.diskNumber === i.MAX_VALUE_16BITS || this.diskWithCentralDirStart === i.MAX_VALUE_16BITS || this.centralDirRecordsOnThisDisk === i.MAX_VALUE_16BITS || this.centralDirRecords === i.MAX_VALUE_16BITS || this.centralDirSize === i.MAX_VALUE_32BITS || this.centralDirOffset === i.MAX_VALUE_32BITS) {
             if (this.zip64 = true, (e2 = this.reader.lastIndexOfSignature(s.ZIP64_CENTRAL_DIRECTORY_LOCATOR)) < 0) throw new Error("Corrupted zip: can't find the ZIP64 end of central directory locator");
             if (this.reader.setIndex(e2), this.checkSignature(s.ZIP64_CENTRAL_DIRECTORY_LOCATOR), this.readBlockZip64EndOfCentralLocator(), !this.isSignature(this.relativeOffsetEndOfZip64CentralDir, s.ZIP64_CENTRAL_DIRECTORY_END) && (this.relativeOffsetEndOfZip64CentralDir = this.reader.lastIndexOfSignature(s.ZIP64_CENTRAL_DIRECTORY_END), this.relativeOffsetEndOfZip64CentralDir < 0)) throw new Error("Corrupted zip: can't find the ZIP64 end of central directory");
@@ -988,37 +988,37 @@ var require_jszip_min = __commonJS({
           }
           var r2 = this.centralDirOffset + this.centralDirSize;
           this.zip64 && (r2 += 20, r2 += 12 + this.zip64EndOfCentralSize);
-          var n2 = t2 - r2;
-          if (0 < n2) this.isSignature(t2, s.CENTRAL_FILE_HEADER) || (this.reader.zero = n2);
+          var n2 = t3 - r2;
+          if (0 < n2) this.isSignature(t3, s.CENTRAL_FILE_HEADER) || (this.reader.zero = n2);
           else if (n2 < 0) throw new Error("Corrupted zip: missing " + Math.abs(n2) + " bytes.");
         }, prepareReader: function(e2) {
           this.reader = n(e2);
         }, load: function(e2) {
           this.prepareReader(e2), this.readEndOfCentral(), this.readCentralDir(), this.readLocalFiles();
-        } }, t.exports = h;
-      }, { "./reader/readerFor": 22, "./signature": 23, "./support": 30, "./utils": 32, "./zipEntry": 34 }], 34: [function(e, t, r) {
+        } }, t2.exports = h;
+      }, { "./reader/readerFor": 22, "./signature": 23, "./support": 30, "./utils": 32, "./zipEntry": 34 }], 34: [function(e, t2, r) {
         "use strict";
         var n = e("./reader/readerFor"), s = e("./utils"), i = e("./compressedObject"), a = e("./crc32"), o = e("./utf8"), h = e("./compressions"), u = e("./support");
-        function l(e2, t2) {
-          this.options = e2, this.loadOptions = t2;
+        function l(e2, t3) {
+          this.options = e2, this.loadOptions = t3;
         }
         l.prototype = { isEncrypted: function() {
           return 1 == (1 & this.bitFlag);
         }, useUTF8: function() {
           return 2048 == (2048 & this.bitFlag);
         }, readLocalPart: function(e2) {
-          var t2, r2;
+          var t3, r2;
           if (e2.skip(22), this.fileNameLength = e2.readInt(2), r2 = e2.readInt(2), this.fileName = e2.readData(this.fileNameLength), e2.skip(r2), -1 === this.compressedSize || -1 === this.uncompressedSize) throw new Error("Bug or corrupted zip : didn't get enough information from the central directory (compressedSize === -1 || uncompressedSize === -1)");
-          if (null === (t2 = (function(e3) {
-            for (var t3 in h) if (Object.prototype.hasOwnProperty.call(h, t3) && h[t3].magic === e3) return h[t3];
+          if (null === (t3 = (function(e3) {
+            for (var t4 in h) if (Object.prototype.hasOwnProperty.call(h, t4) && h[t4].magic === e3) return h[t4];
             return null;
           })(this.compressionMethod))) throw new Error("Corrupted zip : compression " + s.pretty(this.compressionMethod) + " unknown (inner file : " + s.transformTo("string", this.fileName) + ")");
-          this.decompressed = new i(this.compressedSize, this.uncompressedSize, this.crc32, t2, e2.readData(this.compressedSize));
+          this.decompressed = new i(this.compressedSize, this.uncompressedSize, this.crc32, t3, e2.readData(this.compressedSize));
         }, readCentralPart: function(e2) {
           this.versionMadeBy = e2.readInt(2), e2.skip(2), this.bitFlag = e2.readInt(2), this.compressionMethod = e2.readString(2), this.date = e2.readDate(), this.crc32 = e2.readInt(4), this.compressedSize = e2.readInt(4), this.uncompressedSize = e2.readInt(4);
-          var t2 = e2.readInt(2);
+          var t3 = e2.readInt(2);
           if (this.extraFieldsLength = e2.readInt(2), this.fileCommentLength = e2.readInt(2), this.diskNumberStart = e2.readInt(2), this.internalFileAttributes = e2.readInt(2), this.externalFileAttributes = e2.readInt(4), this.localHeaderOffset = e2.readInt(4), this.isEncrypted()) throw new Error("Encrypted zip are not supported");
-          e2.skip(t2), this.readExtraFields(e2), this.parseZIP64ExtraField(e2), this.fileComment = e2.readData(this.fileCommentLength);
+          e2.skip(t3), this.readExtraFields(e2), this.parseZIP64ExtraField(e2), this.fileComment = e2.readData(this.fileCommentLength);
         }, processAttributes: function() {
           this.unixPermissions = null, this.dosPermissions = null;
           var e2 = this.versionMadeBy >> 8;
@@ -1029,15 +1029,15 @@ var require_jszip_min = __commonJS({
             this.uncompressedSize === s.MAX_VALUE_32BITS && (this.uncompressedSize = e2.readInt(8)), this.compressedSize === s.MAX_VALUE_32BITS && (this.compressedSize = e2.readInt(8)), this.localHeaderOffset === s.MAX_VALUE_32BITS && (this.localHeaderOffset = e2.readInt(8)), this.diskNumberStart === s.MAX_VALUE_32BITS && (this.diskNumberStart = e2.readInt(4));
           }
         }, readExtraFields: function(e2) {
-          var t2, r2, n2, i2 = e2.index + this.extraFieldsLength;
-          for (this.extraFields || (this.extraFields = {}); e2.index + 4 < i2; ) t2 = e2.readInt(2), r2 = e2.readInt(2), n2 = e2.readData(r2), this.extraFields[t2] = { id: t2, length: r2, value: n2 };
+          var t3, r2, n2, i2 = e2.index + this.extraFieldsLength;
+          for (this.extraFields || (this.extraFields = {}); e2.index + 4 < i2; ) t3 = e2.readInt(2), r2 = e2.readInt(2), n2 = e2.readData(r2), this.extraFields[t3] = { id: t3, length: r2, value: n2 };
           e2.setIndex(i2);
         }, handleUTF8: function() {
           var e2 = u.uint8array ? "uint8array" : "array";
           if (this.useUTF8()) this.fileNameStr = o.utf8decode(this.fileName), this.fileCommentStr = o.utf8decode(this.fileComment);
           else {
-            var t2 = this.findExtraFieldUnicodePath();
-            if (null !== t2) this.fileNameStr = t2;
+            var t3 = this.findExtraFieldUnicodePath();
+            if (null !== t3) this.fileNameStr = t3;
             else {
               var r2 = s.transformTo(e2, this.fileName);
               this.fileNameStr = this.loadOptions.decodeFileName(r2);
@@ -1052,80 +1052,80 @@ var require_jszip_min = __commonJS({
         }, findExtraFieldUnicodePath: function() {
           var e2 = this.extraFields[28789];
           if (e2) {
-            var t2 = n(e2.value);
-            return 1 !== t2.readInt(1) ? null : a(this.fileName) !== t2.readInt(4) ? null : o.utf8decode(t2.readData(e2.length - 5));
+            var t3 = n(e2.value);
+            return 1 !== t3.readInt(1) ? null : a(this.fileName) !== t3.readInt(4) ? null : o.utf8decode(t3.readData(e2.length - 5));
           }
           return null;
         }, findExtraFieldUnicodeComment: function() {
           var e2 = this.extraFields[25461];
           if (e2) {
-            var t2 = n(e2.value);
-            return 1 !== t2.readInt(1) ? null : a(this.fileComment) !== t2.readInt(4) ? null : o.utf8decode(t2.readData(e2.length - 5));
+            var t3 = n(e2.value);
+            return 1 !== t3.readInt(1) ? null : a(this.fileComment) !== t3.readInt(4) ? null : o.utf8decode(t3.readData(e2.length - 5));
           }
           return null;
-        } }, t.exports = l;
-      }, { "./compressedObject": 2, "./compressions": 3, "./crc32": 4, "./reader/readerFor": 22, "./support": 30, "./utf8": 31, "./utils": 32 }], 35: [function(e, t, r) {
+        } }, t2.exports = l;
+      }, { "./compressedObject": 2, "./compressions": 3, "./crc32": 4, "./reader/readerFor": 22, "./support": 30, "./utf8": 31, "./utils": 32 }], 35: [function(e, t2, r) {
         "use strict";
-        function n(e2, t2, r2) {
-          this.name = e2, this.dir = r2.dir, this.date = r2.date, this.comment = r2.comment, this.unixPermissions = r2.unixPermissions, this.dosPermissions = r2.dosPermissions, this._data = t2, this._dataBinary = r2.binary, this.options = { compression: r2.compression, compressionOptions: r2.compressionOptions };
+        function n(e2, t3, r2) {
+          this.name = e2, this.dir = r2.dir, this.date = r2.date, this.comment = r2.comment, this.unixPermissions = r2.unixPermissions, this.dosPermissions = r2.dosPermissions, this._data = t3, this._dataBinary = r2.binary, this.options = { compression: r2.compression, compressionOptions: r2.compressionOptions };
         }
         var s = e("./stream/StreamHelper"), i = e("./stream/DataWorker"), a = e("./utf8"), o = e("./compressedObject"), h = e("./stream/GenericWorker");
         n.prototype = { internalStream: function(e2) {
-          var t2 = null, r2 = "string";
+          var t3 = null, r2 = "string";
           try {
             if (!e2) throw new Error("No output type specified.");
             var n2 = "string" === (r2 = e2.toLowerCase()) || "text" === r2;
-            "binarystring" !== r2 && "text" !== r2 || (r2 = "string"), t2 = this._decompressWorker();
+            "binarystring" !== r2 && "text" !== r2 || (r2 = "string"), t3 = this._decompressWorker();
             var i2 = !this._dataBinary;
-            i2 && !n2 && (t2 = t2.pipe(new a.Utf8EncodeWorker())), !i2 && n2 && (t2 = t2.pipe(new a.Utf8DecodeWorker()));
+            i2 && !n2 && (t3 = t3.pipe(new a.Utf8EncodeWorker())), !i2 && n2 && (t3 = t3.pipe(new a.Utf8DecodeWorker()));
           } catch (e3) {
-            (t2 = new h("error")).error(e3);
+            (t3 = new h("error")).error(e3);
           }
-          return new s(t2, r2, "");
-        }, async: function(e2, t2) {
-          return this.internalStream(e2).accumulate(t2);
-        }, nodeStream: function(e2, t2) {
-          return this.internalStream(e2 || "nodebuffer").toNodejsStream(t2);
-        }, _compressWorker: function(e2, t2) {
+          return new s(t3, r2, "");
+        }, async: function(e2, t3) {
+          return this.internalStream(e2).accumulate(t3);
+        }, nodeStream: function(e2, t3) {
+          return this.internalStream(e2 || "nodebuffer").toNodejsStream(t3);
+        }, _compressWorker: function(e2, t3) {
           if (this._data instanceof o && this._data.compression.magic === e2.magic) return this._data.getCompressedWorker();
           var r2 = this._decompressWorker();
-          return this._dataBinary || (r2 = r2.pipe(new a.Utf8EncodeWorker())), o.createWorkerFrom(r2, e2, t2);
+          return this._dataBinary || (r2 = r2.pipe(new a.Utf8EncodeWorker())), o.createWorkerFrom(r2, e2, t3);
         }, _decompressWorker: function() {
           return this._data instanceof o ? this._data.getContentWorker() : this._data instanceof h ? this._data : new i(this._data);
         } };
         for (var u = ["asText", "asBinary", "asNodeBuffer", "asUint8Array", "asArrayBuffer"], l = function() {
           throw new Error("This method has been removed in JSZip 3.0, please check the upgrade guide.");
         }, f = 0; f < u.length; f++) n.prototype[u[f]] = l;
-        t.exports = n;
-      }, { "./compressedObject": 2, "./stream/DataWorker": 27, "./stream/GenericWorker": 28, "./stream/StreamHelper": 29, "./utf8": 31 }], 36: [function(e, l, t) {
-        (function(t2) {
+        t2.exports = n;
+      }, { "./compressedObject": 2, "./stream/DataWorker": 27, "./stream/GenericWorker": 28, "./stream/StreamHelper": 29, "./utf8": 31 }], 36: [function(e, l, t2) {
+        (function(t3) {
           "use strict";
-          var r, n, e2 = t2.MutationObserver || t2.WebKitMutationObserver;
+          var r, n, e2 = t3.MutationObserver || t3.WebKitMutationObserver;
           if (e2) {
-            var i = 0, s = new e2(u), a = t2.document.createTextNode("");
+            var i = 0, s = new e2(u), a = t3.document.createTextNode("");
             s.observe(a, { characterData: true }), r = function() {
               a.data = i = ++i % 2;
             };
-          } else if (t2.setImmediate || void 0 === t2.MessageChannel) r = "document" in t2 && "onreadystatechange" in t2.document.createElement("script") ? function() {
-            var e3 = t2.document.createElement("script");
+          } else if (t3.setImmediate || void 0 === t3.MessageChannel) r = "document" in t3 && "onreadystatechange" in t3.document.createElement("script") ? function() {
+            var e3 = t3.document.createElement("script");
             e3.onreadystatechange = function() {
               u(), e3.onreadystatechange = null, e3.parentNode.removeChild(e3), e3 = null;
-            }, t2.document.documentElement.appendChild(e3);
+            }, t3.document.documentElement.appendChild(e3);
           } : function() {
             setTimeout(u, 0);
           };
           else {
-            var o = new t2.MessageChannel();
+            var o = new t3.MessageChannel();
             o.port1.onmessage = u, r = function() {
               o.port2.postMessage(0);
             };
           }
           var h = [];
           function u() {
-            var e3, t3;
+            var e3, t4;
             n = true;
             for (var r2 = h.length; r2; ) {
-              for (t3 = h, h = [], e3 = -1; ++e3 < r2; ) t3[e3]();
+              for (t4 = h, h = [], e3 = -1; ++e3 < r2; ) t4[e3]();
               r2 = h.length;
             }
             n = false;
@@ -1134,7 +1134,7 @@ var require_jszip_min = __commonJS({
             1 !== h.push(e3) || n || r();
           };
         }).call(this, "undefined" != typeof global ? global : "undefined" != typeof self ? self : "undefined" != typeof window ? window : {});
-      }, {}], 37: [function(e, t, r) {
+      }, {}], 37: [function(e, t2, r) {
         "use strict";
         var i = e("immediate");
         function u() {
@@ -1144,66 +1144,66 @@ var require_jszip_min = __commonJS({
           if ("function" != typeof e2) throw new TypeError("resolver must be a function");
           this.state = n, this.queue = [], this.outcome = void 0, e2 !== u && d(this, e2);
         }
-        function h(e2, t2, r2) {
-          this.promise = e2, "function" == typeof t2 && (this.onFulfilled = t2, this.callFulfilled = this.otherCallFulfilled), "function" == typeof r2 && (this.onRejected = r2, this.callRejected = this.otherCallRejected);
+        function h(e2, t3, r2) {
+          this.promise = e2, "function" == typeof t3 && (this.onFulfilled = t3, this.callFulfilled = this.otherCallFulfilled), "function" == typeof r2 && (this.onRejected = r2, this.callRejected = this.otherCallRejected);
         }
-        function f(t2, r2, n2) {
+        function f(t3, r2, n2) {
           i(function() {
             var e2;
             try {
               e2 = r2(n2);
             } catch (e3) {
-              return l.reject(t2, e3);
+              return l.reject(t3, e3);
             }
-            e2 === t2 ? l.reject(t2, new TypeError("Cannot resolve promise with itself")) : l.resolve(t2, e2);
+            e2 === t3 ? l.reject(t3, new TypeError("Cannot resolve promise with itself")) : l.resolve(t3, e2);
           });
         }
         function c(e2) {
-          var t2 = e2 && e2.then;
-          if (e2 && ("object" == typeof e2 || "function" == typeof e2) && "function" == typeof t2) return function() {
-            t2.apply(e2, arguments);
+          var t3 = e2 && e2.then;
+          if (e2 && ("object" == typeof e2 || "function" == typeof e2) && "function" == typeof t3) return function() {
+            t3.apply(e2, arguments);
           };
         }
-        function d(t2, e2) {
+        function d(t3, e2) {
           var r2 = false;
           function n2(e3) {
-            r2 || (r2 = true, l.reject(t2, e3));
+            r2 || (r2 = true, l.reject(t3, e3));
           }
           function i2(e3) {
-            r2 || (r2 = true, l.resolve(t2, e3));
+            r2 || (r2 = true, l.resolve(t3, e3));
           }
           var s2 = p(function() {
             e2(i2, n2);
           });
           "error" === s2.status && n2(s2.value);
         }
-        function p(e2, t2) {
+        function p(e2, t3) {
           var r2 = {};
           try {
-            r2.value = e2(t2), r2.status = "success";
+            r2.value = e2(t3), r2.status = "success";
           } catch (e3) {
             r2.status = "error", r2.value = e3;
           }
           return r2;
         }
-        (t.exports = o).prototype.finally = function(t2) {
-          if ("function" != typeof t2) return this;
+        (t2.exports = o).prototype.finally = function(t3) {
+          if ("function" != typeof t3) return this;
           var r2 = this.constructor;
           return this.then(function(e2) {
-            return r2.resolve(t2()).then(function() {
+            return r2.resolve(t3()).then(function() {
               return e2;
             });
           }, function(e2) {
-            return r2.resolve(t2()).then(function() {
+            return r2.resolve(t3()).then(function() {
               throw e2;
             });
           });
         }, o.prototype.catch = function(e2) {
           return this.then(null, e2);
-        }, o.prototype.then = function(e2, t2) {
-          if ("function" != typeof e2 && this.state === a || "function" != typeof t2 && this.state === s) return this;
+        }, o.prototype.then = function(e2, t3) {
+          if ("function" != typeof e2 && this.state === a || "function" != typeof t3 && this.state === s) return this;
           var r2 = new this.constructor(u);
-          this.state !== n ? f(r2, this.state === a ? e2 : t2, this.outcome) : this.queue.push(new h(r2, e2, t2));
+          this.state !== n ? f(r2, this.state === a ? e2 : t3, this.outcome) : this.queue.push(new h(r2, e2, t3));
           return r2;
         }, h.prototype.callFulfilled = function(e2) {
           l.resolve(this.promise, e2);
@@ -1213,48 +1213,48 @@ var require_jszip_min = __commonJS({
           l.reject(this.promise, e2);
         }, h.prototype.otherCallRejected = function(e2) {
           f(this.promise, this.onRejected, e2);
-        }, l.resolve = function(e2, t2) {
-          var r2 = p(c, t2);
+        }, l.resolve = function(e2, t3) {
+          var r2 = p(c, t3);
           if ("error" === r2.status) return l.reject(e2, r2.value);
           var n2 = r2.value;
           if (n2) d(e2, n2);
           else {
-            e2.state = a, e2.outcome = t2;
-            for (var i2 = -1, s2 = e2.queue.length; ++i2 < s2; ) e2.queue[i2].callFulfilled(t2);
+            e2.state = a, e2.outcome = t3;
+            for (var i2 = -1, s2 = e2.queue.length; ++i2 < s2; ) e2.queue[i2].callFulfilled(t3);
           }
           return e2;
-        }, l.reject = function(e2, t2) {
-          e2.state = s, e2.outcome = t2;
-          for (var r2 = -1, n2 = e2.queue.length; ++r2 < n2; ) e2.queue[r2].callRejected(t2);
+        }, l.reject = function(e2, t3) {
+          e2.state = s, e2.outcome = t3;
+          for (var r2 = -1, n2 = e2.queue.length; ++r2 < n2; ) e2.queue[r2].callRejected(t3);
           return e2;
         }, o.resolve = function(e2) {
           if (e2 instanceof this) return e2;
           return l.resolve(new this(u), e2);
         }, o.reject = function(e2) {
-          var t2 = new this(u);
-          return l.reject(t2, e2);
+          var t3 = new this(u);
+          return l.reject(t3, e2);
         }, o.all = function(e2) {
           var r2 = this;
           if ("[object Array]" !== Object.prototype.toString.call(e2)) return this.reject(new TypeError("must be an array"));
           var n2 = e2.length, i2 = false;
           if (!n2) return this.resolve([]);
-          var s2 = new Array(n2), a2 = 0, t2 = -1, o2 = new this(u);
-          for (; ++t2 < n2; ) h2(e2[t2], t2);
+          var s2 = new Array(n2), a2 = 0, t3 = -1, o2 = new this(u);
+          for (; ++t3 < n2; ) h2(e2[t3], t3);
           return o2;
-          function h2(e3, t3) {
+          function h2(e3, t4) {
             r2.resolve(e3).then(function(e4) {
-              s2[t3] = e4, ++a2 !== n2 || i2 || (i2 = true, l.resolve(o2, s2));
+              s2[t4] = e4, ++a2 !== n2 || i2 || (i2 = true, l.resolve(o2, s2));
             }, function(e4) {
               i2 || (i2 = true, l.reject(o2, e4));
             });
           }
         }, o.race = function(e2) {
-          var t2 = this;
+          var t3 = this;
           if ("[object Array]" !== Object.prototype.toString.call(e2)) return this.reject(new TypeError("must be an array"));
           var r2 = e2.length, n2 = false;
           if (!r2) return this.resolve([]);
           var i2 = -1, s2 = new this(u);
-          for (; ++i2 < r2; ) a2 = e2[i2], t2.resolve(a2).then(function(e3) {
+          for (; ++i2 < r2; ) a2 = e2[i2], t3.resolve(a2).then(function(e3) {
             n2 || (n2 = true, l.resolve(s2, e3));
           }, function(e3) {
             n2 || (n2 = true, l.reject(s2, e3));
@@ -1262,35 +1262,35 @@ var require_jszip_min = __commonJS({
           var a2;
           return s2;
         };
-      }, { immediate: 36 }], 38: [function(e, t, r) {
+      }, { immediate: 36 }], 38: [function(e, t2, r) {
         "use strict";
         var n = {};
-        (0, e("./lib/utils/common").assign)(n, e("./lib/deflate"), e("./lib/inflate"), e("./lib/zlib/constants")), t.exports = n;
-      }, { "./lib/deflate": 39, "./lib/inflate": 40, "./lib/utils/common": 41, "./lib/zlib/constants": 44 }], 39: [function(e, t, r) {
+        (0, e("./lib/utils/common").assign)(n, e("./lib/deflate"), e("./lib/inflate"), e("./lib/zlib/constants")), t2.exports = n;
+      }, { "./lib/deflate": 39, "./lib/inflate": 40, "./lib/utils/common": 41, "./lib/zlib/constants": 44 }], 39: [function(e, t2, r) {
         "use strict";
         var a = e("./zlib/deflate"), o = e("./utils/common"), h = e("./utils/strings"), i = e("./zlib/messages"), s = e("./zlib/zstream"), u = Object.prototype.toString, l = 0, f = -1, c = 0, d = 8;
         function p(e2) {
           if (!(this instanceof p)) return new p(e2);
           this.options = o.assign({ level: f, method: d, chunkSize: 16384, windowBits: 15, memLevel: 8, strategy: c, to: "" }, e2 || {});
-          var t2 = this.options;
-          t2.raw && 0 < t2.windowBits ? t2.windowBits = -t2.windowBits : t2.gzip && 0 < t2.windowBits && t2.windowBits < 16 && (t2.windowBits += 16), this.err = 0, this.msg = "", this.ended = false, this.chunks = [], this.strm = new s(), this.strm.avail_out = 0;
-          var r2 = a.deflateInit2(this.strm, t2.level, t2.method, t2.windowBits, t2.memLevel, t2.strategy);
+          var t3 = this.options;
+          t3.raw && 0 < t3.windowBits ? t3.windowBits = -t3.windowBits : t3.gzip && 0 < t3.windowBits && t3.windowBits < 16 && (t3.windowBits += 16), this.err = 0, this.msg = "", this.ended = false, this.chunks = [], this.strm = new s(), this.strm.avail_out = 0;
+          var r2 = a.deflateInit2(this.strm, t3.level, t3.method, t3.windowBits, t3.memLevel, t3.strategy);
           if (r2 !== l) throw new Error(i[r2]);
-          if (t2.header && a.deflateSetHeader(this.strm, t2.header), t2.dictionary) {
+          if (t3.header && a.deflateSetHeader(this.strm, t3.header), t3.dictionary) {
             var n2;
-            if (n2 = "string" == typeof t2.dictionary ? h.string2buf(t2.dictionary) : "[object ArrayBuffer]" === u.call(t2.dictionary) ? new Uint8Array(t2.dictionary) : t2.dictionary, (r2 = a.deflateSetDictionary(this.strm, n2)) !== l) throw new Error(i[r2]);
+            if (n2 = "string" == typeof t3.dictionary ? h.string2buf(t3.dictionary) : "[object ArrayBuffer]" === u.call(t3.dictionary) ? new Uint8Array(t3.dictionary) : t3.dictionary, (r2 = a.deflateSetDictionary(this.strm, n2)) !== l) throw new Error(i[r2]);
             this._dict_set = true;
           }
         }
-        function n(e2, t2) {
-          var r2 = new p(t2);
+        function n(e2, t3) {
+          var r2 = new p(t3);
           if (r2.push(e2, true), r2.err) throw r2.msg || i[r2.err];
           return r2.result;
         }
-        p.prototype.push = function(e2, t2) {
+        p.prototype.push = function(e2, t3) {
           var r2, n2, i2 = this.strm, s2 = this.options.chunkSize;
           if (this.ended) return false;
-          n2 = t2 === ~~t2 ? t2 : true === t2 ? 4 : 0, "string" == typeof e2 ? i2.input = h.string2buf(e2) : "[object ArrayBuffer]" === u.call(e2) ? i2.input = new Uint8Array(e2) : i2.input = e2, i2.next_in = 0, i2.avail_in = i2.input.length;
+          n2 = t3 === ~~t3 ? t3 : true === t3 ? 4 : 0, "string" == typeof e2 ? i2.input = h.string2buf(e2) : "[object ArrayBuffer]" === u.call(e2) ? i2.input = new Uint8Array(e2) : i2.input = e2, i2.next_in = 0, i2.avail_in = i2.input.length;
           do {
             if (0 === i2.avail_out && (i2.output = new o.Buf8(s2), i2.next_out = 0, i2.avail_out = s2), 1 !== (r2 = a.deflate(i2, n2)) && r2 !== l) return this.onEnd(r2), !(this.ended = true);
             0 !== i2.avail_out && (0 !== i2.avail_in || 4 !== n2 && 2 !== n2) || ("string" === this.options.to ? this.onData(h.buf2binstring(o.shrinkBuf(i2.output, i2.next_out))) : this.onData(o.shrinkBuf(i2.output, i2.next_out)));
@@ -1300,32 +1300,32 @@ var require_jszip_min = __commonJS({
           this.chunks.push(e2);
         }, p.prototype.onEnd = function(e2) {
           e2 === l && ("string" === this.options.to ? this.result = this.chunks.join("") : this.result = o.flattenChunks(this.chunks)), this.chunks = [], this.err = e2, this.msg = this.strm.msg;
-        }, r.Deflate = p, r.deflate = n, r.deflateRaw = function(e2, t2) {
-          return (t2 = t2 || {}).raw = true, n(e2, t2);
-        }, r.gzip = function(e2, t2) {
-          return (t2 = t2 || {}).gzip = true, n(e2, t2);
+        }, r.Deflate = p, r.deflate = n, r.deflateRaw = function(e2, t3) {
+          return (t3 = t3 || {}).raw = true, n(e2, t3);
+        }, r.gzip = function(e2, t3) {
+          return (t3 = t3 || {}).gzip = true, n(e2, t3);
         };
-      }, { "./utils/common": 41, "./utils/strings": 42, "./zlib/deflate": 46, "./zlib/messages": 51, "./zlib/zstream": 53 }], 40: [function(e, t, r) {
+      }, { "./utils/common": 41, "./utils/strings": 42, "./zlib/deflate": 46, "./zlib/messages": 51, "./zlib/zstream": 53 }], 40: [function(e, t2, r) {
         "use strict";
         var c = e("./zlib/inflate"), d = e("./utils/common"), p = e("./utils/strings"), m = e("./zlib/constants"), n = e("./zlib/messages"), i = e("./zlib/zstream"), s = e("./zlib/gzheader"), _ = Object.prototype.toString;
         function a(e2) {
           if (!(this instanceof a)) return new a(e2);
           this.options = d.assign({ chunkSize: 16384, windowBits: 0, to: "" }, e2 || {});
-          var t2 = this.options;
-          t2.raw && 0 <= t2.windowBits && t2.windowBits < 16 && (t2.windowBits = -t2.windowBits, 0 === t2.windowBits && (t2.windowBits = -15)), !(0 <= t2.windowBits && t2.windowBits < 16) || e2 && e2.windowBits || (t2.windowBits += 32), 15 < t2.windowBits && t2.windowBits < 48 && 0 == (15 & t2.windowBits) && (t2.windowBits |= 15), this.err = 0, this.msg = "", this.ended = false, this.chunks = [], this.strm = new i(), this.strm.avail_out = 0;
-          var r2 = c.inflateInit2(this.strm, t2.windowBits);
+          var t3 = this.options;
+          t3.raw && 0 <= t3.windowBits && t3.windowBits < 16 && (t3.windowBits = -t3.windowBits, 0 === t3.windowBits && (t3.windowBits = -15)), !(0 <= t3.windowBits && t3.windowBits < 16) || e2 && e2.windowBits || (t3.windowBits += 32), 15 < t3.windowBits && t3.windowBits < 48 && 0 == (15 & t3.windowBits) && (t3.windowBits |= 15), this.err = 0, this.msg = "", this.ended = false, this.chunks = [], this.strm = new i(), this.strm.avail_out = 0;
+          var r2 = c.inflateInit2(this.strm, t3.windowBits);
           if (r2 !== m.Z_OK) throw new Error(n[r2]);
           this.header = new s(), c.inflateGetHeader(this.strm, this.header);
         }
-        function o(e2, t2) {
-          var r2 = new a(t2);
+        function o(e2, t3) {
+          var r2 = new a(t3);
           if (r2.push(e2, true), r2.err) throw r2.msg || n[r2.err];
           return r2.result;
         }
-        a.prototype.push = function(e2, t2) {
+        a.prototype.push = function(e2, t3) {
           var r2, n2, i2, s2, a2, o2, h = this.strm, u = this.options.chunkSize, l = this.options.dictionary, f = false;
           if (this.ended) return false;
-          n2 = t2 === ~~t2 ? t2 : true === t2 ? m.Z_FINISH : m.Z_NO_FLUSH, "string" == typeof e2 ? h.input = p.binstring2buf(e2) : "[object ArrayBuffer]" === _.call(e2) ? h.input = new Uint8Array(e2) : h.input = e2, h.next_in = 0, h.avail_in = h.input.length;
+          n2 = t3 === ~~t3 ? t3 : true === t3 ? m.Z_FINISH : m.Z_NO_FLUSH, "string" == typeof e2 ? h.input = p.binstring2buf(e2) : "[object ArrayBuffer]" === _.call(e2) ? h.input = new Uint8Array(e2) : h.input = e2, h.next_in = 0, h.avail_in = h.input.length;
           do {
             if (0 === h.avail_out && (h.output = new d.Buf8(u), h.next_out = 0, h.avail_out = u), (r2 = c.inflate(h, m.Z_NO_FLUSH)) === m.Z_NEED_DICT && l && (o2 = "string" == typeof l ? p.string2buf(l) : "[object ArrayBuffer]" === _.call(l) ? new Uint8Array(l) : l, r2 = c.inflateSetDictionary(this.strm, o2)), r2 === m.Z_BUF_ERROR && true === f && (r2 = m.Z_OK, f = false), r2 !== m.Z_STREAM_END && r2 !== m.Z_OK) return this.onEnd(r2), !(this.ended = true);
             h.next_out && (0 !== h.avail_out && r2 !== m.Z_STREAM_END && (0 !== h.avail_in || n2 !== m.Z_FINISH && n2 !== m.Z_SYNC_FLUSH) || ("string" === this.options.to ? (i2 = p.utf8border(h.output, h.next_out), s2 = h.next_out - i2, a2 = p.buf2string(h.output, i2), h.next_out = s2, h.avail_out = u - s2, s2 && d.arraySet(h.output, h.output, i2, s2, 0), this.onData(a2)) : this.onData(d.shrinkBuf(h.output, h.next_out)))), 0 === h.avail_in && 0 === h.avail_out && (f = true);
@@ -1335,41 +1335,41 @@ var require_jszip_min = __commonJS({
           this.chunks.push(e2);
         }, a.prototype.onEnd = function(e2) {
           e2 === m.Z_OK && ("string" === this.options.to ? this.result = this.chunks.join("") : this.result = d.flattenChunks(this.chunks)), this.chunks = [], this.err = e2, this.msg = this.strm.msg;
-        }, r.Inflate = a, r.inflate = o, r.inflateRaw = function(e2, t2) {
-          return (t2 = t2 || {}).raw = true, o(e2, t2);
+        }, r.Inflate = a, r.inflate = o, r.inflateRaw = function(e2, t3) {
+          return (t3 = t3 || {}).raw = true, o(e2, t3);
         }, r.ungzip = o;
-      }, { "./utils/common": 41, "./utils/strings": 42, "./zlib/constants": 44, "./zlib/gzheader": 47, "./zlib/inflate": 49, "./zlib/messages": 51, "./zlib/zstream": 53 }], 41: [function(e, t, r) {
+      }, { "./utils/common": 41, "./utils/strings": 42, "./zlib/constants": 44, "./zlib/gzheader": 47, "./zlib/inflate": 49, "./zlib/messages": 51, "./zlib/zstream": 53 }], 41: [function(e, t2, r) {
         "use strict";
         var n = "undefined" != typeof Uint8Array && "undefined" != typeof Uint16Array && "undefined" != typeof Int32Array;
         r.assign = function(e2) {
-          for (var t2 = Array.prototype.slice.call(arguments, 1); t2.length; ) {
-            var r2 = t2.shift();
+          for (var t3 = Array.prototype.slice.call(arguments, 1); t3.length; ) {
+            var r2 = t3.shift();
             if (r2) {
               if ("object" != typeof r2) throw new TypeError(r2 + "must be non-object");
               for (var n2 in r2) r2.hasOwnProperty(n2) && (e2[n2] = r2[n2]);
             }
           }
           return e2;
-        }, r.shrinkBuf = function(e2, t2) {
-          return e2.length === t2 ? e2 : e2.subarray ? e2.subarray(0, t2) : (e2.length = t2, e2);
+        }, r.shrinkBuf = function(e2, t3) {
+          return e2.length === t3 ? e2 : e2.subarray ? e2.subarray(0, t3) : (e2.length = t3, e2);
         };
-        var i = { arraySet: function(e2, t2, r2, n2, i2) {
-          if (t2.subarray && e2.subarray) e2.set(t2.subarray(r2, r2 + n2), i2);
-          else for (var s2 = 0; s2 < n2; s2++) e2[i2 + s2] = t2[r2 + s2];
+        var i = { arraySet: function(e2, t3, r2, n2, i2) {
+          if (t3.subarray && e2.subarray) e2.set(t3.subarray(r2, r2 + n2), i2);
+          else for (var s2 = 0; s2 < n2; s2++) e2[i2 + s2] = t3[r2 + s2];
         }, flattenChunks: function(e2) {
-          var t2, r2, n2, i2, s2, a;
-          for (t2 = n2 = 0, r2 = e2.length; t2 < r2; t2++) n2 += e2[t2].length;
-          for (a = new Uint8Array(n2), t2 = i2 = 0, r2 = e2.length; t2 < r2; t2++) s2 = e2[t2], a.set(s2, i2), i2 += s2.length;
+          var t3, r2, n2, i2, s2, a;
+          for (t3 = n2 = 0, r2 = e2.length; t3 < r2; t3++) n2 += e2[t3].length;
+          for (a = new Uint8Array(n2), t3 = i2 = 0, r2 = e2.length; t3 < r2; t3++) s2 = e2[t3], a.set(s2, i2), i2 += s2.length;
           return a;
-        } }, s = { arraySet: function(e2, t2, r2, n2, i2) {
-          for (var s2 = 0; s2 < n2; s2++) e2[i2 + s2] = t2[r2 + s2];
+        } }, s = { arraySet: function(e2, t3, r2, n2, i2) {
+          for (var s2 = 0; s2 < n2; s2++) e2[i2 + s2] = t3[r2 + s2];
         }, flattenChunks: function(e2) {
           return [].concat.apply([], e2);
         } };
         r.setTyped = function(e2) {
           e2 ? (r.Buf8 = Uint8Array, r.Buf16 = Uint16Array, r.Buf32 = Int32Array, r.assign(r, i)) : (r.Buf8 = Array, r.Buf16 = Array, r.Buf32 = Array, r.assign(r, s));
         }, r.setTyped(n);
-      }, {}], 42: [function(e, t, r) {
+      }, {}], 42: [function(e, t2, r) {
         "use strict";
         var h = e("./common"), i = true, s = true;
         try {
@@ -1383,23 +1383,23 @@ var require_jszip_min = __commonJS({
           s = false;
         }
         for (var u = new h.Buf8(256), n = 0; n < 256; n++) u[n] = 252 <= n ? 6 : 248 <= n ? 5 : 240 <= n ? 4 : 224 <= n ? 3 : 192 <= n ? 2 : 1;
-        function l(e2, t2) {
-          if (t2 < 65537 && (e2.subarray && s || !e2.subarray && i)) return String.fromCharCode.apply(null, h.shrinkBuf(e2, t2));
-          for (var r2 = "", n2 = 0; n2 < t2; n2++) r2 += String.fromCharCode(e2[n2]);
+        function l(e2, t3) {
+          if (t3 < 65537 && (e2.subarray && s || !e2.subarray && i)) return String.fromCharCode.apply(null, h.shrinkBuf(e2, t3));
+          for (var r2 = "", n2 = 0; n2 < t3; n2++) r2 += String.fromCharCode(e2[n2]);
           return r2;
         }
         u[254] = u[254] = 1, r.string2buf = function(e2) {
-          var t2, r2, n2, i2, s2, a = e2.length, o = 0;
+          var t3, r2, n2, i2, s2, a = e2.length, o = 0;
           for (i2 = 0; i2 < a; i2++) 55296 == (64512 & (r2 = e2.charCodeAt(i2))) && i2 + 1 < a && 56320 == (64512 & (n2 = e2.charCodeAt(i2 + 1))) && (r2 = 65536 + (r2 - 55296 << 10) + (n2 - 56320), i2++), o += r2 < 128 ? 1 : r2 < 2048 ? 2 : r2 < 65536 ? 3 : 4;
-          for (t2 = new h.Buf8(o), i2 = s2 = 0; s2 < o; i2++) 55296 == (64512 & (r2 = e2.charCodeAt(i2))) && i2 + 1 < a && 56320 == (64512 & (n2 = e2.charCodeAt(i2 + 1))) && (r2 = 65536 + (r2 - 55296 << 10) + (n2 - 56320), i2++), r2 < 128 ? t2[s2++] = r2 : (r2 < 2048 ? t2[s2++] = 192 | r2 >>> 6 : (r2 < 65536 ? t2[s2++] = 224 | r2 >>> 12 : (t2[s2++] = 240 | r2 >>> 18, t2[s2++] = 128 | r2 >>> 12 & 63), t2[s2++] = 128 | r2 >>> 6 & 63), t2[s2++] = 128 | 63 & r2);
-          return t2;
+          for (t3 = new h.Buf8(o), i2 = s2 = 0; s2 < o; i2++) 55296 == (64512 & (r2 = e2.charCodeAt(i2))) && i2 + 1 < a && 56320 == (64512 & (n2 = e2.charCodeAt(i2 + 1))) && (r2 = 65536 + (r2 - 55296 << 10) + (n2 - 56320), i2++), r2 < 128 ? t3[s2++] = r2 : (r2 < 2048 ? t3[s2++] = 192 | r2 >>> 6 : (r2 < 65536 ? t3[s2++] = 224 | r2 >>> 12 : (t3[s2++] = 240 | r2 >>> 18, t3[s2++] = 128 | r2 >>> 12 & 63), t3[s2++] = 128 | r2 >>> 6 & 63), t3[s2++] = 128 | 63 & r2);
+          return t3;
         }, r.buf2binstring = function(e2) {
           return l(e2, e2.length);
         }, r.binstring2buf = function(e2) {
-          for (var t2 = new h.Buf8(e2.length), r2 = 0, n2 = t2.length; r2 < n2; r2++) t2[r2] = e2.charCodeAt(r2);
-          return t2;
-        }, r.buf2string = function(e2, t2) {
-          var r2, n2, i2, s2, a = t2 || e2.length, o = new Array(2 * a);
+          for (var t3 = new h.Buf8(e2.length), r2 = 0, n2 = t3.length; r2 < n2; r2++) t3[r2] = e2.charCodeAt(r2);
+          return t3;
+        }, r.buf2string = function(e2, t3) {
+          var r2, n2, i2, s2, a = t3 || e2.length, o = new Array(2 * a);
           for (r2 = n2 = 0; r2 < a; ) if ((i2 = e2[r2++]) < 128) o[n2++] = i2;
           else if (4 < (s2 = u[i2])) o[n2++] = 65533, r2 += s2 - 1;
           else {
@@ -1407,96 +1407,96 @@ var require_jszip_min = __commonJS({
             1 < s2 ? o[n2++] = 65533 : i2 < 65536 ? o[n2++] = i2 : (i2 -= 65536, o[n2++] = 55296 | i2 >> 10 & 1023, o[n2++] = 56320 | 1023 & i2);
           }
           return l(o, n2);
-        }, r.utf8border = function(e2, t2) {
+        }, r.utf8border = function(e2, t3) {
           var r2;
-          for ((t2 = t2 || e2.length) > e2.length && (t2 = e2.length), r2 = t2 - 1; 0 <= r2 && 128 == (192 & e2[r2]); ) r2--;
-          return r2 < 0 ? t2 : 0 === r2 ? t2 : r2 + u[e2[r2]] > t2 ? r2 : t2;
+          for ((t3 = t3 || e2.length) > e2.length && (t3 = e2.length), r2 = t3 - 1; 0 <= r2 && 128 == (192 & e2[r2]); ) r2--;
+          return r2 < 0 ? t3 : 0 === r2 ? t3 : r2 + u[e2[r2]] > t3 ? r2 : t3;
         };
-      }, { "./common": 41 }], 43: [function(e, t, r) {
+      }, { "./common": 41 }], 43: [function(e, t2, r) {
         "use strict";
-        t.exports = function(e2, t2, r2, n) {
+        t2.exports = function(e2, t3, r2, n) {
           for (var i = 65535 & e2 | 0, s = e2 >>> 16 & 65535 | 0, a = 0; 0 !== r2; ) {
-            for (r2 -= a = 2e3 < r2 ? 2e3 : r2; s = s + (i = i + t2[n++] | 0) | 0, --a; ) ;
+            for (r2 -= a = 2e3 < r2 ? 2e3 : r2; s = s + (i = i + t3[n++] | 0) | 0, --a; ) ;
             i %= 65521, s %= 65521;
           }
           return i | s << 16 | 0;
         };
-      }, {}], 44: [function(e, t, r) {
+      }, {}], 44: [function(e, t2, r) {
         "use strict";
-        t.exports = { Z_NO_FLUSH: 0, Z_PARTIAL_FLUSH: 1, Z_SYNC_FLUSH: 2, Z_FULL_FLUSH: 3, Z_FINISH: 4, Z_BLOCK: 5, Z_TREES: 6, Z_OK: 0, Z_STREAM_END: 1, Z_NEED_DICT: 2, Z_ERRNO: -1, Z_STREAM_ERROR: -2, Z_DATA_ERROR: -3, Z_BUF_ERROR: -5, Z_NO_COMPRESSION: 0, Z_BEST_SPEED: 1, Z_BEST_COMPRESSION: 9, Z_DEFAULT_COMPRESSION: -1, Z_FILTERED: 1, Z_HUFFMAN_ONLY: 2, Z_RLE: 3, Z_FIXED: 4, Z_DEFAULT_STRATEGY: 0, Z_BINARY: 0, Z_TEXT: 1, Z_UNKNOWN: 2, Z_DEFLATED: 8 };
-      }, {}], 45: [function(e, t, r) {
+        t2.exports = { Z_NO_FLUSH: 0, Z_PARTIAL_FLUSH: 1, Z_SYNC_FLUSH: 2, Z_FULL_FLUSH: 3, Z_FINISH: 4, Z_BLOCK: 5, Z_TREES: 6, Z_OK: 0, Z_STREAM_END: 1, Z_NEED_DICT: 2, Z_ERRNO: -1, Z_STREAM_ERROR: -2, Z_DATA_ERROR: -3, Z_BUF_ERROR: -5, Z_NO_COMPRESSION: 0, Z_BEST_SPEED: 1, Z_BEST_COMPRESSION: 9, Z_DEFAULT_COMPRESSION: -1, Z_FILTERED: 1, Z_HUFFMAN_ONLY: 2, Z_RLE: 3, Z_FIXED: 4, Z_DEFAULT_STRATEGY: 0, Z_BINARY: 0, Z_TEXT: 1, Z_UNKNOWN: 2, Z_DEFLATED: 8 };
+      }, {}], 45: [function(e, t2, r) {
         "use strict";
         var o = (function() {
-          for (var e2, t2 = [], r2 = 0; r2 < 256; r2++) {
+          for (var e2, t3 = [], r2 = 0; r2 < 256; r2++) {
             e2 = r2;
             for (var n = 0; n < 8; n++) e2 = 1 & e2 ? 3988292384 ^ e2 >>> 1 : e2 >>> 1;
-            t2[r2] = e2;
+            t3[r2] = e2;
           }
-          return t2;
+          return t3;
         })();
-        t.exports = function(e2, t2, r2, n) {
+        t2.exports = function(e2, t3, r2, n) {
           var i = o, s = n + r2;
           e2 ^= -1;
-          for (var a = n; a < s; a++) e2 = e2 >>> 8 ^ i[255 & (e2 ^ t2[a])];
+          for (var a = n; a < s; a++) e2 = e2 >>> 8 ^ i[255 & (e2 ^ t3[a])];
           return -1 ^ e2;
         };
-      }, {}], 46: [function(e, t, r) {
+      }, {}], 46: [function(e, t2, r) {
         "use strict";
         var h, c = e("../utils/common"), u = e("./trees"), d = e("./adler32"), p = e("./crc32"), n = e("./messages"), l = 0, f = 4, m = 0, _ = -2, g = -1, b = 4, i = 2, v = 8, y = 9, s = 286, a = 30, o = 19, w = 2 * s + 1, k = 15, x = 3, S = 258, z = S + x + 1, C = 42, E = 113, A = 1, I = 2, O = 3, B = 4;
-        function R(e2, t2) {
-          return e2.msg = n[t2], t2;
+        function R(e2, t3) {
+          return e2.msg = n[t3], t3;
         }
         function T(e2) {
           return (e2 << 1) - (4 < e2 ? 9 : 0);
         }
         function D(e2) {
-          for (var t2 = e2.length; 0 <= --t2; ) e2[t2] = 0;
+          for (var t3 = e2.length; 0 <= --t3; ) e2[t3] = 0;
         }
         function F(e2) {
-          var t2 = e2.state, r2 = t2.pending;
-          r2 > e2.avail_out && (r2 = e2.avail_out), 0 !== r2 && (c.arraySet(e2.output, t2.pending_buf, t2.pending_out, r2, e2.next_out), e2.next_out += r2, t2.pending_out += r2, e2.total_out += r2, e2.avail_out -= r2, t2.pending -= r2, 0 === t2.pending && (t2.pending_out = 0));
+          var t3 = e2.state, r2 = t3.pending;
+          r2 > e2.avail_out && (r2 = e2.avail_out), 0 !== r2 && (c.arraySet(e2.output, t3.pending_buf, t3.pending_out, r2, e2.next_out), e2.next_out += r2, t3.pending_out += r2, e2.total_out += r2, e2.avail_out -= r2, t3.pending -= r2, 0 === t3.pending && (t3.pending_out = 0));
         }
-        function N(e2, t2) {
-          u._tr_flush_block(e2, 0 <= e2.block_start ? e2.block_start : -1, e2.strstart - e2.block_start, t2), e2.block_start = e2.strstart, F(e2.strm);
+        function N(e2, t3) {
+          u._tr_flush_block(e2, 0 <= e2.block_start ? e2.block_start : -1, e2.strstart - e2.block_start, t3), e2.block_start = e2.strstart, F(e2.strm);
         }
-        function U(e2, t2) {
-          e2.pending_buf[e2.pending++] = t2;
+        function U(e2, t3) {
+          e2.pending_buf[e2.pending++] = t3;
         }
-        function P(e2, t2) {
-          e2.pending_buf[e2.pending++] = t2 >>> 8 & 255, e2.pending_buf[e2.pending++] = 255 & t2;
+        function P(e2, t3) {
+          e2.pending_buf[e2.pending++] = t3 >>> 8 & 255, e2.pending_buf[e2.pending++] = 255 & t3;
         }
-        function L(e2, t2) {
+        function L(e2, t3) {
           var r2, n2, i2 = e2.max_chain_length, s2 = e2.strstart, a2 = e2.prev_length, o2 = e2.nice_match, h2 = e2.strstart > e2.w_size - z ? e2.strstart - (e2.w_size - z) : 0, u2 = e2.window, l2 = e2.w_mask, f2 = e2.prev, c2 = e2.strstart + S, d2 = u2[s2 + a2 - 1], p2 = u2[s2 + a2];
           e2.prev_length >= e2.good_match && (i2 >>= 2), o2 > e2.lookahead && (o2 = e2.lookahead);
           do {
-            if (u2[(r2 = t2) + a2] === p2 && u2[r2 + a2 - 1] === d2 && u2[r2] === u2[s2] && u2[++r2] === u2[s2 + 1]) {
+            if (u2[(r2 = t3) + a2] === p2 && u2[r2 + a2 - 1] === d2 && u2[r2] === u2[s2] && u2[++r2] === u2[s2 + 1]) {
               s2 += 2, r2++;
               do {
               } while (u2[++s2] === u2[++r2] && u2[++s2] === u2[++r2] && u2[++s2] === u2[++r2] && u2[++s2] === u2[++r2] && u2[++s2] === u2[++r2] && u2[++s2] === u2[++r2] && u2[++s2] === u2[++r2] && u2[++s2] === u2[++r2] && s2 < c2);
               if (n2 = S - (c2 - s2), s2 = c2 - S, a2 < n2) {
-                if (e2.match_start = t2, o2 <= (a2 = n2)) break;
+                if (e2.match_start = t3, o2 <= (a2 = n2)) break;
                 d2 = u2[s2 + a2 - 1], p2 = u2[s2 + a2];
               }
             }
-          } while ((t2 = f2[t2 & l2]) > h2 && 0 != --i2);
+          } while ((t3 = f2[t3 & l2]) > h2 && 0 != --i2);
           return a2 <= e2.lookahead ? a2 : e2.lookahead;
         }
         function j(e2) {
-          var t2, r2, n2, i2, s2, a2, o2, h2, u2, l2, f2 = e2.w_size;
+          var t3, r2, n2, i2, s2, a2, o2, h2, u2, l2, f2 = e2.w_size;
           do {
             if (i2 = e2.window_size - e2.lookahead - e2.strstart, e2.strstart >= f2 + (f2 - z)) {
-              for (c.arraySet(e2.window, e2.window, f2, f2, 0), e2.match_start -= f2, e2.strstart -= f2, e2.block_start -= f2, t2 = r2 = e2.hash_size; n2 = e2.head[--t2], e2.head[t2] = f2 <= n2 ? n2 - f2 : 0, --r2; ) ;
-              for (t2 = r2 = f2; n2 = e2.prev[--t2], e2.prev[t2] = f2 <= n2 ? n2 - f2 : 0, --r2; ) ;
+              for (c.arraySet(e2.window, e2.window, f2, f2, 0), e2.match_start -= f2, e2.strstart -= f2, e2.block_start -= f2, t3 = r2 = e2.hash_size; n2 = e2.head[--t3], e2.head[t3] = f2 <= n2 ? n2 - f2 : 0, --r2; ) ;
+              for (t3 = r2 = f2; n2 = e2.prev[--t3], e2.prev[t3] = f2 <= n2 ? n2 - f2 : 0, --r2; ) ;
               i2 += f2;
             }
             if (0 === e2.strm.avail_in) break;
             if (a2 = e2.strm, o2 = e2.window, h2 = e2.strstart + e2.lookahead, u2 = i2, l2 = void 0, l2 = a2.avail_in, u2 < l2 && (l2 = u2), r2 = 0 === l2 ? 0 : (a2.avail_in -= l2, c.arraySet(o2, a2.input, a2.next_in, l2, h2), 1 === a2.state.wrap ? a2.adler = d(a2.adler, o2, l2, h2) : 2 === a2.state.wrap && (a2.adler = p(a2.adler, o2, l2, h2)), a2.next_in += l2, a2.total_in += l2, l2), e2.lookahead += r2, e2.lookahead + e2.insert >= x) for (s2 = e2.strstart - e2.insert, e2.ins_h = e2.window[s2], e2.ins_h = (e2.ins_h << e2.hash_shift ^ e2.window[s2 + 1]) & e2.hash_mask; e2.insert && (e2.ins_h = (e2.ins_h << e2.hash_shift ^ e2.window[s2 + x - 1]) & e2.hash_mask, e2.prev[s2 & e2.w_mask] = e2.head[e2.ins_h], e2.head[e2.ins_h] = s2, s2++, e2.insert--, !(e2.lookahead + e2.insert < x)); ) ;
           } while (e2.lookahead < z && 0 !== e2.strm.avail_in);
         }
-        function Z(e2, t2) {
+        function Z(e2, t3) {
           for (var r2, n2; ; ) {
             if (e2.lookahead < z) {
-              if (j(e2), e2.lookahead < z && t2 === l) return A;
+              if (j(e2), e2.lookahead < z && t3 === l) return A;
               if (0 === e2.lookahead) break;
             }
             if (r2 = 0, e2.lookahead >= x && (e2.ins_h = (e2.ins_h << e2.hash_shift ^ e2.window[e2.strstart + x - 1]) & e2.hash_mask, r2 = e2.prev[e2.strstart & e2.w_mask] = e2.head[e2.ins_h], e2.head[e2.ins_h] = e2.strstart), 0 !== r2 && e2.strstart - r2 <= e2.w_size - z && (e2.match_length = L(e2, r2)), e2.match_length >= x) if (n2 = u._tr_tally(e2, e2.strstart - e2.match_start, e2.match_length - x), e2.lookahead -= e2.match_length, e2.match_length <= e2.max_lazy_match && e2.lookahead >= x) {
@@ -1506,12 +1506,12 @@ var require_jszip_min = __commonJS({
             else n2 = u._tr_tally(e2, 0, e2.window[e2.strstart]), e2.lookahead--, e2.strstart++;
             if (n2 && (N(e2, false), 0 === e2.strm.avail_out)) return A;
           }
-          return e2.insert = e2.strstart < x - 1 ? e2.strstart : x - 1, t2 === f ? (N(e2, true), 0 === e2.strm.avail_out ? O : B) : e2.last_lit && (N(e2, false), 0 === e2.strm.avail_out) ? A : I;
+          return e2.insert = e2.strstart < x - 1 ? e2.strstart : x - 1, t3 === f ? (N(e2, true), 0 === e2.strm.avail_out ? O : B) : e2.last_lit && (N(e2, false), 0 === e2.strm.avail_out) ? A : I;
         }
-        function W(e2, t2) {
+        function W(e2, t3) {
           for (var r2, n2, i2; ; ) {
             if (e2.lookahead < z) {
-              if (j(e2), e2.lookahead < z && t2 === l) return A;
+              if (j(e2), e2.lookahead < z && t3 === l) return A;
               if (0 === e2.lookahead) break;
             }
             if (r2 = 0, e2.lookahead >= x && (e2.ins_h = (e2.ins_h << e2.hash_shift ^ e2.window[e2.strstart + x - 1]) & e2.hash_mask, r2 = e2.prev[e2.strstart & e2.w_mask] = e2.head[e2.ins_h], e2.head[e2.ins_h] = e2.strstart), e2.prev_length = e2.match_length, e2.prev_match = e2.match_start, e2.match_length = x - 1, 0 !== r2 && e2.prev_length < e2.max_lazy_match && e2.strstart - r2 <= e2.w_size - z && (e2.match_length = L(e2, r2), e2.match_length <= 5 && (1 === e2.strategy || e2.match_length === x && 4096 < e2.strstart - e2.match_start) && (e2.match_length = x - 1)), e2.prev_length >= x && e2.match_length <= e2.prev_length) {
@@ -1521,37 +1521,37 @@ var require_jszip_min = __commonJS({
               if ((n2 = u._tr_tally(e2, 0, e2.window[e2.strstart - 1])) && N(e2, false), e2.strstart++, e2.lookahead--, 0 === e2.strm.avail_out) return A;
             } else e2.match_available = 1, e2.strstart++, e2.lookahead--;
           }
-          return e2.match_available && (n2 = u._tr_tally(e2, 0, e2.window[e2.strstart - 1]), e2.match_available = 0), e2.insert = e2.strstart < x - 1 ? e2.strstart : x - 1, t2 === f ? (N(e2, true), 0 === e2.strm.avail_out ? O : B) : e2.last_lit && (N(e2, false), 0 === e2.strm.avail_out) ? A : I;
+          return e2.match_available && (n2 = u._tr_tally(e2, 0, e2.window[e2.strstart - 1]), e2.match_available = 0), e2.insert = e2.strstart < x - 1 ? e2.strstart : x - 1, t3 === f ? (N(e2, true), 0 === e2.strm.avail_out ? O : B) : e2.last_lit && (N(e2, false), 0 === e2.strm.avail_out) ? A : I;
         }
-        function M(e2, t2, r2, n2, i2) {
-          this.good_length = e2, this.max_lazy = t2, this.nice_length = r2, this.max_chain = n2, this.func = i2;
+        function M(e2, t3, r2, n2, i2) {
+          this.good_length = e2, this.max_lazy = t3, this.nice_length = r2, this.max_chain = n2, this.func = i2;
         }
         function H() {
           this.strm = null, this.status = 0, this.pending_buf = null, this.pending_buf_size = 0, this.pending_out = 0, this.pending = 0, this.wrap = 0, this.gzhead = null, this.gzindex = 0, this.method = v, this.last_flush = -1, this.w_size = 0, this.w_bits = 0, this.w_mask = 0, this.window = null, this.window_size = 0, this.prev = null, this.head = null, this.ins_h = 0, this.hash_size = 0, this.hash_bits = 0, this.hash_mask = 0, this.hash_shift = 0, this.block_start = 0, this.match_length = 0, this.prev_match = 0, this.match_available = 0, this.strstart = 0, this.match_start = 0, this.lookahead = 0, this.prev_length = 0, this.max_chain_length = 0, this.max_lazy_match = 0, this.level = 0, this.strategy = 0, this.good_match = 0, this.nice_match = 0, this.dyn_ltree = new c.Buf16(2 * w), this.dyn_dtree = new c.Buf16(2 * (2 * a + 1)), this.bl_tree = new c.Buf16(2 * (2 * o + 1)), D(this.dyn_ltree), D(this.dyn_dtree), D(this.bl_tree), this.l_desc = null, this.d_desc = null, this.bl_desc = null, this.bl_count = new c.Buf16(k + 1), this.heap = new c.Buf16(2 * s + 1), D(this.heap), this.heap_len = 0, this.heap_max = 0, this.depth = new c.Buf16(2 * s + 1), D(this.depth), this.l_buf = 0, this.lit_bufsize = 0, this.last_lit = 0, this.d_buf = 0, this.opt_len = 0, this.static_len = 0, this.matches = 0, this.insert = 0, this.bi_buf = 0, this.bi_valid = 0;
         }
         function G(e2) {
-          var t2;
-          return e2 && e2.state ? (e2.total_in = e2.total_out = 0, e2.data_type = i, (t2 = e2.state).pending = 0, t2.pending_out = 0, t2.wrap < 0 && (t2.wrap = -t2.wrap), t2.status = t2.wrap ? C : E, e2.adler = 2 === t2.wrap ? 0 : 1, t2.last_flush = l, u._tr_init(t2), m) : R(e2, _);
+          var t3;
+          return e2 && e2.state ? (e2.total_in = e2.total_out = 0, e2.data_type = i, (t3 = e2.state).pending = 0, t3.pending_out = 0, t3.wrap < 0 && (t3.wrap = -t3.wrap), t3.status = t3.wrap ? C : E, e2.adler = 2 === t3.wrap ? 0 : 1, t3.last_flush = l, u._tr_init(t3), m) : R(e2, _);
         }
         function K(e2) {
-          var t2 = G(e2);
-          return t2 === m && (function(e3) {
+          var t3 = G(e2);
+          return t3 === m && (function(e3) {
             e3.window_size = 2 * e3.w_size, D(e3.head), e3.max_lazy_match = h[e3.level].max_lazy, e3.good_match = h[e3.level].good_length, e3.nice_match = h[e3.level].nice_length, e3.max_chain_length = h[e3.level].max_chain, e3.strstart = 0, e3.block_start = 0, e3.lookahead = 0, e3.insert = 0, e3.match_length = e3.prev_length = x - 1, e3.match_available = 0, e3.ins_h = 0;
-          })(e2.state), t2;
+          })(e2.state), t3;
         }
-        function Y(e2, t2, r2, n2, i2, s2) {
+        function Y(e2, t3, r2, n2, i2, s2) {
           if (!e2) return _;
           var a2 = 1;
-          if (t2 === g && (t2 = 6), n2 < 0 ? (a2 = 0, n2 = -n2) : 15 < n2 && (a2 = 2, n2 -= 16), i2 < 1 || y < i2 || r2 !== v || n2 < 8 || 15 < n2 || t2 < 0 || 9 < t2 || s2 < 0 || b < s2) return R(e2, _);
+          if (t3 === g && (t3 = 6), n2 < 0 ? (a2 = 0, n2 = -n2) : 15 < n2 && (a2 = 2, n2 -= 16), i2 < 1 || y < i2 || r2 !== v || n2 < 8 || 15 < n2 || t3 < 0 || 9 < t3 || s2 < 0 || b < s2) return R(e2, _);
           8 === n2 && (n2 = 9);
           var o2 = new H();
-          return (e2.state = o2).strm = e2, o2.wrap = a2, o2.gzhead = null, o2.w_bits = n2, o2.w_size = 1 << o2.w_bits, o2.w_mask = o2.w_size - 1, o2.hash_bits = i2 + 7, o2.hash_size = 1 << o2.hash_bits, o2.hash_mask = o2.hash_size - 1, o2.hash_shift = ~~((o2.hash_bits + x - 1) / x), o2.window = new c.Buf8(2 * o2.w_size), o2.head = new c.Buf16(o2.hash_size), o2.prev = new c.Buf16(o2.w_size), o2.lit_bufsize = 1 << i2 + 6, o2.pending_buf_size = 4 * o2.lit_bufsize, o2.pending_buf = new c.Buf8(o2.pending_buf_size), o2.d_buf = 1 * o2.lit_bufsize, o2.l_buf = 3 * o2.lit_bufsize, o2.level = t2, o2.strategy = s2, o2.method = r2, K(e2);
+          return (e2.state = o2).strm = e2, o2.wrap = a2, o2.gzhead = null, o2.w_bits = n2, o2.w_size = 1 << o2.w_bits, o2.w_mask = o2.w_size - 1, o2.hash_bits = i2 + 7, o2.hash_size = 1 << o2.hash_bits, o2.hash_mask = o2.hash_size - 1, o2.hash_shift = ~~((o2.hash_bits + x - 1) / x), o2.window = new c.Buf8(2 * o2.w_size), o2.head = new c.Buf16(o2.hash_size), o2.prev = new c.Buf16(o2.w_size), o2.lit_bufsize = 1 << i2 + 6, o2.pending_buf_size = 4 * o2.lit_bufsize, o2.pending_buf = new c.Buf8(o2.pending_buf_size), o2.d_buf = 1 * o2.lit_bufsize, o2.l_buf = 3 * o2.lit_bufsize, o2.level = t3, o2.strategy = s2, o2.method = r2, K(e2);
         }
-        h = [new M(0, 0, 0, 0, function(e2, t2) {
+        h = [new M(0, 0, 0, 0, function(e2, t3) {
           var r2 = 65535;
           for (r2 > e2.pending_buf_size - 5 && (r2 = e2.pending_buf_size - 5); ; ) {
             if (e2.lookahead <= 1) {
-              if (j(e2), 0 === e2.lookahead && t2 === l) return A;
+              if (j(e2), 0 === e2.lookahead && t3 === l) return A;
               if (0 === e2.lookahead) break;
             }
             e2.strstart += e2.lookahead, e2.lookahead = 0;
@@ -1559,16 +1559,16 @@ var require_jszip_min = __commonJS({
             if ((0 === e2.strstart || e2.strstart >= n2) && (e2.lookahead = e2.strstart - n2, e2.strstart = n2, N(e2, false), 0 === e2.strm.avail_out)) return A;
             if (e2.strstart - e2.block_start >= e2.w_size - z && (N(e2, false), 0 === e2.strm.avail_out)) return A;
           }
-          return e2.insert = 0, t2 === f ? (N(e2, true), 0 === e2.strm.avail_out ? O : B) : (e2.strstart > e2.block_start && (N(e2, false), e2.strm.avail_out), A);
-        }), new M(4, 4, 8, 4, Z), new M(4, 5, 16, 8, Z), new M(4, 6, 32, 32, Z), new M(4, 4, 16, 16, W), new M(8, 16, 32, 32, W), new M(8, 16, 128, 128, W), new M(8, 32, 128, 256, W), new M(32, 128, 258, 1024, W), new M(32, 258, 258, 4096, W)], r.deflateInit = function(e2, t2) {
-          return Y(e2, t2, v, 15, 8, 0);
-        }, r.deflateInit2 = Y, r.deflateReset = K, r.deflateResetKeep = G, r.deflateSetHeader = function(e2, t2) {
-          return e2 && e2.state ? 2 !== e2.state.wrap ? _ : (e2.state.gzhead = t2, m) : _;
-        }, r.deflate = function(e2, t2) {
+          return e2.insert = 0, t3 === f ? (N(e2, true), 0 === e2.strm.avail_out ? O : B) : (e2.strstart > e2.block_start && (N(e2, false), e2.strm.avail_out), A);
+        }), new M(4, 4, 8, 4, Z), new M(4, 5, 16, 8, Z), new M(4, 6, 32, 32, Z), new M(4, 4, 16, 16, W), new M(8, 16, 32, 32, W), new M(8, 16, 128, 128, W), new M(8, 32, 128, 256, W), new M(32, 128, 258, 1024, W), new M(32, 258, 258, 4096, W)], r.deflateInit = function(e2, t3) {
+          return Y(e2, t3, v, 15, 8, 0);
+        }, r.deflateInit2 = Y, r.deflateReset = K, r.deflateResetKeep = G, r.deflateSetHeader = function(e2, t3) {
+          return e2 && e2.state ? 2 !== e2.state.wrap ? _ : (e2.state.gzhead = t3, m) : _;
+        }, r.deflate = function(e2, t3) {
           var r2, n2, i2, s2;
-          if (!e2 || !e2.state || 5 < t2 || t2 < 0) return e2 ? R(e2, _) : _;
-          if (n2 = e2.state, !e2.output || !e2.input && 0 !== e2.avail_in || 666 === n2.status && t2 !== f) return R(e2, 0 === e2.avail_out ? -5 : _);
-          if (n2.strm = e2, r2 = n2.last_flush, n2.last_flush = t2, n2.status === C) if (2 === n2.wrap) e2.adler = 0, U(n2, 31), U(n2, 139), U(n2, 8), n2.gzhead ? (U(n2, (n2.gzhead.text ? 1 : 0) + (n2.gzhead.hcrc ? 2 : 0) + (n2.gzhead.extra ? 4 : 0) + (n2.gzhead.name ? 8 : 0) + (n2.gzhead.comment ? 16 : 0)), U(n2, 255 & n2.gzhead.time), U(n2, n2.gzhead.time >> 8 & 255), U(n2, n2.gzhead.time >> 16 & 255), U(n2, n2.gzhead.time >> 24 & 255), U(n2, 9 === n2.level ? 2 : 2 <= n2.strategy || n2.level < 2 ? 4 : 0), U(n2, 255 & n2.gzhead.os), n2.gzhead.extra && n2.gzhead.extra.length && (U(n2, 255 & n2.gzhead.extra.length), U(n2, n2.gzhead.extra.length >> 8 & 255)), n2.gzhead.hcrc && (e2.adler = p(e2.adler, n2.pending_buf, n2.pending, 0)), n2.gzindex = 0, n2.status = 69) : (U(n2, 0), U(n2, 0), U(n2, 0), U(n2, 0), U(n2, 0), U(n2, 9 === n2.level ? 2 : 2 <= n2.strategy || n2.level < 2 ? 4 : 0), U(n2, 3), n2.status = E);
+          if (!e2 || !e2.state || 5 < t3 || t3 < 0) return e2 ? R(e2, _) : _;
+          if (n2 = e2.state, !e2.output || !e2.input && 0 !== e2.avail_in || 666 === n2.status && t3 !== f) return R(e2, 0 === e2.avail_out ? -5 : _);
+          if (n2.strm = e2, r2 = n2.last_flush, n2.last_flush = t3, n2.status === C) if (2 === n2.wrap) e2.adler = 0, U(n2, 31), U(n2, 139), U(n2, 8), n2.gzhead ? (U(n2, (n2.gzhead.text ? 1 : 0) + (n2.gzhead.hcrc ? 2 : 0) + (n2.gzhead.extra ? 4 : 0) + (n2.gzhead.name ? 8 : 0) + (n2.gzhead.comment ? 16 : 0)), U(n2, 255 & n2.gzhead.time), U(n2, n2.gzhead.time >> 8 & 255), U(n2, n2.gzhead.time >> 16 & 255), U(n2, n2.gzhead.time >> 24 & 255), U(n2, 9 === n2.level ? 2 : 2 <= n2.strategy || n2.level < 2 ? 4 : 0), U(n2, 255 & n2.gzhead.os), n2.gzhead.extra && n2.gzhead.extra.length && (U(n2, 255 & n2.gzhead.extra.length), U(n2, n2.gzhead.extra.length >> 8 & 255)), n2.gzhead.hcrc && (e2.adler = p(e2.adler, n2.pending_buf, n2.pending, 0)), n2.gzindex = 0, n2.status = 69) : (U(n2, 0), U(n2, 0), U(n2, 0), U(n2, 0), U(n2, 0), U(n2, 9 === n2.level ? 2 : 2 <= n2.strategy || n2.level < 2 ? 4 : 0), U(n2, 3), n2.status = E);
           else {
             var a2 = v + (n2.w_bits - 8 << 4) << 8;
             a2 |= (2 <= n2.strategy || n2.level < 2 ? 0 : n2.level < 6 ? 1 : 6 === n2.level ? 2 : 3) << 6, 0 !== n2.strstart && (a2 |= 32), a2 += 31 - a2 % 31, n2.status = E, P(n2, a2), 0 !== n2.strstart && (P(n2, e2.adler >>> 16), P(n2, 65535 & e2.adler)), e2.adler = 1;
@@ -1601,22 +1601,22 @@ var require_jszip_min = __commonJS({
           } else n2.status = 103;
           if (103 === n2.status && (n2.gzhead.hcrc ? (n2.pending + 2 > n2.pending_buf_size && F(e2), n2.pending + 2 <= n2.pending_buf_size && (U(n2, 255 & e2.adler), U(n2, e2.adler >> 8 & 255), e2.adler = 0, n2.status = E)) : n2.status = E), 0 !== n2.pending) {
             if (F(e2), 0 === e2.avail_out) return n2.last_flush = -1, m;
-          } else if (0 === e2.avail_in && T(t2) <= T(r2) && t2 !== f) return R(e2, -5);
+          } else if (0 === e2.avail_in && T(t3) <= T(r2) && t3 !== f) return R(e2, -5);
           if (666 === n2.status && 0 !== e2.avail_in) return R(e2, -5);
-          if (0 !== e2.avail_in || 0 !== n2.lookahead || t2 !== l && 666 !== n2.status) {
-            var o2 = 2 === n2.strategy ? (function(e3, t3) {
+          if (0 !== e2.avail_in || 0 !== n2.lookahead || t3 !== l && 666 !== n2.status) {
+            var o2 = 2 === n2.strategy ? (function(e3, t4) {
               for (var r3; ; ) {
                 if (0 === e3.lookahead && (j(e3), 0 === e3.lookahead)) {
-                  if (t3 === l) return A;
+                  if (t4 === l) return A;
                   break;
                 }
                 if (e3.match_length = 0, r3 = u._tr_tally(e3, 0, e3.window[e3.strstart]), e3.lookahead--, e3.strstart++, r3 && (N(e3, false), 0 === e3.strm.avail_out)) return A;
               }
-              return e3.insert = 0, t3 === f ? (N(e3, true), 0 === e3.strm.avail_out ? O : B) : e3.last_lit && (N(e3, false), 0 === e3.strm.avail_out) ? A : I;
-            })(n2, t2) : 3 === n2.strategy ? (function(e3, t3) {
+              return e3.insert = 0, t4 === f ? (N(e3, true), 0 === e3.strm.avail_out ? O : B) : e3.last_lit && (N(e3, false), 0 === e3.strm.avail_out) ? A : I;
+            })(n2, t3) : 3 === n2.strategy ? (function(e3, t4) {
               for (var r3, n3, i3, s3, a3 = e3.window; ; ) {
                 if (e3.lookahead <= S) {
-                  if (j(e3), e3.lookahead <= S && t3 === l) return A;
+                  if (j(e3), e3.lookahead <= S && t4 === l) return A;
                   if (0 === e3.lookahead) break;
                 }
                 if (e3.match_length = 0, e3.lookahead >= x && 0 < e3.strstart && (n3 = a3[i3 = e3.strstart - 1]) === a3[++i3] && n3 === a3[++i3] && n3 === a3[++i3]) {
@@ -1627,35 +1627,35 @@ var require_jszip_min = __commonJS({
                 }
                 if (e3.match_length >= x ? (r3 = u._tr_tally(e3, 1, e3.match_length - x), e3.lookahead -= e3.match_length, e3.strstart += e3.match_length, e3.match_length = 0) : (r3 = u._tr_tally(e3, 0, e3.window[e3.strstart]), e3.lookahead--, e3.strstart++), r3 && (N(e3, false), 0 === e3.strm.avail_out)) return A;
               }
-              return e3.insert = 0, t3 === f ? (N(e3, true), 0 === e3.strm.avail_out ? O : B) : e3.last_lit && (N(e3, false), 0 === e3.strm.avail_out) ? A : I;
-            })(n2, t2) : h[n2.level].func(n2, t2);
+              return e3.insert = 0, t4 === f ? (N(e3, true), 0 === e3.strm.avail_out ? O : B) : e3.last_lit && (N(e3, false), 0 === e3.strm.avail_out) ? A : I;
+            })(n2, t3) : h[n2.level].func(n2, t3);
             if (o2 !== O && o2 !== B || (n2.status = 666), o2 === A || o2 === O) return 0 === e2.avail_out && (n2.last_flush = -1), m;
-            if (o2 === I && (1 === t2 ? u._tr_align(n2) : 5 !== t2 && (u._tr_stored_block(n2, 0, 0, false), 3 === t2 && (D(n2.head), 0 === n2.lookahead && (n2.strstart = 0, n2.block_start = 0, n2.insert = 0))), F(e2), 0 === e2.avail_out)) return n2.last_flush = -1, m;
+            if (o2 === I && (1 === t3 ? u._tr_align(n2) : 5 !== t3 && (u._tr_stored_block(n2, 0, 0, false), 3 === t3 && (D(n2.head), 0 === n2.lookahead && (n2.strstart = 0, n2.block_start = 0, n2.insert = 0))), F(e2), 0 === e2.avail_out)) return n2.last_flush = -1, m;
           }
-          return t2 !== f ? m : n2.wrap <= 0 ? 1 : (2 === n2.wrap ? (U(n2, 255 & e2.adler), U(n2, e2.adler >> 8 & 255), U(n2, e2.adler >> 16 & 255), U(n2, e2.adler >> 24 & 255), U(n2, 255 & e2.total_in), U(n2, e2.total_in >> 8 & 255), U(n2, e2.total_in >> 16 & 255), U(n2, e2.total_in >> 24 & 255)) : (P(n2, e2.adler >>> 16), P(n2, 65535 & e2.adler)), F(e2), 0 < n2.wrap && (n2.wrap = -n2.wrap), 0 !== n2.pending ? m : 1);
+          return t3 !== f ? m : n2.wrap <= 0 ? 1 : (2 === n2.wrap ? (U(n2, 255 & e2.adler), U(n2, e2.adler >> 8 & 255), U(n2, e2.adler >> 16 & 255), U(n2, e2.adler >> 24 & 255), U(n2, 255 & e2.total_in), U(n2, e2.total_in >> 8 & 255), U(n2, e2.total_in >> 16 & 255), U(n2, e2.total_in >> 24 & 255)) : (P(n2, e2.adler >>> 16), P(n2, 65535 & e2.adler)), F(e2), 0 < n2.wrap && (n2.wrap = -n2.wrap), 0 !== n2.pending ? m : 1);
         }, r.deflateEnd = function(e2) {
-          var t2;
-          return e2 && e2.state ? (t2 = e2.state.status) !== C && 69 !== t2 && 73 !== t2 && 91 !== t2 && 103 !== t2 && t2 !== E && 666 !== t2 ? R(e2, _) : (e2.state = null, t2 === E ? R(e2, -3) : m) : _;
-        }, r.deflateSetDictionary = function(e2, t2) {
-          var r2, n2, i2, s2, a2, o2, h2, u2, l2 = t2.length;
+          var t3;
+          return e2 && e2.state ? (t3 = e2.state.status) !== C && 69 !== t3 && 73 !== t3 && 91 !== t3 && 103 !== t3 && t3 !== E && 666 !== t3 ? R(e2, _) : (e2.state = null, t3 === E ? R(e2, -3) : m) : _;
+        }, r.deflateSetDictionary = function(e2, t3) {
+          var r2, n2, i2, s2, a2, o2, h2, u2, l2 = t3.length;
           if (!e2 || !e2.state) return _;
           if (2 === (s2 = (r2 = e2.state).wrap) || 1 === s2 && r2.status !== C || r2.lookahead) return _;
-          for (1 === s2 && (e2.adler = d(e2.adler, t2, l2, 0)), r2.wrap = 0, l2 >= r2.w_size && (0 === s2 && (D(r2.head), r2.strstart = 0, r2.block_start = 0, r2.insert = 0), u2 = new c.Buf8(r2.w_size), c.arraySet(u2, t2, l2 - r2.w_size, r2.w_size, 0), t2 = u2, l2 = r2.w_size), a2 = e2.avail_in, o2 = e2.next_in, h2 = e2.input, e2.avail_in = l2, e2.next_in = 0, e2.input = t2, j(r2); r2.lookahead >= x; ) {
+          for (1 === s2 && (e2.adler = d(e2.adler, t3, l2, 0)), r2.wrap = 0, l2 >= r2.w_size && (0 === s2 && (D(r2.head), r2.strstart = 0, r2.block_start = 0, r2.insert = 0), u2 = new c.Buf8(r2.w_size), c.arraySet(u2, t3, l2 - r2.w_size, r2.w_size, 0), t3 = u2, l2 = r2.w_size), a2 = e2.avail_in, o2 = e2.next_in, h2 = e2.input, e2.avail_in = l2, e2.next_in = 0, e2.input = t3, j(r2); r2.lookahead >= x; ) {
             for (n2 = r2.strstart, i2 = r2.lookahead - (x - 1); r2.ins_h = (r2.ins_h << r2.hash_shift ^ r2.window[n2 + x - 1]) & r2.hash_mask, r2.prev[n2 & r2.w_mask] = r2.head[r2.ins_h], r2.head[r2.ins_h] = n2, n2++, --i2; ) ;
             r2.strstart = n2, r2.lookahead = x - 1, j(r2);
           }
           return r2.strstart += r2.lookahead, r2.block_start = r2.strstart, r2.insert = r2.lookahead, r2.lookahead = 0, r2.match_length = r2.prev_length = x - 1, r2.match_available = 0, e2.next_in = o2, e2.input = h2, e2.avail_in = a2, r2.wrap = s2, m;
         }, r.deflateInfo = "pako deflate (from Nodeca project)";
-      }, { "../utils/common": 41, "./adler32": 43, "./crc32": 45, "./messages": 51, "./trees": 52 }], 47: [function(e, t, r) {
+      }, { "../utils/common": 41, "./adler32": 43, "./crc32": 45, "./messages": 51, "./trees": 52 }], 47: [function(e, t2, r) {
         "use strict";
-        t.exports = function() {
+        t2.exports = function() {
           this.text = 0, this.time = 0, this.xflags = 0, this.os = 0, this.extra = null, this.extra_len = 0, this.name = "", this.comment = "", this.hcrc = 0, this.done = false;
         };
-      }, {}], 48: [function(e, t, r) {
+      }, {}], 48: [function(e, t2, r) {
         "use strict";
-        t.exports = function(e2, t2) {
+        t2.exports = function(e2, t3) {
           var r2, n, i, s, a, o, h, u, l, f, c, d, p, m, _, g, b, v, y, w, k, x, S, z, C;
-          r2 = e2.state, n = e2.next_in, z = e2.input, i = n + (e2.avail_in - 5), s = e2.next_out, C = e2.output, a = s - (t2 - e2.avail_out), o = s + (e2.avail_out - 257), h = r2.dmax, u = r2.wsize, l = r2.whave, f = r2.wnext, c = r2.window, d = r2.hold, p = r2.bits, m = r2.lencode, _ = r2.distcode, g = (1 << r2.lenbits) - 1, b = (1 << r2.distbits) - 1;
+          r2 = e2.state, n = e2.next_in, z = e2.input, i = n + (e2.avail_in - 5), s = e2.next_out, C = e2.output, a = s - (t3 - e2.avail_out), o = s + (e2.avail_out - 257), h = r2.dmax, u = r2.wsize, l = r2.whave, f = r2.wnext, c = r2.window, d = r2.hold, p = r2.bits, m = r2.lencode, _ = r2.distcode, g = (1 << r2.lenbits) - 1, b = (1 << r2.distbits) - 1;
           e: do {
             p < 15 && (d += z[n++] << p, p += 8, d += z[n++] << p, p += 8), v = m[d & g];
             t: for (; ; ) {
@@ -1723,7 +1723,7 @@ var require_jszip_min = __commonJS({
           } while (n < i && s < o);
           n -= w = p >> 3, d &= (1 << (p -= w << 3)) - 1, e2.next_in = n, e2.next_out = s, e2.avail_in = n < i ? i - n + 5 : 5 - (n - i), e2.avail_out = s < o ? o - s + 257 : 257 - (s - o), r2.hold = d, r2.bits = p;
         };
-      }, {}], 49: [function(e, t, r) {
+      }, {}], 49: [function(e, t2, r) {
         "use strict";
         var I = e("../utils/common"), O = e("./adler32"), B = e("./crc32"), R = e("./inffast"), T = e("./inftrees"), D = 1, F = 2, N = 0, U = -2, P = 1, n = 852, i = 592;
         function L(e2) {
@@ -1733,41 +1733,41 @@ var require_jszip_min = __commonJS({
           this.mode = 0, this.last = false, this.wrap = 0, this.havedict = false, this.flags = 0, this.dmax = 0, this.check = 0, this.total = 0, this.head = null, this.wbits = 0, this.wsize = 0, this.whave = 0, this.wnext = 0, this.window = null, this.hold = 0, this.bits = 0, this.length = 0, this.offset = 0, this.extra = 0, this.lencode = null, this.distcode = null, this.lenbits = 0, this.distbits = 0, this.ncode = 0, this.nlen = 0, this.ndist = 0, this.have = 0, this.next = null, this.lens = new I.Buf16(320), this.work = new I.Buf16(288), this.lendyn = null, this.distdyn = null, this.sane = 0, this.back = 0, this.was = 0;
         }
         function a(e2) {
-          var t2;
-          return e2 && e2.state ? (t2 = e2.state, e2.total_in = e2.total_out = t2.total = 0, e2.msg = "", t2.wrap && (e2.adler = 1 & t2.wrap), t2.mode = P, t2.last = 0, t2.havedict = 0, t2.dmax = 32768, t2.head = null, t2.hold = 0, t2.bits = 0, t2.lencode = t2.lendyn = new I.Buf32(n), t2.distcode = t2.distdyn = new I.Buf32(i), t2.sane = 1, t2.back = -1, N) : U;
+          var t3;
+          return e2 && e2.state ? (t3 = e2.state, e2.total_in = e2.total_out = t3.total = 0, e2.msg = "", t3.wrap && (e2.adler = 1 & t3.wrap), t3.mode = P, t3.last = 0, t3.havedict = 0, t3.dmax = 32768, t3.head = null, t3.hold = 0, t3.bits = 0, t3.lencode = t3.lendyn = new I.Buf32(n), t3.distcode = t3.distdyn = new I.Buf32(i), t3.sane = 1, t3.back = -1, N) : U;
         }
         function o(e2) {
-          var t2;
-          return e2 && e2.state ? ((t2 = e2.state).wsize = 0, t2.whave = 0, t2.wnext = 0, a(e2)) : U;
+          var t3;
+          return e2 && e2.state ? ((t3 = e2.state).wsize = 0, t3.whave = 0, t3.wnext = 0, a(e2)) : U;
         }
-        function h(e2, t2) {
+        function h(e2, t3) {
           var r2, n2;
-          return e2 && e2.state ? (n2 = e2.state, t2 < 0 ? (r2 = 0, t2 = -t2) : (r2 = 1 + (t2 >> 4), t2 < 48 && (t2 &= 15)), t2 && (t2 < 8 || 15 < t2) ? U : (null !== n2.window && n2.wbits !== t2 && (n2.window = null), n2.wrap = r2, n2.wbits = t2, o(e2))) : U;
+          return e2 && e2.state ? (n2 = e2.state, t3 < 0 ? (r2 = 0, t3 = -t3) : (r2 = 1 + (t3 >> 4), t3 < 48 && (t3 &= 15)), t3 && (t3 < 8 || 15 < t3) ? U : (null !== n2.window && n2.wbits !== t3 && (n2.window = null), n2.wrap = r2, n2.wbits = t3, o(e2))) : U;
         }
-        function u(e2, t2) {
+        function u(e2, t3) {
           var r2, n2;
-          return e2 ? (n2 = new s(), (e2.state = n2).window = null, (r2 = h(e2, t2)) !== N && (e2.state = null), r2) : U;
+          return e2 ? (n2 = new s(), (e2.state = n2).window = null, (r2 = h(e2, t3)) !== N && (e2.state = null), r2) : U;
         }
         var l, f, c = true;
         function j(e2) {
           if (c) {
-            var t2;
-            for (l = new I.Buf32(512), f = new I.Buf32(32), t2 = 0; t2 < 144; ) e2.lens[t2++] = 8;
-            for (; t2 < 256; ) e2.lens[t2++] = 9;
-            for (; t2 < 280; ) e2.lens[t2++] = 7;
-            for (; t2 < 288; ) e2.lens[t2++] = 8;
-            for (T(D, e2.lens, 0, 288, l, 0, e2.work, { bits: 9 }), t2 = 0; t2 < 32; ) e2.lens[t2++] = 5;
+            var t3;
+            for (l = new I.Buf32(512), f = new I.Buf32(32), t3 = 0; t3 < 144; ) e2.lens[t3++] = 8;
+            for (; t3 < 256; ) e2.lens[t3++] = 9;
+            for (; t3 < 280; ) e2.lens[t3++] = 7;
+            for (; t3 < 288; ) e2.lens[t3++] = 8;
+            for (T(D, e2.lens, 0, 288, l, 0, e2.work, { bits: 9 }), t3 = 0; t3 < 32; ) e2.lens[t3++] = 5;
             T(F, e2.lens, 0, 32, f, 0, e2.work, { bits: 5 }), c = false;
           }
           e2.lencode = l, e2.lenbits = 9, e2.distcode = f, e2.distbits = 5;
         }
-        function Z(e2, t2, r2, n2) {
+        function Z(e2, t3, r2, n2) {
           var i2, s2 = e2.state;
-          return null === s2.window && (s2.wsize = 1 << s2.wbits, s2.wnext = 0, s2.whave = 0, s2.window = new I.Buf8(s2.wsize)), n2 >= s2.wsize ? (I.arraySet(s2.window, t2, r2 - s2.wsize, s2.wsize, 0), s2.wnext = 0, s2.whave = s2.wsize) : (n2 < (i2 = s2.wsize - s2.wnext) && (i2 = n2), I.arraySet(s2.window, t2, r2 - n2, i2, s2.wnext), (n2 -= i2) ? (I.arraySet(s2.window, t2, r2 - n2, n2, 0), s2.wnext = n2, s2.whave = s2.wsize) : (s2.wnext += i2, s2.wnext === s2.wsize && (s2.wnext = 0), s2.whave < s2.wsize && (s2.whave += i2))), 0;
+          return null === s2.window && (s2.wsize = 1 << s2.wbits, s2.wnext = 0, s2.whave = 0, s2.window = new I.Buf8(s2.wsize)), n2 >= s2.wsize ? (I.arraySet(s2.window, t3, r2 - s2.wsize, s2.wsize, 0), s2.wnext = 0, s2.whave = s2.wsize) : (n2 < (i2 = s2.wsize - s2.wnext) && (i2 = n2), I.arraySet(s2.window, t3, r2 - n2, i2, s2.wnext), (n2 -= i2) ? (I.arraySet(s2.window, t3, r2 - n2, n2, 0), s2.wnext = n2, s2.whave = s2.wsize) : (s2.wnext += i2, s2.wnext === s2.wsize && (s2.wnext = 0), s2.whave < s2.wsize && (s2.whave += i2))), 0;
         }
         r.inflateReset = o, r.inflateReset2 = h, r.inflateResetKeep = a, r.inflateInit = function(e2) {
           return u(e2, 15);
-        }, r.inflateInit2 = u, r.inflate = function(e2, t2) {
+        }, r.inflateInit2 = u, r.inflate = function(e2, t3) {
           var r2, n2, i2, s2, a2, o2, h2, u2, l2, f2, c2, d, p, m, _, g, b, v, y, w, k, x, S, z, C = 0, E = new I.Buf8(4), A = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
           if (!e2 || !e2.state || !e2.output || !e2.input && 0 !== e2.avail_in) return U;
           12 === (r2 = e2.state).mode && (r2.mode = 13), a2 = e2.next_out, i2 = e2.output, h2 = e2.avail_out, s2 = e2.next_in, n2 = e2.input, o2 = e2.avail_in, u2 = r2.hold, l2 = r2.bits, f2 = o2, c2 = h2, x = N;
@@ -1876,7 +1876,7 @@ var require_jszip_min = __commonJS({
               if (0 === r2.havedict) return e2.next_out = a2, e2.avail_out = h2, e2.next_in = s2, e2.avail_in = o2, r2.hold = u2, r2.bits = l2, 2;
               e2.adler = r2.check = 1, r2.mode = 12;
             case 12:
-              if (5 === t2 || 6 === t2) break e;
+              if (5 === t3 || 6 === t3) break e;
             case 13:
               if (r2.last) {
                 u2 >>>= 7 & l2, l2 -= 7 & l2, r2.mode = 27;
@@ -1891,7 +1891,7 @@ var require_jszip_min = __commonJS({
                   r2.mode = 14;
                   break;
                 case 1:
-                  if (j(r2), r2.mode = 20, 6 !== t2) break;
+                  if (j(r2), r2.mode = 20, 6 !== t3) break;
                   u2 >>>= 2, l2 -= 2;
                   break e;
                 case 2:
@@ -1911,7 +1911,7 @@ var require_jszip_min = __commonJS({
                 e2.msg = "invalid stored block lengths", r2.mode = 30;
                 break;
               }
-              if (r2.length = 65535 & u2, l2 = u2 = 0, r2.mode = 15, 6 === t2) break e;
+              if (r2.length = 65535 & u2, l2 = u2 = 0, r2.mode = 15, 6 === t3) break e;
             case 15:
               r2.mode = 16;
             case 16:
@@ -1997,7 +1997,7 @@ var require_jszip_min = __commonJS({
                 e2.msg = "invalid distances set", r2.mode = 30;
                 break;
               }
-              if (r2.mode = 20, 6 === t2) break e;
+              if (r2.mode = 20, 6 === t3) break e;
             case 20:
               r2.mode = 21;
             case 21:
@@ -2122,39 +2122,39 @@ var require_jszip_min = __commonJS({
             default:
               return U;
           }
-          return e2.next_out = a2, e2.avail_out = h2, e2.next_in = s2, e2.avail_in = o2, r2.hold = u2, r2.bits = l2, (r2.wsize || c2 !== e2.avail_out && r2.mode < 30 && (r2.mode < 27 || 4 !== t2)) && Z(e2, e2.output, e2.next_out, c2 - e2.avail_out) ? (r2.mode = 31, -4) : (f2 -= e2.avail_in, c2 -= e2.avail_out, e2.total_in += f2, e2.total_out += c2, r2.total += c2, r2.wrap && c2 && (e2.adler = r2.check = r2.flags ? B(r2.check, i2, c2, e2.next_out - c2) : O(r2.check, i2, c2, e2.next_out - c2)), e2.data_type = r2.bits + (r2.last ? 64 : 0) + (12 === r2.mode ? 128 : 0) + (20 === r2.mode || 15 === r2.mode ? 256 : 0), (0 == f2 && 0 === c2 || 4 === t2) && x === N && (x = -5), x);
+          return e2.next_out = a2, e2.avail_out = h2, e2.next_in = s2, e2.avail_in = o2, r2.hold = u2, r2.bits = l2, (r2.wsize || c2 !== e2.avail_out && r2.mode < 30 && (r2.mode < 27 || 4 !== t3)) && Z(e2, e2.output, e2.next_out, c2 - e2.avail_out) ? (r2.mode = 31, -4) : (f2 -= e2.avail_in, c2 -= e2.avail_out, e2.total_in += f2, e2.total_out += c2, r2.total += c2, r2.wrap && c2 && (e2.adler = r2.check = r2.flags ? B(r2.check, i2, c2, e2.next_out - c2) : O(r2.check, i2, c2, e2.next_out - c2)), e2.data_type = r2.bits + (r2.last ? 64 : 0) + (12 === r2.mode ? 128 : 0) + (20 === r2.mode || 15 === r2.mode ? 256 : 0), (0 == f2 && 0 === c2 || 4 === t3) && x === N && (x = -5), x);
         }, r.inflateEnd = function(e2) {
           if (!e2 || !e2.state) return U;
-          var t2 = e2.state;
-          return t2.window && (t2.window = null), e2.state = null, N;
-        }, r.inflateGetHeader = function(e2, t2) {
+          var t3 = e2.state;
+          return t3.window && (t3.window = null), e2.state = null, N;
+        }, r.inflateGetHeader = function(e2, t3) {
           var r2;
-          return e2 && e2.state ? 0 == (2 & (r2 = e2.state).wrap) ? U : ((r2.head = t2).done = false, N) : U;
-        }, r.inflateSetDictionary = function(e2, t2) {
-          var r2, n2 = t2.length;
-          return e2 && e2.state ? 0 !== (r2 = e2.state).wrap && 11 !== r2.mode ? U : 11 === r2.mode && O(1, t2, n2, 0) !== r2.check ? -3 : Z(e2, t2, n2, n2) ? (r2.mode = 31, -4) : (r2.havedict = 1, N) : U;
+          return e2 && e2.state ? 0 == (2 & (r2 = e2.state).wrap) ? U : ((r2.head = t3).done = false, N) : U;
+        }, r.inflateSetDictionary = function(e2, t3) {
+          var r2, n2 = t3.length;
+          return e2 && e2.state ? 0 !== (r2 = e2.state).wrap && 11 !== r2.mode ? U : 11 === r2.mode && O(1, t3, n2, 0) !== r2.check ? -3 : Z(e2, t3, n2, n2) ? (r2.mode = 31, -4) : (r2.havedict = 1, N) : U;
         }, r.inflateInfo = "pako inflate (from Nodeca project)";
-      }, { "../utils/common": 41, "./adler32": 43, "./crc32": 45, "./inffast": 48, "./inftrees": 50 }], 50: [function(e, t, r) {
+      }, { "../utils/common": 41, "./adler32": 43, "./crc32": 45, "./inffast": 48, "./inftrees": 50 }], 50: [function(e, t2, r) {
         "use strict";
         var D = e("../utils/common"), F = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258, 0, 0], N = [16, 16, 16, 16, 16, 16, 16, 16, 17, 17, 17, 17, 18, 18, 18, 18, 19, 19, 19, 19, 20, 20, 20, 20, 21, 21, 21, 21, 16, 72, 78], U = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577, 0, 0], P = [16, 16, 16, 16, 17, 17, 18, 18, 19, 19, 20, 20, 21, 21, 22, 22, 23, 23, 24, 24, 25, 25, 26, 26, 27, 27, 28, 28, 29, 29, 64, 64];
-        t.exports = function(e2, t2, r2, n, i, s, a, o) {
+        t2.exports = function(e2, t3, r2, n, i, s, a, o) {
           var h, u, l, f, c, d, p, m, _, g = o.bits, b = 0, v = 0, y = 0, w = 0, k = 0, x = 0, S = 0, z = 0, C = 0, E = 0, A = null, I = 0, O = new D.Buf16(16), B = new D.Buf16(16), R = null, T = 0;
           for (b = 0; b <= 15; b++) O[b] = 0;
-          for (v = 0; v < n; v++) O[t2[r2 + v]]++;
+          for (v = 0; v < n; v++) O[t3[r2 + v]]++;
           for (k = g, w = 15; 1 <= w && 0 === O[w]; w--) ;
           if (w < k && (k = w), 0 === w) return i[s++] = 20971520, i[s++] = 20971520, o.bits = 1, 0;
           for (y = 1; y < w && 0 === O[y]; y++) ;
           for (k < y && (k = y), b = z = 1; b <= 15; b++) if (z <<= 1, (z -= O[b]) < 0) return -1;
           if (0 < z && (0 === e2 || 1 !== w)) return -1;
           for (B[1] = 0, b = 1; b < 15; b++) B[b + 1] = B[b] + O[b];
-          for (v = 0; v < n; v++) 0 !== t2[r2 + v] && (a[B[t2[r2 + v]]++] = v);
+          for (v = 0; v < n; v++) 0 !== t3[r2 + v] && (a[B[t3[r2 + v]]++] = v);
           if (d = 0 === e2 ? (A = R = a, 19) : 1 === e2 ? (A = F, I -= 257, R = N, T -= 257, 256) : (A = U, R = P, -1), b = y, c = s, S = v = E = 0, l = -1, f = (C = 1 << (x = k)) - 1, 1 === e2 && 852 < C || 2 === e2 && 592 < C) return 1;
           for (; ; ) {
             for (p = b - S, _ = a[v] < d ? (m = 0, a[v]) : a[v] > d ? (m = R[T + a[v]], A[I + a[v]]) : (m = 96, 0), h = 1 << b - S, y = u = 1 << x; i[c + (E >> S) + (u -= h)] = p << 24 | m << 16 | _ | 0, 0 !== u; ) ;
             for (h = 1 << b - 1; E & h; ) h >>= 1;
             if (0 !== h ? (E &= h - 1, E += h) : E = 0, v++, 0 == --O[b]) {
               if (b === w) break;
-              b = t2[r2 + a[v]];
+              b = t3[r2 + a[v]];
             }
             if (k < b && (E & f) !== l) {
               for (0 === S && (S = k), c += y, z = 1 << (x = b - S); x + S < w && !((z -= O[x + S]) <= 0); ) x++, z <<= 1;
@@ -2164,14 +2164,14 @@ var require_jszip_min = __commonJS({
           }
           return 0 !== E && (i[c + E] = b - S << 24 | 64 << 16 | 0), o.bits = k, 0;
         };
-      }, { "../utils/common": 41 }], 51: [function(e, t, r) {
+      }, { "../utils/common": 41 }], 51: [function(e, t2, r) {
         "use strict";
-        t.exports = { 2: "need dictionary", 1: "stream end", 0: "", "-1": "file error", "-2": "stream error", "-3": "data error", "-4": "insufficient memory", "-5": "buffer error", "-6": "incompatible version" };
-      }, {}], 52: [function(e, t, r) {
+        t2.exports = { 2: "need dictionary", 1: "stream end", 0: "", "-1": "file error", "-2": "stream error", "-3": "data error", "-4": "insufficient memory", "-5": "buffer error", "-6": "incompatible version" };
+      }, {}], 52: [function(e, t2, r) {
         "use strict";
         var i = e("../utils/common"), o = 0, h = 1;
         function n(e2) {
-          for (var t2 = e2.length; 0 <= --t2; ) e2[t2] = 0;
+          for (var t3 = e2.length; 0 <= --t3; ) e2[t3] = 0;
         }
         var s = 0, a = 29, u = 256, l = u + 1 + a, f = 30, c = 19, _ = 2 * l + 1, g = 15, d = 16, p = 7, m = 256, b = 16, v = 17, y = 18, w = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0], k = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13], x = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 7], S = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15], z = new Array(2 * (l + 2));
         n(z);
@@ -2184,67 +2184,67 @@ var require_jszip_min = __commonJS({
         var I = new Array(a);
         n(I);
         var O, B, R, T = new Array(f);
-        function D(e2, t2, r2, n2, i2) {
-          this.static_tree = e2, this.extra_bits = t2, this.extra_base = r2, this.elems = n2, this.max_length = i2, this.has_stree = e2 && e2.length;
+        function D(e2, t3, r2, n2, i2) {
+          this.static_tree = e2, this.extra_bits = t3, this.extra_base = r2, this.elems = n2, this.max_length = i2, this.has_stree = e2 && e2.length;
         }
-        function F(e2, t2) {
-          this.dyn_tree = e2, this.max_code = 0, this.stat_desc = t2;
+        function F(e2, t3) {
+          this.dyn_tree = e2, this.max_code = 0, this.stat_desc = t3;
         }
         function N(e2) {
           return e2 < 256 ? E[e2] : E[256 + (e2 >>> 7)];
         }
-        function U(e2, t2) {
-          e2.pending_buf[e2.pending++] = 255 & t2, e2.pending_buf[e2.pending++] = t2 >>> 8 & 255;
+        function U(e2, t3) {
+          e2.pending_buf[e2.pending++] = 255 & t3, e2.pending_buf[e2.pending++] = t3 >>> 8 & 255;
         }
-        function P(e2, t2, r2) {
-          e2.bi_valid > d - r2 ? (e2.bi_buf |= t2 << e2.bi_valid & 65535, U(e2, e2.bi_buf), e2.bi_buf = t2 >> d - e2.bi_valid, e2.bi_valid += r2 - d) : (e2.bi_buf |= t2 << e2.bi_valid & 65535, e2.bi_valid += r2);
+        function P(e2, t3, r2) {
+          e2.bi_valid > d - r2 ? (e2.bi_buf |= t3 << e2.bi_valid & 65535, U(e2, e2.bi_buf), e2.bi_buf = t3 >> d - e2.bi_valid, e2.bi_valid += r2 - d) : (e2.bi_buf |= t3 << e2.bi_valid & 65535, e2.bi_valid += r2);
         }
-        function L(e2, t2, r2) {
-          P(e2, r2[2 * t2], r2[2 * t2 + 1]);
+        function L(e2, t3, r2) {
+          P(e2, r2[2 * t3], r2[2 * t3 + 1]);
         }
-        function j(e2, t2) {
-          for (var r2 = 0; r2 |= 1 & e2, e2 >>>= 1, r2 <<= 1, 0 < --t2; ) ;
+        function j(e2, t3) {
+          for (var r2 = 0; r2 |= 1 & e2, e2 >>>= 1, r2 <<= 1, 0 < --t3; ) ;
           return r2 >>> 1;
         }
-        function Z(e2, t2, r2) {
+        function Z(e2, t3, r2) {
           var n2, i2, s2 = new Array(g + 1), a2 = 0;
           for (n2 = 1; n2 <= g; n2++) s2[n2] = a2 = a2 + r2[n2 - 1] << 1;
-          for (i2 = 0; i2 <= t2; i2++) {
+          for (i2 = 0; i2 <= t3; i2++) {
             var o2 = e2[2 * i2 + 1];
             0 !== o2 && (e2[2 * i2] = j(s2[o2]++, o2));
           }
         }
         function W(e2) {
-          var t2;
-          for (t2 = 0; t2 < l; t2++) e2.dyn_ltree[2 * t2] = 0;
-          for (t2 = 0; t2 < f; t2++) e2.dyn_dtree[2 * t2] = 0;
-          for (t2 = 0; t2 < c; t2++) e2.bl_tree[2 * t2] = 0;
+          var t3;
+          for (t3 = 0; t3 < l; t3++) e2.dyn_ltree[2 * t3] = 0;
+          for (t3 = 0; t3 < f; t3++) e2.dyn_dtree[2 * t3] = 0;
+          for (t3 = 0; t3 < c; t3++) e2.bl_tree[2 * t3] = 0;
           e2.dyn_ltree[2 * m] = 1, e2.opt_len = e2.static_len = 0, e2.last_lit = e2.matches = 0;
         }
         function M(e2) {
           8 < e2.bi_valid ? U(e2, e2.bi_buf) : 0 < e2.bi_valid && (e2.pending_buf[e2.pending++] = e2.bi_buf), e2.bi_buf = 0, e2.bi_valid = 0;
         }
-        function H(e2, t2, r2, n2) {
-          var i2 = 2 * t2, s2 = 2 * r2;
-          return e2[i2] < e2[s2] || e2[i2] === e2[s2] && n2[t2] <= n2[r2];
+        function H(e2, t3, r2, n2) {
+          var i2 = 2 * t3, s2 = 2 * r2;
+          return e2[i2] < e2[s2] || e2[i2] === e2[s2] && n2[t3] <= n2[r2];
         }
-        function G(e2, t2, r2) {
-          for (var n2 = e2.heap[r2], i2 = r2 << 1; i2 <= e2.heap_len && (i2 < e2.heap_len && H(t2, e2.heap[i2 + 1], e2.heap[i2], e2.depth) && i2++, !H(t2, n2, e2.heap[i2], e2.depth)); ) e2.heap[r2] = e2.heap[i2], r2 = i2, i2 <<= 1;
+        function G(e2, t3, r2) {
+          for (var n2 = e2.heap[r2], i2 = r2 << 1; i2 <= e2.heap_len && (i2 < e2.heap_len && H(t3, e2.heap[i2 + 1], e2.heap[i2], e2.depth) && i2++, !H(t3, n2, e2.heap[i2], e2.depth)); ) e2.heap[r2] = e2.heap[i2], r2 = i2, i2 <<= 1;
           e2.heap[r2] = n2;
         }
-        function K(e2, t2, r2) {
+        function K(e2, t3, r2) {
           var n2, i2, s2, a2, o2 = 0;
-          if (0 !== e2.last_lit) for (; n2 = e2.pending_buf[e2.d_buf + 2 * o2] << 8 | e2.pending_buf[e2.d_buf + 2 * o2 + 1], i2 = e2.pending_buf[e2.l_buf + o2], o2++, 0 === n2 ? L(e2, i2, t2) : (L(e2, (s2 = A[i2]) + u + 1, t2), 0 !== (a2 = w[s2]) && P(e2, i2 -= I[s2], a2), L(e2, s2 = N(--n2), r2), 0 !== (a2 = k[s2]) && P(e2, n2 -= T[s2], a2)), o2 < e2.last_lit; ) ;
-          L(e2, m, t2);
+          if (0 !== e2.last_lit) for (; n2 = e2.pending_buf[e2.d_buf + 2 * o2] << 8 | e2.pending_buf[e2.d_buf + 2 * o2 + 1], i2 = e2.pending_buf[e2.l_buf + o2], o2++, 0 === n2 ? L(e2, i2, t3) : (L(e2, (s2 = A[i2]) + u + 1, t3), 0 !== (a2 = w[s2]) && P(e2, i2 -= I[s2], a2), L(e2, s2 = N(--n2), r2), 0 !== (a2 = k[s2]) && P(e2, n2 -= T[s2], a2)), o2 < e2.last_lit; ) ;
+          L(e2, m, t3);
         }
-        function Y(e2, t2) {
-          var r2, n2, i2, s2 = t2.dyn_tree, a2 = t2.stat_desc.static_tree, o2 = t2.stat_desc.has_stree, h2 = t2.stat_desc.elems, u2 = -1;
+        function Y(e2, t3) {
+          var r2, n2, i2, s2 = t3.dyn_tree, a2 = t3.stat_desc.static_tree, o2 = t3.stat_desc.has_stree, h2 = t3.stat_desc.elems, u2 = -1;
           for (e2.heap_len = 0, e2.heap_max = _, r2 = 0; r2 < h2; r2++) 0 !== s2[2 * r2] ? (e2.heap[++e2.heap_len] = u2 = r2, e2.depth[r2] = 0) : s2[2 * r2 + 1] = 0;
           for (; e2.heap_len < 2; ) s2[2 * (i2 = e2.heap[++e2.heap_len] = u2 < 2 ? ++u2 : 0)] = 1, e2.depth[i2] = 0, e2.opt_len--, o2 && (e2.static_len -= a2[2 * i2 + 1]);
-          for (t2.max_code = u2, r2 = e2.heap_len >> 1; 1 <= r2; r2--) G(e2, s2, r2);
+          for (t3.max_code = u2, r2 = e2.heap_len >> 1; 1 <= r2; r2--) G(e2, s2, r2);
           for (i2 = h2; r2 = e2.heap[1], e2.heap[1] = e2.heap[e2.heap_len--], G(e2, s2, 1), n2 = e2.heap[1], e2.heap[--e2.heap_max] = r2, e2.heap[--e2.heap_max] = n2, s2[2 * i2] = s2[2 * r2] + s2[2 * n2], e2.depth[i2] = (e2.depth[r2] >= e2.depth[n2] ? e2.depth[r2] : e2.depth[n2]) + 1, s2[2 * r2 + 1] = s2[2 * n2 + 1] = i2, e2.heap[1] = i2++, G(e2, s2, 1), 2 <= e2.heap_len; ) ;
-          e2.heap[--e2.heap_max] = e2.heap[1], (function(e3, t3) {
-            var r3, n3, i3, s3, a3, o3, h3 = t3.dyn_tree, u3 = t3.max_code, l2 = t3.stat_desc.static_tree, f2 = t3.stat_desc.has_stree, c2 = t3.stat_desc.extra_bits, d2 = t3.stat_desc.extra_base, p2 = t3.stat_desc.max_length, m2 = 0;
+          e2.heap[--e2.heap_max] = e2.heap[1], (function(e3, t4) {
+            var r3, n3, i3, s3, a3, o3, h3 = t4.dyn_tree, u3 = t4.max_code, l2 = t4.stat_desc.static_tree, f2 = t4.stat_desc.has_stree, c2 = t4.stat_desc.extra_bits, d2 = t4.stat_desc.extra_base, p2 = t4.stat_desc.max_length, m2 = 0;
             for (s3 = 0; s3 <= g; s3++) e3.bl_count[s3] = 0;
             for (h3[2 * e3.heap[e3.heap_max] + 1] = 0, r3 = e3.heap_max + 1; r3 < _; r3++) p2 < (s3 = h3[2 * h3[2 * (n3 = e3.heap[r3]) + 1] + 1] + 1) && (s3 = p2, m2++), h3[2 * n3 + 1] = s3, u3 < n3 || (e3.bl_count[s3]++, a3 = 0, d2 <= n3 && (a3 = c2[n3 - d2]), o3 = h3[2 * n3], e3.opt_len += o3 * (s3 + a3), f2 && (e3.static_len += o3 * (l2[2 * n3 + 1] + a3)));
             if (0 !== m2) {
@@ -2254,15 +2254,15 @@ var require_jszip_min = __commonJS({
               } while (0 < m2);
               for (s3 = p2; 0 !== s3; s3--) for (n3 = e3.bl_count[s3]; 0 !== n3; ) u3 < (i3 = e3.heap[--r3]) || (h3[2 * i3 + 1] !== s3 && (e3.opt_len += (s3 - h3[2 * i3 + 1]) * h3[2 * i3], h3[2 * i3 + 1] = s3), n3--);
             }
-          })(e2, t2), Z(s2, u2, e2.bl_count);
+          })(e2, t3), Z(s2, u2, e2.bl_count);
         }
-        function X(e2, t2, r2) {
-          var n2, i2, s2 = -1, a2 = t2[1], o2 = 0, h2 = 7, u2 = 4;
-          for (0 === a2 && (h2 = 138, u2 = 3), t2[2 * (r2 + 1) + 1] = 65535, n2 = 0; n2 <= r2; n2++) i2 = a2, a2 = t2[2 * (n2 + 1) + 1], ++o2 < h2 && i2 === a2 || (o2 < u2 ? e2.bl_tree[2 * i2] += o2 : 0 !== i2 ? (i2 !== s2 && e2.bl_tree[2 * i2]++, e2.bl_tree[2 * b]++) : o2 <= 10 ? e2.bl_tree[2 * v]++ : e2.bl_tree[2 * y]++, s2 = i2, u2 = (o2 = 0) === a2 ? (h2 = 138, 3) : i2 === a2 ? (h2 = 6, 3) : (h2 = 7, 4));
+        function X(e2, t3, r2) {
+          var n2, i2, s2 = -1, a2 = t3[1], o2 = 0, h2 = 7, u2 = 4;
+          for (0 === a2 && (h2 = 138, u2 = 3), t3[2 * (r2 + 1) + 1] = 65535, n2 = 0; n2 <= r2; n2++) i2 = a2, a2 = t3[2 * (n2 + 1) + 1], ++o2 < h2 && i2 === a2 || (o2 < u2 ? e2.bl_tree[2 * i2] += o2 : 0 !== i2 ? (i2 !== s2 && e2.bl_tree[2 * i2]++, e2.bl_tree[2 * b]++) : o2 <= 10 ? e2.bl_tree[2 * v]++ : e2.bl_tree[2 * y]++, s2 = i2, u2 = (o2 = 0) === a2 ? (h2 = 138, 3) : i2 === a2 ? (h2 = 6, 3) : (h2 = 7, 4));
         }
-        function V(e2, t2, r2) {
-          var n2, i2, s2 = -1, a2 = t2[1], o2 = 0, h2 = 7, u2 = 4;
-          for (0 === a2 && (h2 = 138, u2 = 3), n2 = 0; n2 <= r2; n2++) if (i2 = a2, a2 = t2[2 * (n2 + 1) + 1], !(++o2 < h2 && i2 === a2)) {
+        function V(e2, t3, r2) {
+          var n2, i2, s2 = -1, a2 = t3[1], o2 = 0, h2 = 7, u2 = 4;
+          for (0 === a2 && (h2 = 138, u2 = 3), n2 = 0; n2 <= r2; n2++) if (i2 = a2, a2 = t3[2 * (n2 + 1) + 1], !(++o2 < h2 && i2 === a2)) {
             if (o2 < u2) for (; L(e2, i2, e2.bl_tree), 0 != --o2; ) ;
             else 0 !== i2 ? (i2 !== s2 && (L(e2, i2, e2.bl_tree), o2--), L(e2, b, e2.bl_tree), P(e2, o2 - 3, 2)) : o2 <= 10 ? (L(e2, v, e2.bl_tree), P(e2, o2 - 3, 3)) : (L(e2, y, e2.bl_tree), P(e2, o2 - 11, 7));
             s2 = i2, u2 = (o2 = 0) === a2 ? (h2 = 138, 3) : i2 === a2 ? (h2 = 6, 3) : (h2 = 7, 4);
@@ -2270,18 +2270,18 @@ var require_jszip_min = __commonJS({
         }
         n(T);
         var q = false;
-        function J(e2, t2, r2, n2) {
-          P(e2, (s << 1) + (n2 ? 1 : 0), 3), (function(e3, t3, r3, n3) {
-            M(e3), n3 && (U(e3, r3), U(e3, ~r3)), i.arraySet(e3.pending_buf, e3.window, t3, r3, e3.pending), e3.pending += r3;
-          })(e2, t2, r2, true);
+        function J(e2, t3, r2, n2) {
+          P(e2, (s << 1) + (n2 ? 1 : 0), 3), (function(e3, t4, r3, n3) {
+            M(e3), n3 && (U(e3, r3), U(e3, ~r3)), i.arraySet(e3.pending_buf, e3.window, t4, r3, e3.pending), e3.pending += r3;
+          })(e2, t3, r2, true);
         }
         r._tr_init = function(e2) {
           q || ((function() {
-            var e3, t2, r2, n2, i2, s2 = new Array(g + 1);
+            var e3, t3, r2, n2, i2, s2 = new Array(g + 1);
             for (n2 = r2 = 0; n2 < a - 1; n2++) for (I[n2] = r2, e3 = 0; e3 < 1 << w[n2]; e3++) A[r2++] = n2;
             for (A[r2 - 1] = n2, n2 = i2 = 0; n2 < 16; n2++) for (T[n2] = i2, e3 = 0; e3 < 1 << k[n2]; e3++) E[i2++] = n2;
             for (i2 >>= 7; n2 < f; n2++) for (T[n2] = i2 << 7, e3 = 0; e3 < 1 << k[n2] - 7; e3++) E[256 + i2++] = n2;
-            for (t2 = 0; t2 <= g; t2++) s2[t2] = 0;
+            for (t3 = 0; t3 <= g; t3++) s2[t3] = 0;
             for (e3 = 0; e3 <= 143; ) z[2 * e3 + 1] = 8, e3++, s2[8]++;
             for (; e3 <= 255; ) z[2 * e3 + 1] = 9, e3++, s2[9]++;
             for (; e3 <= 279; ) z[2 * e3 + 1] = 7, e3++, s2[7]++;
@@ -2289,69 +2289,69 @@ var require_jszip_min = __commonJS({
             for (Z(z, l + 1, s2), e3 = 0; e3 < f; e3++) C[2 * e3 + 1] = 5, C[2 * e3] = j(e3, 5);
             O = new D(z, w, u + 1, l, g), B = new D(C, k, 0, f, g), R = new D(new Array(0), x, 0, c, p);
           })(), q = true), e2.l_desc = new F(e2.dyn_ltree, O), e2.d_desc = new F(e2.dyn_dtree, B), e2.bl_desc = new F(e2.bl_tree, R), e2.bi_buf = 0, e2.bi_valid = 0, W(e2);
-        }, r._tr_stored_block = J, r._tr_flush_block = function(e2, t2, r2, n2) {
+        }, r._tr_stored_block = J, r._tr_flush_block = function(e2, t3, r2, n2) {
           var i2, s2, a2 = 0;
           0 < e2.level ? (2 === e2.strm.data_type && (e2.strm.data_type = (function(e3) {
-            var t3, r3 = 4093624447;
-            for (t3 = 0; t3 <= 31; t3++, r3 >>>= 1) if (1 & r3 && 0 !== e3.dyn_ltree[2 * t3]) return o;
+            var t4, r3 = 4093624447;
+            for (t4 = 0; t4 <= 31; t4++, r3 >>>= 1) if (1 & r3 && 0 !== e3.dyn_ltree[2 * t4]) return o;
             if (0 !== e3.dyn_ltree[18] || 0 !== e3.dyn_ltree[20] || 0 !== e3.dyn_ltree[26]) return h;
-            for (t3 = 32; t3 < u; t3++) if (0 !== e3.dyn_ltree[2 * t3]) return h;
+            for (t4 = 32; t4 < u; t4++) if (0 !== e3.dyn_ltree[2 * t4]) return h;
             return o;
           })(e2)), Y(e2, e2.l_desc), Y(e2, e2.d_desc), a2 = (function(e3) {
-            var t3;
-            for (X(e3, e3.dyn_ltree, e3.l_desc.max_code), X(e3, e3.dyn_dtree, e3.d_desc.max_code), Y(e3, e3.bl_desc), t3 = c - 1; 3 <= t3 && 0 === e3.bl_tree[2 * S[t3] + 1]; t3--) ;
-            return e3.opt_len += 3 * (t3 + 1) + 5 + 5 + 4, t3;
-          })(e2), i2 = e2.opt_len + 3 + 7 >>> 3, (s2 = e2.static_len + 3 + 7 >>> 3) <= i2 && (i2 = s2)) : i2 = s2 = r2 + 5, r2 + 4 <= i2 && -1 !== t2 ? J(e2, t2, r2, n2) : 4 === e2.strategy || s2 === i2 ? (P(e2, 2 + (n2 ? 1 : 0), 3), K(e2, z, C)) : (P(e2, 4 + (n2 ? 1 : 0), 3), (function(e3, t3, r3, n3) {
+            var t4;
+            for (X(e3, e3.dyn_ltree, e3.l_desc.max_code), X(e3, e3.dyn_dtree, e3.d_desc.max_code), Y(e3, e3.bl_desc), t4 = c - 1; 3 <= t4 && 0 === e3.bl_tree[2 * S[t4] + 1]; t4--) ;
+            return e3.opt_len += 3 * (t4 + 1) + 5 + 5 + 4, t4;
+          })(e2), i2 = e2.opt_len + 3 + 7 >>> 3, (s2 = e2.static_len + 3 + 7 >>> 3) <= i2 && (i2 = s2)) : i2 = s2 = r2 + 5, r2 + 4 <= i2 && -1 !== t3 ? J(e2, t3, r2, n2) : 4 === e2.strategy || s2 === i2 ? (P(e2, 2 + (n2 ? 1 : 0), 3), K(e2, z, C)) : (P(e2, 4 + (n2 ? 1 : 0), 3), (function(e3, t4, r3, n3) {
             var i3;
-            for (P(e3, t3 - 257, 5), P(e3, r3 - 1, 5), P(e3, n3 - 4, 4), i3 = 0; i3 < n3; i3++) P(e3, e3.bl_tree[2 * S[i3] + 1], 3);
-            V(e3, e3.dyn_ltree, t3 - 1), V(e3, e3.dyn_dtree, r3 - 1);
+            for (P(e3, t4 - 257, 5), P(e3, r3 - 1, 5), P(e3, n3 - 4, 4), i3 = 0; i3 < n3; i3++) P(e3, e3.bl_tree[2 * S[i3] + 1], 3);
+            V(e3, e3.dyn_ltree, t4 - 1), V(e3, e3.dyn_dtree, r3 - 1);
           })(e2, e2.l_desc.max_code + 1, e2.d_desc.max_code + 1, a2 + 1), K(e2, e2.dyn_ltree, e2.dyn_dtree)), W(e2), n2 && M(e2);
-        }, r._tr_tally = function(e2, t2, r2) {
-          return e2.pending_buf[e2.d_buf + 2 * e2.last_lit] = t2 >>> 8 & 255, e2.pending_buf[e2.d_buf + 2 * e2.last_lit + 1] = 255 & t2, e2.pending_buf[e2.l_buf + e2.last_lit] = 255 & r2, e2.last_lit++, 0 === t2 ? e2.dyn_ltree[2 * r2]++ : (e2.matches++, t2--, e2.dyn_ltree[2 * (A[r2] + u + 1)]++, e2.dyn_dtree[2 * N(t2)]++), e2.last_lit === e2.lit_bufsize - 1;
+        }, r._tr_tally = function(e2, t3, r2) {
+          return e2.pending_buf[e2.d_buf + 2 * e2.last_lit] = t3 >>> 8 & 255, e2.pending_buf[e2.d_buf + 2 * e2.last_lit + 1] = 255 & t3, e2.pending_buf[e2.l_buf + e2.last_lit] = 255 & r2, e2.last_lit++, 0 === t3 ? e2.dyn_ltree[2 * r2]++ : (e2.matches++, t3--, e2.dyn_ltree[2 * (A[r2] + u + 1)]++, e2.dyn_dtree[2 * N(t3)]++), e2.last_lit === e2.lit_bufsize - 1;
         }, r._tr_align = function(e2) {
           P(e2, 2, 3), L(e2, m, z), (function(e3) {
             16 === e3.bi_valid ? (U(e3, e3.bi_buf), e3.bi_buf = 0, e3.bi_valid = 0) : 8 <= e3.bi_valid && (e3.pending_buf[e3.pending++] = 255 & e3.bi_buf, e3.bi_buf >>= 8, e3.bi_valid -= 8);
           })(e2);
         };
-      }, { "../utils/common": 41 }], 53: [function(e, t, r) {
+      }, { "../utils/common": 41 }], 53: [function(e, t2, r) {
         "use strict";
-        t.exports = function() {
+        t2.exports = function() {
           this.input = null, this.next_in = 0, this.avail_in = 0, this.total_in = 0, this.output = null, this.next_out = 0, this.avail_out = 0, this.total_out = 0, this.msg = "", this.state = null, this.data_type = 2, this.adler = 0;
         };
-      }, {}], 54: [function(e, t, r) {
+      }, {}], 54: [function(e, t2, r) {
         (function(e2) {
           !(function(r2, n) {
             "use strict";
             if (!r2.setImmediate) {
-              var i, s, t2, a, o = 1, h = {}, u = false, l = r2.document, e3 = Object.getPrototypeOf && Object.getPrototypeOf(r2);
+              var i, s, t3, a, o = 1, h = {}, u = false, l = r2.document, e3 = Object.getPrototypeOf && Object.getPrototypeOf(r2);
               e3 = e3 && e3.setTimeout ? e3 : r2, i = "[object process]" === {}.toString.call(r2.process) ? function(e4) {
                 process.nextTick(function() {
                   c(e4);
                 });
               } : (function() {
                 if (r2.postMessage && !r2.importScripts) {
-                  var e4 = true, t3 = r2.onmessage;
+                  var e4 = true, t4 = r2.onmessage;
                   return r2.onmessage = function() {
                     e4 = false;
-                  }, r2.postMessage("", "*"), r2.onmessage = t3, e4;
+                  }, r2.postMessage("", "*"), r2.onmessage = t4, e4;
                 }
               })() ? (a = "setImmediate$" + Math.random() + "$", r2.addEventListener ? r2.addEventListener("message", d, false) : r2.attachEvent("onmessage", d), function(e4) {
                 r2.postMessage(a + e4, "*");
-              }) : r2.MessageChannel ? ((t2 = new MessageChannel()).port1.onmessage = function(e4) {
+              }) : r2.MessageChannel ? ((t3 = new MessageChannel()).port1.onmessage = function(e4) {
                 c(e4.data);
               }, function(e4) {
-                t2.port2.postMessage(e4);
+                t3.port2.postMessage(e4);
               }) : l && "onreadystatechange" in l.createElement("script") ? (s = l.documentElement, function(e4) {
-                var t3 = l.createElement("script");
-                t3.onreadystatechange = function() {
-                  c(e4), t3.onreadystatechange = null, s.removeChild(t3), t3 = null;
-                }, s.appendChild(t3);
+                var t4 = l.createElement("script");
+                t4.onreadystatechange = function() {
+                  c(e4), t4.onreadystatechange = null, s.removeChild(t4), t4 = null;
+                }, s.appendChild(t4);
               }) : function(e4) {
                 setTimeout(c, 0, e4);
               }, e3.setImmediate = function(e4) {
                 "function" != typeof e4 && (e4 = new Function("" + e4));
-                for (var t3 = new Array(arguments.length - 1), r3 = 0; r3 < t3.length; r3++) t3[r3] = arguments[r3 + 1];
-                var n2 = { callback: e4, args: t3 };
+                for (var t4 = new Array(arguments.length - 1), r3 = 0; r3 < t4.length; r3++) t4[r3] = arguments[r3 + 1];
+                var n2 = { callback: e4, args: t4 };
                 return h[o] = n2, i(o), o++;
               }, e3.clearImmediate = f;
             }
@@ -2361,29 +2361,29 @@ var require_jszip_min = __commonJS({
             function c(e4) {
               if (u) setTimeout(c, 0, e4);
               else {
-                var t3 = h[e4];
-                if (t3) {
+                var t4 = h[e4];
+                if (t4) {
                   u = true;
                   try {
                     !(function(e5) {
-                      var t4 = e5.callback, r3 = e5.args;
+                      var t5 = e5.callback, r3 = e5.args;
                       switch (r3.length) {
                         case 0:
-                          t4();
+                          t5();
                           break;
                         case 1:
-                          t4(r3[0]);
+                          t5(r3[0]);
                           break;
                         case 2:
-                          t4(r3[0], r3[1]);
+                          t5(r3[0], r3[1]);
                           break;
                         case 3:
-                          t4(r3[0], r3[1], r3[2]);
+                          t5(r3[0], r3[1], r3[2]);
                           break;
                         default:
-                          t4.apply(n, r3);
+                          t5.apply(n, r3);
                       }
-                    })(t3);
+                    })(t4);
                   } finally {
                     f(e4), u = false;
                   }
@@ -2399,6 +2399,61 @@ var require_jszip_min = __commonJS({
     });
   }
 });
+
+// core/i18n.ts
+function isI18nDict(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  return Object.values(value).every((entry) => typeof entry === "string" || isI18nDict(entry));
+}
+var state = {
+  currentLocale: "zh-CN",
+  translations: {
+    "zh-CN": {},
+    "en-US": {}
+  },
+  fallbackLocale: "zh-CN"
+};
+function t(key, fallback, params) {
+  const text4 = lookup(state.translations[state.currentLocale], key) ?? lookup(state.translations[state.fallbackLocale], key) ?? fallback ?? key;
+  if (!params) return text4;
+  return text4.replace(/\{\{([^{}]+)\}\}/g, (placeholder, name) => {
+    if (!Object.prototype.hasOwnProperty.call(params, name)) return placeholder;
+    const value = params[name];
+    return typeof value === "string" || typeof value === "number" ? String(value) : placeholder;
+  });
+}
+function lookup(dict, key) {
+  let value = dict;
+  for (const part of key.split(".")) {
+    if (typeof value !== "object" || !Object.prototype.hasOwnProperty.call(value, part)) return void 0;
+    value = value[part];
+  }
+  return typeof value === "string" ? value : void 0;
+}
+function setLocale(locale) {
+  const dict = state.translations[locale];
+  if (!dict || Object.keys(dict).length === 0) {
+    throw new Error(`Locale "${locale}" not loaded`);
+  }
+  state.currentLocale = locale;
+}
+function getLocale() {
+  return state.currentLocale;
+}
+function loadTranslations(locale, dict) {
+  if (!isI18nDict(dict)) throw new TypeError(`Invalid translation dictionary for "${locale}"`);
+  state.translations[locale] = dict;
+}
+function resetI18n() {
+  state.currentLocale = "zh-CN";
+  state.fallbackLocale = "zh-CN";
+  state.translations = {
+    "zh-CN": {},
+    "en-US": {}
+  };
+}
 
 // core/types.ts
 var SETTINGS_VERSION = 7;
@@ -3686,10 +3741,10 @@ function removeSprite(pack, tag, group = "", outfit = "") {
 }
 function renameSprite(pack, oldTag, newTagRaw, group = "", outfit = "") {
   const newTag = normalizeTag(newTagRaw);
-  if (!newTag) throw new Error("表情名不能为空，且不能包含 [ ] / : | = @ 等符号");
+  if (!newTag) throw new Error(t("spriteValidation.invalid_name", "表情名不能为空，且不能包含 [ ] / : | = @ 等符号"));
   if (newTag === oldTag) return pack;
   if (pack.sprites.some((s) => sameIdentity(pack, s, newTag, group, outfit))) {
-    throw new Error(`表情名「${newTag}」在该分组中已存在`);
+    throw new Error(t("spriteValidation.duplicate_name", "表情名「{{name}}」在该分组中已存在", { name: newTag }));
   }
   const sprites = pack.sprites.map(
     (s) => sameIdentity(pack, s, oldTag, group, outfit) ? { ...s, tag: newTag } : s
@@ -3706,7 +3761,10 @@ function setSpriteGroup(pack, tag, fromGroup, toGroupRaw, outfit = "") {
   if (pack.sprites.some(
     (s) => !sources.has(s) && sameIdentity(pack, s, tag, toGroup, outfit)
   )) {
-    throw new Error(`分组「${toGroup || "未分组"}」中已存在表情「${tag}」`);
+    throw new Error(t("spriteValidation.duplicate_group", "分组「{{group}}」中已存在表情「{{name}}」", {
+      group: toGroup || t("spriteValidation.ungrouped", "未分组"),
+      name: tag
+    }));
   }
   const sprites = pack.sprites.map((s) => {
     if (!sources.has(s)) return s;
@@ -3922,6 +3980,7 @@ function countLeafRows(rows) {
 // st-extension/src/variable-hud.ts
 var DRAG_THRESHOLD = 4;
 var BUTTON_SIZE = 44;
+var hudId = 0;
 function clampPosition(x, y, width = BUTTON_SIZE, height = BUTTON_SIZE) {
   const maxX = Math.max(0, window.innerWidth - width);
   const maxY = Math.max(0, window.innerHeight - height);
@@ -3944,15 +4003,20 @@ function createVariableHud(deps) {
   root.id = "st-stage-varhud";
   const button2 = el("button", "so-varhud-btn");
   button2.setAttribute("type", "button");
-  button2.setAttribute("aria-label", "变量速查");
+  button2.setAttribute("aria-label", t("variableHud.title", "变量速查"));
   button2.textContent = "🔢";
   const panel = el("div", "so-varhud-panel");
+  panel.id = `so-varhud-panel-${++hudId}`;
+  panel.setAttribute("role", "region");
+  button2.setAttribute("aria-controls", panel.id);
   const panelHead = el("div", "so-varhud-head");
   const panelTitle = el("span", "so-varhud-title");
-  panelTitle.textContent = "变量速查";
+  panelTitle.id = `${panel.id}-title`;
+  panelTitle.textContent = t("variableHud.title", "变量速查");
+  panel.setAttribute("aria-labelledby", panelTitle.id);
   const closeBtn = el("button", "so-varhud-close");
   closeBtn.setAttribute("type", "button");
-  closeBtn.setAttribute("aria-label", "收起");
+  closeBtn.setAttribute("aria-label", t("variableHud.collapse", "收起"));
   closeBtn.textContent = "✕";
   panelHead.append(panelTitle, closeBtn);
   const panelBody = el("div", "so-varhud-body");
@@ -3965,6 +4029,7 @@ function createVariableHud(deps) {
   }
   function applyOpen() {
     root.classList.toggle("so-varhud-open", open);
+    button2.setAttribute("aria-expanded", String(open));
     button2.style.display = open ? "none" : "flex";
     panel.style.display = open ? "flex" : "none";
   }
@@ -4014,7 +4079,8 @@ function createVariableHud(deps) {
       if (token !== renderToken || disposed || !open) return;
       panelBody.textContent = "";
       const fail = el("div", "so-varhud-notice");
-      fail.textContent = `读取失败：${err instanceof Error ? err.message : String(err)}`;
+      fail.setAttribute("role", "status");
+      fail.textContent = t("variableHud.read_failed", "读取失败：{{message}}", { message: err instanceof Error ? err.message : String(err) });
       panelBody.append(fail);
       scheduleMeasure();
       return;
@@ -4026,15 +4092,15 @@ function createVariableHud(deps) {
       const block = el("div", "so-varhud-section");
       const label = el("div", "so-varhud-source");
       const rows = section2.root ? flattenVariables(section2.root) : [];
-      label.textContent = section2.root ? `${section2.source}（${countLeafRows(rows)}）` : section2.source;
+      label.textContent = section2.root ? t("variableHud.source_count", "{{source}}（{{count}}）", { source: section2.source, count: countLeafRows(rows) }) : section2.source;
       block.append(label);
       if (!section2.root) {
         const notice = el("div", "so-varhud-notice");
-        notice.textContent = section2.notice || "当前不可用";
+        notice.textContent = section2.notice || t("variableHud.unavailable", "当前不可用");
         block.append(notice);
       } else if (rows.length === 0) {
         const empty = el("div", "so-varhud-notice");
-        empty.textContent = "暂无变量";
+        empty.textContent = t("variableHud.no_variables", "暂无变量");
         block.append(empty);
       } else {
         anyRow = true;
@@ -4044,10 +4110,10 @@ function createVariableHud(deps) {
     }
     if (sections.length === 0) {
       const empty = el("div", "so-varhud-notice");
-      empty.textContent = "没有可用的变量来源";
+      empty.textContent = t("variableHud.no_sources", "没有可用的变量来源");
       panelBody.append(empty);
     }
-    panelTitle.textContent = anyRow ? "变量速查" : "变量速查（空）";
+    panelTitle.textContent = anyRow ? t("variableHud.title", "变量速查") : t("variableHud.empty_title", "变量速查（空）");
     scheduleMeasure();
   }
   function setOpen(next) {
@@ -4057,6 +4123,8 @@ function createVariableHud(deps) {
     scheduleMeasure();
     deps.writeState({ ...position, open });
     if (open) void render2();
+    if (open) closeBtn.focus({ preventScroll: true });
+    else button2.focus({ preventScroll: true });
   }
   let cancelDrag = null;
   function startDrag(event) {
@@ -4099,6 +4167,20 @@ function createVariableHud(deps) {
   button2.addEventListener("pointerdown", (event) => {
     event.stopPropagation();
     startDrag(event);
+  });
+  button2.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (event.detail === 0) setOpen(!open);
+  });
+  root.addEventListener("keydown", (event) => {
+    if (event.isComposing) return;
+    if (event.key === "Escape" && open) {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.stopPropagation();
+    }
   });
   panelHead.addEventListener("pointerdown", (event) => {
     if (event.target === closeBtn) return;
@@ -4146,7 +4228,50 @@ function createVariableHud(deps) {
   };
 }
 
+// st-extension/src/apps/newvar/ui-focus.ts
+function variableButton(className) {
+  const button2 = document.createElement("button");
+  button2.type = "button";
+  button2.className = className;
+  button2.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.isComposing) return;
+    event.preventDefault();
+    event.stopPropagation();
+    button2.click();
+  });
+  return button2;
+}
+function captureVariableFocus(container) {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement) || !container.contains(active)) return null;
+  const identity = (node) => {
+    const explicit = node.dataset.variableFocus;
+    if (explicit) return explicit;
+    const labelledBy = node.getAttribute("aria-labelledby");
+    const label = node.getAttribute("aria-label") ?? (labelledBy ? document.getElementById(labelledBy)?.textContent : null) ?? node.closest("label")?.querySelector("span")?.textContent;
+    if (!label) return null;
+    const scope = node.closest("[data-variable-focus-scope]")?.dataset.variableFocusScope ?? "";
+    return `${scope}:${node.tagName}:${node.getAttribute("type") ?? ""}:${label}`;
+  };
+  const key = identity(active);
+  if (!key) return null;
+  const selection = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ? { start: active.selectionStart, end: active.selectionEnd } : null;
+  return () => {
+    const target = [...container.querySelectorAll("button, input, select, textarea, summary, [tabindex]")].find((node) => identity(node) === key && !node.matches(":disabled") && !node.closest("[hidden], [inert]"));
+    if (!target) return false;
+    target.focus({ preventScroll: true });
+    if (selection?.start !== null && selection?.start !== void 0 && selection.end !== null && (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
+      target.setSelectionRange(selection.start, selection.end);
+    }
+    return document.activeElement === target;
+  };
+}
+
 // st-extension/src/apps/widgets.ts
+var controlId = 0;
+function nextControlId() {
+  return `so-app-control-${++controlId}`;
+}
 function el2(tag, className) {
   const node = document.createElement(tag);
   node.className = className;
@@ -4161,6 +4286,7 @@ function appButton(label, onClick) {
   btn.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
+      e.stopPropagation();
       onClick();
     }
   });
@@ -4182,6 +4308,9 @@ function selectRow(label, value, options, onChange) {
   const span = document.createElement("span");
   span.textContent = label;
   const select = document.createElement("select");
+  select.id = nextControlId();
+  span.id = `${select.id}-label`;
+  select.setAttribute("aria-labelledby", span.id);
   select.className = "text_pole so-app-input";
   for (const opt of options) {
     const o = document.createElement("option");
@@ -4221,17 +4350,23 @@ function rangeRow(label, value, min, max, onInput, onCommit, format = String) {
   const controls = el2("span", "so-app-range-controls");
   const input = document.createElement("input");
   input.type = "range";
+  input.id = nextControlId();
+  span.id = `${input.id}-label`;
+  input.setAttribute("aria-labelledby", span.id);
   input.min = String(min);
   input.max = String(max);
   input.step = "1";
   input.value = String(Math.min(max, Math.max(min, Math.round(value))));
   const output = document.createElement("output");
+  output.htmlFor.value = input.id;
+  output.setAttribute("aria-hidden", "true");
   const read = () => {
     const parsed = Math.round(Number(input.value));
     const clamped = Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : min;
     input.value = String(clamped);
     output.value = format(clamped);
     output.textContent = output.value;
+    input.setAttribute("aria-valuetext", output.value);
     return clamped;
   };
   read();
@@ -4256,9 +4391,12 @@ function foldSection(title2, open = false, key = "") {
 }
 function textareaRow(label, value, placeholder, onCommit) {
   const wrap = el2("div", "so-app-field");
-  const title2 = el2("div", "so-app-title");
+  const title2 = document.createElement("label");
+  title2.className = "so-app-title";
   title2.textContent = label;
   const input = document.createElement("textarea");
+  input.id = nextControlId();
+  title2.htmlFor = input.id;
   input.className = "text_pole so-app-input";
   input.rows = 5;
   input.value = value;
@@ -4276,13 +4414,24 @@ function hintField(row, hint) {
   badge.className = "so-app-hint-badge";
   badge.textContent = "ⓘ";
   badge.title = hint;
-  badge.setAttribute("aria-label", "说明");
+  badge.setAttribute("aria-label", t("common.help", "说明"));
   badge.setAttribute("aria-expanded", "false");
   const detail = el2("div", "so-app-hint");
+  detail.id = `${nextControlId()}-help`;
   detail.textContent = hint;
   detail.hidden = true;
+  badge.setAttribute("aria-controls", detail.id);
+  badge.setAttribute("aria-describedby", detail.id);
+  for (const control2 of row.querySelectorAll("input, textarea, select")) {
+    const descriptions = control2.getAttribute("aria-describedby")?.split(/\s+/).filter(Boolean) ?? [];
+    control2.setAttribute("aria-describedby", [...descriptions, detail.id].join(" "));
+  }
+  badge.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+  });
   badge.addEventListener("click", (e) => {
     e.preventDefault();
+    e.stopPropagation();
     detail.hidden = !detail.hidden;
     badge.classList.toggle("so-app-hint-badge-on", !detail.hidden);
     badge.setAttribute("aria-expanded", String(!detail.hidden));
@@ -4293,9 +4442,12 @@ function hintField(row, hint) {
 }
 function textRow(label, value, placeholder, onCommit, type = "text") {
   const wrap = el2("div", "so-app-field");
-  const title2 = el2("div", "so-app-title");
+  const title2 = document.createElement("label");
+  title2.className = "so-app-title";
   title2.textContent = label;
   const input = document.createElement("input");
+  input.id = nextControlId();
+  title2.htmlFor = input.id;
   input.type = type;
   input.className = "text_pole so-app-input";
   input.value = value;
@@ -4373,14 +4525,14 @@ function formatValue(v) {
   return String(v);
 }
 function parseInputValue(raw) {
-  const t = raw.trim();
-  if (t === "null") return null;
-  if (t === "true") return true;
-  if (t === "false") return false;
-  if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
-  if (t.startsWith("{") || t.startsWith("[")) {
+  const t2 = raw.trim();
+  if (t2 === "null") return null;
+  if (t2 === "true") return true;
+  if (t2 === "false") return false;
+  if (/^-?\d+(\.\d+)?$/.test(t2)) return Number(t2);
+  if (t2.startsWith("{") || t2.startsWith("[")) {
     try {
-      return JSON.parse(t);
+      return JSON.parse(t2);
     } catch {
     }
   }
@@ -4398,9 +4550,9 @@ function editKind(v, definition) {
 function valueTypeLabel(v, tuple) {
   const inner = tuple ? v[0] : v;
   if (inner === null) return "null";
-  if (Array.isArray(inner)) return `数组[${inner.length}]`;
-  if (typeof inner === "object") return "对象";
-  return typeof inner === "number" ? "数字" : typeof inner === "boolean" ? "布尔" : "文本";
+  if (Array.isArray(inner)) return t("variableTree.array", "数组[{{count}}]", { count: inner.length });
+  if (typeof inner === "object") return t("variableTree.object", "对象");
+  return typeof inner === "number" ? t("variableTree.number", "数字") : typeof inner === "boolean" ? t("variableTree.boolean", "布尔") : t("variableTree.text", "文本");
 }
 function jsonEqual(a, b) {
   if (a === b) return true;
@@ -4441,25 +4593,36 @@ function computeDelta(current2, prev, isMvu) {
 }
 function createVariableTreeView(container, handlers) {
   let editingPath = null;
+  let focusRequest = null;
   const groupOpen = /* @__PURE__ */ new Map();
   let addOpen = false;
   function render2() {
     const model = handlers.getModel();
+    const restore = captureVariableFocus(container);
+    const request = focusRequest;
+    focusRequest = null;
+    const active = document.activeElement;
+    const focusPath = request && (!request.editor || request.editor.contains(active) || !request.editor.isConnected && active === document.body) ? request.path : null;
     container.textContent = "";
     const head = el2("div", "so-app-section vm-head");
     const line = el2("div", "vm-statusrow");
     const status = el2("div", "so-app-desc vm-status");
+    status.setAttribute("role", "status");
     status.textContent = model.statusText;
-    const refreshBtn = el2("button", "menu_button vm-refresh");
+    const refreshBtn = variableButton("menu_button vm-refresh");
     refreshBtn.setAttribute("role", "button");
-    refreshBtn.textContent = "刷新";
+    refreshBtn.textContent = t("variableTree.refresh", "刷新");
+    refreshBtn.dataset.variableFocus = "refresh";
     refreshBtn.addEventListener("click", () => handlers.requestRefresh());
     line.append(status, refreshBtn);
     head.append(line);
     container.append(head);
     if (model.noticeText) {
       appendNotice(model.noticeText);
-      if (model.status === "unavailable") return;
+      if (model.status === "unavailable") {
+        restore?.();
+        return;
+      }
     }
     const keys = Object.keys(model.data);
     if (keys.length === 0) {
@@ -4470,6 +4633,11 @@ function createVariableTreeView(container, handlers) {
       container.append(tree);
     }
     if (model.allowAdd !== false) container.append(buildAddSection(model));
+    if (focusPath !== null) {
+      const target = editingPath === focusPath ? container.querySelector(".vm-editing input, .vm-editing select, .vm-editing textarea") : [...container.querySelectorAll(".vm-leaf-main")].find((node) => node.dataset.variableFocus === `leaf:${focusPath}`);
+      if (target) target.focus({ preventScroll: true });
+      else restore?.();
+    } else restore?.();
   }
   function appendNotice(text4) {
     const note = el2("div", "so-app-section");
@@ -4487,6 +4655,7 @@ function createVariableTreeView(container, handlers) {
       details.addEventListener("toggle", () => groupOpen.set(path, details.open));
       const summary = document.createElement("summary");
       summary.className = "so-app-title vm-group-title";
+      summary.dataset.variableFocus = `group:${path}`;
       summary.textContent = `${key}（${Object.keys(value).length}）`;
       const body = el2("div", "so-app-fold-body vm-group-body");
       for (const childKey of Object.keys(value)) {
@@ -4505,12 +4674,13 @@ function createVariableTreeView(container, handlers) {
     }
     const card = el2("div", "vm-leaf");
     const main = el2("div", "vm-leaf-main");
+    main.dataset.variableFocus = `leaf:${path}`;
     const keyEl = el2("span", "vm-key");
     keyEl.textContent = key;
     const valEl = el2("span", "vm-val");
     const shown = formatValue(tuple ? value[0] : value);
     valEl.textContent = shown.length > 80 ? `${shown.slice(0, 80)}…` : shown;
-    valEl.title = `类型：${valueTypeLabel(value, tuple)}`;
+    valEl.title = t("variableTree.type", "类型：{{type}}", { type: valueTypeLabel(value, tuple) });
     main.append(keyEl, valEl);
     const d = model.delta.get(path);
     if (d) main.append(buildDeltaBadge(d));
@@ -4524,25 +4694,28 @@ function createVariableTreeView(container, handlers) {
       main.tabIndex = 0;
       const enterEdit = () => {
         editingPath = path;
+        focusRequest = { path };
         render2();
       };
       main.addEventListener("click", enterEdit);
       main.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
+          e.stopPropagation();
           enterEdit();
         }
       });
     }
     card.append(main);
     if (model.canWrite) {
-      const del = el2("button", "vm-del");
-      del.setAttribute("aria-label", "删除变量");
-      del.title = "删除该变量";
+      const del = variableButton("vm-del");
+      del.setAttribute("aria-label", t("variableTree.delete_path", "删除变量 {{path}}", { path }));
+      del.dataset.variableFocus = `delete:${path}`;
+      del.title = t("variableTree.delete_title", "删除该变量");
       del.textContent = "✕";
       del.addEventListener("click", (e) => {
         e.stopPropagation();
-        if (!window.confirm(`删除变量「${path}」？此操作不可撤销。`)) return;
+        if (!window.confirm(t("variableTree.delete_confirm", "删除变量「{{path}}」？此操作不可撤销。", { path }))) return;
         editingPath = null;
         handlers.commitDelete(path);
       });
@@ -4557,7 +4730,7 @@ function createVariableTreeView(container, handlers) {
       const shown = Number.isInteger(n) ? String(n) : String(Number(n.toFixed(2)));
       badge.textContent = `${n > 0 ? "+" : ""}${shown}`;
     } else {
-      badge.textContent = d.kind === "added" ? "新" : "改";
+      badge.textContent = d.kind === "added" ? t("variableTree.added", "新") : t("variableTree.changed", "改");
     }
     return badge;
   }
@@ -4571,22 +4744,23 @@ function createVariableTreeView(container, handlers) {
     wrap.append(title2);
     if (tuple) {
       const desc = el2("div", "vm-desc");
-      desc.textContent = `描述：${value[1]}（保留不变，仅编辑值）`;
+      desc.textContent = t("variableTree.description", "描述：{{description}}（保留不变，仅编辑值）", { description: value[1] });
       wrap.append(desc);
     }
     const err = el2("div", "so-app-desc vm-add-err");
     err.hidden = true;
+    err.setAttribute("role", "alert");
     let readValue;
     if (kind === "boolean") {
       const row = el2("label", "so-app-toggle checkbox_label");
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.checked = inner === true;
+      const input2 = document.createElement("input");
+      input2.type = "checkbox";
+      input2.checked = inner === true;
       const label = document.createElement("span");
-      label.textContent = "启用（true）";
-      row.append(input, label);
+      label.textContent = t("variableTree.true", "启用（true）");
+      row.append(input2, label);
       wrap.append(row);
-      readValue = () => ({ ok: true, value: input.checked });
+      readValue = () => ({ ok: true, value: input2.checked });
     } else if (kind === "enum") {
       const select = document.createElement("select");
       select.className = "text_pole so-app-input vm-edit-input";
@@ -4600,22 +4774,21 @@ function createVariableTreeView(container, handlers) {
       wrap.append(select);
       readValue = () => ({ ok: true, value: select.value });
     } else if (kind === "number") {
-      const input = document.createElement("input");
-      input.type = "number";
-      input.step = "any";
-      input.className = "text_pole so-app-input vm-edit-input";
-      input.value = typeof inner === "number" && Number.isFinite(inner) ? String(inner) : "";
+      const input2 = document.createElement("input");
+      input2.type = "number";
+      input2.step = "any";
+      input2.className = "text_pole so-app-input vm-edit-input";
+      input2.value = typeof inner === "number" && Number.isFinite(inner) ? String(inner) : "";
       if (definition?.range) {
-        input.min = String(definition.range[0]);
-        input.max = String(definition.range[1]);
+        input2.min = String(definition.range[0]);
+        input2.max = String(definition.range[1]);
       }
-      wrap.append(input);
+      wrap.append(input2);
       readValue = () => {
-        if (input.value.trim() === "") return { ok: false, msg: "请输入有效数字。" };
-        const value2 = Number(input.value);
-        return Number.isFinite(value2) ? { ok: true, value: value2 } : { ok: false, msg: "请输入有效数字。" };
+        if (input2.value.trim() === "") return { ok: false, msg: t("variableTree.invalid_number", "请输入有效数字。") };
+        const value2 = Number(input2.value);
+        return Number.isFinite(value2) ? { ok: true, value: value2 } : { ok: false, msg: t("variableTree.invalid_number", "请输入有效数字。") };
       };
-      setTimeout(() => input.focus(), 0);
     } else if (kind === "json") {
       const ta = document.createElement("textarea");
       ta.className = "text_pole so-app-input vm-edit-input";
@@ -4626,43 +4799,49 @@ function createVariableTreeView(container, handlers) {
         try {
           return { ok: true, value: JSON.parse(ta.value) };
         } catch (e) {
-          return { ok: false, msg: `JSON 格式错误：${e instanceof Error ? e.message : String(e)}` };
+          return { ok: false, msg: t("variableTree.json_error", "JSON 格式错误：{{error}}", { error: e instanceof Error ? e.message : String(e) }) };
         }
       };
-      setTimeout(() => ta.focus(), 0);
     } else {
-      const input = document.createElement("input");
-      input.type = "text";
-      input.className = "text_pole so-app-input vm-edit-input";
-      input.value = formatValue(inner);
-      input.autocomplete = "off";
-      wrap.append(input);
-      readValue = () => ({ ok: true, value: definition?.type === "string" ? input.value : parseInputValue(input.value) });
-      setTimeout(() => input.focus(), 0);
+      const input2 = document.createElement("input");
+      input2.type = "text";
+      input2.className = "text_pole so-app-input vm-edit-input";
+      input2.value = formatValue(inner);
+      input2.autocomplete = "off";
+      wrap.append(input2);
+      readValue = () => ({ ok: true, value: definition?.type === "string" ? input2.value : parseInputValue(input2.value) });
     }
+    const input = wrap.querySelector("input, select, textarea");
+    input?.setAttribute("aria-label", t("variableTree.edit_value", "编辑 {{path}} 的值", { path }));
+    if (input) input.dataset.variableFocus = `value:${path}`;
     wrap.append(err);
     const actions = el2("div", "vm-actions");
-    const save = el2("button", "menu_button vm-act");
-    save.textContent = "保存";
+    const save = variableButton("menu_button vm-act");
+    save.textContent = t("variableTree.save", "保存");
+    save.dataset.variableFocus = `save:${path}`;
     save.addEventListener("click", () => {
       const r = readValue();
       if (!r.ok) {
-        err.textContent = r.msg ?? "输入无效。";
+        err.textContent = r.msg ?? t("variableTree.invalid", "输入无效。");
         err.hidden = false;
         return;
       }
       editingPath = null;
+      focusRequest = { path, editor: wrap };
       const committed = handlers.commitSet(path, r.value);
       if (committed && !committed.ok) {
         editingPath = path;
+        focusRequest = null;
         err.textContent = committed.error;
         err.hidden = false;
       }
     });
-    const cancel = el2("button", "menu_button vm-act vm-act-ghost");
-    cancel.textContent = "取消";
+    const cancel = variableButton("menu_button vm-act vm-act-ghost");
+    cancel.textContent = t("variableTree.cancel", "取消");
+    cancel.dataset.variableFocus = `cancel:${path}`;
     cancel.addEventListener("click", () => {
       editingPath = null;
+      focusRequest = { path };
       render2();
     });
     actions.append(save, cancel);
@@ -4676,7 +4855,8 @@ function createVariableTreeView(container, handlers) {
     box.addEventListener("toggle", () => addOpen = box.open);
     const summary = document.createElement("summary");
     summary.className = "so-app-title";
-    summary.textContent = "＋ 新增变量";
+    summary.textContent = t("variableTree.add_variable", "＋ 新增变量");
+    summary.dataset.variableFocus = "add-section";
     const body = el2("div", "so-app-fold-body");
     const hint = el2("div", "so-app-desc");
     hint.textContent = model.addHint;
@@ -4684,27 +4864,32 @@ function createVariableTreeView(container, handlers) {
     const pathInput = document.createElement("input");
     pathInput.type = "text";
     pathInput.className = "text_pole so-app-input";
-    pathInput.placeholder = "变量路径（如 状态.体力）";
+    pathInput.placeholder = t("variableTree.path_placeholder", "变量路径（如 状态.体力）");
+    pathInput.setAttribute("aria-label", t("variableTree.path", "变量路径"));
+    pathInput.dataset.variableFocus = "new-path";
     pathInput.autocomplete = "off";
     const valInput = document.createElement("input");
     valInput.type = "text";
     valInput.className = "text_pole so-app-input";
-    valInput.placeholder = "值（如 80 / 健康 / true）";
+    valInput.placeholder = t("variableTree.value_placeholder", "值（如 80 / 健康 / true）");
+    valInput.setAttribute("aria-label", t("variableTree.value", "变量值"));
+    valInput.dataset.variableFocus = "new-value";
     valInput.autocomplete = "off";
     body.append(pathInput, valInput);
     const err = el2("div", "so-app-desc vm-add-err");
     err.hidden = true;
+    err.setAttribute("role", "alert");
     body.append(err);
     body.append(
-      appButton("添加", () => {
+      appButton(t("variableTree.add", "添加"), () => {
         const path = pathInput.value.trim();
         if (!path) {
-          err.textContent = "请填写变量路径。";
+          err.textContent = t("variableTree.path_required", "请填写变量路径。");
           err.hidden = false;
           return;
         }
         if (!model.canWrite) {
-          err.textContent = "当前环境不可写入变量。";
+          err.textContent = t("variableTree.cannot_write", "当前环境不可写入变量。");
           err.hidden = false;
           return;
         }
@@ -4721,6 +4906,9 @@ function createVariableTreeView(container, handlers) {
   return {
     render: render2,
     resetEditing() {
+      if (editingPath && container.contains(document.activeElement)) {
+        focusRequest = { path: editingPath, editor: container.querySelector(".vm-editing") ?? void 0 };
+      }
       editingPath = null;
     },
     isEditing() {
@@ -4916,7 +5104,7 @@ async function writeHelper(scope, mutate) {
     await Promise.resolve(helper.replaceVariables(vars, scope));
     return;
   }
-  throw new Error("无可用的变量写入通道（MVU / 酒馆助手均不可用）");
+  throw new Error(t("apps.mvu.no_write_channel", "无可用的变量写入通道（MVU / 酒馆助手均不可用）"));
 }
 function subscribeVarEvents(handler) {
   const st = getST();
@@ -5175,21 +5363,132 @@ function installRegisterQueue(prev, register) {
   return shim;
 }
 
+// core/dialog-focus.ts
+var dialogs = [];
+var selector = "button, a[href], input, select, textarea, summary, [contenteditable], [tabindex]";
+function isVisible(element2) {
+  if (!element2.isConnected || element2.closest("[hidden], [inert]")) return false;
+  for (let node = element2; node; node = node.parentElement) {
+    const style = getComputedStyle(node);
+    if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") return false;
+    if (node.tagName === "DETAILS" && !node.hasAttribute("open")) {
+      const summary = node.querySelector(":scope > summary");
+      if (!summary?.contains(element2)) return false;
+    }
+  }
+  return true;
+}
+function focusable(container) {
+  const candidates = Array.from(container.querySelectorAll(selector)).filter((element2) => {
+    const editable = element2.getAttribute("contenteditable");
+    const parentEditable = element2.parentElement?.closest("[contenteditable]")?.getAttribute("contenteditable");
+    const editingHost = editable !== null && ["", "true", "plaintext-only"].includes(editable) && (parentEditable === void 0 || parentEditable === "false");
+    return (element2.tabIndex >= 0 || editingHost && !element2.hasAttribute("tabindex")) && !element2.matches(":disabled") && isVisible(element2);
+  });
+  return candidates.filter((element2) => {
+    if (!(element2 instanceof HTMLInputElement) || element2.type !== "radio" || !element2.name) return true;
+    const group = candidates.filter((candidate) => candidate instanceof HTMLInputElement && candidate.type === "radio" && candidate.name === element2.name && candidate.form === element2.form);
+    return element2 === (group.find((radio) => radio.checked) ?? group[0]);
+  }).sort((a, b) => (a.tabIndex > 0 ? a.tabIndex : Infinity) - (b.tabIndex > 0 ? b.tabIndex : Infinity));
+}
+function topDialog() {
+  return dialogs.findLast((entry) => entry.container.isConnected);
+}
+function manageDialogFocus(container, options) {
+  const opener = options.opener === void 0 ? document.activeElement instanceof HTMLElement ? document.activeElement : null : options.opener;
+  const originalTabIndex = container.getAttribute("tabindex");
+  const layer = options.layer ?? container;
+  const originalZIndex = layer.style.getPropertyValue("z-index");
+  const originalZPriority = layer.style.getPropertyPriority("z-index");
+  const zIndex = (node) => Number.parseInt(getComputedStyle(node).zIndex, 10) || 0;
+  const highestLayer = Math.max(9999, zIndex(layer), ...dialogs.filter((entry2) => entry2.container.isConnected).map((entry2) => zIndex(entry2.layer)));
+  layer.style.setProperty("z-index", String(highestLayer + 1));
+  if (originalTabIndex === null) container.tabIndex = -1;
+  let disposed = false;
+  let restoreAllowed = false;
+  let lastFocused = null;
+  const entry = { container, layer, focusInitial };
+  dialogs.push(entry);
+  function focusInitial() {
+    if (disposed || topDialog() !== entry) return;
+    const target = lastFocused && container.contains(lastFocused) && isVisible(lastFocused) && !lastFocused.matches(":disabled") ? lastFocused : focusable(container)[0] ?? container;
+    target.focus({ preventScroll: true });
+  }
+  function onFocus(event) {
+    if (disposed || topDialog() !== entry) return;
+    if (event.target instanceof HTMLElement && container.contains(event.target)) {
+      lastFocused = event.target;
+    } else {
+      focusInitial();
+    }
+  }
+  function onKey(event) {
+    if (disposed || topDialog() !== entry || event.isComposing) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      options.onEscape();
+    } else if (event.key === "Tab") {
+      const items = focusable(container);
+      const first = items[0] ?? container;
+      const last = items[items.length - 1] ?? container;
+      const active = document.activeElement;
+      if (!items.includes(active) || (event.shiftKey ? active === first : active === last)) {
+        event.preventDefault();
+        event.stopPropagation();
+        (event.shiftKey ? last : first).focus({ preventScroll: true });
+      }
+    }
+  }
+  document.addEventListener("keydown", onKey, true);
+  document.addEventListener("focusin", onFocus, true);
+  return {
+    focusInitial,
+    isTop: () => !disposed && topDialog() === entry,
+    dispose() {
+      if (disposed) return;
+      restoreAllowed = topDialog() === entry;
+      disposed = true;
+      dialogs.splice(dialogs.indexOf(entry), 1);
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("focusin", onFocus, true);
+      if (originalTabIndex === null) container.removeAttribute("tabindex");
+      if (originalZIndex) layer.style.setProperty("z-index", originalZIndex, originalZPriority);
+      else layer.style.removeProperty("z-index");
+    },
+    /** Call after removing the dialog and reopening/remounting its source App. */
+    restoreFocus() {
+      if (!disposed || !restoreAllowed) return;
+      restoreAllowed = false;
+      const parent = topDialog();
+      if (opener && isVisible(opener) && !opener.matches(":disabled") && (!parent || parent.container.contains(opener))) {
+        opener.focus({ preventScroll: true });
+      } else {
+        parent?.focusInitial();
+      }
+    }
+  };
+}
+
 // core/app-modal.ts
 function openAppModal(build, hooks) {
+  const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   hooks.onOpen();
   const backdrop = document.createElement("div");
   backdrop.className = "so-app-modal-backdrop";
   const box = document.createElement("div");
   box.className = "so-app-modal";
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-modal", "true");
+  box.setAttribute("aria-label", t("modal.title", "App 弹窗"));
   const head = document.createElement("div");
   head.className = "so-app-modal-head";
   const closeBtn = document.createElement("div");
   closeBtn.className = "so-app-modal-close";
   closeBtn.textContent = "✕";
-  closeBtn.title = "关闭";
+  closeBtn.title = t("common.close", "关闭");
   closeBtn.setAttribute("role", "button");
-  closeBtn.setAttribute("aria-label", "关闭弹窗");
+  closeBtn.setAttribute("aria-label", t("modal.close", "关闭弹窗"));
   closeBtn.tabIndex = 0;
   const body = document.createElement("div");
   body.className = "so-app-modal-body";
@@ -5211,22 +5510,21 @@ function openAppModal(build, hooks) {
   const close = () => {
     if (closed) return;
     closed = true;
-    document.removeEventListener("keydown", onKey, true);
+    focus.dispose();
     runCleanup();
     backdrop.remove();
-    hooks.onClose();
-  };
-  const onKey = (e) => {
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      close();
+    try {
+      hooks.onClose();
+    } finally {
+      focus.restoreFocus();
     }
   };
-  document.addEventListener("keydown", onKey, true);
+  const focus = manageDialogFocus(box, { onEscape: close, opener, layer: backdrop });
   closeBtn.addEventListener("click", close);
   closeBtn.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
+      e.stopPropagation();
       close();
     }
   });
@@ -5235,8 +5533,10 @@ function openAppModal(build, hooks) {
     if (closed) runCleanup();
   } catch (err) {
     console.error("[sprite-overlay] App 弹窗渲染失败", err);
-    body.textContent = "弹窗渲染失败，详见控制台";
+    body.setAttribute("role", "alert");
+    body.textContent = t("modal.render_error", "弹窗渲染失败，详见控制台");
   }
+  if (!closed) focus.focusInitial();
   return close;
 }
 function openTrackedAppModal(build, hooks, track) {
@@ -5270,25 +5570,44 @@ function createPhoneShell(initialState, deps) {
   let destroyed = false;
   const fab = document.createElement("div");
   fab.className = "so-phone-fab";
-  fab.title = "打开手机";
+  fab.title = t("phone.open", "打开手机");
   fab.textContent = "📱";
   fab.setAttribute("role", "button");
-  fab.setAttribute("aria-label", "打开手机面板");
+  fab.setAttribute("aria-label", t("phone.open_panel", "打开手机面板"));
+  fab.tabIndex = 0;
+  fab.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopPropagation();
+    commitState({ ...state2, open: true });
+    renderScreen();
+    focusHome();
+  });
   const shell = document.createElement("div");
   shell.className = "so-phone-shell";
+  shell.setAttribute("role", "region");
+  shell.setAttribute("aria-label", HOME_TITLE);
   shell.style.display = "none";
   const stopShellEvent = (event) => event.stopPropagation();
   for (const type of ["pointerdown", "touchstart", "click"]) {
     shell.addEventListener(type, stopShellEvent);
   }
+  shell.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (event.key === "Escape" && !event.defaultPrevented && !event.isComposing) {
+      event.preventDefault();
+      if (activeApp) goHome();
+      else collapse();
+    }
+  });
   const statusBar2 = document.createElement("div");
   statusBar2.className = "so-phone-status";
   const backBtn = document.createElement("div");
   backBtn.className = "so-phone-back";
   backBtn.textContent = "‹";
-  backBtn.title = "返回主屏";
+  backBtn.title = t("phone.back", "返回主屏");
   backBtn.setAttribute("role", "button");
-  backBtn.setAttribute("aria-label", "返回主屏");
+  backBtn.setAttribute("aria-label", t("phone.back", "返回主屏"));
   backBtn.tabIndex = 0;
   backBtn.addEventListener("click", () => goHome());
   backBtn.addEventListener("keydown", (e) => {
@@ -5305,13 +5624,14 @@ function createPhoneShell(initialState, deps) {
   const closeBtn = document.createElement("div");
   closeBtn.className = "so-phone-close";
   closeBtn.textContent = "✕";
-  closeBtn.title = "收起手机";
+  closeBtn.title = t("phone.collapse", "收起手机");
   closeBtn.setAttribute("role", "button");
-  closeBtn.setAttribute("aria-label", "收起手机");
+  closeBtn.setAttribute("aria-label", t("phone.collapse", "收起手机"));
   closeBtn.tabIndex = 0;
   const collapse = () => {
     leaveApp();
     commitState({ ...state2, open: false });
+    if (!hidden) fab.focus({ preventScroll: true });
   };
   closeBtn.addEventListener("click", collapse);
   closeBtn.addEventListener("keydown", (e) => {
@@ -5330,9 +5650,9 @@ function createPhoneShell(initialState, deps) {
   homeBar.className = "so-phone-homebar";
   const homeBtn = document.createElement("div");
   homeBtn.className = "so-phone-homebtn";
-  homeBtn.title = "返回主屏";
+  homeBtn.title = t("phone.back", "返回主屏");
   homeBtn.setAttribute("role", "button");
-  homeBtn.setAttribute("aria-label", "返回主屏");
+  homeBtn.setAttribute("aria-label", t("phone.back", "返回主屏"));
   homeBtn.tabIndex = 0;
   homeBar.append(homeBtn);
   shell.append(statusBar2, screen, homeBar);
@@ -5340,7 +5660,7 @@ function createPhoneShell(initialState, deps) {
   const clockTimer = setInterval(updateClock, 3e4);
   updateClock();
   function updateClock() {
-    clock.textContent = (/* @__PURE__ */ new Date()).toLocaleTimeString("zh-CN", {
+    clock.textContent = (/* @__PURE__ */ new Date()).toLocaleTimeString(getLocale(), {
       hour: "2-digit",
       minute: "2-digit"
     });
@@ -5428,10 +5748,7 @@ function createPhoneShell(initialState, deps) {
     window.addEventListener("pointercancel", onCancel);
   });
   const onHomePress = () => {
-    if (activeApp) {
-      leaveApp();
-      renderScreen();
-    }
+    if (activeApp) goHome();
   };
   homeBtn.addEventListener("click", onHomePress);
   homeBtn.addEventListener("keydown", (e) => {
@@ -5459,6 +5776,7 @@ function createPhoneShell(initialState, deps) {
   function renderScreen() {
     const prevScrollAppId = screenScrollAppId;
     const prevScrollTop = screen.scrollTop;
+    const restore = prevScrollAppId === activeApp?.id ? captureScreenFocus() : null;
     screen.innerHTML = "";
     backBtn.style.display = activeApp ? "flex" : "none";
     if (activeApp) {
@@ -5473,6 +5791,9 @@ function createPhoneShell(initialState, deps) {
       if (activeApp.fullbleed) {
         container.classList.add("so-phone-app-fullbleed");
       }
+      container.tabIndex = -1;
+      container.setAttribute("role", "group");
+      container.setAttribute("aria-label", activeApp.name);
       screen.append(container);
       try {
         const mounted = deps.createAppContext(activeApp.id, goHome);
@@ -5483,11 +5804,12 @@ function createPhoneShell(initialState, deps) {
         container.replaceChildren();
         const errBox = document.createElement("div");
         errBox.className = "so-phone-app-error";
-        errBox.textContent = "App 打开失败，详见控制台";
+        errBox.textContent = t("phone.app_error", "App 打开失败，详见控制台");
         container.append(errBox);
       }
       if (prevScrollAppId === activeApp.id && prevScrollTop > 0) screen.scrollTop = prevScrollTop;
       screenScrollAppId = activeApp.id;
+      restore?.();
       return;
     }
     screenScrollAppId = null;
@@ -5503,9 +5825,10 @@ function createPhoneShell(initialState, deps) {
   function renderAppIcon(app) {
     const cell = document.createElement("div");
     cell.className = "so-phone-app-icon";
+    cell.dataset.appId = app.id;
     cell.setAttribute("role", "button");
     cell.tabIndex = 0;
-    cell.setAttribute("aria-label", `打开 ${app.name}`);
+    cell.setAttribute("aria-label", t("phone.open_app", "打开 {{name}}", { name: app.name }));
     const icon = document.createElement("div");
     icon.className = "so-phone-app-glyph";
     icon.textContent = app.icon;
@@ -5516,6 +5839,7 @@ function createPhoneShell(initialState, deps) {
     const openThis = () => {
       activeApp = app;
       renderScreen();
+      focusApp();
     };
     cell.addEventListener("click", openThis);
     cell.addEventListener("keydown", (e) => {
@@ -5527,8 +5851,54 @@ function createPhoneShell(initialState, deps) {
     return cell;
   }
   function goHome() {
+    const appId = activeApp?.id;
     leaveApp();
     renderScreen();
+    focusHome(appId);
+  }
+  function focusHome(appId) {
+    const icons = Array.from(screen.querySelectorAll(".so-phone-app-icon"));
+    (icons.find((icon) => icon.dataset.appId === appId) ?? icons[0] ?? closeBtn).focus({ preventScroll: true });
+  }
+  function focusApp() {
+    screen.querySelector(".so-phone-app-container")?.focus({ preventScroll: true });
+  }
+  function focusIdentity(element2) {
+    const labelledBy = element2.getAttribute("aria-labelledby")?.split(/\s+/).map((id) => document.getElementById(id)?.textContent ?? "").join(" ").trim();
+    const labels = element2 instanceof HTMLInputElement || element2 instanceof HTMLTextAreaElement || element2 instanceof HTMLSelectElement || element2 instanceof HTMLButtonElement ? Array.from(element2.labels ?? []).map((label) => {
+      const copy = label.cloneNode(true);
+      copy.querySelectorAll("input, select, textarea, button, output").forEach((node) => node.remove());
+      return copy.textContent ?? "";
+    }).join(" ") : "";
+    const name = (labelledBy || element2.getAttribute("aria-label") || labels || (element2.matches('button, [role="button"]') ? element2.textContent : "") || "").replace(/\s+/g, " ").trim();
+    const key = element2.dataset.focusKey || element2.getAttribute("name") || "";
+    return name || key ? JSON.stringify([name, key, element2.getAttribute("role")]) : "";
+  }
+  function captureScreenFocus() {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || !screen.contains(active)) return null;
+    const identity = focusIdentity(active);
+    const path = [];
+    for (let node = active; node !== screen && node.parentElement; node = node.parentElement) {
+      path.unshift(Array.from(node.parentElement.children).indexOf(node));
+    }
+    const selection = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ? [active.selectionStart, active.selectionEnd, active.selectionDirection] : null;
+    return () => {
+      let replacement = screen;
+      for (const index of path) replacement = replacement?.children[index];
+      if (!(replacement instanceof HTMLElement) || replacement.tagName !== active.tagName || replacement.getAttribute("type") !== active.getAttribute("type") || !identity || focusIdentity(replacement) !== identity || replacement.closest("[hidden], [inert]") || replacement.matches(":disabled")) {
+        focusApp();
+        return;
+      }
+      replacement.focus({ preventScroll: true });
+      if (document.activeElement !== replacement) {
+        focusApp();
+        return;
+      }
+      if (selection && selection[0] !== null && selection[1] !== null && (replacement instanceof HTMLInputElement || replacement instanceof HTMLTextAreaElement)) {
+        replacement.setSelectionRange(selection[0], selection[1], selection[2] ?? void 0);
+      }
+    };
   }
   return {
     setState(next) {
@@ -5547,6 +5917,7 @@ function createPhoneShell(initialState, deps) {
       activeApp = app;
       if (!state2.open) commitState({ ...state2, open: true });
       renderScreen();
+      focusApp();
     },
     setVisible(visible) {
       if (destroyed) return;
@@ -5623,7 +5994,7 @@ function decodeShareStringV1(raw) {
   const text4 = raw.trim();
   const prefixIndex = text4.indexOf(SHARE_PREFIX);
   if (prefixIndex === -1) {
-    throw new Error(`导入失败：没有找到 ${SHARE_PREFIX} 开头的分享串`);
+    throw new Error(t("sprite.manager.content.error.share_prefix", "导入失败：没有找到 {{p0}} 开头的分享串", { p0: SHARE_PREFIX }));
   }
   const body = text4.slice(prefixIndex + SHARE_PREFIX.length).trim();
   const segments = body.split("|");
@@ -5656,7 +6027,7 @@ function decodeShareStringV1(raw) {
     sprites.push({ tag, url: host + code, code });
   }
   if (sprites.length === 0) {
-    throw new Error("导入失败：分享串中没有可用的「表情=编码」条目");
+    throw new Error(t("sprite.manager.content.error.share_no_codes", "导入失败：分享串中没有可用的「表情=编码」条目"));
   }
   const finalSprites = sprites.map((s) => ({ ...s, url: host + s.code }));
   return { id: genId(), name, author, sprites: finalSprites, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
@@ -5699,7 +6070,7 @@ function decodeShareStringV2(raw) {
   const text4 = raw.trim();
   const prefixIndex = text4.indexOf(SHARE_PREFIX_V2);
   if (prefixIndex === -1) {
-    throw new Error(`导入失败：没有找到 ${SHARE_PREFIX_V2} 开头的分享串`);
+    throw new Error(t("sprite.manager.content.error.share_prefix", "导入失败：没有找到 {{p0}} 开头的分享串", { p0: SHARE_PREFIX_V2 }));
   }
   const body = text4.slice(prefixIndex + SHARE_PREFIX_V2.length).trim();
   const segments = body.split("|");
@@ -5752,7 +6123,7 @@ function decodeShareStringV2(raw) {
     });
   }
   if (sprites.length === 0) {
-    throw new Error("导入失败：分享串中没有可用的「地址=URL」条目");
+    throw new Error(t("sprite.manager.content.error.share_no_urls", "导入失败：分享串中没有可用的「地址=URL」条目"));
   }
   const commonRole = sprites.every((s) => (s.group ?? "") === (sprites[0].group ?? "")) ? sprites[0].group ?? "" : "";
   const commonOutfit = sprites.every((s) => (s.outfit ?? "") === (sprites[0].outfit ?? "")) ? sprites[0].outfit ?? "" : "";
@@ -6368,7 +6739,7 @@ var IMAGE_FORMATS = {
 function uniqueImageName() {
   const cryptoApi = globalThis.crypto;
   if (!cryptoApi || typeof cryptoApi.getRandomValues !== "function") {
-    throw new Error("当前环境不支持安全随机图片命名");
+    throw new Error(t("storage.errors.random_image", "当前环境不支持安全随机图片命名"));
   }
   const bytes = new Uint8Array(16);
   cryptoApi.getRandomValues(bytes);
@@ -6376,18 +6747,18 @@ function uniqueImageName() {
 }
 function parseImageData(dataUri) {
   const match = /^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/]+={0,2})$/i.exec(dataUri);
-  if (!match || match[2].length % 4 !== 0) throw new Error("图片数据格式不正确");
+  if (!match || match[2].length % 4 !== 0) throw new Error(t("storage.errors.image_data", "图片数据格式不正确"));
   const format = IMAGE_FORMATS[match[1].toLowerCase()];
-  if (!format) throw new Error("不支持的图片格式，请转换为 PNG、WebP 或 GIF 后重试");
+  if (!format) throw new Error(t("storage.errors.image_format", "不支持的图片格式，请转换为 PNG、WebP 或 GIF 后重试"));
   const binarySize = match[2].length * 3 / 4 - (match[2].endsWith("==") ? 2 : match[2].endsWith("=") ? 1 : 0);
-  if (binarySize > ST_IMAGE_MAX_BYTES) throw new Error("单张图片不能超过 20 MiB");
+  if (binarySize > ST_IMAGE_MAX_BYTES) throw new Error(t("storage.errors.image_size", "单张图片不能超过 20 MiB"));
   let binary;
   try {
     binary = atob(match[2]);
   } catch (error) {
-    throw new Error("图片数据格式不正确", { cause: error });
+    throw new Error(t("storage.errors.image_data", "图片数据格式不正确"), { cause: error });
   }
-  if (!binary.length) throw new Error("图片数据为空");
+  if (!binary.length) throw new Error(t("storage.errors.image_empty", "图片数据为空"));
   return {
     image: match[2],
     format,
@@ -6402,13 +6773,13 @@ function sameBytes(actual, expected) {
   return true;
 }
 async function persistSTImage(dataUri, deps, options = {}) {
-  if (typeof deps.fetch !== "function") throw new Error("当前环境不支持图片保存请求能力");
+  if (typeof deps.fetch !== "function") throw new Error(t("storage.errors.fetch_missing", "当前环境不支持图片保存请求能力"));
   if (typeof deps.getRequestHeaders !== "function") {
-    throw new Error("当前酒馆未提供图片保存所需的请求头能力");
+    throw new Error(t("storage.errors.headers_missing", "当前酒馆未提供图片保存所需的请求头能力"));
   }
   const headers = deps.getRequestHeaders();
   if (!headers || typeof headers !== "object" || Object.keys(headers).length === 0) {
-    throw new Error("当前酒馆未提供图片保存所需的请求头能力");
+    throw new Error(t("storage.errors.headers_missing", "当前酒馆未提供图片保存所需的请求头能力"));
   }
   const data = parseImageData(dataUri);
   const filename = uniqueImageName();
@@ -6417,7 +6788,7 @@ async function persistSTImage(dataUri, deps, options = {}) {
   const onAbort = () => controller.abort(options.signal?.reason);
   options.signal?.addEventListener("abort", onAbort, { once: true });
   if (options.signal?.aborted) onAbort();
-  const timer = setTimeout(() => controller.abort(new Error("图片保存超时")), ST_IMAGE_SAVE_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(new Error(t("storage.errors.timeout", "图片保存超时"))), ST_IMAGE_SAVE_TIMEOUT_MS);
   try {
     const response = await deps.fetch("/api/images/upload", {
       method: "POST",
@@ -6430,20 +6801,20 @@ async function persistSTImage(dataUri, deps, options = {}) {
         filename
       })
     });
-    if (!response.ok) throw new Error(`图片上传失败：HTTP ${response.status}`);
+    if (!response.ok) throw new Error(t("storage.errors.upload_http", "图片上传失败：HTTP {{status}}", { status: response.status }));
     const result = await response.json();
     const path = result && typeof result === "object" && "path" in result ? result.path : void 0;
     if (typeof path !== "string" || path !== expectedPath || localUserImagePath(path) !== expectedPath) {
-      throw new Error("图片上传响应未返回本次保存的安全本地路径");
+      throw new Error(t("storage.errors.response_path", "图片上传响应未返回本次保存的安全本地路径"));
     }
     const readback = await deps.fetch(path, {
       cache: "no-store",
       credentials: "same-origin",
       signal: controller.signal
     });
-    if (!readback.ok) throw new Error(`图片保存后校验失败：HTTP ${readback.status}`);
+    if (!readback.ok) throw new Error(t("storage.errors.readback_http", "图片保存后校验失败：HTTP {{status}}", { status: readback.status }));
     const actual = new Uint8Array(await readback.arrayBuffer());
-    if (!sameBytes(actual, data.bytes)) throw new Error("图片保存后校验失败：文件内容不一致");
+    if (!sameBytes(actual, data.bytes)) throw new Error(t("storage.errors.content_mismatch", "图片保存后校验失败：文件内容不一致"));
     return path;
   } finally {
     clearTimeout(timer);
@@ -6517,54 +6888,50 @@ function hash(value) {
   return (result >>> 0).toString(36);
 }
 
-// core/i18n.ts
-var state = {
-  currentLocale: "zh-CN",
-  translations: {
-    "zh-CN": {},
-    "en-US": {}
-  },
-  fallbackLocale: "zh-CN"
-};
-function setLocale(locale) {
-  const dict = state.translations[locale];
-  if (!dict || Object.keys(dict).length === 0) {
-    throw new Error(`Locale "${locale}" not loaded`);
-  }
-  state.currentLocale = locale;
-}
-function loadTranslations(locale, dict) {
-  state.translations[locale] = dict;
-}
-
 // st-extension/src/st-adapter.ts
 var MODULE_NAME = "sprite_overlay";
-async function loadLocaleFile(locale) {
+async function loadLocaleFile(locale, bundleUrl) {
+  const controller = new AbortController();
+  let timer;
   try {
-    const stack = new Error().stack || "";
-    const match = stack.match(/(https?:\/\/[^\s)]+?)\//);
-    const base = match ? match[1] : "/scripts/extensions/third-party/st-stage";
-    const url = `${base}/locales/${locale}.json`;
-    const response = await fetch(url, { cache: "no-store" });
-    if (!response.ok) {
-      console.warn(`[sprite-overlay] 加载 locale ${locale} 失败: ${response.status}`);
-      return {};
-    }
-    return await response.json();
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new Error("Locale loading timed out"));
+      }, 3e3);
+    });
+    const request = async () => {
+      const url = new URL(`./locales/${locale}.json`, bundleUrl).href;
+      const response = await fetch(url, { cache: "no-store", signal: controller.signal });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const dict = await response.json();
+      if (!isI18nDict(dict)) throw new TypeError("Invalid translation dictionary");
+      return dict;
+    };
+    return await Promise.race([request(), deadline]);
   } catch (err) {
     console.warn(`[sprite-overlay] 加载 locale ${locale} 异常`, err);
     return {};
+  } finally {
+    clearTimeout(timer);
   }
 }
-async function initI18n() {
+async function initI18n(bundleUrl = import.meta.url) {
+  resetI18n();
   const [zhDict, enDict] = await Promise.all([
-    loadLocaleFile("zh-CN"),
-    loadLocaleFile("en-US")
+    loadLocaleFile("zh-CN", bundleUrl),
+    loadLocaleFile("en-US", bundleUrl)
   ]);
   loadTranslations("zh-CN", zhDict);
   loadTranslations("en-US", enDict);
-  const browserLang = navigator.language || "zh-CN";
-  const locale = browserLang.startsWith("en") ? "en-US" : "zh-CN";
+  let savedLanguage = null;
+  try {
+    savedLanguage = localStorage.getItem("language");
+  } catch {
+  }
+  const browser = typeof navigator === "undefined" ? void 0 : navigator;
+  const language = String(savedLanguage || browser?.language || browser?.userLanguage || "en").toLowerCase();
+  const locale = language.startsWith("en") ? "en-US" : "zh-CN";
   try {
     setLocale(locale);
   } catch {
@@ -6575,7 +6942,7 @@ async function initI18n() {
       }
     }
   }
-  console.log(`[sprite-overlay] i18n 已初始化: ${locale}`);
+  console.log(`[sprite-overlay] i18n 已初始化: ${getLocale()}`);
 }
 function persistableSTSettings(settings) {
   return {
@@ -6641,7 +7008,7 @@ var STAdapter = class {
   async deleteImage(url) {
     const path = url.split(/[?#]/, 1)[0].replace(/\\/g, "/");
     if (!isSafeLocalUserImagePath(path)) {
-      throw new Error("只能删除 SillyTavern 用户图片目录中的文件");
+      throw new Error(t("imageActions.delete_scope", "只能删除 SillyTavern 用户图片目录中的文件"));
     }
     const ctx = getContext();
     const response = await fetch("/api/images/delete", {
@@ -6650,7 +7017,7 @@ var STAdapter = class {
       body: JSON.stringify({ path: path.slice(1) })
     });
     if (!response.ok && response.status !== 404) {
-      throw new Error(`删除本地图片失败：HTTP ${response.status}`);
+      throw new Error(t("imageActions.delete_failed", "删除本地图片失败：HTTP {{status}}", { status: response.status }));
     }
   }
   getCurrentCharacterName() {
@@ -6772,8 +7139,18 @@ function createOverlay(initialLayout, onLayoutChange, onManage, onClose, onOpenS
   placeholder.style.display = "none";
   const gearBtn = document.createElement("div");
   gearBtn.className = "sprite-overlay-gear";
-  gearBtn.title = "立绘包管理";
+  gearBtn.title = t("sprite.manager.title", "立绘包管理");
   gearBtn.textContent = "⚙";
+  gearBtn.setAttribute("role", "button");
+  gearBtn.setAttribute("aria-label", gearBtn.title);
+  gearBtn.tabIndex = 0;
+  gearBtn.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      event.stopPropagation();
+      gearBtn.click();
+    }
+  });
   gearBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
   gearBtn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -6781,9 +7158,9 @@ function createOverlay(initialLayout, onLayoutChange, onManage, onClose, onOpenS
   });
   const spritesBtn = document.createElement("div");
   spritesBtn.className = "sprite-overlay-sprites fa-solid fa-eye";
-  spritesBtn.title = "打开立绘 App";
+  spritesBtn.title = t("sprite.overlay.open_app", "打开立绘 App");
   spritesBtn.setAttribute("role", "button");
-  spritesBtn.setAttribute("aria-label", "打开立绘 App");
+  spritesBtn.setAttribute("aria-label", t("sprite.overlay.open_app", "打开立绘 App"));
   spritesBtn.tabIndex = 0;
   spritesBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
   const openSprites = (e) => {
@@ -6799,10 +7176,18 @@ function createOverlay(initialLayout, onLayoutChange, onManage, onClose, onOpenS
   });
   const closeBtn = document.createElement("div");
   closeBtn.className = "sprite-overlay-close";
-  closeBtn.title = "关闭悬浮窗（立绘功能不受影响，可在手机「立绘」App 重新打开）";
+  closeBtn.title = t("sprite.overlay.close_hint", "关闭悬浮窗（立绘功能不受影响，可在手机「立绘」App 重新打开）");
   closeBtn.textContent = "✕";
   closeBtn.setAttribute("role", "button");
-  closeBtn.setAttribute("aria-label", "关闭悬浮窗");
+  closeBtn.setAttribute("aria-label", t("sprite.overlay.close", "关闭悬浮窗"));
+  closeBtn.tabIndex = 0;
+  closeBtn.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeBtn.click();
+    }
+  });
   closeBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
   closeBtn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -7054,19 +7439,19 @@ function validateChoicesForGroups(groups, choices) {
   for (const choice of choices) {
     const group = conflictByKey.get(choice.key);
     if (!group) {
-      throw new PackMergeChoiceError(`未知冲突选择 key：${choice.key}`);
+      throw new PackMergeChoiceError(t("galleryErrors.merge_unknown", "未知冲突选择 key：{{key}}", { key: choice.key }));
     }
     if (choiceByKey.has(choice.key)) {
-      throw new PackMergeChoiceError(`地址「${group.address.tag}」存在重复选择`);
+      throw new PackMergeChoiceError(t("galleryErrors.merge_duplicate", "地址「{{tag}}」存在重复选择", { tag: group.address.tag }));
     }
     if (!Number.isSafeInteger(choice.candidateIndex) || choice.candidateIndex < 0 || choice.candidateIndex >= group.candidates.length) {
-      throw new PackMergeChoiceError(`地址「${group.address.tag}」的候选序号无效`);
+      throw new PackMergeChoiceError(t("galleryErrors.merge_invalid", "地址「{{tag}}」的候选序号无效", { tag: group.address.tag }));
     }
     choiceByKey.set(choice.key, choice.candidateIndex);
   }
   for (const group of conflicts) {
     if (!choiceByKey.has(group.key)) {
-      throw new PackMergeChoiceError(`地址「${group.address.tag}」的冲突图片尚未选择`);
+      throw new PackMergeChoiceError(t("galleryErrors.merge_missing", "地址「{{tag}}」的冲突图片尚未选择", { tag: group.address.tag }));
     }
   }
   return choiceByKey;
@@ -7176,14 +7561,14 @@ function importPack(jsonText) {
   try {
     raw = JSON.parse(jsonText);
   } catch {
-    throw new Error("导入失败：不是合法的 JSON 文件");
+    throw new Error(t("sprite.manager.content.error.invalid_json", "导入失败：不是合法的 JSON 文件"));
   }
   const file = raw;
   if (file.format !== "sprite-pack@3" && file.format !== "sprite-pack@2" && file.format !== "sprite-pack@1") {
-    throw new Error("导入失败：不是 sprite-pack@1 / @2 / @3 格式的立绘包");
+    throw new Error(t("sprite.manager.content.error.pack_format", "导入失败：不是 sprite-pack@1 / @2 / @3 格式的立绘包"));
   }
   if (typeof file.name !== "string" || !file.name || !Array.isArray(file.sprites) || file.sprites.length === 0) {
-    throw new Error("导入失败：立绘包缺少名称或立绘列表为空");
+    throw new Error(t("sprite.manager.content.error.empty_pack", "导入失败：立绘包缺少名称或立绘列表为空"));
   }
   const seen = /* @__PURE__ */ new Set();
   const sprites = [];
@@ -7212,7 +7597,7 @@ function importPack(jsonText) {
     });
   }
   if (sprites.length === 0) {
-    throw new Error("导入失败：没有可用的立绘条目（表情名可能全部为空或重复）");
+    throw new Error(t("sprite.manager.content.error.no_entries", "导入失败：没有可用的立绘条目（表情名可能全部为空或重复）"));
   }
   const normalizedCover = typeof file.coverTag === "string" ? normalizeTag(file.coverTag) : "";
   const coverTag = sprites.some((s) => s.tag === normalizedCover) ? normalizedCover : void 0;
@@ -7245,7 +7630,7 @@ function importPack(jsonText) {
 }
 async function urlToDataUri(url) {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`fetch ${url} failed: ${res.status}`);
+  if (!res.ok) throw new Error(t("sprite.manager.content.error.image_fetch", "读取图片失败：{{url}}（HTTP {{status}}）", { url, status: res.status }));
   const blob = await res.blob();
   return await new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -7369,7 +7754,7 @@ function isValidImgbbResult(result) {
 }
 async function uploadToImgbb(apiKey, base64DataUri, fetchImpl = fetch) {
   const key = apiKey.trim();
-  if (!key) throw new Error("未配置 imgbb API Key");
+  if (!key) throw new Error(t("galleryErrors.imgbb_key", "未配置 imgbb API Key"));
   const rawBase64 = base64DataUri.replace(/^data:[^;]*;base64,/, "");
   const form = new FormData();
   form.append("key", key);
@@ -7377,11 +7762,11 @@ async function uploadToImgbb(apiKey, base64DataUri, fetchImpl = fetch) {
   const res = await fetchImpl("https://api.imgbb.com/1/upload", { method: "POST", body: form });
   const json = await res.json().catch(() => null);
   if (!json?.success || !json.data?.image) {
-    throw new Error(`imgbb 上传失败：${json?.error?.message ?? `HTTP ${res.status}`}`);
+    throw new Error(t("galleryErrors.imgbb_upload", "imgbb 上传失败：{{error}}", { error: json?.error?.message ?? `HTTP ${res.status}` }));
   }
   const result = { url: json.data.url ?? "", code: json.data.image.filename ?? "" };
   if (!isValidImgbbResult(result)) {
-    throw new Error("imgbb 返回无效：缺少合法的 HTTPS 直链或文件名");
+    throw new Error(t("galleryErrors.imgbb_response", "imgbb 返回无效：缺少合法的 HTTPS 直链或文件名"));
   }
   return result;
 }
@@ -7481,12 +7866,12 @@ function createSpriteActions(context) {
   return [
     {
       id: "rename",
-      label: "重命名",
+      label: t("sprite.manager.content.action.rename", "重命名"),
       icon: "✎",
       run() {
         const state2 = current(context);
         if (!state2) return;
-        const next = window.prompt(`「${state2.sprite.tag}」改名为：`, state2.sprite.tag);
+        const next = window.prompt(t("sprite.manager.content.action.rename_prompt", "「{{p0}}」改名为：", { p0: state2.sprite.tag }), state2.sprite.tag);
         if (next === null) return;
         commitAndRefresh(
           context,
@@ -7502,13 +7887,13 @@ function createSpriteActions(context) {
     },
     {
       id: "labels",
-      label: "标签",
+      label: t("sprite.manager.content.action.labels", "标签"),
       icon: "#",
       run() {
         const state2 = current(context);
         if (!state2) return;
         const raw = window.prompt(
-          `「${state2.sprite.tag}」的标签（逗号分隔，留空=清除）：`,
+          t("sprite.manager.content.action.labels_prompt", "「{{p0}}」的标签（逗号分隔，留空=清除）：", { p0: state2.sprite.tag }),
           state2.sprite.labels?.join(", ") ?? ""
         );
         if (raw === null) return;
@@ -7521,13 +7906,13 @@ function createSpriteActions(context) {
     },
     {
       id: "group",
-      label: "设分组",
+      label: t("sprite.manager.content.action.group", "设分组"),
       icon: "🏷",
       run() {
         const state2 = current(context);
         if (!state2) return;
         const group = spriteGroup(state2.sprite);
-        const next = window.prompt(`「${state2.sprite.tag}」的分组（留空=移出分组）：`, group);
+        const next = window.prompt(t("sprite.manager.content.action.group_prompt", "「{{p0}}」的分组（留空=移出分组）：", { p0: state2.sprite.tag }), group);
         if (next === null) return;
         commitAndRefresh(
           context,
@@ -7537,7 +7922,7 @@ function createSpriteActions(context) {
     },
     {
       id: "replace",
-      label: "重新上传 / 替换图片",
+      label: t("sprite.manager.content.action.replace", "重新上传 / 替换图片"),
       icon: "🖼",
       run() {
         if (!current(context)) return;
@@ -7546,9 +7931,9 @@ function createSpriteActions(context) {
     },
     {
       id: "localize",
-      label: "保存到本地",
+      label: t("sprite.manager.content.action.localize", "保存到本地"),
       icon: "↓",
-      hint: "把图床上的图片下载成本地文件再引用，之后不再依赖外链。预设包不会被改写，只记一条同 ID 的本地覆盖，随时可以删掉回到原图。",
+      hint: t("sprite.manager.content.action.localize_hint", "把图床上的图片下载成本地文件再引用，之后不再依赖外链。") + t("sprite.manager.content.action.preset_localize_hint", "预设包不会被改写，只记一条同 ID 的本地覆盖，随时可以删掉回到原图。"),
       // 预设包只读，但本地化是记覆盖而不是改包，所以只读态下也应当放行——
       // 这是预设立绘唯一的本地化入口。
       allowedInReadonly: true,
@@ -7561,25 +7946,24 @@ function createSpriteActions(context) {
     },
     {
       id: "remote",
-      label: "远程地址",
+      label: t("sprite.manager.content.action.remote", "远程地址"),
       icon: "🔗",
       run() {
         const state2 = current(context);
         if (!state2) return;
         const remote = state2.sprite.remoteUrl || (getSpriteSource(state2.sprite) === "hosted" ? state2.sprite.url : "");
         if (!remote) {
-          throw new Error(`「${state2.sprite.tag}」还没有远程地址（未上传图床，分享时对方看不到）`);
+          throw new Error(t("sprite.manager.content.action.no_remote", "「{{p0}}」还没有远程地址（未上传图床，分享时对方看不到）", { p0: state2.sprite.tag }));
         }
         window.prompt(
-          `「${state2.sprite.tag}」编号：${state2.sprite.code || "无"}
-远程地址（Ctrl+C 复制）：`,
+          t("sprite.manager.content.action.remote_prompt", "「{{p0}}」编号：{{p1}}\n远程地址（Ctrl+C 复制）：", { p0: state2.sprite.tag, p1: state2.sprite.code || t("sprite.manager.content.action.none", "无") }),
           remote
         );
       }
     },
     {
       id: "cover",
-      label: "设为封面",
+      label: t("sprite.manager.content.action.cover", "设为封面"),
       icon: "★",
       run() {
         const state2 = current(context);
@@ -7589,12 +7973,12 @@ function createSpriteActions(context) {
     },
     {
       id: "delete",
-      label: "删除",
+      label: t("common.delete", "删除"),
       icon: "✕",
       destructive: true,
       run() {
         const state2 = current(context);
-        if (!state2 || !window.confirm(`删除立绘「${state2.sprite.tag}」？`)) return;
+        if (!state2 || !window.confirm(t("sprite.manager.content.action.confirm_delete", "删除立绘「{{p0}}」？", { p0: state2.sprite.tag }))) return;
         const next = removeSprite(
           state2.pack,
           state2.sprite.tag,
@@ -7615,21 +7999,24 @@ function openSpriteLightbox(options) {
   let currentIndex = clampIndex(options.index, currentPack.sprites.length);
   let currentActions = options.actions;
   let closed = false;
+  let focus = null;
   const layer = element("div", "so-lightbox");
   layer.setAttribute("role", "dialog");
   layer.setAttribute("aria-modal", "true");
-  layer.setAttribute("aria-label", "立绘预览");
+  layer.setAttribute("aria-label", t("lightbox.title", "立绘预览"));
   layer.dataset.readonly = String(options.readonly);
   const stage = element("div", "so-lightbox-stage");
   const image = document.createElement("img");
   image.className = "so-lightbox-image";
   const caption = element("div", "so-lightbox-caption");
-  const previous = control("◀", "上一张（← 方向键）", "so-lightbox-nav so-lightbox-prev");
-  const next = control("▶", "下一张（→ 方向键）", "so-lightbox-nav so-lightbox-next");
-  const closeButton = control("✕", "关闭（Esc）", "so-lightbox-close");
+  caption.setAttribute("role", "status");
+  caption.setAttribute("aria-atomic", "true");
+  const previous = control("◀", t("lightbox.previous", "上一张（← 方向键）"), "so-lightbox-nav so-lightbox-prev");
+  const next = control("▶", t("lightbox.next", "下一张（→ 方向键）"), "so-lightbox-nav so-lightbox-next");
+  const closeButton = control("✕", t("lightbox.close", "关闭（Esc）"), "so-lightbox-close");
   const actionRail = element("div", "so-lightbox-actions");
-  actionRail.setAttribute("role", "toolbar");
-  actionRail.setAttribute("aria-label", "立绘操作");
+  actionRail.setAttribute("role", "group");
+  actionRail.setAttribute("aria-label", t("lightbox.actions", "立绘操作"));
   stage.append(image);
   layer.append(stage, caption, previous, next, closeButton, actionRail);
   const visualViewport = window.visualViewport;
@@ -7644,6 +8031,8 @@ function openSpriteLightbox(options) {
     layer.style.height = `${height}px`;
   };
   const renderActions = () => {
+    const active = document.activeElement;
+    const activeAction = active instanceof HTMLElement && actionRail.contains(active) ? active.dataset.actionId : void 0;
     actionRail.replaceChildren();
     const visibleActions = options.readonly ? currentActions.filter((action) => action.allowedInReadonly) : currentActions;
     const hidden = visibleActions.length === 0;
@@ -7679,13 +8068,22 @@ function openSpriteLightbox(options) {
       });
       actionRail.append(button2);
     }
+    if (activeAction && focus?.isTop()) {
+      const replacement = Array.from(actionRail.querySelectorAll("button")).find((button2) => button2.dataset.actionId === activeAction && !button2.disabled);
+      if (replacement) replacement.focus({ preventScroll: true });
+      else focus.focusInitial();
+    }
   };
   const render2 = () => {
     const sprite = currentPack.sprites[currentIndex];
     if (sprite) {
       image.src = sprite.url;
       image.alt = sprite.tag;
-      caption.textContent = `${sprite.tag}（${currentIndex + 1}/${currentPack.sprites.length}）`;
+      caption.textContent = t("lightbox.caption", "{{tag}}（{{index}}/{{count}}）", {
+        tag: sprite.tag,
+        index: currentIndex + 1,
+        count: currentPack.sprites.length
+      });
     } else {
       image.removeAttribute("src");
       image.alt = "";
@@ -7706,6 +8104,7 @@ function openSpriteLightbox(options) {
   const close = () => {
     if (closed) return;
     closed = true;
+    focus?.dispose();
     document.removeEventListener("keydown", onKeyDown, true);
     if (visualViewport) {
       visualViewport.removeEventListener("resize", applyViewport);
@@ -7714,19 +8113,23 @@ function openSpriteLightbox(options) {
       window.removeEventListener("resize", applyViewport);
     }
     layer.remove();
-    options.onClose();
+    try {
+      options.onClose();
+    } finally {
+      focus?.restoreFocus();
+    }
   };
   const onKeyDown = (event) => {
+    if (!focus?.isTop() || event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.target instanceof HTMLElement && event.target.closest("input, textarea, select, [contenteditable]")) return;
     if (event.key === "ArrowLeft") {
       event.preventDefault();
+      event.stopPropagation();
       navigate(-1);
     } else if (event.key === "ArrowRight") {
       event.preventDefault();
-      navigate(1);
-    } else if (event.key === "Escape") {
-      event.preventDefault();
       event.stopPropagation();
-      close();
+      navigate(1);
     }
   };
   previous.addEventListener("click", (event) => {
@@ -7770,6 +8173,8 @@ function openSpriteLightbox(options) {
   applyViewport();
   render2();
   document.body.append(layer);
+  focus = manageDialogFocus(layer, { onEscape: close });
+  focus.focusInitial();
   return controller;
 }
 function clampIndex(index, count) {
@@ -7796,65 +8201,65 @@ var LOCALIZE_MAX_BYTES = 20 * 1024 * 1024;
 var LOCALIZE_TIMEOUT_MS = 3e4;
 async function localizeSprite(sprite, fileName, deps) {
   if (getSpriteSource(sprite) !== "hosted") {
-    throw new Error("这张立绘已经是本地图片");
+    throw new Error(t("galleryErrors.already_local", "这张立绘已经是本地图片"));
   }
   let response;
   try {
     response = await deps.fetch(sprite.url, requestInit());
   } catch (error) {
-    throw new Error(`下载远程图片失败：${downloadFailure(error)}`, { cause: error });
+    throw new Error(t("galleryErrors.download", "下载远程图片失败：{{error}}", { error: downloadFailure(error) }), { cause: error });
   }
   if (!response.ok) {
-    throw new Error(`下载远程图片失败：HTTP ${response.status}`);
+    throw new Error(t("galleryErrors.download_http", "下载远程图片失败：HTTP {{status}}", { status: response.status }));
   }
   const declaredBytes = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredBytes) && declaredBytes > LOCALIZE_MAX_BYTES) {
-    throw new Error(`远程图片过大，不能超过 ${formatLimit()}`);
+    throw new Error(t("galleryErrors.size_limit", "远程图片过大，不能超过 {{limit}}", { limit: formatLimit() }));
   }
   let blob;
   try {
     blob = await response.blob();
   } catch (error) {
-    throw new Error(`下载远程图片失败：${downloadFailure(error)}`, { cause: error });
+    throw new Error(t("galleryErrors.download", "下载远程图片失败：{{error}}", { error: downloadFailure(error) }), { cause: error });
   }
   if (blob.size > LOCALIZE_MAX_BYTES) {
-    throw new Error(`远程图片过大，不能超过 ${formatLimit()}`);
+    throw new Error(t("galleryErrors.size_limit", "远程图片过大，不能超过 {{limit}}", { limit: formatLimit() }));
   }
   if (!blob.type.startsWith("image/")) {
-    throw new Error("远程地址没有返回图片");
+    throw new Error(t("galleryErrors.not_image", "远程地址没有返回图片"));
   }
   let compressed;
   try {
     compressed = await (deps.compress ?? compressImage)(blob);
   } catch (error) {
-    throw new Error(`压缩远程图片失败：${errorMessage(error)}`, { cause: error });
+    throw new Error(t("galleryErrors.compress", "压缩远程图片失败：{{error}}", { error: errorMessage(error) }), { cause: error });
   }
   let localUrl;
   try {
     localUrl = await deps.saveImage(dataUriToFile(compressed.dataUri, fileName), fileName);
   } catch (error) {
-    throw new Error(`保存本地图片失败：${errorMessage(error)}`, { cause: error });
+    throw new Error(t("galleryErrors.save", "保存本地图片失败：{{error}}", { error: errorMessage(error) }), { cause: error });
   }
   const safeLocalUrl = localUserImagePath(localUrl);
   if (!safeLocalUrl) {
-    throw new Error("保存本地图片失败：平台未返回安全的本地用户图片地址");
+    throw new Error(t("galleryErrors.unsafe_local", "保存本地图片失败：平台未返回安全的本地用户图片地址"));
   }
   return { ...sprite, url: localUrl, remoteUrl: sprite.url };
 }
 function dataUriToFile(dataUri, fileName) {
   const match = /^data:(image\/[^;,]+);base64,([A-Za-z0-9+/]*={0,2})$/.exec(dataUri);
-  if (!match) throw new Error("压缩后的图片数据格式不正确");
+  if (!match) throw new Error(t("galleryErrors.compressed_data", "压缩后的图片数据格式不正确"));
   const binary = atob(match[2]);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
   return new File([bytes], fileName, { type: match[1] });
 }
 function errorMessage(error) {
-  return error instanceof Error && error.message ? error.message : "未知错误";
+  return error instanceof Error && error.message ? error.message : t("storage.unknown_error", "未知错误");
 }
 function downloadFailure(error) {
   const name = typeof error?.name === "string" ? error.name : "";
-  return name === "TimeoutError" || name === "AbortError" ? `超过 ${LOCALIZE_TIMEOUT_MS / 1e3} 秒没有响应` : errorMessage(error);
+  return name === "TimeoutError" || name === "AbortError" ? t("galleryErrors.download_timeout", "超过 {{seconds}} 秒没有响应", { seconds: LOCALIZE_TIMEOUT_MS / 1e3 }) : errorMessage(error);
 }
 function requestInit() {
   return typeof AbortSignal?.timeout === "function" ? { signal: AbortSignal.timeout(LOCALIZE_TIMEOUT_MS) } : void 0;
@@ -7956,7 +8361,7 @@ async function stageEmbeddedImages(candidates, deps, options = {}) {
       let saved = savedByUri.get(candidate.sourceUrl);
       if (!saved) {
         saved = deps.save(candidate.sourceUrl, { signal: options.signal }).then((url) => {
-          if (!localUserImagePath(url)) throw new Error("保存失败：平台未返回本地图片路径");
+          if (!localUserImagePath(url)) throw new Error(t("storage.errors.local_path_missing", "保存失败：平台未返回本地图片路径"));
           return url;
         });
         savedByUri.set(candidate.sourceUrl, saved);
@@ -7978,7 +8383,7 @@ async function stageEmbeddedImages(candidates, deps, options = {}) {
       }
       result.failed.push({
         candidate,
-        message: error instanceof Error ? error.message : "保存失败"
+        message: error instanceof Error ? error.message : t("storage.errors.save_failed", "保存失败")
       });
     }
     options.onProgress?.(index + 1, candidates.length);
@@ -7992,23 +8397,23 @@ async function stageEmbeddedImages(candidates, deps, options = {}) {
   return result;
 }
 async function prepareImportedPack(pack, deps, options = {}) {
-  if (isPresetPack(pack.id)) throw new Error("内置预设不能作为导入目标");
-  if (options.signal?.aborted) throw new Error("内嵌图片准备未完成，图包未安装（已取消）");
+  if (isPresetPack(pack.id)) throw new Error(t("storage.errors.preset_target", "内置预设不能作为导入目标"));
+  if (options.signal?.aborted) throw new Error(t("storage.errors.import_cancelled", "内嵌图片准备未完成，图包未安装（已取消）"));
   const staging = {
     ...createDefaultSettings(),
     packs: [pack]
   };
   const scan = scanEmbeddedImages(staging);
-  if (scan.ambiguous.length > 0) throw new Error("图包包含重复图片身份，未安装");
+  if (scan.ambiguous.length > 0) throw new Error(t("storage.errors.pack_duplicates", "图包包含重复图片身份，未安装"));
   if (scan.candidates.length === 0) return pack;
   const staged = await stageEmbeddedImages(scan.candidates, deps, options);
   if (staged.cancelled || staged.failed.length > 0 || staged.unprocessed.length > 0) {
-    throw new Error(`内嵌图片准备未完成，图包未安装（失败 ${staged.failed.length}）`);
+    throw new Error(t("storage.errors.prepare_failed", "内嵌图片准备未完成，图包未安装（失败 {{count}}）", { count: staged.failed.length }));
   }
   const applied = applyImageChanges(staging, staged.ready);
   const prepared = applied.settings.packs[0];
   if (!prepared || applied.conflicts.length > 0 || prepared.sprites.some((sprite) => /^data:/i.test(sprite.url))) {
-    throw new Error("图包仍有未落盘图片，未安装");
+    throw new Error(t("storage.errors.pack_unsaved", "图包仍有未落盘图片，未安装"));
   }
   return prepared;
 }
@@ -8068,8 +8473,8 @@ function findUnmappedEmbeddedImages(rawSettings, settings) {
   return result;
 }
 function createStorageBackup(settings, rawSettings, backupId, createdAt) {
-  if (!validId(backupId)) throw new Error("备份 ID 不合法");
-  if (!createdAt) throw new Error("备份时间不合法");
+  if (!validId(backupId)) throw new Error(t("storage.errors.backup_id", "备份 ID 不合法"));
+  if (!createdAt) throw new Error(t("storage.errors.backup_time", "备份时间不合法"));
   const persisted = { ...settings, packs: settings.packs.filter((pack) => !isPresetPack(pack.id)) };
   const backup = { format: "st-stage-storage-backup@1", backupId, createdAt, settings: persisted, unmappedEmbedded: findUnmappedEmbeddedImages(rawSettings, persisted) };
   return JSON.parse(JSON.stringify(backup));
@@ -8079,31 +8484,31 @@ function parseStorageBackup(text4) {
   try {
     parsed = JSON.parse(text4);
   } catch (error) {
-    throw new Error("存储备份不是有效 JSON", { cause: error });
+    throw new Error(t("storage.errors.backup_json", "存储备份不是有效 JSON"), { cause: error });
   }
   const raw = object(parsed);
-  if (!raw || raw.format !== "st-stage-storage-backup@1" || !validId(raw.backupId) || typeof raw.createdAt !== "string" || !raw.createdAt || !Array.isArray(raw.unmappedEmbedded)) throw new Error("存储备份格式或版本不支持");
+  if (!raw || raw.format !== "st-stage-storage-backup@1" || !validId(raw.backupId) || typeof raw.createdAt !== "string" || !raw.createdAt || !Array.isArray(raw.unmappedEmbedded)) throw new Error(t("storage.errors.backup_format", "存储备份格式或版本不支持"));
   if (raw.unmappedEmbedded.some((item) => {
     const entry = object(item);
     return typeof entry?.location !== "string" || typeof entry.value !== "string" || !/^data:/i.test(entry.value);
-  })) throw new Error("存储备份附录不合法");
+  })) throw new Error(t("storage.errors.backup_appendix", "存储备份附录不合法"));
   const rawSettings = object(raw.settings);
   const defaults = createDefaultSettings();
   if (!rawSettings || !Array.isArray(rawSettings.packs) || rawSettings.settingsVersion !== SETTINGS_VERSION || !hasFields(rawSettings, Object.keys(defaults)) || !hasFields(rawSettings.overlay, Object.keys(defaults.overlay)) || !hasFields(rawSettings.phone, Object.keys(defaults.phone)) || !Array.isArray(rawSettings.bindings) || rawSettings.bindings.some((binding) => !hasFields(binding, ["characterName", "packIds", "enabled"]))) {
-    throw new Error("存储备份设置不合法");
+    throw new Error(t("storage.errors.backup_settings", "存储备份设置不合法"));
   }
   const settings = migrateSettings(rawSettings);
   if (settings.packs.some((pack) => isPresetPack(pack.id)) || !preservesFields(rawSettings, settings)) {
-    throw new Error("存储备份设置不合法");
+    throw new Error(t("storage.errors.backup_settings", "存储备份设置不合法"));
   }
   const packIds = /* @__PURE__ */ new Set();
   const refs = /* @__PURE__ */ new Set();
   for (const pack of settings.packs) {
-    if (packIds.has(pack.id)) throw new Error("存储备份包含重复图片身份");
+    if (packIds.has(pack.id)) throw new Error(t("storage.errors.backup_duplicates", "存储备份包含重复图片身份"));
     packIds.add(pack.id);
     for (const sprite of pack.sprites) {
       const key = imageRefKey(spriteImageRef(pack, sprite));
-      if (refs.has(key)) throw new Error("存储备份包含重复图片身份");
+      if (refs.has(key)) throw new Error(t("storage.errors.backup_duplicates", "存储备份包含重复图片身份"));
       refs.add(key);
     }
   }
@@ -8113,20 +8518,20 @@ function assertLocalUrl(url) {
   const normalized = localUserImagePath(url);
   const hasControl = Array.from(url).some((char) => char.charCodeAt(0) < 32);
   if (!normalized || !url.startsWith("/user/images/") || /[?#\\]/.test(url) || hasControl || /%(?:2f|5c)/i.test(url) || normalized.endsWith("/") || normalized.includes("//")) {
-    throw new Error("迁移回执包含不安全的本地图片路径");
+    throw new Error(t("storage.errors.receipt_path", "迁移回执包含不安全的本地图片路径"));
   }
   return url;
 }
 function createMigrationReceipt(backup, ready) {
   const scan = scanEmbeddedImages(backup.settings);
-  if (scan.ambiguous.length > 0) throw new Error("迁移回执与备份不匹配");
+  if (scan.ambiguous.length > 0) throw new Error(t("storage.errors.receipt_mismatch", "迁移回执与备份不匹配"));
   const sourceByRef = new Map(scan.candidates.map((item) => [imageRefKey(item.ref), item]));
   const keys = /* @__PURE__ */ new Set();
   const entries = ready.map((change) => {
     const key = imageRefKey(change.ref);
     const source = sourceByRef.get(key);
-    if (keys.has(key)) throw new Error("迁移回执包含重复图片身份");
-    if (!source || source.sourceUrl !== change.expectedUrl) throw new Error("迁移回执与备份不匹配");
+    if (keys.has(key)) throw new Error(t("storage.errors.receipt_duplicates", "迁移回执包含重复图片身份"));
+    if (!source || source.sourceUrl !== change.expectedUrl) throw new Error(t("storage.errors.receipt_mismatch", "迁移回执与备份不匹配"));
     keys.add(key);
     return { ref: change.ref, localUrl: assertLocalUrl(change.nextUrl) };
   });
@@ -8137,21 +8542,21 @@ function parseMigrationReceipt(text4, backup) {
   try {
     parsed = JSON.parse(text4);
   } catch (error) {
-    throw new Error("迁移回执不是有效 JSON", { cause: error });
+    throw new Error(t("storage.errors.receipt_json", "迁移回执不是有效 JSON"), { cause: error });
   }
   const raw = object(parsed);
-  if (!raw || raw.format !== "st-stage-image-migration-receipt@1" || raw.backupId !== backup.backupId || !Array.isArray(raw.entries)) throw new Error("迁移回执与备份不匹配");
+  if (!raw || raw.format !== "st-stage-image-migration-receipt@1" || raw.backupId !== backup.backupId || !Array.isArray(raw.entries)) throw new Error(t("storage.errors.receipt_mismatch", "迁移回执与备份不匹配"));
   const scan = scanEmbeddedImages(backup.settings);
-  if (scan.ambiguous.length > 0) throw new Error("迁移回执与备份不匹配");
+  if (scan.ambiguous.length > 0) throw new Error(t("storage.errors.receipt_mismatch", "迁移回执与备份不匹配"));
   const sourceByRef = new Map(scan.candidates.map((item) => [imageRefKey(item.ref), item]));
   const keys = /* @__PURE__ */ new Set();
   const entries = raw.entries.map((item) => {
     const entry = object(item);
     const ref = object(entry?.ref);
-    if (!ref || typeof ref.packId !== "string" || typeof ref.group !== "string" || typeof ref.outfit !== "string" || typeof ref.tag !== "string" || typeof entry?.localUrl !== "string") throw new Error("迁移回执条目不合法");
+    if (!ref || typeof ref.packId !== "string" || typeof ref.group !== "string" || typeof ref.outfit !== "string" || typeof ref.tag !== "string" || typeof entry?.localUrl !== "string") throw new Error(t("storage.errors.receipt_entry", "迁移回执条目不合法"));
     const normalized = { packId: ref.packId, group: ref.group, outfit: ref.outfit, tag: ref.tag };
     const key = imageRefKey(normalized);
-    if (keys.has(key) || !sourceByRef.has(key)) throw new Error("迁移回执与备份不匹配");
+    if (keys.has(key) || !sourceByRef.has(key)) throw new Error(t("storage.errors.receipt_mismatch", "迁移回执与备份不匹配"));
     keys.add(key);
     assertLocalUrl(entry.localUrl);
     return { ref: normalized, localUrl: entry.localUrl };
@@ -8159,16 +8564,16 @@ function parseMigrationReceipt(text4, backup) {
   return { format: "st-stage-image-migration-receipt@1", backupId: backup.backupId, entries };
 }
 function restoreMigratedImages(latest, backup, receipt) {
-  if (receipt.backupId !== backup.backupId) throw new Error("迁移回执与备份不匹配");
-  if (receipt.format !== "st-stage-image-migration-receipt@1") throw new Error("迁移回执格式不支持");
+  if (receipt.backupId !== backup.backupId) throw new Error(t("storage.errors.receipt_mismatch", "迁移回执与备份不匹配"));
+  if (receipt.format !== "st-stage-image-migration-receipt@1") throw new Error(t("storage.errors.receipt_format", "迁移回执格式不支持"));
   const scan = scanEmbeddedImages(backup.settings);
-  if (scan.ambiguous.length > 0) throw new Error("迁移回执与备份不匹配");
+  if (scan.ambiguous.length > 0) throw new Error(t("storage.errors.receipt_mismatch", "迁移回执与备份不匹配"));
   const sourceByRef = new Map(scan.candidates.map((item) => [imageRefKey(item.ref), item]));
   const keys = /* @__PURE__ */ new Set();
   const changes = receipt.entries.map((entry) => {
     const key = imageRefKey(entry.ref);
     const source = sourceByRef.get(imageRefKey(entry.ref));
-    if (keys.has(key) || !source) throw new Error("迁移回执与备份不匹配");
+    if (keys.has(key) || !source) throw new Error(t("storage.errors.receipt_mismatch", "迁移回执与备份不匹配"));
     keys.add(key);
     const localUrl = assertLocalUrl(entry.localUrl);
     return { ref: entry.ref, expectedUrl: localUrl, nextUrl: source.sourceUrl };
@@ -8192,7 +8597,7 @@ function actionButton(label, action) {
 }
 function randomId() {
   const bytes = new Uint8Array(16);
-  if (!globalThis.crypto?.getRandomValues) throw new Error("当前环境不支持安全随机备份 ID");
+  if (!globalThis.crypto?.getRandomValues) throw new Error(t("storage.errors.random_backup", "当前环境不支持安全随机备份 ID"));
   globalThis.crypto.getRandomValues(bytes);
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -8235,7 +8640,6 @@ function openImageStorageDialog(deps) {
   let restoreSource = null;
   const downloads = /* @__PURE__ */ new Set();
   let scan = scanEmbeddedImages(deps.getSettings());
-  const previousFocus = document.activeElement;
   function download(name, data) {
     let dispose = () => {
     };
@@ -8248,20 +8652,20 @@ function openImageStorageDialog(deps) {
   dialog.className = "so-storage-dialog";
   dialog.setAttribute("role", "dialog");
   dialog.setAttribute("aria-modal", "true");
-  dialog.setAttribute("aria-label", "存储检查与迁移");
+  dialog.setAttribute("aria-label", t("storage.title", "存储检查与迁移"));
   dialog.tabIndex = -1;
   const heading = document.createElement("h3");
-  heading.textContent = "存储检查与迁移";
+  heading.textContent = t("storage.title", "存储检查与迁移");
   const summary = document.createElement("div");
-  summary.textContent = "发现 " + scan.embeddedReferenceCount + " 个内嵌图片引用，" + scan.uniqueEmbeddedCount + " 张不同图片，约 " + scan.embeddedTextBytes + " 字节文本";
+  summary.textContent = t("storage.summary", "发现 {{refs}} 个内嵌图片引用，{{images}} 张不同图片，约 {{bytes}} 字节文本", { refs: scan.embeddedReferenceCount, images: scan.uniqueEmbeddedCount, bytes: scan.embeddedTextBytes });
   const status = document.createElement("div");
   status.className = "so-storage-status";
   status.setAttribute("role", "status");
   const privacy = document.createElement("p");
   privacy.className = "so-storage-warning";
-  privacy.textContent = "备份可能包含私人提示词和 API Key，仅保存在自己的设备，不要公开上传。";
+  privacy.textContent = t("storage.privacy", "备份可能包含私人提示词和 API Key，仅保存在自己的设备，不要公开上传。");
   const progress = document.createElement("progress");
-  progress.setAttribute("aria-label", "图片上传校验进度");
+  progress.setAttribute("aria-label", t("storage.progress_label", "图片上传校验进度"));
   const errors = document.createElement("ul");
   errors.className = "so-storage-errors";
   const controls = document.createElement("div");
@@ -8269,8 +8673,8 @@ function openImageStorageDialog(deps) {
   const confirmBackup = document.createElement("input");
   confirmBackup.type = "checkbox";
   const confirmLabel = document.createElement("label");
-  confirmLabel.append(confirmBackup, document.createTextNode("我已确认备份文件已保存在本机"));
-  const backupButton = actionButton("下载当前插件状态备份", () => {
+  confirmLabel.append(confirmBackup, document.createTextNode(t("storage.confirm_backup", "我已确认备份文件已保存在本机")));
+  const backupButton = actionButton(t("storage.download_backup", "下载当前插件状态备份"), () => {
     if (phase !== "inspect" && phase !== "restore-ready") return;
     invalidateBackup();
     try {
@@ -8283,55 +8687,55 @@ function openImageStorageDialog(deps) {
       );
       download("sprite-overlay-storage-backup-" + backup.backupId + ".json", backup);
       backupDownloaded = true;
-      status.textContent = scan.ambiguous.length > 0 || backup.unmappedEmbedded.length > 0 ? "备份已下载，但存在未能唯一映射的内嵌图片，不能自动迁移。请先整理为明确的自定义图包后重新下载备份。" : "备份下载请求已完成，请确认文件已保存后开始迁移。";
+      status.textContent = scan.ambiguous.length > 0 || backup.unmappedEmbedded.length > 0 ? t("storage.backup_unmapped", "备份已下载，但存在未能唯一映射的内嵌图片，不能自动迁移。请先整理为明确的自定义图包后重新下载备份。") : t("storage.backup_downloaded", "备份下载请求已完成，请确认文件已保存后开始迁移。");
     } catch (error) {
       invalidateBackup();
-      status.textContent = error instanceof Error ? error.message : "备份失败";
+      status.textContent = error instanceof Error ? error.message : t("storage.backup_failed", "备份失败");
     }
     render2();
   });
-  const startButton = actionButton("开始迁移内嵌图片", () => {
+  const startButton = actionButton(t("storage.start", "开始迁移内嵌图片"), () => {
     void stage();
   });
   const receiptConfirmation = document.createElement("input");
   receiptConfirmation.type = "checkbox";
   receiptConfirmation.dataset.confirm = "receipt";
   const receiptLabel = document.createElement("label");
-  receiptLabel.append(receiptConfirmation, document.createTextNode("我已确认迁移回执已保存在本机"));
-  const receiptButton = actionButton("下载迁移回执", () => {
+  receiptLabel.append(receiptConfirmation, document.createTextNode(t("storage.confirm_receipt", "我已确认迁移回执已保存在本机")));
+  const receiptButton = actionButton(t("storage.download_receipt", "下载迁移回执"), () => {
     if (!receipt || phase !== "staged") return;
     receiptDownloaded = false;
     receiptConfirmation.checked = false;
     try {
       download("sprite-overlay-image-migration-receipt-" + receipt.backupId + ".json", receipt);
       receiptDownloaded = true;
-      status.textContent = "回执下载请求已完成，请确认文件已保存后应用成功项。";
+      status.textContent = t("storage.receipt_downloaded", "回执下载请求已完成，请确认文件已保存后应用成功项。");
     } catch (error) {
-      status.textContent = error instanceof Error ? error.message : "回执下载失败";
+      status.textContent = error instanceof Error ? error.message : t("storage.receipt_failed", "回执下载失败");
     }
     render2();
   });
-  const applyButton = actionButton("确认应用成功项", () => {
+  const applyButton = actionButton(t("storage.apply", "确认应用成功项"), () => {
     if (!receipt || !receiptDownloaded || !receiptConfirmation.checked || phase !== "staged") return;
     const result = applyImageChanges(deps.getSettings(), staged);
-    finishApply(result, "应用");
+    finishApply(result, t("storage.applied_action", "应用"));
   });
-  const cancelButton = actionButton("取消暂存", () => {
+  const cancelButton = actionButton(t("storage.cancel", "取消暂存"), () => {
     if (phase !== "staging") return;
     ++runToken;
     controller?.abort();
     controller = null;
     reset();
-    status.textContent = "暂存已取消，原设置未改变；已上传的新文件未自动删除。";
+    status.textContent = t("storage.cancelled", "暂存已取消，原设置未改变；已上传的新文件未自动删除。");
   });
-  const retryButton = actionButton("重新检查", () => reset());
+  const retryButton = actionButton(t("storage.recheck", "重新检查"), () => reset());
   const restorePanel = document.createElement("details");
   restorePanel.className = "so-storage-restore";
   const restoreHeading = document.createElement("summary");
-  restoreHeading.textContent = "恢复迁移前图片";
+  restoreHeading.textContent = t("storage.restore_title", "恢复迁移前图片");
   const restoreWarning = document.createElement("p");
   restoreWarning.className = "so-storage-warning";
-  restoreWarning.textContent = "恢复会重新写入内嵌图片，增大 settings。仅回退仍与回执匹配的图片，其他设置和后续编辑不变。";
+  restoreWarning.textContent = t("storage.restore_warning", "恢复会重新写入内嵌图片，增大 settings。仅回退仍与回执匹配的图片，其他设置和后续编辑不变。");
   function fileInput(label) {
     const input = document.createElement("input");
     input.type = "file";
@@ -8352,15 +8756,15 @@ function openImageStorageDialog(deps) {
     return input;
   }
   restorePanel.append(restoreHeading, restoreWarning);
-  const restoreBackup = fileInput("迁移前备份");
-  const restoreReceipt = fileInput("迁移回执");
-  const inspectRestoreButton = actionButton("检查恢复文件", () => {
+  const restoreBackup = fileInput(t("storage.backup_file", "迁移前备份"));
+  const restoreReceipt = fileInput(t("storage.receipt_file", "迁移回执"));
+  const inspectRestoreButton = actionButton(t("storage.inspect_restore", "检查恢复文件"), () => {
     void inspectRestore();
   });
-  const restoreButton = actionButton("确认恢复图片", () => {
+  const restoreButton = actionButton(t("storage.restore", "确认恢复图片"), () => {
     if (phase !== "restore-ready" || !restoreSource || !backupDownloaded || !confirmBackup.checked) return;
     const result = restoreMigratedImages(deps.getSettings(), restoreSource.backup, restoreSource.receipt);
-    finishApply(result, "恢复");
+    finishApply(result, t("storage.restored_action", "恢复"));
   });
   restorePanel.append(inspectRestoreButton, restoreButton);
   function finishApply(result, action) {
@@ -8368,9 +8772,9 @@ function openImageStorageDialog(deps) {
     phase = "applied";
     try {
       if (result.applied.length > 0) deps.updateSettings(result.settings);
-      status.textContent = "已" + action + " " + result.applied.length + " 项，冲突 " + result.conflicts.length + " 项未修改。" + (result.applied.length ? "宿主已请求保存，请重载后复查。" : "原设置未改变。");
+      status.textContent = t("storage.finished", "已{{action}} {{count}} 项，冲突 {{conflicts}} 项未修改。{{notice}}", { action, count: result.applied.length, conflicts: result.conflicts.length, notice: result.applied.length ? t("storage.save_requested", "宿主已请求保存，请重载后复查。") : t("storage.unchanged", "原设置未改变。") });
     } catch (error) {
-      status.textContent = "设置更新或界面刷新失败，请保留备份和回执，重载后复查：" + (error instanceof Error ? error.message : "未知错误");
+      status.textContent = t("storage.update_failed", "设置更新或界面刷新失败，请保留备份和回执，重载后复查：{{error}}", { error: error instanceof Error ? error.message : t("storage.unknown_error", "未知错误") });
     }
     staged = [];
     receipt = null;
@@ -8378,7 +8782,7 @@ function openImageStorageDialog(deps) {
     backup = null;
     render2();
   }
-  const closeButton = actionButton("关闭", () => close());
+  const closeButton = actionButton(t("common.close", "关闭"), () => close());
   controls.append(backupButton, confirmLabel, startButton, cancelButton, receiptButton, receiptLabel, applyButton, retryButton);
   const footer = document.createElement("div");
   footer.className = "so-storage-footer";
@@ -8386,7 +8790,7 @@ function openImageStorageDialog(deps) {
   dialog.append(heading, summary, privacy, status, progress, errors, controls, restorePanel, footer);
   backdrop.append(dialog);
   document.body.append(backdrop);
-  dialog.focus();
+  const focus = manageDialogFocus(dialog, { onEscape: close, layer: backdrop });
   function invalidateBackup() {
     backup = null;
     backupDownloaded = false;
@@ -8410,12 +8814,12 @@ function openImageStorageDialog(deps) {
   function checkRawImages() {
     if (!findUnmappedEmbeddedImages(deps.adapter.getStoredSettingsForBackup(), deps.getSettings()).length) return true;
     reset();
-    status.textContent = "当前原始设置有未能映射的内嵌图片，操作已停止。请重新下载备份并整理图片后再继续。";
+    status.textContent = t("storage.raw_unmapped", "当前原始设置有未能映射的内嵌图片，操作已停止。请重新下载备份并整理图片后再继续。");
     return false;
   }
   function render2() {
     if (phase === "closed") return;
-    summary.textContent = "发现 " + scan.embeddedReferenceCount + " 个内嵌图片引用，" + scan.uniqueEmbeddedCount + " 张不同图片，约 " + scan.embeddedTextBytes + " 字节文本";
+    summary.textContent = t("storage.summary", "发现 {{refs}} 个内嵌图片引用，{{images}} 张不同图片，约 {{bytes}} 字节文本", { refs: scan.embeddedReferenceCount, images: scan.uniqueEmbeddedCount, bytes: scan.embeddedTextBytes });
     startButton.disabled = !backupDownloaded || !confirmBackup.checked || scan.candidates.length === 0 || scan.ambiguous.length > 0 || (backup?.unmappedEmbedded.length ?? 0) > 0 || phase !== "inspect";
     receiptButton.disabled = !receipt || phase !== "staged";
     applyButton.disabled = !receipt || !receiptDownloaded || !receiptConfirmation.checked || phase !== "staged";
@@ -8448,12 +8852,12 @@ function openImageStorageDialog(deps) {
       restoreSource = { backup: sourceBackup, receipt: sourceReceipt };
       phase = "restore-ready";
       restoreButton.hidden = false;
-      status.textContent = "可恢复 " + result.applied.length + " 项，冲突 " + result.conflicts.length + " 项。请先下载并确认当前插件状态备份。";
+      status.textContent = t("storage.restore_ready", "可恢复 {{count}} 项，冲突 {{conflicts}} 项。请先下载并确认当前插件状态备份。", { count: result.applied.length, conflicts: result.conflicts.length });
     } catch (error) {
       if (token !== runToken) return;
       phase = "inspect";
       restoreSource = null;
-      status.textContent = error instanceof Error ? error.message : "恢复文件校验失败";
+      status.textContent = error instanceof Error ? error.message : t("storage.restore_invalid", "恢复文件校验失败");
     }
     render2();
   }
@@ -8464,7 +8868,7 @@ function openImageStorageDialog(deps) {
     if (!sameCandidates(scanEmbeddedImages(backup.settings), latestScan)) {
       scan = latestScan;
       invalidateBackup();
-      status.textContent = "备份后设置已变化，请重新下载备份并扫描后再迁移。";
+      status.textContent = t("storage.settings_changed", "备份后设置已变化，请重新下载备份并扫描后再迁移。");
       render2();
       return;
     }
@@ -8484,7 +8888,7 @@ function openImageStorageDialog(deps) {
       }, { signal: runController.signal, onProgress: (completed, total) => {
         if (token !== runToken) return;
         progress.value = completed;
-        status.textContent = "校验进度 " + completed + "/" + total;
+        status.textContent = t("storage.progress", "校验进度 {{completed}}/{{total}}", { completed, total });
       } });
       if (token !== runToken || runController.signal.aborted || result.cancelled) return;
       staged = result.ready;
@@ -8492,13 +8896,13 @@ function openImageStorageDialog(deps) {
       phase = staged.length ? "staged" : "inspect";
       for (const failure of result.failed) {
         const item = document.createElement("li");
-        item.textContent = failure.candidate.ref.tag + "：" + failure.message;
+        item.textContent = t("storage.item_error", "{{tag}}：{{message}}", { tag: failure.candidate.ref.tag, message: failure.message });
         errors.append(item);
       }
-      status.textContent = (staged.length ? "暂存完成" : "迁移未完成") + "：成功 " + staged.length + " 项，失败 " + result.failed.length + " 项，未处理 " + result.unprocessed.length + " 项，未支持 " + sourceBackup.unmappedEmbedded.length + " 项。原设置未改变。";
+      status.textContent = t("storage.stage_result", "{{status}}：成功 {{ready}} 项，失败 {{failed}} 项，未处理 {{unprocessed}} 项，未支持 {{unsupported}} 项。原设置未改变。", { status: staged.length ? t("storage.staged", "暂存完成") : t("storage.not_migrated", "迁移未完成"), ready: staged.length, failed: result.failed.length, unprocessed: result.unprocessed.length, unsupported: sourceBackup.unmappedEmbedded.length });
     } catch (error) {
       if (token === runToken && !runController.signal.aborted) {
-        status.textContent = error instanceof Error ? error.message : "迁移失败，原设置未改变";
+        status.textContent = error instanceof Error ? error.message : t("storage.migration_failed", "迁移失败，原设置未改变");
         phase = "inspect";
       }
     } finally {
@@ -8509,6 +8913,7 @@ function openImageStorageDialog(deps) {
   function close() {
     if (phase === "closed") return;
     phase = "closed";
+    focus.dispose();
     ++runToken;
     controller?.abort();
     controller = null;
@@ -8520,35 +8925,26 @@ function openImageStorageDialog(deps) {
     restoreSource = null;
     scan = { candidates: [], ambiguous: [], embeddedReferenceCount: 0, uniqueEmbeddedCount: 0, embeddedTextBytes: 0 };
     backdrop.remove();
-    if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
-    deps.onClosed();
+    try {
+      deps.onClosed();
+    } finally {
+      focus.restoreFocus();
+    }
   }
   confirmBackup.addEventListener("change", render2);
   receiptConfirmation.addEventListener("change", render2);
   dialog.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      close();
-    }
-    if (event.key !== "Tab") return;
-    const focusable = [...dialog.querySelectorAll("button:not(:disabled), input:not(:disabled), summary")].filter((node) => node.getClientRects().length > 0);
-    const first = focusable[0];
-    const last = focusable.at(-1);
-    if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
-      event.preventDefault();
-      last?.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first?.focus();
-    }
+    event.stopPropagation();
   });
   render2();
+  focus.focusInitial();
   return { close };
 }
 
 // st-extension/src/sprite-manager.ts
 var SPRITE_PAGE_SIZE = 60;
+var managerControlId = 0;
+var nextManagerId = () => `so-manager-control-${++managerControlId}`;
 function createSpriteManager(deps) {
   let backdrop = null;
   let destroyed = false;
@@ -8571,6 +8967,10 @@ function createSpriteManager(deps) {
   let activeLightbox = null;
   let storageDialog = null;
   let importController = null;
+  let dialogFocus = null;
+  const childDialogs = /* @__PURE__ */ new Set();
+  const popoverListeners = /* @__PURE__ */ new Set();
+  let popoverOpener = null;
   function applyBackdropSize() {
     if (!backdrop) return;
     backdrop.style.left = "0";
@@ -8599,54 +8999,63 @@ function createSpriteManager(deps) {
     batchMode = false;
     selectedPackIds.clear();
     backdrop = el3("div", "so-manager-backdrop");
-    document.addEventListener("keydown", onEscape);
     window.addEventListener("resize", applyBackdropSize);
     applyBackdropSize();
     const dialog = el3("div", "so-manager");
     dialog.setAttribute("role", "dialog");
-    dialog.setAttribute("aria-label", "立绘包管理");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-label", t("sprite.manager.title", "立绘包管理"));
     const header = el3("div", "so-manager-header");
     const backBtn = el3("div", "menu_button so-manager-back");
-    backBtn.title = "返回列表";
+    backBtn.title = t("sprite.manager.back", "返回列表");
+    backBtn.setAttribute("aria-label", backBtn.title);
     backBtn.textContent = "‹";
     backBtn.setAttribute("role", "button");
     backBtn.tabIndex = 0;
-    const goBack = () => {
-      view = { kind: "list" };
-      render2();
-    };
+    const goBack = () => returnToList();
     backBtn.addEventListener("click", goBack);
     backBtn.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
+        e.stopPropagation();
         goBack();
       }
     });
     const title2 = el3("b", "so-manager-title");
     const actions = el3("div", "so-manager-actions");
     const closeBtn = el3("div", "menu_button so-manager-close");
-    closeBtn.title = "关闭";
+    closeBtn.title = t("common.close", "关闭");
     closeBtn.textContent = "✕";
+    closeBtn.setAttribute("role", "button");
+    closeBtn.setAttribute("aria-label", closeBtn.title);
+    closeBtn.tabIndex = 0;
+    closeBtn.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+      }
+    });
     closeBtn.addEventListener("click", () => close());
     header.append(backBtn, title2, actions, closeBtn);
     const body = el3("div", "so-manager-body");
     dialog.append(header, body);
     backdrop.append(dialog);
     document.body.append(backdrop);
+    dialogFocus = manageDialogFocus(dialog, { onEscape, layer: backdrop });
     render2();
+    dialogFocus.focusInitial();
   }
-  function onEscape(e) {
-    if (e.key !== "Escape") return;
-    if (e.defaultPrevented) return;
-    if (backdrop?.querySelector(".so-lightbox")) return;
+  function onEscape() {
     if (backdrop?.querySelector(".so-popover")) {
+      const opener = popoverOpener ?? backdrop.querySelector(".so-enable-btn");
       closeEnableList();
       closePopovers();
+      opener?.focus();
       return;
     }
     if (view.kind === "pack") {
-      view = { kind: "list" };
-      render2();
+      returnToList();
     } else {
       close();
     }
@@ -8655,15 +9064,44 @@ function createSpriteManager(deps) {
     if (!backdrop) return;
     activeLightbox?.controller?.close();
     closeEnableList();
+    closePopovers();
     importController?.abort();
     importController = null;
     storageDialog?.close();
     storageDialog = null;
-    document.removeEventListener("keydown", onEscape);
+    for (const closeChild of [...childDialogs].reverse()) closeChild();
+    const focus = dialogFocus;
+    dialogFocus = null;
+    focus?.dispose();
     window.removeEventListener("resize", applyBackdropSize);
     backdrop.remove();
     backdrop = null;
     deps.onClosed?.(openedFrom);
+    focus?.restoreFocus();
+  }
+  function returnToList() {
+    const packId = view.kind === "pack" ? view.packId : null;
+    view = { kind: "list" };
+    render2();
+    const origin = [...backdrop?.querySelectorAll(".so-pack-card") ?? []].find((card) => card.dataset.managerFocus === `pack:${packId}`);
+    if (origin) origin.focus({ preventScroll: true });
+    else dialogFocus?.focusInitial();
+  }
+  function manageChildDialog(modal, canEscape = () => true, opener) {
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    const closeChild = () => {
+      focus.dispose();
+      childDialogs.delete(closeChild);
+      modal.remove();
+      focus.restoreFocus();
+    };
+    const focus = manageDialogFocus(modal, { opener, onEscape: () => {
+      if (canEscape()) closeChild();
+    } });
+    childDialogs.add(closeChild);
+    focus.focusInitial();
+    return closeChild;
   }
   function refreshIfOpen() {
     if (backdrop) {
@@ -8682,7 +9120,7 @@ function createSpriteManager(deps) {
     ).join("；");
   }
   function showConflicts(conflicts) {
-    const message = `操作未生效，存在地址冲突：${conflictText(conflicts)}`;
+    const message = t("sprite.manager.content.conflict.address", "操作未生效，存在地址冲突：{{p0}}", { p0: conflictText(conflicts) });
     const body = backdrop?.querySelector(".so-manager-body");
     if (body) toast(body, message);
     else window.alert(message);
@@ -8712,11 +9150,11 @@ function createSpriteManager(deps) {
   }
   function rejectPackMergeError(error, body) {
     if (error instanceof PackMergeChoiceError) {
-      toast(body, `合并已取消：选择无效（${error.message}）`);
+      toast(body, t("sprite.manager.content.merge.invalid", "合并已取消：选择无效（{{p0}}）", { p0: error.message }));
       return null;
     }
     console.error("合并立绘包失败", error);
-    toast(body, "合并失败，请查看控制台日志");
+    toast(body, t("sprite.manager.content.merge.failed", "合并失败，请查看控制台日志"));
     return null;
   }
   function mergeWithPrompts(packs, defaultName, body) {
@@ -8725,8 +9163,7 @@ function createSpriteManager(deps) {
     for (const conflict of preview.conflicts) {
       const options = conflict.candidates.map((candidate, index) => `${index + 1}. ${candidate.sourcePackName} — ${candidate.sprite.url}`).join("\n");
       const raw = window.prompt(
-        `地址「${formatAddress(conflict.address)}」有不同图片，请输入要保留的序号：
-${options}`,
+        t("sprite.manager.content.merge.choose_image", "地址「{{p0}}」有不同图片，请输入要保留的序号：\n{{p1}}", { p0: formatAddress(conflict.address), p1: options }),
         "1"
       );
       if (raw === null) return null;
@@ -8737,11 +9174,11 @@ ${options}`,
     } catch (error) {
       return rejectPackMergeError(error, body);
     }
-    const rawName = window.prompt("合并结果的包名：", defaultName);
+    const rawName = window.prompt(t("sprite.manager.content.merge.name", "合并结果的包名："), defaultName);
     if (rawName === null) return null;
     const name = sanitizePackName(rawName);
     if (!name) {
-      toast(body, "合并已取消：包名不能为空");
+      toast(body, t("sprite.manager.content.merge.empty_name", "合并已取消：包名不能为空"));
       return null;
     }
     try {
@@ -8758,21 +9195,17 @@ ${options}`,
     });
     if (related.length === 0) {
       if (!updateChecked(upsertPack(settings, pack))) return false;
-      toast(body, `已导入立绘包「${pack.name}」（${pack.sprites.length} 张）`);
+      toast(body, t("sprite.manager.content.import.installed", "已导入立绘包「{{p0}}」（{{p1}} 张）", { p0: pack.name, p1: pack.sprites.length }));
       return true;
     }
     const answer = window.prompt(
-      `检测到同名或地址重叠：${related.map((item) => item.name).join("、")}
-输入 1 合并进现有包，2 重命名后安装，3 仅安装（之后可按需启用）；其他输入取消。`,
+      t("sprite.manager.content.import.overlap", "检测到同名或地址重叠：{{p0}}\n", { p0: related.map((item) => item.name).join("、") }) + t("sprite.manager.content.import.choices", "输入 1 合并进现有包，2 重命名后安装，3 仅安装（之后可按需启用）；其他输入取消。"),
       "1"
     );
     if (answer === "1") {
       const target = related[0];
       const mode = window.prompt(
-        `合并到哪里？
-1 并入旧包「${target.name}」（推荐：角色绑定不变，重叠源包移除）
-2 合并为新包（所有源包保留）
-其他输入取消。`,
+        t("sprite.manager.content.merge.destination", "合并到哪里？\n1 并入旧包「{{p0}}」（推荐：角色绑定不变，重叠源包移除）\n2 合并为新包（所有源包保留）\n其他输入取消。", { p0: target.name }),
         "1"
       );
       if (mode === "1") {
@@ -8781,32 +9214,32 @@ ${options}`,
         let next = settings;
         for (const other of related.slice(1)) next = removePack(next, other.id);
         if (!updateChecked(upsertPack(next, { ...merged, id: target.id }))) return false;
-        toast(body, `已合并进「${merged.name}」（${merged.sprites.length} 张）`);
+        toast(body, t("sprite.manager.content.merge.into_existing", "已合并进「{{p0}}」（{{p1}} 张）", { p0: merged.name, p1: merged.sprites.length }));
         return true;
       }
       if (mode === "2") {
         const merged = mergeWithPrompts([...related, pack], `${target.name} 合并`, body);
         if (!merged || !updateChecked(upsertPack(settings, merged))) return false;
-        toast(body, `已生成合并包「${merged.name}」（${merged.sprites.length} 张），源包仍保留`);
+        toast(body, t("sprite.manager.content.merge.created", "已生成合并包「{{p0}}」（{{p1}} 张），源包仍保留", { p0: merged.name, p1: merged.sprites.length }));
         return true;
       }
       return false;
     }
     if (answer === "2") {
-      const rawName = window.prompt("请输入新的包名：", `${pack.name} 新`);
+      const rawName = window.prompt(t("sprite.manager.content.import.new_name", "请输入新的包名："), `${pack.name} 新`);
       if (rawName === null) return false;
       const name = sanitizePackName(rawName);
       if (!name || settings.packs.some((existing) => existing.name === name)) {
-        toast(body, "未安装：新包名为空或仍与现有包同名");
+        toast(body, t("sprite.manager.content.import.invalid_name", "未安装：新包名为空或仍与现有包同名"));
         return false;
       }
       if (!updateChecked(upsertPack(settings, { ...pack, name }))) return false;
-      toast(body, `已重命名并安装「${name}」（未启用）`);
+      toast(body, t("sprite.manager.content.import.renamed", "已重命名并安装「{{p0}}」（未启用）", { p0: name }));
       return true;
     }
     if (answer === "3") {
       if (!updateChecked(upsertPack(settings, pack))) return false;
-      toast(body, `已安装「${pack.name}」，未加入当前角色`);
+      toast(body, t("sprite.manager.content.import.not_enabled", "已安装「{{p0}}」，未加入当前角色", { p0: pack.name }));
       return true;
     }
     return false;
@@ -8814,24 +9247,24 @@ ${options}`,
   async function prepareAndInstall(pack, body) {
     if (destroyed || !backdrop || currentManagerBody() !== body) return;
     if (storageDialog) {
-      toast(body, "请先关闭存储检查与迁移窗口");
+      toast(body, t("sprite.manager.content.import.close_storage", "请先关闭存储检查与迁移窗口"));
       return;
     }
     if (importController) {
-      toast(body, "已有导入任务正在处理");
+      toast(body, t("sprite.manager.content.import.busy", "已有导入任务正在处理"));
       return;
     }
     const controller = new AbortController();
     importController = controller;
     try {
-      toast(body, "正在准备导入图片");
+      toast(body, t("sprite.manager.content.import.preparing", "正在准备导入图片"));
       const prepared = await prepareImportedPack(pack, {
         save: (dataUri, options) => deps.saveDataUri ? deps.saveDataUri(dataUri, options) : deps.adapter.saveDataUri(dataUri, options)
       }, {
         signal: controller.signal,
         onProgress: (completed, total) => {
           if (!destroyed && !controller.signal.aborted && currentManagerBody() === body) {
-            toast(body, `导入图片校验 ${completed}/${total}`);
+            toast(body, t("sprite.manager.content.import.progress", "导入图片校验 {{p0}}/{{p1}}", { p0: completed, p1: total }));
           }
         }
       });
@@ -8843,7 +9276,7 @@ ${options}`,
       if (installed) view = { kind: "pack", packId: installed.id };
       render2();
     } catch (error) {
-      if (!controller.signal.aborted && !destroyed) toast(body, error instanceof Error ? error.message : "导入失败");
+      if (!controller.signal.aborted && !destroyed) toast(body, error instanceof Error ? error.message : t("sprite.manager.content.import.failed", "导入失败"));
     } finally {
       if (importController === controller) importController = null;
     }
@@ -8854,16 +9287,13 @@ ${options}`,
     if (result.ok) {
       const changes = previewBindingAddressChanges(settings, result.settings, characterName);
       if (changes.removed.length > 0 && !window.confirm(
-        `启用后以下旧地址将变化：${changes.removed.slice(0, 6).join("、")}
-新地址示例：${changes.added.slice(0, 6).join("、")}
-仍要继续吗？`
+        t("sprite.manager.content.binding.address_changes", "启用后以下旧地址将变化：{{p0}}\n", { p0: changes.removed.slice(0, 6).join("、") }) + t("sprite.manager.content.binding.new_addresses", "新地址示例：{{p0}}\n仍要继续吗？", { p0: changes.added.slice(0, 6).join("、") })
       )) return;
       commit(result.settings);
       return;
     }
     const answer = window.prompt(
-      `启用会产生地址冲突：${conflictText(result.conflicts)}
-输入 1 替换当前冲突包，2 合并为新包后启用；其他输入取消。`,
+      t("sprite.manager.content.binding.conflict", "启用会产生地址冲突：{{p0}}\n", { p0: conflictText(result.conflicts) }) + t("sprite.manager.content.binding.choices", "输入 1 替换当前冲突包，2 合并为新包后启用；其他输入取消。"),
       "1"
     );
     const sourceIds = new Set(result.conflicts.flatMap((conflict) => conflict.owners.map((owner) => owner.packId)));
@@ -8895,17 +9325,22 @@ ${options}`,
         return;
       }
       commit(rebound.settings);
-      toast(body, `已生成并启用合并包「${merged.name}」；源包仍保留`);
+      toast(body, t("sprite.manager.content.binding.merged", "已生成并启用合并包「{{p0}}」；源包仍保留", { p0: merged.name }));
     }
   }
   function commitPack(pack) {
     commitChecked(upsertPack(deps.getSettings(), pack));
   }
   function closePopovers() {
+    for (const dispose of popoverListeners) dispose();
+    popoverListeners.clear();
     backdrop?.querySelectorAll(".so-popover").forEach((n) => n.remove());
+    backdrop?.querySelectorAll('[aria-haspopup="dialog"]').forEach((node) => node.setAttribute("aria-expanded", "false"));
+    popoverOpener = null;
   }
   function closeEnableList() {
     enableListOpen = false;
+    backdrop?.querySelector(".so-enable-btn")?.setAttribute("aria-expanded", "false");
     backdrop?.querySelectorAll('.so-popover[data-pop="启用包"]').forEach((n) => n.remove());
     if (enableListDocHandler) {
       document.removeEventListener("click", enableListDocHandler, true);
@@ -8915,6 +9350,9 @@ ${options}`,
   function renderEnableList() {
     const header = backdrop?.querySelector(".so-manager-header");
     if (!header) return;
+    const previousPanel = header.querySelector(".so-enable-pop");
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusKey = active && previousPanel?.contains(active) ? active.dataset.managerFocus : void 0;
     header.querySelectorAll('.so-popover[data-pop="启用包"]').forEach((n) => n.remove());
     if (!enableListOpen) return;
     const characterName = deps.adapter.getCurrentCharacterName();
@@ -8926,25 +9364,35 @@ ${options}`,
     const settings = deps.getSettings();
     const boundIds = settings.bindings.find((b) => b.characterName === characterName)?.packIds ?? [];
     const panel = el3("div", "so-popover so-enable-pop");
+    const trigger = backdrop?.querySelector(".so-enable-btn");
+    panel.id = trigger?.getAttribute("aria-controls") || nextManagerId();
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-label", trigger?.getAttribute("aria-label") ?? "");
+    trigger?.setAttribute("aria-expanded", "true");
     panel.dataset.pop = "启用包";
     const heading = el3("div", "so-popover-title");
-    heading.textContent = `勾选启用（${characterName}，即时生效）`;
+    heading.textContent = t("sprite.manager.content.binding.enable_heading", "勾选启用（{{p0}}，即时生效）", { p0: characterName });
     panel.append(heading);
     if (settings.packs.length === 0) {
       const tip = el3("div", "so-status");
-      tip.textContent = "还没有立绘包，先用「新建」或「导入」。";
+      tip.textContent = t("sprite.manager.content.empty.packs", "还没有立绘包，先用「新建」或「导入」。");
       panel.append(tip);
     }
     for (const p of settings.packs) {
-      panel.append(
-        checkboxRow(`${p.name}（${p.sprites.length} 张）`, boundIds.includes(p.id), (v) => {
-          if (v) bindPackWithChoices(characterName, p.id, body);
-          else commit(unbindPack(deps.getSettings(), characterName, p.id));
-          renderEnableList();
-        })
-      );
+      const row = checkboxRow(t("sprite.manager.content.pack.image_count", "{{p0}}（{{p1}} 张）", { p0: p.name, p1: p.sprites.length }), boundIds.includes(p.id), (v) => {
+        if (v) bindPackWithChoices(characterName, p.id, body);
+        else commit(unbindPack(deps.getSettings(), characterName, p.id));
+        renderEnableList();
+      });
+      row.querySelector("input").dataset.managerFocus = `enable:${p.id}`;
+      panel.append(row);
     }
     header.append(panel);
+    if (focusKey) {
+      [...panel.querySelectorAll("[data-manager-focus]")].find((node) => node.dataset.managerFocus === focusKey)?.focus({ preventScroll: true });
+    } else if (active === trigger) {
+      panel.querySelector("input")?.focus({ preventScroll: true });
+    }
     if (!enableListDocHandler) {
       enableListDocHandler = (e) => {
         const current2 = backdrop?.querySelector('.so-popover[data-pop="启用包"]');
@@ -8956,24 +9404,37 @@ ${options}`,
     }
   }
   function dropdownButton(label, build) {
+    const panelId = nextManagerId();
     const btn = button(`${label} ▾`, () => {
       const header = backdrop?.querySelector(".so-manager-header");
       if (!header) return;
       const existing = header.querySelector(`.so-popover[data-pop="${label}"]`);
+      closeEnableList();
       closePopovers();
       if (existing) return;
       const panel = el3("div", "so-popover");
+      panel.id = panelId;
+      panel.setAttribute("role", "dialog");
+      panel.setAttribute("aria-label", label);
       panel.dataset.pop = label;
       build(panel);
+      panel.querySelectorAll("input, textarea").forEach((input) => {
+        if (!input.getAttribute("aria-label") && input.placeholder) input.setAttribute("aria-label", input.placeholder);
+      });
       header.append(panel);
+      popoverOpener = btn;
+      btn.setAttribute("aria-expanded", "true");
       panel.querySelector("input, textarea")?.focus();
       const onDocClick = (e) => {
         if (panel.contains(e.target) || btn.contains(e.target)) return;
-        panel.remove();
-        document.removeEventListener("click", onDocClick, true);
+        closePopovers();
       };
       document.addEventListener("click", onDocClick, true);
+      popoverListeners.add(() => document.removeEventListener("click", onDocClick, true));
     });
+    btn.setAttribute("aria-haspopup", "dialog");
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-controls", panelId);
     return btn;
   }
   function render2() {
@@ -8982,6 +9443,9 @@ ${options}`,
     const title2 = backdrop.querySelector(".so-manager-title");
     const actions = backdrop.querySelector(".so-manager-actions");
     const body = backdrop.querySelector(".so-manager-body");
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const restoreAfterRender = Boolean(active && (body.contains(active) || actions.contains(active) || active.closest(".so-popover")));
+    const focusKey = restoreAfterRender ? active?.dataset.managerFocus : void 0;
     body.innerHTML = "";
     actions.innerHTML = "";
     backdrop.querySelector(".so-manager")?.classList.toggle("so-manager-batch-mode", batchMode);
@@ -8999,13 +9463,19 @@ ${options}`,
         view = { kind: "list" };
       }
       backBtn.style.display = "none";
-      title2.textContent = "立绘包管理";
+      title2.textContent = t("sprite.manager.title", "立绘包管理");
       renderList(body, actions);
     } catch (err) {
       console.error("[sprite-overlay] 管理弹窗渲染失败", err);
       const msg = el3("div", "so-status");
-      msg.textContent = `界面渲染出错：${err instanceof Error ? err.message : String(err)}`;
+      msg.textContent = t("sprite.manager.content.error.render", "界面渲染出错：{{p0}}", { p0: err instanceof Error ? err.message : String(err) });
       body.append(msg);
+    } finally {
+      if (restoreAfterRender && dialogFocus?.isTop()) {
+        const candidates = focusKey ? [...backdrop.querySelectorAll("[data-manager-focus]")].filter((node) => node.dataset.managerFocus === focusKey && !node.matches(":disabled")) : [];
+        if (candidates.length === 1) candidates[0].focus({ preventScroll: true });
+        else dialogFocus.focusInitial();
+      }
     }
   }
   function collapsible(titleText, open2 = false, key = "") {
@@ -9037,7 +9507,7 @@ ${options}`,
         (pack) => selectedPackIds.has(pack.id) && !isPresetPack(pack.id)
       );
       actions.append(
-        button("全选", () => {
+        button(t("sprite.manager.content.batch.select_all", "全选"), () => {
           const all = filteredPacks;
           if (all.length > 0 && all.every((p) => selectedPackIds.has(p.id))) {
             selectedPackIds.clear();
@@ -9047,26 +9517,26 @@ ${options}`,
           }
           render2();
         }),
-        button(`上传云端（${selectedCount}）`, () => {
+        button(t("sprite.manager.content.batch.upload", "上传云端（{{p0}}）", { p0: selectedCount }), () => {
           void uploadSelectedPacks();
         }),
-        button(`保存本地（${selectedCount}）`, () => {
+        button(t("sprite.manager.content.batch.localize", "保存本地（{{p0}}）", { p0: selectedCount }), () => {
           void localizeSelectedPacks();
         }),
-        button(`复制分享串（${selectedCount}）`, () => {
+        button(t("sprite.manager.content.batch.share", "复制分享串（{{p0}}）", { p0: selectedCount }), () => {
           void copySelectedPackShares();
         }),
-        button(`删除所选（${deletablePacks.length}）`, () => {
+        button(t("sprite.manager.content.batch.delete", "删除所选（{{p0}}）", { p0: deletablePacks.length }), () => {
           if (deletablePacks.length === 0) {
-            toast(body, selectedPackIds.size > 0 ? "预设包不可删除；可保存本地、上传云端或复制分享串" : "先点卡片勾选要删除的包");
+            toast(body, selectedPackIds.size > 0 ? t("sprite.manager.content.batch.preset_hint", "预设包不可删除；可保存本地、上传云端或复制分享串") : t("sprite.manager.content.batch.delete_hint", "先点卡片勾选要删除的包"));
             return;
           }
           const names = deletablePacks.map((pack) => pack.name);
-          const preview = names.slice(0, 8).join("、") + (names.length > 8 ? ` 等 ${names.length} 个` : "");
+          const preview = names.slice(0, 8).join("、") + (names.length > 8 ? t("sprite.manager.content.batch.more", " 等 {{p0}} 个", { p0: names.length }) : "");
           const ids = deletablePacks.map((pack) => pack.id);
           void deletePacksWithChoice(ids, names, preview);
         }, "so-btn-danger"),
-        button("完成", () => {
+        button(t("sprite.manager.content.batch.done", "完成"), () => {
           batchMode = false;
           selectedPackIds.clear();
           render2();
@@ -9075,7 +9545,7 @@ ${options}`,
     } else {
       if (characterName) {
         const enableBtn = button(
-          boundIds.length > 0 ? `启用包（${boundIds.length}） ▾` : "启用包 ▾",
+          boundIds.length > 0 ? t("sprite.manager.enabled_count", "启用包（{{count}}） ▾", { count: boundIds.length }) : t("sprite.manager.enable", "启用包 ▾"),
           () => {
             if (enableListOpen) {
               closeEnableList();
@@ -9087,13 +9557,16 @@ ${options}`,
           }
         );
         enableBtn.classList.add("so-enable-btn");
-        enableBtn.setAttribute("aria-label", `为「${characterName}」勾选启用立绘包`);
+        enableBtn.setAttribute("aria-haspopup", "dialog");
+        enableBtn.setAttribute("aria-expanded", String(enableListOpen));
+        enableBtn.setAttribute("aria-controls", nextManagerId());
+        enableBtn.setAttribute("aria-label", t("sprite.manager.enable_for", "为「{{name}}」勾选启用立绘包", { name: characterName }));
         actions.append(enableBtn);
       }
       actions.append(
-        button("存储检查与迁移", () => {
+        button(t("sprite.manager.storage", "存储检查与迁移"), () => {
           if (importController) {
-            toast(body, "已有导入任务正在处理");
+            toast(body, t("sprite.manager.content.import.busy", "已有导入任务正在处理"));
             return;
           }
           storageDialog?.close();
@@ -9107,15 +9580,15 @@ ${options}`,
             }
           });
         }),
-        dropdownButton("新建", (panel) => {
+        dropdownButton(t("sprite.manager.new", "新建"), (panel) => {
           const heading = el3("div", "so-popover-title");
-          heading.textContent = "新建立绘包";
-          const nameInput = textInput("输入新包名称…");
+          heading.textContent = t("sprite.manager.new_title", "新建立绘包");
+          const nameInput = textInput(t("sprite.manager.new_name", "输入新包名称…"));
           nameInput.maxLength = 40;
-          const createBtn = button("创建", () => {
+          const createBtn = button(t("sprite.manager.create", "创建"), () => {
             const name = sanitizePackName(nameInput.value);
             if (!name) {
-              toast(body, "包名不能为空（| = @ < > 等符号会被剔除）");
+              toast(body, t("sprite.manager.content.pack.invalid_name", "包名不能为空（| = @ < > 等符号会被剔除）"));
               return;
             }
             const pack = { id: genId(), name, author: "我", sprites: [] };
@@ -9128,37 +9601,37 @@ ${options}`,
           });
           panel.append(heading, nameInput, createBtn);
         }),
-        dropdownButton("导入", (panel) => {
+        dropdownButton(t("sprite.manager.import", "导入"), (panel) => {
           const shareHeading = el3("div", "so-popover-title");
-          shareHeading.textContent = "从分享字符串导入";
+          shareHeading.textContent = t("sprite.manager.import_share", "从分享字符串导入");
           const shareInput = document.createElement("textarea");
           shareInput.className = "text_pole";
           shareInput.rows = 3;
-          shareInput.placeholder = "粘贴 stpack2:/stpack1: 分享串…";
-          const shareBtn = button("导入", () => {
+          shareInput.placeholder = t("sprite.manager.share_placeholder", "粘贴 stpack2:/stpack1: 分享串…");
+          const shareBtn = button(t("sprite.manager.import", "导入"), () => {
             if (!shareInput.value.trim()) return;
             try {
               const pack = decodeShareString(shareInput.value);
               void prepareAndInstall(pack, body);
             } catch (err) {
-              toast(body, err instanceof Error ? err.message : "分享串解析失败");
+              toast(body, err instanceof Error ? err.message : t("sprite.manager.content.import.share_failed", "分享串解析失败"));
             }
           });
           const jsonHeading = el3("div", "so-popover-title");
-          jsonHeading.textContent = "从 JSON 文件导入";
-          const jsonBtn = button("选择 JSON 文件…", () => {
+          jsonHeading.textContent = t("sprite.manager.import_json", "从 JSON 文件导入");
+          const jsonBtn = button(t("sprite.manager.choose_json", "选择 JSON 文件…"), () => {
             pickFile(".json,application/json", false, async (files) => {
               try {
                 if (destroyed || currentManagerBody() !== body || !files[0]) return;
                 const file = files[0];
                 if (file.size > 2 * 1024 * 1024 && !window.confirm(
-                  `这个 JSON 有 ${(file.size / 1024 / 1024).toFixed(1)} MiB。读取会占用临时内存，内嵌图片需要逐张上传到酒馆本地文件。继续导入吗？`
+                  t("sprite.manager.content.import.large_json", "这个 JSON 有 {{p0}} MiB。读取会占用临时内存，内嵌图片需要逐张上传到酒馆本地文件。继续导入吗？", { p0: (file.size / 1024 / 1024).toFixed(1) })
                 )) return;
                 const text4 = await file.text();
                 const pack = importPack(text4);
                 void prepareAndInstall(pack, body);
               } catch (err) {
-                toast(body, err instanceof Error ? err.message : "导入失败");
+                toast(body, err instanceof Error ? err.message : t("sprite.manager.content.import.failed", "导入失败"));
               }
             });
           });
@@ -9167,8 +9640,8 @@ ${options}`,
       );
       if (settings.packs.length > 0) {
         actions.append(
-          button("标签管理", () => openTagManager()),
-          button("批量管理", () => {
+          button(t("sprite.manager.tags", "标签管理"), () => openTagManager()),
+          button(t("sprite.manager.batch", "批量管理"), () => {
             closeEnableList();
             batchMode = true;
             selectedPackIds.clear();
@@ -9180,26 +9653,26 @@ ${options}`,
     const strip = el3("div", "so-row so-bind-strip");
     if (characterName) {
       const label = el3("span", "so-bind-label");
-      label.textContent = boundIds.length > 0 ? `${characterName} · 已启用 ${boundIds.length} 个：` : `${characterName} · 尚未启用立绘包（用右上角选择启用）`;
+      label.textContent = boundIds.length > 0 ? t("sprite.manager.content.binding.enabled", "{{p0}} · 已启用 {{p1}} 个：", { p0: characterName, p1: boundIds.length }) : t("sprite.manager.content.binding.none", "{{p0}} · 尚未启用立绘包（用右上角选择启用）", { p0: characterName });
       strip.append(label);
       boundIds.forEach((id, index) => {
         const pack = settings.packs.find((p) => p.id === id);
         const chip = el3("span", "so-chip");
         const name = el3("span", "so-chip-name");
-        name.textContent = pack ? `${index + 1}. ${pack.name}（${pack.sprites.length} 张）` : `（已删除的包 ${id}）`;
+        name.textContent = pack ? t("sprite.manager.content.binding.pack", "{{p0}}. {{p1}}（{{p2}} 张）", { p0: index + 1, p1: pack.name, p2: pack.sprites.length }) : t("sprite.manager.content.binding.deleted", "（已删除的包 {{p0}}）", { p0: id });
         chip.append(name);
         if (boundIds.length > 1) {
           chip.append(
-            iconButton("◀", "前移（多包寻址优先级更高）", () => {
+            iconButton("◀", t("sprite.manager.content.binding.move_first", "前移（多包寻址优先级更高）"), () => {
               if (index > 0) commit(reorderBinding(deps.getSettings(), characterName, index, index - 1));
             }, "so-chip-btn"),
-            iconButton("▶", "后移", () => {
+            iconButton("▶", t("sprite.manager.content.move_later", "后移"), () => {
               commit(reorderBinding(deps.getSettings(), characterName, index, index + 1));
             }, "so-chip-btn")
           );
         }
         chip.append(
-          iconButton("✕", "停用此包", () => {
+          iconButton("✕", t("sprite.manager.content.binding.disable", "停用此包"), () => {
             commit(unbindPack(deps.getSettings(), characterName, id));
           }, "so-chip-btn")
         );
@@ -9209,7 +9682,7 @@ ${options}`,
         strip.append(
           el3("span", "so-spacer"),
           checkboxRow(
-            "全部启用",
+            t("sprite.manager.content.binding.enable_all", "全部启用"),
             binding.enabled,
             (v) => commitChecked(toggleBinding(deps.getSettings(), characterName, v))
           )
@@ -9217,14 +9690,14 @@ ${options}`,
       }
     } else {
       const tip = el3("span", "so-status");
-      tip.textContent = "请先打开一个角色聊天，再回来启用立绘包。";
+      tip.textContent = t("sprite.manager.content.binding.open_chat", "请先打开一个角色聊天，再回来启用立绘包。");
       strip.append(tip);
     }
     body.append(strip);
     body.append(renderPackFilters(settings, filteredPacks.length));
     if (batchMode) {
       const tip = el3("div", "so-status so-batch-tip");
-      tip.textContent = "批量管理：先勾选图包，再统一设置类型或标签；资源操作和排序仍可在上方完成。预设包可保存本地或分享，但不可删除。";
+      tip.textContent = t("sprite.manager.content.batch.hint", "批量管理：先勾选图包，再统一设置类型或标签；资源操作和排序仍可在上方完成。预设包可保存本地或分享，但不可删除。");
       body.append(tip);
       body.append(renderBatchClassificationTools(body));
     }
@@ -9248,17 +9721,21 @@ ${options}`,
           section2.classList.add("so-role-pack-group-expanded");
           const row = el3("button", "so-role-pack-row");
           row.type = "button";
+          row.dataset.managerFocus = `role:${group.key}`;
           row.setAttribute("aria-expanded", "true");
           const title2 = el3("b");
           title2.textContent = group.role;
           const counts = el3("span");
-          counts.textContent = `${group.packCount} 个图包 · ${group.spriteCount} 张`;
+          counts.textContent = t("sprite.manager.content.pack.counts", "{{p0}} 个图包 · {{p1}} 张", { p0: group.packCount, p1: group.spriteCount });
           const arrow = el3("span", "so-role-pack-arrow");
           arrow.textContent = "▾";
           row.append(title2, counts, arrow);
           row.addEventListener("click", toggle);
+          addCardNavigation(row, ".so-pack-card, .so-role-pack-stack, .so-role-pack-row");
           const packs = el3("div", "so-role-pack-strip");
-          packs.setAttribute("aria-label", `${group.role}的图包`);
+          packs.id = nextManagerId();
+          row.setAttribute("aria-controls", packs.id);
+          packs.setAttribute("aria-label", t("sprite.manager.content.pack.role_packs", "{{p0}}的图包", { p0: group.role }));
           for (const pack of group.packs) packs.append(renderPackCard(pack, boundState(pack)));
           section2.append(row, packs);
         } else {
@@ -9272,7 +9749,7 @@ ${options}`,
     body.append(grid);
     if (filteredPacks.length === 0) {
       const empty = el3("div", "so-status so-pack-filter-empty");
-      empty.textContent = "没有符合当前筛选条件的图包";
+      empty.textContent = t("sprite.manager.content.empty.filtered_packs", "没有符合当前筛选条件的图包");
       body.append(empty);
     }
     body.append(statusBar());
@@ -9280,7 +9757,7 @@ ${options}`,
   }
   function renderPackFilters(settings, visibleCount) {
     const panel = el3("div", "so-pack-filters");
-    const search = textInput("搜索包名、角色、服装或标签");
+    const search = textInput(t("sprite.manager.content.filter.packs_placeholder", "搜索包名、角色、服装或标签"));
     search.classList.add("so-pack-filter-search");
     search.value = packFilterQuery;
     const applySearch = () => {
@@ -9297,6 +9774,8 @@ ${options}`,
     const selectFilter = (className, options, current2, apply) => {
       const select = document.createElement("select");
       select.className = `text_pole ${className}`;
+      select.dataset.managerFocus = className;
+      select.setAttribute("aria-label", options[0]?.[1] ?? "");
       for (const [value, label] of options) {
         const option = document.createElement("option");
         option.value = value;
@@ -9315,7 +9794,7 @@ ${options}`,
     const tags = normalizeLabels(settings.packs.flatMap((pack) => pack.customTags ?? []));
     const role = selectFilter(
       "so-pack-filter-role",
-      [["", "全部角色"], ...roles.map((item) => [item, item])],
+      [["", t("sprite.manager.content.filter.all_roles", "全部角色")], ...roles.map((item) => [item, item === "其他" ? t("sprite.manager.content.group.other", "其他") : item])],
       packFilterRole,
       (value) => {
         packFilterRole = value;
@@ -9323,7 +9802,7 @@ ${options}`,
     );
     const kind = selectFilter(
       "so-pack-filter-kind",
-      [["", "全部类型"], ["sprite", "立绘"], ["illustration", "插图"]],
+      [["", t("sprite.manager.content.filter.all_types", "全部类型")], ["sprite", t("sprite.manager.content.kind.sprite", "立绘")], ["illustration", t("sprite.manager.content.kind.illustration", "插图")]],
       packFilterKind,
       (value) => {
         packFilterKind = value;
@@ -9331,17 +9810,17 @@ ${options}`,
     );
     const tag = selectFilter(
       "so-pack-filter-tag",
-      [["", "全部标签"], ...tags.map((item) => [item, item])],
+      [["", t("sprite.manager.content.filter.all_tags", "全部标签")], ...tags.map((item) => [item, item])],
       packFilterTag,
       (value) => {
         packFilterTag = value;
       }
     );
     const status = el3("span", "so-pack-filter-count");
-    status.textContent = `${visibleCount}/${settings.packs.length} 个图包`;
+    status.textContent = t("sprite.manager.content.filter.pack_count", "{{p0}}/{{p1}} 个图包", { p0: visibleCount, p1: settings.packs.length });
     panel.append(search, role, kind, tag, status);
     if (packFilterQuery || packFilterRole || packFilterKind || packFilterTag) {
-      panel.append(button("清除筛选", () => {
+      panel.append(button(t("sprite.manager.content.filter.clear", "清除筛选"), () => {
         packFilterQuery = packFilterRole = packFilterKind = packFilterTag = "";
         expandedRoleGroupKey = "";
         render2();
@@ -9352,14 +9831,14 @@ ${options}`,
   function openTagManager() {
     const modal = el3("div", "so-upload-modal so-tag-manager");
     modal.setAttribute("role", "dialog");
-    modal.setAttribute("aria-label", "图包标签管理");
+    modal.setAttribute("aria-label", t("sprite.manager.content.tag.dialog_title", "图包标签管理"));
     const panel = el3("div", "so-upload-panel so-tag-manager-panel");
     const heading = el3("div", "so-tag-manager-heading");
     const title2 = el3("b");
-    title2.textContent = "标签管理";
-    heading.append(title2, button("关闭", () => modal.remove()));
+    title2.textContent = t("sprite.manager.tags", "标签管理");
+    heading.append(title2, button(t("common.close", "关闭"), () => closeModal()));
     const help = el3("div", "so-status");
-    help.textContent = "角色和类型由图包信息自动生成，只能在包信息或批量管理中修改。这里管理自定义标签。";
+    help.textContent = t("sprite.manager.content.tag.help", "角色和类型由图包信息自动生成，只能在包信息或批量管理中修改。这里管理自定义标签。");
     const settings = deps.getSettings();
     const addRow = el3("div", "so-row so-tag-manager-add");
     const packSelect = document.createElement("select");
@@ -9370,19 +9849,19 @@ ${options}`,
       option.textContent = pack.name;
       packSelect.append(option);
     }
-    const newTag = textInput("输入新标签");
+    const newTag = textInput(t("sprite.manager.content.tag.new_placeholder", "输入新标签"));
     newTag.classList.add("so-tag-manager-new");
     const commitTags = (next) => {
-      modal.remove();
+      closeModal();
       commit(persistSelectedPresetMetadata(next, next.packs.map((pack) => pack.id)));
     };
     addRow.append(
-      labeled("添加到图包", packSelect),
-      labeled("新标签", newTag),
-      button("添加到图包", () => {
+      labeled(t("sprite.manager.content.tag.add_to_pack", "添加到图包"), packSelect),
+      labeled(t("sprite.manager.content.tag.new", "新标签"), newTag),
+      button(t("sprite.manager.content.tag.add_to_pack", "添加到图包"), () => {
         const tag = normalizeLabels([newTag.value])[0];
         if (!packSelect.value || !tag) {
-          toast(currentManagerBody(), "请选择图包并输入标签");
+          toast(currentManagerBody(), t("sprite.manager.content.tag.select_pack", "请选择图包并输入标签"));
           return;
         }
         commitTags(addPackCustomTag(deps.getSettings(), [packSelect.value], tag));
@@ -9392,30 +9871,30 @@ ${options}`,
     const tags = normalizeLabels(settings.packs.flatMap((pack) => pack.customTags ?? []));
     if (tags.length === 0) {
       const empty = el3("div", "so-status");
-      empty.textContent = "还没有自定义标签";
+      empty.textContent = t("sprite.manager.content.tag.empty", "还没有自定义标签");
       list.append(empty);
     }
     for (const tag of tags) {
       const row = el3("div", "so-tag-manager-row");
       row.dataset.tag = tag;
-      const input = textInput("标签名称");
+      const input = textInput(t("sprite.manager.content.tag.name", "标签名称"));
       input.value = tag;
       const count = settings.packs.filter((pack) => normalizeLabels(pack.customTags).includes(tag)).length;
       const usage = el3("span", "so-status");
-      usage.textContent = `${count} 个图包`;
+      usage.textContent = t("sprite.manager.content.pack.count", "{{p0}} 个图包", { p0: count });
       row.append(
         input,
         usage,
-        button("重命名", () => {
+        button(t("sprite.manager.content.action.rename", "重命名"), () => {
           const renamed = normalizeLabels([input.value])[0];
           if (!renamed) {
-            toast(currentManagerBody(), "标签名称不能为空");
+            toast(currentManagerBody(), t("sprite.manager.content.tag.empty_name", "标签名称不能为空"));
             return;
           }
           commitTags(renamePackCustomTag(deps.getSettings(), tag, renamed));
         }),
-        button("删除", () => {
-          if (!window.confirm(`从 ${count} 个图包删除标签「${tag}」吗？`)) return;
+        button(t("common.delete", "删除"), () => {
+          if (!window.confirm(t("sprite.manager.content.tag.confirm_delete", "从 {{p0}} 个图包删除标签「{{p1}}」吗？", { p0: count, p1: tag }))) return;
           commitTags(deletePackCustomTag(deps.getSettings(), tag));
         }, "so-btn-danger")
       );
@@ -9424,6 +9903,7 @@ ${options}`,
     panel.append(heading, help, addRow, list);
     modal.append(panel);
     (backdrop ?? document.body).append(modal);
+    const closeModal = manageChildDialog(modal);
   }
   function selectedPacks() {
     return deps.getSettings().packs.filter((pack) => selectedPackIds.has(pack.id));
@@ -9456,7 +9936,7 @@ ${options}`,
     const ids = [...selectedPackIds];
     const kindSelect = document.createElement("select");
     kindSelect.className = "text_pole so-batch-kind-select";
-    for (const [value, label] of [["sprite", "立绘"], ["illustration", "插图"]]) {
+    for (const [value, label] of [["sprite", t("sprite.manager.content.kind.sprite", "立绘")], ["illustration", t("sprite.manager.content.kind.illustration", "插图")]]) {
       const option = document.createElement("option");
       option.value = value;
       option.textContent = label;
@@ -9464,10 +9944,10 @@ ${options}`,
     }
     const kindRow = el3("div", "so-row");
     kindRow.append(
-      labeled("类型", kindSelect),
-      button("设置类型", () => {
+      labeled(t("sprite.manager.content.kind.label", "类型"), kindSelect),
+      button(t("sprite.manager.content.kind.set", "设置类型"), () => {
         if (selectedPackIds.size === 0) {
-          toast(body, "请先勾选要设置的图包");
+          toast(body, t("sprite.manager.content.batch.select_first", "请先勾选要设置的图包"));
           return;
         }
         const selected = [...selectedPackIds];
@@ -9477,36 +9957,36 @@ ${options}`,
           kindSelect.value === "illustration" ? "illustration" : "sprite"
         );
         commit(persistSelectedPresetMetadata(changed, selected));
-        toast(body, `已设置 ${selected.length} 个图包的类型`);
+        toast(body, t("sprite.manager.content.kind.updated", "已设置 {{p0}} 个图包的类型", { p0: selected.length }));
       })
     );
-    const tagInput = textInput("输入自定义标签");
+    const tagInput = textInput(t("sprite.manager.content.tag.custom_placeholder", "输入自定义标签"));
     tagInput.classList.add("so-batch-tag-input");
     tagInput.maxLength = 32;
     const addRow = el3("div", "so-row");
     addRow.append(
-      labeled("自定义标签", tagInput),
-      button("添加标签", () => {
+      labeled(t("sprite.manager.content.tag.custom", "自定义标签"), tagInput),
+      button(t("sprite.manager.content.tag.add", "添加标签"), () => {
         const tag = normalizeLabels([tagInput.value])[0];
         if (selectedPackIds.size === 0) {
-          toast(body, "请先勾选要设置的图包");
+          toast(body, t("sprite.manager.content.batch.select_first", "请先勾选要设置的图包"));
           return;
         }
         if (!tag) {
-          toast(body, "请输入标签");
+          toast(body, t("sprite.manager.content.tag.enter", "请输入标签"));
           return;
         }
         const selected = [...selectedPackIds];
         const changed = addPackCustomTag(deps.getSettings(), selected, tag);
         commit(persistSelectedPresetMetadata(changed, selected));
-        toast(body, `已为 ${selected.length} 个图包添加「${tag}」`);
+        toast(body, t("sprite.manager.content.tag.added", "已为 {{p0}} 个图包添加「{{p1}}」", { p0: selected.length, p1: tag }));
       })
     );
     const removeSelect = document.createElement("select");
     removeSelect.className = "text_pole so-batch-tag-remove-select";
     const emptyOption = document.createElement("option");
     emptyOption.value = "";
-    emptyOption.textContent = ids.length === 0 ? "先勾选图包" : "选择要移除的标签";
+    emptyOption.textContent = ids.length === 0 ? t("sprite.manager.content.tag.select_packs_first", "先勾选图包") : t("sprite.manager.content.tag.choose_remove", "选择要移除的标签");
     removeSelect.append(emptyOption);
     const selectedTags = normalizeLabels(selectedPacks().flatMap((pack) => pack.customTags ?? []));
     for (const tag of selectedTags) {
@@ -9517,20 +9997,20 @@ ${options}`,
     }
     const removeRow = el3("div", "so-row");
     removeRow.append(
-      labeled("移除标签", removeSelect),
-      button("移除标签", () => {
+      labeled(t("sprite.manager.content.tag.remove", "移除标签"), removeSelect),
+      button(t("sprite.manager.content.tag.remove", "移除标签"), () => {
         if (selectedPackIds.size === 0) {
-          toast(body, "请先勾选要设置的图包");
+          toast(body, t("sprite.manager.content.batch.select_first", "请先勾选要设置的图包"));
           return;
         }
         if (!removeSelect.value) {
-          toast(body, "请选择要移除的标签");
+          toast(body, t("sprite.manager.content.tag.select_remove", "请选择要移除的标签"));
           return;
         }
         const selected = [...selectedPackIds];
         const changed = removePackCustomTag(deps.getSettings(), selected, removeSelect.value);
         commit(persistSelectedPresetMetadata(changed, selected));
-        toast(body, `已从 ${selected.length} 个图包移除「${removeSelect.value}」`);
+        toast(body, t("sprite.manager.content.tag.removed", "已从 {{p0}} 个图包移除「{{p1}}」", { p0: selected.length, p1: removeSelect.value }));
       })
     );
     panel.append(kindRow, addRow, removeRow);
@@ -9545,12 +10025,12 @@ ${options}`,
     if (batchResourceBusy) return;
     const packs = selectedPacks();
     if (packs.length === 0) {
-      toast(currentManagerBody(), "先勾选要上传云端的图包");
+      toast(currentManagerBody(), t("sprite.manager.content.upload.select_first", "先勾选要上传云端的图包"));
       return;
     }
     const apiKey = deps.getSettings().imgbbApiKey.trim();
     if (!apiKey) {
-      toast(currentManagerBody(), "请先在「图库」App 配置 imgbb API Key");
+      toast(currentManagerBody(), t("sprite.manager.content.upload.api_key", "请先在「图库」App 配置 imgbb API Key"));
       return;
     }
     batchResourceBusy = true;
@@ -9566,16 +10046,16 @@ ${options}`,
           try {
             const dataUri = beforeUrl.startsWith("data:") ? beforeUrl : await urlToDataUri(beforeUrl);
             const result = await uploadToImgbb(apiKey, dataUri);
-            if (!isValidImgbbResult(result)) throw new Error("图床响应无效");
+            if (!isValidImgbbResult(result)) throw new Error(t("sprite.manager.content.upload.invalid_response", "图床响应无效"));
             const latestPack = deps.getSettings().packs.find((candidate) => candidate.id === pack.id);
             const latestSprite = latestPack ? sameSprite(latestPack, sprite) : null;
             if (!latestPack || !latestSprite || latestSprite.url !== beforeUrl) {
-              throw new Error("目标已更改，本次结果未应用");
+              throw new Error(t("sprite.manager.content.error.target_changed", "目标已更改，本次结果未应用"));
             }
             if (!updateChecked(upsertPack(
               deps.getSettings(),
               upsertSprite(latestPack, { ...latestSprite, code: result.code, remoteUrl: result.url })
-            ))) throw new Error("更新图包失败");
+            ))) throw new Error(t("sprite.manager.content.error.pack_update", "更新图包失败"));
             uploaded++;
           } catch (error) {
             console.warn("[sprite-overlay] 批量上传云端失败", { packId: pack.id, tag: sprite.tag, error });
@@ -9586,14 +10066,14 @@ ${options}`,
     } finally {
       batchResourceBusy = false;
       render2();
-      toast(currentManagerBody(), `上传云端完成：成功 ${uploaded} 张，失败 ${failed} 张${failed > 0 ? "（可再次点击重试）" : ""}`);
+      toast(currentManagerBody(), t("sprite.manager.content.upload.complete", "上传云端完成：成功 {{p0}} 张，失败 {{p1}} 张{{p2}}", { p0: uploaded, p1: failed, p2: failed > 0 ? t("sprite.manager.content.retry_hint", "（可再次点击重试）") : "" }));
     }
   }
   async function localizeSelectedPacks() {
     if (batchResourceBusy) return;
     const packs = selectedPacks();
     if (packs.length === 0) {
-      toast(currentManagerBody(), "先勾选要保存到本地的图包");
+      toast(currentManagerBody(), t("sprite.manager.content.localize.select_first", "先勾选要保存到本地的图包"));
       return;
     }
     batchResourceBusy = true;
@@ -9620,17 +10100,17 @@ ${options}`,
             const latestPack = latestSettings.packs.find((candidate) => candidate.id === pack.id);
             const latestSprite = latestPack ? sameSprite(latestPack, sprite) : null;
             if (!latestPack || !latestSprite || latestSprite.url !== sprite.url) {
-              throw new Error("立绘在保存期间已变化");
+              throw new Error(t("sprite.manager.content.error.sprite_changed", "立绘在保存期间已变化"));
             }
             if (preset) {
               const next = setPresetLocalSprite(latestSettings, pack.id, latestSprite, localized.url);
-              if (next === latestSettings) throw new Error("更新预设覆盖失败");
+              if (next === latestSettings) throw new Error(t("sprite.manager.content.error.preset_update", "更新预设覆盖失败"));
               deps.updateSettings(next);
             } else if (!updateChecked(upsertPack(
               latestSettings,
               upsertSprite(latestPack, { ...latestSprite, url: localized.url, remoteUrl: localized.remoteUrl })
             ))) {
-              throw new Error("更新图包失败");
+              throw new Error(t("sprite.manager.content.error.pack_update", "更新图包失败"));
             }
             localizedCount++;
           } catch (error) {
@@ -9642,50 +10122,45 @@ ${options}`,
     } finally {
       batchResourceBusy = false;
       render2();
-      toast(currentManagerBody(), `保存本地完成：成功 ${localizedCount} 张，失败 ${failed} 张${failed > 0 ? "（可再次点击重试）" : ""}`);
+      toast(currentManagerBody(), t("sprite.manager.content.localize.complete", "保存本地完成：成功 {{p0}} 张，失败 {{p1}} 张{{p2}}", { p0: localizedCount, p1: failed, p2: failed > 0 ? t("sprite.manager.content.retry_hint", "（可再次点击重试）") : "" }));
     }
   }
   async function copySelectedPackShares() {
     if (batchResourceBusy) return;
     const packs = selectedPacks();
     if (packs.length === 0) {
-      toast(currentManagerBody(), "先勾选要复制分享串的图包");
+      toast(currentManagerBody(), t("sprite.manager.content.share.select_first", "先勾选要复制分享串的图包"));
       return;
     }
     const encoded = packs.map((pack) => ({ pack, result: encodeShareStringV2(pack) })).filter((entry) => entry.result !== null);
     if (encoded.length === 0) {
-      toast(currentManagerBody(), "所选图包都没有可分享的远程图片");
+      toast(currentManagerBody(), t("sprite.manager.content.share.no_remote", "所选图包都没有可分享的远程图片"));
       return;
     }
     const missingCount = encoded.reduce((count, entry) => count + entry.result.missing.length, 0);
     if (missingCount > 0 && !window.confirm(
-      `所选图包中还有 ${missingCount} 张图片没有远程地址，不会进入分享串。仍要复制吗？`
+      t("sprite.manager.content.share.confirm_missing", "所选图包中还有 {{p0}} 张图片没有远程地址，不会进入分享串。仍要复制吗？", { p0: missingCount })
     )) return;
     const text4 = encoded.map((entry) => entry.result.text).join("\n\n");
     const ok = await copyText(text4);
     toast(
       currentManagerBody(),
-      ok ? `已复制 ${encoded.length} 个图包的分享串${missingCount > 0 ? `，缺少 ${missingCount} 张` : ""}` : "复制失败，请手动复制弹出的文本"
+      ok ? t("sprite.manager.content.share.copied_packs", "已复制 {{p0}} 个图包的分享串{{p1}}", { p0: encoded.length, p1: missingCount > 0 ? t("sprite.manager.content.share.missing_suffix", "，缺少 {{p0}} 张", { p0: missingCount }) : "" }) : t("sprite.manager.content.share.copy_failed", "复制失败，请手动复制弹出的文本")
     );
-    if (!ok) window.prompt("手动复制分享串：", text4);
+    if (!ok) window.prompt(t("sprite.manager.content.share.copy_prompt", "手动复制分享串："), text4);
   }
   async function deletePacksWithChoice(packIds, names, preview) {
-    if (!window.confirm(`确定删除 ${names.length} 个立绘包？
-${preview}
-绑定关系会一并清除。`)) return;
+    if (!window.confirm(t("sprite.manager.content.delete.confirm_packs", "确定删除 {{p0}} 个立绘包？\n{{p1}}\n绑定关系会一并清除。", { p0: names.length, p1: preview }))) return;
     const current2 = deps.getSettings();
     const localPaths = deletableLocalSpritePaths(current2, packIds);
     const deleteLocal = localPaths.length > 0 && window.confirm(
-      `检测到 ${localPaths.length} 个仅由这些包使用的本地图片文件。
-同时从 SillyTavern 服务器删除它们吗？
-
-选择“取消”将只删除图包记录，文件继续保留。`
+      t("sprite.manager.content.delete.local_detected", "检测到 {{p0}} 个仅由这些包使用的本地图片文件。\n", { p0: localPaths.length }) + t("sprite.manager.content.delete.local_confirm", "同时从 SillyTavern 服务器删除它们吗？\n\n选择“取消”将只删除图包记录，文件继续保留。")
     );
     if (!deleteLocal) {
       selectedPackIds.clear();
       view = { kind: "list" };
       commit(removePacks(current2, packIds));
-      toast(currentManagerBody(), `已删除 ${names.length} 个立绘包，本地文件未删除`);
+      toast(currentManagerBody(), t("sprite.manager.content.delete.packs_kept_files", "已删除 {{p0}} 个立绘包，本地文件未删除", { p0: names.length }));
       return;
     }
     let deleted = 0;
@@ -9702,21 +10177,22 @@ ${preview}
     if (failed > 0) {
       toast(
         currentManagerBody(),
-        `本地文件删除成功 ${deleted} 张，失败 ${failed} 张；图包尚未删除，可再次重试`
+        t("sprite.manager.content.delete.files_partial", "本地文件删除成功 {{p0}} 张，失败 {{p1}} 张；图包尚未删除，可再次重试", { p0: deleted, p1: failed })
       );
       return;
     }
     selectedPackIds.clear();
     view = { kind: "list" };
     commit(removePacks(deps.getSettings(), packIds));
-    toast(currentManagerBody(), `已删除 ${names.length} 个立绘包及 ${deleted} 张本地文件`);
+    toast(currentManagerBody(), t("sprite.manager.content.delete.packs_and_files", "已删除 {{p0}} 个立绘包及 {{p1}} 张本地文件", { p0: names.length, p1: deleted }));
   }
   function renderRolePackStack(role, roleKey, packs, spriteCount, boundState, expand) {
     const stack = el3("button", "so-role-pack-stack");
     stack.type = "button";
+    stack.dataset.managerFocus = `role:${roleKey}`;
     stack.dataset.roleKey = roleKey;
     stack.setAttribute("aria-expanded", "false");
-    stack.setAttribute("aria-label", `展开「${role}」的 ${packs.length} 个图包`);
+    stack.setAttribute("aria-label", t("sprite.manager.content.pack.expand_role", "展开「{{p0}}」的 {{p1}} 个图包", { p0: role, p1: packs.length }));
     for (let index = 2; index >= 1; index -= 1) {
       const layer = el3("span", `so-role-stack-layer so-role-stack-layer-${index}`);
       layer.setAttribute("aria-hidden", "true");
@@ -9733,33 +10209,35 @@ ${preview}
       image.loading = "lazy";
       coverBox.append(image);
     } else {
-      coverBox.textContent = "暂无立绘";
+      coverBox.textContent = t("sprite.manager.content.empty.sprites", "暂无立绘");
     }
     const activeCount = packs.filter((pack) => boundState(pack) === "active").length;
     if (activeCount > 0) {
       const badge = el3("span", "so-card-badge");
-      badge.textContent = activeCount === 1 ? "使用中" : `使用中 ${activeCount}`;
+      badge.textContent = activeCount === 1 ? t("sprite.manager.content.pack.active", "使用中") : t("sprite.manager.content.pack.active_count", "使用中 {{p0}}", { p0: activeCount });
       coverBox.append(badge);
     }
     const info = el3("span", "so-card-info");
     const title2 = el3("b");
     title2.textContent = role;
     const detail = el3("small");
-    detail.textContent = `${packs.length} 个图包 · ${spriteCount} 张`;
+    detail.textContent = t("sprite.manager.content.pack.counts", "{{p0}} 个图包 · {{p1}} 张", { p0: packs.length, p1: spriteCount });
     const count = el3("span", "so-role-stack-count");
-    count.textContent = `${packs.length} 个图包`;
+    count.textContent = t("sprite.manager.content.pack.count", "{{p0}} 个图包", { p0: packs.length });
     info.append(title2, detail);
     face.append(coverBox, count, info);
     stack.append(face);
     stack.addEventListener("click", expand);
+    addCardNavigation(stack, ".so-pack-card, .so-role-pack-stack, .so-role-pack-row");
     return stack;
   }
   function renderPackCard(pack, bound) {
     const card = el3("div", "so-pack-card");
+    card.dataset.managerFocus = `pack:${pack.id}`;
     card.tabIndex = 0;
     card.setAttribute("role", "button");
-    card.setAttribute("aria-label", `打开立绘包「${pack.name}」`);
-    card.title = "点击进入管理";
+    card.setAttribute("aria-label", t("sprite.manager.content.pack.open", "打开立绘包「{{p0}}」", { p0: pack.name }));
+    card.title = t("sprite.manager.content.pack.open_hint", "点击进入管理");
     const coverBox = el3("div", "so-card-cover");
     const cover = getPackCover(pack);
     if (cover) {
@@ -9769,18 +10247,18 @@ ${preview}
       img.loading = "lazy";
       coverBox.append(img);
     } else {
-      coverBox.textContent = "暂无立绘";
+      coverBox.textContent = t("sprite.manager.content.empty.sprites", "暂无立绘");
     }
     if (bound) {
       if (bound === "active") card.classList.add("so-card-active");
       const badge = el3("span", bound === "active" ? "so-card-badge" : "so-card-badge so-card-badge-off");
-      badge.textContent = bound === "active" ? "使用中" : "已停用";
+      badge.textContent = bound === "active" ? t("sprite.manager.content.pack.active", "使用中") : t("sprite.manager.content.pack.disabled", "已停用");
       badge.dataset.corner = "bottom-left";
       coverBox.append(badge);
     }
     if (isPresetPack(pack.id)) {
       const chip = el3("span", "so-card-chip");
-      chip.textContent = "预设";
+      chip.textContent = t("sprite.manager.content.pack.preset", "预设");
       coverBox.append(chip);
     }
     const resources = summarizePackResources(pack);
@@ -9794,27 +10272,31 @@ ${preview}
         chip.textContent = count === resources.total ? label : `${label} ${count}/${resources.total}`;
         status.append(chip);
       };
-      resourceLabel("local", "本地");
-      resourceLabel("cloud", "云端");
+      resourceLabel("local", t("sprite.manager.content.pack.local", "本地"));
+      resourceLabel("cloud", t("sprite.manager.content.pack.cloud", "云端"));
       coverBox.append(status);
     }
     const info = el3("div", "so-card-info");
     const nameEl = el3("b");
     nameEl.textContent = pack.name;
     const metaEl = el3("small");
-    metaEl.textContent = `${pack.sprites.length} 张 · ${pack.author ?? "未知作者"}`;
+    metaEl.textContent = t("sprite.manager.content.pack.metadata", "{{p0}} 张 · {{p1}}", { p0: pack.sprites.length, p1: pack.author ?? t("sprite.manager.content.pack.unknown_author", "未知作者") });
     const labels = packLabels(pack);
     const labelRow = el3("div", "so-pack-labels");
-    for (const text4 of [`角色：${labels.role}`, `类型：${labels.type}`, ...labels.custom]) {
+    const displayRole = pack.roleName?.trim() || t("sprite.manager.content.group.other", "其他");
+    const displayKind = pack.kind === "illustration" ? t("sprite.manager.content.kind.illustration", "插图") : t("sprite.manager.content.kind.sprite", "立绘");
+    for (const text4 of [t("sprite.manager.content.pack.role_label", "角色：{{p0}}", { p0: displayRole }), t("sprite.manager.content.pack.kind_label", "类型：{{p0}}", { p0: displayKind }), ...labels.custom]) {
       const chip = el3("span");
       chip.textContent = text4;
       labelRow.append(chip);
     }
     info.append(nameEl, metaEl, labelRow);
     card.append(coverBox, info);
+    addCardNavigation(card, ".so-pack-card, .so-role-pack-stack, .so-role-pack-row");
     if (batchMode) {
       const preset = isPresetPack(pack.id);
       const selected = selectedPackIds.has(pack.id);
+      card.setAttribute("aria-pressed", String(selected));
       card.classList.add("so-card-batch");
       if (selected) card.classList.add("so-card-selected");
       const check = el3("span", `so-card-check${selected ? " so-card-check-on" : ""}`);
@@ -9823,16 +10305,16 @@ ${preview}
       coverBox.append(check);
       const orderRow = el3("div", "so-row so-card-order");
       orderRow.append(
-        iconButton("◀", "前移", () => {
+        iconButton("◀", t("sprite.manager.content.move_earlier", "前移"), () => {
           commit(movePack(deps.getSettings(), pack.id, -1));
         }, "so-chip-btn"),
-        iconButton("▶", "后移", () => {
+        iconButton("▶", t("sprite.manager.content.move_later", "后移"), () => {
           commit(movePack(deps.getSettings(), pack.id, 1));
         }, "so-chip-btn")
       );
       card.append(orderRow);
-      card.title = preset ? "点击勾选资源操作；预设包不可删除，可拖拽排序" : "点击勾选；可拖拽排序";
-      card.setAttribute("aria-label", `选择立绘包「${pack.name}」`);
+      card.title = preset ? t("sprite.manager.content.batch.preset_select_hint", "点击勾选资源操作；预设包不可删除，可拖拽排序") : t("sprite.manager.content.batch.select_hint", "点击勾选；可拖拽排序");
+      card.setAttribute("aria-label", t("sprite.manager.content.batch.select_pack", "选择立绘包「{{p0}}」", { p0: pack.name }));
       const toggleSelect = () => {
         if (selectedPackIds.has(pack.id)) selectedPackIds.delete(pack.id);
         else selectedPackIds.add(pack.id);
@@ -9840,8 +10322,9 @@ ${preview}
       };
       card.addEventListener("click", toggleSelect);
       card.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
+        if (e.target === card && !e.isComposing && (e.key === "Enter" || e.key === " ")) {
           e.preventDefault();
+          e.stopPropagation();
           toggleSelect();
         }
       });
@@ -9877,8 +10360,9 @@ ${preview}
     };
     card.addEventListener("click", enter);
     card.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
+      if (e.target === card && !e.isComposing && (e.key === "Enter" || e.key === " ")) {
         e.preventDefault();
+        e.stopPropagation();
         enter();
       }
     });
@@ -9888,29 +10372,30 @@ ${preview}
     const readonly = isPresetPack(pack.id);
     if (!readonly) {
       actions.append(
-        dropdownButton("添加立绘", (panel) => {
+        dropdownButton(t("sprite.manager.content.add.title", "添加立绘"), (panel) => {
           const upHeading = el3("div", "so-popover-title");
-          upHeading.textContent = "直接上传";
-          const upBtn = button("选择图片（自动压缩+解析预览）", () => {
+          upHeading.textContent = t("sprite.manager.content.add.upload_title", "直接上传");
+          const upBtn = button(t("sprite.manager.content.add.choose_images", "选择图片（自动压缩+解析预览）"), () => {
+            const opener = popoverOpener;
             closePopovers();
-            pickFile("image/*", true, (files) => openUploadPreview(pack.id, files));
+            pickFile("image/*", true, (files) => openUploadPreview(pack.id, files, opener));
           });
           const upHint = el3("div", "so-status");
-          upHint.textContent = "默认整个文件名作图名、落入当前包；预览里勾选「自动拆分」可按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png）并按前缀拆分成包。";
+          upHint.textContent = t("sprite.manager.content.add.upload_hint", "默认整个文件名作图名、落入当前包；预览里勾选「自动拆分」可按 _ - – — 空格拆「人名/服装/图名」（如 鸣人-居家服-微笑.png）并按前缀拆分成包。");
           const codeHeading = el3("div", "so-popover-title");
-          codeHeading.textContent = "按编码添加";
+          codeHeading.textContent = t("sprite.manager.content.add.codes_title", "按编码添加");
           const codeInput = document.createElement("textarea");
           codeInput.className = "text_pole";
           codeInput.rows = 3;
-          codeInput.placeholder = "粘贴编码，或「图名 编码」，可多个（空格/逗号/换行分隔）";
-          const codeBtn = button("添加", () => {
+          codeInput.placeholder = t("sprite.manager.content.add.codes_placeholder", "粘贴编码，或「图名 编码」，可多个（空格/逗号/换行分隔）");
+          const codeBtn = button(t("sprite.manager.content.add.button", "添加"), () => {
             const { entries, invalid } = parseImageCodeEntries(codeInput.value);
             if (entries.length === 0 && invalid.length === 0) {
-              toast(body, "请填写图床编码，如 ab12cd.png，或「微笑 ab12cd.png」（可一次粘贴多个）");
+              toast(body, t("sprite.manager.content.add.enter_code", "请填写图床编码，如 ab12cd.png，或「微笑 ab12cd.png」（可一次粘贴多个）"));
               return;
             }
             if (invalid.length > 0) {
-              toast(body, `认不出编码：${invalid.slice(0, 3).join("、")}${invalid.length > 3 ? " 等" : ""}`);
+              toast(body, t("sprite.manager.content.add.invalid_codes", "认不出编码：{{p0}}{{p1}}", { p0: invalid.slice(0, 3).join("、"), p1: invalid.length > 3 ? t("sprite.manager.content.add.more", " 等") : "" }));
               return;
             }
             const current2 = deps.getSettings();
@@ -9931,80 +10416,77 @@ ${preview}
             commitPack(next);
             toast(
               body,
-              named > 0 ? `已添加 ${added} 张，其中 ${named} 张用了你给的图名` : `已按编码添加 ${added} 张（图名取编码名，可在图卡上改名）`
+              named > 0 ? t("sprite.manager.content.add.named_result", "已添加 {{p0}} 张，其中 {{p1}} 张用了你给的图名", { p0: added, p1: named }) : t("sprite.manager.content.add.code_result", "已按编码添加 {{p0}} 张（图名取编码名，可在图卡上改名）", { p0: added })
             );
           });
           const codeHint = el3("div", "so-status");
-          codeHint.textContent = `编码拼接图床前缀 ${deps.getSettings().imageHost} 成直链。写「微笑 ab12cd.png」就用「微笑」当图名，连写「微笑ab12cd.png」也认；只给编码时图名取编码名。改名/分组用图卡上的 ✎ / 🏷。`;
+          codeHint.textContent = t("sprite.manager.content.add.code_prefix", "编码拼接图床前缀 {{p0}} 成直链。", { p0: deps.getSettings().imageHost }) + t("sprite.manager.content.add.code_named_hint", "写「微笑 ab12cd.png」就用「微笑」当图名，连写「微笑ab12cd.png」也认；") + t("sprite.manager.content.add.code_rename_hint", "只给编码时图名取编码名。改名/分组用图卡上的 ✎ / 🏷。");
           panel.append(upHeading, upBtn, upHint, codeHeading, codeInput, codeBtn, codeHint);
         })
       );
     }
     const topRow = el3("div", "so-row so-detail-top");
     topRow.append(
-      button("导出 JSON", async () => {
+      button(t("sprite.manager.content.export.json", "导出 JSON"), async () => {
         const file = await exportPack(pack);
         downloadJson2(file, `${pack.name}.sprite-pack.json`);
-        toast(body, `已导出「${pack.name}」`);
+        toast(body, t("sprite.manager.content.export.saved", "已导出「{{p0}}」", { p0: pack.name }));
       }),
-      button("复制分享串", async () => {
+      button(t("sprite.manager.content.share.copy", "复制分享串"), async () => {
         const result = encodeShareStringV2(pack);
         if (!result) {
-          toast(body, "该包没有可分享的远程图片（本地/内嵌图请用「导出 JSON」，或先上传 imgbb）");
+          toast(body, t("sprite.manager.content.share.pack_no_remote", "该包没有可分享的远程图片（本地/内嵌图请用「导出 JSON」，或先上传 imgbb）"));
           return;
         }
         if (result.missing.length > 0) {
           const preview = result.missing.slice(0, 8).join("、");
-          const more = result.missing.length > 8 ? ` 等 ${result.missing.length} 项` : "";
+          const more = result.missing.length > 8 ? t("sprite.manager.content.share.more_items", " 等 {{p0}} 项", { p0: result.missing.length }) : "";
           const go = window.confirm(
-            `分享串不完整：${result.included}/${result.total} 张有远程地址。
-缺少远程地址（不会包含在分享串里）：${preview}${more}
-
-这些图片对方将看不到。仍要复制残缺分享串吗？`
+            t("sprite.manager.content.share.incomplete", "分享串不完整：{{p0}}/{{p1}} 张有远程地址。\n", { p0: result.included, p1: result.total }) + t("sprite.manager.content.share.missing_list", "缺少远程地址（不会包含在分享串里）：{{p0}}{{p1}}\n\n", { p0: preview, p1: more }) + t("sprite.manager.content.share.confirm_incomplete", "这些图片对方将看不到。仍要复制残缺分享串吗？")
           );
           if (!go) return;
         }
         const ok = await copyText(result.text);
-        const note = result.missing.length > 0 ? `（${result.included}/${result.total} 张，缺 ${result.missing.length} 张）` : `（${result.included} 张，完整）`;
-        toast(body, ok ? `已复制分享串${note}` : "复制失败，请手动复制弹出的文本");
-        if (!ok) window.prompt("手动复制分享串：", result.text);
+        const note = result.missing.length > 0 ? t("sprite.manager.content.share.partial_count", "（{{p0}}/{{p1}} 张，缺 {{p2}} 张）", { p0: result.included, p1: result.total, p2: result.missing.length }) : t("sprite.manager.content.share.complete_count", "（{{p0}} 张，完整）", { p0: result.included });
+        toast(body, ok ? t("sprite.manager.content.share.copied", "已复制分享串{{p0}}", { p0: note }) : t("sprite.manager.content.share.copy_failed", "复制失败，请手动复制弹出的文本"));
+        if (!ok) window.prompt(t("sprite.manager.content.share.copy_prompt", "手动复制分享串："), result.text);
       })
     );
     const spacer = el3("div", "so-spacer");
     topRow.append(spacer);
     if (!readonly) {
       topRow.append(
-        button("删除立绘包", () => {
+        button(t("sprite.manager.content.delete.pack", "删除立绘包"), () => {
           void deletePacksWithChoice([pack.id], [pack.name], pack.name);
         }, "so-btn-danger")
       );
     }
     body.append(topRow);
     {
-      const metaPanel = collapsible("包信息", false, `pack-meta:${pack.id}`);
+      const metaPanel = collapsible(t("sprite.manager.content.info.title", "包信息"), false, `pack-meta:${pack.id}`);
       const metaRow = el3("div", "so-row so-meta-row");
-      const nameInput = textInput("包名");
+      const nameInput = textInput(t("sprite.manager.content.info.name", "包名"));
       nameInput.value = pack.name;
-      const authorInput = textInput("作者");
+      const authorInput = textInput(t("sprite.manager.content.info.author", "作者"));
       authorInput.value = pack.author ?? "";
-      const descInput = textInput("描述（可选）");
+      const descInput = textInput(t("sprite.manager.content.info.description_placeholder", "描述（可选）"));
       descInput.value = pack.description ?? "";
-      const roleInput = textInput("人名（可空）");
+      const roleInput = textInput(t("sprite.manager.content.info.role_placeholder", "人名（可空）"));
       roleInput.value = pack.roleName ?? "";
-      const outfitInput = textInput("服装（可空）");
+      const outfitInput = textInput(t("sprite.manager.content.info.outfit_placeholder", "服装（可空）"));
       outfitInput.value = pack.outfit ?? "";
       const promptNoteInput = document.createElement("textarea");
       promptNoteInput.className = "text_pole so-pack-prompt-note";
-      promptNoteInput.placeholder = "图包备注（可选）";
+      promptNoteInput.placeholder = t("sprite.manager.content.info.note_placeholder", "图包备注（可选）");
       promptNoteInput.rows = 3;
       promptNoteInput.maxLength = MAX_NOTE_CODE_POINTS;
       promptNoteInput.value = pack.promptNote ?? "";
       const placementSelect = document.createElement("select");
       placementSelect.className = "text_pole so-pack-prompt-placement";
-      placementSelect.setAttribute("aria-label", "图包备注插入位置");
+      placementSelect.setAttribute("aria-label", t("sprite.manager.content.info.note_placement", "图包备注插入位置"));
       for (const [value, label] of [
-        ["before-list", "立绘清单前"],
-        ["after-list", "立绘清单后"]
+        ["before-list", t("sprite.manager.content.info.before_list", "立绘清单前")],
+        ["after-list", t("sprite.manager.content.info.after_list", "立绘清单后")]
       ]) {
         const option = document.createElement("option");
         option.value = value;
@@ -10014,7 +10496,7 @@ ${preview}
       placementSelect.value = pack.promptNotePlacement ?? DEFAULT_PROMPT_NOTE_PLACEMENT;
       const inventoryPromptInput = document.createElement("textarea");
       inventoryPromptInput.className = "text_pole so-pack-inventory-prompt";
-      inventoryPromptInput.placeholder = "自定义清单提示词（可选，替换默认的表情列表）";
+      inventoryPromptInput.placeholder = t("sprite.manager.content.info.inventory_placeholder", "自定义清单提示词（可选，替换默认的表情列表）");
       inventoryPromptInput.rows = 4;
       inventoryPromptInput.maxLength = MAX_INVENTORY_PROMPT_CODE_POINTS;
       inventoryPromptInput.value = pack.inventoryPrompt ?? "";
@@ -10035,13 +10517,13 @@ ${preview}
         outfitNotesBox.replaceChildren();
         if (outfits.length === 0) return;
         const title2 = el3("div", "so-section-title");
-        title2.textContent = "服装备注";
+        title2.textContent = t("sprite.manager.content.info.outfit_notes", "服装备注");
         outfitNotesBox.append(title2);
         for (const outfit of outfits) {
           const input = document.createElement("textarea");
           input.className = "text_pole so-outfit-note-input";
           input.dataset.outfit = outfit;
-          input.placeholder = `${outfit}的使用场景（可选）`;
+          input.placeholder = t("sprite.manager.content.info.outfit_note_placeholder", "{{p0}}的使用场景（可选）", { p0: outfit });
           input.rows = 2;
           input.maxLength = MAX_NOTE_CODE_POINTS;
           input.value = outfitNoteDrafts.get(outfit) ?? "";
@@ -10055,28 +10537,28 @@ ${preview}
       renderOutfitNotes();
       const promptRow = el3("div", "so-row so-pack-note-row");
       promptRow.append(
-        labeled("图包备注", promptNoteInput),
-        labeled("插入位置", placementSelect)
+        labeled(t("sprite.manager.content.info.note", "图包备注"), promptNoteInput),
+        labeled(t("sprite.manager.content.info.placement", "插入位置"), placementSelect)
       );
       const inventoryRow = el3("div", "so-row so-pack-inventory-row");
       const inventoryHint = el3("div", "so-status so-pack-inventory-hint");
-      inventoryHint.textContent = "填了就用它替换这个包在清单里的表情列表；留空走默认列表。多个包同场景时两段都会出现，不会互相覆盖。";
-      const inventoryCell = labeled("自定义清单提示词", inventoryPromptInput);
+      inventoryHint.textContent = t("sprite.manager.content.info.inventory_hint", "填了就用它替换这个包在清单里的表情列表；留空走默认列表。") + t("sprite.manager.content.info.multiple_packs_hint", "多个包同场景时两段都会出现，不会互相覆盖。");
+      const inventoryCell = labeled(t("sprite.manager.content.info.inventory", "自定义清单提示词"), inventoryPromptInput);
       inventoryCell.append(inventoryHint);
       inventoryRow.append(inventoryCell);
       metaRow.append(
-        labeled("包名", nameInput),
-        labeled("作者", authorInput),
-        labeled("人名", roleInput),
-        labeled("服装", outfitInput),
-        labeled("描述", descInput)
+        labeled(t("sprite.manager.content.info.name", "包名"), nameInput),
+        labeled(t("sprite.manager.content.info.author", "作者"), authorInput),
+        labeled(t("sprite.manager.content.info.role", "人名"), roleInput),
+        labeled(t("sprite.manager.content.info.outfit", "服装"), outfitInput),
+        labeled(t("sprite.manager.content.info.description", "描述"), descInput)
       );
       const saveRow = el3("div", "so-row so-meta-save-row");
       saveRow.append(
-        button("保存包信息", () => {
+        button(t("sprite.manager.content.info.save", "保存包信息"), () => {
           const name = sanitizePackName(nameInput.value);
           if (!name) {
-            toast(body, "包名不能为空");
+            toast(body, t("sprite.manager.content.info.empty_name", "包名不能为空"));
             return;
           }
           const roleName = normalizeTag(roleInput.value);
@@ -10102,7 +10584,7 @@ ${preview}
             const materialized = next.packs.find((candidate) => candidate.id === pack.id);
             if (!materialized || !checkedSettings(upsertPack(current2, materialized))) return;
             commit(next);
-            toast(body, "已保存包信息");
+            toast(body, t("sprite.manager.content.info.saved", "已保存包信息"));
             return;
           }
           const nextPack = {
@@ -10125,44 +10607,44 @@ ${preview}
           if (Object.keys(outfitNotes).length > 0) nextPack.outfitNotes = outfitNotes;
           else delete nextPack.outfitNotes;
           if (commitChecked(upsertPack(deps.getSettings(), nextPack))) {
-            toast(body, "已保存包信息");
+            toast(body, t("sprite.manager.content.info.saved", "已保存包信息"));
           }
         }, "so-btn-primary so-meta-save")
       );
       if (readonly) {
-        saveRow.append(button("恢复内置信息", () => {
-          if (!window.confirm("确定恢复扩展内置的包信息吗？已保存的本地图片会保留。")) return;
+        saveRow.append(button(t("sprite.manager.content.info.restore", "恢复内置信息"), () => {
+          if (!window.confirm(t("sprite.manager.content.info.confirm_restore", "确定恢复扩展内置的包信息吗？已保存的本地图片会保留。"))) return;
           const current2 = deps.getSettings();
           const next = clearPresetMetadata(current2, pack.id);
           const materialized = next.packs.find((candidate) => candidate.id === pack.id);
           if (!materialized || !checkedSettings(upsertPack(current2, materialized))) return;
           commit(next);
-          toast(body, "已恢复内置信息，本地图片保持不变");
+          toast(body, t("sprite.manager.content.info.restored", "已恢复内置信息，本地图片保持不变"));
         }));
       }
       const metaHint = el3("div", "so-status");
-      metaHint.textContent = readonly ? "可覆盖预设包信息；立绘图片本身仍不可添加、改名或删除。" : "人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。";
+      metaHint.textContent = readonly ? t("sprite.manager.content.info.preset_hint", "可覆盖预设包信息；立绘图片本身仍不可添加、改名或删除。") : t("sprite.manager.content.info.address_hint", "人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。");
       metaPanel.body.append(metaRow, promptRow, inventoryRow, outfitNotesBox, metaHint, saveRow);
       body.append(metaPanel.box);
     }
     if (pack.sprites.length === 0) {
       const empty = el3("div", "so-status");
-      empty.textContent = "还没有立绘：点右上角「添加立绘」上传图片或粘贴编码。";
+      empty.textContent = t("sprite.manager.content.empty.pack_detail", "还没有立绘：点右上角「添加立绘」上传图片或粘贴编码。");
       body.append(empty);
     } else {
       const filters = el3("div", "so-gallery-filters");
       const search = document.createElement("input");
       search.type = "search";
       search.className = "text_pole so-gallery-search";
-      search.placeholder = "搜索图名、角色、服装或标签";
-      search.setAttribute("aria-label", "搜索立绘");
+      search.placeholder = t("sprite.manager.content.filter.sprites_placeholder", "搜索图名、角色、服装或标签");
+      search.setAttribute("aria-label", t("sprite.manager.content.filter.sprites", "搜索立绘"));
       search.value = spriteFilterQuery;
       const labelSelect = document.createElement("select");
       labelSelect.className = "text_pole so-gallery-label-select";
-      labelSelect.setAttribute("aria-label", "添加标签筛选");
+      labelSelect.setAttribute("aria-label", t("sprite.manager.content.filter.add_tag", "添加标签筛选"));
       const placeholder = document.createElement("option");
       placeholder.value = "";
-      placeholder.textContent = "按标签筛选…";
+      placeholder.textContent = t("sprite.manager.content.filter.by_tag", "按标签筛选…");
       labelSelect.append(placeholder);
       const availableLabels = [...new Set(pack.sprites.flatMap((sprite) => sprite.labels ?? []))];
       for (const label of availableLabels) {
@@ -10188,7 +10670,7 @@ ${preview}
         const section2 = el3("div", "so-sprite-section");
         if (groups.length > 0) {
           const head = el3("div", "so-group-head");
-          head.textContent = group === "" ? "未分组" : group;
+          head.textContent = group === "" ? t("sprite.manager.content.group.none", "未分组") : group;
           section2.append(head);
         }
         const grid = el3("div", "so-sprite-grid");
@@ -10211,10 +10693,10 @@ ${preview}
       };
       const updatePaging = () => {
         const visibleCount = Math.min(spriteVisibleCount, filteredEntries.length);
-        count.textContent = `已显示 ${visibleCount}/${filteredEntries.length}`;
+        count.textContent = t("sprite.manager.content.filter.shown", "已显示 {{p0}}/{{p1}}", { p0: visibleCount, p1: filteredEntries.length });
         paging.replaceChildren();
         if (visibleCount < filteredEntries.length) {
-          paging.append(button("加载更多", () => {
+          paging.append(button(t("sprite.manager.content.filter.load_more", "加载更多"), () => {
             const previousCount = spriteVisibleCount;
             spriteVisibleCount = Math.min(filteredEntries.length, previousCount + SPRITE_PAGE_SIZE);
             appendSprites(previousCount, spriteVisibleCount);
@@ -10236,7 +10718,7 @@ ${preview}
         grids.clear();
         if (filteredEntries.length === 0) {
           const empty = el3("div", "so-status so-gallery-empty");
-          empty.textContent = "没有符合筛选条件的立绘。";
+          empty.textContent = t("sprite.manager.content.empty.filtered_sprites", "没有符合筛选条件的立绘。");
           gallery.append(empty);
         } else {
           appendSprites(0, Math.min(spriteVisibleCount, filteredEntries.length));
@@ -10250,7 +10732,7 @@ ${preview}
           chip.type = "button";
           chip.className = "so-gallery-filter-chip";
           chip.textContent = `${label} ×`;
-          chip.title = `移除标签筛选「${label}」`;
+          chip.title = t("sprite.manager.content.filter.remove_tag", "移除标签筛选「{{p0}}」", { p0: label });
           chip.addEventListener("click", () => {
             spriteFilterLabels = spriteFilterLabels.filter((current2) => current2 !== label);
             spriteVisibleCount = SPRITE_PAGE_SIZE;
@@ -10289,13 +10771,13 @@ ${preview}
       if (pending.length > 0 && imgbbApiKey.trim()) {
         const upSection = el3("div", "so-section");
         const upTitle = el3("div", "so-section-title");
-        upTitle.textContent = "图床补传";
+        upTitle.textContent = t("sprite.manager.content.upload.retry_title", "图床补传");
         const upDesc = el3("div", "so-status");
-        upDesc.textContent = `${pending.length} 张立绘还没有远程地址（分享时对方看不到）。补传到 imgbb 后本地图仍保留。`;
+        upDesc.textContent = t("sprite.manager.content.upload.pending_hint", "{{p0}} 张立绘还没有远程地址（分享时对方看不到）。补传到 imgbb 后本地图仍保留。", { p0: pending.length });
         upSection.append(
           upTitle,
           upDesc,
-          button(`补传 ${pending.length} 张到 imgbb（失败可重试）`, () => {
+          button(t("sprite.manager.content.upload.retry", "补传 {{p0}} 张到 imgbb（失败可重试）", { p0: pending.length }), () => {
             void retryPendingUploads(body, pack.id);
           })
         );
@@ -10303,17 +10785,14 @@ ${preview}
       }
       const splitPreview = previewGroupSplit(pack);
       if (splitPreview.length >= 2) {
-        const splitPanel = collapsible("按分组拆成立绘包", false, `pack-split:${pack.id}`);
+        const splitPanel = collapsible(t("sprite.manager.content.split.title", "按分组拆成立绘包"), false, `pack-split:${pack.id}`);
         const splitDesc = el3("div", "so-status");
-        splitDesc.textContent = `检测到 ${splitPreview.length} 个分组：${splitPreview.map((s) => `${s.roleName}(${s.count})`).join("、")}。拆分会新建这些包（原包与绑定保留，可稍后自行删除）。`;
+        splitDesc.textContent = t("sprite.manager.content.split.preview", "检测到 {{p0}} 个分组：{{p1}}。拆分会新建这些包（原包与绑定保留，可稍后自行删除）。", { p0: splitPreview.length, p1: splitPreview.map((s) => `${s.roleName}(${s.count})`).join("、") });
         splitPanel.body.append(
           splitDesc,
-          button("拆分（保留原包）", () => {
-            const preview = splitPreview.map((s) => `${s.roleName}：${s.count} 张`).join("\n");
-            if (!window.confirm(`将新建以下立绘包（原包保留）：
-${preview}
-
-确认拆分？`)) return;
+          button(t("sprite.manager.content.split.button", "拆分（保留原包）"), () => {
+            const preview = splitPreview.map((s) => t("sprite.manager.content.split.pack_count", "{{p0}}：{{p1}} 张", { p0: s.roleName, p1: s.count })).join("\n");
+            if (!window.confirm(t("sprite.manager.content.split.confirm", "将新建以下立绘包（原包保留）：\n{{p0}}\n\n确认拆分？", { p0: preview }))) return;
             const newPacks = splitPackByGroup(pack);
             let next = deps.getSettings();
             for (const np of newPacks) {
@@ -10322,7 +10801,7 @@ ${preview}
               next = updated;
             }
             commit(next);
-            toast(body, `已拆出 ${newPacks.length} 个新包（原包「${pack.name}」保留）`);
+            toast(body, t("sprite.manager.content.split.complete", "已拆出 {{p0}} 个新包（原包「{{p1}}」保留）", { p0: newPacks.length, p1: pack.name }));
           })
         );
         body.append(splitPanel.box);
@@ -10366,7 +10845,7 @@ ${preview}
   }
   function commitActionPack(pack) {
     const result = upsertPack(deps.getSettings(), pack);
-    if (!result.ok) throw new Error(`操作未生效，存在地址冲突：${conflictText(result.conflicts)}`);
+    if (!result.ok) throw new Error(t("sprite.manager.content.conflict.address", "操作未生效，存在地址冲突：{{p0}}", { p0: conflictText(result.conflicts) }));
     deps.updateSettings(result.settings);
   }
   function currentManagerBody() {
@@ -10374,7 +10853,7 @@ ${preview}
   }
   function runSpriteAction(action) {
     const report = (error) => {
-      toast(currentManagerBody(), error instanceof Error ? error.message : "立绘操作失败");
+      toast(currentManagerBody(), error instanceof Error ? error.message : t("sprite.manager.content.action.failed", "立绘操作失败"));
       refreshLightbox();
     };
     try {
@@ -10410,10 +10889,10 @@ ${preview}
           result.dataUri,
           deps.adapter.getCurrentCharacterName() || beforeSave.pack.name
         );
-        if (!localUserImagePath(url)) throw new Error("保存失败：平台未返回安全的本地用户图片地址");
+        if (!localUserImagePath(url)) throw new Error(t("sprite.manager.content.error.unsafe_local", "保存失败：平台未返回安全的本地用户图片地址"));
         const target = latestTarget();
         if (!target || target.sprite.url !== beforeUrl) {
-          throw new Error("目标已更改，本次结果未应用");
+          throw new Error(t("sprite.manager.content.error.target_changed", "目标已更改，本次结果未应用"));
         }
         const base = {
           tag: target.sprite.tag,
@@ -10435,22 +10914,22 @@ ${preview}
                   code: uploaded.code,
                   remoteUrl: uploaded.url
                 }));
-                toast(currentManagerBody(), `已替换「${identity.tag}」并重传图床（${formatBytes(result.bytes)}）`);
+                toast(currentManagerBody(), t("sprite.manager.content.replace.hosted", "已替换「{{p0}}」并重传图床（{{p1}}）", { p0: identity.tag, p1: formatBytes(result.bytes) }));
                 return;
               } else {
-                toast(currentManagerBody(), "目标已更改，本次图床结果未应用；已保留本地文件");
+                toast(currentManagerBody(), t("sprite.manager.content.replace.target_changed", "目标已更改，本次图床结果未应用；已保留本地文件"));
                 return;
               }
             }
-            toast(currentManagerBody(), `已替换「${identity.tag}」，但图床响应无效，标记为待上传`);
+            toast(currentManagerBody(), t("sprite.manager.content.replace.invalid_response", "已替换「{{p0}}」，但图床响应无效，标记为待上传", { p0: identity.tag }));
           } catch {
-            toast(currentManagerBody(), `已替换「${identity.tag}」，图床上传失败，标记为待上传`);
+            toast(currentManagerBody(), t("sprite.manager.content.replace.upload_failed", "已替换「{{p0}}」，图床上传失败，标记为待上传", { p0: identity.tag }));
           }
         } else {
-          toast(currentManagerBody(), `已替换「${identity.tag}」（${formatBytes(result.bytes)}），远程地址待上传`);
+          toast(currentManagerBody(), t("sprite.manager.content.replace.local", "已替换「{{p0}}」（{{p1}}），远程地址待上传", { p0: identity.tag, p1: formatBytes(result.bytes) }));
         }
       } catch (error) {
-        toast(currentManagerBody(), error instanceof Error ? error.message : "替换失败");
+        toast(currentManagerBody(), error instanceof Error ? error.message : t("sprite.manager.content.replace.failed", "替换失败"));
       } finally {
         refreshLightbox();
       }
@@ -10486,7 +10965,7 @@ ${preview}
           (candidate) => candidate.tag === identity.tag && spriteGroup(candidate) === identity.group && (candidate.outfit ?? "") === identity.outfit
         );
         if (!pack || !latest || latest.url !== source.url) {
-          throw new Error("立绘在保存期间已发生变化，请重试");
+          throw new Error(t("sprite.manager.content.localize.changed", "立绘在保存期间已发生变化，请重试"));
         }
         if (isPresetPack(packId)) {
           deps.updateSettings(setPresetLocalSprite(
@@ -10503,7 +10982,7 @@ ${preview}
           }));
         }
         context.refresh();
-        toast(currentManagerBody(), `已将「${source.tag}」保存到本地`);
+        toast(currentManagerBody(), t("sprite.manager.content.localize.saved", "已将「{{p0}}」保存到本地", { p0: source.tag }));
       },
       refresh: () => {
         render2();
@@ -10537,6 +11016,11 @@ ${preview}
   }
   function renderSpriteCell(body, pack, sprite, index, readonly) {
     const cell = el3("div", "so-sprite-cell");
+    cell.tabIndex = 0;
+    cell.setAttribute("role", "button");
+    cell.setAttribute("aria-label", t("sprite.manager.content.pack.open_image", "查看立绘「{{name}}」", { name: sprite.tag }));
+    cell.dataset.managerFocus = `sprite:${pack.id}:${spriteGroup(sprite)}:${sprite.outfit ?? ""}:${sprite.tag}`;
+    addCardNavigation(cell, ".so-sprite-cell");
     if (pack.coverTag === sprite.tag) cell.classList.add("so-cover");
     const img = document.createElement("img");
     img.src = sprite.url;
@@ -10548,6 +11032,12 @@ ${preview}
     tagEl.title = sprite.tag;
     cell.append(img, tagEl);
     cell.addEventListener("click", () => openLightbox(pack.id, index));
+    cell.addEventListener("keydown", (event) => {
+      if (event.target !== cell || event.isComposing || !["Enter", " "].includes(event.key)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openLightbox(pack.id, index);
+    });
     if (readonly) return cell;
     const bar = el3("div", "so-sprite-actions");
     const identity = {
@@ -10567,21 +11057,23 @@ ${preview}
     );
     const sharedActions = createSpriteActions(context);
     for (const action of sharedActions) {
-      bar.append(iconButton(
+      const actionButton3 = iconButton(
         action.icon ?? action.label,
-        action.hint ?? action.label,
+        action.label,
         () => runSpriteAction(action),
         "so-icon-btn",
         Boolean(action.disabled)
-      ));
+      );
+      actionButton3.title = action.hint ?? action.label;
+      bar.append(actionButton3);
     }
     bar.append(
-      iconButton("◀", "前移", () => {
+      iconButton("◀", t("sprite.manager.content.move_earlier", "前移"), () => {
         const target = context.getPack();
         if (!target) return;
         commitPack(moveSprite(target, index, index - 1));
       }),
-      iconButton("▶", "后移", () => {
+      iconButton("▶", t("sprite.manager.content.move_later", "后移"), () => {
         const target = context.getPack();
         if (!target) return;
         commitPack(moveSprite(target, index, index + 1));
@@ -10590,7 +11082,7 @@ ${preview}
     cell.append(bar);
     return cell;
   }
-  function openUploadPreview(currentPackId, files) {
+  function openUploadPreview(currentPackId, files, opener) {
     const fileArr = Array.from(files);
     const parsed = fileArr.map((f) => parseSpriteFileName(f.name));
     let autoSplit = false;
@@ -10600,7 +11092,9 @@ ${preview}
     const panel = el3("div", "so-upload-panel");
     const head = el3("div", "so-upload-head");
     const title2 = el3("b");
-    title2.textContent = `批量上传预览（${fileArr.length} 张）`;
+    title2.textContent = t("sprite.manager.content.upload.preview_title", "批量上传预览（{{p0}} 张）", { p0: fileArr.length });
+    title2.id = nextManagerId();
+    modal.setAttribute("aria-labelledby", title2.id);
     head.append(title2);
     const rows = el3("div", "so-upload-rows");
     const inputs = [];
@@ -10612,9 +11106,9 @@ ${preview}
         const name = el3("div", "so-upload-fname");
         name.textContent = file.name;
         name.title = file.name;
-        const roleIn = textInput("人名");
-        const outfitIn = textInput("服装");
-        const tagIn = textInput("图名");
+        const roleIn = textInput(t("sprite.manager.content.info.role", "人名"));
+        const outfitIn = textInput(t("sprite.manager.content.info.outfit", "服装"));
+        const tagIn = textInput(t("sprite.manager.content.info.image_name", "图名"));
         if (autoSplit) {
           roleIn.value = parsed[i].role;
           outfitIn.value = parsed[i].outfit;
@@ -10629,9 +11123,9 @@ ${preview}
         inputs.push({ role: roleIn, outfit: outfitIn, tag: tagIn });
         row.append(
           name,
-          labeled("人名", roleIn),
-          labeled("服装", outfitIn),
-          labeled("图名", tagIn)
+          labeled(t("sprite.manager.content.info.role", "人名"), roleIn),
+          labeled(t("sprite.manager.content.info.outfit", "服装"), outfitIn),
+          labeled(t("sprite.manager.content.info.image_name", "图名"), tagIn)
         );
         rows.append(row);
       });
@@ -10639,20 +11133,22 @@ ${preview}
     buildRows();
     const opts = el3("div", "so-upload-opts");
     opts.append(
-      checkboxRow("按文件名前缀自动拆分人名/服装（勾选后在下方预览拆分结果，可拆出新包）", autoSplit, (v) => {
+      checkboxRow(t("sprite.manager.content.upload.auto_split", "按文件名前缀自动拆分人名/服装（勾选后在下方预览拆分结果，可拆出新包）"), autoSplit, (v) => {
         autoSplit = v;
         buildRows();
       })
     );
     const stratWrap = el3("div", "so-row");
     const stratLabel = el3("span");
-    stratLabel.textContent = "重名时：";
+    stratLabel.textContent = t("sprite.manager.content.upload.conflict_label", "重名时：");
+    stratLabel.id = nextManagerId();
     const stratSel = document.createElement("select");
     stratSel.className = "text_pole";
+    stratSel.setAttribute("aria-labelledby", stratLabel.id);
     for (const [val, lab] of [
-      ["skip", "跳过（默认）"],
-      ["rename", "自动改名"],
-      ["overwrite", "覆盖"]
+      ["skip", t("sprite.manager.content.upload.skip", "跳过（默认）")],
+      ["rename", t("sprite.manager.content.upload.rename", "自动改名")],
+      ["overwrite", t("sprite.manager.content.upload.overwrite", "覆盖")]
     ]) {
       const o = document.createElement("option");
       o.value = val;
@@ -10663,8 +11159,9 @@ ${preview}
     stratWrap.append(stratLabel, stratSel);
     opts.append(stratWrap);
     const status = el3("div", "so-upload-status");
+    status.setAttribute("role", "status");
     const actions = el3("div", "so-row so-upload-actions");
-    const confirmBtn = button("开始上传", () => {
+    const confirmBtn = button(t("sprite.manager.content.upload.start", "开始上传"), () => {
       if (uploading) return;
       uploading = true;
       confirmBtn.setAttribute("aria-disabled", "true");
@@ -10675,7 +11172,7 @@ ${preview}
         outfit: autoSplit ? inputs[i].outfit.value : "",
         tag: inputs[i].tag.value
       }));
-      void applyUploadPlan(currentPackId, fileArr, entries, strategy, status, () => modal.remove()).finally(
+      void applyUploadPlan(currentPackId, fileArr, entries, strategy, status, () => closeModal()).finally(
         () => {
           uploading = false;
           confirmBtn.removeAttribute("aria-disabled");
@@ -10684,9 +11181,9 @@ ${preview}
       );
     });
     const cancelBtn = button(
-      "取消",
+      t("common.cancel", "取消"),
       () => {
-        if (!uploading) modal.remove();
+        if (!uploading) closeModal();
       },
       "so-btn-danger"
     );
@@ -10697,6 +11194,7 @@ ${preview}
     panel.append(head, opts, actions, status, rows);
     modal.append(panel);
     (backdrop ?? document.body).append(modal);
+    const closeModal = manageChildDialog(modal, () => !uploading, opener);
   }
   async function applyUploadPlan(currentPackId, files, entries, strategy, status, done) {
     const { autoUpload, imgbbApiKey } = deps.getSettings();
@@ -10741,7 +11239,7 @@ ${preview}
       for (let i = 0; i < plans.length; i++) {
         const plan = plans[i];
         const file = files[i];
-        status.textContent = `处理中 ${i + 1}/${plans.length}：${file.name}`;
+        status.textContent = t("sprite.manager.content.upload.progress", "处理中 {{p0}}/{{p1}}：{{p2}}", { p0: i + 1, p1: plans.length, p2: file.name });
         if (plan.action === "skip" || !plan.finalTag) {
           skipped++;
           continue;
@@ -10750,7 +11248,7 @@ ${preview}
           const batchKey = JSON.stringify([plan.entry.role, plan.entry.outfit, plan.targetPackName]);
           const beforeId = plan.targetPackId ?? newPackIds.get(batchKey);
           const beforeTarget = deps.getSettings().packs.find((pack) => pack.id === beforeId);
-          if (beforeId && !beforeTarget) throw new Error("目标已更改，本次结果未应用");
+          if (beforeId && !beforeTarget) throw new Error(t("sprite.manager.content.error.target_changed", "目标已更改，本次结果未应用"));
           const beforeUrl = beforeTarget ? sameSprite(beforeTarget, { tag: plan.finalTag, url: "" })?.url : void 0;
           const result = await compressImage(file);
           if (result.transparency === "opaque-checkerboard") checkerboardImages += 1;
@@ -10761,7 +11259,7 @@ ${preview}
             plan.targetPackName
             // 显示提示；物理文件身份由适配器独立生成
           );
-          if (!localUserImagePath(url)) throw new Error("保存失败：平台未返回安全的本地用户图片地址");
+          if (!localUserImagePath(url)) throw new Error(t("sprite.manager.content.error.unsafe_local", "保存失败：平台未返回安全的本地用户图片地址"));
           let targetId = plan.targetPackId;
           if (!targetId) {
             const role = plan.entry.role;
@@ -10795,7 +11293,7 @@ ${preview}
             continue;
           }
           const latestSprite = sameSprite(target, { tag: plan.finalTag, url: "" });
-          if (latestSprite?.url !== beforeUrl) throw new Error("目标已更改，本次结果未应用");
+          if (latestSprite?.url !== beforeUrl) throw new Error(t("sprite.manager.content.error.target_changed", "目标已更改，本次结果未应用"));
           const sprite = { ...latestSprite, tag: plan.finalTag, url };
           delete sprite.code;
           delete sprite.remoteUrl;
@@ -10853,18 +11351,18 @@ ${preview}
         console.error("[sprite-overlay] 上传后刷新失败", error);
       }
       const parts = [
-        `成功 ${added} 张`,
-        `冲突 ${conflicts} 张`,
-        `失败 ${failed} 张`,
-        `未处理 ${unprocessed} 张`
+        t("sprite.manager.content.upload.result_success", "成功 {{p0}} 张", { p0: added }),
+        t("sprite.manager.content.upload.result_conflict", "冲突 {{p0}} 张", { p0: conflicts }),
+        t("sprite.manager.content.upload.result_failed", "失败 {{p0}} 张", { p0: failed }),
+        t("sprite.manager.content.upload.result_unprocessed", "未处理 {{p0}} 张", { p0: unprocessed })
       ];
-      if (skipped > 0) parts.push(`跳过 ${skipped} 张（重名/无效）`);
-      if (useImgbb) parts.push(`imgbb 成功 ${hosted}${hostFailed > 0 ? `、失败 ${hostFailed}` : ""}`);
+      if (skipped > 0) parts.push(t("sprite.manager.content.upload.result_skipped", "跳过 {{p0}} 张（重名/无效）", { p0: skipped }));
+      if (useImgbb) parts.push(t("sprite.manager.content.upload.result_hosted", "imgbb 成功 {{p0}}{{p1}}", { p0: hosted, p1: hostFailed > 0 ? t("sprite.manager.content.upload.host_failed_suffix", "、失败 {{p0}}", { p0: hostFailed }) : "" }));
       if (checkerboardImages > 0) {
-        parts.push(`警告：${checkerboardImages} 张疑似把棋盘格烤进图片，插件无法安全自动去除`);
+        parts.push(t("sprite.manager.content.upload.checkerboard_warning", "警告：{{p0}} 张疑似把棋盘格烤进图片，插件无法安全自动去除", { p0: checkerboardImages }));
       }
       if (opaqueImages > 0) {
-        parts.push(`提示：${opaqueImages} 张没有透明像素，作为立绘时会显示完整背景`);
+        parts.push(t("sprite.manager.content.upload.opaque_notice", "提示：{{p0}} 张没有透明像素，作为立绘时会显示完整背景", { p0: opaqueImages }));
       }
       try {
         toast(backdrop?.querySelector(".so-manager-body"), parts.join("，"));
@@ -10876,7 +11374,7 @@ ${preview}
   async function retryPendingUploads(body, packId) {
     const { imgbbApiKey } = deps.getSettings();
     if (!imgbbApiKey.trim()) {
-      toast(body, "请先在「图库」App 配置 imgbb API Key");
+      toast(body, t("sprite.manager.content.upload.api_key", "请先在「图库」App 配置 imgbb API Key"));
       return;
     }
     const pack = deps.getSettings().packs.find((p) => p.id === packId);
@@ -10889,7 +11387,7 @@ ${preview}
     for (let i = 0; i < pending.length; i++) {
       const sprite = pending[i];
       const beforeUrl = sprite.url;
-      toast(body, `补传中 ${i + 1}/${pending.length}：${sprite.tag}`);
+      toast(body, t("sprite.manager.content.upload.retry_progress", "补传中 {{p0}}/{{p1}}：{{p2}}", { p0: i + 1, p1: pending.length, p2: sprite.tag }));
       try {
         const dataUri = beforeUrl.startsWith("data:") ? beforeUrl : await urlToDataUri(beforeUrl);
         const up = await uploadToImgbb(imgbbApiKey, dataUri);
@@ -10920,7 +11418,7 @@ ${preview}
     render2();
     toast(
       backdrop?.querySelector(".so-manager-body"),
-      `补传完成：成功 ${ok} 张${fail > 0 ? `，失败 ${fail} 张（可再次点击重试）` : ""}`
+      t("sprite.manager.content.upload.retry_complete", "补传完成：成功 {{p0}} 张{{p1}}", { p0: ok, p1: fail > 0 ? t("sprite.manager.content.upload.retry_failed_suffix", "，失败 {{p0}} 张（可再次点击重试）", { p0: fail }) : "" })
     );
   }
   function destroy() {
@@ -10940,12 +11438,17 @@ function textInput(placeholder) {
   input.type = "text";
   input.className = "text_pole";
   input.placeholder = placeholder;
+  input.setAttribute("aria-label", placeholder);
+  input.dataset.managerFocus = `input:${placeholder}`;
   return input;
 }
 function labeled(label, input) {
   const wrap = el3("label", "so-labeled");
   const span = el3("span", "so-labeled-text");
+  span.id = nextManagerId();
   span.textContent = label;
+  input.setAttribute("aria-labelledby", span.id);
+  input.dataset.managerFocus = `field:${label}`;
   wrap.append(span, input);
   return wrap;
 }
@@ -10954,6 +11457,7 @@ function checkboxRow(label, checked, onChange) {
   const input = document.createElement("input");
   input.type = "checkbox";
   input.checked = checked;
+  input.dataset.managerFocus = `checkbox:${label}`;
   input.addEventListener("change", () => onChange(input.checked));
   const span = document.createElement("span");
   span.textContent = label;
@@ -10965,10 +11469,12 @@ function button(label, onClick, extraClass = "") {
   btn.setAttribute("role", "button");
   btn.tabIndex = 0;
   btn.textContent = label;
+  btn.dataset.managerFocus = `button:${label}`;
   btn.addEventListener("click", onClick);
   btn.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
+    if (!e.isComposing && (e.key === "Enter" || e.key === " ")) {
       e.preventDefault();
+      e.stopPropagation();
       onClick();
     }
   });
@@ -10981,14 +11487,46 @@ function iconButton(icon, title2, onClick, className = "so-icon-btn", disabled =
   btn.setAttribute("role", "button");
   btn.setAttribute("aria-label", title2);
   btn.setAttribute("aria-disabled", String(disabled));
+  btn.tabIndex = disabled ? -1 : 0;
+  btn.dataset.managerFocus = `icon:${title2}`;
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
+    if (!disabled) onClick();
+  });
+  btn.addEventListener("keydown", (event) => {
+    if (event.isComposing || !["Enter", " "].includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
     if (!disabled) onClick();
   });
   return btn;
 }
 function statusBar() {
-  return el3("div", "so-status so-toast");
+  const status = el3("div", "so-status so-toast");
+  status.setAttribute("role", "status");
+  return status;
+}
+function addCardNavigation(card, selector2) {
+  card.addEventListener("keydown", (event) => {
+    if (event.target !== card || event.isComposing || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+    const cards = [...card.closest(".so-manager-body")?.querySelectorAll(selector2) ?? []];
+    const index = cards.indexOf(card);
+    if (index < 0) return;
+    let target = index;
+    if (event.key === "Home") target = 0;
+    else if (event.key === "End") target = cards.length - 1;
+    else if (event.key === "ArrowLeft") target--;
+    else if (event.key === "ArrowRight") target++;
+    else {
+      const rect = card.getBoundingClientRect();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      const candidates = cards.map((node, i) => ({ i, rect: node.getBoundingClientRect() })).filter((item) => direction * (item.rect.top - rect.top) > 1).sort((a, b) => Math.abs(a.rect.top - rect.top) - Math.abs(b.rect.top - rect.top) || Math.abs(a.rect.left - rect.left) - Math.abs(b.rect.left - rect.left));
+      target = candidates[0]?.i ?? index + direction;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    cards[Math.max(0, Math.min(cards.length - 1, target))]?.focus();
+  });
 }
 function toast(scope, msg) {
   const bar = scope?.querySelector(".so-toast");
@@ -11022,18 +11560,24 @@ async function copyText(text4) {
     await navigator.clipboard.writeText(text4);
     return true;
   } catch {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const container = opener?.closest('[role="dialog"]') ?? document.body;
+    const ta = document.createElement("textarea");
     try {
-      const ta = document.createElement("textarea");
       ta.value = text4;
       ta.style.position = "fixed";
       ta.style.opacity = "0";
-      document.body.append(ta);
+      ta.tabIndex = -1;
+      container.append(ta);
+      ta.focus({ preventScroll: true });
       ta.select();
-      const ok = document.execCommand("copy");
-      ta.remove();
-      return ok;
+      if (document.activeElement !== ta || ta.selectionStart !== 0 || ta.selectionEnd !== text4.length) return false;
+      return document.execCommand("copy");
     } catch {
       return false;
+    } finally {
+      ta.remove();
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
     }
   }
 }
@@ -11062,22 +11606,22 @@ function mountSettingsPanel(deps) {
   const settings = deps.getSettings();
   content.append(
     checkboxRow2(
-      "启用立绘功能",
+      t("settings.enable_sprites", "启用立绘功能"),
       settings.enabled,
       (v) => deps.updateSettings({ ...deps.getSettings(), enabled: v }),
-      "总开关：注入立绘清单给 AI 并展示回复中的立绘。关闭后清空注入、停止解析、隐藏悬浮窗并把楼层恢复原文；手机与其他工具不受影响。"
+      t("settings.sprites_help", "总开关：注入立绘清单给 AI 并展示回复中的立绘。关闭后清空注入、停止解析、隐藏悬浮窗并把楼层恢复原文；手机与其他工具不受影响。")
     ),
     checkboxRow2(
-      "显示手机",
+      t("settings.show_phone", "显示手机"),
       settings.showPhone,
       (v) => deps.updateSettings({ ...deps.getSettings(), showPhone: v }),
-      "屏幕上显示可拖动的 📱 图标，点击展开小手机——所有功能 App 的统一入口。"
+      t("settings.phone_help", "屏幕上显示可拖动的 📱 图标，点击展开小手机——所有功能 App 的统一入口。")
     )
   );
   const hint = document.createElement("div");
   hint.className = "so-status";
   const version = false ? "" : ` v${"0.9.0"}`;
-  hint.textContent = `酒馆里的事，百工都做。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。${version}`;
+  hint.textContent = t("settings.hint", "酒馆里的事，百工都做。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。") + version;
   content.append(hint);
   return () => wrapper.remove();
 }
@@ -11161,7 +11705,7 @@ function normalizeNewvarData(raw) {
     }
   }
   if (Array.isArray(r.customTemplates)) {
-    d.customTemplates = r.customTemplates.map(normalizeCustomTemplate).filter((t) => t !== null);
+    d.customTemplates = r.customTemplates.map(normalizeCustomTemplate).filter((t2) => t2 !== null);
   }
   return d;
 }
@@ -11630,15 +12174,27 @@ function createImage(src, alt, extraClass = "") {
   img.loading = "lazy";
   img.addEventListener("error", () => {
     wrap.classList.add("so-inline-image-error");
-    wrap.title = "图片加载失败，点击重试";
+    wrap.title = t("imageActions.retry_load", "图片加载失败，点击重试");
+    wrap.setAttribute("role", "button");
+    wrap.setAttribute("aria-label", wrap.title);
+    wrap.tabIndex = 0;
   });
   img.addEventListener("load", () => {
     wrap.classList.remove("so-inline-image-error");
     wrap.removeAttribute("title");
+    wrap.removeAttribute("role");
+    wrap.removeAttribute("aria-label");
+    wrap.removeAttribute("tabindex");
   });
   wrap.addEventListener("click", () => {
     if (!wrap.classList.contains("so-inline-image-error")) return;
     img.src = src.startsWith("data:") ? src : `${src}${src.includes("?") ? "&" : "?"}so_retry=${Date.now()}`;
+  });
+  wrap.addEventListener("keydown", (event) => {
+    if (event.target !== wrap || !wrap.classList.contains("so-inline-image-error") || event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopPropagation();
+    wrap.click();
   });
   wrap.append(img);
   return wrap;
@@ -11666,13 +12222,15 @@ function createStoryImageCapture(deps) {
       const action = document.createElement("button");
       action.type = "button";
       action.className = ACTION_CLASS;
-      action.textContent = "保存到图库";
+      action.textContent = t("imageActions.save", "保存到图库");
+      action.setAttribute("aria-live", "polite");
+      action.setAttribute("aria-atomic", "true");
       const handler = () => {
         void archive(image, action, deps);
       };
       action.addEventListener("click", handler);
       image.dataset.soStorySave = "true";
-      image.after(action);
+      (image.closest(".so-inline-image") ?? image).after(action);
       decorations.set(action, { image, handler });
     }
   };
@@ -11690,7 +12248,7 @@ async function archive(image, action, deps) {
   const source = { tag, url };
   const story = deps.getStoryContext();
   action.disabled = true;
-  action.textContent = "保存中…";
+  action.textContent = t("imageActions.saving", "保存中…");
   try {
     let stored = source;
     let remoteOnly = false;
@@ -11698,15 +12256,13 @@ async function archive(image, action, deps) {
       try {
         stored = await deps.localize(source, `${tag || "generated-image"}.webp`, story);
       } catch (error) {
-        const detail = error instanceof Error ? error.message : "未知错误";
+        const detail = error instanceof Error ? error.message : t("imageActions.unknown_error", "未知错误");
         const keepRemote = window.confirm(
-          `图片无法保存到本地：${detail}
-
-是否仅保留远程引用？对方网站失效后图片也会失效。`
+          t("imageActions.keep_remote", "图片无法保存到本地：{{detail}}\n\n是否仅保留远程引用？对方网站失效后图片也会失效。", { detail })
         );
         if (!keepRemote) {
           action.disabled = false;
-          action.textContent = "保存到图库";
+          action.textContent = t("imageActions.save", "保存到图库");
           return;
         }
         stored = { ...source, remoteUrl: source.url };
@@ -11715,10 +12271,10 @@ async function archive(image, action, deps) {
     }
     const next = upsertStorySprite(deps.getSettings(), story, stored);
     deps.updateSettings(next);
-    action.textContent = remoteOnly ? "已保存远程引用" : "已保存";
+    action.textContent = remoteOnly ? t("imageActions.saved_remote", "已保存远程引用") : t("imageActions.saved", "已保存");
   } catch (error) {
     action.disabled = false;
-    action.textContent = error instanceof Error ? "保存失败，重试" : "保存失败";
+    action.textContent = error instanceof Error ? t("imageActions.retry_save", "保存失败，重试") : t("imageActions.save_failed", "保存失败");
   }
 }
 function isEligible(image) {
@@ -11739,7 +12295,7 @@ function isEligible(image) {
 function spriteApp(deps = {}) {
   return {
     id: "sprites",
-    name: "立绘",
+    name: t("apps.sprites.name", "立绘"),
     icon: "🎭",
     order: 1,
     mount(container, ctx) {
@@ -11749,27 +12305,27 @@ function spriteApp(deps = {}) {
       const pack = packs[0] ?? null;
       const stateSection = el2("div", "so-app-section");
       const title2 = el2("div", "so-app-title");
-      title2.textContent = characterName ? `当前角色：${characterName}` : "尚未打开角色聊天";
+      title2.textContent = characterName ? t("apps.sprites.current_character", "当前角色：{{name}}", { name: characterName }) : t("apps.sprites.no_character", "尚未打开角色聊天");
       const detail = el2("div", "so-app-desc");
-      detail.textContent = settings.enabled ? pack ? packs.length > 1 ? `立绘功能运行中 — 已启用 ${packs.length} 个包（${packs.reduce((n, p) => n + p.sprites.length, 0)} 张）` : `立绘功能运行中 — 已绑定「${pack.name}」（${pack.sprites.length} 张）` : "立绘功能已开启，但当前角色未绑定立绘包（到「图库」绑定）" : "立绘功能已关闭：不注入 Prompt、不解析标签，旧楼层已恢复原文";
+      detail.textContent = settings.enabled ? pack ? packs.length > 1 ? t("apps.sprites.active_packs", "立绘功能运行中 — 已启用 {{packs}} 个包（{{images}} 张）", { packs: packs.length, images: packs.reduce((n, p) => n + p.sprites.length, 0) }) : t("apps.sprites.active_pack", "立绘功能运行中 — 已绑定「{{name}}」（{{images}} 张）", { name: pack.name, images: pack.sprites.length }) : t("apps.sprites.unbound", "立绘功能已开启，但当前角色未绑定立绘包（到「图库」绑定）") : t("apps.sprites.disabled", "立绘功能已关闭：不注入 Prompt、不解析标签，旧楼层已恢复原文");
       stateSection.append(
         title2,
         toggleRow(
-          "启用立绘功能",
+          t("apps.sprites.enable", "启用立绘功能"),
           settings.enabled,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), enabled: v })
         ),
         detail
       );
-      const displaySection = foldSection("显示", false, "sprites:display");
+      const displaySection = foldSection(t("apps.sprites.display", "显示"), false, "sprites:display");
       displaySection.body.append(
         selectRow(
-          "显示位置",
+          t("apps.sprites.location", "显示位置"),
           settings.spriteDisplayMode,
           [
-            { value: "overlay", label: "悬浮窗" },
-            { value: "inline", label: "仅楼层" },
-            { value: "both", label: "两者" }
+            { value: "overlay", label: t("apps.sprites.overlay", "悬浮窗") },
+            { value: "inline", label: t("apps.sprites.inline", "仅楼层") },
+            { value: "both", label: t("apps.sprites.both", "两者") }
           ],
           (v) => ctx.updateSettings({
             ...ctx.getSettings(),
@@ -11777,11 +12333,11 @@ function spriteApp(deps = {}) {
           })
         ),
         toggleRow(
-          "显示悬浮窗",
+          t("apps.sprites.show_overlay", "显示悬浮窗"),
           !settings.overlayHidden,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), overlayHidden: !v })
         ),
-        appButton("把悬浮窗拉回视口", () => {
+        appButton(t("apps.sprites.reset_overlay", "把悬浮窗拉回视口"), () => {
           const cur = ctx.getSettings();
           if (cur.spriteDisplayMode === "inline") return;
           ctx.updateSettings({
@@ -11791,14 +12347,14 @@ function spriteApp(deps = {}) {
           });
         }),
         numberRow(
-          "最近渲染楼层数",
+          t("apps.sprites.recent_messages", "最近渲染楼层数"),
           settings.recentFloors,
           RECENT_FLOORS_MIN,
           RECENT_FLOORS_MAX,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), recentFloors: v })
         ),
         rangeRow(
-          "悬浮窗立绘不透明度（%）",
+          t("apps.sprites.opacity", "悬浮窗立绘不透明度（%）"),
           settings.spriteOpacity,
           SPRITE_OPACITY_MIN,
           SPRITE_OPACITY_MAX,
@@ -11807,64 +12363,64 @@ function spriteApp(deps = {}) {
           (v) => `${v}%`
         ),
         toggleRow(
-          "隐藏 [立绘:xxx] 标签",
+          t("apps.sprites.hide_tags", "隐藏 [立绘:xxx] 标签"),
           settings.hideTagInMessage,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), hideTagInMessage: v })
         ),
         hintField(
           toggleRow(
-            "解析 <img>编码</img> 插图标签",
+            t("apps.sprites.parse_images", "解析 <img>编码</img> 插图标签"),
             settings.renderInlineImages,
             (v) => ctx.updateSettings({ ...ctx.getSettings(), renderInlineImages: v })
           ),
-          "把 AI 正文中的 <img>文件编码</img> 按图床前缀渲染为剧情插图。它与 [立绘:图名] 的悬浮窗/楼层显示位置互相独立。"
+          t("apps.sprites.images_hint", "把 AI 正文中的 <img>文件编码</img> 按图床前缀渲染为剧情插图。它与 [立绘:图名] 的悬浮窗/楼层显示位置互相独立。")
         ),
         toggleRow(
-          "同角色图包折叠",
+          t("apps.sprites.fold_roles", "同角色图包折叠"),
           settings.galleryFoldByRole,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), galleryFoldByRole: v })
         )
       );
       const displayHint = el2("div", "so-app-desc");
-      displayHint.textContent = "「仅楼层」把 [立绘:xxx] 原位替换为图片且不弹悬浮窗；楼层数限制加载聊天时补渲染的范围（新回复不受限）。不透明度只调悬浮窗，楼层立绘始终清晰显示。";
+      displayHint.textContent = t("apps.sprites.display_hint", "「仅楼层」把 [立绘:xxx] 原位替换为图片且不弹悬浮窗；楼层数限制加载聊天时补渲染的范围（新回复不受限）。不透明度只调悬浮窗，楼层立绘始终清晰显示。");
       displaySection.body.append(displayHint);
-      const autoSection = foldSection("多立绘轮播", false, "sprites:auto");
+      const autoSection = foldSection(t("apps.sprites.slideshow", "多立绘轮播"), false, "sprites:auto");
       autoSection.body.append(
         toggleRow(
-          "自动轮播（一条回复多张立绘时）",
+          t("apps.sprites.auto_switch", "自动轮播（一条回复多张立绘时）"),
           settings.autoSwitch,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), autoSwitch: v })
         ),
         numberRow(
-          "轮播间隔（秒）",
+          t("apps.sprites.interval", "轮播间隔（秒）"),
           settings.autoSwitchSeconds,
           1,
           60,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), autoSwitchSeconds: v })
         )
       );
-      const promptSection = foldSection("Prompt", false, "sprites:prompt");
+      const promptSection = foldSection(t("apps.sprites.prompt", "Prompt"), false, "sprites:prompt");
       promptSection.body.append(
         numberRow(
-          "每次回复立绘数量",
+          t("apps.sprites.sprite_count", "每次回复立绘数量"),
           settings.spriteCount,
           SPRITE_COUNT_MIN,
           SPRITE_COUNT_MAX,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), spriteCount: v })
         ),
         numberRow(
-          "注入深度（距末尾楼层数）",
+          t("apps.sprites.injection_depth", "注入深度（距末尾楼层数）"),
           settings.injectionDepth,
           INJECTION_DEPTH_MIN,
           INJECTION_DEPTH_MAX,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), injectionDepth: v })
         ),
         selectRow(
-          "Prompt 模式",
+          t("apps.sprites.prompt_mode", "Prompt 模式"),
           settings.multiRolePromptMode,
           [
-            { value: "repeat", label: "自动精简（默认：重合图名列一次）" },
-            { value: "full", label: "全量（枚举全部地址）" }
+            { value: "repeat", label: t("apps.sprites.compact_mode", "自动精简（默认：重合图名列一次）") },
+            { value: "full", label: t("apps.sprites.full_mode", "全量（枚举全部地址）") }
           ],
           (v) => ctx.updateSettings({
             ...ctx.getSettings(),
@@ -11872,40 +12428,40 @@ function spriteApp(deps = {}) {
           })
         ),
         numberRow(
-          "Prompt 预算（字符，0=不限）",
+          t("apps.sprites.prompt_budget", "Prompt 预算（字符，0=不限）"),
           settings.promptBudget,
           PROMPT_BUDGET_MIN,
           PROMPT_BUDGET_MAX,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), promptBudget: v })
         ),
         toggleRow(
-          "近似匹配（实验，默认关闭）",
+          t("apps.sprites.approx_match", "近似匹配（实验，默认关闭）"),
           settings.approxMatch,
           (v) => ctx.updateSettings({ ...ctx.getSettings(), approxMatch: v })
         )
       );
       const approxHint = el2("div", "so-app-desc");
-      approxHint.textContent = "开启后，[立绘:...] 里写的不是准确地址时，会拿它当描述去找最像的一张（如「穿连衣裙逛街」命中 连衣裙/逛街）。只在准确地址找不到时才生效，同分打平就放弃，所以不会改变原本能命中的结果。";
+      approxHint.textContent = t("apps.sprites.approx_hint", "开启后，[立绘:...] 里写的不是准确地址时，会拿它当描述去找最像的一张（如「穿连衣裙逛街」命中 连衣裙/逛街）。只在准确地址找不到时才生效，同分打平就放弃，所以不会改变原本能命中的结果。");
       promptSection.body.append(approxHint);
       const budgeted = buildActiveSpritePrompt(settings, characterName);
       const unlimited = settings.promptBudget > 0 ? buildActiveSpritePrompt(settings, characterName, 0) : budgeted;
       const budgetHint = el2("div", "so-app-desc");
-      budgetHint.textContent = budgeted ? `预计注入 ${budgeted.length} 字符` + (budgeted.length < unlimited.length ? `（超预算，已从 ${unlimited.length} 字符每场景均衡截取，保留排前的图名）` : "") : "预计注入：无（当前角色没有可用立绘地址）";
+      budgetHint.textContent = budgeted ? t("apps.sprites.budget_count", "预计注入 {{count}} 字符", { count: budgeted.length }) + (budgeted.length < unlimited.length ? t("apps.sprites.budget_trimmed", "（超预算，已从 {{count}} 字符每场景均衡截取，保留排前的图名）", { count: unlimited.length }) : "") : t("apps.sprites.budget_empty", "预计注入：无（当前角色没有可用立绘地址）");
       promptSection.body.append(budgetHint);
       const promptHint = el2("div", "so-app-desc");
-      promptHint.textContent = "同角色多服装时，默认服装可写 [立绘:图名]，其他服装写 [立绘:服装/图名]；完整三级地址仍兼容。自动精简会抽取基础图名池和服装增量；适合相对地址时优先使用角色级格式（只要比全量短），否则在旧场景压缩和全量格式中取更短者。";
+      promptHint.textContent = t("apps.sprites.prompt_hint", "同角色多服装时，默认服装可写 [立绘:图名]，其他服装写 [立绘:服装/图名]；完整三级地址仍兼容。自动精简会抽取基础图名池和服装增量；适合相对地址时优先使用角色级格式（只要比全量短），否则在旧场景压缩和全量格式中取更短者。");
       promptSection.body.append(promptHint);
       const tplRow = textareaRow(
-        "自定义提示词（留空=用内置）",
+        t("apps.sprites.custom_prompt", "自定义提示词（留空=用内置）"),
         settings.promptTemplate,
-        "整体替换内置提示词。占位符：{清单}=按场景分组的立绘清单，{数量}=每次回复立绘数",
+        t("apps.sprites.template_placeholder", "整体替换内置提示词。占位符：{清单}=按场景分组的立绘清单，{数量}=每次回复立绘数"),
         (v) => ctx.updateSettings({ ...ctx.getSettings(), promptTemplate: v })
       );
       const tplInput = tplRow.querySelector("textarea");
       promptSection.body.append(
         tplRow,
-        appButton("填入内置底稿（未修改时仍自动精简）", () => {
-          if (tplInput.value.trim() && !window.confirm("用内置底稿覆盖当前已填写的自定义提示词？")) return;
+        appButton(t("apps.sprites.fill_builtin", "填入内置底稿（未修改时仍自动精简）"), () => {
+          if (tplInput.value.trim() && !window.confirm(t("apps.sprites.overwrite_confirm", "用内置底稿覆盖当前已填写的自定义提示词？"))) return;
           tplInput.value = BUILTIN_TEMPLATE;
           ctx.updateSettings({ ...ctx.getSettings(), promptTemplate: BUILTIN_TEMPLATE });
         })
@@ -11919,19 +12475,19 @@ function spriteApp(deps = {}) {
 function galleryApp(deps) {
   return {
     id: "gallery",
-    name: "图库",
+    name: t("apps.gallery.name", "图库"),
     icon: "🗂",
     order: 2,
     mount(container, ctx) {
       const settings = ctx.getSettings();
       const section2 = el2("div", "so-app-section");
       const desc = el2("div", "so-app-desc");
-      desc.textContent = "立绘包管理：新建/上传/导入导出/分享串/角色绑定。";
-      section2.append(desc, appButton("打开立绘包管理", () => deps.openManager()));
+      desc.textContent = t("apps.gallery.description", "立绘包管理：新建/上传/导入导出/分享串/角色绑定。");
+      section2.append(desc, appButton(t("apps.gallery.open_manager", "打开立绘包管理"), () => deps.openManager()));
       container.append(section2);
       const list = el2("div", "so-app-section");
       const title2 = el2("div", "so-app-title");
-      title2.textContent = `共 ${settings.packs.length} 个立绘包`;
+      title2.textContent = t("apps.gallery.pack_count", "共 {{count}} 个立绘包", { count: settings.packs.length });
       list.append(title2);
       const boundIds = new Set(settings.bindings.flatMap((b) => b.packIds));
       const sorted = [...settings.packs].sort(
@@ -11940,57 +12496,60 @@ function galleryApp(deps) {
       const MAX_SHOWN = 5;
       for (const pack of sorted.slice(0, MAX_SHOWN)) {
         const row = el2("div", "so-app-desc");
-        row.textContent = `· ${pack.name}（${pack.sprites.length} 张）${boundIds.has(pack.id) ? "　使用中" : ""}`;
+        row.textContent = t("apps.gallery.pack_row", "· {{name}}（{{count}} 张）", { name: pack.name, count: pack.sprites.length }) + (boundIds.has(pack.id) ? t("apps.gallery.in_use", "　使用中") : "");
         list.append(row);
       }
       if (settings.packs.length > MAX_SHOWN) {
         const more = el2("div", "so-app-desc");
-        more.textContent = `…还有 ${settings.packs.length - MAX_SHOWN} 个，全部在「立绘包管理」查看`;
+        more.textContent = t("apps.gallery.more_packs", "…还有 {{count}} 个，全部在「立绘包管理」查看", { count: settings.packs.length - MAX_SHOWN });
         list.append(more);
       }
       container.append(list);
       const hostSection = el2("div", "so-app-section");
       const hostTitle = el2("div", "so-app-title");
-      hostTitle.textContent = "图床";
+      hostTitle.textContent = t("apps.gallery.hosting", "图床");
       hostSection.append(hostTitle);
       const hostIntro = el2("div", "so-app-desc");
-      hostIntro.textContent = "两条通道各管一件事，按需要配，不用都配：要把自己的图变成能分享的链接 → 配 ①；只是想用别人给的图包/编号 → 什么都不用配，② 已有默认值。";
+      hostIntro.textContent = t("apps.gallery.host_intro", "两条通道各管一件事，按需要配，不用都配：要把自己的图变成能分享的链接 → 配 ①；只是想用别人给的图包/编号 → 什么都不用配，② 已有默认值。");
       hostSection.append(hostIntro);
       const autoDesc = el2("div", "so-app-desc");
-      autoDesc.textContent = "① 自动直传（imgbb，需要 Key）：上传/替换图片时自动传到 imgbb 并绑定编号，本地图保留作显示保底，直链用于分享串。别人才能看到你分享的图，靠的是这条。";
+      autoDesc.textContent = t("apps.gallery.auto_description", "① 自动直传（imgbb，需要 Key）：上传/替换图片时自动传到 imgbb 并绑定编号，本地图保留作显示保底，直链用于分享串。别人才能看到你分享的图，靠的是这条。");
       const autoWhy = el2("div", "so-app-desc");
-      autoWhy.textContent = "为什么是 imgbb 而不是 catbox：浏览器里只能传 imgbb。catbox 的接口不返回 CORS 头，网页无法直接上传，所以它只能用在下面那条「按编号还原地址」的通道上。";
+      autoWhy.textContent = t("apps.gallery.auto_why", "为什么是 imgbb 而不是 catbox：浏览器里只能传 imgbb。catbox 的接口不返回 CORS 头，网页无法直接上传，所以它只能用在下面那条「按编号还原地址」的通道上。");
       const hint = el2("div", "so-app-desc");
-      hint.textContent = "Key 明文保存在 ST 扩展设置里（随 ST 服务端 settings.json 落盘），不会写入分享串或导出文件；上传失败时图片仍保留本地，可稍后补传。";
+      hint.setAttribute("role", "status");
+      hint.setAttribute("aria-live", "polite");
+      hint.textContent = t("apps.gallery.key_storage_hint", "Key 明文保存在 ST 扩展设置里（随 ST 服务端 settings.json 落盘），不会写入分享串或导出文件；上传失败时图片仍保留本地，可稍后补传。");
+      const autoUploadRow = toggleRow(t("apps.gallery.auto_upload", "上传时自动直传 imgbb 并绑定编号"), settings.autoUpload, (v) => {
+        const cur = ctx.getSettings();
+        if (v && !cur.imgbbApiKey.trim()) {
+          hint.textContent = t("apps.gallery.key_required", "请先填写 imgbb API Key（免费申请：https://api.imgbb.com/）");
+          autoUploadRow.querySelector("input").checked = false;
+          return;
+        }
+        ctx.updateSettings({ ...cur, autoUpload: v });
+      });
       hostSection.append(
         autoDesc,
         autoWhy,
         textRow(
-          "imgbb API Key（存 ST 设置，明文）",
+          t("apps.gallery.api_key", "imgbb API Key（存 ST 设置，明文）"),
           settings.imgbbApiKey,
-          "免费申请：api.imgbb.com",
+          t("apps.gallery.key_placeholder", "免费申请：api.imgbb.com"),
           (raw) => ctx.updateSettings({ ...ctx.getSettings(), imgbbApiKey: raw.trim() }),
           "password"
         ),
-        toggleRow("上传时自动直传 imgbb 并绑定编号", settings.autoUpload, (v) => {
-          const cur = ctx.getSettings();
-          if (v && !cur.imgbbApiKey.trim()) {
-            hint.textContent = "请先填写 imgbb API Key（免费申请：https://api.imgbb.com/）";
-            ctx.updateSettings({ ...cur, autoUpload: false });
-            return;
-          }
-          ctx.updateSettings({ ...cur, autoUpload: v });
-        }),
+        autoUploadRow,
         hint
       );
       const manualDesc = el2("div", "so-app-desc");
-      manualDesc.textContent = "② 按编号还原地址（默认 catbox，不需要 Key）：「按编码添加」以及解析分享串和插图编码时，把编号接在下面这个前缀后面拼成完整地址。它只读不写，不会上传任何东西。";
+      manualDesc.textContent = t("apps.gallery.manual_description", "② 按编号还原地址（默认 catbox，不需要 Key）：「按编码添加」以及解析分享串和插图编码时，把编号接在下面这个前缀后面拼成完整地址。它只读不写，不会上传任何东西。");
       const manualWhen = el2("div", "so-app-desc");
-      manualWhen.textContent = "只有当对方的图不在 catbox 上时才需要改前缀——改成他们用的图床域名即可。";
+      manualWhen.textContent = t("apps.gallery.manual_when", "只有当对方的图不在 catbox 上时才需要改前缀——改成他们用的图床域名即可。");
       hostSection.append(
         manualDesc,
         manualWhen,
-        textRow("图床前缀", settings.imageHost, DEFAULT_IMAGE_HOST, (raw) => {
+        textRow(t("apps.gallery.host_prefix", "图床前缀"), settings.imageHost, DEFAULT_IMAGE_HOST, (raw) => {
           const v = raw.trim() || DEFAULT_IMAGE_HOST;
           const value = /^https?:\/\/.+/.test(v) ? v.endsWith("/") ? v : `${v}/` : DEFAULT_IMAGE_HOST;
           ctx.updateSettings({ ...ctx.getSettings(), imageHost: value });
@@ -13975,8 +14534,8 @@ function summarizeMedia(root, viewport) {
   const result = {};
   let visible = 0;
   let offscreen = 0;
-  for (const [key, selector] of Object.entries(kinds)) {
-    const nodes = [...root.querySelectorAll(selector)];
+  for (const [key, selector2] of Object.entries(kinds)) {
+    const nodes = [...root.querySelectorAll(selector2)];
     result[key] = nodes.length;
     for (const node of nodes) {
       const rect = node.getBoundingClientRect();
@@ -14264,7 +14823,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-10-26 01:59"}`;
+  return `${"0.9.0"}+${"2026-10-26 11:21"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -14562,7 +15121,7 @@ function butlerApp(serviceOverrides) {
   let activeState = null;
   return {
     id: "butler",
-    name: "管家",
+    name: t("apps.butler.name", "管家"),
     icon: "🧹",
     order: 3,
     mount(container, ctx) {
@@ -14961,11 +15520,10 @@ function createInstance(container, ctx) {
     settingsBox.textContent = "";
     settingsBox.append(
       hintField(
-        toggleRow("变量速查悬浮窗", ctx.getSettings().variableHud, (v) => {
+        toggleRow(t("apps.mvu.hud", "变量速查悬浮窗"), ctx.getSettings().variableHud, (v) => {
           ctx.updateSettings({ ...ctx.getSettings(), variableHud: v });
-          renderSettings();
         }),
-        "在聊天界面常驻一个可拖动的小圆钮，点开就能看到全部变量的当前值，省掉「开手机→开 App→翻找」。只读速查，改值仍在下方变量面板里。这个开关是全局的，与「新变量」App 里的是同一个。"
+        t("apps.mvu.hud_help", "在聊天界面常驻一个可拖动的小圆钮，点开就能看到全部变量的当前值，省掉「开手机→开 App→翻找」。只读速查，改值仍在下方变量面板里。这个开关是全局的，与「新变量」App 里的是同一个。")
       )
     );
   }
@@ -14984,7 +15542,7 @@ function createInstance(container, ctx) {
   }
   function sourceLabel(r) {
     if (r.meta.source === "mvu") return "MVU";
-    if (r.meta.source === "tavern-helper") return "酒馆助手";
+    if (r.meta.source === "tavern-helper") return t("apps.mvu.helper", "酒馆助手");
     return "—";
   }
   function buildModel() {
@@ -14995,8 +15553,8 @@ function createInstance(container, ctx) {
         isMvu: true,
         delta: /* @__PURE__ */ new Map(),
         status: "empty",
-        statusText: "正在读取…",
-        emptyText: "正在读取楼层变量…",
+        statusText: t("apps.mvu.reading", "正在读取…"),
+        emptyText: t("apps.mvu.reading_variables", "正在读取楼层变量…"),
         canWrite: false,
         addHint: ""
       };
@@ -15004,20 +15562,20 @@ function createInstance(container, ctx) {
     const canWrite = r.status !== "unavailable";
     let noticeText;
     if (r.status === "unavailable") {
-      noticeText = "未检测到 MVU 框架或酒馆助手（Web 模拟器中仅可查看本说明）。在 SillyTavern 内、且安装了 MVU/酒馆助手时才能读写楼层变量。";
+      noticeText = t("apps.mvu.unavailable", "未检测到 MVU 框架或酒馆助手（Web 模拟器中仅可查看本说明）。在 SillyTavern 内、且安装了 MVU/酒馆助手时才能读写楼层变量。");
     } else if (r.status === "error") {
-      noticeText = `读取变量出错：${r.error ?? "未知错误"}。可点「刷新」重试。`;
+      noticeText = t("apps.mvu.read_error", "读取变量出错：{{error}}。可点「刷新」重试。", { error: r.error ?? t("apps.mvu.unknown_error", "未知错误") });
     }
     return {
       data: r.data,
       isMvu: r.isMvu,
       delta,
       status: r.status,
-      statusText: `来源：${sourceLabel(r)} · ${r.messageId >= 0 ? `楼层 #${r.messageId}` : "无对话"}`,
-      emptyText: r.status === "empty" && r.meta.waitedMvu ? "当前楼层暂无变量（已等待 MVU 初始化）。有变量的楼层刷新后会显示在这里。" : "当前楼层暂无变量。",
+      statusText: t("apps.mvu.source", "来源：{{source}} · {{message}}", { source: sourceLabel(r), message: r.messageId >= 0 ? t("apps.mvu.message", "楼层 #{{id}}", { id: r.messageId }) : t("apps.mvu.no_conversation", "无对话") }),
+      emptyText: r.status === "empty" && r.meta.waitedMvu ? t("apps.mvu.empty_after_wait", "当前楼层暂无变量（已等待 MVU 初始化）。有变量的楼层刷新后会显示在这里。") : t("apps.mvu.empty", "当前楼层暂无变量。"),
       noticeText,
       canWrite,
-      addHint: canWrite ? "正常情况下变量由 MVU 框架按角色卡规则维护，无需手动新增；这里仅用于修补卡片缺失的变量或调试（卡的更新规则里没有的路径，AI 不会主动维护）。路径点号分层，值支持 数字/true/false/null/JSON/文本。" : "当前环境不可写入变量。"
+      addHint: canWrite ? t("apps.mvu.add_hint", "正常情况下变量由 MVU 框架按角色卡规则维护，无需手动新增；这里仅用于修补卡片缺失的变量或调试（卡的更新规则里没有的路径，AI 不会主动维护）。路径点号分层，值支持 数字/true/false/null/JSON/文本。") : t("apps.mvu.cannot_write", "当前环境不可写入变量。")
     };
   }
   function isStale(token) {
@@ -15053,7 +15611,7 @@ function createInstance(container, ctx) {
       await op();
     } catch (err) {
       console.error("[st-stage] 变量写入失败", err);
-      window.alert(`写入失败：${err instanceof Error ? err.message : String(err)}`);
+      window.alert(t("apps.mvu.write_error", "写入失败：{{error}}", { error: err instanceof Error ? err.message : String(err) }));
     }
     if (!disposed) await load();
   }
@@ -15095,7 +15653,7 @@ function newvarApp(deps) {
   let unsub = null;
   return {
     id: "newvar",
-    name: "新变量",
+    name: t("apps.newvar.name", "新变量"),
     icon: "🧮",
     order: 5,
     mount(container, ctx) {
@@ -15110,32 +15668,29 @@ function newvarApp(deps) {
         const section2 = el2("div", "so-app-section");
         section2.append(
           hintField(
-            toggleRow("启用变量追踪", d.enabled, (v) => {
+            toggleRow(t("apps.newvar.enable", "启用变量追踪"), d.enabled, (v) => {
               ctx.setAppData({ ...runtime.getData(), enabled: v });
               runtime.onConfigChanged();
-              renderCfg();
             }),
-            "不依赖 MVU/酒馆助手：按你的变量定义自动向 AI 注入当前状态与更新规则，解析回复末尾的 <UpdateVariable> 并逐楼保存快照，任何角色卡都能用。变量定义、模板、注入预览都在「变量设计」里。"
+            t("apps.newvar.enable_help", "不依赖 MVU/酒馆助手：按你的变量定义自动向 AI 注入当前状态与更新规则，解析回复末尾的 <UpdateVariable> 并逐楼保存快照，任何角色卡都能用。变量定义、模板、注入预览都在「变量设计」里。")
           ),
           hintField(
-            toggleRow("隐藏正文中的变量更新记录", d.hideUpdateBlocks, (v) => {
+            toggleRow(t("apps.newvar.hide_updates", "隐藏正文中的变量更新记录"), d.hideUpdateBlocks, (v) => {
               ctx.setAppData({ ...runtime.getData(), hideUpdateBlocks: v });
               ctx.toast(
                 "success",
-                v ? "已隐藏变量更新记录；原始回复和变量快照保持不变。" : "变量更新记录已恢复（此前由百工隐藏）。若仍不可见，请检查 ST Regex 中删除 UpdateVariable 的规则。"
+                v ? t("apps.newvar.updates_hidden", "已隐藏变量更新记录；原始回复和变量快照保持不变。") : t("apps.newvar.updates_restored", "变量更新记录已恢复（此前由百工隐藏）。若仍不可见，请检查 ST Regex 中删除 UpdateVariable 的规则。")
               );
-              renderCfg();
             }),
-            "只隐藏消息气泡里完整的 <UpdateVariable>...</UpdateVariable> 区块，不修改 SillyTavern 保存的原始回复，也不影响变量解析和楼层快照。关闭后只能恢复本扩展隐藏的内容；ST Regex 等外部规则仍会独立生效。"
+            t("apps.newvar.hide_help", "只隐藏消息气泡里完整的 <UpdateVariable>...</UpdateVariable> 区块，不修改 SillyTavern 保存的原始回复，也不影响变量解析和楼层快照。关闭后只能恢复本扩展隐藏的内容；ST Regex 等外部规则仍会独立生效。")
           ),
           hintField(
-            toggleRow("变量速查悬浮窗", ctx.getSettings().variableHud, (v) => {
+            toggleRow(t("apps.newvar.hud", "变量速查悬浮窗"), ctx.getSettings().variableHud, (v) => {
               ctx.updateSettings({ ...ctx.getSettings(), variableHud: v });
-              renderCfg();
             }),
-            "在聊天界面常驻一个可拖动的小圆钮，点开就能看到全部变量的当前值，省掉「开手机→开 App→翻找」。只读速查，改值仍在下方变量面板里；MVU 与「新变量」两边的变量会分段列出。这个开关是全局的，两个变量 App 里改哪个都一样。"
+            t("apps.newvar.hud_help", "在聊天界面常驻一个可拖动的小圆钮，点开就能看到全部变量的当前值，省掉「开手机→开 App→翻找」。只读速查，改值仍在下方变量面板里；MVU 与「新变量」两边的变量会分段列出。这个开关是全局的，两个变量 App 里改哪个都一样。")
           ),
-          appButton("打开变量设计", openDesigner)
+          appButton(t("apps.newvar.open_designer", "打开变量设计"), openDesigner)
         );
         cfgBox.append(section2);
       }
@@ -15150,12 +15705,12 @@ function newvarApp(deps) {
             isMvu: false,
             delta: computeDelta(state2, runtime.getPrevState(), false),
             status: st ? "ready" : "unavailable",
-            statusText: st ? `内置追踪 · ${d.enabled ? "已启用" : "未启用"}` : "内置追踪 · 模拟器",
-            emptyText: "暂无变量。点上方「打开变量设计」定义或导入模板，启用后 AI 回复会逐楼更新这里。",
-            noticeText: st ? void 0 : "未检测到 SillyTavern：模拟器中可打开变量设计编辑定义与预览注入，状态快照在 ST 内才会产生。",
+            statusText: st ? t("apps.newvar.status", "内置追踪 · {{state}}", { state: d.enabled ? t("apps.newvar.enabled", "已启用") : t("apps.newvar.disabled", "未启用") }) : t("apps.newvar.simulator", "内置追踪 · 模拟器"),
+            emptyText: t("apps.newvar.empty", "暂无变量。点上方「打开变量设计」定义或导入模板，启用后 AI 回复会逐楼更新这里。"),
+            noticeText: st ? void 0 : t("apps.newvar.unavailable", "未检测到 SillyTavern：模拟器中可打开变量设计编辑定义与预览注入，状态快照在 ST 内才会产生。"),
             canWrite: st,
             allowAdd: false,
-            addHint: "这里只能修改变量设计中已有的路径；新增变量请先在「变量设计」中添加定义。"
+            addHint: t("apps.newvar.add_hint", "这里只能修改变量设计中已有的路径；新增变量请先在「变量设计」中添加定义。")
           };
         },
         commitSet: (path, value) => runtime.setManualValue(path, value),
@@ -15328,8 +15883,8 @@ function getST3() {
   }
 }
 function toast2(kind, message) {
-  const t = window.toastr;
-  t?.[kind]?.(message, "API 切换");
+  const t2 = window.toastr;
+  t2?.[kind]?.(message, "API 切换");
 }
 function readString(object2, key) {
   const value = key ? object2?.[key] : void 0;
@@ -15394,10 +15949,10 @@ function dispatchValue(element2, value) {
   element2.dispatchEvent(new Event("change", { bubbles: true }));
 }
 var sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-async function waitFor(selector, timeout = 2500) {
+async function waitFor(selector2, timeout = 2500) {
   const start = Date.now();
   while (Date.now() - start < timeout) {
-    const element2 = document.querySelector(selector);
+    const element2 = document.querySelector(selector2);
     if (element2) return element2;
     await sleep(50);
   }
@@ -15827,7 +16382,7 @@ function modeGuide() {
 function rendererApp(deps) {
   return {
     id: RENDERER_APP_ID,
-    name: "渲染",
+    name: t("apps.renderer.name", "渲染"),
     icon: "🎬",
     order: 7,
     setup(host) {
@@ -15898,7 +16453,7 @@ async function requestJson(path, init2 = {}) {
     ...init2,
     headers: { ...requestHeaders(), ...init2.headers ?? {} }
   });
-  if (!response.ok) throw new Error(`${path} 请求失败（${response.status}）`);
+  if (!response.ok) throw new Error(t("cloudExport.request_failed", "{{path}} 请求失败（{{status}}）", { path, status: response.status }));
   return response.json();
 }
 async function requestBinary(path, init2 = {}) {
@@ -15906,7 +16461,7 @@ async function requestBinary(path, init2 = {}) {
     ...init2,
     headers: { ...requestHeaders(), ...init2.headers ?? {} }
   });
-  if (!response.ok) throw new Error(`${path} 请求失败（${response.status}）`);
+  if (!response.ok) throw new Error(t("cloudExport.request_failed", "{{path}} 请求失败（{{status}}）", { path, status: response.status }));
   return response.arrayBuffer();
 }
 function asRecord(value) {
@@ -16047,7 +16602,7 @@ function createSTCloudExportBridge() {
         method: "POST",
         body: JSON.stringify({ ch_name: character.name, avatar_url: character.avatar, file_name: fileName })
       });
-      if (!Array.isArray(raw)) throw new Error(`聊天 ${chat2.name} 返回了无法导出的数据`);
+      if (!Array.isArray(raw)) throw new Error(t("cloudExport.chat_unexportable", "聊天 {{name}} 返回了无法导出的数据", { name: chat2.name }));
       return raw.map((line) => JSON.stringify(line)).join("\n") + (raw.length ? "\n" : "");
     }
   };
@@ -16059,15 +16614,15 @@ function isArchiveSegment(value) {
   return Boolean(value) && value.trim() === value && !/^[.]+$/.test(value) && !hasControl && !/[\\/:*?"<>|]/.test(value) && !/[. ]$/.test(value) && !/^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/i.test(value);
 }
 function archiveSegment(value, kind) {
-  if (!isArchiveSegment(value)) throw new Error("无法生成可恢复备份：" + kind + "文件名不合法");
+  if (!isArchiveSegment(value)) throw new Error(t("cloudExport.invalid_filename", "无法生成可恢复备份：{{kind}}文件名不合法", { kind }));
   return value;
 }
 
 // st-extension/src/apps/cloud-export/manifest.ts
 function characterArchiveIdentity(avatar) {
-  const name = archiveSegment(avatar, "角色头像");
-  if (!/\.png$/i.test(name)) throw new Error("无法确定角色聊天目录：头像文件必须为 PNG");
-  return { avatar: name, stem: archiveSegment(name.slice(0, -4), "角色目录") };
+  const name = archiveSegment(avatar, t("cloudExport.kind_avatar", "角色头像"));
+  if (!/\.png$/i.test(name)) throw new Error(t("cloudExport.avatar_png_required", "无法确定角色聊天目录：头像文件必须为 PNG"));
+  return { avatar: name, stem: archiveSegment(name.slice(0, -4), t("cloudExport.kind_directory", "角色目录")) };
 }
 function buildMinimalSettings(snapshot, selection) {
   const selectedWorldNames = snapshot.worldbooks.filter((worldbook) => selection.worldbookIds.has(worldbook.id)).map((worldbook) => worldbook.name);
@@ -16088,13 +16643,13 @@ function buildExportFiles(snapshot, selection) {
   for (const worldbook of snapshot.worldbooks) {
     if (selection.worldbookIds.has(worldbook.id)) {
       if (worldbook.content !== void 0) {
-        files.push({ path: `worlds/${archiveSegment(worldbook.fileName, "世界书")}`, data: JSON.stringify(worldbook.content, null, 2), updatedAt: worldbook.updatedAt });
+        files.push({ path: `worlds/${archiveSegment(worldbook.fileName, t("cloudExport.kind_worldbook", "世界书"))}`, data: JSON.stringify(worldbook.content, null, 2), updatedAt: worldbook.updatedAt });
       }
     }
   }
   for (const preset of snapshot.presets) {
     if (selection.presetIds.has(preset.id)) {
-      files.push({ path: `OpenAI Settings/${archiveSegment(preset.fileName, "预设")}`, data: JSON.stringify(preset.content, null, 2), updatedAt: preset.updatedAt });
+      files.push({ path: `OpenAI Settings/${archiveSegment(preset.fileName, t("cloudExport.kind_preset", "预设"))}`, data: JSON.stringify(preset.content, null, 2), updatedAt: preset.updatedAt });
     }
   }
   return files;
@@ -16116,7 +16671,7 @@ function buildCharacterFiles(character, cardData, chats, selection) {
     const data = chats.get(chat2.id);
     if (!selection.chatIds.has(chat2.id) || data === void 0) continue;
     files.push({
-      path: `chats/${identity.stem}/${archiveSegment((chat2.path || chat2.name).replace(/\.jsonl$/i, ""), "聊天")}.jsonl`,
+      path: `chats/${identity.stem}/${archiveSegment((chat2.path || chat2.name).replace(/\.jsonl$/i, ""), t("cloudExport.kind_chat", "聊天"))}.jsonl`,
       data,
       updatedAt: chat2.updatedAt
     });
@@ -16139,7 +16694,7 @@ async function runTasks(tasks, concurrency, onProgress) {
       try {
         await task.run();
       } catch (error) {
-        failed = new Error(`读取${task.label}失败：${error instanceof Error ? error.message : String(error)}`);
+        failed = new Error(t("cloudExport.asset_read_failed", "读取{{label}}失败：{{error}}", { label: task.label, error: error instanceof Error ? error.message : String(error) }));
         return;
       }
       completed += 1;
@@ -16164,7 +16719,7 @@ async function loadSelectedExportFiles({
   for (const character of catalog.characters) {
     if (selection.characterIds.has(character.id)) {
       tasks.push({
-        label: `角色卡 ${character.name}`,
+        label: t("cloudExport.asset_character", "角色卡 {{name}}", { name: character.name }),
         run: async () => {
           cardData.set(character.id, await bridge.readCharacterCard(character));
         }
@@ -16173,7 +16728,7 @@ async function loadSelectedExportFiles({
     for (const chat2 of character.chats) {
       if (!selection.chatIds.has(chat2.id)) continue;
       tasks.push({
-        label: `聊天 ${character.name}/${chat2.name}`,
+        label: t("cloudExport.asset_chat", "聊天 {{character}}/{{chat}}", { character: character.name, chat: chat2.name }),
         run: async () => {
           chatData.set(chat2.id, await bridge.readChat(character, chat2));
         }
@@ -16183,7 +16738,7 @@ async function loadSelectedExportFiles({
   for (const worldbook of catalog.worldbooks) {
     if (!selection.worldbookIds.has(worldbook.id)) continue;
     tasks.push({
-      label: `世界书 ${worldbook.name}`,
+      label: t("cloudExport.asset_worldbook", "世界书 {{name}}", { name: worldbook.name }),
       run: async () => {
         worldbookContent.set(worldbook.id, await bridge.readWorldbook(worldbook));
       }
@@ -16205,21 +16760,21 @@ var REVOKE_DELAY_MS = 6e4;
 function assertUniqueArchivePaths(files) {
   const seen = /* @__PURE__ */ new Map();
   for (const { path } of files) {
-    if (!path.split("/").every(isArchiveSegment)) throw new Error("备份路径不合法：" + path);
+    if (!path.split("/").every(isArchiveSegment)) throw new Error(t("cloudExport.invalid_path", "备份路径不合法：{{path}}", { path }));
     const canonical = path.normalize("NFC").toLowerCase();
-    if (seen.has(canonical)) throw new Error("备份路径冲突：" + seen.get(canonical) + " 与 " + path);
+    if (seen.has(canonical)) throw new Error(t("cloudExport.path_collision", "备份路径冲突：{{first}} 与 {{second}}", { first: seen.get(canonical), second: path }));
     seen.set(canonical, path);
   }
   for (const [canonical, path] of seen) {
     const parts = canonical.split("/");
     for (let length = 1; length < parts.length; length += 1) {
       const parent = parts.slice(0, length).join("/");
-      if (seen.has(parent)) throw new Error("备份路径冲突：" + seen.get(parent) + " 与 " + path);
+      if (seen.has(parent)) throw new Error(t("cloudExport.path_collision", "备份路径冲突：{{first}} 与 {{second}}", { first: seen.get(parent), second: path }));
     }
   }
 }
 async function downloadSTBackup(files, filename, onProgress, schedulers = {}) {
-  if (!files.length) throw new Error("没有选择任何可导出的资产");
+  if (!files.length) throw new Error(t("cloudExport.no_assets", "没有选择任何可导出的资产"));
   assertUniqueArchivePaths(files);
   const zip = new import_jszip.default();
   for (const file of files) {
@@ -16247,17 +16802,20 @@ async function downloadSTBackup(files, filename, onProgress, schedulers = {}) {
 }
 
 // st-extension/src/apps/cloud-export/export-app.ts
-var TABS = [
-  { id: "characters", label: "角色卡" },
-  { id: "worldbooks", label: "世界书" },
-  { id: "presets", label: "预设" },
-  { id: "regex", label: "正则" }
-];
+function exportTabs() {
+  return [
+    { id: "characters", label: t("cloudExport.characters", "角色卡") },
+    { id: "worldbooks", label: t("cloudExport.worldbooks", "世界书") },
+    { id: "presets", label: t("cloudExport.presets", "预设") },
+    { id: "regex", label: t("cloudExport.regex", "正则") }
+  ];
+}
+var mountId = 0;
 function emptySelection() {
   return { characterIds: /* @__PURE__ */ new Set(), chatIds: /* @__PURE__ */ new Set(), worldbookIds: /* @__PURE__ */ new Set(), presetIds: /* @__PURE__ */ new Set(), regex: false };
 }
 function formatDate(value) {
-  return value ? new Date(value).toLocaleString() : "更新时间未知";
+  return value ? new Date(value).toLocaleString(getLocale()) : t("cloudExport.unknown_date", "更新时间未知");
 }
 function backupFilename(now = /* @__PURE__ */ new Date()) {
   const pad = (value) => String(value).padStart(2, "0");
@@ -16266,13 +16824,25 @@ function backupFilename(now = /* @__PURE__ */ new Date()) {
 function hasSelection(selection) {
   return selection.characterIds.size > 0 || selection.chatIds.size > 0 || selection.worldbookIds.size > 0 || selection.presetIds.size > 0 || selection.regex;
 }
-function checkbox(label, checked, onChange, extraClass = "") {
+function checkbox(label, checked, onChange, focusKey, busy, extraClass = "") {
   const row = el2("div", `so-app-toggle${extraClass ? ` ${extraClass}` : ""}`);
   const control2 = document.createElement("label");
   const input = document.createElement("input");
   input.type = "checkbox";
   input.checked = checked;
-  input.addEventListener("change", () => onChange(input.checked));
+  input.dataset.exportFocus = focusKey;
+  input.setAttribute("aria-disabled", String(busy));
+  input.addEventListener("click", (event) => {
+    if (busy) event.preventDefault();
+  });
+  input.addEventListener("change", () => {
+    if (busy) {
+      input.checked = checked;
+      return;
+    }
+    ;
+    onChange(input.checked);
+  });
   const text4 = el2("span", "");
   text4.textContent = label;
   control2.append(input, text4);
@@ -16313,7 +16883,7 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
   let disposeMount;
   return {
     id: "cloud-export",
-    name: "导出",
+    name: t("cloudExport.name", "导出"),
     icon: "📦",
     order: 15,
     mount(container, ctx) {
@@ -16332,17 +16902,33 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
       disposeMount = () => {
         disposed = true;
       };
+      const prefix = `cloud-export-${++mountId}`;
       const title2 = el2("div", "so-app-title");
-      title2.textContent = "SillyTavern 选择式备份";
+      title2.textContent = t("cloudExport.title", "SillyTavern 选择式备份");
       const desc = el2("div", "so-app-desc");
-      desc.textContent = "选择需要的数据，统一导出为 SillyTavern 标准 default-user ZIP。";
+      desc.textContent = t("cloudExport.description", "选择需要的数据，统一导出为 SillyTavern 标准 default-user ZIP。");
       const tabs = el2("div", "so-app-section cloud-export-tabs");
+      tabs.setAttribute("role", "tablist");
+      tabs.setAttribute("aria-label", t("cloudExport.categories", "备份分类"));
       const search = document.createElement("input");
       search.className = "text_pole so-app-input";
-      search.placeholder = "搜索当前分类";
-      search.setAttribute("aria-label", "搜索当前分类");
+      search.placeholder = t("cloudExport.search", "搜索当前分类");
+      search.setAttribute("aria-label", t("cloudExport.search", "搜索当前分类"));
       const results = el2("div", "cloud-export-results");
+      results.id = `${prefix}-results`;
+      results.setAttribute("role", "tabpanel");
+      results.tabIndex = 0;
       const footer = el2("div", "so-app-section");
+      const count = el2("div", "so-app-desc");
+      const status = el2("div", "so-app-desc");
+      status.setAttribute("role", "status");
+      status.setAttribute("aria-live", "polite");
+      status.setAttribute("aria-atomic", "true");
+      const exportButton = appButton(t("cloudExport.export", "导出所选备份"), () => {
+        void exportSelected();
+      });
+      exportButton.dataset.exportFocus = "export";
+      footer.append(count, status, exportButton);
       let composing = false;
       const applyQuery = () => {
         query = search.value.trim().toLowerCase();
@@ -16462,26 +17048,26 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
       };
       const selectCharacterBundle = async (character) => {
         if (busy) return;
-        busy = true;
-        progressText = `正在收集 ${character.name} 的关联数据…`;
-        render2();
         selection.characterIds.add(character.id);
+        busy = true;
+        progressText = t("cloudExport.collect_character", "正在收集 {{name}} 的关联数据…", { name: character.name });
+        render2();
         const missing = [];
         try {
           try {
             const items = await ensureChats(character, false);
             items.forEach((chat2) => selection.chatIds.add(chat2.id));
           } catch {
-            missing.push("聊天清单");
+            missing.push(t("cloudExport.chat_list", "聊天清单"));
           }
           if (character.linkedWorldName) {
             try {
               const books = await ensureWorldbooks();
               const linked = findLinkedWorldbook(character, books);
               if (linked) selection.worldbookIds.add(linked.id);
-              else missing.push(`关联世界书「${character.linkedWorldName}」在清单里没找到`);
+              else missing.push(t("cloudExport.linked_missing", "关联世界书「{{name}}」在清单里没找到", { name: character.linkedWorldName }));
             } catch {
-              missing.push("世界书清单");
+              missing.push(t("cloudExport.worldbook_list", "世界书清单"));
             }
           }
         } finally {
@@ -16489,14 +17075,14 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
           progressText = "";
           render2();
         }
-        if (missing.length > 0) {
-          ctx.toast("warning", `${character.name} 已选中，但这些没能带上：${missing.join("、")}`);
+        if (!disposed && missing.length > 0) {
+          ctx.toast("warning", t("cloudExport.bundle_incomplete", "{{name}} 已选中，但这些没能带上：{{items}}", { name: character.name, items: missing.join(t("cloudExport.list_separator", "、")) }));
         }
       };
       const selectVisibleBundles = async (targets) => {
         if (busy) return;
         busy = true;
-        progressText = "正在收集角色的关联数据…";
+        progressText = t("cloudExport.collect_characters", "正在收集角色的关联数据…");
         render2();
         const unresolved = [];
         try {
@@ -16505,7 +17091,7 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
             try {
               books = await ensureWorldbooks();
             } catch {
-              unresolved.push("世界书清单读取失败");
+              unresolved.push(t("cloudExport.worldbook_list_failed", "世界书清单读取失败"));
             }
           }
           await loadWithLimit(targets, 4, async (character) => {
@@ -16514,22 +17100,22 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
               const items = await ensureChats(character, false);
               items.forEach((chat2) => selection.chatIds.add(chat2.id));
             } catch {
-              unresolved.push(`${character.name} 的聊天清单`);
+              unresolved.push(t("cloudExport.character_chat_list", "{{name}} 的聊天清单", { name: character.name }));
             }
             if (!character.linkedWorldName) return;
             const linked = findLinkedWorldbook(character, books);
             if (linked) selection.worldbookIds.add(linked.id);
-            else unresolved.push(`${character.name} 的关联世界书「${character.linkedWorldName}」`);
+            else unresolved.push(t("cloudExport.character_worldbook", "{{name}} 的关联世界书「{{worldbook}}」", { name: character.name, worldbook: character.linkedWorldName }));
           });
         } catch (error) {
-          ctx.toast("error", `批量选择失败：${String(error)}`);
+          if (!disposed) ctx.toast("error", t("cloudExport.batch_failed", "批量选择失败：{{error}}", { error: String(error) }));
         } finally {
           busy = false;
           progressText = "";
           render2();
         }
-        if (unresolved.length > 0) {
-          ctx.toast("warning", `已选中，但这些没能带上：${unresolved.join("、")}`);
+        if (!disposed && unresolved.length > 0) {
+          ctx.toast("warning", t("cloudExport.batch_incomplete", "已选中，但这些没能带上：{{items}}", { items: unresolved.join(t("cloudExport.list_separator", "、")) }));
         }
       };
       const scrollParent = () => {
@@ -16542,13 +17128,55 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
         }
         return null;
       };
+      const exportSelected = async () => {
+        if (busy || disposed) return;
+        if (!hasSelection(selection)) {
+          ctx.toast("warning", t("cloudExport.select_first", "请先选择要导出的内容"));
+          return;
+        }
+        busy = true;
+        progressText = t("cloudExport.preparing", "正在准备所选数据…");
+        render2();
+        try {
+          const catalog = {
+            characters: characters.data.map((character) => ({ ...character, chats: chats.get(character.id)?.data ?? [] })),
+            worldbooks: worldbooks.data,
+            presets: settings.data?.presets ?? [],
+            regex: settings.data?.regex ?? null
+          };
+          const files = await loadSelectedExportFiles({
+            bridge,
+            catalog,
+            selection,
+            concurrency: 4,
+            onProgress: ({ completed, total, current: current2 }) => {
+              progressText = t("cloudExport.read_progress", "正在读取 {{completed}}/{{total}}：{{current}}", { completed, total, current: current2 });
+              render2();
+            }
+          });
+          await download(files, backupFilename(), ({ percent }) => {
+            progressText = t("cloudExport.compress_progress", "正在压缩 {{percent}}%", { percent: Math.round(percent) });
+            render2();
+          });
+          if (!disposed) ctx.toast("success", t("cloudExport.downloaded", "SillyTavern 标准备份已下载"));
+        } catch (error) {
+          if (!disposed) ctx.toast("error", t("cloudExport.export_failed", "导出失败：{{error}}", { error: String(error) }));
+        } finally {
+          busy = false;
+          progressText = "";
+          render2();
+        }
+      };
       const render2 = () => {
         if (disposed) return;
         const scroller = scrollParent();
         const previousScrollTop = scroller?.scrollTop ?? 0;
+        const active = document.activeElement;
+        const focusKey = active instanceof HTMLElement && container.contains(active) ? active.dataset.exportFocus : void 0;
         tabs.replaceChildren();
-        for (const tab of TABS) {
-          const button2 = appButton(tab.label, () => {
+        const currentTabs = exportTabs();
+        for (const [index, tab] of currentTabs.entries()) {
+          const activate = () => {
             if (busy || activeTab === tab.id) return;
             activeTab = tab.id;
             query = "";
@@ -16556,24 +17184,57 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
             search.value = "";
             render2();
             void ensureActiveTab();
+          };
+          const button2 = document.createElement("button");
+          button2.type = "button";
+          button2.className = "so-app-btn";
+          button2.textContent = tab.label;
+          button2.addEventListener("click", activate);
+          button2.id = `${prefix}-tab-${tab.id}`;
+          button2.dataset.exportFocus = `tab:${tab.id}`;
+          button2.setAttribute("role", "tab");
+          button2.setAttribute("aria-selected", String(activeTab === tab.id));
+          button2.setAttribute("aria-controls", results.id);
+          button2.setAttribute("aria-disabled", String(busy));
+          button2.tabIndex = activeTab === tab.id ? 0 : -1;
+          button2.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.stopPropagation();
+              return;
+            }
+            const next = event.key === "Home" ? 0 : event.key === "End" ? currentTabs.length - 1 : event.key === "ArrowRight" ? (index + 1) % currentTabs.length : event.key === "ArrowLeft" ? (index + currentTabs.length - 1) % currentTabs.length : -1;
+            if (next < 0 || event.isComposing) return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (busy) return;
+            const target = tabs.children[next];
+            target.focus({ preventScroll: true });
+            target.click();
           });
           if (activeTab === tab.id) button2.classList.add("cloud-export-active");
           tabs.append(button2);
         }
-        search.disabled = busy;
+        results.setAttribute("aria-labelledby", `${prefix}-tab-${activeTab}`);
+        search.readOnly = busy;
+        search.setAttribute("aria-disabled", String(busy));
         const visibleCharacters = characters.data.filter((item) => item.name.toLowerCase().includes(query));
         const visibleWorldbooks = worldbooks.data.filter((item) => item.name.toLowerCase().includes(query));
         const visiblePresets = (settings.data?.presets ?? []).filter((item) => item.name.toLowerCase().includes(query));
         const actions = el2("div", "so-app-section");
-        const addAction = (label, action) => actions.append(appButton(label, () => {
-          if (!busy) void action();
-        }));
+        const addAction = (key, label, action) => {
+          const button2 = appButton(label, () => {
+            if (!busy) void action();
+          });
+          button2.dataset.exportFocus = `${activeTab}:${key}`;
+          button2.setAttribute("aria-disabled", String(busy));
+          actions.append(button2);
+        };
         const toggleSet = (items, set) => items.forEach((item) => set.has(item.id) ? set.delete(item.id) : set.add(item.id));
         if (activeTab === "characters" && characters.status === "ready" && visibleCharacters.length) {
-          addAction("全选当前结果", () => {
+          addAction("select-all", t("cloudExport.select_all", "全选当前结果"), () => {
             void selectVisibleBundles(visibleCharacters);
           });
-          addAction("反选当前结果", () => {
+          addAction("invert", t("cloudExport.invert", "反选当前结果"), () => {
             const toAdd = visibleCharacters.filter((item) => !selection.characterIds.has(item.id));
             visibleCharacters.filter((item) => selection.characterIds.has(item.id)).forEach((item) => deselectCharacter(item.id, selection, chats, characters.data, worldbooks.data));
             if (toAdd.length === 0) {
@@ -16582,46 +17243,51 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
             }
             void selectVisibleBundles(toAdd);
           });
-          addAction("清空当前分类", () => {
+          addAction("clear", t("cloudExport.clear", "清空当前分类"), () => {
             selection.characterIds.clear();
             selection.chatIds.clear();
             render2();
           });
         } else if (activeTab === "worldbooks" && worldbooks.status === "ready" && visibleWorldbooks.length) {
-          addAction("全选当前结果", () => {
+          addAction("select-all", t("cloudExport.select_all", "全选当前结果"), () => {
             visibleWorldbooks.forEach((item) => selection.worldbookIds.add(item.id));
             render2();
           });
-          addAction("反选当前结果", () => {
+          addAction("invert", t("cloudExport.invert", "反选当前结果"), () => {
             toggleSet(visibleWorldbooks, selection.worldbookIds);
             render2();
           });
-          addAction("清空当前分类", () => {
+          addAction("clear", t("cloudExport.clear", "清空当前分类"), () => {
             selection.worldbookIds.clear();
             render2();
           });
         } else if (activeTab === "presets" && settings.status === "ready" && visiblePresets.length) {
-          addAction("全选当前结果", () => {
+          addAction("select-all", t("cloudExport.select_all", "全选当前结果"), () => {
             visiblePresets.forEach((item) => selection.presetIds.add(item.id));
             render2();
           });
-          addAction("反选当前结果", () => {
+          addAction("invert", t("cloudExport.invert", "反选当前结果"), () => {
             toggleSet(visiblePresets, selection.presetIds);
             render2();
           });
-          addAction("清空当前分类", () => {
+          addAction("clear", t("cloudExport.clear", "清空当前分类"), () => {
             selection.presetIds.clear();
             render2();
           });
         }
         const list = el2("div", "so-app-section");
         const state2 = activeTab === "characters" ? characters : activeTab === "worldbooks" ? worldbooks : settings;
-        if (state2.status === "idle" || state2.status === "loading") list.textContent = "正在读取当前分类…";
+        const loading = state2.status === "idle" || state2.status === "loading";
+        results.setAttribute("aria-busy", String(busy || loading));
+        if (loading) list.textContent = t("cloudExport.loading_category", "正在读取当前分类…");
         else if (state2.status === "error") {
-          list.textContent = `读取失败：${state2.error ?? "未知错误"}`;
-          list.append(appButton("重试", () => {
-            void ensureActiveTab(true);
-          }));
+          list.textContent = t("cloudExport.read_failed", "读取失败：{{error}}", { error: state2.error ?? t("cloudExport.unknown_error", "未知错误") });
+          const retry = appButton(t("cloudExport.retry", "重试"), () => {
+            if (!busy) void ensureActiveTab(true);
+          });
+          retry.dataset.exportFocus = `${activeTab}:retry`;
+          retry.setAttribute("aria-disabled", String(busy));
+          list.append(retry);
         } else if (activeTab === "characters") {
           for (const character of visibleCharacters) {
             const row = el2("div", "cloud-export-character");
@@ -16632,34 +17298,48 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
                 return;
               }
               void selectCharacterBundle(character);
-            }, "cloud-export-character-name"));
+            }, `character:${character.id}`, busy, "cloud-export-character-name"));
             const bundleNote = el2("div", "cloud-export-bundle-note");
-            const linkedLabel = !character.linkedWorldName ? "没有关联独立世界书" : worldbooks.status !== "ready" ? `关联世界书「${character.linkedWorldName}」按酒馆里的当前内容导出` : findLinkedWorldbook(character, worldbooks.data) ? `关联世界书「${character.linkedWorldName}」按酒馆里的当前内容导出` : `关联世界书「${character.linkedWorldName}」在酒馆世界书清单里没找到`;
-            bundleNote.textContent = `勾选即整体导出：角色卡 + 全部聊天 + ${linkedLabel}`;
+            const linkedLabel = !character.linkedWorldName ? t("cloudExport.no_linked_worldbook", "没有关联独立世界书") : worldbooks.status !== "ready" ? t("cloudExport.linked_current", "关联世界书「{{name}}」按酒馆里的当前内容导出", { name: character.linkedWorldName }) : findLinkedWorldbook(character, worldbooks.data) ? t("cloudExport.linked_current", "关联世界书「{{name}}」按酒馆里的当前内容导出", { name: character.linkedWorldName }) : t("cloudExport.linked_unavailable", "关联世界书「{{name}}」在酒馆世界书清单里没找到", { name: character.linkedWorldName });
+            bundleNote.textContent = t("cloudExport.bundle_note", "勾选即整体导出：角色卡 + 全部聊天 + {{linked}}", { linked: linkedLabel });
             row.append(bundleNote);
             const details = document.createElement("details");
             details.className = "so-app-fold cloud-export-chats";
             details.open = expandedCharacters.has(character.id);
             const summary = document.createElement("summary");
             const chatState = chats.get(character.id);
-            summary.textContent = chatState?.status === "ready" ? `聊天记录（${chatState.data.length}）` : "聊天记录（展开后读取）";
-            details.append(summary);
-            if (chatState?.status === "loading") details.append("正在读取聊天清单…");
-            else if (chatState?.status === "error") details.append(`读取失败：${chatState.error ?? "未知错误"}`);
+            summary.textContent = chatState?.status === "ready" ? t("cloudExport.chats_count", "聊天记录（{{count}}）", { count: chatState.data.length }) : t("cloudExport.chats_expand", "聊天记录（展开后读取）");
+            summary.dataset.exportFocus = `chats:${character.id}`;
+            summary.setAttribute("aria-label", t("cloudExport.character_chats", "{{name}} 的{{chats}}", { name: character.name, chats: summary.textContent }));
+            summary.setAttribute("aria-expanded", String(details.open));
+            const chatBody = el2("div", "cloud-export-chat-list");
+            chatBody.id = `${prefix}-chats-${characters.data.indexOf(character)}`;
+            summary.setAttribute("aria-controls", chatBody.id);
+            chatBody.setAttribute("aria-busy", String(chatState?.status === "loading"));
+            details.append(summary, chatBody);
+            if (chatState?.status === "loading") chatBody.append(t("cloudExport.loading_chats", "正在读取聊天清单…"));
+            else if (chatState?.status === "error") chatBody.append(t("cloudExport.read_failed", "读取失败：{{error}}", { error: chatState.error ?? t("cloudExport.unknown_error", "未知错误") }));
             else if (chatState?.status === "ready") {
-              for (const chat2 of chatState.data) details.append(checkbox(`${chat2.name} · ${formatDate(chat2.updatedAt)}`, selection.chatIds.has(chat2.id), (checked) => {
+              for (const chat2 of chatState.data) chatBody.append(checkbox(`${chat2.name} · ${formatDate(chat2.updatedAt)}`, selection.chatIds.has(chat2.id), (checked) => {
                 if (checked) {
                   selection.chatIds.add(chat2.id);
                   selection.characterIds.add(character.id);
                 } else selection.chatIds.delete(chat2.id);
                 render2();
-              }, "cloud-export-chat"));
+              }, `chat:${chat2.id}`, busy, "cloud-export-chat"));
             }
             details.addEventListener("toggle", () => {
+              if (disposed || !container.contains(details)) return;
+              summary.setAttribute("aria-expanded", String(details.open));
+              if (details.open === expandedCharacters.has(character.id)) return;
               if (details.open) {
                 expandedCharacters.add(character.id);
-                void ensureChats(character);
-              } else expandedCharacters.delete(character.id);
+                void ensureChats(character).catch(() => {
+                });
+              } else {
+                expandedCharacters.delete(character.id);
+                render2();
+              }
             });
             row.append(details);
             list.append(row);
@@ -16669,59 +17349,40 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
             if (checked) selection.worldbookIds.add(worldbook.id);
             else selection.worldbookIds.delete(worldbook.id);
             render2();
-          }));
+          }, `worldbook:${worldbook.id}`, busy));
         } else if (activeTab === "presets") {
           for (const preset of visiblePresets) list.append(checkbox(`${preset.name} · ${formatDate(preset.updatedAt)}`, selection.presetIds.has(preset.id), (checked) => {
             if (checked) selection.presetIds.add(preset.id);
             else selection.presetIds.delete(preset.id);
             render2();
-          }));
+          }, `preset:${preset.id}`, busy));
         } else {
           const regex = settings.data?.regex;
-          list.append(checkbox(regex ? `全局正则（${regex.rules.length} 条）` : "没有发现全局正则", selection.regex, (checked) => {
+          list.append(checkbox(regex ? t("cloudExport.regex_count", "全局正则（{{count}} 条）", { count: regex.rules.length }) : t("cloudExport.no_regex", "没有发现全局正则"), selection.regex, (checked) => {
             selection.regex = Boolean(regex) && checked;
             render2();
-          }));
+          }, "regex", busy || !regex));
         }
+        if (state2.status === "ready" && !list.childNodes.length) list.textContent = t("cloudExport.no_matches", "没有匹配的项目");
         results.replaceChildren(...actions.childElementCount ? [actions, list] : [list]);
-        footer.replaceChildren();
-        const count = el2("div", "so-app-desc");
-        count.textContent = `已选 ${selection.characterIds.size} 个角色、${selection.chatIds.size} 段聊天、${selection.worldbookIds.size} 本世界书、${selection.presetIds.size} 个预设${selection.regex ? "、1 组正则" : ""}`;
-        footer.append(count);
-        if (progressText) {
-          const progress = el2("div", "so-app-desc");
-          progress.textContent = progressText;
-          footer.append(progress);
+        const countText = t("cloudExport.count", "已选 {{characters}} 个角色、{{chats}} 段聊天、{{worldbooks}} 本世界书、{{presets}} 个预设{{regex}}", {
+          characters: selection.characterIds.size,
+          chats: selection.chatIds.size,
+          worldbooks: selection.worldbookIds.size,
+          presets: selection.presetIds.size,
+          regex: selection.regex ? t("cloudExport.regex_selected", "、1 组正则") : ""
+        });
+        if (count.textContent !== countText) count.textContent = countText;
+        const chatStatus = activeTab === "characters" ? visibleCharacters.filter((character) => expandedCharacters.has(character.id)).map((character) => chats.get(character.id)).find((state3) => state3?.status === "loading" || state3?.status === "error") : void 0;
+        const statusText = progressText || (loading ? t("cloudExport.loading_category", "正在读取当前分类…") : state2.status === "error" ? t("cloudExport.read_failed", "读取失败：{{error}}", { error: state2.error ?? t("cloudExport.unknown_error", "未知错误") }) : chatStatus?.status === "loading" ? t("cloudExport.loading_chats", "正在读取聊天清单…") : chatStatus?.status === "error" ? t("cloudExport.read_failed", "读取失败：{{error}}", { error: chatStatus.error ?? t("cloudExport.unknown_error", "未知错误") }) : countText);
+        if (status.textContent !== statusText) status.textContent = statusText;
+        count.hidden = statusText === countText;
+        exportButton.textContent = busy ? t("cloudExport.processing", "正在处理…") : t("cloudExport.export", "导出所选备份");
+        exportButton.setAttribute("aria-disabled", String(busy));
+        if (focusKey && active !== document.activeElement && container.isConnected && document.activeElement === document.body) {
+          const target = [...container.querySelectorAll("[data-export-focus]")].find((node) => node.dataset.exportFocus === focusKey);
+          (target ?? results).focus({ preventScroll: true });
         }
-        footer.append(appButton(busy ? "正在处理…" : "导出所选备份", async () => {
-          if (busy) return;
-          if (!hasSelection(selection)) {
-            ctx.toast("warning", "请先选择要导出的内容");
-            return;
-          }
-          ;
-          busy = true;
-          progressText = "正在准备所选数据…";
-          render2();
-          try {
-            const catalog = { characters: characters.data.map((character) => ({ ...character, chats: chats.get(character.id)?.data ?? [] })), worldbooks: worldbooks.data, presets: settings.data?.presets ?? [], regex: settings.data?.regex ?? null };
-            const files = await loadSelectedExportFiles({ bridge, catalog, selection, concurrency: 4, onProgress: ({ completed, total, current: current2 }) => {
-              progressText = `正在读取 ${completed}/${total}：${current2}`;
-              render2();
-            } });
-            await download(files, backupFilename(), ({ percent }) => {
-              progressText = `正在压缩 ${Math.round(percent)}%`;
-              render2();
-            });
-            ctx.toast("success", "SillyTavern 标准备份已下载");
-          } catch (error) {
-            ctx.toast("error", `导出失败：${String(error)}`);
-          } finally {
-            busy = false;
-            progressText = "";
-            render2();
-          }
-        }));
         if (scroller && previousScrollTop > 0) scroller.scrollTop = previousScrollTop;
       };
       render2();
@@ -18448,7 +19109,7 @@ function parseLegacySetCalls(source) {
         index = next;
         continue;
       }
-      throw syntaxError(source, next, "调用后存在不允许的尾随内容");
+      throw syntaxError(source, next, t("apps.newvar.legacy.trailing", "调用后存在不允许的尾随内容"));
     } catch (error) {
       errors.push(error instanceof Error ? error.message : String(error));
       index = recoverAtNextLine(source, start);
@@ -18457,21 +19118,21 @@ function parseLegacySetCalls(source) {
   return { calls, errors };
 }
 function parseCall(source, start) {
-  if (!source.startsWith("_.set", start)) throw syntaxError(source, start, "只允许 _.set(...) 调用");
+  if (!source.startsWith("_.set", start)) throw syntaxError(source, start, t("apps.newvar.legacy.calls_only", "只允许 _.set(...) 调用"));
   let index = skipWhitespace(source, start + "_.set".length);
-  if (source[index] !== "(") throw syntaxError(source, index, "_.set 后缺少左括号");
+  if (source[index] !== "(") throw syntaxError(source, index, t("apps.newvar.legacy.missing_parenthesis", "_.set 后缺少左括号"));
   index = skipWhitespace(source, index + 1);
   const pathArg = parseValue(source, index);
-  if (typeof pathArg.value !== "string") throw syntaxError(source, index, "第一个参数必须是字符串路径");
+  if (typeof pathArg.value !== "string") throw syntaxError(source, index, t("apps.newvar.legacy.path_string", "第一个参数必须是字符串路径"));
   const path = pathArg.value.trim();
-  if (!path) throw syntaxError(source, index, "变量路径不能为空");
-  if (!isSafePath(path)) throw syntaxError(source, index, "变量路径包含危险字段");
-  index = expectComma(source, pathArg.next, "路径后缺少旧值参数");
+  if (!path) throw syntaxError(source, index, t("apps.newvar.legacy.empty_path", "变量路径不能为空"));
+  if (!isSafePath(path)) throw syntaxError(source, index, t("apps.newvar.legacy.unsafe_path", "变量路径包含危险字段"));
+  index = expectComma(source, pathArg.next, t("apps.newvar.legacy.missing_old", "路径后缺少旧值参数"));
   const oldArg = parseValue(source, index);
-  index = expectComma(source, oldArg.next, "旧值后缺少新值参数");
+  index = expectComma(source, oldArg.next, t("apps.newvar.legacy.missing_new", "旧值后缺少新值参数"));
   const newArg = parseValue(source, index);
   index = skipWhitespace(source, newArg.next);
-  if (source[index] !== ")") throw syntaxError(source, index, "新值后必须立即结束调用");
+  if (source[index] !== ")") throw syntaxError(source, index, t("apps.newvar.legacy.unexpected_argument", "新值后必须立即结束调用"));
   return {
     call: { path, oldValue: oldArg.value, newValue: newArg.value },
     next: index + 1
@@ -18494,7 +19155,7 @@ function parseValue(source, start) {
   if (number && isValueBoundary(source[index + number[0].length])) {
     return { value: Number(number[0]), next: index + number[0].length };
   }
-  throw syntaxError(source, index, "参数只能是字符串、数字、布尔值或 null");
+  throw syntaxError(source, index, t("apps.newvar.legacy.literal_only", "参数只能是字符串、数字、布尔值或 null"));
 }
 function parseString(source, start, quote) {
   let value = "";
@@ -18502,14 +19163,14 @@ function parseString(source, start, quote) {
   while (index < source.length) {
     const char = source[index];
     if (char === quote) return { value, next: index + 1 };
-    if (isLineBreak(char)) throw syntaxError(source, index, "字符串引号未闭合");
+    if (isLineBreak(char)) throw syntaxError(source, index, t("apps.newvar.legacy.unclosed_string", "字符串引号未闭合"));
     if (char !== "\\") {
       value += char;
       index += 1;
       continue;
     }
     const escaped = source[index + 1];
-    if (escaped === void 0 || isLineBreak(escaped)) throw syntaxError(source, index, "字符串转义未完成");
+    if (escaped === void 0 || isLineBreak(escaped)) throw syntaxError(source, index, t("apps.newvar.legacy.incomplete_escape", "字符串转义未完成"));
     const simpleEscapes = {
       "'": "'",
       '"': '"',
@@ -18523,16 +19184,16 @@ function parseString(source, start, quote) {
     };
     if (escaped === "u") {
       const hex = source.slice(index + 2, index + 6);
-      if (!/^[0-9a-fA-F]{4}$/.test(hex)) throw syntaxError(source, index, "Unicode 转义必须包含四位十六进制数");
+      if (!/^[0-9a-fA-F]{4}$/.test(hex)) throw syntaxError(source, index, t("apps.newvar.legacy.unicode_escape", "Unicode 转义必须包含四位十六进制数"));
       value += String.fromCharCode(Number.parseInt(hex, 16));
       index += 6;
       continue;
     }
-    if (!(escaped in simpleEscapes)) throw syntaxError(source, index, `不支持的字符串转义 \\${escaped}`);
+    if (!(escaped in simpleEscapes)) throw syntaxError(source, index, t("apps.newvar.legacy.unsupported_escape", "不支持的字符串转义 \\{{escape}}", { escape: escaped }));
     value += simpleEscapes[escaped];
     index += 2;
   }
-  throw syntaxError(source, start, "字符串引号未闭合");
+  throw syntaxError(source, start, t("apps.newvar.legacy.unclosed_string", "字符串引号未闭合"));
 }
 function expectComma(source, start, message) {
   const index = skipWhitespace(source, start);
@@ -18583,7 +19244,7 @@ function syntaxError(source, index, message) {
   const line = before.split("\n").length;
   const lastNewline = before.lastIndexOf("\n");
   const column = index - lastNewline;
-  return new Error(`第 ${line} 行第 ${column} 列：${message}`);
+  return new Error(t("apps.newvar.legacy.position", "第 {{line}} 行第 {{column}} 列：{{message}}", { line, column, message }));
 }
 
 // st-extension/src/apps/newvar/engine.ts
@@ -18613,7 +19274,7 @@ function validateValue(def, raw) {
   switch (def.type) {
     case "number": {
       if (typeof raw !== "number" || !Number.isFinite(raw)) {
-        return { ok: false, error: `期望数字，得到 ${describe(raw)}` };
+        return { ok: false, error: t("apps.newvar.errors.expected_number", "期望数字，得到 {{value}}", { value: describe(raw) }) };
       }
       if (def.range) {
         const [min, max] = def.range;
@@ -18625,15 +19286,15 @@ function validateValue(def, raw) {
       return { ok: true, value: raw };
     }
     case "string":
-      if (typeof raw !== "string") return { ok: false, error: `期望文本，得到 ${describe(raw)}` };
+      if (typeof raw !== "string") return { ok: false, error: t("apps.newvar.errors.expected_string", "期望文本，得到 {{value}}", { value: describe(raw) }) };
       return { ok: true, value: raw };
     case "boolean":
-      if (typeof raw !== "boolean") return { ok: false, error: `期望布尔，得到 ${describe(raw)}` };
+      if (typeof raw !== "boolean") return { ok: false, error: t("apps.newvar.errors.expected_boolean", "期望布尔，得到 {{value}}", { value: describe(raw) }) };
       return { ok: true, value: raw };
     case "enum": {
       const options = def.enum ?? [];
       if (typeof raw !== "string" || !options.includes(raw)) {
-        return { ok: false, error: `值 ${describe(raw)} 不在枚举 [${options.join(", ")}] 中` };
+        return { ok: false, error: t("apps.newvar.errors.invalid_enum", "值 {{value}} 不在枚举 [{{options}}] 中", { value: describe(raw), options: options.join(", ") }) };
       }
       return { ok: true, value: raw };
     }
@@ -18644,7 +19305,7 @@ function validateValue(def, raw) {
 function describe(v) {
   if (v === null) return "null";
   if (typeof v === "string") return `"${v}"`;
-  if (typeof v === "object") return Array.isArray(v) ? "数组" : "对象";
+  if (typeof v === "object") return Array.isArray(v) ? t("apps.newvar.errors.array", "数组") : t("apps.newvar.errors.object", "对象");
   return String(v);
 }
 function exampleValue(def) {
@@ -18675,43 +19336,43 @@ function parseUpdateBlock(text4, format) {
 }
 function parseJsonPatch(inner) {
   const arrText = extractJsonArray(inner);
-  if (arrText === null) return { found: true, ops: [], error: "未找到 JSON Patch 数组" };
+  if (arrText === null) return { found: true, ops: [], error: t("apps.newvar.errors.no_array", "未找到 JSON Patch 数组") };
   let parsed;
   try {
     parsed = JSON.parse(arrText);
   } catch (e) {
-    return { found: true, ops: [], error: `JSON 解析失败：${e instanceof Error ? e.message : String(e)}` };
+    return { found: true, ops: [], error: t("apps.newvar.errors.json", "JSON 解析失败：{{error}}", { error: e instanceof Error ? e.message : String(e) }) };
   }
-  if (!Array.isArray(parsed)) return { found: true, ops: [], error: "JSON Patch 应为数组" };
+  if (!Array.isArray(parsed)) return { found: true, ops: [], error: t("apps.newvar.errors.patch_array", "JSON Patch 应为数组") };
   const ops = [];
   const rejected = [];
   for (const [index, raw] of parsed.entries()) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-      rejected.push({ index, reason: "补丁条目必须是对象" });
+      rejected.push({ index, reason: t("apps.newvar.errors.patch_object", "补丁条目必须是对象") });
       continue;
     }
     const o = raw;
     const op = o.op;
     const pointer = o.path;
     if (op !== "replace" && op !== "add" && op !== "remove") {
-      rejected.push({ index, reason: "op 只允许 add、replace 或 remove" });
+      rejected.push({ index, reason: t("apps.newvar.errors.invalid_op", "op 只允许 add、replace 或 remove") });
       continue;
     }
     if (typeof pointer !== "string") {
-      rejected.push({ index, reason: "path 必须是非空字符串" });
+      rejected.push({ index, reason: t("apps.newvar.errors.path_string", "path 必须是非空字符串") });
       continue;
     }
     const path = pointerToDotted(pointer).trim();
     if (!path) {
-      rejected.push({ index, reason: "path 不能为空" });
+      rejected.push({ index, reason: t("apps.newvar.errors.empty_path", "path 不能为空") });
       continue;
     }
     if (!isSafePath(path)) {
-      rejected.push({ index, reason: "path 包含危险字段" });
+      rejected.push({ index, reason: t("apps.newvar.errors.unsafe_path", "path 包含危险字段") });
       continue;
     }
     if (op !== "remove" && !Object.prototype.hasOwnProperty.call(o, "value")) {
-      rejected.push({ index, reason: `${op} 操作缺少 value` });
+      rejected.push({ index, reason: t("apps.newvar.errors.missing_value", "{{op}} 操作缺少 value", { op }) });
       continue;
     }
     ops.push({ op, path, value: o.value });
@@ -18745,13 +19406,13 @@ function applyOps(state2, ops, schema) {
   const hasSchema = schema.variables.length > 0;
   for (const op of ops) {
     if (!op.path.trim() || !isSafePath(op.path)) {
-      log.push({ path: op.path, status: "rejected", detail: "变量路径为空或包含危险字段" });
+      log.push({ path: op.path, status: "rejected", detail: t("apps.newvar.errors.unsafe_variable_path", "变量路径为空或包含危险字段") });
       continue;
     }
     const def = defByKey.get(op.path);
     if (op.op === "remove") {
       if (hasSchema && !def) {
-        log.push({ path: op.path, status: "rejected", detail: "remove 只能删除 schema 中定义的叶子变量" });
+        log.push({ path: op.path, status: "rejected", detail: t("apps.newvar.errors.remove_leaf", "remove 只能删除 schema 中定义的叶子变量") });
         continue;
       }
       deleteNested(next, op.path);
@@ -18760,7 +19421,7 @@ function applyOps(state2, ops, schema) {
     }
     if (!def) {
       if (hasSchema) {
-        log.push({ path: op.path, status: "rejected", detail: "未定义的变量路径" });
+        log.push({ path: op.path, status: "rejected", detail: t("apps.newvar.errors.undefined", "未定义的变量路径") });
         continue;
       }
       setNested(next, op.path, op.value);
@@ -18776,7 +19437,7 @@ function applyOps(state2, ops, schema) {
     log.push({
       path: op.path,
       status: outcome.corrected ? "corrected" : "accepted",
-      detail: outcome.corrected ? `已修正为 ${JSON.stringify(outcome.value)}` : void 0
+      detail: outcome.corrected ? t("apps.newvar.errors.corrected", "已修正为 {{value}}", { value: JSON.stringify(outcome.value) ?? "undefined" }) : void 0
     });
   }
   return { state: next, log };
@@ -18803,8 +19464,8 @@ function buildInjection(state2, schema, format) {
     }
     if (v.updateRule) {
       for (const line of v.updateRule.split("\n")) {
-        const t = line.trim();
-        if (t) checks.push(t);
+        const t2 = line.trim();
+        if (t2) checks.push(t2);
       }
     }
     ruleLines.push(`  ${v.key}:`);
@@ -19028,11 +19689,11 @@ function createNewvarRuntime(deps) {
     getPrevState,
     setManualValue(path, value) {
       const def = getData().schema.variables.find((item) => item.key === path);
-      if (!def) return { ok: false, error: `未定义的变量路径：${path}` };
+      if (!def) return { ok: false, error: t("apps.newvar.errors.undefined_path", "未定义的变量路径：{{path}}", { path }) };
       const validated = validateValue(def, value);
-      if (!validated.ok) return { ok: false, error: validated.error ?? "输入值不符合变量定义。" };
+      if (!validated.ok) return { ok: false, error: validated.error ?? t("apps.newvar.errors.invalid_value", "输入值不符合变量定义。") };
       if (!mutateCurrent((state2) => setNested(state2, path, validated.value))) {
-        return { ok: false, error: "当前环境没有可写入的聊天楼层。" };
+        return { ok: false, error: t("apps.newvar.errors.no_message", "当前环境没有可写入的聊天楼层。") };
       }
       return { ok: true, value: validated.value };
     },
@@ -19497,7 +20158,59 @@ var NEWVAR_TEMPLATES = [
 ];
 
 // st-extension/src/apps/newvar/designer.ts
-var TYPE_LABELS = { number: "数字", string: "文本", boolean: "布尔", enum: "枚举" };
+function typeLabels() {
+  return {
+    number: t("variableDesigner.number", "数字"),
+    string: t("variableDesigner.string", "文本"),
+    boolean: t("variableDesigner.boolean", "布尔"),
+    enum: t("variableDesigner.enum", "枚举")
+  };
+}
+function templateDisplay(tpl, customId) {
+  if (customId !== null) return {
+    name: tpl.name,
+    description: tpl.description === `自定义 · ${tpl.variables.length} 项` ? t("variableDesigner.custom_count", "自定义 · {{count}} 项", { count: tpl.variables.length }) : tpl.description
+  };
+  switch (tpl.id) {
+    case "romance-single":
+      return {
+        name: t("variableDesigner.templates_romance_single", "恋爱 · 单角色"),
+        description: t("variableDesigner.templates_romance_single_description", "好感、关系阶段、心情、行动和完整日期时间；关系按明确阈值小步推进。")
+      };
+    case "romance-multi":
+      return {
+        name: t("variableDesigner.templates_romance_multi", "恋爱 · 多角色"),
+        description: t("variableDesigner.templates_romance_multi_description", "为两个角色分别维护在场、好感、关系、状态、位置和穿着；导入前可直接填写角色名。")
+      };
+    case "rpg":
+      return {
+        name: t("variableDesigner.templates_rpg", "RPG 冒险"),
+        description: t("variableDesigner.templates_rpg_description", "生命、法力、金币、等级、身体状态、位置与完整日期时间。")
+      };
+    case "daily":
+      return {
+        name: t("variableDesigner.templates_daily", "日常陪伴"),
+        description: t("variableDesigner.templates_daily_description", "好感、心情、体力、活动、地点与完整日期时间，适合慢节奏日常卡。")
+      };
+    case "survival-exploration":
+      return {
+        name: t("variableDesigner.templates_survival", "生存探索"),
+        description: t("variableDesigner.templates_survival_description", "生命、饥饿、口渴、疲劳、体感温度、危险、地点与时间，适合荒野和末日探索。")
+      };
+    case "mystery-investigation":
+      return {
+        name: t("variableDesigner.templates_mystery", "悬疑调查"),
+        description: t("variableDesigner.templates_mystery_description", "调查目标、线索摘要、嫌疑、紧迫度、阶段、地点与时间，适合推理和侦探剧情。")
+      };
+    case "quest-progression":
+      return {
+        name: t("variableDesigner.templates_quest", "任务推进"),
+        description: t("variableDesigner.templates_quest_description", "目标、进度、阶段、阻碍、截止压力和完成状态，适合长期主线与委托。")
+      };
+    default:
+      return tpl;
+  }
+}
 function draftFromDef(def) {
   return {
     key: def.key,
@@ -19524,14 +20237,14 @@ function emptyDraft2() {
 }
 function draftToDef(draft) {
   const key = draft.key.trim();
-  if (!key) return { error: "请填写变量路径。" };
-  if (!isSafePath(key)) return { error: "变量路径不能包含 __proto__、prototype 或 constructor。" };
+  if (!key) return { error: t("variableDesigner.path_required", "请填写变量路径。") };
+  if (!isSafePath(key)) return { error: t("variableDesigner.unsafe_path", "变量路径不能包含 __proto__、prototype 或 constructor。") };
   const def = { key, type: draft.type, default: void 0, description: draft.description.trim() };
   if (draft.hidden) def.hidden = true;
   if (draft.updateRule.trim()) def.updateRule = draft.updateRule.trim();
   if (draft.type === "number") {
     const range = parseRange(draft.rangeText);
-    if (range === false) return { error: "范围格式应为「最小~最大」，如 0~100。" };
+    if (range === false) return { error: t("variableDesigner.invalid_range", "范围格式应为「最小~最大」，如 0~100。") };
     if (range) def.range = range;
     const n = Number(draft.defaultText.trim());
     let dflt = Number.isFinite(n) ? n : 0;
@@ -19541,7 +20254,7 @@ function draftToDef(draft) {
     def.default = draft.defaultText.trim() === "true";
   } else if (draft.type === "enum") {
     const options = draft.enumText.split(/[,，]/).map((s) => s.trim()).filter((s) => s !== "");
-    if (options.length === 0) return { error: "枚举类型至少需要一个选项（逗号分隔）。" };
+    if (options.length === 0) return { error: t("variableDesigner.enum_required", "枚举类型至少需要一个选项（逗号分隔）。") };
     def.enum = options;
     def.default = options.includes(draft.defaultText.trim()) ? draft.defaultText.trim() : options[0];
   } else {
@@ -19553,9 +20266,9 @@ function cloneDefs(defs) {
   return JSON.parse(JSON.stringify(defs));
 }
 function parseRange(text4) {
-  const t = text4.trim();
-  if (!t) return null;
-  const m = /^(-?\d+(?:\.\d+)?)\s*~\s*(-?\d+(?:\.\d+)?)$/.exec(t);
+  const t2 = text4.trim();
+  if (!t2) return null;
+  const m = /^(-?\d+(?:\.\d+)?)\s*~\s*(-?\d+(?:\.\d+)?)$/.exec(t2);
   if (!m) return false;
   const min = Number(m[1]);
   const max = Number(m[2]);
@@ -19565,6 +20278,7 @@ function parseRange(text4) {
 function createNewvarDesigner(deps) {
   let backdrop = null;
   let body = null;
+  let focus = null;
   let formDraft = null;
   let editingIndex = null;
   let scrollToEditor = false;
@@ -19575,9 +20289,6 @@ function createNewvarDesigner(deps) {
     backdrop.style.width = `${window.innerWidth}px`;
     backdrop.style.height = `${window.innerHeight}px`;
   }
-  function onEscape(e) {
-    if (e.key === "Escape") close();
-  }
   function open() {
     if (backdrop) {
       render2();
@@ -19586,24 +20297,26 @@ function createNewvarDesigner(deps) {
     formDraft = null;
     editingIndex = null;
     backdrop = el2("div", "so-manager-backdrop");
-    document.addEventListener("keydown", onEscape);
     window.addEventListener("resize", applyBackdropSize);
     applyBackdropSize();
     const dialog = el2("div", "so-manager");
     dialog.setAttribute("role", "dialog");
-    dialog.setAttribute("aria-label", "变量设计");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-label", t("variableDesigner.title", "变量设计"));
     const header = el2("div", "so-manager-header");
     const title2 = el2("div", "so-manager-title");
-    title2.textContent = "变量设计";
+    title2.textContent = t("variableDesigner.title", "变量设计");
     const closeBtn = el2("div", "menu_button so-manager-close");
     closeBtn.textContent = "✕";
-    closeBtn.title = "关闭";
+    closeBtn.title = t("variableDesigner.close", "关闭");
+    closeBtn.setAttribute("aria-label", closeBtn.title);
     closeBtn.setAttribute("role", "button");
     closeBtn.tabIndex = 0;
     closeBtn.addEventListener("click", close);
     closeBtn.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
+        e.stopPropagation();
         close();
       }
     });
@@ -19612,11 +20325,15 @@ function createNewvarDesigner(deps) {
     dialog.append(header, body);
     backdrop.append(dialog);
     document.body.append(backdrop);
+    focus = manageDialogFocus(dialog, { onEscape: close, layer: backdrop });
     render2();
+    focus.focusInitial();
   }
   function close() {
     if (!backdrop) return;
-    document.removeEventListener("keydown", onEscape);
+    const closingFocus = focus;
+    focus = null;
+    closingFocus?.dispose();
     window.removeEventListener("resize", applyBackdropSize);
     backdrop.remove();
     backdrop = null;
@@ -19624,6 +20341,7 @@ function createNewvarDesigner(deps) {
     formDraft = null;
     editingIndex = null;
     deps.onClosed?.();
+    closingFocus?.restoreFocus();
   }
   function save(next) {
     deps.setData(next);
@@ -19631,6 +20349,7 @@ function createNewvarDesigner(deps) {
   }
   function render2() {
     if (!body) return;
+    const restore = captureVariableFocus(body);
     try {
       body.textContent = "";
       body.append(
@@ -19642,7 +20361,10 @@ function createNewvarDesigner(deps) {
       );
       if (scrollToEditor) {
         scrollToEditor = false;
-        body.querySelector(".nv-defs-editor")?.scrollIntoView({ block: "nearest" });
+        body.querySelector(".nv-defs-editor")?.scrollIntoView?.({ block: "nearest" });
+        body.querySelector(".nv-defs-editor input")?.focus({ preventScroll: true });
+      } else if (restore && !restore()) {
+        body.querySelector(".nv-defs-editor .so-app-btn")?.focus({ preventScroll: true });
       }
     } catch (err) {
       console.error("[st-stage] 变量设计弹窗渲染失败", err);
@@ -19662,8 +20384,8 @@ function createNewvarDesigner(deps) {
   }
   function buildTemplateSection() {
     const data = deps.getData();
-    const { box } = section2("模板库（一键起步）");
-    descLine(box, "「替换」清空现有定义后导入；「追加」跳过重名路径合并。导入的规则都已写好，可再逐条微调。");
+    const { box } = section2(t("variableDesigner.templates", "模板库（一键起步）"));
+    descLine(box, t("variableDesigner.template_help", "「替换」清空现有定义后导入；「追加」跳过重名路径合并。导入的规则都已写好，可再逐条微调。"));
     const grid = el2("div", "nv-tpl-grid");
     for (const tpl of NEWVAR_TEMPLATES) grid.append(buildTemplateCard(tpl, null));
     for (const tpl of data.customTemplates) grid.append(buildTemplateCard(tpl, tpl.id));
@@ -19672,19 +20394,21 @@ function createNewvarDesigner(deps) {
     const nameInput = document.createElement("input");
     nameInput.type = "text";
     nameInput.className = "text_pole so-app-input";
-    nameInput.placeholder = "模板名（如 我的恋爱系统）";
+    nameInput.placeholder = t("variableDesigner.template_placeholder", "模板名（如 我的恋爱系统）");
     nameInput.autocomplete = "off";
-    const saveBtn = el2("button", "menu_button vm-act");
-    saveBtn.textContent = "把当前定义存为模板";
+    nameInput.setAttribute("aria-label", t("variableDesigner.template_name", "模板名"));
+    const saveBtn = variableButton("menu_button vm-act");
+    saveBtn.textContent = t("variableDesigner.save_template", "把当前定义存为模板");
+    saveBtn.dataset.variableFocus = "save-template";
     saveBtn.addEventListener("click", () => {
       const cur = deps.getData();
       const name = nameInput.value.trim();
       if (!name) {
-        window.alert("请先填写模板名。");
+        window.alert(t("variableDesigner.template_name_required", "请先填写模板名。"));
         return;
       }
       if (cur.schema.variables.length === 0) {
-        window.alert("当前没有任何变量定义，无法保存为模板。");
+        window.alert(t("variableDesigner.template_empty", "当前没有任何变量定义，无法保存为模板。"));
         return;
       }
       const tpl = {
@@ -19701,17 +20425,20 @@ function createNewvarDesigner(deps) {
   }
   function buildTemplateCard(tpl, customId) {
     const card = el2("div", "nv-tpl-card");
+    card.dataset.variableFocusScope = `template:${tpl.id}`;
+    card.setAttribute("role", "group");
+    card.setAttribute("aria-label", templateDisplay(tpl, customId).name);
     const name = el2("div", "vm-key");
-    name.textContent = `${tpl.name}（${tpl.variables.length} 项）`;
+    name.textContent = t("variableDesigner.template_count", "{{name}}（{{count}} 项）", { name: templateDisplay(tpl, customId).name, count: tpl.variables.length });
     const desc = el2("div", "vm-desc nv-tpl-desc");
-    desc.textContent = tpl.description;
+    desc.textContent = templateDisplay(tpl, customId).description;
     card.append(name, desc);
     const builtIn = customId === null ? tpl : null;
     const parameterInputs = /* @__PURE__ */ new Map();
     for (const parameter of builtIn?.parameters ?? []) {
       const row = el2("label", "so-app-toggle");
       const label = document.createElement("span");
-      label.textContent = parameter.label;
+      label.textContent = parameter.key === "roleA" ? t("variableDesigner.role_one", "角色 1 名称") : parameter.key === "roleB" ? t("variableDesigner.role_two", "角色 2 名称") : parameter.label;
       const input = document.createElement("input");
       input.type = "text";
       input.className = "text_pole so-app-input";
@@ -19726,35 +20453,37 @@ function createNewvarDesigner(deps) {
       const parameters = Object.fromEntries([...parameterInputs].map(([key, input]) => [key, input.value.trim()]));
       const names = Object.values(parameters);
       if (names.some((value) => value === "")) {
-        window.alert("请填写所有模板角色名。");
+        window.alert(t("variableDesigner.roles_required", "请填写所有模板角色名。"));
         return null;
       }
       if (new Set(names).size !== names.length) {
-        window.alert("模板角色名不能重复。");
+        window.alert(t("variableDesigner.roles_duplicate", "模板角色名不能重复。"));
         return null;
       }
       if (names.some((value) => value.includes(".") || !isSafePath(`角色.${value}.变量`))) {
-        window.alert("角色名不能包含点号或危险路径字段。");
+        window.alert(t("variableDesigner.roles_unsafe", "角色名不能包含点号或危险路径字段。"));
         return null;
       }
       return builtIn.instantiate(parameters);
     };
     const actions = el2("div", "nv-tpl-actions");
-    const replaceBtn = el2("button", "menu_button vm-act");
-    replaceBtn.textContent = "替换";
+    const replaceBtn = variableButton("menu_button vm-act");
+    replaceBtn.textContent = t("variableDesigner.replace", "替换");
+    replaceBtn.dataset.variableFocus = `template:${tpl.id}:replace`;
     replaceBtn.addEventListener("click", () => {
       const variables = resolveVariables();
       if (!variables) return;
       const cur = deps.getData();
-      if (cur.schema.variables.length > 0 && !window.confirm(`用「${tpl.name}」替换现有 ${cur.schema.variables.length} 条定义？（楼层快照不受影响）`)) {
+      if (cur.schema.variables.length > 0 && !window.confirm(t("variableDesigner.replace_confirm", "用「{{name}}」替换现有 {{count}} 条定义？（楼层快照不受影响）", { name: templateDisplay(tpl, customId).name, count: cur.schema.variables.length }))) {
         return;
       }
       formDraft = null;
       editingIndex = null;
       save({ ...cur, schema: { ...cur.schema, name: tpl.name, variables: cloneDefs(variables) } });
     });
-    const appendBtn = el2("button", "menu_button vm-act vm-act-ghost");
-    appendBtn.textContent = "追加";
+    const appendBtn = variableButton("menu_button vm-act vm-act-ghost");
+    appendBtn.textContent = t("variableDesigner.append", "追加");
+    appendBtn.dataset.variableFocus = `template:${tpl.id}:append`;
     appendBtn.addEventListener("click", () => {
       const variables = resolveVariables();
       if (!variables) return;
@@ -19762,19 +20491,19 @@ function createNewvarDesigner(deps) {
       const existing = new Set(cur.schema.variables.map((v) => v.key));
       const added = variables.filter((v) => !existing.has(v.key));
       if (added.length === 0) {
-        window.alert("该模板的变量路径都已存在，没有可追加的项。");
+        window.alert(t("variableDesigner.no_new_paths", "该模板的变量路径都已存在，没有可追加的项。"));
         return;
       }
       save({ ...cur, schema: { ...cur.schema, variables: [...cur.schema.variables, ...cloneDefs(added)] } });
     });
     actions.append(replaceBtn, appendBtn);
     if (customId) {
-      const delBtn = el2("button", "menu_button vm-act vm-act-ghost nv-tpl-del");
-      delBtn.textContent = "删除";
+      const delBtn = variableButton("menu_button vm-act vm-act-ghost nv-tpl-del");
+      delBtn.textContent = t("variableDesigner.delete", "删除");
       delBtn.addEventListener("click", () => {
-        if (!window.confirm(`删除自定义模板「${tpl.name}」？`)) return;
+        if (!window.confirm(t("variableDesigner.delete_template_confirm", "删除自定义模板「{{name}}」？", { name: tpl.name }))) return;
         const cur = deps.getData();
-        save({ ...cur, customTemplates: cur.customTemplates.filter((t) => t.id !== customId) });
+        save({ ...cur, customTemplates: cur.customTemplates.filter((t2) => t2.id !== customId) });
       });
       actions.append(delBtn);
     }
@@ -19783,12 +20512,12 @@ function createNewvarDesigner(deps) {
   }
   function buildDefsSection() {
     const data = deps.getData();
-    const { box } = section2(`变量定义（${data.schema.variables.length}）`);
+    const { box } = section2(t("variableDesigner.definitions", "变量定义（{{count}}）", { count: data.schema.variables.length }));
     const layout = el2("div", "nv-defs-layout");
     const list = el2("div", "nv-defs-list");
     const editor = el2("div", "nv-defs-editor");
     if (data.schema.variables.length === 0) {
-      descLine(list, "还没有变量。从上方模板一键导入，或点右侧「添加变量」逐条定义。");
+      descLine(list, t("variableDesigner.no_definitions", "还没有变量。从上方模板一键导入，或点右侧「添加变量」逐条定义。"));
     }
     for (let i = 0; i < data.schema.variables.length; i++) {
       list.append(buildDefRow(data.schema.variables[i], i));
@@ -19797,10 +20526,10 @@ function createNewvarDesigner(deps) {
       editor.append(buildDefForm());
     } else {
       const hint = el2("div", "so-app-desc");
-      hint.textContent = "点击左侧变量进行编辑，或新建：";
+      hint.textContent = t("variableDesigner.edit_hint", "点击左侧变量进行编辑，或新建：");
       editor.append(
         hint,
-        appButton("＋ 添加变量", () => {
+        appButton(t("variableDesigner.add", "＋ 添加变量"), () => {
           formDraft = emptyDraft2();
           editingIndex = null;
           scrollToEditor = true;
@@ -19816,13 +20545,14 @@ function createNewvarDesigner(deps) {
     const selected = editingIndex === index;
     const card = el2("div", `vm-leaf${selected ? " nv-def-selected" : ""}`);
     const main = el2("div", "vm-leaf-main");
+    main.dataset.variableFocus = `definition:${def.key}`;
     const keyEl = el2("span", "vm-key");
     keyEl.textContent = def.key;
     const meta = el2("span", "vm-val");
-    const parts = [TYPE_LABELS[def.type], `默认 ${formatValue(def.default)}`];
-    if (def.range) parts.push(`范围 ${def.range[0]}~${def.range[1]}`);
-    if (def.enum) parts.push(`枚举 ${def.enum.join("/")}`);
-    if (def.hidden) parts.push("对 AI 隐藏");
+    const parts = [typeLabels()[def.type], t("variableDesigner.default_summary", "默认 {{value}}", { value: formatValue(def.default) })];
+    if (def.range) parts.push(t("variableDesigner.range_summary", "范围 {{min}}~{{max}}", { min: def.range[0], max: def.range[1] }));
+    if (def.enum) parts.push(t("variableDesigner.enum_summary", "枚举 {{options}}", { options: def.enum.join("/") }));
+    if (def.hidden) parts.push(t("variableDesigner.hidden", "对 AI 隐藏"));
     meta.textContent = parts.join(" · ");
     main.append(keyEl, meta);
     if (def.description) {
@@ -19832,7 +20562,7 @@ function createNewvarDesigner(deps) {
     }
     if (def.updateRule) {
       const rule = el2("div", "vm-desc");
-      rule.textContent = `规则：${def.updateRule.split("\n").join("；")}`;
+      rule.textContent = t("variableDesigner.rules_summary", "规则：{{rules}}", { rules: def.updateRule.split("\n").join("；") });
       main.append(rule);
     }
     main.setAttribute("role", "button");
@@ -19847,16 +20577,17 @@ function createNewvarDesigner(deps) {
     main.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
+        e.stopPropagation();
         edit();
       }
     });
-    const del = el2("button", "vm-del");
-    del.setAttribute("aria-label", "删除定义");
-    del.title = "删除该变量定义";
+    const del = variableButton("vm-del");
+    del.setAttribute("aria-label", t("variableDesigner.delete_path", "删除定义 {{path}}", { path: def.key }));
+    del.title = t("variableDesigner.delete_definition_title", "删除该变量定义");
     del.textContent = "✕";
     del.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (!window.confirm(`删除变量定义「${def.key}」？（已保存的楼层快照不受影响）`)) return;
+      if (!window.confirm(t("variableDesigner.delete_definition_confirm", "删除变量定义「{{path}}」？（已保存的楼层快照不受影响）", { path: def.key }))) return;
       const cur = deps.getData();
       if (editingIndex === index) {
         formDraft = null;
@@ -19871,54 +20602,55 @@ function createNewvarDesigner(deps) {
     const draft = formDraft;
     const wrap = el2("div", "vm-leaf vm-editing");
     const title2 = el2("div", "so-app-title vm-edit-title");
-    title2.textContent = editingIndex === null ? "新变量定义" : `编辑：${draft.key || "（未命名）"}`;
+    title2.textContent = editingIndex === null ? t("variableDesigner.new_definition", "新变量定义") : t("variableDesigner.edit", "编辑：{{path}}", { path: draft.key || t("variableDesigner.unnamed", "（未命名）") });
     wrap.append(title2);
     const err = el2("div", "so-app-desc vm-add-err");
     err.hidden = true;
+    err.setAttribute("role", "alert");
     wrap.append(
-      textRow("路径（点号分层）", draft.key, "如 状态.体力 / 角色.小雪.好感度", (v) => draft.key = v),
+      textRow(t("variableDesigner.path", "路径（点号分层）"), draft.key, t("variableDesigner.path_example", "如 状态.体力 / 角色.小雪.好感度"), (v) => draft.key = v),
       selectRow(
-        "类型",
+        t("variableDesigner.type", "类型"),
         draft.type,
-        Object.keys(TYPE_LABELS).map((t) => ({ value: t, label: TYPE_LABELS[t] })),
+        Object.keys(typeLabels()).map((t2) => ({ value: t2, label: typeLabels()[t2] })),
         (v) => {
           draft.type = v;
           render2();
         }
       ),
-      textRow("默认值", draft.defaultText, draft.type === "boolean" ? "true / false" : "", (v) => draft.defaultText = v),
-      textRow("描述（给 AI 看）", draft.description, "如 角色对用户的好感", (v) => draft.description = v)
+      textRow(t("variableDesigner.default", "默认值"), draft.defaultText, draft.type === "boolean" ? "true / false" : "", (v) => draft.defaultText = v),
+      textRow(t("variableDesigner.description", "描述（给 AI 看）"), draft.description, t("variableDesigner.description_example", "如 角色对用户的好感"), (v) => draft.description = v)
     );
     if (draft.type === "number") {
-      wrap.append(textRow("范围（可空）", draft.rangeText, "如 0~100，越界自动修正", (v) => draft.rangeText = v));
+      wrap.append(textRow(t("variableDesigner.range", "范围（可空）"), draft.rangeText, t("variableDesigner.range_example", "如 0~100，越界自动修正"), (v) => draft.rangeText = v));
     }
     if (draft.type === "enum") {
-      wrap.append(textRow("枚举选项（逗号分隔）", draft.enumText, "如 开心, 平静, 烦躁", (v) => draft.enumText = v));
+      wrap.append(textRow(t("variableDesigner.enum_options", "枚举选项（逗号分隔）"), draft.enumText, t("variableDesigner.enum_example", "如 开心, 平静, 烦躁"), (v) => draft.enumText = v));
     }
     wrap.append(
       textareaRow(
-        "更新规则（每行一条，注入给 AI）",
+        t("variableDesigner.rules", "更新规则（每行一条，注入给 AI）"),
         draft.updateRule,
-        "如：正面互动 +1~3\n重大事件 ±5~10\n禁止无缘由跳变",
+        t("variableDesigner.rules_example", "如：正面互动 +1~3\n重大事件 ±5~10\n禁止无缘由跳变"),
         (v) => draft.updateRule = v
       ),
-      toggleRow("对 AI 隐藏（内部计算用）", draft.hidden, (v) => draft.hidden = v),
+      toggleRow(t("variableDesigner.hidden_input", "对 AI 隐藏（内部计算用）"), draft.hidden, (v) => draft.hidden = v),
       err
     );
     const actions = el2("div", "vm-actions");
-    const saveBtn = el2("button", "menu_button vm-act");
-    saveBtn.textContent = "保存定义";
+    const saveBtn = variableButton("menu_button vm-act");
+    saveBtn.textContent = t("variableDesigner.save_definition", "保存定义");
     saveBtn.addEventListener("click", () => {
       const r = draftToDef(draft);
       if (!r.def) {
-        err.textContent = r.error ?? "输入无效。";
+        err.textContent = r.error ?? t("variableDesigner.invalid", "输入无效。");
         err.hidden = false;
         return;
       }
       const cur = deps.getData();
       const dup = cur.schema.variables.findIndex((v, i) => v.key === r.def.key && i !== editingIndex);
       if (dup >= 0) {
-        err.textContent = `路径「${r.def.key}」已有定义。`;
+        err.textContent = t("variableDesigner.duplicate_path", "路径「{{path}}」已有定义。", { path: r.def.key });
         err.hidden = false;
         return;
       }
@@ -19929,32 +20661,34 @@ function createNewvarDesigner(deps) {
       editingIndex = null;
       save({ ...cur, schema: { ...cur.schema, variables } });
     });
-    const cancel = el2("button", "menu_button vm-act vm-act-ghost");
-    cancel.textContent = "取消";
+    const cancel = variableButton("menu_button vm-act vm-act-ghost");
+    cancel.dataset.variableFocus = "cancel-definition";
+    cancel.textContent = t("variableDesigner.cancel", "取消");
     cancel.addEventListener("click", () => {
       formDraft = null;
       editingIndex = null;
       render2();
     });
+    saveBtn.dataset.variableFocus = "save-definition";
     actions.append(saveBtn, cancel);
     wrap.append(actions);
     return wrap;
   }
   function buildSettingsSection() {
     const data = deps.getData();
-    const { box } = section2("生成设置");
+    const { box } = section2(t("variableDesigner.settings", "生成设置"));
     box.append(
       selectRow(
-        "输出格式",
+        t("variableDesigner.format", "输出格式"),
         data.format,
         [
-          { value: "json_patch", label: "JSON Patch（推荐）" },
-          { value: "lodash_set", label: "_.set（老版 MVU 兼容）" }
+          { value: "json_patch", label: t("variableDesigner.json_patch", "JSON Patch（推荐）") },
+          { value: "lodash_set", label: t("variableDesigner.lodash_set", "_.set（老版 MVU 兼容）") }
         ],
         (v) => save({ ...deps.getData(), format: v === "lodash_set" ? "lodash_set" : "json_patch" })
       ),
       numberRow(
-        "注入深度（距末尾楼层数）",
+        t("variableDesigner.depth", "注入深度（距末尾楼层数）"),
         data.injectionDepth,
         0,
         20,
@@ -19964,30 +20698,36 @@ function createNewvarDesigner(deps) {
     return box;
   }
   function buildPreviewSection() {
-    const fold = foldSection("注入预览");
+    const fold = foldSection(t("variableDesigner.preview", "注入预览"));
     const text4 = deps.buildPreview();
     if (text4) {
       const pre = el2("div", "nv-pre");
       pre.textContent = text4;
       fold.body.append(pre);
     } else {
-      descLine(fold.body, "（未启用或未定义任何变量时不注入。启用开关在手机「新变量」页。）");
+      descLine(fold.body, t("variableDesigner.no_preview", "（未启用或未定义任何变量时不注入。启用开关在手机「新变量」页。）"));
     }
     const wrap = el2("div", "so-section");
     wrap.append(fold.box);
     return wrap;
   }
   function buildLogSection() {
-    const fold = foldSection("解析日志");
+    const fold = foldSection(t("variableDesigner.log", "解析日志"));
     const report = deps.getLastParse();
     if (!report) {
-      descLine(fold.body, "尚无解析记录。AI 回复包含 <UpdateVariable> 块时，这里显示逐条接受/修正/拒绝结果。");
+      descLine(fold.body, t("variableDesigner.no_log", "尚无解析记录。AI 回复包含 <UpdateVariable> 块时，这里显示逐条接受/修正/拒绝结果。"));
     } else {
-      descLine(fold.body, `楼层 #${report.messageId}${report.error ? ` · 解析出错：${report.error}` : ""}`);
+      descLine(fold.body, t("variableDesigner.message_log", "楼层 #{{id}}{{error}}", { id: report.messageId, error: report.error ? t("variableDesigner.parse_error", " · 解析出错：{{error}}", { error: report.error }) : "" }));
       const icons = { accepted: "✅", corrected: "⚠️", rejected: "❌", removed: "🗑️" };
+      const labels = {
+        accepted: t("variableDesigner.log_accepted", "已接受"),
+        corrected: t("variableDesigner.log_corrected", "已修正"),
+        rejected: t("variableDesigner.log_rejected", "已拒绝"),
+        removed: t("variableDesigner.log_removed", "已删除")
+      };
       for (const entry of report.log) {
         const line = el2("div", "so-app-desc nv-log-line");
-        line.textContent = `${icons[entry.status] ?? "·"} ${entry.path}${entry.detail ? ` — ${entry.detail}` : ""}`;
+        line.textContent = `${icons[entry.status] ?? "·"} ${labels[entry.status]} · ${entry.path}${entry.detail ? ` — ${entry.detail}` : ""}`;
         fold.body.append(line);
       }
     }
@@ -21619,8 +22359,8 @@ async function init(lifecycle) {
       adapter.injectChannel(channel, text4, depth);
     },
     toast: (kind, message) => {
-      const t = window.toastr;
-      if (t?.[kind]) t[kind](message);
+      const t2 = window.toastr;
+      if (t2?.[kind]) t2[kind](message);
       else console.info(`[sprite-overlay][${kind}] ${message}`);
     }
   };
@@ -21759,11 +22499,11 @@ async function init(lifecycle) {
           sections.push({
             source: "MVU",
             root: read.status === "ready" || read.status === "empty" ? read.data : null,
-            notice: read.status === "unavailable" ? "未检测到 MVU / 酒馆助手" : read.error ?? ""
+            notice: read.status === "unavailable" ? t("variableHud.mvu_unavailable", "未检测到 MVU / 酒馆助手") : read.error ?? ""
           });
           const newvarState = newvarRuntime.getCurrentState();
           sections.push({
-            source: "新变量",
+            source: t("apps.newvar.name", "新变量"),
             root: newvarState,
             notice: ""
           });
@@ -21881,9 +22621,9 @@ async function init(lifecycle) {
         preloadOnActivate(packs);
         overlay.setImage(pack.sprites[0].url, pack.sprites[0].tag);
       } else if (characterName) {
-        overlay.setPlaceholder("未绑定立绘包\n点击 ⚙ 进行绑定");
+        overlay.setPlaceholder(t("sprite.overlay.placeholder_no_pack", "未绑定立绘包\n点击 ⚙ 进行绑定"));
       } else {
-        overlay.setPlaceholder("打开角色聊天后\n点击 ⚙ 绑定立绘包");
+        overlay.setPlaceholder(t("sprite.overlay.placeholder_no_character", "打开角色聊天后\n点击 ⚙ 绑定立绘包"));
       }
     }
     overlay.setVisible(overlayAllowed());
@@ -21980,7 +22720,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-10-26 01:59"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-10-26 11:21"}`;
   console.log(`[sprite-overlay] 百工（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

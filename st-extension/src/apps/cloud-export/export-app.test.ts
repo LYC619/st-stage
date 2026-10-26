@@ -35,7 +35,7 @@ async function settle(): Promise<void> {
 }
 
 function clickText(container: HTMLElement, text: string): void {
-  const target = [...container.querySelectorAll<HTMLElement>('[role="button"]')]
+  const target = [...container.querySelectorAll<HTMLElement>('[role="button"], [role="tab"]')]
     .find((element) => element.textContent === text)
   if (!target) throw new Error(`button not found: ${text}`)
   target.click()
@@ -425,10 +425,10 @@ describe('cloud export app', () => {
     cloudExportApp(fakeBridge()).mount(container, context())
     await settle()
 
-    // 四个分类横排依赖 `.cloud-export-tabs > .so-app-btn`：必须是直接子元素
+    // 分类网格依赖 `.cloud-export-tabs > .so-app-btn`：必须是直接子元素
     const tabs = container.querySelector('.cloud-export-tabs')
     expect(tabs).not.toBeNull()
-    const tabButtons = [...tabs!.querySelectorAll<HTMLElement>('[role="button"]')]
+    const tabButtons = [...tabs!.querySelectorAll<HTMLElement>('[role="tab"]')]
     expect(tabButtons).toHaveLength(4)
     for (const button of tabButtons) {
       expect(button.matches('.cloud-export-tabs > .so-app-btn')).toBe(true)

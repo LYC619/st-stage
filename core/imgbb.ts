@@ -9,6 +9,8 @@
  * API Key 仅由调用方从本地设置读取传入，本模块不接触任何持久化。
  */
 
+import { t } from './i18n'
+
 /** 上传结果：url = imgbb 直链；code = imgbb 分配的文件名（response.data.image.filename） */
 export interface ImgbbResult {
   url: string
@@ -41,7 +43,7 @@ export async function uploadToImgbb(
   fetchImpl: typeof fetch = fetch,
 ): Promise<ImgbbResult> {
   const key = apiKey.trim()
-  if (!key) throw new Error('未配置 imgbb API Key')
+  if (!key) throw new Error(t('galleryErrors.imgbb_key', '未配置 imgbb API Key'))
 
   // imgbb 的 image 字段要裸 base64，剥掉可能的 data:...;base64, 前缀
   const rawBase64 = base64DataUri.replace(/^data:[^;]*;base64,/, '')
@@ -58,13 +60,13 @@ export async function uploadToImgbb(
   } | null
 
   if (!json?.success || !json.data?.image) {
-    throw new Error(`imgbb 上传失败：${json?.error?.message ?? `HTTP ${res.status}`}`)
+    throw new Error(t('galleryErrors.imgbb_upload', 'imgbb 上传失败：{{error}}', { error: json?.error?.message ?? `HTTP ${res.status}` }))
   }
   // 结果自校验（九期→本期内置）：success 为真但 url/filename 缺失或非法时，绝不返回
   // { url:'', code:'' } 让调用方误当成功覆盖本地保底图；直接抛错，调用方按失败处理。
   const result: ImgbbResult = { url: json.data.url ?? '', code: json.data.image.filename ?? '' }
   if (!isValidImgbbResult(result)) {
-    throw new Error('imgbb 返回无效：缺少合法的 HTTPS 直链或文件名')
+    throw new Error(t('galleryErrors.imgbb_response', 'imgbb 返回无效：缺少合法的 HTTPS 直链或文件名'))
   }
   return result
 }

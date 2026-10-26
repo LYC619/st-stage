@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createVariableTreeView,
   type VariableEditDefinition,
   type VariableTreeHandlers,
   type VariableTreeModel,
 } from './variable-tree'
+
+afterEach(() => document.body.replaceChildren())
 
 function renderEditor(
   definition: VariableEditDefinition,
@@ -40,6 +42,50 @@ function renderEditor(
 }
 
 describe('variable tree schema-aware editors', () => {
+  it.each(['outside', 'refresh', 'editor', 'removed-editor'] as const)(
+    'returns focus after a delayed write only when the editor still owns it: %s',
+    async (destination) => {
+      const container = document.createElement('div')
+      const hud = document.createElement('input')
+      hud.type = 'checkbox'
+      document.body.append(hud, container)
+      const model: VariableTreeModel = {
+        data: { energy: 50 }, isMvu: false, delta: new Map(), status: 'ready',
+        statusText: '', emptyText: '', canWrite: true, addHint: '',
+      }
+      let finishWrite!: () => void
+      const gate = new Promise<void>(resolve => { finishWrite = resolve })
+      let pending = Promise.resolve()
+      const view = createVariableTreeView(container, {
+        getModel: () => model,
+        commitSet: (_path, value) => {
+          pending = gate.then(() => {
+            model.data.energy = value
+            // MVU rereads and resets the tree after replaceMvuData resolves.
+            view.resetEditing()
+            view.render()
+          })
+        },
+        commitDelete: vi.fn(), requestRefresh: vi.fn(),
+      })
+      view.render()
+      container.querySelector<HTMLElement>('.vm-leaf-main')!.click()
+      container.querySelector<HTMLInputElement>('.vm-edit-input')!.value = '75'
+      const save = container.querySelector<HTMLButtonElement>('.vm-act')!
+      save.focus()
+      save.click()
+      if (destination === 'outside') hud.focus()
+      else if (destination === 'refresh') container.querySelector<HTMLElement>('.vm-refresh')!.focus()
+      else if (destination === 'removed-editor') container.querySelector('.vm-editing')!.remove()
+      finishWrite()
+      await pending
+      expect(model.data.energy).toBe(75)
+      const expected = destination === 'outside' ? hud
+        : container.querySelector(destination === 'refresh' ? '.vm-refresh' : '.vm-leaf-main')
+      expect(document.activeElement).toBe(expected)
+    },
+  )
+
   it('数字定义使用 number 输入并在本地拦截非数字', () => {
     const { container, commitSet, view } = renderEditor(
       { key: '体力', type: 'number', range: [0, 100] },

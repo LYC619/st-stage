@@ -7,6 +7,32 @@ beforeEach(() => {
 })
 
 describe('openAppModal', () => {
+  it('has modal semantics, contains focus and returns focus to the opener', () => {
+    const opener = document.createElement('button')
+    document.body.append(opener)
+    opener.focus()
+    const close = openAppModal(body => {
+      body.innerHTML = '<input aria-label="Name">'
+    }, { onOpen: () => {}, onClose: () => {} })
+    const dialog = document.querySelector('[role="dialog"]')!
+    expect(dialog?.getAttribute('aria-modal')).toBe('true')
+    expect(dialog?.getAttribute('aria-label')).toBeTruthy()
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    close()
+    expect(document.activeElement).toBe(opener)
+  })
+
+  it('Escape closes only the innermost App modal and restores the outer control', () => {
+    const closeOuter = openAppModal(body => { body.innerHTML = '<button>Open nested</button>' }, { onOpen: () => {}, onClose: () => {} })
+    const opener = document.querySelector('.so-app-modal-body button') as HTMLElement
+    opener.focus()
+    openAppModal(() => {}, { onOpen: () => {}, onClose: () => {} })
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(document.querySelectorAll('.so-app-modal')).toHaveLength(1)
+    expect(document.activeElement).toBe(opener)
+    closeOuter()
+  })
+
   it('打开：onOpen 先行、内容渲染进 body；关闭：清理 → 移除 DOM → onClose', () => {
     const calls: string[] = []
     const close = openAppModal(

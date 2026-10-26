@@ -5,6 +5,7 @@
  * 可选按秒数自动轮播（手动点击后重置计时）。单张时无指示、无轮播，行为同旧版。
  */
 
+import { t } from '../../core/i18n'
 import type { OverlayLayout } from '../../core/types'
 
 /** 悬浮窗展示用的最小立绘引用 */
@@ -81,8 +82,18 @@ export function createOverlay(
   // 齿轮按钮：打开立绘包管理弹窗
   const gearBtn = document.createElement('div')
   gearBtn.className = 'sprite-overlay-gear'
-  gearBtn.title = '立绘包管理'
+  gearBtn.title = t('sprite.manager.title', '立绘包管理')
   gearBtn.textContent = '⚙'
+  gearBtn.setAttribute('role', 'button')
+  gearBtn.setAttribute('aria-label', gearBtn.title)
+  gearBtn.tabIndex = 0
+  gearBtn.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      event.stopPropagation()
+      gearBtn.click()
+    }
+  })
   gearBtn.addEventListener('pointerdown', (e) => e.stopPropagation())
   gearBtn.addEventListener('click', (e) => {
     e.stopPropagation()
@@ -91,9 +102,9 @@ export function createOverlay(
 
   const spritesBtn = document.createElement('div')
   spritesBtn.className = 'sprite-overlay-sprites fa-solid fa-eye'
-  spritesBtn.title = '打开立绘 App'
+  spritesBtn.title = t('sprite.overlay.open_app', '打开立绘 App')
   spritesBtn.setAttribute('role', 'button')
-  spritesBtn.setAttribute('aria-label', '打开立绘 App')
+  spritesBtn.setAttribute('aria-label', t('sprite.overlay.open_app', '打开立绘 App'))
   spritesBtn.tabIndex = 0
   spritesBtn.addEventListener('pointerdown', (e) => e.stopPropagation())
   const openSprites = (e: Event) => {
@@ -111,10 +122,18 @@ export function createOverlay(
   // 关闭按钮：只隐藏窗体并记住状态（不关立绘功能），重新打开入口在「立绘」App
   const closeBtn = document.createElement('div')
   closeBtn.className = 'sprite-overlay-close'
-  closeBtn.title = '关闭悬浮窗（立绘功能不受影响，可在手机「立绘」App 重新打开）'
+  closeBtn.title = t('sprite.overlay.close_hint', '关闭悬浮窗（立绘功能不受影响，可在手机「立绘」App 重新打开）')
   closeBtn.textContent = '✕'
   closeBtn.setAttribute('role', 'button')
-  closeBtn.setAttribute('aria-label', '关闭悬浮窗')
+  closeBtn.setAttribute('aria-label', t('sprite.overlay.close', '关闭悬浮窗'))
+  closeBtn.tabIndex = 0
+  closeBtn.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeBtn.click()
+    }
+  })
   closeBtn.addEventListener('pointerdown', (e) => e.stopPropagation())
   closeBtn.addEventListener('click', (e) => {
     e.stopPropagation()

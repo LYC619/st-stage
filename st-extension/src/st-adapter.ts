@@ -19,55 +19,68 @@ import { isSafeLocalUserImagePath } from '../../core/sprite-store'
 import { blobToDataUri } from '../../core/image-compress'
 import { persistSTImage, type ImageSaveOptions } from './image-persistence'
 import { storyArchiveKey, type StoryContext } from '../../core/story-archive'
-import { loadTranslations, setLocale, type Locale, type I18nDict } from '../../core/i18n'
+import { getLocale, isI18nDict, loadTranslations, resetI18n, setLocale, t, type Locale, type I18nDict } from '../../core/i18n'
 
 export const MODULE_NAME = 'sprite_overlay'
 
 /**
  * 加载 i18n 翻译文件（从扩展根目录 /locales/）
  *
- * @param locale - 语言标识
  * @returns 加载并解析的翻译字典，失败时返回空对象
  */
-async function loadLocaleFile(locale: Locale): Promise<I18nDict> {
+async function loadLocaleFile(locale: Locale, bundleUrl: string): Promise<I18nDict> {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    // baseUrl 从 stack 推导扩展根目录（与 index.js stub 逻辑一致）
-    const stack = new Error().stack || ''
-    const match = stack.match(/(https?:\/\/[^\s)]+?)\//)
-    const base = match ? match[1] : '/scripts/extensions/third-party/st-stage'
-
-    const url = `${base}/locales/${locale}.json`
-    const response = await fetch(url, { cache: 'no-store' })
-    if (!response.ok) {
-      console.warn(`[sprite-overlay] 加载 locale ${locale} 失败: ${response.status}`)
-      return {}
+    // 同一个时限覆盖请求和响应体；即使宿主 fetch 忽略 abort，也会结束等待。
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort()
+        reject(new Error('Locale loading timed out'))
+      }, 3000)
+    })
+    const request = async (): Promise<I18nDict> => {
+      const url = new URL(`./locales/${locale}.json`, bundleUrl).href
+      const response = await fetch(url, { cache: 'no-store', signal: controller.signal })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const dict: unknown = await response.json()
+      if (!isI18nDict(dict)) throw new TypeError('Invalid translation dictionary')
+      return dict
     }
-
-    return await response.json() as I18nDict
+    return await Promise.race([request(), deadline])
   } catch (err) {
     console.warn(`[sprite-overlay] 加载 locale ${locale} 异常`, err)
     return {}
+  } finally {
+    clearTimeout(timer)
   }
 }
 
 /**
  * 初始化 i18n 系统
  *
- * 默认加载中文和英文，当前语言从浏览器 navigator.language 推断。
- * 加载失败不阻塞扩展启动，降级到 fallback 文本。
+ * 遵循 ST 的 language 本地偏好，再回退到浏览器语言；宿主切换语言后会重载页面。
+ * 加载失败或超时后继续启动，降级到中文词典或调用处的 fallback 文本。
  */
-export async function initI18n(): Promise<void> {
+export async function initI18n(bundleUrl = import.meta.url): Promise<void> {
+  resetI18n()
   const [zhDict, enDict] = await Promise.all([
-    loadLocaleFile('zh-CN'),
-    loadLocaleFile('en-US'),
+    loadLocaleFile('zh-CN', bundleUrl),
+    loadLocaleFile('en-US', bundleUrl),
   ])
 
   loadTranslations('zh-CN', zhDict)
   loadTranslations('en-US', enDict)
 
-  // 根据浏览器语言选择 locale（默认中文）
-  const browserLang = navigator.language || 'zh-CN'
-  const locale: Locale = browserLang.startsWith('en') ? 'en-US' : 'zh-CN'
+  let savedLanguage: string | null = null
+  try {
+    savedLanguage = localStorage.getItem('language')
+  } catch {
+    // 浏览器限制存储访问时仍可使用浏览器语言，不写入宿主偏好。
+  }
+  const browser = typeof navigator === 'undefined' ? undefined : navigator as Navigator & { userLanguage?: string }
+  const language = String(savedLanguage || browser?.language || browser?.userLanguage || 'en').toLowerCase()
+  const locale: Locale = language.startsWith('en') ? 'en-US' : 'zh-CN'
 
   try {
     setLocale(locale)
@@ -82,7 +95,7 @@ export async function initI18n(): Promise<void> {
     }
   }
 
-  console.log(`[sprite-overlay] i18n 已初始化: ${locale}`)
+  console.log(`[sprite-overlay] i18n 已初始化: ${getLocale()}`)
 }
 
 /** ST 设置只保存用户自定义包;代码内预设通过覆盖层重新合成。 */
@@ -197,7 +210,7 @@ export class STAdapter implements PlatformAdapter {
   async deleteImage(url: string): Promise<void> {
     const path = url.split(/[?#]/, 1)[0].replace(/\\/g, '/')
     if (!isSafeLocalUserImagePath(path)) {
-      throw new Error('只能删除 SillyTavern 用户图片目录中的文件')
+      throw new Error(t('imageActions.delete_scope', '只能删除 SillyTavern 用户图片目录中的文件'))
     }
     const ctx = getContext()
     const response = await fetch('/api/images/delete', {
@@ -206,7 +219,7 @@ export class STAdapter implements PlatformAdapter {
       body: JSON.stringify({ path: path.slice(1) }),
     })
     if (!response.ok && response.status !== 404) {
-      throw new Error(`删除本地图片失败：HTTP ${response.status}`)
+      throw new Error(t('imageActions.delete_failed', '删除本地图片失败：HTTP {{status}}', { status: response.status }))
     }
   }
 

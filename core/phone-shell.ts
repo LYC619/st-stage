@@ -7,6 +7,7 @@
  * 样式类名前缀 so-phone-*，样式在 st-extension/style.css（Web 端 globals.css 引用同一段）。
  */
 
+import { t, getLocale } from './i18n'
 import type { PhoneState } from './types'
 import type { MountedAppContext, PhoneApp, PhoneAppRegistry } from './phone-registry'
 
@@ -52,19 +53,39 @@ export function createPhoneShell(
   /* ---- 悬浮图标 ---- */
   const fab = document.createElement('div')
   fab.className = 'so-phone-fab'
-  fab.title = '打开手机'
+  fab.title = t('phone.open', '打开手机')
   fab.textContent = '📱'
   fab.setAttribute('role', 'button')
-  fab.setAttribute('aria-label', '打开手机面板')
+  fab.setAttribute('aria-label', t('phone.open_panel', '打开手机面板'))
+  fab.tabIndex = 0
+  fab.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    event.stopPropagation()
+    commitState({ ...state, open: true })
+    renderScreen()
+    focusHome()
+  })
 
   /* ---- 手机壳 ---- */
   const shell = document.createElement('div')
   shell.className = 'so-phone-shell'
+  shell.setAttribute('role', 'region')
+  shell.setAttribute('aria-label', HOME_TITLE)
   shell.style.display = 'none'
   const stopShellEvent = (event: Event) => event.stopPropagation()
   for (const type of ['pointerdown', 'touchstart', 'click']) {
     shell.addEventListener(type, stopShellEvent)
   }
+  shell.addEventListener('keydown', (event) => {
+    // Keep native input/selection defaults while isolating ST's global shortcuts.
+    event.stopPropagation()
+    if (event.key === 'Escape' && !event.defaultPrevented && !event.isComposing) {
+      event.preventDefault()
+      if (activeApp) goHome()
+      else collapse()
+    }
+  })
 
   const statusBar = document.createElement('div')
   statusBar.className = 'so-phone-status'
@@ -72,9 +93,9 @@ export function createPhoneShell(
   const backBtn = document.createElement('div')
   backBtn.className = 'so-phone-back'
   backBtn.textContent = '‹'
-  backBtn.title = '返回主屏'
+  backBtn.title = t('phone.back', '返回主屏')
   backBtn.setAttribute('role', 'button')
-  backBtn.setAttribute('aria-label', '返回主屏')
+  backBtn.setAttribute('aria-label', t('phone.back', '返回主屏'))
   backBtn.tabIndex = 0
   backBtn.addEventListener('click', () => goHome())
   backBtn.addEventListener('keydown', (e) => {
@@ -92,13 +113,14 @@ export function createPhoneShell(
   const closeBtn = document.createElement('div')
   closeBtn.className = 'so-phone-close'
   closeBtn.textContent = '✕'
-  closeBtn.title = '收起手机'
+  closeBtn.title = t('phone.collapse', '收起手机')
   closeBtn.setAttribute('role', 'button')
-  closeBtn.setAttribute('aria-label', '收起手机')
+  closeBtn.setAttribute('aria-label', t('phone.collapse', '收起手机'))
   closeBtn.tabIndex = 0
   const collapse = () => {
     leaveApp()
     commitState({ ...state, open: false })
+    if (!hidden) fab.focus({ preventScroll: true })
   }
   closeBtn.addEventListener('click', collapse)
   closeBtn.addEventListener('keydown', (e) => {
@@ -120,9 +142,9 @@ export function createPhoneShell(
   homeBar.className = 'so-phone-homebar'
   const homeBtn = document.createElement('div')
   homeBtn.className = 'so-phone-homebtn'
-  homeBtn.title = '返回主屏'
+  homeBtn.title = t('phone.back', '返回主屏')
   homeBtn.setAttribute('role', 'button')
-  homeBtn.setAttribute('aria-label', '返回主屏')
+  homeBtn.setAttribute('aria-label', t('phone.back', '返回主屏'))
   homeBtn.tabIndex = 0
   homeBar.append(homeBtn)
 
@@ -132,7 +154,7 @@ export function createPhoneShell(
   const clockTimer = setInterval(updateClock, 30_000)
   updateClock()
   function updateClock(): void {
-    clock.textContent = new Date().toLocaleTimeString('zh-CN', {
+    clock.textContent = new Date().toLocaleTimeString(getLocale(), {
       hour: '2-digit',
       minute: '2-digit',
     })
@@ -236,10 +258,7 @@ export function createPhoneShell(
 
   // 圆形 Home 键：只返回主屏（在主屏时无动作）；收起手机走右上角 ✕
   const onHomePress = () => {
-    if (activeApp) {
-      leaveApp()
-      renderScreen()
-    }
+    if (activeApp) goHome()
   }
   homeBtn.addEventListener('click', onHomePress)
   homeBtn.addEventListener('keydown', (e) => {
@@ -273,6 +292,7 @@ export function createPhoneShell(
     // 同一 App 因设置变更整体重挂载时保持滚动位置：拨一个开关整页跳回顶部的体验极差
     const prevScrollAppId = screenScrollAppId
     const prevScrollTop = screen.scrollTop
+    const restore = prevScrollAppId === activeApp?.id ? captureScreenFocus() : null
     screen.innerHTML = ''
     backBtn.style.display = activeApp ? 'flex' : 'none'
     if (activeApp) {
@@ -287,6 +307,9 @@ export function createPhoneShell(
       if (activeApp.fullbleed) {
         container.classList.add('so-phone-app-fullbleed')
       }
+      container.tabIndex = -1
+      container.setAttribute('role', 'group')
+      container.setAttribute('aria-label', activeApp.name)
       screen.append(container)
       try {
         const mounted = deps.createAppContext(activeApp.id, goHome)
@@ -298,11 +321,12 @@ export function createPhoneShell(
         container.replaceChildren()
         const errBox = document.createElement('div')
         errBox.className = 'so-phone-app-error'
-        errBox.textContent = 'App 打开失败，详见控制台'
+        errBox.textContent = t('phone.app_error', 'App 打开失败，详见控制台')
         container.append(errBox)
       }
       if (prevScrollAppId === activeApp.id && prevScrollTop > 0) screen.scrollTop = prevScrollTop
       screenScrollAppId = activeApp.id
+      restore?.()
       return
     }
 
@@ -320,9 +344,10 @@ export function createPhoneShell(
   function renderAppIcon(app: PhoneApp): HTMLElement {
     const cell = document.createElement('div')
     cell.className = 'so-phone-app-icon'
+    cell.dataset.appId = app.id
     cell.setAttribute('role', 'button')
     cell.tabIndex = 0
-    cell.setAttribute('aria-label', `打开 ${app.name}`)
+    cell.setAttribute('aria-label', t('phone.open_app', '打开 {{name}}', { name: app.name }))
 
     const icon = document.createElement('div')
     icon.className = 'so-phone-app-glyph'
@@ -336,6 +361,7 @@ export function createPhoneShell(
     const openThis = () => {
       activeApp = app
       renderScreen()
+      focusApp()
     }
     cell.addEventListener('click', openThis)
     cell.addEventListener('keydown', (e) => {
@@ -348,8 +374,71 @@ export function createPhoneShell(
   }
 
   function goHome(): void {
+    const appId = activeApp?.id
     leaveApp()
     renderScreen()
+    focusHome(appId)
+  }
+
+  function focusHome(appId?: string): void {
+    const icons = Array.from(screen.querySelectorAll<HTMLElement>('.so-phone-app-icon'))
+    ;(icons.find(icon => icon.dataset.appId === appId) ?? icons[0] ?? closeBtn).focus({ preventScroll: true })
+  }
+
+  function focusApp(): void {
+    screen.querySelector<HTMLElement>('.so-phone-app-container')?.focus({ preventScroll: true })
+  }
+
+  // Compare semantic labels, not generated DOM IDs. Never restore into a newly inserted field.
+  function focusIdentity(element: HTMLElement): string {
+    const labelledBy = element.getAttribute('aria-labelledby')?.split(/\s+/)
+      .map(id => document.getElementById(id)?.textContent ?? '').join(' ').trim()
+    const labels = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
+      || element instanceof HTMLSelectElement || element instanceof HTMLButtonElement
+      ? Array.from(element.labels ?? []).map(label => {
+        const copy = label.cloneNode(true) as HTMLElement
+        copy.querySelectorAll('input, select, textarea, button, output').forEach(node => node.remove())
+        return copy.textContent ?? ''
+      }).join(' ')
+      : ''
+    const name = (labelledBy || element.getAttribute('aria-label') || labels
+      || (element.matches('button, [role="button"]') ? element.textContent : '') || '').replace(/\s+/g, ' ').trim()
+    const key = element.dataset.focusKey || element.getAttribute('name') || ''
+    return name || key ? JSON.stringify([name, key, element.getAttribute('role')]) : ''
+  }
+
+  /** A settings update rebuilds the same App; keep the currently edited control usable. */
+  function captureScreenFocus(): (() => void) | null {
+    const active = document.activeElement
+    if (!(active instanceof HTMLElement) || !screen.contains(active)) return null
+    const identity = focusIdentity(active)
+    const path: number[] = []
+    for (let node: Element = active; node !== screen && node.parentElement; node = node.parentElement) {
+      path.unshift(Array.from(node.parentElement.children).indexOf(node))
+    }
+    const selection = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
+      ? [active.selectionStart, active.selectionEnd, active.selectionDirection] as const
+      : null
+    return () => {
+      let replacement: Element | undefined = screen
+      for (const index of path) replacement = replacement?.children[index]
+      if (!(replacement instanceof HTMLElement) || replacement.tagName !== active.tagName
+        || replacement.getAttribute('type') !== active.getAttribute('type')
+        || !identity || focusIdentity(replacement) !== identity
+        || replacement.closest('[hidden], [inert]') || replacement.matches(':disabled')) {
+        focusApp()
+        return
+      }
+      replacement.focus({ preventScroll: true })
+      if (document.activeElement !== replacement) {
+        focusApp()
+        return
+      }
+      if (selection && selection[0] !== null && selection[1] !== null
+        && (replacement instanceof HTMLInputElement || replacement instanceof HTMLTextAreaElement)) {
+        replacement.setSelectionRange(selection[0], selection[1], selection[2] ?? undefined)
+      }
+    }
   }
 
   return {
@@ -370,6 +459,7 @@ export function createPhoneShell(
       activeApp = app
       if (!state.open) commitState({ ...state, open: true })
       renderScreen()
+      focusApp()
     },
     setVisible(visible: boolean) {
       if (destroyed) return

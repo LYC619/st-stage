@@ -8,6 +8,8 @@
  * 变化高亮：读当前楼与向前回溯最近有变量的一楼各一份 stat_data，deep-diff（variable-tree.computeDelta）。
  */
 
+import { t } from '../../../core/i18n'
+
 import type { PhoneApp, PhoneAppContext } from '../../../core/phone-registry'
 import {
   createVariableTreeView,
@@ -53,11 +55,10 @@ function createInstance(container: HTMLElement, ctx: PhoneAppContext): Instance 
     settingsBox.textContent = ''
     settingsBox.append(
       hintField(
-        toggleRow('变量速查悬浮窗', ctx.getSettings().variableHud, (v) => {
+        toggleRow(t('apps.mvu.hud', "变量速查悬浮窗"), ctx.getSettings().variableHud, (v) => {
           ctx.updateSettings({ ...ctx.getSettings(), variableHud: v })
-          renderSettings()
         }),
-        '在聊天界面常驻一个可拖动的小圆钮，点开就能看到全部变量的当前值，省掉「开手机→开 App→翻找」。只读速查，改值仍在下方变量面板里。这个开关是全局的，与「新变量」App 里的是同一个。',
+        t('apps.mvu.hud_help', "在聊天界面常驻一个可拖动的小圆钮，点开就能看到全部变量的当前值，省掉「开手机→开 App→翻找」。只读速查，改值仍在下方变量面板里。这个开关是全局的，与「新变量」App 里的是同一个。"),
       ),
     )
   }
@@ -79,7 +80,7 @@ function createInstance(container: HTMLElement, ctx: PhoneAppContext): Instance 
 
   function sourceLabel(r: ReadResult): string {
     if (r.meta.source === 'mvu') return 'MVU'
-    if (r.meta.source === 'tavern-helper') return '酒馆助手'
+    if (r.meta.source === 'tavern-helper') return t('apps.mvu.helper', "酒馆助手")
     return '—'
   }
 
@@ -91,8 +92,8 @@ function createInstance(container: HTMLElement, ctx: PhoneAppContext): Instance 
         isMvu: true,
         delta: new Map(),
         status: 'empty',
-        statusText: '正在读取…',
-        emptyText: '正在读取楼层变量…',
+        statusText: t('apps.mvu.reading', "正在读取…"),
+        emptyText: t('apps.mvu.reading_variables', "正在读取楼层变量…"),
         canWrite: false,
         addHint: '',
       }
@@ -101,25 +102,25 @@ function createInstance(container: HTMLElement, ctx: PhoneAppContext): Instance 
     let noticeText: string | undefined
     if (r.status === 'unavailable') {
       noticeText =
-        '未检测到 MVU 框架或酒馆助手（Web 模拟器中仅可查看本说明）。在 SillyTavern 内、且安装了 MVU/酒馆助手时才能读写楼层变量。'
+        t('apps.mvu.unavailable', "未检测到 MVU 框架或酒馆助手（Web 模拟器中仅可查看本说明）。在 SillyTavern 内、且安装了 MVU/酒馆助手时才能读写楼层变量。")
     } else if (r.status === 'error') {
-      noticeText = `读取变量出错：${r.error ?? '未知错误'}。可点「刷新」重试。`
+      noticeText = t('apps.mvu.read_error', "读取变量出错：{{error}}。可点「刷新」重试。", { error: r.error ?? t('apps.mvu.unknown_error', '未知错误') })
     }
     return {
       data: r.data,
       isMvu: r.isMvu,
       delta,
       status: r.status,
-      statusText: `来源：${sourceLabel(r)} · ${r.messageId >= 0 ? `楼层 #${r.messageId}` : '无对话'}`,
+      statusText: t('apps.mvu.source', "来源：{{source}} · {{message}}", { source: sourceLabel(r), message: r.messageId >= 0 ? t('apps.mvu.message', '楼层 #{{id}}', { id: r.messageId }) : t('apps.mvu.no_conversation', '无对话') }),
       emptyText:
         r.status === 'empty' && r.meta.waitedMvu
-          ? '当前楼层暂无变量（已等待 MVU 初始化）。有变量的楼层刷新后会显示在这里。'
-          : '当前楼层暂无变量。',
+          ? t('apps.mvu.empty_after_wait', "当前楼层暂无变量（已等待 MVU 初始化）。有变量的楼层刷新后会显示在这里。")
+          : t('apps.mvu.empty', "当前楼层暂无变量。"),
       noticeText,
       canWrite,
       addHint: canWrite
-        ? '正常情况下变量由 MVU 框架按角色卡规则维护，无需手动新增；这里仅用于修补卡片缺失的变量或调试（卡的更新规则里没有的路径，AI 不会主动维护）。路径点号分层，值支持 数字/true/false/null/JSON/文本。'
-        : '当前环境不可写入变量。',
+        ? t('apps.mvu.add_hint', "正常情况下变量由 MVU 框架按角色卡规则维护，无需手动新增；这里仅用于修补卡片缺失的变量或调试（卡的更新规则里没有的路径，AI 不会主动维护）。路径点号分层，值支持 数字/true/false/null/JSON/文本。")
+        : t('apps.mvu.cannot_write', "当前环境不可写入变量。"),
     }
   }
 
@@ -161,7 +162,7 @@ function createInstance(container: HTMLElement, ctx: PhoneAppContext): Instance 
       await op()
     } catch (err) {
       console.error('[st-stage] 变量写入失败', err)
-      window.alert(`写入失败：${err instanceof Error ? err.message : String(err)}`)
+      window.alert(t('apps.mvu.write_error', "写入失败：{{error}}", { error: err instanceof Error ? err.message : String(err) }))
     }
     if (!disposed) await load()
   }

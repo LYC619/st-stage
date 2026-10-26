@@ -11,6 +11,16 @@ export interface I18nDict {
   [key: string]: string | I18nDict
 }
 
+export type I18nParams = Record<string, string | number>
+
+/** JSON 词典只接受嵌套对象和字符串，避免无效数据进入运行时。 */
+export function isI18nDict(value: unknown): value is I18nDict {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== null) return false
+  return Object.values(value).every(entry => typeof entry === 'string' || isI18nDict(entry))
+}
+
 interface I18nState {
   currentLocale: Locale
   translations: Record<Locale, I18nDict>
@@ -31,6 +41,7 @@ const state: I18nState = {
  *
  * @param key - 点分隔的嵌套键，例如 'common.confirm'
  * @param fallback - 键不存在时的回退文本（通常是原字符串）
+ * @param params - 替换 {{name}} 占位符的字符串或数字；缺失参数保留原占位符
  * @returns 翻译后的文本，或回退文本，或键本身
  *
  * @example
@@ -38,30 +49,26 @@ const state: I18nState = {
  * t('missing.key', 'Default') // => 'Default'
  * t('missing.key') // => 'missing.key'
  */
-export function t(key: string, fallback?: string): string {
-  const keys = key.split('.')
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let value: any = state.translations[state.currentLocale]
+export function t(key: string, fallback?: string, params?: I18nParams): string {
+  const text = lookup(state.translations[state.currentLocale], key)
+    ?? lookup(state.translations[state.fallbackLocale], key)
+    ?? fallback
+    ?? key
+  if (!params) return text
+  return text.replace(/\{\{([^{}]+)\}\}/g, (placeholder, name: string) => {
+    if (!Object.prototype.hasOwnProperty.call(params, name)) return placeholder
+    const value = params[name]
+    return typeof value === 'string' || typeof value === 'number' ? String(value) : placeholder
+  })
+}
 
-  for (const k of keys) {
-    value = value?.[k]
-    if (value === undefined) break
+function lookup(dict: I18nDict, key: string): string | undefined {
+  let value: string | I18nDict = dict
+  for (const part of key.split('.')) {
+    if (typeof value !== 'object' || !Object.prototype.hasOwnProperty.call(value, part)) return undefined
+    value = value[part]
   }
-
-  if (typeof value === 'string') return value
-
-  // 尝试 fallback locale
-  if (state.currentLocale !== state.fallbackLocale) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let fallbackValue: any = state.translations[state.fallbackLocale]
-    for (const k of keys) {
-      fallbackValue = fallbackValue?.[k]
-      if (fallbackValue === undefined) break
-    }
-    if (typeof fallbackValue === 'string') return fallbackValue
-  }
-
-  return fallback ?? key
+  return typeof value === 'string' ? value : undefined
 }
 
 /**
@@ -91,7 +98,8 @@ export function getLocale(): Locale {
  * @param locale - 语言标识
  * @param dict - 翻译字典
  */
-export function loadTranslations(locale: Locale, dict: I18nDict): void {
+export function loadTranslations(locale: Locale, dict: unknown): void {
+  if (!isI18nDict(dict)) throw new TypeError(`Invalid translation dictionary for "${locale}"`)
   state.translations[locale] = dict
 }
 

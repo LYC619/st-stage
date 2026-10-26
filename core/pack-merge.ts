@@ -11,6 +11,7 @@ import {
 import type { Sprite, SpriteAddress, SpritePack } from './types'
 import { spriteOutfit } from './types'
 import { normalizeLabels } from './sprite-metadata'
+import { t } from './i18n'
 
 export interface MergeCandidate {
   sourcePackId: string
@@ -126,24 +127,24 @@ function validateChoicesForGroups(
   for (const choice of choices) {
     const group = conflictByKey.get(choice.key)
     if (!group) {
-      throw new PackMergeChoiceError(`未知冲突选择 key：${choice.key}`)
+      throw new PackMergeChoiceError(t('galleryErrors.merge_unknown', '未知冲突选择 key：{{key}}', { key: choice.key }))
     }
     if (choiceByKey.has(choice.key)) {
-      throw new PackMergeChoiceError(`地址「${group.address.tag}」存在重复选择`)
+      throw new PackMergeChoiceError(t('galleryErrors.merge_duplicate', '地址「{{tag}}」存在重复选择', { tag: group.address.tag }))
     }
     if (
       !Number.isSafeInteger(choice.candidateIndex) ||
       choice.candidateIndex < 0 ||
       choice.candidateIndex >= group.candidates.length
     ) {
-      throw new PackMergeChoiceError(`地址「${group.address.tag}」的候选序号无效`)
+      throw new PackMergeChoiceError(t('galleryErrors.merge_invalid', '地址「{{tag}}」的候选序号无效', { tag: group.address.tag }))
     }
     choiceByKey.set(choice.key, choice.candidateIndex)
   }
 
   for (const group of conflicts) {
     if (!choiceByKey.has(group.key)) {
-      throw new PackMergeChoiceError(`地址「${group.address.tag}」的冲突图片尚未选择`)
+      throw new PackMergeChoiceError(t('galleryErrors.merge_missing', '地址「{{tag}}」的冲突图片尚未选择', { tag: group.address.tag }))
     }
   }
   return choiceByKey

@@ -1,6 +1,7 @@
 /** Renderer 设置 App：控制协议注入、模式启停和渲染动态效果。 */
 
 import type { AppHost, PhoneApp } from '../../../core/phone-registry'
+import { t } from '../../../core/i18n'
 import { appButton, el, foldSection, hintField, numberRow, toggleRow } from './widgets'
 import { buildRendererPrompt } from './renderer/prompt'
 import { normalizeRendererSettings, RENDERER_APP_ID, type RendererSettings } from './renderer/config'
@@ -107,7 +108,7 @@ function modeGuide(): HTMLElement {
 export function rendererApp(deps: RendererAppDeps): PhoneApp {
   return {
     id: RENDERER_APP_ID,
-    name: '渲染',
+    name: t('apps.renderer.name', '渲染'),
     icon: '🎬',
     order: 7,
     setup(host) {
