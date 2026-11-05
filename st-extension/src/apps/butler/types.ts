@@ -160,4 +160,6 @@ export interface ButlerDataV2 {
   activeTransaction: ButlerTransaction | null
   pendingExperiment: ButlerExperiment | null
   history: ButlerHistoryRecord[]
+  /** 持续保留迁移时发现的恢复记录损坏提示，直到用户确认。 */
+  recoveryWarnings?: Array<'performance' | 'extensions'>
 }

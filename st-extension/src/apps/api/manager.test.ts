@@ -24,6 +24,16 @@ afterEach(() => {
 })
 
 describe('API manager channel boundary', () => {
+  it('sizes the modal explicitly for ST mobile layout and returns focus on Escape', () => {
+    const opener = document.createElement('button'); document.body.append(opener); opener.focus()
+    const manager = openManager({ profiles: [], nativeCharacterProfiles: { 'avatar:a.png': 'native-one' } })
+    const backdrop = document.querySelector<HTMLElement>('.so-manager-backdrop')!
+    expect(backdrop.style.height).toBe(`${window.innerHeight}px`)
+    expect(backdrop.style.width).toBe(`${window.innerWidth}px`)
+    expect(document.activeElement).toBe(document.querySelector('.so-manager-close'))
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(manager.isOpen()).toBe(false); expect(document.activeElement).toBe(opener)
+  })
   it('new profiles show only the common chat channels', () => {
     const manager = openManager({ profiles: [] })
     const add = Array.from(document.querySelectorAll<HTMLElement>('[role="button"]'))

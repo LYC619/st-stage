@@ -129,6 +129,16 @@ function validV2(): ButlerDataV2 {
 }
 
 describe('migrateButlerData', () => {
+  it('损坏的恢复槽留下持久提示，其他字段损坏不丢弃有效恢复事务', () => {
+    const input = { ...validV2(), activeTransaction: { broken: true } }
+    const migrated = migrateButlerData(input)
+    expect(migrated.recoveryWarnings).toEqual(['performance'])
+    expect(migrateButlerData(migrated).recoveryWarnings).toEqual(['performance'])
+    expect(migrated.performanceModeOn).toBe(false)
+    expect(migrateButlerData({ ...validV2(), history: 'broken' }).activeTransaction).toEqual(transaction())
+    expect(migrateButlerData({ ...validV2(), pendingExperiment: { broken: true } }).recoveryWarnings).toEqual(['extensions'])
+  })
+
   it('旧 snapshot/perfOn 不伪造空事务，迁移后要求重新体检', () => {
     const data = migrateButlerData(
       { snapshot: legacySnapshot, perfOn: true },

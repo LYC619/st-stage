@@ -48,6 +48,33 @@ function bridge(overrides: Partial<CloudExportBridge> = {}): CloudExportBridge {
 }
 
 describe('cloud export selected asset loader', () => {
+  it('aborts sibling reads on failure and suppresses late progress even if a reader ignores cancellation', async () => {
+    let siblingSignal: AbortSignal | undefined
+    let release!: (value: string) => void
+    const progress: number[] = []
+    const done = loadSelectedExportFiles({ catalog, selection: selected(), concurrency: 2,
+      bridge: bridge({
+        readCharacterCard: async () => { throw new Error('card failed') },
+        readChat: (_character, _chat, signal) => { siblingSignal = signal; return new Promise(resolve => { release = resolve }) },
+      }), onProgress: p => progress.push(p.completed),
+    }).catch(error => error)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const cancelled = siblingSignal?.aborted
+    release('{}\n')
+    expect(await done).toBeInstanceOf(Error)
+    expect(cancelled).toBe(true)
+    expect(progress).toEqual([])
+  })
+
+  it('rejects a cancelled export without scheduling any reads', async () => {
+    const controller = new AbortController(); controller.abort()
+    const reads: string[] = []
+    await expect(loadSelectedExportFiles({ catalog, selection: selected(), signal: controller.signal,
+      bridge: bridge({ readCharacterCard: async () => { reads.push('card'); return new ArrayBuffer(0) } }),
+    })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(reads).toEqual([])
+  })
+
   it('reads only selected assets and emits standard default-user paths', async () => {
     const read: string[] = []
     const files = await loadSelectedExportFiles({

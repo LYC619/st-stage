@@ -59,6 +59,52 @@ beforeEach(() => {
   document.body.innerHTML = ''
 })
 
+describe('role overview navigation', () => {
+  it('ignores a stale asynchronous role read and leaves an open App mounted', async () => {
+    const registry = new PhoneAppRegistry(), mount = vi.fn()
+    registry.register(makeApp('gallery', { mount }))
+    const settings = createDefaultSettings()
+    let name = 'Alice'
+    const pending: Array<(summary: { title: string; subtitle: string; rows: Array<{ id: string; appId: string; label: string; value: string }> }) => void> = []
+    const summary = (title: string) => ({ title, subtitle: 'Chat', rows: [{ id: 'gallery', appId: 'gallery', label: 'Packs', value: title }] })
+    const shell = createPhoneShell({ x: 0, y: 0, open: false }, {
+      registry,
+      getHomeSummary: () => summary(name),
+      readHomeSummary: () => new Promise(resolve => pending.push(resolve)),
+      onStateChange: () => {},
+      createAppContext: (appId, goHome) => createPhoneAppContext({
+        appId, goHome, getSettings: () => settings, updateSettings: () => {}, saveSettingsOnly: () => {},
+        getCharacterName: () => name, onMessageReceived: () => () => {}, onCharacterChanged: () => () => {},
+        injectPrompt: () => {}, toast: () => {}, openModal: () => {},
+      }),
+    })
+    shell.setState({ x: 0, y: 0, open: true })
+    name = 'Bob'; shell.refreshHome()
+    pending[1](summary('Bob current')); await Promise.resolve()
+    pending[0](summary('Alice stale')); await Promise.resolve()
+    expect(document.querySelector('.so-phone-role-title')?.textContent).toBe('Bob current')
+    const details = document.querySelector<HTMLDetailsElement>('.so-phone-role')!
+    expect(details.previousElementSibling?.className).toBe('so-phone-home-grid')
+    expect(details.open).toBe(false)
+    details.open = true
+    details.dispatchEvent(new Event('toggle'))
+    expect(localStorage.getItem('baigong:phone:role-expanded')).toBe('true')
+    const action = document.querySelector<HTMLButtonElement>('[data-role-action="gallery"]')!
+    action.focus(); shell.refreshHome()
+    expect((document.activeElement as HTMLElement).dataset.roleAction).toBe('gallery')
+    document.querySelector<HTMLButtonElement>('[data-role-action="gallery"]')!.click()
+    expect(mount).toHaveBeenCalledTimes(1)
+    shell.refreshHome()
+    pending[2](summary('Late Bob')); await Promise.resolve()
+    expect(mount).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('.so-phone-role')).toBeNull()
+    document.querySelector<HTMLButtonElement>('.so-phone-homebtn')!.click()
+    expect(document.querySelector<HTMLDetailsElement>('.so-phone-role')!.open).toBe(true)
+    localStorage.removeItem('baigong:phone:role-expanded')
+    shell.destroy()
+  })
+})
+
 describe('手机壳交互', () => {
   it('keeps fullbleed Apps keyboard accessible and clears their layout when leaving', () => {
     const app = { ...makeApp('wechat'), fullbleed: true }

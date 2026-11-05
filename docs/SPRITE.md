@@ -102,6 +102,8 @@ stpack2:我的老婆|微笑=https://i.ibb.co/aa/smile.png|鸣人/居家服/害�
 
 对方复制这行字 → 图库管理右上角 **导入 ▾** → 粘贴到「从分享字符串导入」文本框 → 点 **导入**，整个包就到手了（图片从图床加载，不占对方存储）。三级地址（人名/服装）会一并还原；所有图共享同一人名/服装时会自动写回包信息。
 
+如果你指定了封面，且那张图片有可分享的远程地址，新分享串会一并保存封面。对方导入后封面与图片顺序都保持原样；只有本地地址的封面无法随分享串传递，请改用 JSON。旧分享串仍可导入。
+
 **制作步骤（最省事：imgbb 自动直传）：**
 
 1. 到 [api.imgbb.com](https://api.imgbb.com/) 免费申请 API Key，填进「🗂 图库」App，勾选「上传立绘时自动直传 imgbb」
@@ -176,4 +178,4 @@ stpack2:我的老婆|微笑=https://i.ibb.co/aa/smile.png|鸣人/居家服/害�
 - 立绘包：`{ id, name, author?, description?, roleName?（人名）, outfit?（服装）, coverTag?, sprites[] }`
 - 三级地址：`图名` / `人名/图名` / `人名/服装/图名`；人名取 `sprite.group || pack.roleName`，服装取 `sprite.outfit || pack.outfit`
 - 立绘包文件：`sprite-pack@2`（含 roleName/outfit/group/outfit 字段），导入兼容 `sprite-pack@1`
-- 分享串：`stpack2:包名|@author=…|地址=完整URL|…`（每图独立 URL、三级地址）；继续兼容导入 `stpack1`
+- 分享串：`stpack2:包名|@author=…|@cover=编码后的封面标签|地址=完整URL|…`（每图独立 URL、三级地址；可选封面必须对应包中可分享的图片）；继续兼容无封面旧码和 `stpack1`

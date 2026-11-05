@@ -13,6 +13,7 @@
 
 import { t } from '../../core/i18n'
 import { manageDialogFocus } from '../../core/dialog-focus'
+import { fixedViewport, observeFixedViewport } from '../../core/fixed-viewport'
 import type { PluginSettings, Sprite, SpritePack } from '../../core/types'
 import {
   DEFAULT_PROMPT_NOTE_PLACEMENT,
@@ -165,14 +166,15 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
   const popoverListeners = new Set<() => void>()
   let popoverOpener: HTMLElement | null = null
 
-  /** 遮罩尺寸用 JS 按 innerWidth/Height 写死 px（与手机壳同一套定位路径）：
-      移动端浏览器对 fixed+四边锚点/视口单位的解释五花八门，内联 px 最稳 */
+  /** 使用可视视口尺寸，补偿宿主变换根节点在滚动时对 fixed 定位的影响。 */
+  let stopViewport: (() => void) | null = null
   function applyBackdropSize(): void {
     if (!backdrop) return
-    backdrop.style.left = '0'
-    backdrop.style.top = '0'
-    backdrop.style.width = `${window.innerWidth}px`
-    backdrop.style.height = `${window.innerHeight}px`
+    const viewport = fixedViewport()
+    backdrop.style.left = `${viewport.left}px`
+    backdrop.style.top = `${viewport.top}px`
+    backdrop.style.width = `${viewport.width}px`
+    backdrop.style.height = `${viewport.height}px`
   }
 
   function open(source: ManagerSource = 'overlay'): void {
@@ -197,7 +199,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     selectedPackIds.clear()
     backdrop = el('div', 'so-manager-backdrop')
     // 点空白不再关闭（用户实测：误触退出后要重新逐层进入，受挫感强）；关闭走 ✕ 按钮或 Esc
-    window.addEventListener('resize', applyBackdropSize)
+    stopViewport = observeFixedViewport(applyBackdropSize)
     applyBackdropSize()
 
     const dialog = el('div', 'so-manager')
@@ -279,7 +281,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     const focus = dialogFocus
     dialogFocus = null
     focus?.dispose()
-    window.removeEventListener('resize', applyBackdropSize)
+    stopViewport?.(); stopViewport = null
     backdrop.remove()
     backdrop = null
     deps.onClosed?.(openedFrom)
@@ -831,7 +833,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
         enableBtn.setAttribute('aria-haspopup', 'dialog')
         enableBtn.setAttribute('aria-expanded', String(enableListOpen))
         enableBtn.setAttribute('aria-controls', nextManagerId())
-        enableBtn.setAttribute('aria-label', t('sprite.manager.enable_for', '为「{{name}}」勾选启用立绘包', { name: characterName }))
+        enableBtn.setAttribute('aria-label', `${enableBtn.textContent}：${t('sprite.manager.enable_for', '为「{{name}}」勾选启用立绘包', { name: characterName })}`)
         actions.append(enableBtn)
       }
       actions.append(
@@ -1508,7 +1510,7 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     stack.dataset.managerFocus = `role:${roleKey}`
     stack.dataset.roleKey = roleKey
     stack.setAttribute('aria-expanded', 'false')
-    stack.setAttribute('aria-label', t("sprite.manager.content.pack.expand_role", "展开「{{p0}}」的 {{p1}} 个图包", { p0: role, p1: packs.length }))
+    stack.title = t("sprite.manager.content.pack.expand_role", "展开「{{p0}}」的 {{p1}} 个图包", { p0: role, p1: packs.length })
     for (let index = 2; index >= 1; index -= 1) {
       const layer = el('span', `so-role-stack-layer so-role-stack-layer-${index}`)
       layer.setAttribute('aria-hidden', 'true')
@@ -1554,8 +1556,8 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
     card.dataset.managerFocus = `pack:${pack.id}`
     card.tabIndex = 0
     card.setAttribute('role', 'button')
-    card.setAttribute('aria-label', t("sprite.manager.content.pack.open", "打开立绘包「{{p0}}」", { p0: pack.name }))
-    card.title = t("sprite.manager.content.pack.open_hint", "点击进入管理")
+    // Derive the accessible name from the visible card, including status and metadata.
+    card.title = t("sprite.manager.content.pack.open", "打开立绘包「{{p0}}」", { p0: pack.name })
 
     // 封面区：大图 + 角标（使用中 / 预设）
     const coverBox = el('div', 'so-card-cover')
@@ -1642,7 +1644,6 @@ export function createSpriteManager(deps: ManagerDeps): ManagerController {
       card.title = preset
         ? t("sprite.manager.content.batch.preset_select_hint", "点击勾选资源操作；预设包不可删除，可拖拽排序")
         : t("sprite.manager.content.batch.select_hint", "点击勾选；可拖拽排序")
-      card.setAttribute('aria-label', t("sprite.manager.content.batch.select_pack", "选择立绘包「{{p0}}」", { p0: pack.name }))
       const toggleSelect = () => {
         if (selectedPackIds.has(pack.id)) selectedPackIds.delete(pack.id)
         else selectedPackIds.add(pack.id)

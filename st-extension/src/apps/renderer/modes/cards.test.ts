@@ -26,6 +26,31 @@ beforeEach(() => {
 })
 
 describe('mountCardsMode', () => {
+  it('previews branch text, remembers a choice across remount and protects an edited draft', () => {
+    const root = document.createElement('div'); document.body.append(root)
+    const value = block(); value.cards[0].branch = 'Possible scene\n<img src=x onerror=alert(1)>'
+    let saved: string | null = null
+    const memory = { read: () => saved, write: (id: string | null) => { saved = id; return { ok: true as const } }, isCurrent: () => true }
+    const insertDraft = vi.fn(() => ({ ok: false as const, error: 'Existing draft' }))
+    const deps = { getSettings: defaultRendererSettings, insertDraft, choiceMemory: memory }
+    const first = mountCardsMode(root, value, deps)
+    root.querySelector<HTMLElement>('.st-render-card-branch summary')!.click()
+    expect(root.querySelector('img')).toBeNull()
+    expect(insertDraft).not.toHaveBeenCalled()
+    root.querySelector<HTMLButtonElement>('.st-render-card-remember')!.click()
+    expect(saved).toBe('advance'); first.destroy()
+    mountCardsMode(root, value, deps)
+    expect(root.querySelector('.st-render-card-saved')?.getAttribute('data-card-id')).toBe('advance')
+    selectButtons(root)[1].click(); expect(saved).toBe('advance')
+    expect(root.querySelector('.st-render-card-saved')?.getAttribute('data-card-id')).toBe('advance')
+    root.querySelector<HTMLButtonElement>('.st-render-cards-reset')!.click(); expect(saved).toBeNull()
+  })
+  it('does not insert a stale message action after the conversation changed', () => {
+    const root = document.createElement('div'); document.body.append(root)
+    const insertDraft = vi.fn(() => ({ ok: true as const }))
+    mountCardsMode(root, block(), { getSettings: defaultRendererSettings, insertDraft, choiceMemory: { read: () => null, write: () => ({ ok: false, error: 'Stale' }), isCurrent: () => false } })
+    selectButtons(root)[0].click(); expect(insertDraft).not.toHaveBeenCalled()
+  })
   it('以文本节点渲染 2-8 张卡片并明确按钮只填入输入框', () => {
     const root = document.createElement('div')
     document.body.append(root)

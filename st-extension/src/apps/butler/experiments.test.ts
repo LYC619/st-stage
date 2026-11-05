@@ -181,6 +181,28 @@ describe('emergency backup', () => {
 })
 
 describe('official extension batch', () => {
+  it.each([false, true])('单一候选判断 %s 后停止空转，仍可恢复最初清单', async improved => {
+    const h = harness()
+    const list = await h.deps.readExtensions()
+    if (list.status !== 'ready') throw new Error('inventory')
+    const prepared = prepareExtensionExperiment('binaryIsolation', ['third-party/a'], list, 'baseline', h.deps)
+    const started = await startExtensionExperiment(prepared, h.deps)
+    const decision = recordExperimentComparison(resumeExtensionExperiment(started.experiment), 'comparison')
+    vi.mocked(h.deps.setExtensionEnabled).mockClear()
+    vi.mocked(h.deps.reloadPage).mockClear()
+    const end = await advanceBinaryIsolation(decision, improved, h.deps)
+    const repeated = await advanceBinaryIsolation(end, improved, h.deps)
+    expect(end.status).toBe('awaitingDecision')
+    expect(repeated.currentRound).toBe(decision.currentRound)
+    expect(end.notes).toContain('恢复')
+    expect(h.deps.setExtensionEnabled).not.toHaveBeenCalled()
+    expect(h.deps.reloadPage).not.toHaveBeenCalled()
+    expect(h.storage.size).toBe(1)
+    await finishExtensionExperiment(end, 'restore', h.deps)
+    expect(h.getDisabled()).toEqual([])
+    expect(h.storage.size).toBe(0)
+  })
+
   it('reloads exactly once after every change succeeds', async () => {
     const h = harness()
     const result = await applyDesiredDisabledExtensions(['third-party/a', 'third-party/b'], h.deps)

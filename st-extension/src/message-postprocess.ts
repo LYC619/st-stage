@@ -245,6 +245,7 @@ export function mountMessagePostprocess(deps: PostprocessDeps): () => void {
     ctx.eventTypes?.CHARACTER_MESSAGE_RENDERED,
     ctx.eventTypes?.USER_MESSAGE_RENDERED,
     ctx.eventTypes?.MESSAGE_UPDATED,
+    ctx.eventTypes?.MESSAGE_SWIPED,
   ].filter((e): e is string => typeof e === 'string' && e.length > 0))]
 
   let active = true

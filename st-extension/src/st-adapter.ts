@@ -194,7 +194,7 @@ export class STAdapter implements PlatformAdapter {
     const ctx = getContext()
     const headers = ctx.getRequestHeaders
     return persistSTImage(dataUri, {
-      fetch,
+      fetch: globalThis.fetch.bind(globalThis),
       getRequestHeaders: headers ? () => headers.call(ctx) : undefined,
     }, options)
   }

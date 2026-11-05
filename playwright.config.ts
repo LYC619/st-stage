@@ -8,11 +8,15 @@ import { defineConfig, devices } from '@playwright/test'
  */
 export default defineConfig({
   testDir: './e2e',
+  // Playwright cleans this directory before a run; keep isolated ST data/candidates outside it.
+  outputDir: './test-results/playwright',
   timeout: 30_000,
   fullyParallel: true,
   reporter: [['list']],
   use: {
     baseURL: 'http://localhost:3101',
+    // Optional installed Chromium channel, e.g. msedge, when Playwright's download is absent.
+    channel: process.env.PLAYWRIGHT_CHANNEL,
   },
   webServer: {
     command: 'node node_modules/next/dist/bin/next dev -p 3101',

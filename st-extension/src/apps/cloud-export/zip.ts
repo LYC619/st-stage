@@ -17,6 +17,36 @@ export const REVOKE_DELAY_MS = 60_000
 /** 仅供测试注入，避免为了验证「不同步回收」去伪造全局定时器（会卡死 JSZip 的异步分块）。 */
 export interface DownloadSchedulers {
   scheduleRevoke?: (revoke: () => void, delayMs: number) => void
+  signal?: AbortSignal
+}
+
+/** 使用可暂停的公共流接口，取消时释放已收集的字节并停止压缩后续块。 */
+function compress(zip: JSZip, onProgress: (progress: ZipProgress) => void, signal?: AbortSignal): Promise<Blob> {
+  signal?.throwIfAborted()
+  return new Promise((resolve, reject) => {
+    const stream = zip.generateInternalStream({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } })
+    let chunks: Uint8Array[] = []
+    let settled = false
+    const cleanup = () => { signal?.removeEventListener('abort', onAbort); chunks = [] }
+    const fail = (error: unknown) => {
+      if (settled) return
+      settled = true; stream.pause(); cleanup(); reject(error)
+    }
+    const onAbort = () => fail(signal?.reason)
+    signal?.addEventListener('abort', onAbort, { once: true })
+    stream.on('data', (chunk, metadata) => {
+      if (settled) return
+      chunks.push(chunk)
+      try { onProgress({ percent: metadata.percent, currentFile: metadata.currentFile ?? undefined }) }
+      catch (error) { fail(error) }
+    }).on('error', fail).on('end', () => {
+      if (settled) return
+      settled = true
+      try { resolve(new Blob(chunks, { type: 'application/zip' })) }
+      catch (error) { reject(error) }
+      cleanup()
+    }).resume()
+  })
 }
 
 /** 在 JSZip 可以覆盖条目前预检全部路径，不自动重命名资源。 */
@@ -43,16 +73,15 @@ export async function downloadSTBackup(
   onProgress: (progress: ZipProgress) => void,
   schedulers: DownloadSchedulers = {},
 ): Promise<void> {
+  schedulers.signal?.throwIfAborted()
   if (!files.length) throw new Error(t('cloudExport.no_assets', '没有选择任何可导出的资产'))
   assertUniqueArchivePaths(files)
   const zip = new JSZip()
   for (const file of files) {
     zip.file(file.path, file.data, file.updatedAt ? { date: new Date(file.updatedAt) } : undefined)
   }
-  const blob = await zip.generateAsync(
-    { type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } },
-    (metadata) => onProgress({ percent: metadata.percent }),
-  )
+  const blob = await compress(zip, onProgress, schedulers.signal)
+  schedulers.signal?.throwIfAborted()
   const scheduleRevoke = schedulers.scheduleRevoke
     ?? ((revoke, delayMs) => { setTimeout(revoke, delayMs) })
   const url = URL.createObjectURL(blob)

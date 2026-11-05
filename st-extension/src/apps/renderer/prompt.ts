@@ -6,7 +6,8 @@ const GAL_PROMPT = `【Galgame 模式】
 <STStageRender>{"version":1,"mode":"gal","title":"雨夜重逢","scene":"车站月台","beats":[{"speaker":"小雪","text":"你终于来了。","portrait":"/user/images/xiaoxue.png"},{"speaker":"我","text":"抱歉，让你久等了。"}]}</STStageRender>`
 
 const CARDS_PROMPT = `【SLG 卡片选择模式】
-适合给出 2-8 个明确选择。每张卡必须有唯一 id、title、description、action，consequence 可省略；action 是填入输入框但不自动发送的文字。
+适合给出 2-8 个明确选择。每张卡必须有唯一 id、title、description、action，consequence 和 branch 可省略；action 是填入输入框但不自动发送的文字（最多 2000 字符）。branch 是该选择可能发展的剧情片段（最多 4000 字符），用于预览，不能写成已经发生的主剧情；无需为没有必要的选择扩写分支。
+用户可预览各分支并记住选择；仅点击填入输入框会写入 action，用户确认发送后再推进主聊天。整个 JSON 仍不能超过 64 KB，不因预览自动调用模型。
 示例：
 <STStageRender>{"version":1,"mode":"cards","title":"下一步行动","cards":[{"id":"advance","title":"继续前进","description":"沿山路调查灯光","consequence":"可能遭遇守卫","action":"我选择沿山路继续前进。"},{"id":"rest","title":"原地休整","description":"恢复体力并整理物资","action":"我选择原地休整。"}]}</STStageRender>`
 

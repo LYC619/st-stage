@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { applyProfile, fetchModels, readConnection } from './bridge'
+import { applyProfile, fetchModels, getApiHostContext, readConnection } from './bridge'
 import type { ApiProfile } from './core'
 
 const profile = (over: Partial<ApiProfile> = {}): ApiProfile => ({ version: 2, id: 'p', name: '自定义', mainApi: 'openai', source: 'custom', url: 'https://example.com/v1', key: 'secret', secretId: 'sid', secretMode: 'stored', model: 'model-a', settings: { custom_include_body: 'top_k: 20' }, ...over })
@@ -18,6 +18,11 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); document.body.textContent = ''; Reflect.deleteProperty(window, 'SillyTavern') })
 
 describe('SillyTavern bridge', () => {
+  it('preserves the native bypass status instead of claiming a validated connection', async () => {
+    installST()
+    Object.assign(getApiHostContext()!, { onlineStatus: 'Status check bypassed' })
+    await expect(readConnection({ withSecret: false })).resolves.toMatchObject({ online: true, statusText: 'Status check bypassed' })
+  })
   it('imports URL, model and readable key through /api/secrets/find', async () => {
     installST(); vi.stubGlobal('fetch', vi.fn(async () => response(true, { value: 'readable-key' })))
     await expect(readConnection()).resolves.toMatchObject({ mainApi: 'openai', source: 'custom', url: 'https://old/v1', model: 'old', key: 'readable-key', secretMode: 'read' })

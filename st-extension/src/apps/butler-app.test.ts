@@ -195,6 +195,21 @@ beforeEach(() => {
 })
 
 describe('管家 2.0 主屏', () => {
+  it('持续显示损坏恢复记录的提示，重开后仍在，用户确认后才清除', async () => {
+    const first = mountButler({}, { ...createEmptyButlerData(), activeTransaction: { broken: true } })
+    await vi.waitFor(() => expect(first.container.textContent).toContain('基础检查完成'))
+    expect(first.container.textContent).toContain('无法恢复上次性能设置')
+    expect(first.service.writePerformance).not.toHaveBeenCalled()
+    first.app.unmount?.()
+    const reopened = mountButler({}, first.getData())
+    expect(reopened.container.textContent).toContain('无法恢复上次性能设置')
+    button(reopened.container, '我已检查，清除此提示').click()
+    expect(reopened.container.textContent).not.toContain('无法恢复上次性能设置')
+    expect(reopened.getData().recoveryWarnings).toBeUndefined()
+    expect(reopened.service.writePerformance).not.toHaveBeenCalled()
+    reopened.app.unmount?.()
+  })
+
   it('发现旧版空事务时清理它，并仍显示明确的应用建议入口', async () => {
     const mounted = mountButler({}, {
       version: 2,

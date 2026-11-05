@@ -34,6 +34,9 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      - name: Release tooling regression tests
+        run: pnpm test:release
+
       - name: Next.js build
         run: pnpm build
 
@@ -63,7 +66,7 @@ jobs:
         run: pnpm build:all
 
       - name: Verify runtime and locale parity
-        run: node scripts/verify-runtime-parity.mjs --root . --distribution st-distribution
+        run: node scripts/verify-runtime-parity.mjs --root . --distribution st-distribution --preview public
 
       - name: Report extension bundle size
         run: |

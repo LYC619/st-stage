@@ -4,6 +4,7 @@
 
 export function resolveWeChatAssetUrl(subpath: string): string {
   if (!subpath) return ''
+  if (subpath.startsWith('/user/images/')) return subpath
   if (/^(?:https?:|data:)/.test(subpath)) return subpath
 
   let clean = subpath.replace(/^\/+/, '')

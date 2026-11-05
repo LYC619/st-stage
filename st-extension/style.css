@@ -2130,6 +2130,12 @@
   border-color: #79c9a4;
   box-shadow: inset 0 0 0 1px #79c9a4;
 }
+#chat .st-render-card-saved { border-color: #a7c9ef; }
+#chat .st-render-card-remember[aria-pressed=true] { background: #254965; }
+#chat .st-render-cards-note { margin: 0 0 12px; line-height: 1.5; font-size: 13px; }
+#chat .st-render-card-branch { min-width: 0; font-size: 14px; line-height: 1.6; }
+#chat .st-render-card-branch summary { min-height: 44px; display: list-item; cursor: pointer; padding-block: 10px; box-sizing: border-box; }
+#chat .st-render-card-branch p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0; }
 
 #chat .st-render-card-title,
 #chat .st-render-card-description,
@@ -2155,9 +2161,14 @@
   line-height: 1.4;
 }
 
-#chat .st-render-card-select {
+#chat .st-render-card-select,
+#chat .st-render-card-remember,
+#chat .st-render-cards-reset {
   width: 100%;
-  min-height: 36px;
+  min-height: 44px;
+  padding: 8px;
+  box-sizing: border-box;
+  white-space: normal;
   border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 6px;
   background: #30373d;
@@ -2165,10 +2176,15 @@
   cursor: pointer;
 }
 
-#chat .st-render-card-select:focus-visible {
+#chat .st-render-card-select:focus-visible,
+#chat .st-render-card-remember:focus-visible,
+#chat .st-render-cards-reset:focus-visible,
+#chat .st-render-card-branch summary:focus-visible {
   outline: 2px solid #79c9a4;
   outline-offset: 2px;
 }
+#chat .st-render-cards-reset { width: auto; margin-top: 12px; }
+#chat .st-render-cards-reset:disabled { opacity: 0.6; cursor: default; }
 
 #chat .st-render-cards-status {
   min-height: 20px;

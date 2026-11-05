@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
-import { chromium } from '@playwright/test'
+import { chromium, expect } from '@playwright/test'
 
 const args = process.argv.slice(2)
 const option = name => args.includes(name) ? args[args.indexOf(name) + 1] : undefined
@@ -27,7 +27,8 @@ async function ready(page) {
   await page.waitForFunction(async () => (await import('/script.js')).settingsReady)
   await page.waitForSelector('.so-phone-fab', { state: 'attached' })
 }
-async function focused(locator) { assert.ok(await locator.evaluate(node => node === document.activeElement), `Expected focus on ${await locator.getAttribute('data-export-focus')}; actual=${await locator.evaluate(() => document.activeElement?.outerHTML.slice(0, 240))}`) }
+// Category loads replace controls asynchronously; wait for the current control's focus.
+async function focused(locator) { await expect(locator).toBeFocused() }
 async function bounded(locator) {
   await locator.scrollIntoViewIfNeeded()
   const r = await locator.evaluate(node => { const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, right: r.right, bottom: r.bottom, w: r.width, h: r.height, sw: node.scrollWidth, cw: node.clientWidth, vw: innerWidth, vh: innerHeight } })
@@ -120,6 +121,36 @@ try {
       entry.regex = await bounded(regexControl.locator('..')); await shot('selection')
       const exportButton = app.getByRole('button', { name: d.export, exact: true })
       entry.exportButton = await bounded(exportButton)
+      const cancelButton = control('cancel')
+      await expect(cancelButton).toBeHidden()
+      // Hold one real asset read. Cancelling must release the UI, suppress the
+      // delayed download and preserve selection for the next real ZIP export.
+      let releaseRead
+      const heldRead = new Promise(resolve => { releaseRead = resolve })
+      let reads = 0, cancelledDownloads = 0
+      const countDownload = () => { cancelledDownloads++ }
+      page.on('download', countDownload)
+      await page.route('**/api/characters/export', async route => {
+        reads++; await heldRead
+        await route.continue().catch(() => {}) // Aborted fetch may already be gone.
+      })
+      try {
+        await exportButton.press('Enter')
+        await expect.poll(() => reads).toBe(1)
+        await expect(cancelButton).toBeVisible()
+        entry.cancelButton = await bounded(cancelButton)
+        await cancelButton.press('Enter')
+        await expect(cancelButton).toBeHidden(); await focused(exportButton)
+        await expect(page.getByText(d.cancelled, { exact: true })).toBeVisible()
+        releaseRead()
+        await expect(exportButton).toHaveAttribute('aria-disabled', 'false')
+        assert.equal(cancelledDownloads, 0)
+        assert.equal(await regexControl.isChecked(), true)
+        entry.cancelReadAndRetry = true
+      } finally {
+        releaseRead(); await page.unroute('**/api/characters/export')
+        page.off('download', countDownload)
+      }
       const downloading = page.waitForEvent('download')
       await exportButton.press('Enter')
       const download = await downloading

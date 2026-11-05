@@ -8,6 +8,25 @@ afterEach(() => {
 })
 
 describe('cloud export ST bridge', () => {
+  it.each([
+    [{ name: 'Missing avatar' }],
+    [{ name: 'A', avatar: 'same.png' }, { name: 'B', avatar: 'same.png' }],
+  ].map(characters => ({ characters })))('rejects ambiguous character identities instead of overwriting selections', async ({ characters }) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(characters))))
+    await expect(createSTCloudExportBridge().listCharacters()).rejects.toThrow('唯一')
+  })
+
+  it('passes cancellation to all asset HTTP reads', async () => {
+    const signals: Array<AbortSignal | null | undefined> = []
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => { signals.push(init?.signal); return new Response('[]') }))
+    const bridge = createSTCloudExportBridge(), controller = new AbortController()
+    const character = { id: 'A.png', name: 'A', avatar: 'A.png', chats: [] }
+    await bridge.readCharacterCard(character, controller.signal)
+    await bridge.readChat(character, { id: 'chat', name: 'chat', path: 'chat.jsonl' }, controller.signal)
+    await bridge.readWorldbook({ id: 'World', name: 'World', fileName: 'World.json' }, controller.signal)
+    expect(signals).toEqual([controller.signal, controller.signal, controller.signal])
+  })
+
   it('loads lightweight lists first and defers expensive asset content', async () => {
     const calls: Array<{ url: string; method: string; body?: string }> = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

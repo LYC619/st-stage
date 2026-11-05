@@ -94,7 +94,7 @@ vi.mock('./sprite-manager', () => ({
 }))
 vi.mock('../../core/phone-shell', () => ({
   createPhoneShell: () => ({
-    setState: vi.fn(), openApp: mocks.phoneOpenApp, setVisible: vi.fn(), destroy: mocks.phoneDestroy,
+    setState: vi.fn(), openApp: mocks.phoneOpenApp, setVisible: vi.fn(), refreshHome: vi.fn(), destroy: mocks.phoneDestroy,
   }),
 }))
 vi.mock('./apps', () => ({

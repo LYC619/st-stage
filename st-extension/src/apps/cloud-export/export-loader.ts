@@ -19,37 +19,48 @@ interface LoadSelectedExportFilesOptions {
   catalog: ExportSnapshot
   selection: ExportSelection
   concurrency?: number
+  signal?: AbortSignal
   onProgress?: (progress: ExportLoadProgress) => void
 }
 
 async function runTasks(
   tasks: ExportTask[],
   concurrency: number,
+  controller: AbortController,
   onProgress?: (progress: ExportLoadProgress) => void,
 ): Promise<void> {
+  const { signal } = controller
+  signal.throwIfAborted()
   if (!tasks.length) return
   let nextIndex = 0
   let completed = 0
-  let failed: unknown
   const worker = async () => {
-    while (failed === undefined) {
+    while (!signal.aborted) {
       const index = nextIndex
       nextIndex += 1
       if (index >= tasks.length) return
       const task = tasks[index]
       try {
         await task.run()
+        if (signal.aborted) return
+        completed += 1
+        onProgress?.({ completed, total: tasks.length, current: task.label })
       } catch (error) {
-        failed = new Error(t('cloudExport.asset_read_failed', '读取{{label}}失败：{{error}}', { label: task.label, error: error instanceof Error ? error.message : String(error) }))
+        if (!signal.aborted) controller.abort(new Error(t('cloudExport.asset_read_failed', '读取{{label}}失败：{{error}}', { label: task.label, error: error instanceof Error ? error.message : String(error) })))
         return
       }
-      completed += 1
-      onProgress?.({ completed, total: tasks.length, current: task.label })
     }
   }
-  const workerCount = Math.min(Math.max(1, Math.floor(concurrency)), tasks.length)
-  await Promise.all(Array.from({ length: workerCount }, () => worker()))
-  if (failed !== undefined) throw failed
+  const workerCount = Math.min(Number.isFinite(concurrency) ? Math.max(1, Math.floor(concurrency)) : 4, tasks.length)
+  let onAbort!: () => void
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(signal.reason)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+  try {
+    await Promise.race([Promise.all(Array.from({ length: workerCount }, () => worker())), cancelled])
+    signal.throwIfAborted()
+  } finally { signal.removeEventListener('abort', onAbort) }
 }
 
 export async function loadSelectedExportFiles({
@@ -57,8 +68,13 @@ export async function loadSelectedExportFiles({
   catalog,
   selection,
   concurrency = 4,
+  signal,
   onProgress,
 }: LoadSelectedExportFilesOptions): Promise<ExportFile[]> {
+  signal?.throwIfAborted()
+  const controller = new AbortController()
+  const onAbort = () => controller.abort(signal?.reason)
+  signal?.addEventListener('abort', onAbort, { once: true })
   const cardData = new Map<string, ArrayBuffer>()
   const chatData = new Map<string, string>()
   const worldbookContent = new Map<string, unknown>()
@@ -68,14 +84,14 @@ export async function loadSelectedExportFiles({
     if (selection.characterIds.has(character.id)) {
       tasks.push({
         label: t('cloudExport.asset_character', '角色卡 {{name}}', { name: character.name }),
-        run: async () => { cardData.set(character.id, await bridge.readCharacterCard(character)) },
+        run: async () => { cardData.set(character.id, await bridge.readCharacterCard(character, controller.signal)) },
       })
     }
     for (const chat of character.chats) {
       if (!selection.chatIds.has(chat.id)) continue
       tasks.push({
         label: t('cloudExport.asset_chat', '聊天 {{character}}/{{chat}}', { character: character.name, chat: chat.name }),
-        run: async () => { chatData.set(chat.id, await bridge.readChat(character, chat)) },
+        run: async () => { chatData.set(chat.id, await bridge.readChat(character, chat, controller.signal)) },
       })
     }
   }
@@ -83,11 +99,12 @@ export async function loadSelectedExportFiles({
     if (!selection.worldbookIds.has(worldbook.id)) continue
     tasks.push({
       label: t('cloudExport.asset_worldbook', '世界书 {{name}}', { name: worldbook.name }),
-      run: async () => { worldbookContent.set(worldbook.id, await bridge.readWorldbook(worldbook)) },
+      run: async () => { worldbookContent.set(worldbook.id, await bridge.readWorldbook(worldbook, controller.signal)) },
     })
   }
 
-  await runTasks(tasks, concurrency, onProgress)
+  try { await runTasks(tasks, concurrency, controller, onProgress) }
+  finally { signal?.removeEventListener('abort', onAbort) }
 
   const hydratedWorldbooks: ExportWorldbook[] = catalog.worldbooks.map((worldbook) => (
     worldbookContent.has(worldbook.id)

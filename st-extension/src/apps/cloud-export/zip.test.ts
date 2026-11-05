@@ -13,6 +13,15 @@ afterEach(() => {
 const immediateRevoke = { scheduleRevoke: (revoke: () => void) => { revoke() } }
 
 describe('cloud export zip', () => {
+  it('cancels during compression without creating a blob download', async () => {
+    const create = vi.spyOn(URL, 'createObjectURL')
+    const controller = new AbortController()
+    await expect(downloadSTBackup([{ path: 'large.json', data: 'hello'.repeat(20000) }], 'cancelled.zip', () => controller.abort(), {
+      ...immediateRevoke, signal: controller.signal,
+    })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(create).not.toHaveBeenCalled()
+  })
+
   it('reports progress and downloads a zip blob', async () => {
     const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test')
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})

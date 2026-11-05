@@ -322,6 +322,17 @@ export async function advanceBinaryIsolation(
   const candidates = symptomImproved
     ? source.candidateExtensions.filter((name) => tested.has(name))
     : source.candidateExtensions.filter((name) => !tested.has(name))
+  if (candidates.length === 0 || source.candidateExtensions.length <= 1) {
+    const stopped: ButlerExperiment = {
+      ...structuredClone(source),
+      candidateExtensions: candidates,
+      notes: candidates.length === 0
+        ? '没有可继续排查的候选，已停止二分。可以恢复最初扩展清单，或保留当前状态。'
+        : `已缩小到 ${candidates[0]}，不再重复同一轮。可以恢复最初扩展清单，或保留当前状态。`,
+    }
+    await deps.persistExperiment(stopped)
+    return stopped
+  }
   const next: ButlerExperiment = {
     ...structuredClone(source),
     status: 'prepared',

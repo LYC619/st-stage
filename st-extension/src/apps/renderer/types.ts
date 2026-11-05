@@ -23,6 +23,8 @@ export interface ChoiceCard {
   description: string
   consequence?: string
   action: string
+  /** Optional possible scene; preview only, never automatically sent or written into the main story. */
+  branch?: string
 }
 
 export interface CardsRenderBlock {

@@ -48,17 +48,21 @@ export function messageToRagText(
   switch (type) {
     case 'text':
       return content
-    case 'emoji':
-      if (sender === 'player' && playerEmojis[content]) {
-        return `玩家发送了一个表情包：id=${content}，名称=${playerEmojis[content].name}，含义=${playerEmojis[content].description}`
+    case 'emoji': {
+      const fromPlayer = msg.emojiSource ? msg.emojiSource === 'player' : sender === 'player'
+      const item = msg.asset ?? (fromPlayer ? playerEmojis : sisterEmojis)[content]
+      if (sender === 'player' && item) {
+        return `玩家发送了一个表情包：id=${content}，名称=${item.name}，含义=${item.description}`
       }
-      if (sender === 'sister' && sisterEmojis[content]) {
-        return `${sisterEmojis[content].name} ${sisterEmojis[content].description}`
+      if (sender === 'sister' && item) {
+        return `${item.name} ${item.description}`
       }
       return content
+    }
     case 'red_packet':
-      return `红包 金额 ${content}`
+      return `红包 礼物 ${content}${msg.note ? ` 留言 ${msg.note}` : ''}`
     case 'image':
+      if (msg.asset) return `${msg.asset.name} ${msg.asset.description}`
       if (sender === 'sister' && sisterPhotos[content]) {
         return `${sisterPhotos[content].name} ${sisterPhotos[content].description}`
       }
@@ -139,10 +143,10 @@ export function buildRagPrompt(
   const ragMessages = getRagMessages(query, allMessages, today, playerEmojis, sisterEmojis, sisterPhotos, maxCount)
   if (ragMessages.length === 0) return ''
 
-  let text = '\n以下是从过去聊天记录中检索出的可能相关内容。\n这些内容仅供参考，不一定与当前问题有关。\n不要直接提及“历史记录”“RAG”或“检索”。\n请结合妹妹当前的人设和当天上下文自然回复。\n\n相关历史：\n'
+  let text = '\n以下是从过去聊天记录中检索出的可能相关内容。\n这些内容仅供参考，不一定与当前问题有关。\n不要直接提及“历史记录”“RAG”或“检索”。\n请结合当前角色的人设和当天上下文自然回复。\n\n相关历史：\n'
 
   for (const msg of ragMessages) {
-    const senderName = msg.sender === 'player' ? '玩家' : '妹妹'
+    const senderName = msg.sender === 'player' ? '玩家' : '角色'
     const content = messageToRagText(msg, playerEmojis, sisterEmojis, sisterPhotos)
     text += `[第${msg.time.day}天][${senderName}] ${content}\n`
   }

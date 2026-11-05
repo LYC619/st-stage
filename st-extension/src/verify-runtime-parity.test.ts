@@ -16,16 +16,20 @@ describe('verify-runtime-parity', { timeout: 15000 }, () => {
     for (const directory of Object.values(roots)) {
       mkdirSync(directory)
       mkdirSync(path.join(directory, 'locales'))
+      mkdirSync(path.join(directory, 'assets/wechat/ui'), { recursive: true })
+      writeFileSync(path.join(directory, 'assets/wechat/ui/fixture.png'), 'synthetic image')
       for (const file of [...runtimeFiles, 'README.md']) writeFileSync(path.join(directory, file), 'synthetic-' + file)
     }
     writeFileSync(path.join(roots.root, 'README.md'), 'development README is intentionally different')
+    mkdirSync(path.join(roots.root, 'st-extension'))
+    writeFileSync(path.join(roots.root, 'st-extension/distribution-readme.md'), 'synthetic-README.md')
   })
 
   afterEach(() => { rmSync(temp, { recursive: true, force: true }) })
 
   function run(withRelease = true) {
     return spawnSync(process.execPath, [
-      'scripts/verify-runtime-parity.mjs', '--root', roots.root,
+      'scripts/verify-runtime-parity.mjs', '--verbose', '--root', roots.root,
       '--distribution', roots.distribution, ...(withRelease ? ['--release', roots.release] : []),
     ], { cwd: process.cwd(), encoding: 'utf8' })
   }

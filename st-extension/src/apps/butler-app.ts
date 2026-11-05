@@ -466,6 +466,23 @@ function mountButler(
     }
     container.append(header)
 
+    if (data.recoveryWarnings?.length) {
+      const warning = el('div', 'so-app-section so-butler-pending')
+      warning.setAttribute('role', 'note')
+      if (data.recoveryWarnings.includes('performance')) {
+        text(warning, '无法恢复上次性能设置：保存的恢复记录已损坏。当前酒馆设置未被改动，请对照备份或酒馆设置手动核对。', 'so-butler-alert')
+      }
+      if (data.recoveryWarnings.includes('extensions')) {
+        text(warning, '上次扩展排查的恢复记录已损坏。请打开“扩展指南”检查独立恢复备份，或手动核对酒馆的扩展启用状态。', 'so-butler-alert')
+      }
+      warning.append(appButton('我已检查，清除此提示', () => {
+        const next = { ...data }; delete next.recoveryWarnings
+        data = persistData(next)
+        render()
+      }))
+      container.append(warning)
+    }
+
     const guide = el('div', 'so-app-section so-butler-guide')
     const guideTitle = el('div', 'so-app-title')
     guideTitle.textContent = '使用步骤'

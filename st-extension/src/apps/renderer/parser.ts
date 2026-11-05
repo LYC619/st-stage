@@ -60,7 +60,7 @@ function getRequiredString(value: RecordValue, key: string, label: string, maxLe
   const field = value[key]
   if (typeof field !== 'string' || field.trim().length === 0) return `${label}.${key} 必须是非空字符串`
   if (field.length > maxLength) return `${label}.${key} 超过最大长度 ${maxLength}`
-  if (/<\/?[a-z][^>]*>/i.test(field)) return `${label}.${key} 不接受 HTML`
+  if (/<\/?[a-z][a-z0-9:-]*(?=[\s/>])[^>]*>/i.test(field)) return `${label}.${key} 不接受 HTML`
   return null
 }
 
@@ -70,7 +70,7 @@ function getOptionalString(value: RecordValue, key: string, label: string, maxLe
   const field = value[key]
   if (typeof field !== 'string') return `${label}.${key} 必须是字符串`
   if (field.length > maxLength) return `${label}.${key} 超过最大长度 ${maxLength}`
-  if (/<\/?[a-z][^>]*>/i.test(field)) return `${label}.${key} 不接受 HTML`
+  if (/<\/?[a-z][a-z0-9:-]*(?=[\s/>])[^>]*>/i.test(field)) return `${label}.${key} 不接受 HTML`
   return null
 }
 
@@ -198,7 +198,7 @@ function validateGal(value: RecordValue): GalRenderBlock | string {
 function validateCard(value: unknown, index: number): ChoiceCard | string {
   if (!isRecord(value)) return `cards.cards[${index}] 必须是对象`
   const label = `cards.cards[${index}]`
-  const keyError = checkKeys(value, ['id', 'title', 'description', 'consequence', 'action'], label)
+  const keyError = checkKeys(value, ['id', 'title', 'description', 'consequence', 'action', 'branch'], label)
   if (keyError) return keyError
   const errors = [
     getRequiredString(value, 'id', label, 100),
@@ -206,6 +206,7 @@ function validateCard(value: unknown, index: number): ChoiceCard | string {
     getRequiredString(value, 'description', label, 1000),
     getOptionalString(value, 'consequence', label, 1000),
     getRequiredString(value, 'action', label, 2000),
+    getOptionalString(value, 'branch', label, 4000),
   ]
   const error = firstError(...errors)
   if (error) return error
@@ -215,6 +216,7 @@ function validateCard(value: unknown, index: number): ChoiceCard | string {
     description: value.description as string,
     ...(value.consequence === undefined ? {} : { consequence: value.consequence as string }),
     action: value.action as string,
+    ...(value.branch === undefined ? {} : { branch: value.branch as string }),
   }
 }
 

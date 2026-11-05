@@ -1,6 +1,8 @@
 import { el, appButton, textRow, textareaRow, foldSection, selectRow } from '../widgets'
 import { COMMON_CHAT_SOURCES, type ApiAppData, type ApiProfile, type MainApi, type ProfileDraft, emptyDraft, findActiveProfile, findUrlDuplicate, getSource, moveProfile, normalizeUrl, profileSummary, upsertProfile } from './core'
 import { fetchModels, readConnection } from './bridge'
+import { manageDialogFocus } from '../../../../core/dialog-focus'
+import { fixedViewport, observeFixedViewport } from '../../../../core/fixed-viewport'
 
 export interface ApiManagerDeps { getData(): ApiAppData; setData(next: ApiAppData): void; onClosed?: () => void }
 export interface ApiManager { open(): void; close(): void; isOpen(): boolean }
@@ -13,19 +15,35 @@ const MAIN_API_OPTIONS = [
 
 export function createApiManager(deps: ApiManagerDeps): ApiManager {
   let backdrop: HTMLElement | null = null; let body: HTMLElement | null = null; let draft: ProfileDraft | null = null; let editingId: string | null = null; let notice = ''
+  let focus: ReturnType<typeof manageDialogFocus> | null = null
+  let stopViewport: (() => void) | null = null
+  function applyBackdropSize() {
+    if (!backdrop) return
+    const viewport = fixedViewport()
+    backdrop.style.left = `${viewport.left}px`; backdrop.style.top = `${viewport.top}px`
+    backdrop.style.width = `${viewport.width}px`; backdrop.style.height = `${viewport.height}px`
+  }
   const section = (title: string) => { const box = el('div', 'so-section'); const heading = el('div', 'so-section-title'); heading.textContent = title; box.append(heading); return box }
   const desc = (box: HTMLElement, text: string) => { const line = el('div', 'so-app-desc'); line.textContent = text; box.append(line) }
-  const save = (data: ApiAppData) => { deps.setData(data); render() }
+  const save = (data: ApiAppData) => { deps.setData({ ...deps.getData(), ...data }); render() }
 
   function open(): void {
     if (backdrop) return render()
-    backdrop = el('div', 'so-manager-backdrop'); backdrop.style.inset = '0'
-    const dialog = el('div', 'so-manager'); dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-label', 'API 连接档案管理')
+    backdrop = el('div', 'so-manager-backdrop')
+    stopViewport = observeFixedViewport(applyBackdropSize)
+    applyBackdropSize()
+    const dialog = el('div', 'so-manager'); dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-label', 'API 连接档案管理')
     const header = el('div', 'so-manager-header'); const title = el('div', 'so-manager-title'); title.textContent = 'API 连接档案管理'
     const closeButton = el('button', 'menu_button so-manager-close'); closeButton.textContent = '关闭'; closeButton.addEventListener('click', close)
-    header.append(title, closeButton); body = el('div', 'so-manager-body'); dialog.append(header, body); backdrop.append(dialog); document.body.append(backdrop); render()
+    header.append(title, closeButton); body = el('div', 'so-manager-body'); dialog.append(header, body); backdrop.append(dialog); document.body.append(backdrop)
+    focus = manageDialogFocus(dialog, { onEscape: close, layer: backdrop }); render(); focus.focusInitial()
   }
-  function close(): void { backdrop?.remove(); backdrop = null; body = null; draft = null; editingId = null; deps.onClosed?.() }
+  function close(): void {
+    if (!backdrop) return
+    const closingFocus = focus; focus = null; closingFocus?.dispose()
+    stopViewport?.(); stopViewport = null
+    backdrop.remove(); backdrop = null; body = null; draft = null; editingId = null; deps.onClosed?.(); closingFocus?.restoreFocus()
+  }
 
   function edit(profile: ApiProfile): void {
     const { id: _id, version: _version, ...value } = profile; draft = { ...value, settings: { ...value.settings } }; editingId = profile.id; notice = ''; render()
@@ -50,6 +68,7 @@ export function createApiManager(deps: ApiManagerDeps): ApiManager {
       const name = el('span', 'vm-key'); name.textContent = profile.name
       const meta = el('span', 'vm-val'); meta.textContent = profileSummary(profile).join(' · ')
       main.append(name, meta); main.addEventListener('click', () => edit(profile))
+      main.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); edit(profile) } })
       const move = (label: string, delta: -1 | 1) => { const button = el('button', 'vm-del stapi-move'); button.textContent = label; button.addEventListener('click', () => save({ profiles: moveProfile(deps.getData().profiles, profile.id, delta) })); return button }
       const remove = el('button', 'vm-del'); remove.textContent = '删除'; remove.addEventListener('click', () => { if (window.confirm(`删除连接档案「${profile.name}」？`)) save({ profiles: deps.getData().profiles.filter((item) => item.id !== profile.id) }) })
       row.append(main, move('↑', -1), move('↓', 1), remove); box.append(row)

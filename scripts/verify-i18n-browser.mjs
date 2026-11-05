@@ -114,6 +114,10 @@ async function restoreOverlay(page, language) {
   await page.locator('.so-phone-app-icon[data-app-id="sprites"]').click()
   const display = page.locator('.so-phone-shell details').filter({ has: page.getByText(strings.display, { exact: true }) })
   if (!await display.getAttribute('open').then(value => value !== null)) await display.locator('summary').click()
+  // Another acceptance suite may leave inline-only mode in this disposable
+  // user. Resetting position should not change that preference implicitly.
+  const location = page.getByLabel(strings.location, { exact: true })
+  if (await location.inputValue() === 'inline') await location.selectOption('overlay')
   await page.getByText(strings.reset_overlay, { exact: true }).click()
   assert.equal(await page.locator('#sprite-overlay-root').isVisible(), true)
   await page.locator('.so-phone-close').click()

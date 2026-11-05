@@ -1,3 +1,5 @@
+import { isStableCharacterKey } from '../../../../core/character-identity'
+
 export const API_APP_ID = 'api'
 export const API_PROFILE_VERSION = 2
 
@@ -72,7 +74,7 @@ export interface ApiProfile {
   settings: Record<string, string | number | boolean>
 }
 
-export interface ApiAppData { profiles: ApiProfile[] }
+export interface ApiAppData { profiles: ApiProfile[]; nativeCharacterProfiles?: Record<string, string> }
 export type ProfileDraft = Omit<ApiProfile, 'id' | 'version'>
 
 export function emptyDraft(): ProfileDraft {
@@ -85,8 +87,12 @@ export function newProfileId(): string { return Date.now().toString(36) + Math.r
 
 export function sanitizeAppData(raw: unknown): ApiAppData {
   const profiles: ApiProfile[] = []
+  const refs = (raw as ApiAppData | undefined)?.nativeCharacterProfiles
+  const nativeCharacterProfiles = refs && typeof refs === 'object' && !Array.isArray(refs)
+    ? Object.fromEntries(Object.entries(refs).filter(([key, id]) => isStableCharacterKey(key) && typeof id === 'string' && id.length > 0 && id.length <= 256)) : {}
+  const result: ApiAppData = { profiles, ...(Object.keys(nativeCharacterProfiles).length ? { nativeCharacterProfiles } : {}) }
   const list = (raw as { profiles?: unknown } | undefined)?.profiles
-  if (!Array.isArray(list)) return { profiles }
+  if (!Array.isArray(list)) return result
   for (const item of list) {
     if (!item || typeof item !== 'object') continue
     const p = item as Record<string, unknown>
@@ -110,7 +116,7 @@ export function sanitizeAppData(raw: unknown): ApiAppData {
       model: str(p.model).trim(), settings,
     })
   }
-  return { profiles }
+  return result
 }
 
 export function validateDraft(draft: Pick<ProfileDraft, 'name' | 'mainApi' | 'source' | 'url'>): string | null {

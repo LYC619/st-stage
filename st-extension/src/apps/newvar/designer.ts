@@ -11,6 +11,7 @@
  */
 
 import { manageDialogFocus } from '../../../../core/dialog-focus'
+import { fixedViewport, observeFixedViewport } from '../../../../core/fixed-viewport'
 import { captureVariableFocus, variableButton } from './ui-focus'
 import { t } from '../../../../core/i18n'
 
@@ -185,12 +186,14 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
   /** 本次渲染后把编辑表单滚进视野（窄屏堆叠布局下点列表要能看到表单） */
   let scrollToEditor = false
 
+  let stopViewport: (() => void) | null = null
   function applyBackdropSize(): void {
     if (!backdrop) return
-    backdrop.style.left = '0'
-    backdrop.style.top = '0'
-    backdrop.style.width = `${window.innerWidth}px`
-    backdrop.style.height = `${window.innerHeight}px`
+    const viewport = fixedViewport()
+    backdrop.style.left = `${viewport.left}px`
+    backdrop.style.top = `${viewport.top}px`
+    backdrop.style.width = `${viewport.width}px`
+    backdrop.style.height = `${viewport.height}px`
   }
 
   function open(): void {
@@ -201,7 +204,7 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
     formDraft = null
     editingIndex = null
     backdrop = el('div', 'so-manager-backdrop')
-    window.addEventListener('resize', applyBackdropSize)
+    stopViewport = observeFixedViewport(applyBackdropSize)
     applyBackdropSize()
 
     const dialog = el('div', 'so-manager')
@@ -242,7 +245,7 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
     const closingFocus = focus
     focus = null
     closingFocus?.dispose()
-    window.removeEventListener('resize', applyBackdropSize)
+    stopViewport?.(); stopViewport = null
     backdrop.remove()
     backdrop = null
     body = null

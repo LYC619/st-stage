@@ -45,8 +45,10 @@ import { mountBattleMode } from './apps/renderer/modes/battle'
 import { createComposerBridge } from './apps/renderer/composer'
 import { createApiManager } from './apps/api/manager'
 import { API_APP_ID, sanitizeAppData } from './apps/api/core'
+import { CARD_CHOICES_APP_ID, createChoicePersistence } from './apps/renderer/choices'
 import { beginExtensionLifecycle, runWhenDomReady } from './lifecycle'
 import { initI18n } from './st-adapter'
+import { buildRoleSummary, type ExternalVariableStatus } from './role-summary'
 
 declare global {
   interface Window {
@@ -115,6 +117,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     const nextHidesUpdates = nextNewvar.enabled && nextNewvar.hideUpdateBlocks
     settings = next
     adapter.saveSettings(settings)
+    phone.refreshHome()
     if (previousHidesUpdates !== nextHidesUpdates) {
       reprocessAllMessages(settings)
     }
@@ -235,15 +238,28 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     })
   }
 
+  function homeSummary(external: ExternalVariableStatus = 'checking') {
+    const ctx = window.SillyTavern?.getContext()
+    const hasCharacter = ctx?.characterId !== undefined && ctx.characterId !== null && String(ctx.characterId) !== ''
+    return buildRoleSummary(settings, hasCharacter ? adapter.getCurrentCharacterName() : '', hasCharacter ? adapter.getStoryContext().title : '', external)
+  }
   const phone = createPhoneShell(settings.phone, {
     registry,
     createAppContext,
+    getHomeSummary: () => homeSummary(),
+    readHomeSummary: async () => {
+      const result = await readVariables({ type: 'message', message_id: 'latest' }, getLastMessageId())
+      const status: ExternalVariableStatus = result.status === 'ready'
+        ? result.meta.source === 'mvu' ? 'mvu' : 'helper' : result.status
+      return homeSummary(status)
+    },
     onStateChange: (state) => {
       // 手机壳位置/展开态与立绘无关，走仅保存路径
       saveSettingsOnly({ ...settings, phone: state })
     },
   })
   lifecycle.track(() => phone.destroy())
+  lifecycle.track(subscribeVarEvents(() => phone.refreshHome()))
   openSpritesApp = () => phone.openApp('sprites')
 
   /** 收起手机壳并持久化（打开全屏弹窗前用，避免手机挡在弹窗上） */
@@ -265,9 +281,14 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   const getRendererSettings = () => normalizeRendererSettings(settings.apps[RENDERER_APP_ID])
   const composerBridge = createComposerBridge()
   lifecycle.track(() => composerBridge.dispose())
+  const choicePersistence = createChoicePersistence({
+    getData: () => settings.apps[CARD_CHOICES_APP_ID],
+    setData: data => saveSettingsOnly({ ...settings, apps: { ...settings.apps, [CARD_CHOICES_APP_ID]: data } }),
+  })
   const rendererRuntime = createRendererRuntime({
     getSettings: getRendererSettings,
     factories: { gal: mountGalMode, cards: mountCardsMode, battle: mountBattleMode },
+    getBlockDeps: (root, parsed, index) => ({ choiceMemory: choicePersistence.forBlock(root, parsed, index) }),
     modeDeps: {
       getSettings: getRendererSettings,
       resolvePortrait: (address) => {
@@ -532,6 +553,8 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   // （渲染事件逐条触发时窗口守卫已限流，这里兜底渲染事件缺失的旧版 ST / 迟到的 DOM）
   let cancelPendingNavigation = () => {}
   const handleChatNavigation = () => {
+    composerBridge.dispose()
+    phone.refreshHome()
     appCharacterHub.emit(null)
     refresh()
     manager.refreshIfOpen()

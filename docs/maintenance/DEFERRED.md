@@ -2,6 +2,51 @@
 
 Known follow-ups and pending review repairs are recorded here. Older sections retain their original non-blocking decisions; the review queue below is **not** a declaration that its risks are acceptable for a new release. Remove or resolve entries only with an actual fixing commit and fresh verification.
 
+## 2026-11-05 WeChat Experience — Uncommitted
+
+Candidate `0.9.0+202611052119` replaces host-following WeChat with independent contact conversations, editable prompts, one-response character state, gallery-backed emoji and custom gifts. The old wallet/day/MVU-following/two-stage behavior is retired from the new WeChat workflow; historical acceptance records remain historical. See [G handoff](history/2026-11-05-wechat-experience.md).
+
+Final affected tests: 68/68. Real isolated ST: four layouts, 40 workflow checks, 24 scoped axe scans with zero detected violations and 8 incomplete-rule records retained. The desktop/portrait evidence belongs to 2114; the only 2119 change adds keyboard focus to the message scroll region and is accepted by the full landscape path. Real AI, physical devices, OS IME and full screen-reader/AA acceptance remain environment-specific. Groups and Moments are future features; only conversation/member identities are prepared. The original 18771 test data is preserved and the candidate is served there. No commit, push, install-repository synchronization or publication occurred; prior entries stay for traceability.
+
+## 2026-11-05 Character / Play / Mobile — Uncommitted
+
+Local candidate `0.9.0+202611051309` adds stable-role WeChat overrides/inheritance and scene templates, native Connection Manager integration with role references, and optional card branch previews with bounded persistent choices. Old API data, default profiles and action-only cards remain compatible. Previewing a branch does not create a native chat fork or call another model. See [product overlap decisions](PRODUCT-DIFFERENTIATION.md) and [F evidence](history/2026-11-05-character-play-mobile.md).
+
+The mobile API manager's zero height and fixed-layer drift under ST's transformed, scrolled root are repaired. Phone/API/gallery/variable-designer layers follow the visible viewport; 136 scoped layout assertions pass. New flows pass three desktop/mobile locale scenarios; identified real MVU passes 8/8, gallery 4/4. The full unit suite is 110 files / 1424 tests. Across this batch, 47 axe scans find zero violations, with 81 incomplete rule records retained for manual review. Reports keep their actual `1226` or `1309` artifact identity.
+
+Still outside automated closure: real AI requests with a dedicated connection, physical devices/OS IME, full readers/WAVE/WCAG AA, other MVU versions and uncontrolled production races. Image hosting/catalog cleanup, full-account restore, broader translation, semantic-version choice and publication remain separate. Native status bypass explicitly does **not** prove successful AI connectivity. No fixing commit, installation synchronization, push or release has occurred; historical entries below stay for traceability.
+
+## 2026-11-04 Acceptance Hardening — Uncommitted
+
+Build `0.9.0+202611042329` extends the previous local candidate. These are additional local fixes/evidence, not fixing commits; historical queue entries below remain for traceability. See [hardening evidence](history/2026-11-04-acceptance-hardening.md).
+
+- Identified real MVU acceptance is now **8/8**. Two new cases use actual `Mvu.getMvuData` snapshots and parser/writes: delayed older reads cannot replace newer same-chat state, and external ownership acquired during a pending impact request preserves 82/35 across reload. Snapshot delivery, notifications and AI responses are explicitly controlled. Other MVU versions and uncontrolled production timing remain unverified; the old statement that no real provider was exercised is superseded for this scope.
+- WeChat labels, theme-dependent input contrast, status/packet text and gallery visible-name mismatches are repaired. Packet/photo dialogs now enter/trap/restore focus; emoji selection/Escape returns focus, and a chat switch closes old surfaces. Contact-emoji selection retains its asset family, persisted image and prompt/RAG meaning, including IDs shared with player emojis.
+- **38 scoped axe scans** on desktop English and simulated 320px Chinese report zero detected violations. There are **74 incomplete rule records** across screens (including repetition), covering gradients, symbol-only names, empty inputs and dynamically created popup references. They are retained for human review, not marked passed. Real readers, WAVE/full WCAG AA, physical devices/OS IME and real external AI remain open.
+
+The new candidate supersedes `2230`; no actual install-repository synchronization, commit, push or release has occurred. Later feature work listed below remains separate from this accepted hardening scope.
+
+## 2026-11-04 Release Readiness Repairs — Uncommitted
+
+The following queue entries now have local fixes in build `0.9.0+202611042230`. They remain below because no fixing commit or release has been created. See [release-readiness evidence](history/2026-11-04-release-readiness.md) and the [unified acceptance checklist](UNIFIED-ACCEPTANCE.md).
+
+- Renderer snapshot restoration keeps original nodes/listeners; real-ST keyboard image retry after disabling Renderer passes. The historical numeric example `1<2 and 3>4` already parsed on the baseline; the actually reproduced false positive was `x<y+3 且 z>4`, now repaired and checked in the shipped UI. Existing late host DOM changes remain protected.
+- Cloud Export rejects missing/duplicate avatar identities, prioritizes exact worldbook matches and refuses ambiguous case-insensitive fallback. Reads and ZIP compression support cancellation; failures stop sibling reads, unmount cancels, and retry retains selection. ST 1.18.0's `world_info_settings.world_info.globalSelect` was confirmed against actual host source. Four real-ST layouts passed cancel/retry and ZIP contents; a fresh synthetic user passed five per-type restore checks.
+- Butler recovers valid slots independently and persists warnings for malformed recovery records. Acknowledgement clears only warnings, verified across reload without changing host performance/disabled-extension state. The retained binary-isolation helper stops at zero/one candidate and preserves recovery; no new experiment UI was enabled.
+- `stpack2` now carries a valid shareable cover tag; actual UI copy/import preserves the cover and original sprite ordering. Old share strings remain supported. This does not address image hosting/catalog cleanup.
+- Local release synchronization now has preview, verified backup, hash checks and exception rollback. Twelve Node release-tool tests pass in temporary repositories; the real install checkout was only previewed. Git commit/push publication, unattended release infrastructure and semantic-version selection remain separate decisions. Forced termination still requires recovery from the backup receipt.
+- Identified real MVU acceptance is now 6/6, adding Variables App edit/cancel/add/delete/reload to the five WeChat paths. Other versions and real third-party delayed-read/ownership-transition acceptance remain outside this evidence.
+
+Real external AI, physical devices/OS IME and full screen-reader/WCAG AA acceptance remain open. Pre-generated branches, transparent-sprite cleanup/catalog expansion/hosting and native whole-account import are future feature scopes rather than unfinished repairs in this batch.
+
+## 2026-11-04 Local Roadmap Evidence — Uncommitted
+
+The authorized local roadmap now has real isolated-ST evidence for image migration/save/reload/receipt restoration, upload failure/cancellation and JSON import (5/5), plus component restoration from an exported ZIP through actual host APIs into a fresh test user (5/5). The native-fetch receiver defect is repaired locally. These results supersede the historical "not yet tested" statements for that limited path; no fixing commit or release has been made. This is not native whole-ZIP import or full-account recovery. See [roadmap A](history/2026-11-04-roadmap-a.md) and [external acceptance](EXTERNAL-ACCEPTANCE.md).
+
+Phone role overview and configurable WeChat scenes are local work under the same roadmap. A later isolated-ST run with actual TavernHelper 4.11.3 and unmodified MVU `74f930e` passed 5/5 checks for WeChat reads, parser events/UI refresh, external ownership/red-packet protection, reload persistence and switching chats during a pending reply without remounting WeChat. See [identified MVU evidence](history/2026-11-04-real-mvu-acceptance.md). This supersedes the historical "third-party MVU absent/pending" statements below only for that version and path. Other MVU versions, Variables App editing, delayed same-scope reads and ownership changes during stat evaluation are not newly accepted. No product code changed or fixing commit was created, so the queue is retained.
+
+Real external AI, physical devices/OS IME and full accessibility remain open. Renderer, export identity/cancellation/casing, Butler recovery and share-cover repairs were outside the original A/B/C roadmap and are superseded by the later local release-readiness evidence above. Hosting and remote publication decisions remain separate; a verified candidate and local sync tool do not mean a release occurred.
+
 ## 2026-10-26 WeChat Review Queue — Code Merged, Scoped Host Acceptance Complete
 
 Round-4 repairs for the five remaining findings (W9 test callback typing, W4 same-scope refresh ordering, W1c ownership re-evaluation after stat impact await, W1c external money snapshot protection, W1a valid alias traversal) passed independent re-review and are committed in `752678d`, then included in merged `main` code head `7866559` and build `0.9.0+202610261121`. Scoped SillyTavern 1.18.0 browser acceptance subsequently passed on desktop and a simulated 320×667 viewport; see [Real-ST Acceptance](history/2026-10-26-real-st-acceptance.md), [Fifth Review](history/2026-10-26-wechat-fifth-review.md), [Round-4 Repairs](history/2026-10-26-wechat-round4-repairs.md), and [Merge and Release](history/2026-10-26-merge-and-release.md). Controlled third-party MVU, physical-device/OS IME and real external AI acceptance remain open.

@@ -6,6 +6,7 @@
 import type { AppHost } from '../../../../core/phone-registry'
 import { getLastMessageId, readVariables, subscribeVarEvents } from '../mvu/bridge'
 import { isTupleLeaf } from '../variable-tree'
+import { mappedValue, type StateMappings } from './profile'
 
 export interface STCharacterCard {
   name?: string
@@ -14,6 +15,12 @@ export interface STCharacterCard {
   scenario?: string
   mes_example?: string
   avatar?: string
+}
+
+export interface HostCharacterCard extends STCharacterCard { shallow?: boolean; data?: STCharacterCard }
+/** Read-only character catalogue; consumers hydrate a card without selecting a main chat. */
+export function getWeChatHostContext() {
+  return (window as unknown as { SillyTavern?: { getContext?: () => { characters?: HostCharacterCard[]; unshallowCharacter?: (id: string) => Promise<void> } } }).SillyTavern?.getContext?.()
 }
 
 export interface STChatContext {
@@ -106,6 +113,7 @@ function findValidStringInPool(pool: Record<string, unknown>, keys: string[]): s
 export function extractFieldsFromObject(
   obj: unknown,
   charName?: string,
+  mappings: StateMappings = {},
 ): {
   mood?: number
   interest?: number
@@ -150,6 +158,11 @@ export function extractFieldsFromObject(
     if (money === undefined) money = findValidNumberInPool(pool, MONEY_KEYS)
     if (location === undefined) location = findValidStringInPool(pool, LOCATION_KEYS)
   }
+
+  if (mappings.mood) mood = numOrUndef(mappedValue(raw, mappings.mood))
+  if (mappings.interest) interest = numOrUndef(mappedValue(raw, mappings.interest))
+  if (mappings.money) money = numOrUndef(mappedValue(raw, mappings.money))
+  if (mappings.location) location = strOrUndef(mappedValue(raw, mappings.location))
 
   const mappedFields = {
     mood: mood !== undefined,
@@ -202,12 +215,12 @@ export function resolveCharacterAvatarUrl(avatar?: string): string | undefined {
 /**
  * 从不同来源（宿主自定义、MVU、酒馆助手）尝试抽取数值状态
  */
-export async function readExternalCharacterState(host?: AppHost, charName?: string): Promise<ExternalCharacterState> {
+export async function readExternalCharacterState(host?: AppHost, charName?: string, mappings: StateMappings = {}): Promise<ExternalCharacterState> {
   // 1. 优先读取 host.getVariables（如果宿主提供了直接读取函数）
   try {
     if (host && typeof host.getVariables === 'function') {
       const vars = await Promise.resolve(host.getVariables())
-      const extracted = extractFieldsFromObject(vars, charName)
+      const extracted = extractFieldsFromObject(vars, charName, mappings)
       if (extracted.hasAny) {
         return {
           source: 'host',
@@ -236,7 +249,7 @@ export async function readExternalCharacterState(host?: AppHost, charName?: stri
     if (w?.Mvu && typeof w.Mvu.getMvuData === 'function') {
       const mvuRes = w.Mvu.getMvuData({ type: 'message', message_id: 'latest' })
       const stat = mvuRes?.stat_data
-      const extracted = extractFieldsFromObject(stat, charName)
+      const extracted = extractFieldsFromObject(stat, charName, mappings)
       if (extracted.hasAny) {
         return {
           source: 'mvu',
@@ -252,7 +265,7 @@ export async function readExternalCharacterState(host?: AppHost, charName?: stri
 
     if (w?.TavernHelper && typeof w.TavernHelper.getVariables === 'function') {
       const helperVars = await Promise.resolve(w.TavernHelper.getVariables({ type: 'message', message_id: 'latest' }))
-      const extracted = extractFieldsFromObject(helperVars, charName)
+      const extracted = extractFieldsFromObject(helperVars, charName, mappings)
       if (extracted.hasAny) {
         return {
           source: 'tavern-helper',
@@ -273,7 +286,7 @@ export async function readExternalCharacterState(host?: AppHost, charName?: stri
   try {
     const res = await readVariables({ type: 'message', message_id: 'latest' }, getLastMessageId())
     if (res.status === 'ready' && res.data) {
-      const extracted = extractFieldsFromObject(res.data, charName)
+      const extracted = extractFieldsFromObject(res.data, charName, mappings)
       if (extracted.hasAny) {
         return {
           source: res.isMvu ? 'mvu' : 'tavern-helper',
@@ -296,7 +309,8 @@ export async function readExternalCharacterState(host?: AppHost, charName?: stri
 /**
  * 提取当前 ST 主会话中最近几条消息记录（作为微信连贯记忆背景）
  */
-export function extractRecentSTMessages(host?: AppHost): Array<{ sender: 'user' | 'character'; text: string }> | undefined {
+export function extractRecentSTMessages(host?: AppHost, limit = 6): Array<{ sender: 'user' | 'character'; text: string }> | undefined {
+  if (!Number.isFinite(limit) || limit <= 0) return undefined
   let chatCtx: STChatContext | undefined = undefined
   if (host && typeof host.getChatContext === 'function') {
     chatCtx = host.getChatContext()
@@ -323,7 +337,7 @@ export function extractRecentSTMessages(host?: AppHost): Array<{ sender: 'user' 
 
   if (Array.isArray(chatCtx?.chat) && chatCtx.chat.length > 0) {
     return chatCtx.chat
-      .slice(-6)
+      .slice(-Math.min(20, Math.trunc(limit)))
       .filter((m) => typeof m.mes === 'string' && m.mes.trim().length > 0)
       .map((m) => ({
         sender: m.is_user ? 'user' : 'character',
@@ -371,7 +385,7 @@ export function subscribeExternalContextEvents(host: AppHost, onUpdate: () => vo
 /**
  * 同步解析当前对话的基础作用域标识、角色卡与聊天上下文（用于即时无闪烁切视图）
  */
-export function resolveConversationScopeSync(host: AppHost): ConversationScope {
+export function resolveConversationScopeSync(host: AppHost, contextMessageCount = 6): ConversationScope {
   const charName = host.getCharacterName() || '妹妹'
 
   let card: STCharacterCard | undefined = undefined
@@ -425,7 +439,7 @@ export function resolveConversationScopeSync(host: AppHost): ConversationScope {
   const stableChatId = (chatCtx?.chatId !== undefined && String(chatCtx.chatId) !== '') ? String(chatCtx.chatId) : ''
   const scopeKey = stableChatId ? `${stableCharId}::${stableChatId}` : stableCharId
 
-  const stRecentMessages = extractRecentSTMessages(host)
+  const stRecentMessages = extractRecentSTMessages(host, contextMessageCount)
 
   return {
     scopeKey,

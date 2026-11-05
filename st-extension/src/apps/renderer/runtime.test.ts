@@ -66,6 +66,46 @@ beforeEach(() => {
 })
 
 describe('createRendererRuntime', () => {
+  it('remounts an unchanged DOM when the persisted message identity becomes stale', () => {
+    let current = true
+    const factory = vi.fn(() => ({ destroy: vi.fn() }))
+    const runtime = createRendererRuntime({ getSettings: () => enabledSettings(), factories: { cards: factory },
+      getBlockDeps: () => ({ choiceMemory: { read: () => null, write: () => ({ ok: true }), isCurrent: () => current } }),
+    })
+    const root = buildMessage(`<STStageRender>${cardsJson()}</STStageRender>`)
+    runtime.processMessage(root); expect(factory).toHaveBeenCalledOnce()
+    current = false; runtime.processMessage(root); expect(factory).toHaveBeenCalledTimes(2)
+    runtime.dispose()
+  })
+  it.each(['dispose', 'reprocess', 'detached'] as const)('%s 恢复消息时保留原图片的重试监听', (cleanup) => {
+    let settings = enabledSettings()
+    const runtime = createRendererRuntime({ getSettings: () => settings, factories: { gal: () => ({ destroy() {} }) } })
+    const body = buildMessage(galBlock())
+    const wrapper = document.createElement('p')
+    const image = document.createElement('img')
+    const retry = vi.fn()
+    image.addEventListener('click', retry)
+    wrapper.append(image, document.createTextNode('图片说明'))
+    body.prepend(wrapper)
+    const original = body.innerHTML
+    runtime.processMessage(body)
+    if (cleanup === 'dispose') runtime.dispose()
+    if (cleanup === 'reprocess') {
+      settings = { ...settings, enabled: false }
+      runtime.reprocessAll()
+    }
+    if (cleanup === 'detached') {
+      body.closest('.mes')!.remove()
+      runtime.processMessage(buildMessage(galBlock('新消息')))
+      document.body.append(body)
+    }
+    expect(body.innerHTML).toBe(original)
+    body.querySelector('img')!.click()
+    expect(retry).toHaveBeenCalledTimes(1)
+    expect(body.querySelector('img')).toBe(image)
+    runtime.dispose()
+  })
+
   it('工厂成功后才隐藏原始块并挂载一个 renderer', () => {
     const destroy = vi.fn()
     const factory = vi.fn<RendererModeFactory>((root, block) => {

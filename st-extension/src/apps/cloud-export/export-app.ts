@@ -99,13 +99,15 @@ export function findLinkedWorldbook(
   character: ExportCharacter,
   worldbooks: ExportWorldbook[],
 ): ExportWorldbook | undefined {
-  const target = character.linkedWorldName?.trim().toLowerCase().replace(/\.json$/i, '')
+  const normalize = (name: string) => name.trim().replace(/\.json$/i, '')
+  const target = normalize(character.linkedWorldName ?? '')
   if (!target) return undefined
-  return worldbooks.find((book) => {
-    const byId = book.id.trim().toLowerCase().replace(/\.json$/i, '')
-    const byName = book.name.trim().toLowerCase().replace(/\.json$/i, '')
-    return byId === target || byName === target
-  })
+  const byId = worldbooks.filter(book => normalize(book.id) === target)
+  if (byId.length) return byId.length === 1 ? byId[0] : undefined
+  const byName = worldbooks.filter(book => normalize(book.name) === target)
+  if (byName.length) return byName.length === 1 ? byName[0] : undefined
+  const matches = worldbooks.filter(book => [book.id, book.name].some(name => normalize(name).toLowerCase() === target.toLowerCase()))
+  return matches.length === 1 ? matches[0] : undefined
 }
 
 export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBridge(), download: Downloader = downloadSTBackup): PhoneApp {
@@ -114,13 +116,14 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
     id: 'cloud-export', name: t('cloudExport.name', '导出'), icon: '📦', order: 15,
     mount(container, ctx) {
       let disposed = false; let activeTab: ExportTab = 'characters'; let query = ''; let busy = false; let progressText = ''
+      let exportController: AbortController | undefined
       const selection = emptySelection(); const expandedCharacters = new Set<string>()
       const characters: LoadState<ExportCharacter[]> = { status: 'idle', data: [] }
       const worldbooks: LoadState<ExportWorldbook[]> = { status: 'idle', data: [] }
       const settings: LoadState<ExportSettingsAssets | null> = { status: 'idle', data: null }
       const chats = new Map<string, LoadState<ExportChat[]>>()
       const chatRequests = new Map<string, Promise<ExportChat[]>>()
-      disposeMount = () => { disposed = true }
+      disposeMount = () => { disposed = true; exportController?.abort() }
       // 输入节点和其祖先只挂载一次，避免输入法、焦点和选区在 render 时丢失。
       const prefix = `cloud-export-${++mountId}`
       const title = el('div', 'so-app-title'); title.textContent = t('cloudExport.title', 'SillyTavern 选择式备份')
@@ -139,7 +142,10 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
       status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); status.setAttribute('aria-atomic', 'true')
       const exportButton = appButton(t('cloudExport.export', '导出所选备份'), () => { void exportSelected() })
       exportButton.dataset.exportFocus = 'export'
-      footer.append(count, status, exportButton)
+      const cancelButton = appButton(t('cloudExport.cancel', '取消导出'), () => { exportController?.abort() })
+      cancelButton.dataset.exportFocus = 'cancel'
+      cancelButton.hidden = true
+      footer.append(count, status, exportButton, cancelButton)
       let composing = false
       const applyQuery = () => { query = search.value.trim().toLowerCase(); render() }
       search.addEventListener('compositionstart', () => { composing = true })
@@ -198,7 +204,7 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
               const books = await ensureWorldbooks()
               const linked = findLinkedWorldbook(character, books)
               if (linked) selection.worldbookIds.add(linked.id)
-              else missing.push(t('cloudExport.linked_missing', '关联世界书「{{name}}」在清单里没找到', { name: character.linkedWorldName }))
+              else missing.push(t('cloudExport.linked_missing', '关联世界书「{{name}}」未找到或名称有歧义', { name: character.linkedWorldName }))
             } catch { missing.push(t('cloudExport.worldbook_list', '世界书清单')) }
           }
         } finally {
@@ -261,6 +267,8 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
       const exportSelected = async (): Promise<void> => {
         if (busy || disposed) return
         if (!hasSelection(selection)) { ctx.toast('warning', t('cloudExport.select_first', '请先选择要导出的内容')); return }
+        const controller = new AbortController()
+        exportController = controller
         busy = true; progressText = t('cloudExport.preparing', '正在准备所选数据…'); render()
         try {
           const catalog: ExportSnapshot = {
@@ -268,18 +276,27 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
             worldbooks: worldbooks.data, presets: settings.data?.presets ?? [], regex: settings.data?.regex ?? null,
           }
           const files = await loadSelectedExportFiles({
-            bridge, catalog, selection, concurrency: 4,
+            bridge, catalog, selection, concurrency: 4, signal: controller.signal,
             onProgress: ({ completed, total, current }) => {
               progressText = t('cloudExport.read_progress', '正在读取 {{completed}}/{{total}}：{{current}}', { completed, total, current }); render()
             },
           })
+          controller.signal.throwIfAborted()
           await download(files, backupFilename(), ({ percent }) => {
             progressText = t('cloudExport.compress_progress', '正在压缩 {{percent}}%', { percent: Math.round(percent) }); render()
-          })
+          }, { signal: controller.signal })
+          controller.signal.throwIfAborted()
           if (!disposed) ctx.toast('success', t('cloudExport.downloaded', 'SillyTavern 标准备份已下载'))
         } catch (error) {
-          if (!disposed) ctx.toast('error', t('cloudExport.export_failed', '导出失败：{{error}}', { error: String(error) }))
-        } finally { busy = false; progressText = ''; render() }
+          if (!disposed) {
+            if (controller.signal.aborted) ctx.toast('info', t('cloudExport.cancelled', '导出已取消，未下载备份'))
+            else ctx.toast('error', t('cloudExport.export_failed', '导出失败：{{error}}', { error: String(error) }))
+          }
+        } finally {
+          const restoreFocus = document.activeElement === cancelButton
+          exportController = undefined; busy = false; progressText = ''; render()
+          if (restoreFocus && !disposed) exportButton.focus({ preventScroll: true })
+        }
       }
 
       /**
@@ -380,7 +397,7 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
                 ? t('cloudExport.linked_current', '关联世界书「{{name}}」按酒馆里的当前内容导出', { name: character.linkedWorldName })
                 : findLinkedWorldbook(character, worldbooks.data)
                   ? t('cloudExport.linked_current', '关联世界书「{{name}}」按酒馆里的当前内容导出', { name: character.linkedWorldName })
-                  : t('cloudExport.linked_unavailable', '关联世界书「{{name}}」在酒馆世界书清单里没找到', { name: character.linkedWorldName })
+                  : t('cloudExport.linked_unavailable', '关联世界书「{{name}}」未找到或名称有歧义', { name: character.linkedWorldName })
             bundleNote.textContent = t('cloudExport.bundle_note', '勾选即整体导出：角色卡 + 全部聊天 + {{linked}}', { linked: linkedLabel })
             row.append(bundleNote)
             const details = document.createElement('details'); details.className = 'so-app-fold cloud-export-chats'; details.open = expandedCharacters.has(character.id)
@@ -432,6 +449,7 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
         count.hidden = statusText === countText
         exportButton.textContent = busy ? t('cloudExport.processing', '正在处理…') : t('cloudExport.export', '导出所选备份')
         exportButton.setAttribute('aria-disabled', String(busy))
+        cancelButton.hidden = !exportController
         if (focusKey && active !== document.activeElement && container.isConnected && document.activeElement === document.body) {
           const target = [...container.querySelectorAll<HTMLElement>('[data-export-focus]')].find(node => node.dataset.exportFocus === focusKey)
           ;(target ?? results).focus({ preventScroll: true })

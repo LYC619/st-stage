@@ -8,8 +8,15 @@
  */
 
 import { t, getLocale } from './i18n'
+import { fixedViewport, observeFixedViewport } from './fixed-viewport'
 import type { PhoneState } from './types'
 import type { MountedAppContext, PhoneApp, PhoneAppRegistry } from './phone-registry'
+
+export interface PhoneHomeSummary {
+  title: string
+  subtitle: string
+  rows: Array<{ id: string; appId: string; label: string; value: string }>
+}
 
 export interface PhoneShellDeps {
   registry: PhoneAppRegistry
@@ -17,6 +24,8 @@ export interface PhoneShellDeps {
   createAppContext(appId: string, goHome: () => void): MountedAppContext
   /** 状态变化（拖拽/开合）回调，调用方负责持久化 */
   onStateChange(state: PhoneState): void
+  getHomeSummary?(): PhoneHomeSummary
+  readHomeSummary?(): Promise<PhoneHomeSummary>
 }
 
 export interface PhoneShellController {
@@ -25,6 +34,8 @@ export interface PhoneShellController {
   openApp(appId: string): void
   /** 显隐整个手机（图标 + 壳）；隐藏时回退纯悬浮窗模式，即时生效 */
   setVisible(visible: boolean): void
+  /** Refresh the current role card without remounting an open App. */
+  refreshHome(): void
   destroy(): void
 }
 
@@ -49,6 +60,8 @@ export function createPhoneShell(
   // 手机总显隐（功能④）：隐藏时图标与壳都不显示，回退纯悬浮窗模式
   let hidden = false
   let destroyed = false
+  let homeGeneration = 0
+  let homeCard: HTMLDetailsElement | null = null
 
   /* ---- 悬浮图标 ---- */
   const fab = document.createElement('div')
@@ -162,11 +175,13 @@ export function createPhoneShell(
 
   /* ---- 布局 ---- */
   /** 可视视口尺寸：优先 visualViewport（移动端地址栏伸缩/软键盘时更准） */
-  function viewportSize(): { w: number; h: number } {
-    const vv = typeof window !== 'undefined' ? window.visualViewport : null
+  function viewportSize(): { w: number; h: number; left: number; top: number } {
+    const vv = fixedViewport()
     return {
-      w: Math.round(vv?.width ?? window.innerWidth),
-      h: Math.round(vv?.height ?? window.innerHeight),
+      w: Math.round(vv.width),
+      h: Math.round(vv.height),
+      left: Math.round(vv.left),
+      top: Math.round(vv.top),
     }
   }
 
@@ -176,11 +191,11 @@ export function createPhoneShell(
       shell.style.display = 'none'
       return
     }
-    const { w: vw, h: vh } = viewportSize()
+    const { w: vw, h: vh, left, top } = viewportSize()
     const clampedX = Math.max(0, Math.min(state.x, vw - 56))
     const clampedY = Math.max(0, Math.min(state.y, vh - 56))
-    fab.style.left = `${clampedX}px`
-    fab.style.top = `${clampedY}px`
+    fab.style.left = `${left + clampedX}px`
+    fab.style.top = `${top + clampedY}px`
     fab.style.display = state.open ? 'none' : 'flex'
     shell.style.display = state.open ? 'flex' : 'none'
     if (state.open) {
@@ -189,14 +204,13 @@ export function createPhoneShell(
       const shellH = Math.min(580, vh - 16)
       shell.style.width = `${shellW}px`
       shell.style.height = `${shellH}px`
-      shell.style.left = `${Math.max(8, Math.min(clampedX, vw - shellW - 8))}px`
-      shell.style.top = `${Math.max(8, Math.min(clampedY, vh - shellH - 8))}px`
+      shell.style.left = `${left + Math.max(8, Math.min(clampedX, vw - shellW - 8))}px`
+      shell.style.top = `${top + Math.max(8, Math.min(clampedY, vh - shellH - 8))}px`
     }
   }
   applyLayout()
   // 旋转屏幕 / 移动端地址栏伸缩 / 软键盘弹出时重新钳位
-  window.addEventListener('resize', applyLayout)
-  window.visualViewport?.addEventListener('resize', applyLayout)
+  const stopViewport = observeFixedViewport(applyLayout)
 
   function commitState(next: PhoneState): void {
     state = next
@@ -289,6 +303,8 @@ export function createPhoneShell(
   }
 
   function renderScreen(): void {
+    ++homeGeneration
+    homeCard = null
     // 同一 App 因设置变更整体重挂载时保持滚动位置：拨一个开关整页跳回顶部的体验极差
     const prevScrollAppId = screenScrollAppId
     const prevScrollTop = screen.scrollTop
@@ -333,12 +349,76 @@ export function createPhoneShell(
     screenScrollAppId = null
     screen.classList.remove('so-phone-screen-fullbleed')
     statusTitle.textContent = HOME_TITLE
+    if (deps.getHomeSummary) {
+      homeCard = document.createElement('details')
+      homeCard.className = 'so-phone-role'
+      homeCard.setAttribute('aria-label', t('phone.role.heading', '当前角色'))
+      try { homeCard.open = localStorage.getItem('baigong:phone:role-expanded') === 'true' } catch { /* Storage can be unavailable. */ }
+      const roleDetails = homeCard
+      homeCard.ontoggle = () => { if (roleDetails.isConnected) { try { localStorage.setItem('baigong:phone:role-expanded', String(roleDetails.open)) } catch { /* Keep session usable. */ } } }
+    }
     const grid = document.createElement('div')
     grid.className = 'so-phone-home-grid'
     for (const app of deps.registry.list()) {
       grid.append(renderAppIcon(app))
     }
     screen.append(grid)
+    // 角色概览是辅助入口，放在 App 网格之后；默认折叠，避免占据主屏首屏。
+    if (homeCard) {
+      screen.append(homeCard)
+      refreshHome()
+    }
+  }
+
+  function renderSummary(summary: PhoneHomeSummary): void {
+    if (!homeCard) return
+    const focused = homeCard.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.roleAction : undefined
+    const wasOpen = homeCard instanceof HTMLDetailsElement ? homeCard.open : false
+    homeCard.replaceChildren()
+    if (homeCard instanceof HTMLDetailsElement) homeCard.open = wasOpen
+    const summaryEl = document.createElement('summary')
+    const eyebrow = document.createElement('div')
+    eyebrow.className = 'so-phone-role-eyebrow'
+    eyebrow.textContent = t('phone.role.heading', '当前角色')
+    const title = document.createElement('strong')
+    title.className = 'so-phone-role-title'
+    title.textContent = summary.title
+    const subtitle = document.createElement('div')
+    subtitle.className = 'so-phone-role-subtitle'
+    subtitle.textContent = summary.subtitle
+    summaryEl.append(eyebrow, title, subtitle)
+    homeCard.append(summaryEl)
+    const actions = document.createElement('div')
+    actions.className = 'so-phone-role-actions'
+    for (const row of summary.rows) {
+      if (!deps.registry.get(row.appId)) continue
+      const action = document.createElement('button')
+      action.type = 'button'
+      action.className = 'so-phone-role-action'
+      action.dataset.roleAction = row.id
+      const label = document.createElement('span'), value = document.createElement('span')
+      label.textContent = row.label
+      value.textContent = row.value
+      action.append(label, value)
+      action.addEventListener('click', () => {
+        const app = deps.registry.get(row.appId)
+        if (!app) return
+        leaveApp(); activeApp = app; renderScreen(); focusApp()
+      })
+      actions.append(action)
+
+    }
+    homeCard.append(actions)
+    if (focused) [...actions.querySelectorAll<HTMLButtonElement>('button')].find(button => button.dataset.roleAction === focused)?.focus({ preventScroll: true })
+  }
+
+  function refreshHome(): void {
+    if (destroyed || activeApp || !homeCard || !deps.getHomeSummary) return
+    const generation = ++homeGeneration
+    renderSummary(deps.getHomeSummary())
+    if (deps.readHomeSummary) void deps.readHomeSummary().then(summary => {
+      if (!destroyed && !activeApp && generation === homeGeneration && homeCard?.isConnected) renderSummary(summary)
+    }).catch(() => { /* The immediate overview remains usable when host reads fail. */ })
   }
 
   function renderAppIcon(app: PhoneApp): HTMLElement {
@@ -442,6 +522,7 @@ export function createPhoneShell(
   }
 
   return {
+    refreshHome,
     setState(next: PhoneState) {
       if (destroyed) return
       const wasOpen = state.open
@@ -473,8 +554,7 @@ export function createPhoneShell(
       if (destroyed) return
       destroyed = true
       clearInterval(clockTimer)
-      window.removeEventListener('resize', applyLayout)
-      window.visualViewport?.removeEventListener('resize', applyLayout)
+      stopViewport()
       unsubscribe()
       leaveApp()
       for (const type of ['pointerdown', 'touchstart', 'click']) {

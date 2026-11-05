@@ -2,6 +2,9 @@ import type { PhoneApp, PhoneAppContext } from '../../../core/phone-registry'
 import { el, appButton, foldSection } from './widgets'
 import { API_APP_ID, findActiveProfile, getSource, profileSummary, sanitizeAppData, type ApiProfile } from './api/core'
 import { applyProfile, onOnlineStatusChanged, readConnection, toast, type ConnectionInfo } from './api/bridge'
+import { isNativeSwitching, NativeProfileError, onNativeProfilesChanged, readNativeProfiles, switchNativeProfile } from './api/native-profiles'
+import { stableCharacterKey } from '../../../core/character-identity'
+import { t } from '../../../core/i18n'
 
 export interface ApiAppDeps { openManager: () => void }
 
@@ -10,70 +13,149 @@ interface ApiAppState {
   message: string
   connection: ConnectionInfo | null
   connectionLoaded: boolean
+  alive: boolean
+  refresh: number
 }
+
 
 export function apiApp(deps: ApiAppDeps): PhoneApp {
   let unsubscribe: (() => void) | null = null
+  let mounted: ApiAppState | null = null
   return {
     id: API_APP_ID, name: 'API', icon: '📡', order: 6,
     mount(container, ctx) {
-      const state: ApiAppState = { busy: false, message: '', connection: null, connectionLoaded: false }
+      const state: ApiAppState = { busy: false, message: '', connection: null, connectionLoaded: false, alive: true, refresh: 0 }
+      mounted = state
       // 首屏同步画出来：档案列表只依赖本地设置，不该等网络。连接状态随后补。
       render(container, ctx, deps, state)
       void refreshConnection(container, ctx, deps, state)
-      unsubscribe = onOnlineStatusChanged(() => { if (!state.busy && container.isConnected) void refreshConnection(container, ctx, deps, state) })
+      const refresh = () => { if (!state.busy && state.alive) void refreshConnection(container, ctx, deps, state) }
+      const cleanups = [onOnlineStatusChanged(refresh), onNativeProfilesChanged(refresh), ctx.onCharacterChanged(refresh)]
+      unsubscribe = () => cleanups.forEach(dispose => dispose())
     },
-    unmount() { unsubscribe?.(); unsubscribe = null },
+    unmount() { if (mounted) mounted.alive = false; mounted = null; unsubscribe?.(); unsubscribe = null },
   }
 }
 
 async function refreshConnection(container: HTMLElement, ctx: PhoneAppContext, deps: ApiAppDeps, state: ApiAppState): Promise<void> {
+  const request = ++state.refresh
   const connection = await readConnection({ withSecret: false })
-  if (!container.isConnected) return
+  if (!state.alive || !container.isConnected || request !== state.refresh) return
   state.connection = connection; state.connectionLoaded = true
   render(container, ctx, deps, state)
 }
 
 function render(container: HTMLElement, ctx: PhoneAppContext, deps: ApiAppDeps, state: ApiAppState): void {
   const data = sanitizeAppData(ctx.getAppData()); const connection = state.connection
-  if (!container.isConnected) return
+  if (!state.alive || !container.isConnected) return
   const active = connection ? findActiveProfile(data.profiles, connection) : undefined
+  const focused = container.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.apiFocus : undefined
+  const legacyOpen = container.querySelector<HTMLDetailsElement>('[data-api-legacy]')?.open ?? false
   container.textContent = ''
 
-  const status = el('div', 'so-app-section'); const title = el('div', 'so-app-title'); title.textContent = '当前连接'; status.append(title)
+  const status = el('div', 'so-app-section'); const title = el('div', 'so-app-title'); title.textContent = t('nativeApi.status', '当前连接'); status.append(title)
   const line = el('div', 'so-app-desc')
-  if (!state.connectionLoaded) line.textContent = '正在读取当前连接…'
-  else if (!connection) line.textContent = '未检测到 SillyTavern 运行时（这里只展示已保存档案）。'
+  if (!state.connectionLoaded) line.textContent = t('nativeApi.loading', '正在读取当前连接…')
+  else if (!connection) line.textContent = t('nativeApi.noHost', '未检测到 SillyTavern 运行时。')
   else {
     const source = getSource(connection.mainApi, connection.source)
-    line.textContent = `${connection.online ? '已连接' : '未连接'} · ${source.label}${active ? ` · ${active.name}` : ''}`
+    line.textContent = `${connection.online ? t('nativeApi.online', '酒馆允许发送') : t('nativeApi.offline', '未连接')} · ${source.label}${active ? ` · ${active.name}` : ''}`
     const detail = el('div', 'so-app-desc'); detail.textContent = [connection.url, connection.model].filter(Boolean).join(' · ') || '该来源没有地址或模型字段'; status.append(detail)
+    if (connection.statusText) { const nativeStatus = el('div', 'so-app-desc'); nativeStatus.textContent = `${t('nativeApi.hostStatus', '酒馆状态')}：${connection.statusText}`; status.append(nativeStatus) }
   }
   status.append(line); container.append(status)
 
+  const native = readNativeProfiles(), busy = state.busy || isNativeSwitching()
+  const nativeBox = el('div', 'so-app-section'); nativeBox.dataset.nativeProfiles = ''
+  const nativeTitle = el('div', 'so-app-title'); nativeTitle.textContent = t('nativeApi.title', 'SillyTavern 连接档案')
+  const nativeHint = el('p', 'so-app-desc'); nativeHint.textContent = native.available
+    ? t('nativeApi.hint', '直接使用酒馆原生档案，连接与密钥在原生 API 面板管理。选择档案后仍需检查实际连接状态。')
+    : t('nativeApi.unavailable', '原生 Connection Manager 未就绪或已禁用。请在酒馆启用它；旧百工档案仍可在下方使用。')
+  nativeBox.append(nativeTitle, nativeHint)
+  if (!native.profiles.length && native.available) {
+    const empty = el('p', 'so-app-desc'); empty.textContent = t('nativeApi.empty', '还没有原生连接档案。请先在酒馆 API 面板创建。'); nativeBox.append(empty)
+  }
+  const key = stableCharacterKey(ctx.getCharacterCard?.())
+  const recommendedId = key ? data.nativeCharacterProfiles?.[key] : undefined
+  const recommendation = el('label', 'so-app-desc'); recommendation.textContent = t('nativeApi.recommendation', '当前角色推荐（点击档案才会切换）')
+  recommendation.style.cssText = 'display:flex;flex-direction:column;gap:6px;'
+  const select = document.createElement('select'); select.dataset.apiFocus = 'recommendation'
+  select.setAttribute('aria-label', t('nativeApi.recommendation', '当前角色推荐（点击档案才会切换）'))
+  select.style.cssText = 'min-width:0;width:100%;min-height:44px;box-sizing:border-box;'
+  select.add(new Option(t('nativeApi.none', '不指定推荐连接'), ''))
+  for (const profile of native.profiles) select.add(new Option(profile.name, profile.id))
+  if (recommendedId && !native.profiles.some(profile => profile.id === recommendedId)) select.add(new Option(t('nativeApi.missing', '推荐档案已删除，可解除关联'), recommendedId))
+  select.value = recommendedId ?? ''; select.disabled = !key || busy
+  select.onchange = () => {
+    if (!key || !state.alive || key !== stableCharacterKey(ctx.getCharacterCard?.())) return
+    const latest = sanitizeAppData(ctx.getAppData()), refs = { ...latest.nativeCharacterProfiles }
+    if (select.value) refs[key] = select.value; else delete refs[key]
+    ctx.setAppData({ ...latest, nativeCharacterProfiles: refs }); render(container, ctx, deps, state)
+  }
+  recommendation.append(select); nativeBox.append(recommendation)
+  if (!key) { const note = el('div', 'so-app-desc'); note.textContent = t('nativeApi.noCharacter', '打开可稳定识别的角色卡后，可保存角色推荐。'); nativeBox.append(note) }
+  for (const profile of [...native.profiles].sort((a, b) => Number(b.id === recommendedId) - Number(a.id === recommendedId))) {
+    const row = document.createElement('button'); row.type = 'button'; row.className = `stapi-row${native.selectedId === profile.id ? ' stapi-row-on' : ''}`
+    row.style.cssText = 'width:100%;min-height:52px;text-align:start;font:inherit;color:inherit;'
+    row.disabled = busy || !native.available; row.dataset.apiFocus = `native:${profile.id}`; row.dataset.nativeProfileId = profile.id
+    row.setAttribute('aria-pressed', String(native.selectedId === profile.id))
+    const main = el('span', 'stapi-row-main'), name = el('span', 'stapi-row-name'), meta = el('span', 'stapi-row-sub')
+    name.textContent = profile.name; name.style.overflowWrap = 'anywhere'
+    meta.textContent = [profile.mode === 'tc' ? 'Text Completion' : 'Chat Completion', profile.model, recommendedId === profile.id ? t('nativeApi.recommended', '角色推荐') : ''].filter(Boolean).join(' · ')
+    main.append(name, meta)
+    const mark = el('span', 'stapi-row-mark'); mark.textContent = native.selectedId === profile.id ? t('nativeApi.selected', '已选档案') : t('nativeApi.switch', '切换')
+    row.append(main, mark); row.onclick = () => void switchNative(profile.id, profile.name); nativeBox.append(row)
+  }
+  const feedback = el('div', 'so-app-desc'); feedback.setAttribute('role', 'status'); feedback.textContent = state.message; nativeBox.append(feedback)
+  container.append(nativeBox)
+
+  const legacy = document.createElement('details'); legacy.dataset.apiLegacy = ''; legacy.open = legacyOpen
+  const legacyTitle = document.createElement('summary'); legacyTitle.textContent = `${t('nativeApi.legacy', '旧百工档案与管理')} (${data.profiles.length})`; legacyTitle.dataset.apiFocus = 'legacy'
+  legacy.append(legacyTitle)
+
   const profiles = el('div', 'so-app-section'); const profilesTitle = el('div', 'so-app-title'); profilesTitle.textContent = `连接档案（${data.profiles.length}）`; profiles.append(profilesTitle)
   if (!data.profiles.length) { const empty = el('div', 'so-app-desc'); empty.textContent = '还没有连接档案，请进入管理页添加或导入。'; profiles.append(empty) }
-  for (const profile of data.profiles) profiles.append(buildRow(profile, active?.id === profile.id, state.busy, () => void switchProfile(profile)))
-  if (state.message) { const feedback = el('div', 'so-app-desc'); feedback.textContent = state.message; profiles.append(feedback) }
-  container.append(profiles)
+  for (const profile of data.profiles) profiles.append(buildRow(profile, active?.id === profile.id, busy, () => void switchProfile(profile)))
+  legacy.append(profiles)
 
-  const manage = el('div', 'so-app-section'); const description = el('div', 'so-app-desc'); description.textContent = '管理全部 Chat Completion、Text Completion 与其他 SillyTavern API 档案。'; manage.append(description, appButton('管理连接档案', deps.openManager)); container.append(manage, buildApiGuide())
+  const manage = el('div', 'so-app-section'); const description = el('div', 'so-app-desc'); description.textContent = t('nativeApi.legacyHint', '保留已有百工档案。建议新连接在酒馆原生面板建档，避免重复维护。'); manage.append(description, appButton(t('nativeApi.legacyManage', '管理旧百工档案'), deps.openManager)); legacy.append(manage, buildApiGuide()); container.append(legacy)
+  if (focused) [...container.querySelectorAll<HTMLElement>('[data-api-focus]')].find(item => item.dataset.apiFocus === focused)?.focus({ preventScroll: true })
+
+  async function switchNative(id: string, name: string): Promise<void> {
+    if (state.busy || isNativeSwitching()) return
+    state.busy = true; state.message = `${t('nativeApi.applying', '正在应用档案')} · ${name}`; state.refresh++; render(container, ctx, deps, state)
+    try {
+      await switchNativeProfile(id)
+      const actual = await readConnection({ withSecret: false })
+      if (!state.alive) return
+      state.connection = actual; state.connectionLoaded = true
+      state.message = actual?.online ? t('nativeApi.appliedOnline', '原生档案已应用；酒馆当前允许发送。真实模型请求尚未验证。') : t('nativeApi.appliedOffline', '原生档案已应用，当前仍未连接。请检查原生 API 面板中的地址、模型与凭据。')
+    } catch (error) {
+      if (!state.alive) return
+      state.message = error instanceof NativeProfileError ? ({
+        unavailable: t('nativeApi.unavailable', '原生 Connection Manager 未就绪或已禁用。请在酒馆启用它；旧百工档案仍可在下方使用。'), missing: t('nativeApi.gone', '档案已不存在，请重新选择。'), busy: t('nativeApi.busy', '已有档案正在切换。'),
+        timeout: t('nativeApi.timeout', '等待档案应用超时。酒馆可能仍在处理，请检查原生面板的实际状态。'), interrupted: t('nativeApi.interrupted', '原生面板的选择已改变，请检查当前连接。'),
+      })[error.code] : t('nativeApi.failed', '应用档案失败，请检查原生连接面板。')
+    } finally { state.busy = false; if (state.alive) { render(container, ctx, deps, state); void refreshConnection(container, ctx, deps, state) } }
+  }
 
   async function switchProfile(profile: ApiProfile): Promise<void> {
-    if (state.busy) return
+    if (state.busy || isNativeSwitching()) return
     state.busy = true; state.message = `正在应用「${profile.name}」的类型、来源、密钥、URL 与模型…`; render(container, ctx, deps, state)
     try {
       const connected = await applyProfile(profile, (message) => {
         state.message = message
-        if (container.isConnected) render(container, ctx, deps, state)
+        if (state.alive && container.isConnected) render(container, ctx, deps, state)
       })
+      if (!state.alive) return
       state.connection = connected; state.connectionLoaded = true
-      state.message = `「${profile.name}」已连接${connected.model ? `，实际模型：${connected.model}` : ''}`; toast('success', state.message)
+      state.message = `「${profile.name}」已应用；酒馆当前允许发送${connected.model ? `，当前模型：${connected.model}` : ''}。真实模型请求尚未验证。`; toast('success', state.message)
     } catch (error) {
+      if (!state.alive) return
       state.message = `切换失败：${error instanceof Error ? error.message : String(error)}`; toast('error', state.message); console.error('[st-stage] API 切换失败', error)
     } finally {
       state.busy = false; render(container, ctx, deps, state)
-      void refreshConnection(container, ctx, deps, state)
+      if (state.alive) void refreshConnection(container, ctx, deps, state)
     }
   }
 }
@@ -87,9 +169,9 @@ function buildApiGuide(): HTMLElement {
 
   const quick = foldSection('快速开始', false)
   quick.body.append(
-    guideLine('1. 建档', '在“管理连接档案”中添加档案，或先打开 SillyTavern 原生 API 面板配置好连接，再用“导入当前连接”。'),
+    guideLine('1. 建档', '新连接建议在 SillyTavern 原生 API 面板建档，再从上方点选。已有百工档案可在“管理旧百工档案”中继续维护。'),
     guideLine('2. 填写', 'Key 是访问凭证，URL 是服务入口，模型 ID 必须与渠道实际提供的名称完全一致。Key 会明文保存在本扩展档案中。'),
-    guideLine('3. 切换', '点击档案后会依次切换渠道、写入凭证、加载模型并做最终连接回验。看到“已连接，实际模型…”才算完成。'),
+    guideLine('3. 切换', '点击旧档案后会依次切换渠道、写入凭证、加载模型并检查酒馆状态。自定义 API 可能跳过状态检查；“允许发送”仍需用实际模型请求验证。'),
   )
 
   const completion = foldSection('补全方式有什么不同', false)

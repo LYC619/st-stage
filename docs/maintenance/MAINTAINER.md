@@ -4,18 +4,11 @@
 
 ## 回来后先核对哪里
 
-1. 读 [CURRENT](CURRENT.md)：区分本工作树、较新未合并成果、生成目录与实际发布仓库。本指南按 2026-10-24 的 `main` 核对；较新分支有不同 API、检查脚本和构建命令，不能混用。
+1. 读 [CURRENT](CURRENT.md)：区分本工作树、生成目录与实际发布仓库。核心界面翻译、键盘维护和微信均已合入 `main`；当前本地任务及验收边界以 CURRENT 和关联执行计划为准。
 2. 按 [PROTOCOL](PROTOCOL.md) 检查 `git status --short --branch`、`git worktree list`、`git branch -avv` 和代码基线。记录过期时先用 Git 和相关 history 校正；提交检查不会覆盖未提交修改。
 3. 查 [DEFERRED](DEFERRED.md)，判断本次修改是否碰到已知边界。设计理由在 [specs](../superpowers/specs/)，实施过程在 [plans](../superpowers/plans/) 与 [history](history/)；计划中的勾选不单独证明已经实现或发布。
 
-当前较新成果的本地路径见 CURRENT。无需切换工作树就能查看其事实，例如：
-
-```powershell
-git show codex/i18n-acceptance:docs/maintenance/CURRENT.md
-git diff main..codex/i18n-acceptance -- docs/maintenance
-```
-
-这条文档整理支线以后与 i18n 分支整合时，要保留两边的记录，不能以其中一份 CURRENT 整体覆盖另一份。
+历史分支已经合并清理，不再依赖旧分支名读取成果。追溯实现时使用 CURRENT 中记录的提交及 `history/`；判断当前能力时核对实际源码和 `package.json`。
 
 ## 准备与运行
 
@@ -46,7 +39,8 @@ pnpm dev
 | 管家性能与恢复 | [butler-app.ts](../../st-extension/src/apps/butler-app.ts)、[butler/bridge.ts](../../st-extension/src/apps/butler/bridge.ts) | 修改宿主 `power_user`，需快照恢复；[BUTLER](../BUTLER.md) 解释选项 |
 | 标准 ZIP 导出 | [cloud-export/README](../../st-extension/src/apps/cloud-export/README.md)、[export-app.ts](../../st-extension/src/apps/cloud-export/export-app.ts)、[bridge.ts](../../st-extension/src/apps/cloud-export/bridge.ts) | 合成新下载包，不写回 ST；不是完整账户备份；ZIP 导入另行验收 |
 | 设置结构与升级兼容 | [types.ts](../../core/types.ts)、[migrate.ts](../../core/migrate.ts) | 默认值、版本迁移与历史用户数据；不要随产品改名重命名持久化 key |
-| 中英文本 | [i18n.ts](../../core/i18n.ts)、[字典目录](../../st-extension/locales/)、[用法与分支边界](../i18n-usage.md) | main 只有基础设施；完整 UI 翻译/键盘维护在未合并分支 |
+| 中英文本 | [i18n.ts](../../core/i18n.ts)、[字典目录](../../st-extension/locales/)、[用法与支持范围](../i18n-usage.md) | 核心界面及五个主要 App 已支持中英文；其余 App 和实体设备/读屏验收另见 CURRENT |
+| 微信角色对话 | [wechat-app.ts](../../st-extension/src/apps/wechat/wechat-app.ts)、[bridge.ts](../../st-extension/src/apps/wechat/bridge.ts)、[pipeline.ts](../../st-extension/src/apps/wechat/pipeline.ts) | 按角色与聊天隔离；区分外部变量所有权、合成响应和真实 AI/MVU 验收 |
 
 一条典型链路：图库导入经 `pack-io` 校验，图片准备成功后写入图包与绑定；`index.ts` 用 `sprite-store` 和 `prompt-builder` 给当前角色生成清单，经 STAdapter 注入宿主。宿主消息事件回来后用 `tag-parser` 提取标签、`sprite-store` 寻址，再由 DOM overlay 显示。设置通过 adapter 保存。修改标签格式会同时影响解析、注入和寻址；修改图片路径会碰到导入、存储与备份，不能只改界面。
 
@@ -64,16 +58,40 @@ pnpm build
 
 定向测试证明受测逻辑，类型与 lint 检查静态约束；全套测试与 Next 构建仍不能证明真实 ST 的宿主行为。UI 变更另看 [设计走查](../DESIGN-WALKTHROUGH.md)；`pnpm test:mobile` 是 Playwright 的网页移动视口检查，首次需安装其 Chromium，不是物理手机或 OS 输入法验收。控制测试并发以免重型测试与构建争用资源。
 
-打包脚本会覆盖跟踪产物并改变构建号。未来获准修改产品时，在当前 main 可用相同时间戳生成两处产物（时间是本次构建所选时间，示例不要原样用于新发布）：
+真实微信/MVU 回归入口为 `node scripts/verify-wechat-mvu-browser.mjs --url http://127.0.0.1:18771 --isolated-data`，必须先准备独立测试用户及脚本锁定的酒馆助手/MVU，详见 [复现与版本记录](history/2026-11-04-real-mvu-acceptance.md)。脚本会重置该测试用户的微信配置，不能指向日常账户。若隔离 runtime 通过 junction 复用依赖，用 `node --preserve-symlinks server.js ...` 保持 WASM 路径位于 runtime 内；不要关闭宿主文件路径或聊天完整性校验来绕过错误。
+
+角色配置/原生档案/分支的整体验收使用 `node scripts/verify-character-play-browser.mjs --url http://127.0.0.1:18769 --isolated-data`；九 App 六档手机检查使用 `verify-mobile-apps-browser.mjs`，参数相同。它们会替换测试配置，使用同一用户的宿主脚本须顺序执行。`PLAYWRIGHT_CHANNEL=msedge` 可让脚本和网页移动回归复用已安装 Edge。Playwright 输出固定到 `test-results/playwright/`，不要将其清理目录设成整个 `test-results/`，其中还有隔离数据与候选包。失败时的布局附件用于区分产品、宿主样式和夹具问题。
+
+打包脚本会覆盖跟踪产物并改变构建号。修改产品后，用统一入口以同一时间戳生成根目录与分发目录：
 
 ```powershell
-$env:ST_STAGE_BUILD_TIME = '2026-10-24 12:00'
-pnpm build:ext
-pnpm build:st
-Remove-Item Env:ST_STAGE_BUILD_TIME
+pnpm build:all
+node scripts/verify-runtime-parity.mjs --root . --distribution st-distribution
 ```
 
-`build:ext` 写根目录；`build:st` 写 `st-distribution/`，含两个 locale 文件。main 没有 `build:all` 脚本；较新分支提供该入口，按其 package.json 操作。打包不是发布；未来发布的八文件清单和三方比较见 CURRENT。生成的 `bundle.js`、根目录 `style.css`、locale 副本不应手改。
+`build:ext` 单独写根目录；`build:st` 单独写 `st-distribution/`；`build:all` 同批生成两处产物，包括语言文件与微信素材。CI 使用已提交的 `version.json` 时间戳重建以核对产物。打包不是发布；发布的八文件清单和三方比较见 CURRENT。生成的 `bundle.js`、根目录 `style.css`、locale 副本不应手改。
+
+准备可审阅的安装包时，先完成上述构建和适用验收，再执行：
+
+```powershell
+pnpm test:release
+pnpm release:prepare --output test-results/release-candidate --release ../st-stage-ext
+```
+
+输出目录必须尚不存在；重跑请选新的目录名。命令验证八个基础文件、源 README 的 LF 归一结果，以及源目录/预览/分发中的完整微信素材清单和 SHA-256，然后写入 `package/` 与 `release-report.json`。报告列出相对安装仓库的新增、修改和待移除素材；不修改安装仓库，不构建、不提交也不推送。报告写入成功才表示准备完成。产物一致只证明文件一致，不能替代源码重建和真实宿主验收。
+
+需要核验已发布副本时运行 `node scripts/verify-runtime-parity.mjs --root . --distribution st-distribution --preview public --release ../st-stage-ext`。待发布产物与旧安装仓库不同是正常差异；准备命令报告差异，发布后校验命令则要求完全一致。
+
+现在可用同步工具取代手工复制。默认只预览；实际同步应在当前任务已授权更新安装仓库后执行，并指定尚不存在、位于候选和安装仓库之外的备份目录（父目录须存在）：
+
+```powershell
+pnpm release:sync --candidate test-results/release-candidate --release ../st-stage-ext
+pnpm release:sync --candidate test-results/release-candidate --release ../st-stage-ext --backup ../st-stage-ext-backup-YYYYMMDD-HHmm --apply
+```
+
+工具校验候选清单/哈希、独立安装仓库身份和干净状态，拒绝路径冲突及符号链接；先备份旧安装产物，再逐文件替换、检查最终清单。普通写入失败会自动回滚并写入备份目录的 `sync-report.json`。备份中 `originals/` 保留原文件；`rollback-failed` 或进程被强制终止时应停止后续发布，对照回执的 `previous`、`expected` 和 `changes` 手动恢复，再验证哈希。逐文件原子替换不等于整个批次可抵抗断电。工具不提交、推送、拉取、重写历史或设置远端。
+
+本轮仅在临时 Git 仓库验证实际同步/失败回滚，对真实 `st-stage-ext` 只执行默认预览。最终候选及人工实测入口见 [统一验收](UNIFIED-ACCEPTANCE.md)。
 
 ## 故障定位与设计理由
 

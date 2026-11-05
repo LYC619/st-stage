@@ -2,6 +2,7 @@ import type { RendererSettings } from './config'
 import type { ComposerInsertResult } from './composer'
 import { parseRendererBlocks, type ParsedRendererBlock } from './parser'
 import type { RendererBlock, RendererMode } from './types'
+import type { CardChoiceMemory } from './choices'
 
 export interface RendererMount {
   destroy(): void
@@ -17,6 +18,7 @@ export interface RendererModeDeps {
   insertDraft?: (text: string) => ComposerInsertResult
   /** 战斗模式可注入 RNG，生产环境缺省使用 Math.random。 */
   random?: () => number
+  choiceMemory?: CardChoiceMemory
 }
 
 export type RendererModeFactory<TMode extends RendererMode = RendererMode> = (
@@ -33,6 +35,7 @@ export interface RendererRuntimeDeps {
   getSettings: () => RendererSettings
   factories: RendererModeFactories
   modeDeps?: RendererModeDeps
+  getBlockDeps?: (root: HTMLElement, block: ParsedRendererBlock, index: number) => Partial<RendererModeDeps>
 }
 
 export interface RendererRuntime {
@@ -48,12 +51,31 @@ interface MountedBlockState {
   container: HTMLElement
   mode: RendererMode
   destroyed: boolean
+  isCurrent?: () => boolean
 }
 
 interface MountedState {
   mounts: MountedBlockState[]
-  snapshot: Node[]
+  snapshot: DomSnapshot[]
   outsideSignature: string
+}
+
+interface DomSnapshot {
+  node: Node
+  value: string | null
+  children: DomSnapshot[]
+}
+
+/** 保存原节点与结构，Range 提取/拆分后仍能还原其事件监听和宿主引用。 */
+function snapshotNode(node: Node): DomSnapshot {
+  return { node, value: node.nodeValue, children: Array.from(node.childNodes, snapshotNode) }
+}
+
+function restoreNode(snapshot: DomSnapshot): Node {
+  const { node, value, children } = snapshot
+  if (node instanceof Element) node.replaceChildren(...children.map(restoreNode))
+  else node.nodeValue = value
+  return node
 }
 
 interface TextBoundary {
@@ -146,7 +168,7 @@ export function createRendererRuntime(deps: RendererRuntimeDeps): RendererRuntim
     if (!state) return
     for (const mount of state.mounts) destroyMount(mount)
     if (stillOwnsDom(root, state)) {
-      root.replaceChildren(...state.snapshot)
+      root.replaceChildren(...state.snapshot.map(restoreNode))
     } else {
       for (const mount of state.mounts) {
         mount.marker.remove()
@@ -177,27 +199,30 @@ export function createRendererRuntime(deps: RendererRuntimeDeps): RendererRuntim
       && stillOwnsDom(root, current)
       && settings.enabled
       && current.mounts.every((mount) => isModeEnabled(settings, mount.mode))
+      && current.mounts.every((mount) => !mount.isCurrent || mount.isCurrent())
     ) return
     if (current) cleanupRoot(root)
     const message = root.closest('.mes')
     if (message?.getAttribute('is_user') === 'true' || message?.getAttribute('is_system') === 'true') return
     if (!settings.enabled) return
-    const snapshot = Array.from(root.childNodes).map((node) => node.cloneNode(true))
+    const snapshot = Array.from(root.childNodes, snapshotNode)
     const prepared: Array<{
       parsed: ParsedRendererBlock
       container: HTMLElement
       mount: RendererMount
+      isCurrent?: () => boolean
     }> = []
-    for (const parsed of parseRendererBlocks(root.textContent ?? '')) {
+    for (const [index, parsed] of parseRendererBlocks(root.textContent ?? '').entries()) {
       if (!isModeEnabled(settings, parsed.block.mode)) continue
       const factory = deps.factories[parsed.block.mode] as RendererModeFactory | undefined
       if (!factory) continue
       const container = document.createElement('section')
       container.className = RENDERER_CLASS
       try {
-        const mount = factory(container, parsed.block, modeDeps)
+        const blockDeps = { ...modeDeps, ...deps.getBlockDeps?.(root, parsed, index) }
+        const mount = factory(container, parsed.block, blockDeps)
         if (!mount || typeof mount.destroy !== 'function') continue
-        prepared.push({ parsed, container, mount })
+        prepared.push({ parsed, container, mount, isCurrent: blockDeps.choiceMemory?.isCurrent })
       } catch {
         // 单个模式工厂失败时只保留该块原文，继续处理合法兄弟块。
         continue
@@ -228,6 +253,7 @@ export function createRendererRuntime(deps: RendererRuntimeDeps): RendererRuntim
         container: item.container,
         mode: item.parsed.block.mode,
         destroyed: false,
+        isCurrent: item.isCurrent,
       })
     }
     if (mounts.length === 0) return

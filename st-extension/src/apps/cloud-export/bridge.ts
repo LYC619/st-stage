@@ -21,9 +21,9 @@ export interface CloudExportBridge {
   listChats(character: ExportCharacter): Promise<ExportChat[]>
   listWorldbooks(): Promise<ExportWorldbook[]>
   loadSettingsAssets(): Promise<ExportSettingsAssets>
-  readWorldbook(worldbook: ExportWorldbook): Promise<unknown>
-  readCharacterCard(character: ExportCharacter): Promise<ArrayBuffer>
-  readChat(character: ExportCharacter, chat: ExportChat): Promise<string>
+  readWorldbook(worldbook: ExportWorldbook, signal?: AbortSignal): Promise<unknown>
+  readCharacterCard(character: ExportCharacter, signal?: AbortSignal): Promise<ArrayBuffer>
+  readChat(character: ExportCharacter, chat: ExportChat, signal?: AbortSignal): Promise<string>
 }
 
 function getSTContext(): STContextLike | undefined {
@@ -110,13 +110,18 @@ async function listCharacters(): Promise<ExportCharacter[]> {
     method: 'POST',
     body: JSON.stringify({}),
   })
+  const seen = new Set<string>()
   return asArray(raw, ['characters', 'data']).map((item, index) => {
     const avatar = text(item, ['avatar', 'avatar_url', 'file_name'])
     const name = text(item, ['name', 'char_name'], avatar.replace(/\.png$/i, '')) || `角色 ${index + 1}`
+    // The host addresses cards and chats by avatar filename. A synthetic ID cannot
+    // disambiguate two HTTP reads to the same file, so do not guess or overwrite.
+    if (!avatar || seen.has(avatar)) throw new Error(t('cloudExport.invalid_character_identity', '角色「{{name}}」缺少唯一的头像文件名，请检查酒馆角色数据后重试。', { name }))
+    seen.add(avatar)
     return {
-      id: avatar || name,
+      id: avatar,
       name,
-      avatar: avatar || `${name}.png`,
+      avatar,
       updatedAt: timestamp(item),
       chats: [],
       linkedWorldName: linkedWorldName(item),
@@ -151,8 +156,9 @@ async function listWorldbooks(): Promise<ExportWorldbook[]> {
   })
 }
 
-async function readWorldbook(worldbook: ExportWorldbook): Promise<unknown> {
+async function readWorldbook(worldbook: ExportWorldbook, signal?: AbortSignal): Promise<unknown> {
   return requestJson<unknown>('/api/worldinfo/get', {
+    signal,
     method: 'POST',
     body: JSON.stringify({ name: worldbook.id.replace(/\.json$/i, '') }),
   })
@@ -195,13 +201,15 @@ export function createSTCloudExportBridge(): CloudExportBridge {
       return { presets, regex }
     },
     readWorldbook,
-    readCharacterCard: (character) => requestBinary('/api/characters/export', {
+    readCharacterCard: (character, signal) => requestBinary('/api/characters/export', {
+      signal,
       method: 'POST',
       body: JSON.stringify({ format: 'png', avatar_url: character.avatar }),
     }),
-    async readChat(character, chat) {
+    async readChat(character, chat, signal) {
       const fileName = (chat.path || chat.name).replace(/\.jsonl$/i, '')
       const raw = await requestJson<unknown>('/api/chats/get', {
+        signal,
         method: 'POST',
         body: JSON.stringify({ ch_name: character.name, avatar_url: character.avatar, file_name: fileName }),
       })

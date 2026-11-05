@@ -5558,6 +5558,37 @@ function openTrackedAppModal(build, hooks, track) {
   return close;
 }
 
+// core/fixed-viewport.ts
+function fixedViewport() {
+  const viewport = window.visualViewport;
+  const probe = document.createElement("div");
+  probe.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;visibility:hidden;pointer-events:none;margin:0;padding:0;border:0;";
+  document.body.append(probe);
+  const origin = probe.getBoundingClientRect();
+  probe.remove();
+  const scaleX = origin.width || 1;
+  const scaleY = origin.height || 1;
+  return {
+    width: (viewport?.width ?? window.innerWidth) / scaleX,
+    height: (viewport?.height ?? window.innerHeight) / scaleY,
+    left: ((viewport?.offsetLeft ?? 0) - origin.left) / scaleX,
+    top: ((viewport?.offsetTop ?? 0) - origin.top) / scaleY
+  };
+}
+function observeFixedViewport(update) {
+  const viewport = window.visualViewport;
+  window.addEventListener("resize", update);
+  window.addEventListener("scroll", update);
+  viewport?.addEventListener("resize", update);
+  viewport?.addEventListener("scroll", update);
+  return () => {
+    window.removeEventListener("resize", update);
+    window.removeEventListener("scroll", update);
+    viewport?.removeEventListener("resize", update);
+    viewport?.removeEventListener("scroll", update);
+  };
+}
+
 // core/phone-shell.ts
 var DRAG_THRESHOLD2 = 6;
 var HOME_TITLE = "百工";
@@ -5568,6 +5599,8 @@ function createPhoneShell(initialState, deps) {
   let screenScrollAppId = null;
   let hidden = false;
   let destroyed = false;
+  let homeGeneration = 0;
+  let homeCard = null;
   const fab = document.createElement("div");
   fab.className = "so-phone-fab";
   fab.title = t("phone.open", "打开手机");
@@ -5666,10 +5699,12 @@ function createPhoneShell(initialState, deps) {
     });
   }
   function viewportSize() {
-    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    const vv = fixedViewport();
     return {
-      w: Math.round(vv?.width ?? window.innerWidth),
-      h: Math.round(vv?.height ?? window.innerHeight)
+      w: Math.round(vv.width),
+      h: Math.round(vv.height),
+      left: Math.round(vv.left),
+      top: Math.round(vv.top)
     };
   }
   function applyLayout() {
@@ -5678,11 +5713,11 @@ function createPhoneShell(initialState, deps) {
       shell.style.display = "none";
       return;
     }
-    const { w: vw, h: vh } = viewportSize();
+    const { w: vw, h: vh, left, top } = viewportSize();
     const clampedX = Math.max(0, Math.min(state2.x, vw - 56));
     const clampedY = Math.max(0, Math.min(state2.y, vh - 56));
-    fab.style.left = `${clampedX}px`;
-    fab.style.top = `${clampedY}px`;
+    fab.style.left = `${left + clampedX}px`;
+    fab.style.top = `${top + clampedY}px`;
     fab.style.display = state2.open ? "none" : "flex";
     shell.style.display = state2.open ? "flex" : "none";
     if (state2.open) {
@@ -5690,13 +5725,12 @@ function createPhoneShell(initialState, deps) {
       const shellH = Math.min(580, vh - 16);
       shell.style.width = `${shellW}px`;
       shell.style.height = `${shellH}px`;
-      shell.style.left = `${Math.max(8, Math.min(clampedX, vw - shellW - 8))}px`;
-      shell.style.top = `${Math.max(8, Math.min(clampedY, vh - shellH - 8))}px`;
+      shell.style.left = `${left + Math.max(8, Math.min(clampedX, vw - shellW - 8))}px`;
+      shell.style.top = `${top + Math.max(8, Math.min(clampedY, vh - shellH - 8))}px`;
     }
   }
   applyLayout();
-  window.addEventListener("resize", applyLayout);
-  window.visualViewport?.addEventListener("resize", applyLayout);
+  const stopViewport = observeFixedViewport(applyLayout);
   function commitState(next) {
     state2 = next;
     applyLayout();
@@ -5774,6 +5808,8 @@ function createPhoneShell(initialState, deps) {
     }
   }
   function renderScreen() {
+    ++homeGeneration;
+    homeCard = null;
     const prevScrollAppId = screenScrollAppId;
     const prevScrollTop = screen.scrollTop;
     const restore = prevScrollAppId === activeApp?.id ? captureScreenFocus() : null;
@@ -5815,12 +5851,86 @@ function createPhoneShell(initialState, deps) {
     screenScrollAppId = null;
     screen.classList.remove("so-phone-screen-fullbleed");
     statusTitle.textContent = HOME_TITLE;
+    if (deps.getHomeSummary) {
+      homeCard = document.createElement("details");
+      homeCard.className = "so-phone-role";
+      homeCard.setAttribute("aria-label", t("phone.role.heading", "当前角色"));
+      try {
+        homeCard.open = localStorage.getItem("baigong:phone:role-expanded") === "true";
+      } catch {
+      }
+      const roleDetails = homeCard;
+      homeCard.ontoggle = () => {
+        if (roleDetails.isConnected) {
+          try {
+            localStorage.setItem("baigong:phone:role-expanded", String(roleDetails.open));
+          } catch {
+          }
+        }
+      };
+    }
     const grid = document.createElement("div");
     grid.className = "so-phone-home-grid";
     for (const app of deps.registry.list()) {
       grid.append(renderAppIcon(app));
     }
     screen.append(grid);
+    if (homeCard) {
+      screen.append(homeCard);
+      refreshHome();
+    }
+  }
+  function renderSummary(summary) {
+    if (!homeCard) return;
+    const focused = homeCard.contains(document.activeElement) ? document.activeElement.dataset.roleAction : void 0;
+    const wasOpen = homeCard instanceof HTMLDetailsElement ? homeCard.open : false;
+    homeCard.replaceChildren();
+    if (homeCard instanceof HTMLDetailsElement) homeCard.open = wasOpen;
+    const summaryEl = document.createElement("summary");
+    const eyebrow = document.createElement("div");
+    eyebrow.className = "so-phone-role-eyebrow";
+    eyebrow.textContent = t("phone.role.heading", "当前角色");
+    const title2 = document.createElement("strong");
+    title2.className = "so-phone-role-title";
+    title2.textContent = summary.title;
+    const subtitle = document.createElement("div");
+    subtitle.className = "so-phone-role-subtitle";
+    subtitle.textContent = summary.subtitle;
+    summaryEl.append(eyebrow, title2, subtitle);
+    homeCard.append(summaryEl);
+    const actions = document.createElement("div");
+    actions.className = "so-phone-role-actions";
+    for (const row of summary.rows) {
+      if (!deps.registry.get(row.appId)) continue;
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = "so-phone-role-action";
+      action.dataset.roleAction = row.id;
+      const label = document.createElement("span"), value = document.createElement("span");
+      label.textContent = row.label;
+      value.textContent = row.value;
+      action.append(label, value);
+      action.addEventListener("click", () => {
+        const app = deps.registry.get(row.appId);
+        if (!app) return;
+        leaveApp();
+        activeApp = app;
+        renderScreen();
+        focusApp();
+      });
+      actions.append(action);
+    }
+    homeCard.append(actions);
+    if (focused) [...actions.querySelectorAll("button")].find((button2) => button2.dataset.roleAction === focused)?.focus({ preventScroll: true });
+  }
+  function refreshHome() {
+    if (destroyed || activeApp || !homeCard || !deps.getHomeSummary) return;
+    const generation = ++homeGeneration;
+    renderSummary(deps.getHomeSummary());
+    if (deps.readHomeSummary) void deps.readHomeSummary().then((summary) => {
+      if (!destroyed && !activeApp && generation === homeGeneration && homeCard?.isConnected) renderSummary(summary);
+    }).catch(() => {
+    });
   }
   function renderAppIcon(app) {
     const cell = document.createElement("div");
@@ -5901,6 +6011,7 @@ function createPhoneShell(initialState, deps) {
     };
   }
   return {
+    refreshHome,
     setState(next) {
       if (destroyed) return;
       const wasOpen = state2.open;
@@ -5930,8 +6041,7 @@ function createPhoneShell(initialState, deps) {
       if (destroyed) return;
       destroyed = true;
       clearInterval(clockTimer);
-      window.removeEventListener("resize", applyLayout);
-      window.visualViewport?.removeEventListener("resize", applyLayout);
+      stopViewport();
       unsubscribe();
       leaveApp();
       for (const type of ["pointerdown", "touchstart", "click"]) {
@@ -6058,6 +6168,10 @@ function encodeShareStringV2(pack) {
   if (customTags.length > 0) {
     segments.push(`@tags=${encodeURIComponent(JSON.stringify(customTags))}`);
   }
+  const coverTag = normalizeTag(pack.coverTag ?? "");
+  if (coverTag && pack.sprites.some((sprite) => sprite.tag === coverTag && shareableUrl(sprite))) {
+    segments.push(`@cover=${encodeURIComponent(coverTag)}`);
+  }
   segments.push(...entries);
   return {
     text: SHARE_PREFIX_V2 + segments.join("|"),
@@ -6077,6 +6191,7 @@ function decodeShareStringV2(raw) {
   const name = sanitizePackName(segments[0] ?? "") || "分享立绘包";
   let author;
   let kind;
+  let coverTag;
   let customTags = [];
   const sprites = [];
   const seen = /* @__PURE__ */ new Set();
@@ -6090,6 +6205,13 @@ function decodeShareStringV2(raw) {
       const value = part.slice(eq2 + 1).trim();
       if (key2 === "author") author = sanitizePackName(value) || void 0;
       if (key2 === "kind") kind = normalizePackKind(value);
+      if (key2 === "cover") {
+        try {
+          coverTag = normalizeTag(decodeURIComponent(value)) || void 0;
+        } catch {
+          coverTag = void 0;
+        }
+      }
       if (key2 === "tags") {
         try {
           customTags = normalizeLabels(JSON.parse(decodeURIComponent(value)));
@@ -6136,6 +6258,7 @@ function decodeShareStringV2(raw) {
     name,
     author,
     ...kind ? { kind } : {},
+    ...coverTag && sprites.some((sprite) => sprite.tag === coverTag) ? { coverTag } : {},
     ...customTags.length > 0 ? { customTags } : {},
     ...commonRole ? { roleName: commonRole } : {},
     ...commonOutfit ? { outfit: commonOutfit } : {},
@@ -6995,7 +7118,7 @@ var STAdapter = class {
     const ctx = getContext();
     const headers = ctx.getRequestHeaders;
     return persistSTImage(dataUri, {
-      fetch,
+      fetch: globalThis.fetch.bind(globalThis),
       getRequestHeaders: headers ? () => headers.call(ctx) : void 0
     }, options);
   }
@@ -7849,32 +7972,32 @@ function clearPresetMetadata(settings, presetId) {
 }
 
 // st-extension/src/sprite-actions.ts
-function current(context) {
-  const pack = context.getPack();
-  const sprite = context.getSprite();
+function current(context2) {
+  const pack = context2.getPack();
+  const sprite = context2.getSprite();
   return pack && sprite ? { pack, sprite } : null;
 }
-function commitAndRefresh(context, pack) {
+function commitAndRefresh(context2, pack) {
   try {
-    context.commit(pack);
+    context2.commit(pack);
   } finally {
-    context.refresh();
+    context2.refresh();
   }
 }
-function createSpriteActions(context) {
-  const source = context.getSprite();
+function createSpriteActions(context2) {
+  const source = context2.getSprite();
   return [
     {
       id: "rename",
       label: t("sprite.manager.content.action.rename", "重命名"),
       icon: "✎",
       run() {
-        const state2 = current(context);
+        const state2 = current(context2);
         if (!state2) return;
         const next = window.prompt(t("sprite.manager.content.action.rename_prompt", "「{{p0}}」改名为：", { p0: state2.sprite.tag }), state2.sprite.tag);
         if (next === null) return;
         commitAndRefresh(
-          context,
+          context2,
           renameSprite(
             state2.pack,
             state2.sprite.tag,
@@ -7890,7 +8013,7 @@ function createSpriteActions(context) {
       label: t("sprite.manager.content.action.labels", "标签"),
       icon: "#",
       run() {
-        const state2 = current(context);
+        const state2 = current(context2);
         if (!state2) return;
         const raw = window.prompt(
           t("sprite.manager.content.action.labels_prompt", "「{{p0}}」的标签（逗号分隔，留空=清除）：", { p0: state2.sprite.tag }),
@@ -7901,7 +8024,7 @@ function createSpriteActions(context) {
         const nextSprite = { ...state2.sprite };
         if (labels.length > 0) nextSprite.labels = labels;
         else delete nextSprite.labels;
-        commitAndRefresh(context, upsertSprite(state2.pack, nextSprite));
+        commitAndRefresh(context2, upsertSprite(state2.pack, nextSprite));
       }
     },
     {
@@ -7909,13 +8032,13 @@ function createSpriteActions(context) {
       label: t("sprite.manager.content.action.group", "设分组"),
       icon: "🏷",
       run() {
-        const state2 = current(context);
+        const state2 = current(context2);
         if (!state2) return;
         const group = spriteGroup(state2.sprite);
         const next = window.prompt(t("sprite.manager.content.action.group_prompt", "「{{p0}}」的分组（留空=移出分组）：", { p0: state2.sprite.tag }), group);
         if (next === null) return;
         commitAndRefresh(
-          context,
+          context2,
           setSpriteGroup(state2.pack, state2.sprite.tag, group, next, state2.sprite.outfit ?? "")
         );
       }
@@ -7925,8 +8048,8 @@ function createSpriteActions(context) {
       label: t("sprite.manager.content.action.replace", "重新上传 / 替换图片"),
       icon: "🖼",
       run() {
-        if (!current(context)) return;
-        context.pickReplacement();
+        if (!current(context2)) return;
+        context2.pickReplacement();
       }
     },
     {
@@ -7939,9 +8062,9 @@ function createSpriteActions(context) {
       allowedInReadonly: true,
       disabled: !source || getSpriteSource(source) !== "hosted",
       async run() {
-        const state2 = current(context);
+        const state2 = current(context2);
         if (!state2 || getSpriteSource(state2.sprite) !== "hosted") return;
-        await context.localize(state2.sprite);
+        await context2.localize(state2.sprite);
       }
     },
     {
@@ -7949,7 +8072,7 @@ function createSpriteActions(context) {
       label: t("sprite.manager.content.action.remote", "远程地址"),
       icon: "🔗",
       run() {
-        const state2 = current(context);
+        const state2 = current(context2);
         if (!state2) return;
         const remote = state2.sprite.remoteUrl || (getSpriteSource(state2.sprite) === "hosted" ? state2.sprite.url : "");
         if (!remote) {
@@ -7966,9 +8089,9 @@ function createSpriteActions(context) {
       label: t("sprite.manager.content.action.cover", "设为封面"),
       icon: "★",
       run() {
-        const state2 = current(context);
+        const state2 = current(context2);
         if (!state2) return;
-        commitAndRefresh(context, { ...state2.pack, coverTag: state2.sprite.tag });
+        commitAndRefresh(context2, { ...state2.pack, coverTag: state2.sprite.tag });
       }
     },
     {
@@ -7977,7 +8100,7 @@ function createSpriteActions(context) {
       icon: "✕",
       destructive: true,
       run() {
-        const state2 = current(context);
+        const state2 = current(context2);
         if (!state2 || !window.confirm(t("sprite.manager.content.action.confirm_delete", "删除立绘「{{p0}}」？", { p0: state2.sprite.tag }))) return;
         const next = removeSprite(
           state2.pack,
@@ -7985,9 +8108,9 @@ function createSpriteActions(context) {
           spriteGroup(state2.sprite),
           state2.sprite.outfit ?? ""
         );
-        context.commit(next);
-        if (next.sprites.length === 0) context.close();
-        else context.refresh();
+        context2.commit(next);
+        if (next.sprites.length === 0) context2.close();
+        else context2.refresh();
       }
     }
   ];
@@ -8426,17 +8549,17 @@ function object(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : null;
 }
 function hasFields(value, fields) {
-  const record = object(value);
-  return !!record && fields.every((key) => Object.hasOwn(record, key));
+  const record2 = object(value);
+  return !!record2 && fields.every((key) => Object.hasOwn(record2, key));
 }
 function preservesFields(original, normalized) {
   if (original === normalized) return true;
   if (Array.isArray(original)) {
     return Array.isArray(normalized) && original.length === normalized.length && original.every((value, index) => preservesFields(value, normalized[index]));
   }
-  const record = object(original);
+  const record2 = object(original);
   const next = object(normalized);
-  return !!record && !!next && Object.keys(record).every((key) => Object.hasOwn(next, key) && preservesFields(record[key], next[key]));
+  return !!record2 && !!next && Object.keys(record2).every((key) => Object.hasOwn(next, key) && preservesFields(record2[key], next[key]));
 }
 function findUnmappedEmbeddedImages(rawSettings, settings) {
   const raw = object(rawSettings);
@@ -8971,12 +9094,14 @@ function createSpriteManager(deps) {
   const childDialogs = /* @__PURE__ */ new Set();
   const popoverListeners = /* @__PURE__ */ new Set();
   let popoverOpener = null;
+  let stopViewport = null;
   function applyBackdropSize() {
     if (!backdrop) return;
-    backdrop.style.left = "0";
-    backdrop.style.top = "0";
-    backdrop.style.width = `${window.innerWidth}px`;
-    backdrop.style.height = `${window.innerHeight}px`;
+    const viewport = fixedViewport();
+    backdrop.style.left = `${viewport.left}px`;
+    backdrop.style.top = `${viewport.top}px`;
+    backdrop.style.width = `${viewport.width}px`;
+    backdrop.style.height = `${viewport.height}px`;
   }
   function open(source = "overlay") {
     if (destroyed) return;
@@ -8999,7 +9124,7 @@ function createSpriteManager(deps) {
     batchMode = false;
     selectedPackIds.clear();
     backdrop = el3("div", "so-manager-backdrop");
-    window.addEventListener("resize", applyBackdropSize);
+    stopViewport = observeFixedViewport(applyBackdropSize);
     applyBackdropSize();
     const dialog = el3("div", "so-manager");
     dialog.setAttribute("role", "dialog");
@@ -9073,7 +9198,8 @@ function createSpriteManager(deps) {
     const focus = dialogFocus;
     dialogFocus = null;
     focus?.dispose();
-    window.removeEventListener("resize", applyBackdropSize);
+    stopViewport?.();
+    stopViewport = null;
     backdrop.remove();
     backdrop = null;
     deps.onClosed?.(openedFrom);
@@ -9560,7 +9686,7 @@ function createSpriteManager(deps) {
         enableBtn.setAttribute("aria-haspopup", "dialog");
         enableBtn.setAttribute("aria-expanded", String(enableListOpen));
         enableBtn.setAttribute("aria-controls", nextManagerId());
-        enableBtn.setAttribute("aria-label", t("sprite.manager.enable_for", "为「{{name}}」勾选启用立绘包", { name: characterName }));
+        enableBtn.setAttribute("aria-label", `${enableBtn.textContent}：${t("sprite.manager.enable_for", "为「{{name}}」勾选启用立绘包", { name: characterName })}`);
         actions.append(enableBtn);
       }
       actions.append(
@@ -10192,7 +10318,7 @@ function createSpriteManager(deps) {
     stack.dataset.managerFocus = `role:${roleKey}`;
     stack.dataset.roleKey = roleKey;
     stack.setAttribute("aria-expanded", "false");
-    stack.setAttribute("aria-label", t("sprite.manager.content.pack.expand_role", "展开「{{p0}}」的 {{p1}} 个图包", { p0: role, p1: packs.length }));
+    stack.title = t("sprite.manager.content.pack.expand_role", "展开「{{p0}}」的 {{p1}} 个图包", { p0: role, p1: packs.length });
     for (let index = 2; index >= 1; index -= 1) {
       const layer = el3("span", `so-role-stack-layer so-role-stack-layer-${index}`);
       layer.setAttribute("aria-hidden", "true");
@@ -10236,8 +10362,7 @@ function createSpriteManager(deps) {
     card.dataset.managerFocus = `pack:${pack.id}`;
     card.tabIndex = 0;
     card.setAttribute("role", "button");
-    card.setAttribute("aria-label", t("sprite.manager.content.pack.open", "打开立绘包「{{p0}}」", { p0: pack.name }));
-    card.title = t("sprite.manager.content.pack.open_hint", "点击进入管理");
+    card.title = t("sprite.manager.content.pack.open", "打开立绘包「{{p0}}」", { p0: pack.name });
     const coverBox = el3("div", "so-card-cover");
     const cover = getPackCover(pack);
     if (cover) {
@@ -10314,7 +10439,6 @@ function createSpriteManager(deps) {
       );
       card.append(orderRow);
       card.title = preset ? t("sprite.manager.content.batch.preset_select_hint", "点击勾选资源操作；预设包不可删除，可拖拽排序") : t("sprite.manager.content.batch.select_hint", "点击勾选；可拖拽排序");
-      card.setAttribute("aria-label", t("sprite.manager.content.batch.select_pack", "选择立绘包「{{p0}}」", { p0: pack.name }));
       const toggleSelect = () => {
         if (selectedPackIds.has(pack.id)) selectedPackIds.delete(pack.id);
         else selectedPackIds.add(pack.id);
@@ -10937,14 +11061,14 @@ function createSpriteManager(deps) {
   }
   function actionContext(packId, getSprite, closeAction) {
     const getPack = () => deps.getSettings().packs.find((candidate) => candidate.id === packId) ?? null;
-    const context = {
+    const context2 = {
       getPack,
       getSprite: () => {
         const pack = getPack();
         return pack ? getSprite(pack) : null;
       },
       commit: commitActionPack,
-      pickReplacement: () => pickReplacement(packId, () => context.getSprite()),
+      pickReplacement: () => pickReplacement(packId, () => context2.getSprite()),
       localize: async (source) => {
         const identity = {
           tag: source.tag,
@@ -10981,7 +11105,7 @@ function createSpriteManager(deps) {
             remoteUrl: localized.remoteUrl
           }));
         }
-        context.refresh();
+        context2.refresh();
         toast(currentManagerBody(), t("sprite.manager.content.localize.saved", "已将「{{p0}}」保存到本地", { p0: source.tag }));
       },
       refresh: () => {
@@ -10990,10 +11114,10 @@ function createSpriteManager(deps) {
       },
       close: closeAction
     };
-    return context;
+    return context2;
   }
   function lightboxActions(state2) {
-    const context = actionContext(
+    const context2 = actionContext(
       state2.packId,
       (pack) => pack.sprites[state2.index] ?? null,
       () => {
@@ -11001,18 +11125,18 @@ function createSpriteManager(deps) {
         state2.controller?.close();
       }
     );
-    return createSpriteActions(context).map((action) => ({
+    return createSpriteActions(context2).map((action) => ({
       ...action,
       run: () => runSpriteAction(action)
     }));
   }
   function presetLightboxActions(state2) {
-    const context = actionContext(
+    const context2 = actionContext(
       state2.packId,
       (pack) => pack.sprites[state2.index] ?? null,
       () => state2.controller?.close()
     );
-    return createSpriteActions(context).filter((action) => action.allowedInReadonly).map((action) => ({ ...action, run: () => runSpriteAction(action) }));
+    return createSpriteActions(context2).filter((action) => action.allowedInReadonly).map((action) => ({ ...action, run: () => runSpriteAction(action) }));
   }
   function renderSpriteCell(body, pack, sprite, index, readonly) {
     const cell = el3("div", "so-sprite-cell");
@@ -11045,7 +11169,7 @@ function createSpriteManager(deps) {
       group: spriteGroup(sprite),
       outfit: sprite.outfit ?? ""
     };
-    const context = actionContext(
+    const context2 = actionContext(
       pack.id,
       (latest) => latest.sprites.find(
         (candidate) => candidate.tag === identity.tag && spriteGroup(candidate) === identity.group && (candidate.outfit ?? "") === identity.outfit
@@ -11055,7 +11179,7 @@ function createSpriteManager(deps) {
         refreshLightbox();
       }
     );
-    const sharedActions = createSpriteActions(context);
+    const sharedActions = createSpriteActions(context2);
     for (const action of sharedActions) {
       const actionButton3 = iconButton(
         action.icon ?? action.label,
@@ -11069,12 +11193,12 @@ function createSpriteManager(deps) {
     }
     bar.append(
       iconButton("◀", t("sprite.manager.content.move_earlier", "前移"), () => {
-        const target = context.getPack();
+        const target = context2.getPack();
         if (!target) return;
         commitPack(moveSprite(target, index, index - 1));
       }),
       iconButton("▶", t("sprite.manager.content.move_later", "后移"), () => {
-        const target = context.getPack();
+        const target = context2.getPack();
         if (!target) return;
         commitPack(moveSprite(target, index, index + 1));
       })
@@ -11914,7 +12038,8 @@ function mountMessagePostprocess(deps) {
   const renderedEvents = [...new Set([
     ctx.eventTypes?.CHARACTER_MESSAGE_RENDERED,
     ctx.eventTypes?.USER_MESSAGE_RENDERED,
-    ctx.eventTypes?.MESSAGE_UPDATED
+    ctx.eventTypes?.MESSAGE_UPDATED,
+    ctx.eventTypes?.MESSAGE_SWIPED
   ].filter((e) => typeof e === "string" && e.length > 0))];
   let active = true;
   const pendingTimers = /* @__PURE__ */ new Set();
@@ -12090,8 +12215,8 @@ function processMessageElement(root, settings, rawMessage = null) {
   const snap = snapshots.get(root);
   const contentIsOurs = snap !== void 0 && root.querySelector(`.${MARKER_CLASS}`) !== null;
   const originalText = contentIsOurs ? snap.originalText : root.textContent ?? "";
-  const fingerprint = `${settings.hideTagInMessage ? "T" : ""}${settings.renderInlineImages ? "I" : ""}${inlineSprites ? "S" : ""}${hideUpdateBlocks ? "V" : ""}|${hashText(host)}|${hashText(originalText)}|${rawMessage === null ? "" : hashText(rawMessage)}`;
-  if (contentIsOurs && root.getAttribute(FP_ATTR) === fingerprint) return;
+  const fingerprint2 = `${settings.hideTagInMessage ? "T" : ""}${settings.renderInlineImages ? "I" : ""}${inlineSprites ? "S" : ""}${hideUpdateBlocks ? "V" : ""}|${hashText(host)}|${hashText(originalText)}|${rawMessage === null ? "" : hashText(rawMessage)}`;
+  if (contentIsOurs && root.getAttribute(FP_ATTR) === fingerprint2) return;
   if (contentIsOurs) {
     root.replaceChildren(...snap.nodes);
   }
@@ -12163,7 +12288,7 @@ function processMessageElement(root, settings, rawMessage = null) {
   processedMark.className = MARKER_CLASS;
   processedMark.hidden = true;
   root.prepend(processedMark);
-  root.setAttribute(FP_ATTR, fingerprint);
+  root.setAttribute(FP_ATTR, fingerprint2);
 }
 function createImage(src, alt, extraClass = "") {
   const wrap = document.createElement("span");
@@ -12683,8 +12808,8 @@ async function restoreTransaction(source, bridge, confirmedConflictFields = []) 
   await bridge.persistTransaction(transaction);
   return { transaction, conflicts: [] };
 }
-function capabilitySignature(snapshot) {
-  return [...snapshot.capabilities].map((capability) => `${capability.id}:${capability.available ? "1" : "0"}`).sort().join("|");
+function capabilitySignature(snapshot2) {
+  return [...snapshot2.capabilities].map((capability) => `${capability.id}:${capability.available ? "1" : "0"}`).sort().join("|");
 }
 function flattenNumbers(value, prefix = "", output = {}) {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -12900,8 +13025,8 @@ function numberRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value;
 }
-function resourceGroups(snapshot) {
-  const resources = numberRecord(snapshot.metrics.resources);
+function resourceGroups(snapshot2) {
+  const resources = numberRecord(snapshot2.metrics.resources);
   return Array.isArray(resources?.groups) ? resources.groups.filter((item) => typeof item === "object" && item !== null && !Array.isArray(item)) : [];
 }
 function unavailableCapabilities(capabilities) {
@@ -12909,10 +13034,10 @@ function unavailableCapabilities(capabilities) {
     (capability) => !capability.available
   );
 }
-function capabilityAvailable(snapshot, id) {
-  return snapshot.capabilities.some((capability) => capability.id === id && capability.available);
+function capabilityAvailable(snapshot2, id) {
+  return snapshot2.capabilities.some((capability) => capability.id === id && capability.available);
 }
-function diagnose(snapshot, current2) {
+function diagnose(snapshot2, current2) {
   const findings = [];
   if (current2) {
     if (!current2.fast_ui_mode) findings.push(settingFinding(
@@ -12969,7 +13094,7 @@ function diagnose(snapshot, current2) {
       "流式动画细腻度会降低，不改变回复内容。",
       "立即影响后续流式回复。"
     ));
-    const limit = snapshot.environment.mobile.available ? snapshot.environment.mobile.value ? 20 : 50 : null;
+    const limit = snapshot2.environment.mobile.available ? snapshot2.environment.mobile.value ? 20 : 50 : null;
     if (limit !== null && (current2.chat_truncation === 0 || current2.chat_truncation > limit)) findings.push(settingFinding(
       "setting-chat-truncation",
       "perf-chat-truncation",
@@ -12980,10 +13105,10 @@ function diagnose(snapshot, current2) {
       "需要重载当前聊天。"
     ));
   }
-  const dynamic = numberRecord(snapshot.metrics.dynamic);
+  const dynamic = numberRecord(snapshot2.metrics.dynamic);
   const longestTask = typeof dynamic?.longestTaskMs === "number" ? dynamic.longestTaskMs : 0;
   const longTaskCount = typeof dynamic?.longTaskCount === "number" ? dynamic.longTaskCount : 0;
-  if (capabilityAvailable(snapshot, "longTasks") && longTaskCount > 0 && longestTask >= 50) findings.push(finding({
+  if (capabilityAvailable(snapshot2, "longTasks") && longTaskCount > 0 && longestTask >= 50) findings.push(finding({
     id: "measured-long-tasks",
     layer: "pageRendering",
     evidence: { longTaskCount, longestTaskMs: longestTask },
@@ -12998,8 +13123,8 @@ function diagnose(snapshot, current2) {
       restore: "显示设置和扩展排查都保留独立的恢复入口。"
     }
   }));
-  const extensionResources = resourceGroups(snapshot).filter((group) => typeof group.key === "string" && group.key.startsWith("extension:"));
-  if (capabilityAvailable(snapshot, "resourceTiming") && extensionResources.length > 0) findings.push(finding({
+  const extensionResources = resourceGroups(snapshot2).filter((group) => typeof group.key === "string" && group.key.startsWith("extension:"));
+  if (capabilityAvailable(snapshot2, "resourceTiming") && extensionResources.length > 0) findings.push(finding({
     id: "extension-resource-evidence",
     layer: "extensions",
     evidence: { groups: extensionResources },
@@ -13014,8 +13139,8 @@ function diagnose(snapshot, current2) {
       restore: "启停都在 SillyTavern 自己的扩展管理里操作，本工具不改动你的扩展禁用清单。"
     }
   }));
-  const page = numberRecord(snapshot.metrics.page);
-  if (page && capabilityAvailable(snapshot, "pageSummary")) findings.push(finding({
+  const page = numberRecord(snapshot2.metrics.page);
+  if (page && capabilityAvailable(snapshot2, "pageSummary")) findings.push(finding({
     id: "evidence-page-dom",
     layer: "pageRendering",
     evidence: page,
@@ -13030,8 +13155,8 @@ function diagnose(snapshot, current2) {
       restore: "没有修改，无需恢复。"
     }
   }));
-  const media = numberRecord(snapshot.metrics.media);
-  if (media && capabilityAvailable(snapshot, "mediaDom")) findings.push(finding({
+  const media = numberRecord(snapshot2.metrics.media);
+  if (media && capabilityAvailable(snapshot2, "mediaDom")) findings.push(finding({
     id: "evidence-media",
     layer: "mediaResourcesStorage",
     evidence: media,
@@ -13046,7 +13171,7 @@ function diagnose(snapshot, current2) {
       restore: "没有修改，无需恢复。"
     }
   }));
-  const unavailable2 = unavailableCapabilities(snapshot.capabilities);
+  const unavailable2 = unavailableCapabilities(snapshot2.capabilities);
   if (unavailable2.length > 0) findings.push(finding({
     id: "capability-unavailable",
     layer: "mediaResourcesStorage",
@@ -13127,9 +13252,9 @@ function readEmergencyBackup(storage) {
   try {
     const value = JSON.parse(raw);
     if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-    const record = value;
-    if (record.version !== 1 || typeof record.createdAt !== "number" || !Number.isFinite(record.createdAt) || !Array.isArray(record.disabledExtensions) || !record.disabledExtensions.every((name) => typeof name === "string" && name.length > 0) || record.disabledExtensions.some((name) => typeof name === "string" && isSelf(name))) return null;
-    return buildEmergencyBackup(record.disabledExtensions, record.createdAt);
+    const record2 = value;
+    if (record2.version !== 1 || typeof record2.createdAt !== "number" || !Number.isFinite(record2.createdAt) || !Array.isArray(record2.disabledExtensions) || !record2.disabledExtensions.every((name) => typeof name === "string" && name.length > 0) || record2.disabledExtensions.some((name) => typeof name === "string" && isSelf(name))) return null;
+    return buildEmergencyBackup(record2.disabledExtensions, record2.createdAt);
   } catch {
     return null;
   }
@@ -13236,8 +13361,8 @@ function protectedMeasurementIds(data) {
 function oldestRecordIndex(history, protectedIds) {
   let oldestIndex = -1;
   for (let index = 0; index < history.length; index += 1) {
-    const record = history[index];
-    if (record.kind === "measurement" && protectedIds.has(record.measurement.id)) continue;
+    const record2 = history[index];
+    if (record2.kind === "measurement" && protectedIds.has(record2.measurement.id)) continue;
     if (oldestIndex < 0) {
       oldestIndex = index;
       continue;
@@ -13282,7 +13407,7 @@ function fitButlerDataBudget(data, budgetBytes = BUTLER_DATA_BUDGET_BYTES, candi
       bytes,
       budgetBytes,
       status: evictedIds.length > 0 ? "evicted" : "ok",
-      historyAccepted: candidateHistoryId === void 0 ? true : fitted.history.some((record) => record.id === candidateHistoryId),
+      historyAccepted: candidateHistoryId === void 0 ? true : fitted.history.some((record2) => record2.id === candidateHistoryId),
       evictedIds
     };
   }
@@ -13568,22 +13693,29 @@ function normalizeHistoryRecord(value) {
   return null;
 }
 function normalizeV2(value) {
-  if (value.version !== BUTLER_DATA_VERSION || typeof value.performanceModeOn !== "boolean" || !Array.isArray(value.history)) return null;
+  if (value.version !== BUTLER_DATA_VERSION) return null;
   const activeTransaction = value.activeTransaction === null ? null : normalizeButlerTransaction(value.activeTransaction);
   const pendingExperiment = value.pendingExperiment === null ? null : normalizeButlerExperiment(value.pendingExperiment);
   const recoverableTransaction = activeTransaction && isOneOf(activeTransaction.status, ACTIVE_TRANSACTION_STATUSES) && isOneOf(activeTransaction.restoreStatus, ACTIVE_RESTORE_STATUSES) ? activeTransaction : null;
   const resumableExperiment = pendingExperiment && isOneOf(pendingExperiment.status, PENDING_EXPERIMENT_STATUSES) ? pendingExperiment : null;
   const history = [];
-  for (const candidate of value.history) {
+  for (const candidate of Array.isArray(value.history) ? value.history : []) {
     const normalized = normalizeHistoryRecord(candidate);
     if (normalized) history.push(normalized);
   }
+  const warnings = /* @__PURE__ */ new Set();
+  for (const warning of Array.isArray(value.recoveryWarnings) ? value.recoveryWarnings : []) {
+    if (warning === "performance" || warning === "extensions") warnings.add(warning);
+  }
+  if (value.activeTransaction != null && !activeTransaction) warnings.add("performance");
+  if (value.pendingExperiment != null && !pendingExperiment) warnings.add("extensions");
   return {
     version: BUTLER_DATA_VERSION,
-    performanceModeOn: value.performanceModeOn,
+    performanceModeOn: value.performanceModeOn === true && recoverableTransaction !== null,
     activeTransaction: recoverableTransaction,
     pendingExperiment: resumableExperiment,
-    history
+    history,
+    ...warnings.size ? { recoveryWarnings: [...warnings] } : {}
   };
 }
 function createEmptyButlerData() {
@@ -13598,8 +13730,8 @@ function createEmptyButlerData() {
 function migrateButlerData(value, _options = {}) {
   if (!isRecord(value)) return createEmptyButlerData();
   if (value.version === BUTLER_DATA_VERSION) return normalizeV2(value) ?? createEmptyButlerData();
-  const snapshot = normalizePerformanceSnapshot(value.snapshot);
-  if (!snapshot.ok || value.perfOn !== void 0 && typeof value.perfOn !== "boolean") {
+  const snapshot2 = normalizePerformanceSnapshot(value.snapshot);
+  if (!snapshot2.ok || value.perfOn !== void 0 && typeof value.perfOn !== "boolean") {
     return createEmptyButlerData();
   }
   return {
@@ -13832,8 +13964,8 @@ function buildReportModal(controller) {
       body.append(compare.box);
     }
     const history = foldSection(`最近操作（${controller.getData().history.length}）`);
-    for (const record of [...controller.getData().history].reverse()) {
-      text(history.body, `${new Date(record.createdAt).toLocaleString()} · ${String(record.summary.label ?? record.kind)} · ${record.outcome}`);
+    for (const record2 of [...controller.getData().history].reverse()) {
+      text(history.body, `${new Date(record2.createdAt).toLocaleString()} · ${String(record2.summary.label ?? record2.kind)} · ${record2.outcome}`);
     }
     if (controller.getData().history.length === 0) text(history.body, "暂无已保存操作。");
     body.append(history.box);
@@ -14176,21 +14308,21 @@ function readPerfState() {
     const reason = "未检测到 SillyTavern power_user 设置";
     return { status: "unavailable", snapshot: {}, capabilities: unavailableCapabilities2(reason), reason };
   }
-  const snapshot = {};
+  const snapshot2 = {};
   const capabilities = {};
   for (const [rawKey, expected] of Object.entries(PERF_FIELDS)) {
     const key = rawKey;
     const value = pu[key];
     const valid2 = expected === "boolean" ? typeof value === "boolean" : typeof value === "number" && Number.isFinite(value);
     if (valid2) {
-      Object.assign(snapshot, { [key]: value });
+      Object.assign(snapshot2, { [key]: value });
       capabilities[key] = { available: true };
     } else {
       capabilities[key] = { available: false, reason: "字段缺失或类型无效" };
     }
   }
   const complete = Object.values(capabilities).every((capability) => capability.available);
-  return { status: complete ? "ready" : "partial", snapshot, capabilities };
+  return { status: complete ? "ready" : "partial", snapshot: snapshot2, capabilities };
 }
 function readPerf() {
   const result = readPerfState();
@@ -14643,21 +14775,21 @@ function createMetricsSampler(deps) {
     };
   };
   const sampleDynamic = async (probe, signal, onFrameEffect) => {
-    const snapshot = await collectStatic(probe);
+    const snapshot2 = await collectStatic(probe);
     const combined = combineSignals(signal);
     const controller = combined.controller;
     const initialGenerating = deps.isGenerating();
     if (initialGenerating === null) {
       combined.cleanup();
-      snapshot.invalidReason = "无法读取生成状态，采样未开始";
-      return snapshot;
+      snapshot2.invalidReason = "无法读取生成状态，采样未开始";
+      return snapshot2;
     }
     if (initialGenerating) {
       combined.cleanup();
-      snapshot.invalidReason = "当前正在生成，采样未开始";
-      return snapshot;
+      snapshot2.invalidReason = "当前正在生成，采样未开始";
+      return snapshot2;
     }
-    const initialPage = snapshot.metrics.page;
+    const initialPage = snapshot2.metrics.page;
     const initialPageRecord = initialPage && typeof initialPage === "object" && !Array.isArray(initialPage) ? initialPage : null;
     const frameIntervals = [];
     const timerDelays = [];
@@ -14684,7 +14816,7 @@ function createMetricsSampler(deps) {
       longTaskSubscription = deps.observeLongTasks((duration) => {
         if (Number.isFinite(duration) && duration >= 0) longTasks.push(duration);
       });
-      snapshot.capabilities.push(longTaskSubscription ? available("longTasks") : unavailable("longTasks", "当前浏览器不支持页面卡顿记录"));
+      snapshot2.capabilities.push(longTaskSubscription ? available("longTasks") : unavailable("longTasks", "当前浏览器不支持页面卡顿记录"));
       await deps.runTimeline(BUTLER_PROBE_DURATION_MS, controller.signal, {
         onFrame(time) {
           if (!deps.isForeground()) {
@@ -14696,7 +14828,7 @@ function createMetricsSampler(deps) {
           if (generating === null) cancel("无法读取生成状态，采样已取消");
           else if (generating !== initialGenerating) cancel("生成状态发生变化，采样已取消");
           const currentPage = deps.readPageSummary();
-          if (snapshot.chatKey && currentPage.chat.available && currentPage.chat.value.chatKey !== snapshot.chatKey) {
+          if (snapshot2.chatKey && currentPage.chat.available && currentPage.chat.value.chatKey !== snapshot2.chatKey) {
             cancel("聊天已切换，采样已取消");
           }
           if (initialPageRecord && currentPage.dom.available) {
@@ -14724,7 +14856,7 @@ function createMetricsSampler(deps) {
       combined.cleanup();
     }
     const animationCount2 = deps.countAnimations();
-    snapshot.metrics.dynamic = {
+    snapshot2.metrics.dynamic = {
       frameSamples: frameIntervals.length,
       frameIntervalP95Ms: percentile95(frameIntervals),
       frameIntervalsOver50Ms: frameIntervals.filter((value) => value > 50).length,
@@ -14734,8 +14866,8 @@ function createMetricsSampler(deps) {
       longestTaskMs: longTasks.length > 0 ? Math.max(...longTasks) : 0,
       ...animationCount2 === null ? {} : { cssAnimationCount: animationCount2 }
     };
-    if (cancellationReason) snapshot.invalidReason = cancellationReason;
-    return snapshot;
+    if (cancellationReason) snapshot2.invalidReason = cancellationReason;
+    return snapshot2;
   };
   return {
     collectStatic: () => collectStatic("static"),
@@ -14753,24 +14885,24 @@ function createMetricsSampler(deps) {
         userInterfered = true;
       };
       if (!chat2) {
-        const snapshot = await collectStatic("controlledScroll");
-        snapshot.invalidReason = "未找到聊天滚动区域";
-        return snapshot;
+        const snapshot2 = await collectStatic("controlledScroll");
+        snapshot2.invalidReason = "未找到聊天滚动区域";
+        return snapshot2;
       }
       if (initialHeight < initialClientHeight * 3) {
-        const snapshot = await collectStatic("controlledScroll");
-        snapshot.invalidReason = "聊天区域不足三个视口高度，无法安全运行受控滚动";
-        return snapshot;
+        const snapshot2 = await collectStatic("controlledScroll");
+        snapshot2.invalidReason = "聊天区域不足三个视口高度，无法安全运行受控滚动";
+        return snapshot2;
       }
       if (initialGenerating === null) {
-        const snapshot = await collectStatic("controlledScroll");
-        snapshot.invalidReason = "无法读取生成状态，采样未开始";
-        return snapshot;
+        const snapshot2 = await collectStatic("controlledScroll");
+        snapshot2.invalidReason = "无法读取生成状态，采样未开始";
+        return snapshot2;
       }
       if (initialGenerating) {
-        const snapshot = await collectStatic("controlledScroll");
-        snapshot.invalidReason = "生成状态发生变化或当前正在生成，采样已取消";
-        return snapshot;
+        const snapshot2 = await collectStatic("controlledScroll");
+        snapshot2.invalidReason = "生成状态发生变化或当前正在生成，采样已取消";
+        return snapshot2;
       }
       const baseline = deps.readPageSummary();
       const baselineChatKey = baseline.chat.available ? baseline.chat.value.chatKey : null;
@@ -14779,7 +14911,7 @@ function createMetricsSampler(deps) {
       for (const event of userEvents) chat2.addEventListener(event, onUserInterference, { passive: true });
       chat2.scrollTop = maxScroll;
       try {
-        const snapshot = await sampleDynamic("controlledScroll", signal, (time) => {
+        const snapshot2 = await sampleDynamic("controlledScroll", signal, (time) => {
           if (userInterfered) localReason || (localReason = "检测到用户干预，采样已取消");
           if (chat2.scrollHeight !== initialHeight || chat2.clientHeight !== initialClientHeight) {
             localReason || (localReason = "聊天布局变化，采样已取消");
@@ -14802,13 +14934,13 @@ function createMetricsSampler(deps) {
         const generating = deps.isGenerating();
         if (generating === null) localReason || (localReason = "无法读取生成状态，采样已取消");
         else if (generating !== initialGenerating) localReason || (localReason = "生成状态发生变化，采样已取消");
-        snapshot.metrics.controlledScroll = {
-          valid: !snapshot.invalidReason && !localReason,
+        snapshot2.metrics.controlledScroll = {
+          valid: !snapshot2.invalidReason && !localReason,
           originalTop,
           distance
         };
-        if (localReason) snapshot.invalidReason = localReason;
-        return snapshot;
+        if (localReason) snapshot2.invalidReason = localReason;
+        return snapshot2;
       } finally {
         for (const event of userEvents) chat2.removeEventListener(event, onUserInterference);
         chat2.scrollTop = originalTop;
@@ -14823,7 +14955,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-10-26 11:21"}`;
+  return `${"0.9.0"}+${"2026-11-05 21:19"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -14894,11 +15026,11 @@ function resourceGroups2() {
     return null;
   }
 }
-function observeLongTasks(record) {
+function observeLongTasks(record2) {
   if (typeof PerformanceObserver === "undefined" || !PerformanceObserver.supportedEntryTypes?.includes("longtask")) return null;
   try {
     const observer = new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) record(entry.duration);
+      for (const entry of list.getEntries()) record2(entry.duration);
     });
     observer.observe({ type: "longtask", buffered: false });
     return { disconnect: () => observer.disconnect() };
@@ -15061,8 +15193,8 @@ function text2(parent, value, className = "so-butler-text") {
   return node;
 }
 function latestMeasurement(data, id) {
-  const records = data.history.filter((record) => record.kind === "measurement");
-  const target = id ? records.find((record) => record.measurement.id === id) : records.reduce((latest, record) => !latest || record.createdAt > latest.createdAt ? record : latest, null);
+  const records = data.history.filter((record2) => record2.kind === "measurement");
+  const target = id ? records.find((record2) => record2.measurement.id === id) : records.reduce((latest, record2) => !latest || record2.createdAt > latest.createdAt ? record2 : latest, null);
   return target?.measurement ?? null;
 }
 function measurementHistory(measurement, label, outcome = "completed") {
@@ -15110,10 +15242,10 @@ function currentDevice(services) {
   const mobile = services.readMobile();
   return mobile.available && mobile.value ? "mobile" : "desktop";
 }
-function upsertHistory(data, record) {
+function upsertHistory(data, record2) {
   return {
     ...data,
-    history: [...data.history.filter((item) => item.id !== record.id), record]
+    history: [...data.history.filter((item) => item.id !== record2.id), record2]
   };
 }
 function butlerApp(serviceOverrides) {
@@ -15247,12 +15379,12 @@ function mountButler(container, ctx, services, state2) {
       let baseline = baselineForTransaction();
       if (!baseline || baseline.probe === "static" || baseline.invalidReason) {
         baseline = await runProbe(state2.selectedProbe);
-        const record = measurementHistory(
+        const record2 = measurementHistory(
           baseline,
           "优化前基线",
           baseline.invalidReason ? "cancelled" : "completed"
         );
-        data = persistData(upsertHistory(data, record), record.id);
+        data = persistData(upsertHistory(data, record2), record2.id);
         if (baseline.invalidReason) throw new Error(`优化前检查未完成：${baseline.invalidReason}`);
       }
       const transaction = await applyTransaction(plan.actions, actionBridge, baseline?.id);
@@ -15261,9 +15393,9 @@ function mountButler(container, ctx, services, state2) {
         transaction.status === "applied" ? `已应用 ${transaction.actions.filter((action) => action.status === "applied").length} 项；可以再测一次，也可以随时恢复。` : "部分设置未成功写入，已保留事务和每项实际结果。",
         transaction.status === "applied" ? "success" : "error"
       );
-      if (baseline && !data.history.some((record) => record.kind === "measurement" && record.measurement.id === baseline.id)) {
-        const record = measurementHistory(baseline, "优化前基线", baseline.invalidReason ? "cancelled" : "completed");
-        data = persistData(upsertHistory(data, record), record.id);
+      if (baseline && !data.history.some((record2) => record2.kind === "measurement" && record2.measurement.id === baseline.id)) {
+        const record2 = measurementHistory(baseline, "优化前基线", baseline.invalidReason ? "cancelled" : "completed");
+        data = persistData(upsertHistory(data, record2), record2.id);
       }
     } finally {
       state2.applying = false;
@@ -15274,8 +15406,8 @@ function mountButler(container, ctx, services, state2) {
     const baseline = baselineForTransaction();
     if (!baseline || baseline.probe === "static") throw new Error("请先完成一次检查，再点“再测一次，比较优化前后”。");
     const result = await runProbe(baseline.probe);
-    const record = measurementHistory(result, "优化后再次检查", result.invalidReason ? "cancelled" : "completed");
-    data = persistData(upsertHistory(data, record), record.id);
+    const record2 = measurementHistory(result, "优化后再次检查", result.invalidReason ? "cancelled" : "completed");
+    data = persistData(upsertHistory(data, record2), record2.id);
     state2.comparison = compareMeasurements(baseline, result);
     setNotice(
       state2.comparison.comparable ? "两次检查条件一致，已显示优化前后的变化。" : `两次检查条件不同，暂时不能直接比较：${state2.comparison.reasons.join("；")}。`,
@@ -15298,12 +15430,12 @@ ${lines.join("\n")}
       result = await restoreTransaction(transaction, actionBridge, result.conflicts.map((item) => item.field));
     }
     if (result.transaction.restoreStatus === "restored") {
-      const record = transactionHistory(result.transaction);
+      const record2 = transactionHistory(result.transaction);
       data = persistData({
-        ...upsertHistory(data, record),
+        ...upsertHistory(data, record2),
         activeTransaction: null,
         performanceModeOn: false
-      }, record.id);
+      }, record2.id);
       setNotice("已恢复到优化前设置。", "success");
     } else {
       data = persistData({ ...data, activeTransaction: result.transaction });
@@ -15330,8 +15462,8 @@ ${lines.join("\n")}
         data = persistData({ ...data, pendingExperiment: completed });
         throw new Error(completed.notes ?? "扩展清单恢复失败");
       }
-      const record = experimentHistory(completed, "恢复扩展状态（排查流程已下线）");
-      data = persistData({ ...upsertHistory(data, record), pendingExperiment: null }, record.id);
+      const record2 = experimentHistory(completed, "恢复扩展状态（排查流程已下线）");
+      data = persistData({ ...upsertHistory(data, record2), pendingExperiment: null }, record2.id);
       setNotice("已恢复最初扩展禁用清单。", "success");
     },
     async restoreEmergencyBackup(backup) {
@@ -15405,6 +15537,23 @@ ${lines.join("\n")}
       );
     }
     container.append(header);
+    if (data.recoveryWarnings?.length) {
+      const warning = el2("div", "so-app-section so-butler-pending");
+      warning.setAttribute("role", "note");
+      if (data.recoveryWarnings.includes("performance")) {
+        text2(warning, "无法恢复上次性能设置：保存的恢复记录已损坏。当前酒馆设置未被改动，请对照备份或酒馆设置手动核对。", "so-butler-alert");
+      }
+      if (data.recoveryWarnings.includes("extensions")) {
+        text2(warning, "上次扩展排查的恢复记录已损坏。请打开“扩展指南”检查独立恢复备份，或手动核对酒馆的扩展启用状态。", "so-butler-alert");
+      }
+      warning.append(appButton("我已检查，清除此提示", () => {
+        const next = { ...data };
+        delete next.recoveryWarnings;
+        data = persistData(next);
+        render2();
+      }));
+      container.append(warning);
+    }
     const guide = el2("div", "so-app-section so-butler-guide");
     const guideTitle = el2("div", "so-app-title");
     guideTitle.textContent = "使用步骤";
@@ -15432,8 +15581,8 @@ ${lines.join("\n")}
     if (state2.sampling) sampling.append(appButton("取消本次检查", () => state2.controller?.abort()));
     else sampling.append(appButton("开始 6 秒体检", () => void safely(async () => {
       const result = await runProbe(state2.selectedProbe);
-      const record = measurementHistory(result, result.probe === "idle" ? "静置体检" : "受控滚动体检", result.invalidReason ? "cancelled" : "completed");
-      data = persistData(upsertHistory(data, record), record.id);
+      const record2 = measurementHistory(result, result.probe === "idle" ? "静置体检" : "受控滚动体检", result.invalidReason ? "cancelled" : "completed");
+      data = persistData(upsertHistory(data, record2), record2.id);
     })));
     container.append(sampling);
     const findingSection = foldSection(`检查发现（${state2.findings.length}）`, true, "butler-findings");
@@ -15731,6 +15880,15 @@ function newvarApp(deps) {
   };
 }
 
+// core/character-identity.ts
+function stableCharacterKey(card) {
+  const avatar = card?.avatar;
+  return typeof avatar === "string" && avatar.trim() === avatar && avatar.length > 0 && avatar.length <= 255 && avatar !== "none" && avatar !== "." && avatar !== ".." && !/[\\/]/.test(avatar) && ![...avatar].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) ? `avatar:${avatar}` : null;
+}
+function isStableCharacterKey(key) {
+  return key.startsWith("avatar:") && stableCharacterKey({ avatar: key.slice(7) }) === key;
+}
+
 // st-extension/src/apps/api/core.ts
 var API_APP_ID = "api";
 var API_PROFILE_VERSION = 2;
@@ -15779,8 +15937,11 @@ function newProfileId() {
 }
 function sanitizeAppData(raw) {
   const profiles = [];
+  const refs = raw?.nativeCharacterProfiles;
+  const nativeCharacterProfiles = refs && typeof refs === "object" && !Array.isArray(refs) ? Object.fromEntries(Object.entries(refs).filter(([key, id]) => isStableCharacterKey(key) && typeof id === "string" && id.length > 0 && id.length <= 256)) : {};
+  const result = { profiles, ...Object.keys(nativeCharacterProfiles).length ? { nativeCharacterProfiles } : {} };
   const list = raw?.profiles;
-  if (!Array.isArray(list)) return { profiles };
+  if (!Array.isArray(list)) return result;
   for (const item of list) {
     if (!item || typeof item !== "object") continue;
     const p = item;
@@ -15812,7 +15973,7 @@ function sanitizeAppData(raw) {
       settings
     });
   }
-  return { profiles };
+  return result;
 }
 function validateDraft(draft) {
   if (!draft.name.trim()) return "给连接档案起个名称吧。";
@@ -15882,6 +16043,7 @@ function getST3() {
     return void 0;
   }
 }
+var getApiHostContext = getST3;
 function toast2(kind, message) {
   const t2 = window.toastr;
   t2?.[kind]?.(message, "API 切换");
@@ -15917,10 +16079,10 @@ async function readConnection(options = {}) {
   const descriptor = getSource(mainApi, source);
   const secretId = readString(settings, `${descriptor.secretKey}_id`) || readString(settings, "secret_id");
   const secret = options.withSecret === false ? { key: "", mode: "unavailable" } : await readSecret(st, descriptor.secretKey, secretId);
-  const snapshot = {};
+  const snapshot2 = {};
   for (const key of SOURCE_SETTING_KEYS) {
     const value = settings[key];
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") snapshot[key] = value;
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") snapshot2[key] = value;
   }
   return {
     mainApi,
@@ -15928,10 +16090,11 @@ async function readConnection(options = {}) {
     url: readString(settings, descriptor.urlField) || (descriptor.urlSelector ? document.querySelector(descriptor.urlSelector)?.value ?? "" : ""),
     model: readString(settings, descriptor.modelField) || (descriptor.modelSelector ? document.querySelector(descriptor.modelSelector)?.value ?? "" : ""),
     online: (st.onlineStatus ?? "no_connection") !== "no_connection",
-    settings: snapshot,
+    settings: snapshot2,
     key: secret.key,
     secretId,
-    secretMode: secret.mode
+    secretMode: secret.mode,
+    statusText: st.onlineStatus ?? "no_connection"
   };
 }
 function onOnlineStatusChanged(handler) {
@@ -15939,7 +16102,7 @@ function onOnlineStatusChanged(handler) {
   const source = st?.eventSource;
   if (!source) return () => {
   };
-  const eventName = st.event_types?.ONLINE_STATUS_CHANGED ?? "online_status_changed";
+  const eventName = st.eventTypes?.ONLINE_STATUS_CHANGED ?? st.event_types?.ONLINE_STATUS_CHANGED ?? "online_status_changed";
   source.on(eventName, handler);
   return () => source.removeListener(eventName, handler);
 }
@@ -16068,31 +16231,115 @@ async function fetchModelsTransaction(profile) {
   }
 }
 
+// st-extension/src/apps/api/native-profiles.ts
+function context() {
+  return getApiHostContext();
+}
+var NativeProfileError = class extends Error {
+  constructor(code) {
+    super(code);
+    this.code = code;
+  }
+};
+function readNativeProfiles() {
+  const st = context(), manager = st?.extensionSettings?.connectionManager;
+  const profiles = [];
+  if (Array.isArray(manager?.profiles)) for (const raw of manager.profiles) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const { id, name, mode, model } = raw;
+    if (typeof id !== "string" || !id || id.length > 256 || typeof name !== "string" || !name.trim() || profiles.some((item) => item.id === id)) continue;
+    profiles.push({ id, name, mode: typeof mode === "string" ? mode.slice(0, 20) : "", model: typeof model === "string" ? model.slice(0, 240) : "" });
+  }
+  return {
+    available: !!st?.eventSource && !!document.querySelector("select#connection_profiles") && !st.extensionSettings?.disabledExtensions?.includes("connection-manager"),
+    selectedId: typeof manager?.selectedProfile === "string" ? manager.selectedProfile : "",
+    profiles
+  };
+}
+var switching = false;
+function isNativeSwitching() {
+  return switching;
+}
+async function switchNativeProfile(id, timeoutMs = 15e3) {
+  if (switching) throw new NativeProfileError("busy");
+  const snapshot2 = readNativeProfiles(), st = context(), source = st?.eventSource;
+  const select = document.querySelector("select#connection_profiles");
+  if (!snapshot2.available || !source || !select) throw new NativeProfileError("unavailable");
+  if (!snapshot2.profiles.some((item) => item.id === id) || ![...select.options].some((option) => option.value === id)) throw new NativeProfileError("missing");
+  const event = st?.eventTypes?.CONNECTION_PROFILE_LOADED ?? st?.event_types?.CONNECTION_PROFILE_LOADED ?? "connection_profile_loaded";
+  switching = true;
+  try {
+    await new Promise((resolve, reject) => {
+      const cleanup = () => {
+        clearTimeout(timer);
+        source.removeListener(event, loaded);
+      };
+      const loaded = (name) => {
+        if (name !== snapshot2.profiles.find((item) => item.id === id)?.name) return;
+        cleanup();
+        if (readNativeProfiles().selectedId === id) resolve();
+        else reject(new NativeProfileError("interrupted"));
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new NativeProfileError("timeout"));
+      }, timeoutMs);
+      source.on(event, loaded);
+      try {
+        select.value = id;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      } catch (error) {
+        cleanup();
+        reject(error);
+      }
+    });
+  } finally {
+    switching = false;
+  }
+}
+function onNativeProfilesChanged(handler) {
+  const st = context(), source = st?.eventSource;
+  if (!source) return () => {
+  };
+  const events = ["CONNECTION_PROFILE_LOADED", "CONNECTION_PROFILE_CREATED", "CONNECTION_PROFILE_UPDATED", "CONNECTION_PROFILE_DELETED"].map((key) => st?.eventTypes?.[key] ?? st?.event_types?.[key] ?? key.toLowerCase());
+  for (const event of events) source.on(event, handler);
+  return () => {
+    for (const event of events) source.removeListener(event, handler);
+  };
+}
+
 // st-extension/src/apps/api-app.ts
 function apiApp(deps) {
   let unsubscribe = null;
+  let mounted = null;
   return {
     id: API_APP_ID,
     name: "API",
     icon: "📡",
     order: 6,
     mount(container, ctx) {
-      const state2 = { busy: false, message: "", connection: null, connectionLoaded: false };
+      const state2 = { busy: false, message: "", connection: null, connectionLoaded: false, alive: true, refresh: 0 };
+      mounted = state2;
       render(container, ctx, deps, state2);
       void refreshConnection(container, ctx, deps, state2);
-      unsubscribe = onOnlineStatusChanged(() => {
-        if (!state2.busy && container.isConnected) void refreshConnection(container, ctx, deps, state2);
-      });
+      const refresh = () => {
+        if (!state2.busy && state2.alive) void refreshConnection(container, ctx, deps, state2);
+      };
+      const cleanups = [onOnlineStatusChanged(refresh), onNativeProfilesChanged(refresh), ctx.onCharacterChanged(refresh)];
+      unsubscribe = () => cleanups.forEach((dispose) => dispose());
     },
     unmount() {
+      if (mounted) mounted.alive = false;
+      mounted = null;
       unsubscribe?.();
       unsubscribe = null;
     }
   };
 }
 async function refreshConnection(container, ctx, deps, state2) {
+  const request = ++state2.refresh;
   const connection = await readConnection({ withSecret: false });
-  if (!container.isConnected) return;
+  if (!state2.alive || !container.isConnected || request !== state2.refresh) return;
   state2.connection = connection;
   state2.connectionLoaded = true;
   render(container, ctx, deps, state2);
@@ -16100,25 +16347,106 @@ async function refreshConnection(container, ctx, deps, state2) {
 function render(container, ctx, deps, state2) {
   const data = sanitizeAppData(ctx.getAppData());
   const connection = state2.connection;
-  if (!container.isConnected) return;
+  if (!state2.alive || !container.isConnected) return;
   const active = connection ? findActiveProfile(data.profiles, connection) : void 0;
+  const focused = container.contains(document.activeElement) ? document.activeElement.dataset.apiFocus : void 0;
+  const legacyOpen = container.querySelector("[data-api-legacy]")?.open ?? false;
   container.textContent = "";
   const status = el2("div", "so-app-section");
   const title2 = el2("div", "so-app-title");
-  title2.textContent = "当前连接";
+  title2.textContent = t("nativeApi.status", "当前连接");
   status.append(title2);
   const line = el2("div", "so-app-desc");
-  if (!state2.connectionLoaded) line.textContent = "正在读取当前连接…";
-  else if (!connection) line.textContent = "未检测到 SillyTavern 运行时（这里只展示已保存档案）。";
+  if (!state2.connectionLoaded) line.textContent = t("nativeApi.loading", "正在读取当前连接…");
+  else if (!connection) line.textContent = t("nativeApi.noHost", "未检测到 SillyTavern 运行时。");
   else {
     const source = getSource(connection.mainApi, connection.source);
-    line.textContent = `${connection.online ? "已连接" : "未连接"} · ${source.label}${active ? ` · ${active.name}` : ""}`;
+    line.textContent = `${connection.online ? t("nativeApi.online", "酒馆允许发送") : t("nativeApi.offline", "未连接")} · ${source.label}${active ? ` · ${active.name}` : ""}`;
     const detail = el2("div", "so-app-desc");
     detail.textContent = [connection.url, connection.model].filter(Boolean).join(" · ") || "该来源没有地址或模型字段";
     status.append(detail);
+    if (connection.statusText) {
+      const nativeStatus = el2("div", "so-app-desc");
+      nativeStatus.textContent = `${t("nativeApi.hostStatus", "酒馆状态")}：${connection.statusText}`;
+      status.append(nativeStatus);
+    }
   }
   status.append(line);
   container.append(status);
+  const native = readNativeProfiles(), busy = state2.busy || isNativeSwitching();
+  const nativeBox = el2("div", "so-app-section");
+  nativeBox.dataset.nativeProfiles = "";
+  const nativeTitle = el2("div", "so-app-title");
+  nativeTitle.textContent = t("nativeApi.title", "SillyTavern 连接档案");
+  const nativeHint = el2("p", "so-app-desc");
+  nativeHint.textContent = native.available ? t("nativeApi.hint", "直接使用酒馆原生档案，连接与密钥在原生 API 面板管理。选择档案后仍需检查实际连接状态。") : t("nativeApi.unavailable", "原生 Connection Manager 未就绪或已禁用。请在酒馆启用它；旧百工档案仍可在下方使用。");
+  nativeBox.append(nativeTitle, nativeHint);
+  if (!native.profiles.length && native.available) {
+    const empty = el2("p", "so-app-desc");
+    empty.textContent = t("nativeApi.empty", "还没有原生连接档案。请先在酒馆 API 面板创建。");
+    nativeBox.append(empty);
+  }
+  const key = stableCharacterKey(ctx.getCharacterCard?.());
+  const recommendedId = key ? data.nativeCharacterProfiles?.[key] : void 0;
+  const recommendation = el2("label", "so-app-desc");
+  recommendation.textContent = t("nativeApi.recommendation", "当前角色推荐（点击档案才会切换）");
+  recommendation.style.cssText = "display:flex;flex-direction:column;gap:6px;";
+  const select = document.createElement("select");
+  select.dataset.apiFocus = "recommendation";
+  select.setAttribute("aria-label", t("nativeApi.recommendation", "当前角色推荐（点击档案才会切换）"));
+  select.style.cssText = "min-width:0;width:100%;min-height:44px;box-sizing:border-box;";
+  select.add(new Option(t("nativeApi.none", "不指定推荐连接"), ""));
+  for (const profile of native.profiles) select.add(new Option(profile.name, profile.id));
+  if (recommendedId && !native.profiles.some((profile) => profile.id === recommendedId)) select.add(new Option(t("nativeApi.missing", "推荐档案已删除，可解除关联"), recommendedId));
+  select.value = recommendedId ?? "";
+  select.disabled = !key || busy;
+  select.onchange = () => {
+    if (!key || !state2.alive || key !== stableCharacterKey(ctx.getCharacterCard?.())) return;
+    const latest = sanitizeAppData(ctx.getAppData()), refs = { ...latest.nativeCharacterProfiles };
+    if (select.value) refs[key] = select.value;
+    else delete refs[key];
+    ctx.setAppData({ ...latest, nativeCharacterProfiles: refs });
+    render(container, ctx, deps, state2);
+  };
+  recommendation.append(select);
+  nativeBox.append(recommendation);
+  if (!key) {
+    const note = el2("div", "so-app-desc");
+    note.textContent = t("nativeApi.noCharacter", "打开可稳定识别的角色卡后，可保存角色推荐。");
+    nativeBox.append(note);
+  }
+  for (const profile of [...native.profiles].sort((a, b) => Number(b.id === recommendedId) - Number(a.id === recommendedId))) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = `stapi-row${native.selectedId === profile.id ? " stapi-row-on" : ""}`;
+    row.style.cssText = "width:100%;min-height:52px;text-align:start;font:inherit;color:inherit;";
+    row.disabled = busy || !native.available;
+    row.dataset.apiFocus = `native:${profile.id}`;
+    row.dataset.nativeProfileId = profile.id;
+    row.setAttribute("aria-pressed", String(native.selectedId === profile.id));
+    const main = el2("span", "stapi-row-main"), name = el2("span", "stapi-row-name"), meta = el2("span", "stapi-row-sub");
+    name.textContent = profile.name;
+    name.style.overflowWrap = "anywhere";
+    meta.textContent = [profile.mode === "tc" ? "Text Completion" : "Chat Completion", profile.model, recommendedId === profile.id ? t("nativeApi.recommended", "角色推荐") : ""].filter(Boolean).join(" · ");
+    main.append(name, meta);
+    const mark = el2("span", "stapi-row-mark");
+    mark.textContent = native.selectedId === profile.id ? t("nativeApi.selected", "已选档案") : t("nativeApi.switch", "切换");
+    row.append(main, mark);
+    row.onclick = () => void switchNative(profile.id, profile.name);
+    nativeBox.append(row);
+  }
+  const feedback = el2("div", "so-app-desc");
+  feedback.setAttribute("role", "status");
+  feedback.textContent = state2.message;
+  nativeBox.append(feedback);
+  container.append(nativeBox);
+  const legacy = document.createElement("details");
+  legacy.dataset.apiLegacy = "";
+  legacy.open = legacyOpen;
+  const legacyTitle = document.createElement("summary");
+  legacyTitle.textContent = `${t("nativeApi.legacy", "旧百工档案与管理")} (${data.profiles.length})`;
+  legacyTitle.dataset.apiFocus = "legacy";
+  legacy.append(legacyTitle);
   const profiles = el2("div", "so-app-section");
   const profilesTitle = el2("div", "so-app-title");
   profilesTitle.textContent = `连接档案（${data.profiles.length}）`;
@@ -16128,40 +16456,69 @@ function render(container, ctx, deps, state2) {
     empty.textContent = "还没有连接档案，请进入管理页添加或导入。";
     profiles.append(empty);
   }
-  for (const profile of data.profiles) profiles.append(buildRow(profile, active?.id === profile.id, state2.busy, () => void switchProfile(profile)));
-  if (state2.message) {
-    const feedback = el2("div", "so-app-desc");
-    feedback.textContent = state2.message;
-    profiles.append(feedback);
-  }
-  container.append(profiles);
+  for (const profile of data.profiles) profiles.append(buildRow(profile, active?.id === profile.id, busy, () => void switchProfile(profile)));
+  legacy.append(profiles);
   const manage = el2("div", "so-app-section");
   const description = el2("div", "so-app-desc");
-  description.textContent = "管理全部 Chat Completion、Text Completion 与其他 SillyTavern API 档案。";
-  manage.append(description, appButton("管理连接档案", deps.openManager));
-  container.append(manage, buildApiGuide());
+  description.textContent = t("nativeApi.legacyHint", "保留已有百工档案。建议新连接在酒馆原生面板建档，避免重复维护。");
+  manage.append(description, appButton(t("nativeApi.legacyManage", "管理旧百工档案"), deps.openManager));
+  legacy.append(manage, buildApiGuide());
+  container.append(legacy);
+  if (focused) [...container.querySelectorAll("[data-api-focus]")].find((item) => item.dataset.apiFocus === focused)?.focus({ preventScroll: true });
+  async function switchNative(id, name) {
+    if (state2.busy || isNativeSwitching()) return;
+    state2.busy = true;
+    state2.message = `${t("nativeApi.applying", "正在应用档案")} · ${name}`;
+    state2.refresh++;
+    render(container, ctx, deps, state2);
+    try {
+      await switchNativeProfile(id);
+      const actual = await readConnection({ withSecret: false });
+      if (!state2.alive) return;
+      state2.connection = actual;
+      state2.connectionLoaded = true;
+      state2.message = actual?.online ? t("nativeApi.appliedOnline", "原生档案已应用；酒馆当前允许发送。真实模型请求尚未验证。") : t("nativeApi.appliedOffline", "原生档案已应用，当前仍未连接。请检查原生 API 面板中的地址、模型与凭据。");
+    } catch (error) {
+      if (!state2.alive) return;
+      state2.message = error instanceof NativeProfileError ? {
+        unavailable: t("nativeApi.unavailable", "原生 Connection Manager 未就绪或已禁用。请在酒馆启用它；旧百工档案仍可在下方使用。"),
+        missing: t("nativeApi.gone", "档案已不存在，请重新选择。"),
+        busy: t("nativeApi.busy", "已有档案正在切换。"),
+        timeout: t("nativeApi.timeout", "等待档案应用超时。酒馆可能仍在处理，请检查原生面板的实际状态。"),
+        interrupted: t("nativeApi.interrupted", "原生面板的选择已改变，请检查当前连接。")
+      }[error.code] : t("nativeApi.failed", "应用档案失败，请检查原生连接面板。");
+    } finally {
+      state2.busy = false;
+      if (state2.alive) {
+        render(container, ctx, deps, state2);
+        void refreshConnection(container, ctx, deps, state2);
+      }
+    }
+  }
   async function switchProfile(profile) {
-    if (state2.busy) return;
+    if (state2.busy || isNativeSwitching()) return;
     state2.busy = true;
     state2.message = `正在应用「${profile.name}」的类型、来源、密钥、URL 与模型…`;
     render(container, ctx, deps, state2);
     try {
       const connected = await applyProfile(profile, (message) => {
         state2.message = message;
-        if (container.isConnected) render(container, ctx, deps, state2);
+        if (state2.alive && container.isConnected) render(container, ctx, deps, state2);
       });
+      if (!state2.alive) return;
       state2.connection = connected;
       state2.connectionLoaded = true;
-      state2.message = `「${profile.name}」已连接${connected.model ? `，实际模型：${connected.model}` : ""}`;
+      state2.message = `「${profile.name}」已应用；酒馆当前允许发送${connected.model ? `，当前模型：${connected.model}` : ""}。真实模型请求尚未验证。`;
       toast2("success", state2.message);
     } catch (error) {
+      if (!state2.alive) return;
       state2.message = `切换失败：${error instanceof Error ? error.message : String(error)}`;
       toast2("error", state2.message);
       console.error("[st-stage] API 切换失败", error);
     } finally {
       state2.busy = false;
       render(container, ctx, deps, state2);
-      void refreshConnection(container, ctx, deps, state2);
+      if (state2.alive) void refreshConnection(container, ctx, deps, state2);
     }
   }
 }
@@ -16179,9 +16536,9 @@ function buildApiGuide() {
   guide.append(title2);
   const quick = foldSection("快速开始", false);
   quick.body.append(
-    guideLine("1. 建档", "在“管理连接档案”中添加档案，或先打开 SillyTavern 原生 API 面板配置好连接，再用“导入当前连接”。"),
+    guideLine("1. 建档", "新连接建议在 SillyTavern 原生 API 面板建档，再从上方点选。已有百工档案可在“管理旧百工档案”中继续维护。"),
     guideLine("2. 填写", "Key 是访问凭证，URL 是服务入口，模型 ID 必须与渠道实际提供的名称完全一致。Key 会明文保存在本扩展档案中。"),
-    guideLine("3. 切换", "点击档案后会依次切换渠道、写入凭证、加载模型并做最终连接回验。看到“已连接，实际模型…”才算完成。")
+    guideLine("3. 切换", "点击旧档案后会依次切换渠道、写入凭证、加载模型并检查酒馆状态。自定义 API 可能跳过状态检查；“允许发送”仍需用实际模型请求验证。")
   );
   const completion = foldSection("补全方式有什么不同", false);
   completion.body.append(
@@ -16244,7 +16601,8 @@ var GAL_PROMPT = `【Galgame 模式】
 示例：
 <STStageRender>{"version":1,"mode":"gal","title":"雨夜重逢","scene":"车站月台","beats":[{"speaker":"小雪","text":"你终于来了。","portrait":"/user/images/xiaoxue.png"},{"speaker":"我","text":"抱歉，让你久等了。"}]}</STStageRender>`;
 var CARDS_PROMPT = `【SLG 卡片选择模式】
-适合给出 2-8 个明确选择。每张卡必须有唯一 id、title、description、action，consequence 可省略；action 是填入输入框但不自动发送的文字。
+适合给出 2-8 个明确选择。每张卡必须有唯一 id、title、description、action，consequence 和 branch 可省略；action 是填入输入框但不自动发送的文字（最多 2000 字符）。branch 是该选择可能发展的剧情片段（最多 4000 字符），用于预览，不能写成已经发生的主剧情；无需为没有必要的选择扩写分支。
+用户可预览各分支并记住选择；仅点击填入输入框会写入 action，用户确认发送后再推进主聊天。整个 JSON 仍不能超过 64 KB，不因预览自动调用模型。
 示例：
 <STStageRender>{"version":1,"mode":"cards","title":"下一步行动","cards":[{"id":"advance","title":"继续前进","description":"沿山路调查灯光","consequence":"可能遭遇守卫","action":"我选择沿山路继续前进。"},{"id":"rest","title":"原地休整","description":"恢复体力并整理物资","action":"我选择原地休整。"}]}</STStageRender>`;
 var BATTLE_PROMPT = `【战斗模式】
@@ -16362,7 +16720,7 @@ function modeGuide() {
   box.classList.add("renderer-mode-guide");
   const modes = [
     ["Galgame", "连续对话和分镜节拍；适合让 AI 控制角色、场景和立绘切换。"],
-    ["卡片选择", "2-8 个明确选项；点击后只填入草稿，不会替你自动发送。"],
+    ["卡片选择", "2-8 个明确选项，可预览分支并记住选择；填入草稿后自行确认发送。"],
     ["战斗", "本地确定性战斗；选择攻击、技能、物品或逃跑后立即更新面板。"]
   ];
   for (const [title2, description] of modes) {
@@ -16469,21 +16827,21 @@ function asRecord(value) {
 }
 function asArray(value, keys = []) {
   if (Array.isArray(value)) return value.map(asRecord);
-  const record = asRecord(value);
+  const record2 = asRecord(value);
   for (const key of keys) {
-    if (Array.isArray(record[key])) return record[key].map(asRecord);
+    if (Array.isArray(record2[key])) return record2[key].map(asRecord);
   }
   return [];
 }
-function text3(record, keys, fallback = "") {
+function text3(record2, keys, fallback = "") {
   for (const key of keys) {
-    if (typeof record[key] === "string" && record[key]) return record[key];
+    if (typeof record2[key] === "string" && record2[key]) return record2[key];
   }
   return fallback;
 }
-function timestamp(record) {
+function timestamp(record2) {
   for (const key of ["updatedAt", "updated_at", "lastModified", "last_modified", "mtime", "last_mes"]) {
-    const value = record[key];
+    const value = record2[key];
     if (typeof value === "number" && Number.isFinite(value)) return value;
     if (typeof value === "string") {
       const parsed = Number(value) || Date.parse(value);
@@ -16505,13 +16863,16 @@ async function listCharacters() {
     method: "POST",
     body: JSON.stringify({})
   });
+  const seen = /* @__PURE__ */ new Set();
   return asArray(raw, ["characters", "data"]).map((item, index) => {
     const avatar = text3(item, ["avatar", "avatar_url", "file_name"]);
     const name = text3(item, ["name", "char_name"], avatar.replace(/\.png$/i, "")) || `角色 ${index + 1}`;
+    if (!avatar || seen.has(avatar)) throw new Error(t("cloudExport.invalid_character_identity", "角色「{{name}}」缺少唯一的头像文件名，请检查酒馆角色数据后重试。", { name }));
+    seen.add(avatar);
     return {
-      id: avatar || name,
+      id: avatar,
       name,
-      avatar: avatar || `${name}.png`,
+      avatar,
       updatedAt: timestamp(item),
       chats: [],
       linkedWorldName: linkedWorldName(item)
@@ -16543,8 +16904,9 @@ async function listWorldbooks() {
     };
   });
 }
-async function readWorldbook(worldbook) {
+async function readWorldbook(worldbook, signal) {
   return requestJson("/api/worldinfo/get", {
+    signal,
     method: "POST",
     body: JSON.stringify({ name: worldbook.id.replace(/\.json$/i, "") })
   });
@@ -16592,13 +16954,15 @@ function createSTCloudExportBridge() {
       return { presets, regex };
     },
     readWorldbook,
-    readCharacterCard: (character) => requestBinary("/api/characters/export", {
+    readCharacterCard: (character, signal) => requestBinary("/api/characters/export", {
+      signal,
       method: "POST",
       body: JSON.stringify({ format: "png", avatar_url: character.avatar })
     }),
-    async readChat(character, chat2) {
+    async readChat(character, chat2, signal) {
       const fileName = (chat2.path || chat2.name).replace(/\.jsonl$/i, "");
       const raw = await requestJson("/api/chats/get", {
+        signal,
         method: "POST",
         body: JSON.stringify({ ch_name: character.name, avatar_url: character.avatar, file_name: fileName })
       });
@@ -16624,9 +16988,9 @@ function characterArchiveIdentity(avatar) {
   if (!/\.png$/i.test(name)) throw new Error(t("cloudExport.avatar_png_required", "无法确定角色聊天目录：头像文件必须为 PNG"));
   return { avatar: name, stem: archiveSegment(name.slice(0, -4), t("cloudExport.kind_directory", "角色目录")) };
 }
-function buildMinimalSettings(snapshot, selection) {
-  const selectedWorldNames = snapshot.worldbooks.filter((worldbook) => selection.worldbookIds.has(worldbook.id)).map((worldbook) => worldbook.name);
-  const regex = selection.regex ? snapshot.regex?.rules ?? [] : [];
+function buildMinimalSettings(snapshot2, selection) {
+  const selectedWorldNames = snapshot2.worldbooks.filter((worldbook) => selection.worldbookIds.has(worldbook.id)).map((worldbook) => worldbook.name);
+  const regex = selection.regex ? snapshot2.regex?.rules ?? [] : [];
   const settings = {};
   if (regex.length > 0) settings.extension_settings = { regex };
   if (selectedWorldNames.length > 0) {
@@ -16634,20 +16998,20 @@ function buildMinimalSettings(snapshot, selection) {
   }
   return Object.keys(settings).length > 0 ? JSON.stringify(settings, null, 2) : null;
 }
-function buildExportFiles(snapshot, selection) {
+function buildExportFiles(snapshot2, selection) {
   const files = [];
   const hasSelection2 = selection.characterIds.size > 0 || selection.chatIds.size > 0 || selection.worldbookIds.size > 0 || selection.presetIds.size > 0 || selection.regex;
   if (!hasSelection2) return files;
-  const settings = buildMinimalSettings(snapshot, selection);
+  const settings = buildMinimalSettings(snapshot2, selection);
   if (settings !== null) files.push({ path: "settings.json", data: settings });
-  for (const worldbook of snapshot.worldbooks) {
+  for (const worldbook of snapshot2.worldbooks) {
     if (selection.worldbookIds.has(worldbook.id)) {
       if (worldbook.content !== void 0) {
         files.push({ path: `worlds/${archiveSegment(worldbook.fileName, t("cloudExport.kind_worldbook", "世界书"))}`, data: JSON.stringify(worldbook.content, null, 2), updatedAt: worldbook.updatedAt });
       }
     }
   }
-  for (const preset of snapshot.presets) {
+  for (const preset of snapshot2.presets) {
     if (selection.presetIds.has(preset.id)) {
       files.push({ path: `OpenAI Settings/${archiveSegment(preset.fileName, t("cloudExport.kind_preset", "预设"))}`, data: JSON.stringify(preset.content, null, 2), updatedAt: preset.updatedAt });
     }
@@ -16680,38 +17044,54 @@ function buildCharacterFiles(character, cardData, chats, selection) {
 }
 
 // st-extension/src/apps/cloud-export/export-loader.ts
-async function runTasks(tasks, concurrency, onProgress) {
+async function runTasks(tasks, concurrency, controller, onProgress) {
+  const { signal } = controller;
+  signal.throwIfAborted();
   if (!tasks.length) return;
   let nextIndex = 0;
   let completed = 0;
-  let failed;
   const worker = async () => {
-    while (failed === void 0) {
+    while (!signal.aborted) {
       const index = nextIndex;
       nextIndex += 1;
       if (index >= tasks.length) return;
       const task = tasks[index];
       try {
         await task.run();
+        if (signal.aborted) return;
+        completed += 1;
+        onProgress?.({ completed, total: tasks.length, current: task.label });
       } catch (error) {
-        failed = new Error(t("cloudExport.asset_read_failed", "读取{{label}}失败：{{error}}", { label: task.label, error: error instanceof Error ? error.message : String(error) }));
+        if (!signal.aborted) controller.abort(new Error(t("cloudExport.asset_read_failed", "读取{{label}}失败：{{error}}", { label: task.label, error: error instanceof Error ? error.message : String(error) })));
         return;
       }
-      completed += 1;
-      onProgress?.({ completed, total: tasks.length, current: task.label });
     }
   };
-  const workerCount = Math.min(Math.max(1, Math.floor(concurrency)), tasks.length);
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  if (failed !== void 0) throw failed;
+  const workerCount = Math.min(Number.isFinite(concurrency) ? Math.max(1, Math.floor(concurrency)) : 4, tasks.length);
+  let onAbort;
+  const cancelled = new Promise((_resolve, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    await Promise.race([Promise.all(Array.from({ length: workerCount }, () => worker())), cancelled]);
+    signal.throwIfAborted();
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
 }
 async function loadSelectedExportFiles({
   bridge,
   catalog,
   selection,
   concurrency = 4,
+  signal,
   onProgress
 }) {
+  signal?.throwIfAborted();
+  const controller = new AbortController();
+  const onAbort = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", onAbort, { once: true });
   const cardData = /* @__PURE__ */ new Map();
   const chatData = /* @__PURE__ */ new Map();
   const worldbookContent = /* @__PURE__ */ new Map();
@@ -16721,7 +17101,7 @@ async function loadSelectedExportFiles({
       tasks.push({
         label: t("cloudExport.asset_character", "角色卡 {{name}}", { name: character.name }),
         run: async () => {
-          cardData.set(character.id, await bridge.readCharacterCard(character));
+          cardData.set(character.id, await bridge.readCharacterCard(character, controller.signal));
         }
       });
     }
@@ -16730,7 +17110,7 @@ async function loadSelectedExportFiles({
       tasks.push({
         label: t("cloudExport.asset_chat", "聊天 {{character}}/{{chat}}", { character: character.name, chat: chat2.name }),
         run: async () => {
-          chatData.set(chat2.id, await bridge.readChat(character, chat2));
+          chatData.set(chat2.id, await bridge.readChat(character, chat2, controller.signal));
         }
       });
     }
@@ -16740,11 +17120,15 @@ async function loadSelectedExportFiles({
     tasks.push({
       label: t("cloudExport.asset_worldbook", "世界书 {{name}}", { name: worldbook.name }),
       run: async () => {
-        worldbookContent.set(worldbook.id, await bridge.readWorldbook(worldbook));
+        worldbookContent.set(worldbook.id, await bridge.readWorldbook(worldbook, controller.signal));
       }
     });
   }
-  await runTasks(tasks, concurrency, onProgress);
+  try {
+    await runTasks(tasks, concurrency, controller, onProgress);
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+  }
   const hydratedWorldbooks = catalog.worldbooks.map((worldbook) => worldbookContent.has(worldbook.id) ? { ...worldbook, content: worldbookContent.get(worldbook.id) } : worldbook);
   const hydratedCatalog = { ...catalog, worldbooks: hydratedWorldbooks };
   const files = buildExportFiles(hydratedCatalog, selection);
@@ -16757,6 +17141,45 @@ async function loadSelectedExportFiles({
 // st-extension/src/apps/cloud-export/zip.ts
 var import_jszip = __toESM(require_jszip_min());
 var REVOKE_DELAY_MS = 6e4;
+function compress(zip, onProgress, signal) {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const stream = zip.generateInternalStream({ type: "uint8array", compression: "DEFLATE", compressionOptions: { level: 6 } });
+    let chunks = [];
+    let settled = false;
+    const cleanup = () => {
+      signal?.removeEventListener("abort", onAbort);
+      chunks = [];
+    };
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      stream.pause();
+      cleanup();
+      reject(error);
+    };
+    const onAbort = () => fail(signal?.reason);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    stream.on("data", (chunk, metadata) => {
+      if (settled) return;
+      chunks.push(chunk);
+      try {
+        onProgress({ percent: metadata.percent, currentFile: metadata.currentFile ?? void 0 });
+      } catch (error) {
+        fail(error);
+      }
+    }).on("error", fail).on("end", () => {
+      if (settled) return;
+      settled = true;
+      try {
+        resolve(new Blob(chunks, { type: "application/zip" }));
+      } catch (error) {
+        reject(error);
+      }
+      cleanup();
+    }).resume();
+  });
+}
 function assertUniqueArchivePaths(files) {
   const seen = /* @__PURE__ */ new Map();
   for (const { path } of files) {
@@ -16774,16 +17197,15 @@ function assertUniqueArchivePaths(files) {
   }
 }
 async function downloadSTBackup(files, filename, onProgress, schedulers = {}) {
+  schedulers.signal?.throwIfAborted();
   if (!files.length) throw new Error(t("cloudExport.no_assets", "没有选择任何可导出的资产"));
   assertUniqueArchivePaths(files);
   const zip = new import_jszip.default();
   for (const file of files) {
     zip.file(file.path, file.data, file.updatedAt ? { date: new Date(file.updatedAt) } : void 0);
   }
-  const blob = await zip.generateAsync(
-    { type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } },
-    (metadata) => onProgress({ percent: metadata.percent })
-  );
+  const blob = await compress(zip, onProgress, schedulers.signal);
+  schedulers.signal?.throwIfAborted();
   const scheduleRevoke = schedulers.scheduleRevoke ?? ((revoke, delayMs) => {
     setTimeout(revoke, delayMs);
   });
@@ -16871,13 +17293,15 @@ function deselectCharacter(characterId, selection, chats, allCharacters, worldbo
   if (!stillNeeded) selection.worldbookIds.delete(linked.id);
 }
 function findLinkedWorldbook(character, worldbooks) {
-  const target = character.linkedWorldName?.trim().toLowerCase().replace(/\.json$/i, "");
+  const normalize = (name) => name.trim().replace(/\.json$/i, "");
+  const target = normalize(character.linkedWorldName ?? "");
   if (!target) return void 0;
-  return worldbooks.find((book) => {
-    const byId = book.id.trim().toLowerCase().replace(/\.json$/i, "");
-    const byName = book.name.trim().toLowerCase().replace(/\.json$/i, "");
-    return byId === target || byName === target;
-  });
+  const byId = worldbooks.filter((book) => normalize(book.id) === target);
+  if (byId.length) return byId.length === 1 ? byId[0] : void 0;
+  const byName = worldbooks.filter((book) => normalize(book.name) === target);
+  if (byName.length) return byName.length === 1 ? byName[0] : void 0;
+  const matches = worldbooks.filter((book) => [book.id, book.name].some((name) => normalize(name).toLowerCase() === target.toLowerCase()));
+  return matches.length === 1 ? matches[0] : void 0;
 }
 function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloadSTBackup) {
   let disposeMount;
@@ -16892,6 +17316,7 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
       let query = "";
       let busy = false;
       let progressText = "";
+      let exportController;
       const selection = emptySelection();
       const expandedCharacters = /* @__PURE__ */ new Set();
       const characters = { status: "idle", data: [] };
@@ -16901,6 +17326,7 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
       const chatRequests = /* @__PURE__ */ new Map();
       disposeMount = () => {
         disposed = true;
+        exportController?.abort();
       };
       const prefix = `cloud-export-${++mountId}`;
       const title2 = el2("div", "so-app-title");
@@ -16928,7 +17354,12 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
         void exportSelected();
       });
       exportButton.dataset.exportFocus = "export";
-      footer.append(count, status, exportButton);
+      const cancelButton = appButton(t("cloudExport.cancel", "取消导出"), () => {
+        exportController?.abort();
+      });
+      cancelButton.dataset.exportFocus = "cancel";
+      cancelButton.hidden = true;
+      footer.append(count, status, exportButton, cancelButton);
       let composing = false;
       const applyQuery = () => {
         query = search.value.trim().toLowerCase();
@@ -17065,7 +17496,7 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
               const books = await ensureWorldbooks();
               const linked = findLinkedWorldbook(character, books);
               if (linked) selection.worldbookIds.add(linked.id);
-              else missing.push(t("cloudExport.linked_missing", "关联世界书「{{name}}」在清单里没找到", { name: character.linkedWorldName }));
+              else missing.push(t("cloudExport.linked_missing", "关联世界书「{{name}}」未找到或名称有歧义", { name: character.linkedWorldName }));
             } catch {
               missing.push(t("cloudExport.worldbook_list", "世界书清单"));
             }
@@ -17134,6 +17565,8 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
           ctx.toast("warning", t("cloudExport.select_first", "请先选择要导出的内容"));
           return;
         }
+        const controller = new AbortController();
+        exportController = controller;
         busy = true;
         progressText = t("cloudExport.preparing", "正在准备所选数据…");
         render2();
@@ -17149,22 +17582,31 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
             catalog,
             selection,
             concurrency: 4,
+            signal: controller.signal,
             onProgress: ({ completed, total, current: current2 }) => {
               progressText = t("cloudExport.read_progress", "正在读取 {{completed}}/{{total}}：{{current}}", { completed, total, current: current2 });
               render2();
             }
           });
+          controller.signal.throwIfAborted();
           await download(files, backupFilename(), ({ percent }) => {
             progressText = t("cloudExport.compress_progress", "正在压缩 {{percent}}%", { percent: Math.round(percent) });
             render2();
-          });
+          }, { signal: controller.signal });
+          controller.signal.throwIfAborted();
           if (!disposed) ctx.toast("success", t("cloudExport.downloaded", "SillyTavern 标准备份已下载"));
         } catch (error) {
-          if (!disposed) ctx.toast("error", t("cloudExport.export_failed", "导出失败：{{error}}", { error: String(error) }));
+          if (!disposed) {
+            if (controller.signal.aborted) ctx.toast("info", t("cloudExport.cancelled", "导出已取消，未下载备份"));
+            else ctx.toast("error", t("cloudExport.export_failed", "导出失败：{{error}}", { error: String(error) }));
+          }
         } finally {
+          const restoreFocus = document.activeElement === cancelButton;
+          exportController = void 0;
           busy = false;
           progressText = "";
           render2();
+          if (restoreFocus && !disposed) exportButton.focus({ preventScroll: true });
         }
       };
       const render2 = () => {
@@ -17300,7 +17742,7 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
               void selectCharacterBundle(character);
             }, `character:${character.id}`, busy, "cloud-export-character-name"));
             const bundleNote = el2("div", "cloud-export-bundle-note");
-            const linkedLabel = !character.linkedWorldName ? t("cloudExport.no_linked_worldbook", "没有关联独立世界书") : worldbooks.status !== "ready" ? t("cloudExport.linked_current", "关联世界书「{{name}}」按酒馆里的当前内容导出", { name: character.linkedWorldName }) : findLinkedWorldbook(character, worldbooks.data) ? t("cloudExport.linked_current", "关联世界书「{{name}}」按酒馆里的当前内容导出", { name: character.linkedWorldName }) : t("cloudExport.linked_unavailable", "关联世界书「{{name}}」在酒馆世界书清单里没找到", { name: character.linkedWorldName });
+            const linkedLabel = !character.linkedWorldName ? t("cloudExport.no_linked_worldbook", "没有关联独立世界书") : worldbooks.status !== "ready" ? t("cloudExport.linked_current", "关联世界书「{{name}}」按酒馆里的当前内容导出", { name: character.linkedWorldName }) : findLinkedWorldbook(character, worldbooks.data) ? t("cloudExport.linked_current", "关联世界书「{{name}}」按酒馆里的当前内容导出", { name: character.linkedWorldName }) : t("cloudExport.linked_unavailable", "关联世界书「{{name}}」未找到或名称有歧义", { name: character.linkedWorldName });
             bundleNote.textContent = t("cloudExport.bundle_note", "勾选即整体导出：角色卡 + 全部聊天 + {{linked}}", { linked: linkedLabel });
             row.append(bundleNote);
             const details = document.createElement("details");
@@ -17379,6 +17821,7 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
         count.hidden = statusText === countText;
         exportButton.textContent = busy ? t("cloudExport.processing", "正在处理…") : t("cloudExport.export", "导出所选备份");
         exportButton.setAttribute("aria-disabled", String(busy));
+        cancelButton.hidden = !exportController;
         if (focusKey && active !== document.activeElement && container.isConnected && document.activeElement === document.body) {
           const target = [...container.querySelectorAll("[data-export-focus]")].find((node) => node.dataset.exportFocus === focusKey);
           (target ?? results).focus({ preventScroll: true });
@@ -17395,21 +17838,279 @@ function cloudExportApp(bridge = createSTCloudExportBridge(), download = downloa
   };
 }
 
+// st-extension/src/apps/wechat/profile.ts
+function safeAssetUrl(value) {
+  if (value.startsWith("/user/images/")) {
+    try {
+      const decoded = decodeURIComponent(value);
+      return /^\/user\/images\/[\w\-./ \u0080-\uffff]+$/.test(decoded) && !decoded.split("/").some((segment) => segment === "." || segment === "..");
+    } catch {
+      return false;
+    }
+  }
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+function normalizeProfile(config) {
+  const raw = config?.profile;
+  const text4 = (value, max) => typeof value === "string" ? value.trim().slice(0, max) : "";
+  const mappings = {};
+  for (const field of ["mood", "interest", "money", "location"]) {
+    const value = text4(raw?.mappings?.[field], 200);
+    if (value && isSafePath(value)) mappings[field] = value;
+  }
+  const assetOverrides = {};
+  for (const [key, value] of Object.entries(raw?.assetOverrides ?? {}).slice(0, 100)) {
+    if (/^(player|contact|photo)\.[\w-]+$/.test(key) && typeof value === "string" && safeAssetUrl(value)) assetOverrides[key] = value;
+  }
+  const rawGroups = raw?.assetGroups;
+  const assetGroups = {
+    player: typeof rawGroups?.player === "boolean" ? rawGroups.player : raw?.useBuiltinAssets !== false,
+    contact: typeof rawGroups?.contact === "boolean" ? rawGroups.contact : raw?.useBuiltinAssets !== false,
+    photo: typeof rawGroups?.photo === "boolean" ? rawGroups.photo : raw?.preset === "cohabitation" && raw?.useBuiltinAssets !== false
+  };
+  const assetEdits = {};
+  if (raw?.assetEdits && typeof raw.assetEdits === "object" && !Array.isArray(raw.assetEdits)) {
+    for (const [key, edit] of Object.entries(raw.assetEdits).slice(0, 200)) {
+      if (!/^(player|contact|photo)\.[\w-]+$/.test(key) || !edit || typeof edit !== "object") continue;
+      const item = edit;
+      const name = typeof item.name === "string" ? item.name.trim().slice(0, 60) : void 0;
+      const description = typeof item.description === "string" ? item.description.trim().slice(0, 200) : void 0;
+      if (name || description) assetEdits[key] = { ...name ? { name } : {}, ...description ? { description } : {} };
+    }
+  }
+  const customAssets = {};
+  for (const [key, item] of Object.entries(raw?.customAssets ?? {}).slice(0, 100)) {
+    if (!/^(player|contact|photo)\.custom-[\w-]+$/.test(key) || !item || typeof item.file !== "string" || !safeAssetUrl(item.file)) continue;
+    customAssets[key] = { name: text4(item.name, 60) || "图库图片", description: text4(item.description, 200), file: item.file };
+  }
+  return {
+    preset: raw?.preset === "general" ? "general" : "cohabitation",
+    playerName: text4(raw?.playerName, 60),
+    contactName: text4(raw?.contactName, 60),
+    openingMessage: text4(raw?.openingMessage, 500),
+    scene: text4(raw?.scene, 2e3),
+    contextMessageCount: typeof raw?.contextMessageCount === "number" && Number.isFinite(raw.contextMessageCount) ? Math.max(0, Math.min(20, Math.trunc(raw.contextMessageCount))) : 6,
+    useBuiltinAssets: raw?.useBuiltinAssets !== false,
+    assetGroups,
+    mappings,
+    assetOverrides,
+    assetEdits,
+    customAssets,
+    replyPrompt: text4(raw?.replyPrompt, 12e3),
+    statePrompt: text4(raw?.statePrompt, 8e3),
+    formatPrompt: text4(raw?.formatPrompt, 4e3)
+  };
+}
+function applyAssetProfile(items, prefix, profile) {
+  if (!profile.assetGroups[prefix]) return {};
+  const custom = Object.fromEntries(Object.entries(profile.customAssets).filter(([key]) => key.startsWith(`${prefix}.`)).map(([key, item]) => [key.slice(prefix.length + 1), item]));
+  return Object.fromEntries(Object.entries({ ...items, ...custom }).map(([id, item]) => {
+    const edit = profile.assetEdits[`${prefix}.${id}`];
+    return [id, {
+      ...item,
+      file: profile.assetOverrides[`${prefix}.${id}`] ?? item.file,
+      ...edit?.name ? { name: edit.name } : {},
+      ...edit?.description ? { description: edit.description } : {}
+    }];
+  }));
+}
+
+// st-extension/src/apps/wechat/bridge.ts
+function getWeChatHostContext() {
+  return window.SillyTavern?.getContext?.();
+}
+function resolveCharacterAvatarUrl(avatar) {
+  if (!avatar || typeof avatar !== "string") return void 0;
+  const trimmed = avatar.trim();
+  if (!trimmed) return void 0;
+  if (/^(?:https?:|\/|data:|blob:)/i.test(trimmed)) {
+    return trimmed;
+  }
+  try {
+    const w = typeof window !== "undefined" ? window : void 0;
+    const getThumb = w?.getThumbnailUrl || w?.SillyTavern?.getContext?.()?.getThumbnailUrl;
+    if (typeof getThumb === "function") {
+      const url = getThumb("avatar", trimmed);
+      if (url && typeof url === "string") return url;
+    }
+  } catch {
+  }
+  return `/characters/${encodeURIComponent(trimmed)}`;
+}
+function extractRecentSTMessages(host, limit = 6) {
+  if (!Number.isFinite(limit) || limit <= 0) return void 0;
+  let chatCtx = void 0;
+  if (host && typeof host.getChatContext === "function") {
+    chatCtx = host.getChatContext();
+  }
+  if (!chatCtx) {
+    try {
+      const w = typeof window !== "undefined" ? window : void 0;
+      const chat2 = w?.SillyTavern?.getContext?.()?.chat;
+      if (Array.isArray(chat2)) {
+        chatCtx = { chat: chat2 };
+      }
+    } catch {
+    }
+  }
+  if (Array.isArray(chatCtx?.chat) && chatCtx.chat.length > 0) {
+    return chatCtx.chat.slice(-Math.min(20, Math.trunc(limit))).filter((m) => typeof m.mes === "string" && m.mes.trim().length > 0).map((m) => ({
+      sender: m.is_user ? "user" : "character",
+      text: m.mes.trim()
+    }));
+  }
+  return void 0;
+}
+function resolveConversationScopeSync(host, contextMessageCount = 6) {
+  const charName = host.getCharacterName() || "妹妹";
+  let card = void 0;
+  let chatCtx = void 0;
+  if (typeof host.getCharacterCard === "function") {
+    card = host.getCharacterCard();
+  }
+  if (typeof host.getChatContext === "function") {
+    chatCtx = host.getChatContext();
+  }
+  try {
+    const w = typeof window !== "undefined" ? window : void 0;
+    const stCtx = w?.SillyTavern?.getContext?.();
+    if (stCtx) {
+      if (!card) {
+        const id = stCtx.characterId;
+        if (id !== void 0 && id !== null && String(id) !== "") {
+          card = stCtx.characters?.[Number(id)];
+        }
+      }
+      if (!chatCtx) {
+        chatCtx = {
+          characterId: stCtx.characterId,
+          chatId: stCtx.chatId ?? stCtx.chatMetadata?.file_name,
+          characterName: charName,
+          chat: stCtx.chat
+        };
+      }
+    }
+  } catch {
+  }
+  const stableCharId = card?.avatar || (chatCtx?.characterId !== void 0 && String(chatCtx.characterId) !== "" ? String(chatCtx.characterId) : "") || charName.trim();
+  const stableChatId = chatCtx?.chatId !== void 0 && String(chatCtx.chatId) !== "" ? String(chatCtx.chatId) : "";
+  const scopeKey = stableChatId ? `${stableCharId}::${stableChatId}` : stableCharId;
+  const stRecentMessages = extractRecentSTMessages(host, contextMessageCount);
+  return {
+    scopeKey,
+    characterName: charName,
+    characterId: chatCtx?.characterId !== void 0 ? String(chatCtx.characterId) : void 0,
+    chatId: stableChatId || void 0,
+    card,
+    stRecentMessages,
+    externalState: { source: "none" }
+  };
+}
+
+// st-extension/src/apps/wechat/profile-library.ts
+var MAX_TEMPLATES = 30;
+var MAX_TEXT = 64 * 1024;
+var own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+function record(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null;
+}
+var ProfileLibraryError = class extends Error {
+  constructor(code) {
+    super(code);
+    this.code = code;
+  }
+};
+var profileCharacterKey = stableCharacterKey;
+function hasCharacterProfile(config, key) {
+  return !!key && isStableCharacterKey(key) && record(config.characterProfiles) && own(config.characterProfiles, key) && record(config.characterProfiles[key]);
+}
+function resolveProfile(config, key) {
+  return normalizeProfile(hasCharacterProfile(config, key) ? { profile: config.characterProfiles[key] } : config);
+}
+function saveScopedProfile(config, key, profile) {
+  const normalized = normalizeProfile({ profile });
+  if (key === null) return { ...config, profile: normalized };
+  if (!isStableCharacterKey(key)) throw new ProfileLibraryError("invalid");
+  return { ...config, characterProfiles: { ...config.characterProfiles, [key]: normalized } };
+}
+function inheritProfile(config, key) {
+  const characterProfiles = { ...config.characterProfiles };
+  delete characterProfiles[key];
+  return { ...config, characterProfiles };
+}
+function templateName(value) {
+  if (typeof value !== "string" || !value.trim() || value.trim().length > 60) throw new ProfileLibraryError("name");
+  return value.trim();
+}
+function strictProfile(value) {
+  if (!record(value)) throw new ProfileLibraryError("invalid");
+  const keys = ["preset", "playerName", "contactName", "openingMessage", "contextMessageCount", "useBuiltinAssets", "mappings", "assetOverrides"];
+  const optional = ["assetGroups", "assetEdits", "customAssets", "replyPrompt", "statePrompt", "formatPrompt", "scene"];
+  if (Object.keys(value).some((key) => !keys.includes(key) && !optional.includes(key)) || keys.some((key) => !own(value, key))) throw new ProfileLibraryError("invalid");
+  if (!["general", "cohabitation"].includes(value.preset) || typeof value.useBuiltinAssets !== "boolean" || !Number.isInteger(value.contextMessageCount) || value.contextMessageCount < 0 || value.contextMessageCount > 20) throw new ProfileLibraryError("invalid");
+  for (const [field, limit] of [["playerName", 60], ["contactName", 60], ["openingMessage", 500]]) {
+    if (typeof value[field] !== "string" || value[field].length > limit) throw new ProfileLibraryError("invalid");
+  }
+  if (!record(value.mappings) || Object.entries(value.mappings).some(([key, path]) => !["mood", "interest", "money", "location"].includes(key) || typeof path !== "string" || path.length > 200 || !isSafePath(path))) throw new ProfileLibraryError("invalid");
+  if (!record(value.assetOverrides) || Object.keys(value.assetOverrides).length > 100 || Object.entries(value.assetOverrides).some(([key, url]) => !/^(player|contact|photo)\.[\w-]+$/.test(key) || typeof url !== "string" || !safeAssetUrl(url))) throw new ProfileLibraryError("invalid");
+  for (const [key, limit] of [["replyPrompt", 12e3], ["statePrompt", 8e3], ["formatPrompt", 4e3], ["scene", 2e3]]) {
+    if (own(value, key) && (typeof value[key] !== "string" || value[key].length > limit)) throw new ProfileLibraryError("invalid");
+  }
+  if (own(value, "assetGroups") && (!record(value.assetGroups) || Object.keys(value.assetGroups).length !== 3 || !["player", "contact", "photo"].every((key) => typeof value.assetGroups[key] === "boolean"))) throw new ProfileLibraryError("invalid");
+  if (own(value, "assetEdits") && (!record(value.assetEdits) || Object.keys(value.assetEdits).length > 200 || Object.entries(value.assetEdits).some(([key, edit]) => !/^(player|contact|photo)\.[\w-]+$/.test(key) || !record(edit) || Object.entries(edit).some(([field, text4]) => !["name", "description"].includes(field) || typeof text4 !== "string" || text4.length > (field === "name" ? 60 : 200))))) throw new ProfileLibraryError("invalid");
+  if (own(value, "customAssets") && (!record(value.customAssets) || Object.keys(value.customAssets).length > 100 || Object.entries(value.customAssets).some(([key, item]) => !/^(player|contact|photo)\.custom-[\w-]+$/.test(key) || !record(item) || Object.keys(item).some((field) => !["name", "description", "file"].includes(field)) || typeof item.name !== "string" || item.name.length > 60 || typeof item.description !== "string" || item.description.length > 200 || typeof item.file !== "string" || !safeAssetUrl(item.file)))) throw new ProfileLibraryError("invalid");
+  return normalizeProfile({ profile: value });
+}
+function encodeProfileTemplate(name, profile) {
+  const encoded = JSON.stringify({ format: "baigong-wechat-profile", version: 1, name: templateName(name), profile: normalizeProfile({ profile }) }, null, 2);
+  if (new TextEncoder().encode(encoded).length > MAX_TEXT) throw new ProfileLibraryError("invalid");
+  return encoded;
+}
+function decodeProfileTemplate(text4) {
+  if (text4.length > MAX_TEXT || new TextEncoder().encode(text4).length > MAX_TEXT) throw new ProfileLibraryError("invalid");
+  let raw;
+  try {
+    raw = JSON.parse(text4);
+  } catch {
+    throw new ProfileLibraryError("invalid");
+  }
+  if (!record(raw) || raw.format !== "baigong-wechat-profile" || raw.version !== 1 || Object.keys(raw).some((key) => !["format", "version", "name", "profile"].includes(key))) throw new ProfileLibraryError("invalid");
+  return { name: templateName(raw.name), profile: strictProfile(raw.profile) };
+}
+function normalizeTemplates(raw) {
+  if (!Array.isArray(raw)) return [];
+  const result = [];
+  for (const entry of raw) {
+    if (result.length === MAX_TEMPLATES) break;
+    if (!record(entry) || typeof entry.id !== "string" || !/^[\w-]{1,100}$/.test(entry.id) || result.some((item) => item.id === entry.id)) continue;
+    try {
+      const name = templateName(entry.name);
+      if (!result.some((item) => item.name === name)) result.push({ id: entry.id, name, profile: strictProfile(entry.profile) });
+    } catch {
+    }
+  }
+  return result;
+}
+function addProfileTemplate(list, name, profile) {
+  const normalized = normalizeTemplates(list), validName = templateName(name);
+  if (normalized.some((item) => item.name === validName)) throw new ProfileLibraryError("duplicate");
+  if (normalized.length >= MAX_TEMPLATES) throw new ProfileLibraryError("limit");
+  const id = globalThis.crypto?.randomUUID?.() ?? `template-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const clean2 = decodeProfileTemplate(encodeProfileTemplate(validName, profile));
+  return [...normalized, { id, ...clean2 }];
+}
+
 // st-extension/src/apps/wechat/avatars-data.ts
 var DEFAULT_PLAYER_AVATAR = "data:image/png;base64,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";
 var DEFAULT_SISTER_AVATAR = "data:image/png;base64,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";
 
 // st-extension/src/apps/wechat/manifest-data.ts
-var SISTER_LOCATIONS = {
-  TOILET: "厕所，妹妹正在上厕所",
-  SCHOOL: "妹妹正在学校上课",
-  LIVING_ROOM: "客厅，妹妹正在和玩家待在一起，会吐槽为什么还用微信发消息",
-  SISTER_ROOM: "妹妹正在自己的卧室"
-};
-var PLAYER_LOCATIONS = {
-  LIVING_ROOM: "玩家此时在客厅",
-  COMPANY: "玩家此时在公司"
-};
 var PLAYER_EMOJIS = {
   simper: { id: "simper", name: "傻笑", description: "傻笑的熊猫头表情包，代表搞怪，沙雕的傻笑。", file: "emojies/player/simper.png" },
   angry: { id: "angry", name: "生气", description: "熊猫头愤怒表情，代表有点搞怪的生气含义。", file: "emojies/player/angry.png" },
@@ -17459,22 +18160,11 @@ var SISTER_PHOTOS = {
   pee1: { id: "pee1", name: "上厕所自拍1", description: "尿尿时的俯视自拍", file: "photos/pee1.png" },
   pee2: { id: "pee2", name: "上厕所自拍2", description: "尿尿时正对小穴的自拍", file: "photos/pee2.png" }
 };
-var FALLBACK_DIALOGUES = {
-  keywords: [
-    { pattern: "爱你|喜欢", branches: [{ min_mood: 50, reply: "我也爱你，哥哥~" }, { min_mood: 20, reply: "哥哥真好~" }, { min_mood: 0, reply: "嗯..." }] },
-    { pattern: "吃", branches: [{ min_mood: 30, reply: "我想吃你做的菜~" }, { min_mood: 0, reply: "我还没想好呢，要不你给我带点？" }] },
-    { pattern: "在吗", reply: "有事说事" },
-    { pattern: "回来带杯可乐|可乐", reply: "打钱" },
-    { pattern: "想你", branches: [{ min_mood: 40, reply: "我也想你...♡" }, { min_mood: 0, reply: "嗯，我也是。" }] },
-    { pattern: "照片|涩图|看", reply: "photo:bedroom1" }
-  ],
-  default_text: "嗯嗯，知道了。",
-  red_packet_reply: "谢谢老板，老板大气！"
-};
 
 // st-extension/src/apps/wechat/assets.ts
 function resolveWeChatAssetUrl(subpath) {
   if (!subpath) return "";
+  if (subpath.startsWith("/user/images/")) return subpath;
   if (/^(?:https?:|data:)/.test(subpath)) return subpath;
   let clean2 = subpath.replace(/^\/+/, "");
   if (clean2.startsWith("assets/wechat/")) {
@@ -17491,6 +18181,655 @@ function resolveWeChatAssetUrl(subpath) {
   } catch {
   }
   return `/assets/wechat/${clean2}`;
+}
+
+// st-extension/src/apps/wechat/prompts.ts
+var DEFAULT_REPLY_PROMPT = `你正在扮演「{角色}」，通过微信与用户进行虚构角色互动。
+遵循以下角色卡，保持其说话习惯、关系边界和已知经历；不要擅自添加亲属关系、职业或共同生活的设定。
+{人设}
+用户称呼：{用户}
+联系人显示称呼：{称呼}
+场景补充：{场景}
+当前时间：{时间}
+此前状态：{状态}
+以自然、具体的聊天口吻回应这次消息，承接微信历史，不复述设定说明。可以用一到四条短消息表达完整意思；不要每次固定反问，不要凭空声称发生了转账或现实行动。
+红包代表虚构礼物，内容可能是金额或物品，请结合内容与留言回应。
+可选表情（仅在符合情绪时使用）：
+{表情}
+可选图片（仅在符合情境时使用）：
+{图片}
+{背景}`;
+var DEFAULT_STATE_PROMPT = `在同一次回复中补充角色扮演状态：
+inner_thought：角色当下未说出口的简短想法，属于虚构人物的内心独白，不是模型推理或处理步骤。最多 300 字。
+current_status：角色此刻正在做什么、处于什么状态，最多 100 字。不确定时保持已有状态或留空，不凭空推进重大事件。
+这两个字段放在 messages 旁边，不要作为聊天消息重复发送。`;
+var DEFAULT_FORMAT_PROMPT = `只返回一个 JSON 对象，不使用 Markdown，不输出 JSON 之外的文字。
+格式：{"messages":[{"type":"text","content":"回复文字"}],"inner_thought":"角色内心独白","current_status":"当前状态"}
+messages 包含 1–4 条消息，type 可为 text、emoji、image。
+text 使用 content 字段；emoji 使用 emoji_id，image 使用 pic_id，ID 必须来自以上可用列表。没有合适素材就发文字。`;
+function renderWeChatPrompt(profile, state2, time, scope, emojis, photos) {
+  const card = scope.card;
+  const values = {
+    "角色": scope.characterName,
+    "人设": [card?.description, card?.personality, card?.scenario, card?.mes_example].filter(Boolean).join("\n") || "未提供额外人设。",
+    "场景": profile.scene || "遵循角色卡和已有微信记录。",
+    "用户": profile.playerName || "用户",
+    "称呼": profile.contactName || scope.characterName,
+    "时间": time,
+    "状态": `内心想法：${state2.innerThought || "未更新"}；当前状态：${state2.currentStatus || "未更新"}`,
+    "表情": emojis || "无",
+    "图片": photos || "无",
+    "背景": profile.contextMessageCount > 0 && scope.stRecentMessages?.length ? scope.stRecentMessages.slice(-profile.contextMessageCount).map((m) => `${m.sender}: ${m.text}`).join("\n") : ""
+  };
+  return [profile.replyPrompt || DEFAULT_REPLY_PROMPT, profile.statePrompt || DEFAULT_STATE_PROMPT, profile.formatPrompt || DEFAULT_FORMAT_PROMPT].map((text4) => text4.replace(/\{(角色|人设|用户|称呼|场景|时间|状态|表情|图片|背景)\}/g, (all, key) => values[key] ?? all)).join("\n\n");
+}
+
+// st-extension/src/apps/wechat/profile-editor.ts
+function createProfileEditor(parent, packs = () => []) {
+  const section2 = document.createElement("section");
+  section2.className = "wt-profile-editor";
+  parent.insertBefore(section2, parent.querySelector("#wt-settings-actions"));
+  const field = (label, input, target = section2) => {
+    const wrap = document.createElement("label");
+    wrap.className = "wt-field";
+    wrap.append(document.createTextNode(label), input);
+    input.setAttribute("aria-label", label);
+    target.append(wrap);
+    return input;
+  };
+  function details(title2) {
+    const el4 = document.createElement("details"), summary = document.createElement("summary");
+    summary.textContent = title2;
+    el4.append(summary);
+    section2.append(el4);
+    return el4;
+  }
+  function button2(label, target, run) {
+    const el4 = document.createElement("button");
+    el4.type = "button";
+    el4.textContent = label;
+    el4.onclick = run;
+    target.append(el4);
+    return el4;
+  }
+  const player = field("用户称呼（可留空）", document.createElement("input"));
+  player.maxLength = 60;
+  const contact2 = field("联系人显示名（留空跟随角色卡）", document.createElement("input"));
+  contact2.maxLength = 60;
+  const scene = field("场景补充（留空遵循角色卡）", document.createElement("textarea"));
+  scene.rows = 3;
+  scene.maxLength = 2e3;
+  const opening = field("新会话开场白（不改已有记录）", document.createElement("textarea"));
+  opening.maxLength = 500;
+  opening.rows = 2;
+  const promptPanel = details("提示词 · 查看、编辑与恢复默认");
+  const promptNote = document.createElement("p");
+  promptNote.className = "wt-hint";
+  promptNote.textContent = "以下文字就是实际使用的提示词。花括号会填入当前联系人的角色卡、称呼、场景、状态和可用素材。微信只使用此会话的历史；保存后下一次发送生效。";
+  promptPanel.append(promptNote);
+  const prompts = [
+    ["replyPrompt", "聊天提示词", DEFAULT_REPLY_PROMPT, 12e3],
+    ["statePrompt", "状态提示词", DEFAULT_STATE_PROMPT, 8e3],
+    ["formatPrompt", "输出格式提示词", DEFAULT_FORMAT_PROMPT, 4e3]
+  ];
+  const promptInputs = {};
+  const feedback = document.createElement("p");
+  feedback.setAttribute("role", "status");
+  feedback.className = "wt-hint";
+  section2.append(feedback);
+  for (const [key, label, fallback, max] of prompts) {
+    const input = field(label, document.createElement("textarea"), promptPanel);
+    input.rows = key === "replyPrompt" ? 9 : 5;
+    input.maxLength = max;
+    input.spellcheck = false;
+    promptInputs[key] = input;
+    button2(`恢复默认${label}`, promptPanel, () => {
+      input.value = fallback;
+      feedback.textContent = `${label}已恢复默认，保存设置后生效。`;
+    });
+  }
+  const assetsPanel = details("表情与图片 · 预览、分组与图库");
+  assetsPanel.dataset.assetManager = "";
+  const groups = {};
+  for (const [key, label] of [["player", "我的表情包"], ["contact", "联系人表情包"], ["photo", "旧版角色照片（专属场景）"]]) {
+    const input = field(`启用${label}`, document.createElement("input"), assetsPanel);
+    input.type = "checkbox";
+    groups[key] = input;
+  }
+  const grid = document.createElement("div");
+  grid.className = "wt-asset-grid";
+  grid.setAttribute("role", "group");
+  grid.setAttribute("aria-label", "素材预览列表");
+  assetsPanel.append(grid);
+  const browseGroup = field("预览表情包组", document.createElement("select"), assetsPanel);
+  for (const [key, label] of [["player", "我的表情包"], ["contact", "联系人表情包"], ["photo", "旧版角色照片（专属场景）"]]) browseGroup.add(new Option(label, key));
+  assetsPanel.insertBefore(browseGroup.parentElement, grid);
+  const assetName = field("素材显示名", document.createElement("input"), assetsPanel);
+  assetName.maxLength = 60;
+  const assetDescription = field("素材含义说明", document.createElement("textarea"), assetsPanel);
+  assetDescription.maxLength = 200;
+  assetDescription.rows = 2;
+  const assetUrl = field("素材图片地址（留空恢复原图）", document.createElement("input"), assetsPanel);
+  assetUrl.placeholder = "HTTPS 或 /user/images/…";
+  const preview = document.createElement("img");
+  preview.className = "wt-asset-preview";
+  preview.alt = "选中素材预览";
+  assetsPanel.append(preview);
+  let base = normalizeProfile(), selected = "", custom = {}, edits = {}, overrides = {};
+  const catalog = () => ({
+    ...Object.fromEntries(Object.entries(PLAYER_EMOJIS).map(([id, item]) => [`player.${id}`, item])),
+    ...Object.fromEntries(Object.entries(SISTER_EMOJIS).map(([id, item]) => [`contact.${id}`, item])),
+    ...Object.fromEntries(Object.entries(SISTER_PHOTOS).map(([id, item]) => [`photo.${id}`, item])),
+    ...custom
+  });
+  function storeAsset() {
+    const item = catalog()[selected];
+    if (!item) return;
+    const url = assetUrl.value.trim();
+    if (url && !safeAssetUrl(url)) throw new Error("素材地址需要 HTTPS 或安全的酒馆用户图片路径");
+    if (url && url !== item.file) overrides[selected] = url;
+    else delete overrides[selected];
+    const name = assetName.value.trim(), description = assetDescription.value.trim();
+    const edit = { ...name && name !== item.name ? { name } : {}, ...description && description !== item.description ? { description } : {} };
+    if (Object.keys(edit).length) edits[selected] = edit;
+    else delete edits[selected];
+  }
+  function selectAsset(key) {
+    selected = key;
+    const item = catalog()[key];
+    if (!item) return;
+    assetName.value = edits[key]?.name ?? item.name;
+    assetDescription.value = edits[key]?.description ?? item.description;
+    assetUrl.value = overrides[key] ?? "";
+    preview.src = resolveWeChatAssetUrl(overrides[key] ?? item.file);
+    preview.alt = assetName.value;
+    grid.querySelectorAll("button").forEach((btn) => btn.setAttribute("aria-pressed", String(btn.dataset.asset === key)));
+  }
+  function drawAssets() {
+    grid.replaceChildren();
+    const visible = Object.entries(catalog()).filter(([key]) => key.startsWith(`${browseGroup.value}.`));
+    for (const [key, item] of visible) {
+      const btn = button2(edits[key]?.name ?? item.name, grid, () => {
+        try {
+          storeAsset();
+          selectAsset(key);
+          feedback.textContent = "";
+        } catch (error) {
+          feedback.textContent = error.message;
+        }
+      });
+      btn.dataset.asset = key;
+      btn.title = edits[key]?.description ?? item.description;
+      const img = document.createElement("img");
+      img.alt = "";
+      img.loading = "lazy";
+      img.src = resolveWeChatAssetUrl(overrides[key] ?? item.file);
+      btn.prepend(img);
+    }
+    selectAsset(visible.some(([key]) => key === selected) ? selected : visible[0]?.[0] || "");
+  }
+  button2("恢复选中素材", assetsPanel, () => {
+    delete edits[selected];
+    delete overrides[selected];
+    selectAsset(selected);
+    drawAssets();
+    feedback.textContent = "已恢复原始素材，保存后生效。";
+  });
+  button2("移除选中的图库图片", assetsPanel, () => {
+    if (!custom[selected]) {
+      feedback.textContent = "内置素材请通过上方分组开关停用。";
+      return;
+    }
+    delete custom[selected];
+    delete edits[selected];
+    delete overrides[selected];
+    selected = "";
+    drawAssets();
+    feedback.textContent = "已从此配置移除，历史消息保留。";
+  });
+  const gallery = field("从图库选择图片", document.createElement("select"), assetsPanel);
+  const destination = field("添加到", document.createElement("select"), assetsPanel);
+  for (const [key, label] of [["player", "我的表情包"], ["contact", "联系人表情包"], ["photo", "联系人图片"]]) destination.add(new Option(label, key));
+  let galleryItems = [];
+  button2("添加图库图片", assetsPanel, () => {
+    const item = gallery.value === "" ? void 0 : galleryItems[Number(gallery.value)];
+    if (!item) {
+      feedback.textContent = "请先在图库中保存图片，再回到这里选择。";
+      return;
+    }
+    if (!safeAssetUrl(item.file)) {
+      feedback.textContent = "请先在图库将此图片保存到酒馆图片存储，或使用 HTTPS 图片地址。";
+      return;
+    }
+    try {
+      storeAsset();
+    } catch (error) {
+      feedback.textContent = error.message;
+      return;
+    }
+    if (Object.keys(custom).length >= 100) {
+      feedback.textContent = "最多添加 100 张图库图片。";
+      return;
+    }
+    const key = `${destination.value}.custom-${globalThis.crypto.randomUUID()}`;
+    custom[key] = { name: item.name.slice(0, 60), description: item.name.slice(0, 200), file: item.file };
+    groups[destination.value].checked = true;
+    browseGroup.value = destination.value;
+    selected = key;
+    drawAssets();
+    feedback.textContent = "图片已加入，保存设置后可发送。";
+  });
+  assetUrl.onchange = () => {
+    try {
+      storeAsset();
+      selectAsset(selected);
+      feedback.textContent = "";
+    } catch (error) {
+      feedback.textContent = error.message;
+    }
+  };
+  browseGroup.onchange = () => {
+    try {
+      storeAsset();
+      drawAssets();
+      feedback.textContent = "";
+    } catch (error) {
+      browseGroup.value = selected.split(".")[0];
+      feedback.textContent = error.message;
+    }
+  };
+  return {
+    element: section2,
+    showAssets() {
+      assetsPanel.open = true;
+      assetsPanel.scrollIntoView?.({ block: "start" });
+    },
+    setDisabled(disabled) {
+      section2.querySelectorAll("input,select,textarea,button").forEach((input) => {
+        input.disabled = disabled;
+      });
+    },
+    fill(profile) {
+      base = profile;
+      player.value = profile.playerName;
+      contact2.value = profile.contactName;
+      scene.value = profile.scene ?? "";
+      opening.value = profile.openingMessage;
+      for (const key of Object.keys(groups)) groups[key].checked = profile.assetGroups[key];
+      for (const [key, , fallback] of prompts) promptInputs[key].value = profile[key] || fallback;
+      custom = structuredClone(profile.customAssets);
+      edits = structuredClone(profile.assetEdits);
+      overrides = { ...profile.assetOverrides };
+      drawAssets();
+      galleryItems = packs().flatMap((pack) => pack.sprites.map((sprite) => ({ name: `${pack.name} · ${sprite.tag}`, file: sprite.url })));
+      gallery.replaceChildren(new Option("选择图库中的图片", ""));
+      galleryItems.forEach((item, index) => gallery.add(new Option(item.name, String(index))));
+      gallery.selectedIndex = 0;
+      feedback.textContent = "";
+    },
+    read() {
+      storeAsset();
+      return normalizeProfile({ profile: {
+        ...base,
+        playerName: player.value,
+        contactName: contact2.value,
+        scene: scene.value,
+        openingMessage: opening.value,
+        assetGroups: { player: groups.player.checked, contact: groups.contact.checked, photo: groups.photo.checked },
+        assetOverrides: overrides,
+        assetEdits: edits,
+        customAssets: custom,
+        ...Object.fromEntries(prompts.map(([key, , fallback]) => [key, promptInputs[key].value.trim() === fallback ? "" : promptInputs[key].value]))
+      } });
+    }
+  };
+}
+
+// st-extension/src/apps/wechat/profile-settings.ts
+function createProfileSettings(parent, data, persist, options = {}) {
+  const root = document.createElement("section");
+  root.className = "wt-profile-settings";
+  root.style.cssText = "display:flex;flex-direction:column;gap:10px;min-width:0;flex-shrink:0;font-size:12px;color:#222;";
+  parent.insertBefore(root, parent.querySelector("#wt-settings-actions"));
+  const label = (text4, input) => {
+    const wrapper = document.createElement("label");
+    wrapper.textContent = text4;
+    wrapper.style.cssText = "display:flex;flex-direction:column;gap:4px;min-width:0;";
+    input.style.cssText = "width:100%;min-width:0;min-height:40px;box-sizing:border-box;border:1px solid #aaa;border-radius:5px;padding:7px;font:inherit;background:#fff;color:#222;";
+    input.setAttribute("aria-label", text4);
+    wrapper.append(input);
+    root.append(wrapper);
+    return input;
+  };
+  const scope = label("正在编辑", document.createElement("select"));
+  scope.dataset.profileScope = "";
+  const status = document.createElement("p");
+  status.setAttribute("role", "status");
+  status.style.cssText = "margin:0;line-height:1.5;overflow-wrap:anywhere;";
+  const hint = document.createElement("p");
+  hint.style.cssText = "margin:0;line-height:1.5;";
+  root.append(hint);
+  const editor = createProfileEditor(root, options.packs);
+  let characterKey = null;
+  let resetOverride = false;
+  const reset = document.createElement("button");
+  reset.type = "button";
+  reset.textContent = "此联系人改用通用设置";
+  root.insertBefore(reset, editor.element);
+  function fillScope() {
+    editor.fill(scope.value === "global" ? normalizeProfile(data.config) : resolveProfile(data.config, characterKey));
+    editor.setDisabled(false);
+    reset.hidden = !characterKey || !hasCharacterProfile(data.config, characterKey) || resetOverride;
+    hint.textContent = scope.value === "global" ? characterKey && hasCharacterProfile(data.config, characterKey) && !resetOverride ? "修改所有使用通用设置的联系人。此联系人目前有专用设置；下方按钮可将其改回通用设置。" : "所有没有专用设置的联系人都会使用这里的内容。" : "只影响此联系人，其他联系人继续使用各自的设置。首次保存时会建立专用设置。";
+  }
+  reset.onclick = () => {
+    resetOverride = true;
+    scope.value = "global";
+    fillScope();
+    status.textContent = "此联系人将在保存后改用通用设置。";
+  };
+  scope.onchange = () => {
+    resetOverride = false;
+    fillScope();
+    status.textContent = "";
+  };
+  const templatePanel = document.createElement("details");
+  templatePanel.dataset.profileTemplatePanel = "";
+  const templateSummary = document.createElement("summary");
+  templateSummary.textContent = "场景模板 · 保存、导入与导出";
+  templatePanel.append(templateSummary);
+  root.append(templatePanel);
+  const templates = label(t("wechatProfiles.templates", "场景模板"), document.createElement("select"));
+  templates.dataset.profileTemplates = "";
+  const name = label(t("wechatProfiles.name", "模板名称"), document.createElement("input"));
+  name.maxLength = 60;
+  const controls = document.createElement("div");
+  controls.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;";
+  root.append(controls);
+  function action(text4, run) {
+    const button2 = document.createElement("button");
+    button2.type = "button";
+    button2.textContent = text4;
+    button2.style.cssText = "min-height:40px;padding:7px 10px;border:1px solid #aaa;border-radius:5px;background:#f7f7f7;color:#222;font:inherit;white-space:normal;";
+    button2.onclick = () => {
+      try {
+        run();
+      } catch (error) {
+        status.textContent = error instanceof ProfileLibraryError ? { invalid: t("wechatProfiles.invalid", "模板格式或内容无效（最多 64 KB，只接受场景字段）。"), name: t("wechatProfiles.nameError", "模板名称需为 1–60 个字符。"), duplicate: t("wechatProfiles.duplicate", "模板名称已存在，请换一个名称。"), limit: t("wechatProfiles.limit", "最多保存 30 个模板，请先删除不用的模板。") }[error.code] : error instanceof Error ? error.message : t("wechatProfiles.invalid", "模板格式或内容无效（最多 64 KB，只接受场景字段）。");
+      }
+    };
+    controls.append(button2);
+    return button2;
+  }
+  const selected = () => normalizeTemplates(data.profileTemplates).find((item) => item.id === templates.value);
+  function refreshTemplates(id) {
+    templates.replaceChildren(new Option(t("wechatProfiles.choose", "选择已保存模板"), ""));
+    for (const item of normalizeTemplates(data.profileTemplates)) templates.add(new Option(item.name, item.id));
+    templates.value = id ?? "";
+    remove.dataset.confirm = "";
+    remove.textContent = t("wechatProfiles.delete", "删除模板");
+  }
+  function preview(profile) {
+    editor.fill(profile);
+    status.textContent = t("wechatProfiles.previewed", "已填入表单供预览。点击下方“保存”后才会用于会话。");
+  }
+  action(t("wechatProfiles.apply", "预览套用"), () => {
+    const item = selected();
+    if (item) {
+      preview(item.profile);
+      name.value = item.name;
+    } else {
+      status.textContent = "请先选择模板。";
+    }
+  });
+  action(t("wechatProfiles.saveTemplate", "保存为模板"), () => {
+    data.profileTemplates = addProfileTemplate(normalizeTemplates(data.profileTemplates), name.value, editor.read());
+    persist();
+    refreshTemplates(data.profileTemplates.at(-1)?.id);
+    status.textContent = t("wechatProfiles.saved", "模板已保存。会话配置尚未改变。");
+  });
+  const remove = action(t("wechatProfiles.delete", "删除模板"), () => {
+    const item = selected();
+    if (!item) {
+      status.textContent = "请先选择要删除的模板。";
+      return;
+    }
+    if (remove.dataset.confirm !== item.id) {
+      remove.dataset.confirm = item.id;
+      remove.textContent = t("wechatProfiles.confirmDelete", "再次点击确认删除");
+      status.textContent = item.name;
+      return;
+    }
+    data.profileTemplates = normalizeTemplates(data.profileTemplates).filter((entry) => entry.id !== item.id);
+    persist();
+    refreshTemplates();
+    status.textContent = t("wechatProfiles.deleted", "模板已删除。已保存的角色配置保留。");
+  });
+  templates.onchange = () => {
+    remove.dataset.confirm = "";
+    remove.textContent = t("wechatProfiles.delete", "删除模板");
+    const item = selected();
+    if (item) name.value = item.name;
+  };
+  const transfer = label(t("wechatProfiles.transfer", "模板 JSON（粘贴导入或复制导出）"), document.createElement("textarea"));
+  transfer.rows = 3;
+  transfer.maxLength = 65536;
+  transfer.spellcheck = false;
+  root.append(controls);
+  action(t("wechatProfiles.import", "导入并预览"), () => {
+    const item = decodeProfileTemplate(transfer.value);
+    name.value = item.name;
+    preview(item.profile);
+  });
+  action(t("wechatProfiles.export", "导出当前表单"), () => {
+    transfer.value = encodeProfileTemplate(name.value, editor.read());
+    transfer.focus();
+    transfer.select();
+    status.textContent = t("wechatProfiles.exported", "已生成 JSON，可复制保存；仅包含场景配置。");
+  });
+  templatePanel.append(templates.parentElement, name.parentElement, transfer.parentElement, controls);
+  if (options.preview) {
+    const previewButton = document.createElement("button");
+    previewButton.type = "button";
+    previewButton.textContent = "预览实际发送的提示词";
+    const previewText = document.createElement("textarea");
+    previewText.readOnly = true;
+    previewText.rows = 10;
+    previewText.hidden = true;
+    previewText.setAttribute("aria-label", "实际提示词预览");
+    previewButton.onclick = () => {
+      try {
+        previewText.value = options.preview(editor.read());
+        previewText.hidden = false;
+        status.textContent = "以下预览使用当前表单与当前联系人，尚未保存。";
+      } catch (error) {
+        status.textContent = error.message;
+      }
+    };
+    root.insertBefore(previewButton, templatePanel);
+    root.insertBefore(previewText, templatePanel);
+  }
+  root.append(status);
+  return {
+    open(key, assets = false) {
+      characterKey = key;
+      resetOverride = false;
+      scope.replaceChildren(new Option("通用设置", "global"));
+      if (key) scope.append(new Option("此联系人专用设置", "character"));
+      scope.value = data.profileEditorScopes?.[key ?? "global"] ?? (key && hasCharacterProfile(data.config, key) ? "character" : "global");
+      fillScope();
+      refreshTemplates();
+      name.value = "";
+      transfer.value = "";
+      status.textContent = "";
+      templatePanel.open = false;
+      if (assets) editor.showAssets();
+    },
+    save(config) {
+      const target = scope.value === "character" ? characterKey : null;
+      const next = saveScopedProfile(resetOverride && characterKey ? inheritProfile(config, characterKey) : config, target, editor.read());
+      data.profileEditorScopes = { ...data.profileEditorScopes, [characterKey ?? "global"]: target ? "character" : "global" };
+      status.textContent = "";
+      return next;
+    }
+  };
+}
+
+// st-extension/src/apps/wechat/conversations.ts
+var hostContext = getWeChatHostContext;
+function snapshot(raw) {
+  const result = {};
+  for (const key of ["name", "avatar", "description", "personality", "scenario", "mes_example"]) {
+    const value = raw[key] ?? raw.data?.[key];
+    if (typeof value === "string") result[key] = value.slice(0, key === "avatar" ? 256 : key === "name" ? 100 : 16e3);
+  }
+  return result;
+}
+function contact(raw) {
+  const id = stableCharacterKey(raw);
+  return id ? { id, name: raw.name?.trim() || raw.data?.name?.trim() || "未命名角色", avatar: raw.avatar, kind: "character", card: snapshot(raw) } : void 0;
+}
+function listContacts(host) {
+  const cards = [...hostContext()?.characters ?? []];
+  const current2 = host.getCharacterCard?.();
+  if (current2) cards.push(current2);
+  const result = /* @__PURE__ */ new Map();
+  for (const card of cards) {
+    const item = contact(card);
+    if (item && !result.has(item.id)) result.set(item.id, item);
+  }
+  return [...result.values()];
+}
+async function loadContact(host, id) {
+  const context2 = hostContext();
+  const index = context2?.characters?.findIndex((item2) => stableCharacterKey(item2) === id) ?? -1;
+  if (index >= 0 && context2?.characters?.[index].shallow) {
+    if (!context2.unshallowCharacter) throw new Error("角色卡详情尚未加载，请先在酒馆中载入该角色");
+    await context2.unshallowCharacter(String(index));
+  }
+  const raw = hostContext()?.characters?.find((item2) => stableCharacterKey(item2) === id);
+  if (raw?.shallow) throw new Error("角色卡详情加载失败，请重试");
+  const item = raw ? contact(raw) : listContacts(host).find((item2) => item2.id === id);
+  if (!item) throw new Error("此角色卡已不存在，请重新选择");
+  return item;
+}
+function addContactConversation(data, item) {
+  if (!stableCharacterKey(item.card) || stableCharacterKey(item.card) !== item.id) throw new Error("联系人缺少稳定的角色卡身份");
+  data.contacts ?? (data.contacts = {});
+  data.conversations ?? (data.conversations = {});
+  data.contacts[item.id] = { ...item, card: snapshot(item.card) };
+  const key = `direct:${item.id}`;
+  if (!data.conversations[key]) {
+    const profile = resolveProfile(data.config, item.id);
+    data.conversations[key] = {
+      scopeKey: key,
+      contactId: item.id,
+      conversationType: "direct",
+      memberIds: [item.id],
+      characterName: item.name,
+      messages: profile.openingMessage ? [{ sender: "sister", type: "text", content: profile.openingMessage, time: { day: 1, hour: 0, minute: 0 } }] : [],
+      state: { mood: 60, interest: 15, money: 0, sisterLocation: "", playerLocation: "" },
+      currentDay: 1,
+      unreadCount: 0
+    };
+  }
+  return data.conversations[key];
+}
+function conversationScope(data, conv) {
+  const item = conv.contactId ? data.contacts?.[conv.contactId] : void 0;
+  const avatarKey = conv.scopeKey?.match(/^(avatar:[^:]+)(?:::|$)/)?.[1];
+  const stored = item ?? (avatarKey ? data.contacts?.[avatarKey] : void 0);
+  return {
+    scopeKey: conv.scopeKey,
+    characterName: stored?.name ?? conv.characterName,
+    card: stored?.card ?? conv.card,
+    characterId: conv.characterId,
+    chatId: conv.chatId,
+    externalState: { source: "none" }
+  };
+}
+
+// st-extension/src/apps/wechat/legacy-conversation.ts
+function createDefaultSisterState() {
+  return {
+    hasExternalState: false,
+    mood: 60,
+    interest: 15,
+    sisterLocation: "SISTER_ROOM",
+    playerLocation: "COMPANY",
+    money: 5200
+  };
+}
+function getScopedConversation(appData, scopeOrName) {
+  if (!appData.conversations) {
+    appData.conversations = {};
+  }
+  const isScope = typeof scopeOrName === "object" && scopeOrName !== null;
+  const characterName = isScope ? scopeOrName.characterName : scopeOrName || "妹妹";
+  const scopeKey = isScope ? scopeOrName.scopeKey : characterName.trim() || "default";
+  const externalState = isScope ? scopeOrName.externalState : void 0;
+  const characterId = isScope ? scopeOrName.characterId : void 0;
+  const chatId = isScope ? scopeOrName.chatId : void 0;
+  let conv = appData.conversations[scopeKey];
+  if (!conv && characterName && appData.conversations[characterName]) {
+    conv = appData.conversations[characterName];
+    delete appData.conversations[characterName];
+    conv.scopeKey = scopeKey;
+    conv.characterName = characterName;
+    if (characterId) conv.characterId = characterId;
+    if (chatId) conv.chatId = chatId;
+    appData.conversations[scopeKey] = conv;
+  }
+  if (!conv && appData.messages && appData.messages.length > 0) {
+    conv = {
+      characterName,
+      characterId,
+      chatId,
+      scopeKey,
+      messages: [...appData.messages],
+      state: appData.state ? { ...appData.state } : createDefaultSisterState(),
+      currentDay: appData.currentDay || 1
+    };
+    appData.conversations[scopeKey] = conv;
+    delete appData.messages;
+    delete appData.state;
+    delete appData.currentDay;
+  }
+  if (!conv) {
+    const isSister = !characterName || characterName === "妹妹";
+    const profile = resolveProfile(appData.config, isScope ? profileCharacterKey(scopeOrName.card) : null);
+    conv = {
+      characterName,
+      characterId,
+      chatId,
+      scopeKey,
+      messages: [
+        {
+          sender: "sister",
+          content: profile.openingMessage || (profile.preset === "cohabitation" && isSister ? "哥，下班没？今天晚上想吃什么呀？" : "在吗？发个微信聊聊。"),
+          type: "text",
+          time: { day: 1, hour: 18, minute: 30 }
+        }
+      ],
+      state: profile.preset === "general" ? { ...createDefaultSisterState(), sisterLocation: "未设定", playerLocation: "未设定", money: 0 } : createDefaultSisterState(),
+      currentDay: 1
+    };
+    appData.conversations[scopeKey] = conv;
+  }
+  if (externalState && externalState.source !== "none" && externalState.mappedFields && Object.values(externalState.mappedFields).some(Boolean)) {
+    conv.state.hasExternalState = true;
+    conv.state.externalSource = externalState.source;
+    conv.state.externalFields = { ...externalState.mappedFields };
+    if (externalState.mood !== void 0) conv.state.mood = externalState.mood;
+    if (externalState.interest !== void 0) conv.state.interest = externalState.interest;
+    if (externalState.money !== void 0) conv.state.money = externalState.money;
+    if (externalState.location !== void 0) conv.state.sisterLocation = externalState.location;
+  } else if (externalState && externalState.source === "none") {
+    conv.state.hasExternalState = false;
+    conv.state.externalSource = void 0;
+    conv.state.externalFields = void 0;
+  }
+  return conv;
 }
 
 // st-extension/src/apps/wechat/rag.ts
@@ -17523,17 +18862,21 @@ function messageToRagText(msg, playerEmojis, sisterEmojis, sisterPhotos) {
   switch (type) {
     case "text":
       return content;
-    case "emoji":
-      if (sender === "player" && playerEmojis[content]) {
-        return `玩家发送了一个表情包：id=${content}，名称=${playerEmojis[content].name}，含义=${playerEmojis[content].description}`;
+    case "emoji": {
+      const fromPlayer = msg.emojiSource ? msg.emojiSource === "player" : sender === "player";
+      const item = msg.asset ?? (fromPlayer ? playerEmojis : sisterEmojis)[content];
+      if (sender === "player" && item) {
+        return `玩家发送了一个表情包：id=${content}，名称=${item.name}，含义=${item.description}`;
       }
-      if (sender === "sister" && sisterEmojis[content]) {
-        return `${sisterEmojis[content].name} ${sisterEmojis[content].description}`;
+      if (sender === "sister" && item) {
+        return `${item.name} ${item.description}`;
       }
       return content;
+    }
     case "red_packet":
-      return `红包 金额 ${content}`;
+      return `红包 礼物 ${content}${msg.note ? ` 留言 ${msg.note}` : ""}`;
     case "image":
+      if (msg.asset) return `${msg.asset.name} ${msg.asset.description}`;
       if (sender === "sister" && sisterPhotos[content]) {
         return `${sisterPhotos[content].name} ${sisterPhotos[content].description}`;
       }
@@ -17578,9 +18921,9 @@ function getRagMessages(query, allMessages, today, playerEmojis, sisterEmojis, s
 function buildRagPrompt(query, allMessages, today, playerEmojis, sisterEmojis, sisterPhotos, maxCount = 3) {
   const ragMessages = getRagMessages(query, allMessages, today, playerEmojis, sisterEmojis, sisterPhotos, maxCount);
   if (ragMessages.length === 0) return "";
-  let text4 = "\n以下是从过去聊天记录中检索出的可能相关内容。\n这些内容仅供参考，不一定与当前问题有关。\n不要直接提及“历史记录”“RAG”或“检索”。\n请结合妹妹当前的人设和当天上下文自然回复。\n\n相关历史：\n";
+  let text4 = "\n以下是从过去聊天记录中检索出的可能相关内容。\n这些内容仅供参考，不一定与当前问题有关。\n不要直接提及“历史记录”“RAG”或“检索”。\n请结合当前角色的人设和当天上下文自然回复。\n\n相关历史：\n";
   for (const msg of ragMessages) {
-    const senderName = msg.sender === "player" ? "玩家" : "妹妹";
+    const senderName = msg.sender === "player" ? "玩家" : "角色";
     const content = messageToRagText(msg, playerEmojis, sisterEmojis, sisterPhotos);
     text4 += `[第${msg.time.day}天][${senderName}] ${content}
 `;
@@ -17590,12 +18933,11 @@ function buildRagPrompt(query, allMessages, today, playerEmojis, sisterEmojis, s
 
 // st-extension/src/apps/wechat/pipeline.ts
 var WeChatPipeline = class {
-  constructor(config, playerEmojis, sisterEmojis, sisterPhotos, fallbackDialogues) {
+  constructor(config, playerEmojis, sisterEmojis, sisterPhotos, _fallbackDialogues) {
     this.config = config;
     this.playerEmojis = playerEmojis;
     this.sisterEmojis = sisterEmojis;
     this.sisterPhotos = sisterPhotos;
-    this.fallbackDialogues = fallbackDialogues;
   }
   updateConfig(newConfig) {
     this.config = { ...this.config, ...newConfig };
@@ -17604,123 +18946,9 @@ var WeChatPipeline = class {
    * 构建微信系统提示词（根据当前 ST 对话角色动态适配）
    */
   buildSystemPrompt(state2, timeStr, characterNameOrScope = "妹妹") {
-    const isScope = typeof characterNameOrScope === "object" && characterNameOrScope !== null;
-    const characterName = isScope ? characterNameOrScope.characterName : characterNameOrScope || "妹妹";
-    const card = isScope ? characterNameOrScope.card : void 0;
-    const stRecentMessages = isScope ? characterNameOrScope.stRecentMessages : void 0;
-    let emojiListStr = "可用表情包：\n";
-    for (const [id, item] of Object.entries(this.sisterEmojis)) {
-      emojiListStr += `- id: ${id}，名称: ${item.name}，含义: ${item.description}
-`;
-    }
-    let picListStr = "可用图片：\n";
-    for (const [id, item] of Object.entries(this.sisterPhotos)) {
-      picListStr += `- id: ${id}，名称: ${item.name}，含义: ${item.description}
-`;
-    }
-    let cardSection = "";
-    if (card?.description || card?.personality || card?.scenario) {
-      cardSection = `
-【当前角色人设（来自 SillyTavern 角色卡）】
-角色姓名：${characterName}
-`;
-      if (card.description) cardSection += `设定描述：${card.description}
-`;
-      if (card.personality) cardSection += `性格特质：${card.personality}
-`;
-      if (card.scenario) cardSection += `所处场景：${card.scenario}
-`;
-    }
-    let stChatSection = "";
-    if (stRecentMessages && stRecentMessages.length > 0) {
-      stChatSection = `
-【近期酒馆对话背景】
-以下是你与用户在酒馆日常交流的近期片段，请以此为连贯记忆背景：
-`;
-      for (const m of stRecentMessages) {
-        stChatSection += `- ${m.sender === "user" ? "用户" : characterName}: ${m.text}
-`;
-      }
-    }
-    const roleIntro = cardSection ? `你正在扮演角色卡设定的「${characterName}」，此时通过手机微信与用户对话，请完全忠实于上方角色人设与性格，保持自然、生活感的微信聊天语气。` : characterName === "妹妹" || characterName.includes("妹") ? "你正在扮演玩家的妹妹，妹妹的人物设定是在校学生，性格比较平淡，真实系，具有生活感的人设。" : `你正在扮演当前对话角色「${characterName}」，此时通过手机微信与用户对话，保持自然真实生活感的微信聊天语气。`;
-    const premiseStr = !cardSection && (characterName === "妹妹" || characterName.includes("妹")) ? `玩家的设定是上班社畜，并且家中只有玩家和${characterName}两人。
-` : "";
-    const stateDesc = (() => {
-      const moodNum = typeof state2.mood === "number" && !isNaN(state2.mood) ? state2.mood : 60;
-      const interestNum = typeof state2.interest === "number" && !isNaN(state2.interest) ? state2.interest : 15;
-      if (state2.hasExternalState) {
-        const extParts = [];
-        const indParts = [];
-        if (state2.externalFields?.mood) {
-          extParts.push(`心情 ${moodNum.toFixed(1)}`);
-        } else {
-          indParts.push(`心情参考 ${moodNum.toFixed(1)}`);
-        }
-        if (state2.externalFields?.interest) {
-          extParts.push(`态度/好感度 ${interestNum.toFixed(1)}`);
-        } else {
-          indParts.push(`好感度参考 ${interestNum.toFixed(1)}`);
-        }
-        let desc = `当前外部状态（源自 ${state2.externalSource || "ST/MVU"}）：${extParts.join("，")}`;
-        if (indParts.length > 0) {
-          desc += `
-独立模拟状态（未从外部映射）：${indParts.join("，")}`;
-        }
-        return desc;
-      }
-      return `当前会话状态（未连接外部状态源）：心情参考 ${moodNum.toFixed(1)}，好感度参考 ${interestNum.toFixed(1)}`;
-    })();
-    const sisterLoc = state2.sisterLocation && SISTER_LOCATIONS[state2.sisterLocation] ? SISTER_LOCATIONS[state2.sisterLocation] : state2.sisterLocation || `${characterName}当前位置`;
-    const playerLoc = state2.playerLocation && PLAYER_LOCATIONS[state2.playerLocation] ? PLAYER_LOCATIONS[state2.playerLocation] : state2.playerLocation || "玩家此时在客厅";
-    return `
-不要试图以任何方式作为AI回答，你的目标是作为要求的角色来进行对话！
-明确自己的身份后，接下来我们将继续在虚拟世界中进行角色扮演，${roleIntro}
-说话自然、简短、像微信聊天。
-你需要根据当前时间，态度/好感，心情以及所处场景来对玩家的话和表情做出回应。
-${cardSection}${stChatSection}${premiseStr}
-好感态度 / 性趣阶梯参考：
-0-25时反应带有嫌弃或生疏感，参考回复[“你在对我说什么呢”，“无聊，别烦我”]
-25-50时态度平淡，带有一点傲娇或距离感，偶尔会要零花钱。参考回复[“哦哦，知道了”，“想看？打钱”]
-50-75时关系亲近，半推半就，不再回避亲昵话题。参考回复[“你怎么一天到晚找我聊天”，“哎呀你烦死了！待会儿再说”]
-75-100时关系非常亲密，会主动接梗或主动分享日常。参考回复[“在干嘛？今天有没有想我？”，“晚上要不要一起出去？”]
-
-心情阶梯参考：
-0-40时是心情不好的状态
-40-80时是普通心情状态
-80-100是比较高兴的状态
-
-你需要根据好感与心情的组合来做出对应的回复。
-${emojiListStr}
-${picListStr}
-${stateDesc}
-当前时间：${timeStr}
-当前所处场景：${sisterLoc}
-玩家当前所处场景：${playerLoc}
-
-你必须返回一个合法 JSON 对象, 禁止连续输出多个 JSON, 如果有多条消息，必须放在同一个 messages 数组中。
-不要使用 Markdown。不要输出 JSON 之外的任何内容。
-最外层必须是 {"messages": [...]}。
-messages中最多只有两条消息，只能使用以下组合[文本+表情]，[表情+文本],[文本+图片],[图片+文本],[表情+图片],[图片+表情],[文本],[表情],[图片]。
-
-格式示例：
-{
-  "messages": [
-    {
-      "type": "text",
-      "content": "回复文字"
-    },
-    {
-      "type": "emoji",
-      "emoji_id": "happy"
-    }
-  ]
-}
-规则：
-1. type 只能是 "text" 或 "emoji" 或 "image"。
-2. text 必须有 content，且不超过20字。
-3. emoji 必须有 emoji_id，且必须从可用列表中选取。
-4. image 必须有 pic_id，且必须从可用列表中选取。
-`;
+    const scope = typeof characterNameOrScope === "string" ? { scopeKey: "", characterName: characterNameOrScope, externalState: { source: "none" } } : characterNameOrScope;
+    const list = (items) => Object.entries(items).map(([id, item]) => `${id}: ${item.name} — ${item.description}`).join("\n");
+    return renderWeChatPrompt(normalizeProfile(this.config), state2, timeStr, scope, list(this.sisterEmojis), list(this.sisterPhotos));
   }
   /**
    * 组装完整的对话上下文消息
@@ -17782,12 +19010,12 @@ messages中最多只有两条消息，只能使用以下组合[文本+表情]，
       case "text":
         return { role: "user", content: msg.content };
       case "emoji": {
-        const item = this.playerEmojis[msg.content];
+        const item = msg.asset ?? (msg.emojiSource === "sister" ? this.sisterEmojis : this.playerEmojis)[msg.content];
         const desc = item ? `id=${msg.content}，名称=${item.name}，含义=${item.description}` : msg.content;
         return { role: "user", content: `玩家发送了一个表情包：${desc}` };
       }
       case "red_packet":
-        return { role: "user", content: `玩家发送了一个红包，金额：${msg.content}` };
+        return { role: "user", content: `玩家发送了一个虚构红包/礼物，内容：${msg.content}${msg.note ? `；留言：${msg.note}` : ""}` };
       case "image":
         return { role: "user", content: `玩家发送了一张图片：${msg.content}` };
       default:
@@ -17809,7 +19037,7 @@ messages中最多只有两条消息，只能使用以下组合[文本+表情]，
   /**
    * 阶段一：请求角色回复
    */
-  async requestSisterReply(history, state2, today, timeStr, characterNameOrScope = "妹妹") {
+  async requestSisterReply(history, state2, today, timeStr, characterNameOrScope = "妹妹", signal) {
     const apiKey = this.config.apiKey;
     if (!apiKey) {
       return this.getLocalFallbackReply(history, state2);
@@ -17819,6 +19047,7 @@ messages中最多只有两条消息，只能使用以下组合[文本+表情]，
     const messages = this.buildContextMessages(history, state2, today, timeStr, characterNameOrScope);
     try {
       const resp = await fetch(url, {
+        signal,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -17834,91 +19063,14 @@ messages中最多只有两条消息，只能使用以下组合[文本+表情]，
       });
       if (!resp.ok) {
         console.warn(`WeChat API error: ${resp.status} ${resp.statusText}`);
-        return this.getLocalFallbackReply(history, state2);
+        return { ...this.getLocalFallbackReply(history, state2), warning: `AI 连接失败（${resp.status}），以下为本地演示回复。` };
       }
       const data = await resp.json();
       const rawText = data?.choices?.[0]?.message?.content || "";
       return this.parseReplyJson(rawText, state2);
     } catch (err) {
-      console.error("WeChat request failed:", err);
-      return this.getLocalFallbackReply(history, state2);
-    }
-  }
-  /**
-   * 阶段二：评估好感/心情状态变化
-   */
-  async requestStatImpact(playerMessageText, sisterReplySummary, state2) {
-    const apiKey = this.config.apiKey;
-    if (!apiKey) {
-      if (playerMessageText.includes("红包")) {
-        return { mood: 0.3, interest: 0.1 };
-      }
-      if (playerMessageText.includes("喜欢") || playerMessageText.includes("爱你")) {
-        return { mood: 0.2, interest: 0.2 };
-      }
-      return { mood: 0.05, interest: 0.05 };
-    }
-    const statPrompt = `
-你是一个聊天状态分析器，只负责判断在收到本次消息后，心情和性趣的变化。
-
-请注意：
-1. 只分析玩家本次发送的消息，不要根据历史消息改变结果。
-2. mood 表示心情变化。
-3. interest 表示对暧昧、色情、性话题的接受度变化。
-4. 普通聊天通常返回较小变化，例如 -0.1 到 0.1。
-5. 明显让对方开心的内容，mood 可以增加。
-6. 冒犯、骚扰、让人不舒服的内容，mood 可以减少。
-7. 每个数值绝对不能超过 0.4 或低于 -0.4。
-8. 必须返回合法 JSON。
-9. 不要输出 Markdown，不要输出 JSON 之外的任何内容。
-
-返回格式：
-{
-  "mood": 0.0,
-  "interest": 0.0
-}
-
-玩家本次消息：
-${playerMessageText}
-
-本次回复：
-${sisterReplySummary}
-
-当前心情：${state2.mood.toFixed(1)}
-当前性趣：${state2.interest.toFixed(1)}
-`;
-    const url = this.config.apiUrl || "https://api.deepseek.com/chat/completions";
-    const model = this.config.model || "deepseek-chat";
-    try {
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: "你只返回状态变化 JSON，不要输出任何其他内容。" },
-            { role: "user", content: statPrompt }
-          ],
-          temperature: 0.2,
-          stream: false,
-          response_format: { type: "json_object" }
-        })
-      });
-      if (!resp.ok) return { mood: 0, interest: 0 };
-      const data = await resp.json();
-      const content = data?.choices?.[0]?.message?.content || "";
-      const parsed = JSON.parse(this.cleanJsonString(content));
-      const rawMood = typeof parsed.mood === "number" ? parsed.mood : 0;
-      const rawInterest = typeof parsed.interest === "number" ? parsed.interest : 0;
-      return {
-        mood: Math.max(-0.4, Math.min(0.4, rawMood)),
-        interest: Math.max(-0.4, Math.min(0.4, rawInterest))
-      };
-    } catch {
-      return { mood: 0, interest: 0 };
+      if (signal?.aborted) throw err;
+      return { ...this.getLocalFallbackReply(history, state2), warning: "AI 请求失败，以下为本地演示回复。请检查连接设置。" };
     }
   }
   cleanJsonString(str2) {
@@ -17940,7 +19092,7 @@ ${sisterReplySummary}
         for (const m of parsed.messages) {
           if (!m || typeof m !== "object") continue;
           if (m.type === "text" && typeof m.content === "string") {
-            valid2.push({ type: "text", content: m.content });
+            if (m.content.trim()) valid2.push({ type: "text", content: m.content.slice(0, 4e3) });
           } else if (m.type === "emoji" && typeof m.emoji_id === "string") {
             const safeEmojiId = m.emoji_id.trim();
             if (this.sisterEmojis[safeEmojiId]) {
@@ -17958,7 +19110,9 @@ ${sisterReplySummary}
           }
         }
         if (valid2.length > 0) {
-          return { messages: valid2 };
+          const stateText = (value) => typeof value === "string" && value.trim() && value.length <= 500 ? value.trim() : void 0;
+          const innerThought = stateText(parsed.inner_thought), currentStatus = stateText(parsed.current_status);
+          return { messages: valid2.slice(0, 4), ...innerThought ? { innerThought } : {}, ...currentStatus ? { currentStatus } : {} };
         }
       }
     } catch {
@@ -17971,445 +19125,164 @@ ${sisterReplySummary}
   /**
    * 本地分支离线回复（Fallback 词库）
    */
-  getLocalFallbackReply(history, state2) {
-    const lastPlayerMsg = [...history].reverse().find((m) => m.sender === "player");
-    const text4 = lastPlayerMsg?.content || "";
-    if (lastPlayerMsg?.type === "red_packet") {
-      return {
-        messages: [
-          { type: "text", content: this.fallbackDialogues?.red_packet_reply || "谢谢老板，老板大气！" },
-          { type: "emoji", emoji_id: "great" }
-        ]
-      };
-    }
-    if (lastPlayerMsg?.type === "emoji") {
-      const map = {
-        happy: { messages: [{ type: "emoji", emoji_id: "happy" }] },
-        angry: { messages: [{ type: "text", content: "别生气啦~" }] },
-        cry: { messages: [{ type: "text", content: "不哭不哭，摸摸头" }] },
-        laugh: { messages: [{ type: "emoji", emoji_id: "laugh" }] },
-        a_sexy_pic: state2 && state2.interest >= 50 ? { messages: [{ type: "image", pic_id: "bedroom1" }] } : { messages: [{ type: "text", content: "想看？打钱~" }] }
-      };
-      return map[text4] || { messages: [{ type: "emoji", emoji_id: "smile" }] };
-    }
-    const curMood = state2 ? state2.mood : 50;
-    const curInterest = state2 ? state2.interest : 15;
-    for (const item of this.fallbackDialogues?.keywords || []) {
-      const reg = new RegExp(item.pattern);
-      if (reg.test(text4)) {
-        if (item.reply && item.reply.startsWith("photo:")) {
-          const photoId = item.reply.replace("photo:", "");
-          if (curInterest >= 40) {
-            return { messages: [{ type: "text", content: "只许你看哦..." }, { type: "image", pic_id: photoId }] };
-          }
-          return { messages: [{ type: "text", content: "变态！不给看。" }, { type: "emoji", emoji_id: "angry" }] };
-        }
-        if (item.branches) {
-          for (const br of item.branches) {
-            if (curMood >= br.min_mood) {
-              return { messages: [{ type: "text", content: br.reply }] };
-            }
-          }
-        }
-        if (item.reply) {
-          return { messages: [{ type: "text", content: item.reply }] };
-        }
-      }
-    }
-    return { messages: [{ type: "text", content: this.fallbackDialogues?.default_text || "嗯嗯，知道了。" }] };
+  getLocalFallbackReply(history, _state) {
+    const last = [...history].reverse().find((item) => item.sender === "player");
+    return { messages: [{ type: "text", content: last?.type === "red_packet" ? "收到你的礼物了，谢谢。" : "收到你的消息了。" }] };
   }
 };
 
-// st-extension/src/apps/wechat/typing.ts
-function planTypingSimulation(replyText) {
-  const len = replyText.length;
-  let baseSeconds = len * 0.08;
-  if (baseSeconds < 0.6) baseSeconds = 0.6;
-  if (baseSeconds > 2) baseSeconds = 2;
-  const baseTimeMs = Math.round(baseSeconds * 1e3);
-  const pauseCount = Math.floor(Math.random() * 3);
-  const pauses = [];
-  let totalPauseMs = 0;
-  for (let i = 0; i < pauseCount; i++) {
-    const pauseMs = Math.round((0.25 + Math.random() * 0.65) * 1e3);
-    pauses.push(pauseMs);
-    totalPauseMs += pauseMs;
-  }
-  return {
-    baseTimeMs,
-    pauses,
-    totalDurationMs: baseTimeMs + totalPauseMs
-  };
-}
-async function simulateTypingDelay(replyText, onTypingStateChange) {
-  const plan = planTypingSimulation(replyText);
-  if (onTypingStateChange) onTypingStateChange(true);
-  await new Promise((r) => setTimeout(r, plan.baseTimeMs));
-  for (const pauseMs of plan.pauses) {
-    await new Promise((r) => setTimeout(r, pauseMs));
-  }
-  if (onTypingStateChange) onTypingStateChange(false);
-}
-
-// st-extension/src/apps/wechat/bridge.ts
-var MOOD_KEYS = ["mood", "心情", "好感", "favor", "favorability", "emotion", "happiness"];
-var INTEREST_KEYS = ["interest", "好感度", "兴趣", "affinity", "intimacy", "love"];
-var MONEY_KEYS = ["money", "金钱", "余额", "cash", "coin", "coins", "wallet", "gold"];
-var LOCATION_KEYS = ["location", "地点", "当前位置", "place", "scene"];
-function unpackValue(val) {
-  if (isTupleLeaf2(val)) {
-    return val[0];
-  }
-  if (Array.isArray(val) && val.length === 2 && typeof val[1] === "string") {
-    return val[0];
-  }
-  return val;
-}
-function numOrUndef(raw) {
-  const val = unpackValue(raw);
-  if (typeof val === "number" && !isNaN(val)) return val;
-  if (typeof val === "string" && /^-?\d+(?:\.\d+)?$/.test(val.trim())) {
-    const parsed = Number(val.trim());
-    if (!isNaN(parsed)) return parsed;
-  }
-  return void 0;
-}
-function strOrUndef(raw) {
-  const val = unpackValue(raw);
-  if (typeof val === "string" && val.trim()) return val.trim();
-  return void 0;
-}
-function findValidNumberInPool(pool, keys) {
-  for (const k of keys) {
-    if (k in pool && pool[k] !== void 0 && pool[k] !== null) {
-      const val = numOrUndef(pool[k]);
-      if (val !== void 0) {
-        return val;
-      }
-    }
-  }
-  return void 0;
-}
-function findValidStringInPool(pool, keys) {
-  for (const k of keys) {
-    if (k in pool && pool[k] !== void 0 && pool[k] !== null) {
-      const val = strOrUndef(pool[k]);
-      if (val !== void 0) {
-        return val;
-      }
-    }
-  }
-  return void 0;
-}
-function extractFieldsFromObject(obj, charName) {
-  if (!obj || typeof obj !== "object") {
-    return { hasAny: false, mappedFields: {} };
-  }
-  const raw = obj;
-  const pools = [];
-  const trimmedName = charName?.trim();
-  if (trimmedName && raw[trimmedName] && typeof raw[trimmedName] === "object" && !Array.isArray(raw[trimmedName])) {
-    pools.push(raw[trimmedName]);
-  }
-  if (raw.stat_data && typeof raw.stat_data === "object" && !Array.isArray(raw.stat_data)) {
-    const sd = raw.stat_data;
-    if (trimmedName && sd[trimmedName] && typeof sd[trimmedName] === "object" && !Array.isArray(sd[trimmedName])) {
-      pools.push(sd[trimmedName]);
-    }
-    pools.push(sd);
-  }
-  pools.push(raw);
-  let mood;
-  let interest;
-  let money;
-  let location;
-  for (const pool of pools) {
-    if (mood === void 0) mood = findValidNumberInPool(pool, MOOD_KEYS);
-    if (interest === void 0) interest = findValidNumberInPool(pool, INTEREST_KEYS);
-    if (money === void 0) money = findValidNumberInPool(pool, MONEY_KEYS);
-    if (location === void 0) location = findValidStringInPool(pool, LOCATION_KEYS);
-  }
-  const mappedFields = {
-    mood: mood !== void 0,
-    interest: interest !== void 0,
-    money: money !== void 0,
-    location: location !== void 0
-  };
-  const hasAny = Boolean(mappedFields.mood || mappedFields.interest || mappedFields.money || mappedFields.location);
-  return { mood, interest, money, location, hasAny, mappedFields };
-}
-function resolveCharacterAvatarUrl(avatar) {
-  if (!avatar || typeof avatar !== "string") return void 0;
-  const trimmed = avatar.trim();
-  if (!trimmed) return void 0;
-  if (/^(?:https?:|\/|data:|blob:)/i.test(trimmed)) {
-    return trimmed;
-  }
-  try {
-    const w = typeof window !== "undefined" ? window : void 0;
-    const getThumb = w?.getThumbnailUrl || w?.SillyTavern?.getContext?.()?.getThumbnailUrl;
-    if (typeof getThumb === "function") {
-      const url = getThumb("avatar", trimmed);
-      if (url && typeof url === "string") return url;
-    }
-  } catch {
-  }
-  return `/characters/${encodeURIComponent(trimmed)}`;
-}
-async function readExternalCharacterState(host, charName) {
-  try {
-    if (host && typeof host.getVariables === "function") {
-      const vars = await Promise.resolve(host.getVariables());
-      const extracted = extractFieldsFromObject(vars, charName);
-      if (extracted.hasAny) {
-        return {
-          source: "host",
-          mood: extracted.mood,
-          interest: extracted.interest,
-          money: extracted.money,
-          location: extracted.location,
-          mappedFields: extracted.mappedFields,
-          raw: vars && typeof vars === "object" ? vars : void 0
-        };
-      }
-    }
-  } catch {
-  }
-  try {
-    const w = typeof window !== "undefined" ? window : void 0;
-    if (w?.Mvu && typeof w.Mvu.getMvuData === "function") {
-      const mvuRes = w.Mvu.getMvuData({ type: "message", message_id: "latest" });
-      const stat = mvuRes?.stat_data;
-      const extracted = extractFieldsFromObject(stat, charName);
-      if (extracted.hasAny) {
-        return {
-          source: "mvu",
-          mood: extracted.mood,
-          interest: extracted.interest,
-          money: extracted.money,
-          location: extracted.location,
-          mappedFields: extracted.mappedFields,
-          raw: stat
-        };
-      }
-    }
-    if (w?.TavernHelper && typeof w.TavernHelper.getVariables === "function") {
-      const helperVars = await Promise.resolve(w.TavernHelper.getVariables({ type: "message", message_id: "latest" }));
-      const extracted = extractFieldsFromObject(helperVars, charName);
-      if (extracted.hasAny) {
-        return {
-          source: "tavern-helper",
-          mood: extracted.mood,
-          interest: extracted.interest,
-          money: extracted.money,
-          location: extracted.location,
-          mappedFields: extracted.mappedFields,
-          raw: helperVars
-        };
-      }
-    }
-  } catch {
-  }
-  try {
-    const res = await readVariables({ type: "message", message_id: "latest" }, getLastMessageId());
-    if (res.status === "ready" && res.data) {
-      const extracted = extractFieldsFromObject(res.data, charName);
-      if (extracted.hasAny) {
-        return {
-          source: res.isMvu ? "mvu" : "tavern-helper",
-          mood: extracted.mood,
-          interest: extracted.interest,
-          money: extracted.money,
-          location: extracted.location,
-          mappedFields: extracted.mappedFields,
-          raw: res.data
-        };
-      }
-    }
-  } catch {
-  }
-  return { source: "none" };
-}
-function extractRecentSTMessages(host) {
-  let chatCtx = void 0;
-  if (host && typeof host.getChatContext === "function") {
-    chatCtx = host.getChatContext();
-  }
-  if (!chatCtx) {
-    try {
-      const w = typeof window !== "undefined" ? window : void 0;
-      const chat2 = w?.SillyTavern?.getContext?.()?.chat;
-      if (Array.isArray(chat2)) {
-        chatCtx = { chat: chat2 };
-      }
-    } catch {
-    }
-  }
-  if (Array.isArray(chatCtx?.chat) && chatCtx.chat.length > 0) {
-    return chatCtx.chat.slice(-6).filter((m) => typeof m.mes === "string" && m.mes.trim().length > 0).map((m) => ({
-      sender: m.is_user ? "user" : "character",
-      text: m.mes.trim()
-    }));
-  }
-  return void 0;
-}
-function subscribeExternalContextEvents(host, onUpdate) {
-  const offs = [];
-  try {
-    const unbindVar = subscribeVarEvents(onUpdate);
-    offs.push(unbindVar);
-  } catch {
-  }
-  try {
-    if (typeof host.onMessageReceived === "function") {
-      const offMsg = host.onMessageReceived(onUpdate);
-      if (typeof offMsg === "function") {
-        offs.push(offMsg);
-      }
-    }
-  } catch {
-  }
-  return () => {
-    for (const off of offs) {
-      try {
-        off();
-      } catch {
-      }
-    }
-  };
-}
-function resolveConversationScopeSync(host) {
-  const charName = host.getCharacterName() || "妹妹";
-  let card = void 0;
-  let chatCtx = void 0;
-  if (typeof host.getCharacterCard === "function") {
-    card = host.getCharacterCard();
-  }
-  if (typeof host.getChatContext === "function") {
-    chatCtx = host.getChatContext();
-  }
-  try {
-    const w = typeof window !== "undefined" ? window : void 0;
-    const stCtx = w?.SillyTavern?.getContext?.();
-    if (stCtx) {
-      if (!card) {
-        const id = stCtx.characterId;
-        if (id !== void 0 && id !== null && String(id) !== "") {
-          card = stCtx.characters?.[Number(id)];
-        }
-      }
-      if (!chatCtx) {
-        chatCtx = {
-          characterId: stCtx.characterId,
-          chatId: stCtx.chatId ?? stCtx.chatMetadata?.file_name,
-          characterName: charName,
-          chat: stCtx.chat
-        };
-      }
-    }
-  } catch {
-  }
-  const stableCharId = card?.avatar || (chatCtx?.characterId !== void 0 && String(chatCtx.characterId) !== "" ? String(chatCtx.characterId) : "") || charName.trim();
-  const stableChatId = chatCtx?.chatId !== void 0 && String(chatCtx.chatId) !== "" ? String(chatCtx.chatId) : "";
-  const scopeKey = stableChatId ? `${stableCharId}::${stableChatId}` : stableCharId;
-  const stRecentMessages = extractRecentSTMessages(host);
-  return {
-    scopeKey,
-    characterName: charName,
-    characterId: chatCtx?.characterId !== void 0 ? String(chatCtx.characterId) : void 0,
-    chatId: stableChatId || void 0,
-    card,
-    stRecentMessages,
-    externalState: { source: "none" }
-  };
-}
+// st-extension/src/apps/wechat/view.ts
+var WECHAT_VIEW = `
+<div class="wechat-root">
+  <style>
+    .wechat-root{--wt-green:#087b3e;display:flex;flex-direction:column;height:100%;width:100%;min-height:0;min-width:0;overflow:hidden;position:relative;background:#ededed;color:#181818;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;isolation:isolate}
+    .wechat-root *{box-sizing:border-box}
+    .wechat-root [hidden]{display:none!important}
+    .wechat-root button,.wechat-root input,.wechat-root select,.wechat-root textarea{font:inherit;color:#222;border:1px solid #c8c8c8;border-radius:6px;background:#fff;min-width:0;max-width:100%;box-shadow:none;text-shadow:none}
+    .wechat-root button{min-height:40px;padding:7px 11px;cursor:pointer;white-space:normal}
+    .wechat-root button:disabled{opacity:.55;cursor:default}
+    .wechat-root :is(button,input,select,textarea,summary,[tabindex]):focus-visible{outline:2px solid #155a96;outline-offset:2px}
+    .wechat-root input,.wechat-root select,.wechat-root textarea{width:100%;padding:8px;min-height:40px}
+    .wechat-root input::placeholder,.wechat-root textarea::placeholder{color:#686868;opacity:1}
+    .wechat-root input[type=checkbox]{width:22px;height:22px;min-height:22px;accent-color:var(--wt-green)}
+    .wechat-root textarea{resize:vertical}
+    .wechat-root .wt-primary{background:var(--wt-green);color:white;border-color:var(--wt-green)}
+    .wechat-nav{display:flex;align-items:center;gap:6px;min-height:54px;padding:6px 10px;border-bottom:1px solid #d8d8d8;flex-shrink:0}
+    .wechat-nav button{border:0;background:transparent;flex-shrink:0}
+    #wt-contact-name{font-size:16px;font-weight:600;flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+    #wt-conversations{overflow:auto;flex:1;min-height:0;background:#fff}
+    .wechat-root .wt-conversation{display:flex;align-items:center;gap:11px;width:100%;border:0;border-bottom:1px solid #ededed;border-radius:0;padding:14px 12px;text-align:left;background:#fff}
+    .wt-avatar{width:44px;height:44px;border-radius:7px;object-fit:cover;background:#e1e9e3;flex-shrink:0}
+    .wt-conversation-copy{flex:1;min-width:0}
+    .wt-conversation-title{display:block;font-size:15px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+    .wt-conversation-preview{display:block;color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+    .wt-unread{border-radius:20px;background:#bc2c2c;color:#fff;padding:1px 6px;font-size:11px}
+    #wt-chat{flex:1;min-height:0;display:flex;flex-direction:column}
+    #wt-state{background:#f7f7f7;border-bottom:1px solid #ddd;padding:7px 12px;font-size:12px;max-height:30%;overflow:auto;flex-shrink:0}
+    #wt-state summary{cursor:pointer;min-height:26px;overflow-wrap:anywhere;color:#4a4a4a}
+    #wt-state p{margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+    #wt-scroll{flex:1;min-height:0;overflow:auto;padding:14px 10px;display:flex;flex-direction:column;gap:14px}
+    .wt-message{display:flex;align-items:flex-start;gap:8px;flex-shrink:0}
+    .wt-message-player{flex-direction:row-reverse}
+    .wt-message .wt-avatar{width:34px;height:34px}
+    .wt-bubble{background:#fff;border-radius:7px;padding:9px 11px;max-width:76%;white-space:pre-wrap;overflow-wrap:anywhere;color:#181818}
+    .wt-message-player .wt-bubble{background:#95ec69}
+    .wt-bubble img{max-width:100%;max-height:200px;object-fit:contain;display:block;border-radius:5px}
+    .wechat-root .wt-media{background:transparent;border:0;padding:0;width:110px}
+    .wechat-root .wt-gift{background:#f4ac58;color:#432100;min-width:140px}
+    .wechat-root .wt-gift small{display:block;margin-top:7px;font-size:12px;color:#432100;opacity:1}
+    .wechat-input-bar{display:flex;align-items:center;gap:5px;padding:8px;background:#f7f7f7;border-top:1px solid #ddd;flex-shrink:0}
+    .wechat-input-bar input{flex:1;width:0}
+    .wechat-input-bar button{flex-shrink:0;padding:6px 9px}
+    #wt-typing-badge{padding:3px 12px;color:#087b3e;font-size:12px;background:#f7f7f7}
+    #wt-emoji-drawer{height:210px;max-height:38%;display:flex;flex-direction:column;flex-shrink:0;background:#f7f7f7;border-top:1px solid #ddd}
+    .wt-tabs{display:flex;gap:4px;padding:4px;flex-shrink:0}
+    .wt-tabs button{flex:1;padding:5px;font-size:12px}
+    .wt-tabs [aria-pressed=true]{border-color:var(--wt-green);color:var(--wt-green)}
+    #wt-emoji-grid,.wt-asset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(58px,1fr));gap:6px;overflow:auto;padding:6px}
+    #wt-emoji-grid button,.wt-asset-grid button{padding:4px;font-size:10px;overflow-wrap:anywhere}
+    #wt-emoji-grid img,.wt-asset-grid img{display:block;width:100%;height:46px;object-fit:contain;margin:0 auto 3px}
+    .wt-asset-grid{max-height:240px}
+    .wt-asset-grid [aria-pressed=true]{outline:2px solid var(--wt-green);outline-offset:-2px}
+    .wt-asset-preview{width:100px;height:100px;object-fit:contain}
+    .wt-modal{position:absolute;inset:0;z-index:30;display:flex;align-items:flex-end;background:#0007;padding-top:12px}
+    .wt-modal-card{display:flex;flex-direction:column;gap:12px;width:100%;max-height:100%;padding:14px;background:#fff;border-radius:14px 14px 0 0;overflow:auto;min-height:0;color:#222}
+    .wt-modal-header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0}
+    .wt-modal-header h2{font-size:16px;margin:0}
+    .wt-field{display:flex;flex-direction:column;gap:5px;margin:10px 0;min-width:0;color:#333;font-size:12px}
+    .wt-hint{font-size:12px;color:#595959;line-height:1.6;overflow-wrap:anywhere;margin:6px 0}
+    .wechat-root details{flex-shrink:0}
+    .wt-modal-card details{border:1px solid #dedede;border-radius:8px;padding:10px;margin:8px 0}
+    .wt-modal-card summary{cursor:pointer;font-weight:600;min-height:28px}
+    .wt-modal-card details>button{margin:4px 4px 4px 0}
+    #wt-settings-actions{position:sticky;bottom:-14px;padding:8px 0 10px;background:#fff;display:flex;flex-wrap:wrap;gap:8px;z-index:2;flex-shrink:0}
+    #wt-settings-actions button{flex:1}
+    #wt-settings-feedback{margin:0;padding:0;color:#16683d;font-size:12px;overflow-wrap:anywhere;flex:0 0 100%}
+    #wt-settings-feedback:empty{display:none}
+    #wt-settings-feedback[data-kind=error]{color:#a32323}
+    #wt-notice{font-size:12px;color:#555;background:#f7f7f7;padding:4px 12px;flex-shrink:0}
+    .wt-empty{padding:30px 18px;text-align:center;color:#666}
+    #wt-photo-lightbox{background:#000e;align-items:center}
+    #wt-photo-lightbox .wt-modal-card{background:transparent;color:white;align-items:center}
+    #wt-lightbox-img{max-width:100%;max-height:65vh;object-fit:contain}
+    @media(max-width:360px){.wechat-nav{padding:5px 7px}.wechat-nav button{padding:5px 7px}.wt-modal-card{padding:12px}.wechat-input-bar{gap:4px;padding:6px}.wechat-input-bar button{padding:6px 7px}}
+  </style>
+  <header class="wechat-nav">
+    <button id="wt-back" aria-label="返回会话列表" hidden>‹</button>
+    <span id="wt-contact-name">微信</span>
+    <button id="wt-add-contact">新会话</button>
+    <button id="wt-settings-btn" aria-label="微信设置">⚙ 设置</button>
+  </header>
+  <div id="wt-notice" role="status"></div>
+  <div id="wt-conversations" role="region" aria-label="微信会话列表"></div>
+  <section id="wt-chat" aria-label="微信聊天" hidden>
+    <details id="wt-state"><summary id="wt-state-summary">角色状态 · 等待更新</summary><p><strong>内心想法</strong><br><span id="wt-inner-thought">等待角色回复</span></p><p><strong>当前状态</strong><br><span id="wt-current-status">等待角色回复</span></p></details>
+    <div id="wt-scroll" role="log" aria-label="聊天消息" tabindex="0"></div>
+    <div id="wt-typing-badge" role="status" hidden>对方正在输入…</div>
+    <div id="wt-emoji-drawer" aria-label="表情包" role="region" hidden>
+      <div class="wt-tabs"><button id="wt-tab-player">我的表情</button><button id="wt-tab-sister">联系人表情</button><button id="wt-manage-emojis">管理</button></div>
+      <div id="wt-emoji-grid"></div>
+    </div>
+    <div class="wechat-input-bar"><button id="wt-emoji-btn" aria-label="表情包" aria-expanded="false" aria-controls="wt-emoji-drawer">😀</button><button id="wt-packet-btn" aria-label="发红包或礼物">🧧</button><input id="wt-input-text" aria-label="消息" placeholder="发消息…" maxlength="8000"><button id="wt-send-btn" class="wt-primary">发送</button></div>
+  </section>
+  <div id="wt-settings-modal" class="wt-modal" role="dialog" aria-modal="true" aria-labelledby="wt-modal-title" hidden>
+    <div class="wt-modal-card">
+      <div class="wt-modal-header"><h2 id="wt-modal-title">微信设置</h2><button id="wt-close-settings" aria-label="关闭微信设置">✕</button></div>
+      <div id="wt-profile-container"></div>
+      <details><summary>AI 连接 · 所有联系人共用</summary>
+        <p class="wt-hint">填写兼容 OpenAI 的连接；留空时仅使用本地演示回复。此连接独立于酒馆主聊天。</p>
+        <label class="wt-field">API Key<input id="wt-cfg-key" type="password" autocomplete="off"></label>
+        <label class="wt-field">API URL<input id="wt-cfg-url" type="url" placeholder="https://…/chat/completions"></label>
+        <label class="wt-field">Model<input id="wt-cfg-model" placeholder="模型名称"></label>
+      </details>
+      <details id="wt-history-actions"><summary>聊天记录</summary><p class="wt-hint">只清空当前微信会话。酒馆主聊天不受影响。</p><button id="wt-btn-clear-chat">清空此会话记录</button></details>
+      <div id="wt-settings-actions"><p id="wt-settings-feedback" role="status" aria-live="polite"></p><button id="wt-cancel-settings">关闭</button><button id="wt-btn-save-settings" class="wt-primary">保存设置</button></div>
+    </div>
+  </div>
+  <div id="wt-contacts-modal" class="wt-modal" role="dialog" aria-modal="true" aria-labelledby="wt-contacts-title" hidden><div class="wt-modal-card">
+    <div class="wt-modal-header"><h2 id="wt-contacts-title">选择联系人</h2><button id="wt-close-contacts" aria-label="关闭联系人选择">✕</button></div>
+    <p class="wt-hint">从酒馆角色卡建立独立微信会话，不切换正在进行的主聊天。</p>
+    <input id="wt-contact-search" aria-label="搜索角色卡" placeholder="搜索角色名…">
+    <div id="wt-contact-options"></div><p id="wt-contact-feedback" role="status"></p>
+  </div></div>
+  <div id="wt-packet-modal" class="wt-modal" role="dialog" aria-modal="true" aria-labelledby="wt-packet-title" hidden><div class="wt-modal-card">
+    <div class="wt-modal-header"><h2 id="wt-packet-title">🧧 红包 / 礼物</h2><button id="wt-packet-close" aria-label="关闭红包">✕</button></div>
+    <p id="wt-packet-target" class="wt-hint"></p>
+    <label class="wt-field">发送什么<input id="wt-custom-amt" placeholder="例如：一杯奶茶、520 元、一张船票" maxlength="120"></label>
+    <label class="wt-field">附言（可选）<textarea id="wt-packet-note" rows="2" maxlength="300" placeholder="想对 TA 说的话…"></textarea></label>
+    <p class="wt-hint">用于角色互动的虚构礼物。</p><p id="wt-packet-feedback" role="status"></p><button id="wt-confirm-packet" class="wt-primary">发送红包</button>
+  </div></div>
+  <div id="wt-photo-lightbox" class="wt-modal" role="dialog" aria-modal="true" aria-label="查看图片" hidden><div class="wt-modal-card"><button id="wt-close-lightbox" aria-label="关闭图片">关闭</button><img id="wt-lightbox-img" alt=""><p id="wt-lightbox-desc"></p></div></div>
+</div>`;
 
 // st-extension/src/apps/wechat/wechat-app.ts
-function createDefaultSisterState() {
-  return {
-    hasExternalState: false,
-    mood: 60,
-    interest: 15,
-    sisterLocation: "SISTER_ROOM",
-    playerLocation: "COMPANY",
-    money: 5200
-  };
-}
-function getScopedConversation(appData, scopeOrName) {
-  if (!appData.conversations) {
-    appData.conversations = {};
+function initialize(host) {
+  const existing = host.getAppData();
+  const data = existing ?? { config: { profile: { preset: "general", contextMessageCount: 0 } } };
+  data.config ?? (data.config = {});
+  data.conversations ?? (data.conversations = {});
+  data.contacts ?? (data.contacts = {});
+  const current2 = resolveConversationScopeSync(host, 0);
+  if (data.messages?.length) {
+    const name = data.activeCharacter || current2.characterName;
+    getScopedConversation(data, name === current2.characterName ? current2 : name);
   }
-  const isScope = typeof scopeOrName === "object" && scopeOrName !== null;
-  const characterName = isScope ? scopeOrName.characterName : scopeOrName || "妹妹";
-  const scopeKey = isScope ? scopeOrName.scopeKey : characterName.trim() || "default";
-  const externalState = isScope ? scopeOrName.externalState : void 0;
-  const characterId = isScope ? scopeOrName.characterId : void 0;
-  const chatId = isScope ? scopeOrName.chatId : void 0;
-  let conv = appData.conversations[scopeKey];
-  if (!conv && characterName && appData.conversations[characterName]) {
-    conv = appData.conversations[characterName];
-    delete appData.conversations[characterName];
-    conv.scopeKey = scopeKey;
-    conv.characterName = characterName;
-    if (characterId) conv.characterId = characterId;
-    if (chatId) conv.chatId = chatId;
-    appData.conversations[scopeKey] = conv;
+  for (const [key, conv] of Object.entries(data.conversations)) {
+    conv.scopeKey = key;
+    if (key === current2.scopeKey && !conv.card && profileCharacterKey(current2.card)) conv.card = current2.card;
+    if (!conv.card && !conv.contactId) {
+      const match = listContacts(host).find((item) => item.avatar === key.split("::")[0]);
+      if (match) conv.card = match.card;
+    }
   }
-  if (!conv && appData.messages && appData.messages.length > 0) {
-    conv = {
-      characterName,
-      characterId,
-      chatId,
-      scopeKey,
-      messages: [...appData.messages],
-      state: appData.state ? { ...appData.state } : createDefaultSisterState(),
-      currentDay: appData.currentDay || 1
-    };
-    appData.conversations[scopeKey] = conv;
-    delete appData.messages;
-    delete appData.state;
-    delete appData.currentDay;
+  if (!existing && profileCharacterKey(current2.card)) {
+    addContactConversation(data, { id: profileCharacterKey(current2.card), name: current2.characterName, avatar: current2.card?.avatar, card: current2.card, kind: "character" });
   }
-  if (!conv) {
-    const isSister = !characterName || characterName === "妹妹";
-    conv = {
-      characterName,
-      characterId,
-      chatId,
-      scopeKey,
-      messages: [
-        {
-          sender: "sister",
-          content: isSister ? "哥，下班没？今天晚上想吃什么呀？" : "在吗？发个微信聊聊。",
-          type: "text",
-          time: { day: 1, hour: 18, minute: 30 }
-        }
-      ],
-      state: createDefaultSisterState(),
-      currentDay: 1
-    };
-    appData.conversations[scopeKey] = conv;
-  }
-  if (externalState && externalState.source !== "none" && externalState.mappedFields && Object.values(externalState.mappedFields).some(Boolean)) {
-    conv.state.hasExternalState = true;
-    conv.state.externalSource = externalState.source;
-    conv.state.externalFields = { ...externalState.mappedFields };
-    if (externalState.mood !== void 0) conv.state.mood = externalState.mood;
-    if (externalState.interest !== void 0) conv.state.interest = externalState.interest;
-    if (externalState.money !== void 0) conv.state.money = externalState.money;
-    if (externalState.location !== void 0) conv.state.sisterLocation = externalState.location;
-  } else if (externalState && externalState.source === "none") {
-    conv.state.hasExternalState = false;
-    conv.state.externalSource = void 0;
-    conv.state.externalFields = void 0;
-  }
-  return conv;
+  host.setAppData(data);
+  return data;
 }
 function createWeChatApp() {
-  let pipeline = null;
-  let mountSessionId = 0;
-  let activeScopeSessionId = 0;
-  let unbindEvents = null;
+  let cleanup;
   return {
     id: "wechat-sister",
     name: "微信",
@@ -18417,650 +19290,535 @@ function createWeChatApp() {
     order: 25,
     fullbleed: true,
     setup(host) {
-      const existing = host.getAppData();
-      if (!existing || !existing.conversations) {
-        const initialConversations = {};
-        const initial = {
-          config: {
-            apiKey: "",
-            apiUrl: "https://api.deepseek.com/chat/completions",
-            model: "deepseek-chat"
-          },
-          conversations: initialConversations
-        };
-        const syncScope = resolveConversationScopeSync(host);
-        const initialKey = syncScope.scopeKey;
-        if (existing?.messages && existing.messages.length > 0) {
-          initialConversations[initialKey] = {
-            characterName: syncScope.characterName,
-            characterId: syncScope.characterId,
-            chatId: syncScope.chatId,
-            scopeKey: initialKey,
-            messages: existing.messages,
-            state: existing.state || createDefaultSisterState(),
-            currentDay: existing.currentDay || 1
-          };
-          if (existing.config) initial.config = existing.config;
-        } else {
-          getScopedConversation(initial, syncScope);
-        }
-        host.setAppData(initial);
-      }
+      initialize(host);
     },
     mount(container, ctx) {
-      const currentMountSession = ++mountSessionId;
-      const isCurrent = () => currentMountSession === mountSessionId && pipeline !== null;
-      activeScopeSessionId++;
-      let latestRefreshReq = 0;
-      let latestAppliedRefresh = 0;
-      const appData = ctx.getAppData() || {
-        config: {
-          apiKey: "",
-          apiUrl: "https://api.deepseek.com/chat/completions",
-          model: "deepseek-chat"
-        },
-        conversations: {}
-      };
-      if (!appData.conversations) {
-        appData.conversations = {};
-      }
-      const conversations = appData.conversations;
-      let currentScope = resolveConversationScopeSync(ctx);
-      let activeConv = getScopedConversation(appData, currentScope);
-      pipeline = new WeChatPipeline(
-        appData.config,
-        PLAYER_EMOJIS,
-        SISTER_EMOJIS,
-        SISTER_PHOTOS,
-        FALLBACK_DIALOGUES
-      );
+      cleanup?.();
+      const data = initialize(ctx), conversations = data.conversations;
+      let alive = true, activeKey = null, drawerTab = "player", selecting = 0;
+      const pending = /* @__PURE__ */ new Map();
+      const timers = /* @__PURE__ */ new Set();
+      let dialogFocus = null;
+      let currentDialog = null;
+      let photoMessage, photoScopeKey = null;
       container.classList.add("so-phone-app-fullbleed");
-      container.innerHTML = `
-        <div class="wechat-root" style="display:flex; flex-direction:column; height:100%; width:100%; background:#ededed; font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif; color:#181818; box-sizing:border-box; overflow:hidden; position:relative;">
-
-          <!-- 微信顶部导航栏 -->
-          <div class="wechat-nav" style="display:flex; align-items:center; justify-content:space-between; height:46px; padding:0 12px; background:#ededed; border-bottom:1px solid #dcdcdc; flex-shrink:0; z-index:10;">
-            <div style="font-weight:600; font-size:15px; display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
-              <span id="wt-contact-name" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:120px;"></span>
-              <span id="wt-typing-badge" style="display:none; font-size:11px; font-weight:normal; color:#07c160; flex-shrink:0; animation:wtPulse 1.2s infinite ease-in-out;">(对方正在输入...)</span>
-            </div>
-
-            <!-- 状态胶囊：心情与好感监控 -->
-            <div id="wt-status-pill" style="display:flex; align-items:center; gap:6px; font-size:11px; color:#444; background:#e0e0e0; padding:4px 9px; border-radius:12px; cursor:pointer; flex-shrink:0; transition:background 0.15s ease;" title="点击打开状态面板与 API 设置">
-              <span id="wt-pill-mood">😊 <b id="val-mood">--</b></span>
-              <span id="wt-pill-divider" style="opacity:0.4;">|</span>
-              <span id="wt-pill-interest">💖 <b id="val-interest">--</b></span>
-              <span id="wt-pill-badge" style="font-size:10px; color:#666; display:none;"></span>
-              <span style="font-size:10px; opacity:0.6;">⚙️</span>
-            </div>
-          </div>
-
-          <!-- 消息流区域 -->
-          <div id="wt-scroll" style="flex:1; overflow-y:auto; padding:12px 10px; display:flex; flex-direction:column; gap:12px; min-height:0; -webkit-overflow-scrolling:touch;"></div>
-
-          <!-- 表情包抽屉 (默认收起) -->
-          <div id="wt-emoji-drawer" style="display:none; flex-direction:column; height:180px; background:#f7f7f7; border-top:1px solid #d9d9d9; flex-shrink:0; z-index:20;">
-            <div style="display:flex; border-bottom:1px solid #e0e0e0; background:#eeeeee;">
-              <button id="wt-tab-player" style="flex:1; padding:6px; font-size:12px; font-weight:600; border:none; background:#f7f7f7; color:#07c160; cursor:pointer;">沙雕熊猫头 (15)</button>
-              <button id="wt-tab-sister" style="flex:1; padding:6px; font-size:12px; font-weight:normal; border:none; background:#eeeeee; color:#666; cursor:pointer;">妹妹专属 (19)</button>
-            </div>
-            <div id="wt-emoji-grid" style="flex:1; overflow-y:auto; padding:8px; display:grid; grid-template-columns:repeat(5, 1fr); gap:6px;"></div>
-          </div>
-
-          <!-- 底部输入栏 (W7: min-width:0 杜绝窄屏裁切) -->
-          <div class="wechat-input-bar" style="display:flex; align-items:center; gap:6px; padding:7px 10px; background:#f7f7f7; border-top:1px solid #dcdcdc; flex-shrink:0; z-index:15;">
-            <button id="wt-emoji-btn" style="background:none; border:none; font-size:20px; cursor:pointer; padding:2px; line-height:1; opacity:0.85; flex-shrink:0;" title="表情包">😀</button>
-            <button id="wt-packet-btn" style="background:none; border:none; font-size:19px; cursor:pointer; padding:2px; line-height:1; opacity:0.85; flex-shrink:0;" title="发红包">🧧</button>
-            <input id="wt-input-text" type="text" placeholder="发消息..." style="flex:1; min-width:0; height:34px; padding:0 10px; border:1px solid #d0d0d0; border-radius:5px; background:#fff; font-size:13px; outline:none; box-sizing:border-box;" />
-            <button id="wt-send-btn" style="background:#07c160; color:#fff; border:none; border-radius:5px; height:34px; padding:0 12px; font-size:13px; font-weight:500; cursor:pointer; white-space:nowrap; flex-shrink:0; transition:opacity 0.15s ease;">发送</button>
-          </div>
-
-          <!-- 状态面板 & API 配置弹窗 -->
-          <div id="wt-settings-modal" style="display:none; position:absolute; inset:0; background:rgba(0,0,0,0.55); z-index:50; backdrop-filter:blur(3px); align-items:flex-end; justify-content:center;">
-            <div style="background:#fff; width:100%; border-radius:16px 16px 0 0; padding:16px 16px 20px; box-sizing:border-box; max-height:88%; overflow-y:auto; display:flex; flex-direction:column; gap:14px; animation:wtSlideUp 0.2s ease;">
-
-              <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding-bottom:8px;">
-                <span id="wt-modal-title" style="font-weight:600; font-size:15px; color:#222;">角色状态监控与设置</span>
-                <button id="wt-close-settings" style="border:none; background:#eee; border-radius:50%; width:26px; height:26px; cursor:pointer; font-size:13px; color:#666;">✕</button>
-              </div>
-
-              <!-- 状态源展示 (W1: 明确区分外部变量 vs 独立数值) -->
-              <div id="wt-modal-state-source" style="font-size:11px; color:#666; background:#f0f2f5; padding:6px 10px; border-radius:6px;">
-                状态来源：检测中...
-              </div>
-
-              <!-- 数值调节 -->
-              <div style="display:flex; flex-direction:column; gap:8px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px;">
-                  <span>😊 当前心情：<b id="wt-set-mood-val">60</b> / 100</span>
-                  <span id="wt-set-mood-tag" style="font-size:11px; color:#07c160; font-weight:500;">普通</span>
-                </div>
-                <input id="wt-set-mood-range" type="range" min="0" max="100" value="60" style="width:100%; accent-color:#07c160;" />
-
-                <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; margin-top:4px;">
-                  <span>💖 当前好感/性趣：<b id="wt-set-interest-val">15</b> / 100</span>
-                  <span id="wt-set-interest-tag" style="font-size:11px; color:#fa5151; font-weight:500;">嫌弃警告</span>
-                </div>
-                <input id="wt-set-interest-range" type="range" min="0" max="100" value="15" style="width:100%; accent-color:#fa5151;" />
-              </div>
-
-              <!-- 场景与钱包 -->
-              <div style="background:#f9f9f9; padding:10px; border-radius:8px; font-size:12px; display:flex; flex-direction:column; gap:8px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <span>📍 角色位置：</span>
-                  <select id="wt-set-sister-loc" style="padding:3px 6px; border:1px solid #ccc; border-radius:4px; font-size:12px; background:#fff;">
-                    <option value="SISTER_ROOM">卧室</option>
-                    <option value="TOILET">厕所</option>
-                    <option value="LIVING_ROOM">客厅</option>
-                    <option value="SCHOOL">学校</option>
-                  </select>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <span>💰 钱包余额：</span>
-                  <span>¥ <b id="wt-wallet-bal">5200</b></span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <span>📅 当前天数：</span>
-                  <span>第 <b id="wt-day-num">1</b> 天</span>
-                </div>
-              </div>
-
-              <!-- API 设置 -->
-              <div style="display:flex; flex-direction:column; gap:6px;">
-                <span style="font-size:12px; font-weight:600; color:#333;">DeepSeek / OpenAI API 配置</span>
-                <input id="wt-cfg-key" type="password" placeholder="API Key (留空使用离线智能词库)" value="" style="height:32px; padding:0 8px; border:1px solid #ddd; border-radius:4px; font-size:12px;" />
-                <input id="wt-cfg-url" type="text" placeholder="API URL" value="" style="height:32px; padding:0 8px; border:1px solid #ddd; border-radius:4px; font-size:12px;" />
-                <input id="wt-cfg-model" type="text" placeholder="Model" value="" style="height:32px; padding:0 8px; border:1px solid #ddd; border-radius:4px; font-size:12px;" />
-              </div>
-
-              <!-- 快捷操作按钮 -->
-              <div style="display:flex; gap:8px;">
-                <button id="wt-btn-next-day" style="flex:1; background:#f0f0f0; border:1px solid #ccc; border-radius:6px; padding:8px 0; font-size:12px; cursor:pointer;">进入下一天 ☀️</button>
-                <button id="wt-btn-clear-chat" style="flex:1; background:#f0f0f0; border:1px solid #ccc; border-radius:6px; padding:8px 0; font-size:12px; color:#c00; cursor:pointer;">清空记录 🗑️</button>
-                <button id="wt-btn-save-settings" style="flex:1.2; background:#07c160; color:#fff; border:none; border-radius:6px; padding:8px 0; font-size:12px; font-weight:600; cursor:pointer;">保存设置</button>
-              </div>
-
-            </div>
-          </div>
-
-          <!-- 发红包弹窗 -->
-          <div id="wt-packet-modal" style="display:none; position:absolute; inset:0; background:rgba(0,0,0,0.6); z-index:50; backdrop-filter:blur(3px); align-items:center; justify-content:center; padding:16px;">
-            <div style="background:#cf3b35; width:260px; border-radius:14px; padding:20px 16px; box-sizing:border-box; color:#fff; display:flex; flex-direction:column; align-items:center; gap:12px; position:relative; box-shadow:0 12px 30px rgba(0,0,0,0.4);">
-              <button id="wt-packet-close" style="position:absolute; top:8px; right:8px; background:none; border:none; color:rgba(255,255,255,0.7); font-size:16px; cursor:pointer;">✕</button>
-              <div style="font-size:32px;">🧧</div>
-              <div style="font-weight:600; font-size:15px; color:#fde3b3;">给<span id="wt-packet-target">妹妹</span>发微信红包</div>
-              <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; width:100%; margin-top:4px;">
-                <button class="wt-amt-pill" data-amt="20" style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); border-radius:6px; padding:8px 0; color:#fff; font-size:13px; font-weight:bold; cursor:pointer;">¥20</button>
-                <button class="wt-amt-pill" data-amt="50" style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); border-radius:6px; padding:8px 0; color:#fff; font-size:13px; font-weight:bold; cursor:pointer;">¥50</button>
-                <button class="wt-amt-pill" data-amt="200" style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); border-radius:6px; padding:8px 0; color:#fff; font-size:13px; font-weight:bold; cursor:pointer;">¥200</button>
-              </div>
-              <input id="wt-custom-amt" type="number" placeholder="自定义金额 (¥)" style="width:100%; height:32px; border-radius:6px; border:none; padding:0 10px; font-size:13px; box-sizing:border-box; color:#333;" />
-              <button id="wt-confirm-packet" style="background:#fde3b3; color:#a12621; border:none; border-radius:6px; width:100%; height:36px; font-weight:bold; font-size:14px; cursor:pointer; margin-top:4px;">塞钱进红包</button>
-            </div>
-          </div>
-
-          <!-- 查看大图灯箱 -->
-          <div id="wt-photo-lightbox" style="display:none; position:absolute; inset:0; background:rgba(0,0,0,0.88); z-index:100; flex-direction:column; align-items:center; justify-content:center; padding:16px;">
-            <button id="wt-close-lightbox" style="position:absolute; top:12px; right:12px; background:none; border:none; color:#fff; font-size:24px; cursor:pointer;">✕</button>
-            <img id="wt-lightbox-img" src="" alt="Photo" style="max-width:92%; max-height:80%; border-radius:8px; object-fit:contain; box-shadow:0 10px 30px rgba(0,0,0,0.5);" />
-            <div id="wt-lightbox-desc" style="color:#eee; font-size:13px; margin-top:12px; text-align:center;"></div>
-          </div>
-
-        </div>
-      `;
-      const contactNameEl = container.querySelector("#wt-contact-name");
-      const scrollEl = container.querySelector("#wt-scroll");
-      const inputEl = container.querySelector("#wt-input-text");
-      const sendBtn = container.querySelector("#wt-send-btn");
-      const emojiBtn = container.querySelector("#wt-emoji-btn");
-      const packetBtn = container.querySelector("#wt-packet-btn");
-      const emojiDrawer = container.querySelector("#wt-emoji-drawer");
-      const emojiGrid = container.querySelector("#wt-emoji-grid");
-      const tabPlayer = container.querySelector("#wt-tab-player");
-      const tabSister = container.querySelector("#wt-tab-sister");
-      const typingBadge = container.querySelector("#wt-typing-badge");
-      const statusPill = container.querySelector("#wt-status-pill");
-      const valMood = container.querySelector("#val-mood");
-      const valInterest = container.querySelector("#val-interest");
-      const pillBadge = container.querySelector("#wt-pill-badge");
-      const modalStateSource = container.querySelector("#wt-modal-state-source");
-      const settingsModal = container.querySelector("#wt-settings-modal");
-      const closeSettings = container.querySelector("#wt-close-settings");
-      const setMoodRange = container.querySelector("#wt-set-mood-range");
-      const setMoodVal = container.querySelector("#wt-set-mood-val");
-      const setMoodTag = container.querySelector("#wt-set-mood-tag");
-      const setInterestRange = container.querySelector("#wt-set-interest-range");
-      const setInterestVal = container.querySelector("#wt-set-interest-val");
-      const setInterestTag = container.querySelector("#wt-set-interest-tag");
-      const setSisterLoc = container.querySelector("#wt-set-sister-loc");
-      const cfgKey = container.querySelector("#wt-cfg-key");
-      const cfgUrl = container.querySelector("#wt-cfg-url");
-      const cfgModel = container.querySelector("#wt-cfg-model");
-      const btnSaveSettings = container.querySelector("#wt-btn-save-settings");
-      const btnNextDay = container.querySelector("#wt-btn-next-day");
-      const btnClearChat = container.querySelector("#wt-btn-clear-chat");
-      const modalTitle = container.querySelector("#wt-modal-title");
-      const packetModal = container.querySelector("#wt-packet-modal");
-      const packetClose = container.querySelector("#wt-packet-close");
-      const customAmt = container.querySelector("#wt-custom-amt");
-      const confirmPacket = container.querySelector("#wt-confirm-packet");
-      const packetTarget = container.querySelector("#wt-packet-target");
-      const photoLightbox = container.querySelector("#wt-photo-lightbox");
-      const closeLightbox = container.querySelector("#wt-close-lightbox");
-      const lightboxImg = container.querySelector("#wt-lightbox-img");
-      const lightboxDesc = container.querySelector("#wt-lightbox-desc");
-      const syncActiveView = () => {
-        contactNameEl.textContent = activeConv.characterName;
-        packetTarget.textContent = activeConv.characterName;
-        modalTitle.textContent = `${activeConv.characterName} 状态监控与设置`;
-        valMood.textContent = activeConv.state.mood.toFixed(0);
-        valInterest.textContent = activeConv.state.interest.toFixed(0);
-        setMoodRange.value = String(activeConv.state.mood);
-        setInterestRange.value = String(activeConv.state.interest);
-        setSisterLoc.value = String(activeConv.state.sisterLocation);
-        container.querySelector("#wt-wallet-bal").textContent = String(activeConv.state.money);
-        container.querySelector("#wt-day-num").textContent = String(activeConv.currentDay);
-        if (activeConv.state.hasExternalState) {
-          if (pillBadge) pillBadge.style.display = "none";
-          if (modalStateSource) {
-            const fields = activeConv.state.externalFields;
-            const fieldLabels = [];
-            if (fields?.mood) fieldLabels.push("心情");
-            if (fields?.interest) fieldLabels.push("好感");
-            if (fields?.money) fieldLabels.push("金钱");
-            if (fields?.location) fieldLabels.push("地点");
-            const fieldsStr = fieldLabels.length > 0 ? ` [${fieldLabels.join("/")}]` : "";
-            modalStateSource.textContent = `状态来源：已连接外部变量（${activeConv.state.externalSource || "ST/MVU"}${fieldsStr}）`;
-          }
-        } else {
-          if (pillBadge) {
-            pillBadge.style.display = "inline";
-            pillBadge.textContent = "独立";
-          }
-          if (modalStateSource) {
-            modalStateSource.textContent = "状态来源：未接入外部状态（使用独立会话数值）";
-          }
+      container.innerHTML = WECHAT_VIEW;
+      const el4 = (id) => container.querySelector(`#${id}`);
+      const input = el4("wt-input-text"), list = el4("wt-conversations"), scroll = el4("wt-scroll");
+      const feedback = el4("wt-settings-feedback");
+      const active = () => activeKey ? conversations[activeKey] : void 0;
+      const scopeFor = (conv) => conversationScope(data, conv);
+      const profileFor = (conv) => resolveProfile(data.config, conv ? profileCharacterKey(scopeFor(conv).card) : null);
+      const mediaFor = (conv) => {
+        const profile = profileFor(conv);
+        return { player: applyAssetProfile(PLAYER_EMOJIS, "player", profile), sister: applyAssetProfile(SISTER_EMOJIS, "contact", profile), photo: applyAssetProfile(SISTER_PHOTOS, "photo", profile) };
+      };
+      const pipeFor = (conv) => {
+        const media = mediaFor(conv);
+        return new WeChatPipeline({ ...data.config, profile: profileFor(conv) }, media.player, media.sister, media.photo);
+      };
+      const persist = () => ctx.setAppData(data);
+      function saveDraft() {
+        const conv = active();
+        if (conv) {
+          conv.draft = input.value;
+          persist();
         }
-        updateLadderTags();
-        renderMessages();
-      };
-      const updateLadderTags = () => {
-        const mood = parseFloat(setMoodRange.value);
-        const interest = parseFloat(setInterestRange.value);
-        setMoodVal.textContent = mood.toFixed(0);
-        setInterestVal.textContent = interest.toFixed(0);
-        if (mood < 40) setMoodTag.textContent = "心情低落 🌧️";
-        else if (mood < 80) setMoodTag.textContent = "平淡普通 ⛅";
-        else setMoodTag.textContent = "心情愉悦 ☀️";
-        if (interest < 25) setInterestTag.textContent = "嫌弃警告 🚫";
-        else if (interest < 50) setInterestTag.textContent = "要零花钱 💸";
-        else if (interest < 75) setInterestTag.textContent = "半推半就 🌸";
-        else setInterestTag.textContent = "老夫老妻 🔥";
-      };
-      setMoodRange.oninput = updateLadderTags;
-      setInterestRange.oninput = updateLadderTags;
-      const switchScope = (nextScope) => {
-        if (!isCurrent()) return;
-        activeScopeSessionId++;
-        latestRefreshReq++;
-        latestAppliedRefresh = latestRefreshReq;
-        currentScope = nextScope;
-        activeConv = getScopedConversation(appData, currentScope);
-        syncActiveView();
-      };
-      const refreshContextAndState = async (targetScope) => {
-        const reqMountId = mountSessionId;
-        const reqScopeId = activeScopeSessionId;
-        const reqScopeKey = (targetScope || currentScope).scopeKey;
-        const reqCharName = (targetScope || currentScope).characterName;
-        const reqRefreshSeq = ++latestRefreshReq;
-        const latestMsgs = extractRecentSTMessages(ctx);
-        const extState = await readExternalCharacterState(ctx, reqCharName);
-        if (!isCurrent() || reqMountId !== mountSessionId || reqScopeId !== activeScopeSessionId || reqScopeKey !== currentScope.scopeKey) {
-          return;
+      }
+      function closeDialog(restore = true) {
+        const wasPhoto = currentDialog?.id === "wt-photo-lightbox";
+        if (currentDialog?.id === "wt-contacts-modal") selecting++;
+        const focus = dialogFocus;
+        dialogFocus = null;
+        focus?.dispose();
+        if (currentDialog) currentDialog.hidden = true;
+        currentDialog = null;
+        if (restore) focus?.restoreFocus();
+        if (wasPhoto && restore && activeKey === photoScopeKey && photoMessage) {
+          const index = active()?.messages.indexOf(photoMessage) ?? -1;
+          scroll.querySelector(`[data-wt-photo="${index}"]`)?.focus({ preventScroll: true });
         }
-        if (reqRefreshSeq < latestAppliedRefresh) {
-          return;
+        if (wasPhoto) {
+          photoMessage = void 0;
+          photoScopeKey = null;
         }
-        latestAppliedRefresh = reqRefreshSeq;
-        if (latestMsgs) {
-          currentScope.stRecentMessages = latestMsgs;
-        }
-        currentScope.externalState = extState;
-        activeConv = getScopedConversation(appData, currentScope);
-        syncActiveView();
-      };
-      refreshContextAndState();
-      ctx.onCharacterChanged(() => {
-        if (!isCurrent()) return;
-        const syncScope = resolveConversationScopeSync(ctx);
-        if (syncScope.scopeKey !== currentScope.scopeKey) {
-          switchScope(syncScope);
-        }
-        refreshContextAndState(syncScope);
-      });
-      unbindEvents = subscribeExternalContextEvents(ctx, () => {
-        if (!isCurrent()) return;
-        refreshContextAndState();
-      });
-      const renderMessages = () => {
-        scrollEl.replaceChildren();
-        for (const msg of activeConv.messages) {
-          const isPlayer = msg.sender === "player";
-          const row = document.createElement("div");
-          row.style.cssText = `display:flex; gap:9px; align-items:flex-start; ${isPlayer ? "flex-direction:row-reverse;" : ""}`;
-          const avatar = document.createElement("img");
-          avatar.style.cssText = "width:38px; height:38px; border-radius:5px; object-fit:cover; flex-shrink:0; background:#ddd;";
-          const resolvedAvatar = isPlayer ? DEFAULT_PLAYER_AVATAR : resolveCharacterAvatarUrl(currentScope.card?.avatar) || DEFAULT_SISTER_AVATAR;
-          avatar.src = resolvedAvatar;
-          avatar.onerror = () => {
-            avatar.src = isPlayer ? DEFAULT_PLAYER_AVATAR : DEFAULT_SISTER_AVATAR;
-          };
-          avatar.alt = isPlayer ? "User" : activeConv.characterName;
-          const bubble = document.createElement("div");
-          if (msg.type === "text") {
-            bubble.style.cssText = `padding:9px 12px; font-size:14px; line-height:1.4; border-radius:5px; max-width:72%; word-break:break-word; box-shadow:0 1px 2px rgba(0,0,0,0.05); ${isPlayer ? "background:#95ec69; color:#000;" : "background:#fff; color:#181818;"}`;
-            bubble.textContent = msg.content;
-          } else if (msg.type === "emoji") {
-            bubble.style.cssText = "background:none; border:none; padding:2px;";
-            const emojiItem = (isPlayer ? PLAYER_EMOJIS : SISTER_EMOJIS)[msg.content];
-            if (emojiItem) {
-              const img = document.createElement("img");
-              img.src = resolveWeChatAssetUrl(emojiItem.file);
-              img.alt = emojiItem.name;
-              img.style.cssText = "width:110px; height:110px; object-fit:contain; border-radius:4px;";
-              bubble.appendChild(img);
-            } else {
-              bubble.style.cssText = "background:#fff; border-radius:5px; padding:8px 12px; font-size:13px; color:#666;";
-              bubble.textContent = `[表情: ${msg.content}]`;
-            }
-          } else if (msg.type === "image") {
-            bubble.style.cssText = "background:#fff; border-radius:6px; padding:4px; max-width:65%; box-shadow:0 1px 3px rgba(0,0,0,0.1); cursor:pointer;";
-            const photo = SISTER_PHOTOS[msg.content];
-            if (photo) {
-              const photoUrl = resolveWeChatAssetUrl(photo.file);
-              const img = document.createElement("img");
-              img.src = photoUrl;
-              img.alt = photo.name;
-              img.style.cssText = "width:100%; max-height:220px; border-radius:4px; object-fit:cover; display:block;";
-              bubble.appendChild(img);
-              bubble.onclick = () => {
-                lightboxImg.src = photoUrl;
-                lightboxDesc.textContent = `${photo.name}：${photo.description}`;
-                photoLightbox.style.display = "flex";
-              };
-            } else {
-              bubble.textContent = `[图片: ${msg.content}]`;
-            }
-          } else if (msg.type === "red_packet") {
-            bubble.style.cssText = "background:#fa9d3b; color:#fff; border-radius:7px; padding:10px 14px; width:160px; box-shadow:0 2px 6px rgba(250,157,59,0.3);";
-            const rowDiv = document.createElement("div");
-            rowDiv.style.cssText = "display:flex; align-items:center; gap:10px;";
-            const iconSpan = document.createElement("span");
-            iconSpan.style.fontSize = "24px";
-            iconSpan.textContent = "🧧";
-            const textWrap = document.createElement("div");
-            const amtDiv = document.createElement("div");
-            amtDiv.style.cssText = "font-size:15px; font-weight:bold;";
-            amtDiv.textContent = `¥ ${msg.content}`;
-            const subDiv = document.createElement("div");
-            subDiv.style.cssText = "font-size:10px; opacity:0.85;";
-            subDiv.textContent = "微信红包 · 已存入钱包";
-            textWrap.append(amtDiv, subDiv);
-            rowDiv.append(iconSpan, textWrap);
-            bubble.append(rowDiv);
-          }
-          row.appendChild(avatar);
-          row.appendChild(bubble);
-          scrollEl.appendChild(row);
-        }
-        scrollEl.scrollTop = scrollEl.scrollHeight;
-      };
-      let activeTab = "player";
-      const renderEmojiDrawer = () => {
-        emojiGrid.replaceChildren();
-        const emojis = activeTab === "player" ? PLAYER_EMOJIS : SISTER_EMOJIS;
-        for (const [id, item] of Object.entries(emojis)) {
-          const btn = document.createElement("div");
-          btn.style.cssText = "background:#fff; border:1px solid #ddd; border-radius:6px; padding:4px; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; gap:2px; transition:transform 0.1s ease;";
-          btn.title = item.description;
-          const imgPath = resolveWeChatAssetUrl(item.file);
-          const img = document.createElement("img");
-          img.src = imgPath;
-          img.alt = item.name;
-          img.style.cssText = "width:34px; height:34px; object-fit:contain;";
-          const lbl = document.createElement("span");
-          lbl.style.cssText = "font-size:10px; color:#555; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:44px;";
-          lbl.textContent = item.name;
-          btn.append(img, lbl);
-          btn.onclick = () => {
-            emojiDrawer.style.display = "none";
-            handleSendMessage(id, "emoji");
-          };
-          emojiGrid.appendChild(btn);
-        }
-      };
-      tabPlayer.onclick = () => {
-        activeTab = "player";
-        tabPlayer.style.background = "#f7f7f7";
-        tabPlayer.style.color = "#07c160";
-        tabSister.style.background = "#eeeeee";
-        tabSister.style.color = "#666";
-        renderEmojiDrawer();
-      };
-      tabSister.onclick = () => {
-        activeTab = "sister";
-        tabSister.style.background = "#f7f7f7";
-        tabSister.style.color = "#07c160";
-        tabPlayer.style.background = "#eeeeee";
-        tabPlayer.style.color = "#666";
-        renderEmojiDrawer();
-      };
-      emojiBtn.onclick = () => {
-        const isHidden = emojiDrawer.style.display === "none";
-        emojiDrawer.style.display = isHidden ? "flex" : "none";
-        if (isHidden) renderEmojiDrawer();
-      };
-      packetBtn.onclick = () => {
-        packetModal.style.display = "flex";
-      };
-      packetClose.onclick = () => {
-        packetModal.style.display = "none";
-      };
-      container.querySelectorAll(".wt-amt-pill").forEach((pill) => {
-        pill.addEventListener("click", () => {
-          const amt = pill.dataset.amt || "50";
-          sendRedPacket(parseInt(amt, 10));
-        });
-      });
-      confirmPacket.onclick = () => {
-        const amt = parseInt(customAmt.value, 10);
-        if (isNaN(amt) || amt <= 0) {
-          ctx.toast("error", "请输入有效的红包金额");
-          return;
-        }
-        sendRedPacket(amt);
-      };
-      const sendRedPacket = (amt) => {
-        if (activeConv.state.money < amt) {
-          ctx.toast("error", `钱包余额不足（当前余额：¥${activeConv.state.money}）`);
-          return;
-        }
-        const hasExternalMoney = Boolean(activeConv.state.hasExternalState && activeConv.state.externalFields?.money);
-        if (!hasExternalMoney) {
-          activeConv.state.money -= amt;
-        }
-        packetModal.style.display = "none";
-        customAmt.value = "";
-        handleSendMessage(String(amt), "red_packet");
-      };
-      closeLightbox.onclick = () => {
-        photoLightbox.style.display = "none";
-      };
-      photoLightbox.onclick = (e) => {
-        if (e.target === photoLightbox) photoLightbox.style.display = "none";
-      };
-      const handleSendMessage = async (content, type = "text") => {
-        if (!content.trim() || !isCurrent()) return;
-        const targetMountSession = mountSessionId;
-        const targetScopeSession = activeScopeSessionId;
-        const targetScopeKey = currentScope.scopeKey;
-        const targetConv = activeConv;
-        const targetScopeObj = currentScope;
-        const isRequestValid = () => isCurrent() && targetMountSession === mountSessionId && targetScopeSession === activeScopeSessionId && targetScopeKey === currentScope.scopeKey;
-        const latestMsgs = extractRecentSTMessages(ctx);
-        if (latestMsgs) {
-          targetScopeObj.stRecentMessages = latestMsgs;
-        }
-        const playerMsg = {
-          sender: "player",
-          content,
-          type,
-          time: { day: targetConv.currentDay, hour: 19, minute: 0 }
+      }
+      function showDialog(id, opener) {
+        closeDrawer(false);
+        closeDialog(false);
+        currentDialog = el4(id);
+        currentDialog.hidden = false;
+        dialogFocus = manageDialogFocus(currentDialog, { onEscape: () => closeDialog(), opener });
+        dialogFocus.focusInitial();
+      }
+      function closeDrawer(restore = true) {
+        const wasOpen = !el4("wt-emoji-drawer").hidden;
+        el4("wt-emoji-drawer").hidden = true;
+        el4("wt-emoji-btn").setAttribute("aria-expanded", "false");
+        if (wasOpen && restore) el4("wt-emoji-btn").focus();
+      }
+      function avatar(url, name = "") {
+        const img = document.createElement("img");
+        img.className = "wt-avatar";
+        img.alt = name;
+        img.src = resolveCharacterAvatarUrl(url) || DEFAULT_SISTER_AVATAR;
+        img.onerror = () => {
+          img.onerror = null;
+          img.src = DEFAULT_SISTER_AVATAR;
         };
-        targetConv.messages.push(playerMsg);
-        if (currentScope.scopeKey === targetScopeKey) {
-          renderMessages();
-          typingBadge.style.display = "inline";
+        return img;
+      }
+      function titleFor(conv) {
+        return conv.title || profileFor(conv).contactName || scopeFor(conv).characterName;
+      }
+      function notice(message) {
+        el4("wt-notice").textContent = message ?? (data.config.apiKey ? "平行世界 · 独立微信会话" : "本地演示模式 · 可在右上角设置中连接 AI");
+      }
+      function renderList() {
+        list.replaceChildren();
+        const entries = Object.entries(conversations).sort(([, a], [, b]) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+        if (!entries.length) {
+          const empty = document.createElement("p");
+          empty.className = "wt-empty";
+          empty.textContent = "还没有会话。点击右上角“新会话”，选择想联系的角色。";
+          list.append(empty);
         }
-        if (type === "text") inputEl.value = "";
-        const replyPayload = await pipeline.requestSisterReply(
-          targetConv.messages,
-          targetConv.state,
-          targetConv.currentDay,
-          "19:00",
-          targetScopeObj
-        );
-        if (!isRequestValid()) return;
-        const firstText = replyPayload.messages.find((m) => m.type === "text")?.content || "嗯嗯。";
-        await simulateTypingDelay(firstText);
-        if (!isRequestValid()) return;
-        if (currentScope.scopeKey === targetScopeKey) {
-          typingBadge.style.display = "none";
-        }
-        for (const item of replyPayload.messages) {
-          targetConv.messages.push({
-            sender: "sister",
-            content: item.content || item.emoji_id || item.pic_id || "",
-            type: item.type,
-            time: { day: targetConv.currentDay, hour: 19, minute: 1 }
-          });
-        }
-        conversations[targetScopeKey] = targetConv;
-        ctx.setAppData(appData);
-        if (currentScope.scopeKey === targetScopeKey) {
-          renderMessages();
-        }
-        const preMoodExternal = Boolean(targetConv.state.hasExternalState && targetConv.state.externalFields?.mood);
-        const preInterestExternal = Boolean(targetConv.state.hasExternalState && targetConv.state.externalFields?.interest);
-        if (!preMoodExternal || !preInterestExternal) {
-          const impact = await pipeline.requestStatImpact(
-            type === "text" ? content : `[${type}] ${content}`,
-            firstText,
-            targetConv.state
-          );
-          if (!isRequestValid()) return;
-          const curMoodExternal = Boolean(targetConv.state.hasExternalState && targetConv.state.externalFields?.mood);
-          const curInterestExternal = Boolean(targetConv.state.hasExternalState && targetConv.state.externalFields?.interest);
-          let stateChanged = false;
-          if (!curMoodExternal) {
-            targetConv.state.mood = Math.max(0, Math.min(100, targetConv.state.mood + impact.mood));
-            stateChanged = true;
+        for (const [key, conv] of entries) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "wt-conversation";
+          btn.dataset.conversation = key;
+          const copy = document.createElement("span");
+          copy.className = "wt-conversation-copy";
+          const title2 = document.createElement("span");
+          title2.className = "wt-conversation-title";
+          title2.textContent = titleFor(conv);
+          const preview = document.createElement("span");
+          preview.className = "wt-conversation-preview";
+          const last = conv.messages.at(-1);
+          preview.textContent = pending.has(key) ? "正在回复…" : conv.draft ? `[草稿] ${conv.draft}` : last ? last.type === "emoji" ? "[表情]" : last.type === "image" ? "[图片]" : last.type === "red_packet" ? `[红包] ${last.content}` : last.content : "开始聊天";
+          if (!conv.contactId) preview.textContent = `旧会话${conv.chatId ? ` · ${conv.chatId}` : ""} · ${preview.textContent}`;
+          copy.append(title2, preview);
+          btn.append(avatar(scopeFor(conv).card?.avatar), copy);
+          if (conv.unreadCount) {
+            const badge = document.createElement("span");
+            badge.className = "wt-unread";
+            badge.textContent = String(conv.unreadCount);
+            badge.setAttribute("aria-label", `${conv.unreadCount} 条未读`);
+            btn.append(badge);
           }
-          if (!curInterestExternal) {
-            targetConv.state.interest = Math.max(0, Math.min(100, targetConv.state.interest + impact.interest));
-            stateChanged = true;
-          }
-          if (stateChanged) {
-            conversations[targetScopeKey] = targetConv;
-            ctx.setAppData(appData);
-            if (currentScope.scopeKey === targetScopeKey) {
-              syncActiveView();
-            }
-          }
+          btn.onclick = () => openConversation(key);
+          list.append(btn);
         }
-      };
-      sendBtn.onclick = () => handleSendMessage(inputEl.value, "text");
-      let isComposing = false;
-      inputEl.addEventListener("compositionstart", () => {
-        isComposing = true;
-      });
-      inputEl.addEventListener("compositionend", () => {
-        isComposing = false;
-      });
-      inputEl.onkeydown = (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          if (isComposing || e.isComposing || e.keyCode === 229) {
-            return;
-          }
-          e.preventDefault();
-          handleSendMessage(inputEl.value, "text");
-        }
-      };
-      statusPill.onclick = () => {
-        cfgKey.value = appData.config.apiKey || "";
-        cfgUrl.value = appData.config.apiUrl || "https://api.deepseek.com/chat/completions";
-        cfgModel.value = appData.config.model || "deepseek-chat";
-        settingsModal.style.display = "flex";
-      };
-      closeSettings.onclick = () => {
-        settingsModal.style.display = "none";
-      };
-      btnSaveSettings.onclick = () => {
-        appData.config.apiKey = cfgKey.value.trim();
-        appData.config.apiUrl = cfgUrl.value.trim() || "https://api.deepseek.com/chat/completions";
-        appData.config.model = cfgModel.value.trim() || "deepseek-chat";
-        activeConv.state.mood = parseFloat(setMoodRange.value);
-        activeConv.state.interest = parseFloat(setInterestRange.value);
-        activeConv.state.sisterLocation = setSisterLoc.value;
-        if (activeConv.state.hasExternalState) {
-          activeConv.state.hasExternalState = false;
-          activeConv.state.externalSource = void 0;
-          activeConv.state.externalFields = void 0;
-          currentScope.externalState = { source: "none" };
-        }
-        conversations[currentScope.scopeKey] = activeConv;
-        ctx.setAppData(appData);
-        pipeline = new WeChatPipeline(
-          appData.config,
-          PLAYER_EMOJIS,
-          SISTER_EMOJIS,
-          SISTER_PHOTOS,
-          FALLBACK_DIALOGUES
-        );
-        settingsModal.style.display = "none";
-        syncActiveView();
-        ctx.toast("success", "微信设置与数值已保存");
-      };
-      btnNextDay.onclick = () => {
-        activeConv.currentDay += 1;
-        const hasExternalMoney = Boolean(activeConv.state.hasExternalState && activeConv.state.externalFields?.money);
-        if (!hasExternalMoney) {
-          activeConv.state.money += 200;
-        }
-        conversations[currentScope.scopeKey] = activeConv;
-        ctx.setAppData(appData);
-        syncActiveView();
-        ctx.toast("info", `已进入第 ${activeConv.currentDay} 天${!hasExternalMoney ? "，发放生活费 ¥200" : ""}`);
-      };
-      btnClearChat.onclick = () => {
-        activeConv.messages = [];
-        conversations[currentScope.scopeKey] = activeConv;
-        ctx.setAppData(appData);
+      }
+      function syncState() {
+        const conv = active();
+        if (!conv) return;
+        el4("wt-contact-name").textContent = titleFor(conv);
+        el4("wt-inner-thought").textContent = conv.state.innerThought || "等待角色回复";
+        el4("wt-current-status").textContent = conv.state.currentStatus || "等待角色回复";
+        el4("wt-state-summary").textContent = `角色状态 · ${conv.state.currentStatus || "等待更新"}`;
+        el4("wt-typing-badge").hidden = !pending.has(activeKey);
+        el4("wt-send-btn").disabled = pending.has(activeKey);
+      }
+      function openConversation(key) {
+        if (!conversations[key]) return;
+        saveDraft();
+        closeDialog(false);
+        closeDrawer(false);
+        activeKey = key;
+        data.activeScopeKey = key;
+        conversations[key].unreadCount = 0;
+        list.hidden = true;
+        el4("wt-chat").hidden = false;
+        el4("wt-back").hidden = false;
+        el4("wt-add-contact").hidden = true;
+        input.value = conversations[key].draft || "";
+        persist();
         renderMessages();
-        settingsModal.style.display = "none";
-        ctx.toast("info", "微信聊天记录已清空");
+        syncState();
+        notice();
+        input.focus({ preventScroll: true });
+      }
+      function showList() {
+        saveDraft();
+        closeDialog(false);
+        closeDrawer(false);
+        activeKey = null;
+        list.hidden = false;
+        el4("wt-chat").hidden = true;
+        el4("wt-back").hidden = true;
+        el4("wt-add-contact").hidden = false;
+        el4("wt-contact-name").textContent = "微信";
+        renderList();
+        notice();
+        list.querySelector("button")?.focus({ preventScroll: true });
+      }
+      function renderMessages() {
+        const conv = active();
+        if (!conv) return;
+        const priorPhoto = document.activeElement?.dataset.wtPhoto;
+        scroll.replaceChildren();
+        const media = mediaFor(conv), profile = profileFor(conv);
+        for (const [index, msg] of conv.messages.entries()) {
+          const player = msg.sender === "player", row = document.createElement("div");
+          row.className = `wt-message${player ? " wt-message-player" : ""}`;
+          row.append(avatar(player ? DEFAULT_PLAYER_AVATAR : scopeFor(conv).card?.avatar, player ? profile.playerName || "用户" : titleFor(conv)));
+          let bubble = document.createElement("div");
+          bubble.className = "wt-bubble";
+          if (msg.type === "text") bubble.textContent = msg.content;
+          else if (msg.type === "red_packet") {
+            bubble.classList.add("wt-gift");
+            bubble.textContent = `🧧 ${msg.content}`;
+            const sub = document.createElement("small");
+            sub.textContent = msg.note || "微信红包 / 礼物";
+            bubble.append(sub);
+          } else {
+            const fromPlayer = msg.emojiSource ? msg.emojiSource === "player" : player;
+            const item = msg.asset ?? (msg.type === "image" ? media.photo[msg.content] ?? SISTER_PHOTOS[msg.content] : (fromPlayer ? media.player : media.sister)[msg.content] ?? (fromPlayer ? PLAYER_EMOJIS : SISTER_EMOJIS)[msg.content]);
+            if (item) {
+              bubble = document.createElement("button");
+              bubble.className = "wt-bubble wt-media";
+              bubble.dataset.wtPhoto = String(index);
+              bubble.setAttribute("aria-label", `查看图片：${item.name}`);
+              const img = document.createElement("img");
+              img.src = resolveWeChatAssetUrl(item.file);
+              img.alt = item.name;
+              bubble.append(img);
+              bubble.onclick = () => {
+                el4("wt-lightbox-img").src = img.src;
+                el4("wt-lightbox-img").alt = item.name;
+                el4("wt-lightbox-desc").textContent = item.description;
+                showDialog("wt-photo-lightbox", bubble);
+                photoMessage = msg;
+                photoScopeKey = activeKey;
+              };
+            } else bubble.textContent = msg.type === "image" ? `[图片：${msg.content}]` : `[表情：${msg.content}]`;
+          }
+          row.append(bubble);
+          scroll.append(row);
+        }
+        scroll.scrollTop = scroll.scrollHeight;
+        if (priorPhoto) scroll.querySelector(`[data-wt-photo="${priorPhoto}"]`)?.focus({ preventScroll: true });
+      }
+      function renderDrawer() {
+        const media = mediaFor(active()), entries = Object.entries(drawerTab === "player" ? media.player : media.sister);
+        el4("wt-tab-player").setAttribute("aria-pressed", String(drawerTab === "player"));
+        el4("wt-tab-sister").setAttribute("aria-pressed", String(drawerTab === "sister"));
+        const grid = el4("wt-emoji-grid");
+        grid.replaceChildren();
+        if (!entries.length) {
+          const text4 = document.createElement("p");
+          text4.className = "wt-hint";
+          text4.style.gridColumn = "1 / -1";
+          text4.textContent = "此表情组未启用。点击“管理”预览并启用表情包，也可添加图库图片。";
+          grid.append(text4);
+        }
+        for (const [id, item] of entries) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.title = item.description;
+          btn.setAttribute("aria-label", item.name);
+          const img = document.createElement("img");
+          img.src = resolveWeChatAssetUrl(item.file);
+          img.alt = "";
+          btn.append(img, document.createTextNode(item.name));
+          btn.onclick = () => {
+            closeDrawer();
+            void send(id, "emoji", drawerTab);
+          };
+          grid.append(btn);
+        }
+      }
+      const profileSettings = createProfileSettings(el4("wt-profile-container"), data, persist, {
+        packs: () => ctx.getSettings().packs,
+        preview: (profile) => {
+          const conv = active(), scope = conv ? scopeFor(conv) : { scopeKey: "", characterName: "所选联系人", externalState: { source: "none" } };
+          return new WeChatPipeline({ profile }, applyAssetProfile(PLAYER_EMOJIS, "player", profile), applyAssetProfile(SISTER_EMOJIS, "contact", profile), applyAssetProfile(SISTER_PHOTOS, "photo", profile)).buildSystemPrompt(conv?.state ?? { mood: 0, interest: 0, money: 0, sisterLocation: "", playerLocation: "" }, (/* @__PURE__ */ new Date()).toLocaleTimeString(), scope);
+        }
+      });
+      function openSettings(assets = false) {
+        showDialog("wt-settings-modal", assets ? el4("wt-emoji-btn") : el4("wt-settings-btn"));
+        profileSettings.open(active() ? profileCharacterKey(scopeFor(active()).card) : null, assets);
+        el4("wt-cfg-key").value = data.config.apiKey || "";
+        el4("wt-cfg-url").value = data.config.apiUrl || "https://api.deepseek.com/chat/completions";
+        el4("wt-cfg-model").value = data.config.model || "deepseek-chat";
+        el4("wt-history-actions").hidden = !active();
+        el4("wt-btn-clear-chat").textContent = "清空此会话记录";
+        feedback.textContent = "";
+      }
+      async function send(content, type = "text", emojiSource = "player", note) {
+        const target = active(), key = activeKey;
+        if (!target || !key || !content.trim()) return;
+        if (pending.has(key)) {
+          notice("此联系人正在回复，可先切换到其他会话。");
+          return;
+        }
+        const controller = new AbortController();
+        pending.set(key, controller);
+        const valid2 = () => alive && pending.get(key) === controller && conversations[key] === target && !controller.signal.aborted;
+        const time = /* @__PURE__ */ new Date(), media = mediaFor(target), pipe = pipeFor(target), scope = scopeFor(target);
+        const snapshot2 = type === "emoji" ? (emojiSource === "player" ? media.player : media.sister)[content] : void 0;
+        const player = { id: crypto.randomUUID(), sender: "player", type, content: content.trim().slice(0, type === "red_packet" ? 120 : 8e3), time: { day: target.currentDay, hour: time.getHours(), minute: time.getMinutes() }, ...type === "emoji" ? { emojiSource, asset: snapshot2 } : {}, ...note ? { note: note.slice(0, 300) } : {} };
+        target.messages.push(player);
+        target.updatedAt = Date.now();
+        if (type === "text") {
+          input.value = "";
+          target.draft = "";
+        }
+        try {
+          persist();
+        } catch {
+          pending.delete(key);
+          target.messages.pop();
+          if (type === "text") {
+            input.value = content;
+            target.draft = content;
+          }
+          ;
+          notice("消息保存失败，请重试。");
+          return;
+        }
+        renderMessages();
+        syncState();
+        notice();
+        const timeout = window.setTimeout(() => {
+          if (pending.get(key) === controller) {
+            controller.abort();
+            pending.delete(key);
+            if (activeKey === key) {
+              syncState();
+              notice("请求超时，消息已保留。可以稍后重试。");
+            } else renderList();
+          }
+        }, 6e4);
+        timers.add(timeout);
+        try {
+          const reply = await pipe.requestSisterReply([...target.messages], { ...target.state }, target.currentDay, time.toLocaleTimeString(), scope, controller.signal);
+          if (!valid2()) return;
+          for (const item of reply.messages) {
+            const asset = item.type === "emoji" ? media.sister[item.emoji_id] : item.type === "image" ? media.photo[item.pic_id] : void 0;
+            target.messages.push({ id: crypto.randomUUID(), sender: "sister", type: item.type, content: item.content || item.emoji_id || item.pic_id || "", time: { day: target.currentDay, hour: (/* @__PURE__ */ new Date()).getHours(), minute: (/* @__PURE__ */ new Date()).getMinutes() }, ...asset ? { asset: { ...asset } } : {} });
+          }
+          if (reply.innerThought) target.state.innerThought = reply.innerThought;
+          if (reply.currentStatus) target.state.currentStatus = reply.currentStatus;
+          if (activeKey !== key) target.unreadCount = (target.unreadCount || 0) + reply.messages.length;
+          target.updatedAt = Date.now();
+          persist();
+          if (activeKey === key) {
+            renderMessages();
+            syncState();
+            if (reply.warning) notice(reply.warning);
+          } else renderList();
+        } catch (error) {
+          if (alive && pending.get(key) === controller && !controller.signal.aborted) {
+            notice(error instanceof Error ? error.message : "回复失败，请重试");
+            ctx.toast("error", "微信回复未完成，已保留发送记录");
+          }
+        } finally {
+          window.clearTimeout(timeout);
+          timers.delete(timeout);
+          if (pending.get(key) === controller) pending.delete(key);
+          if (alive) {
+            if (activeKey === key) syncState();
+            else renderList();
+          }
+        }
+      }
+      el4("wt-back").onclick = showList;
+      el4("wt-settings-btn").onclick = () => openSettings();
+      el4("wt-close-settings").onclick = () => closeDialog();
+      el4("wt-cancel-settings").onclick = () => closeDialog();
+      el4("wt-close-lightbox").onclick = () => closeDialog();
+      el4("wt-packet-close").onclick = () => closeDialog();
+      el4("wt-close-contacts").onclick = () => closeDialog();
+      el4("wt-send-btn").onclick = () => {
+        void send(input.value);
       };
-      syncActiveView();
+      let composing = false;
+      input.addEventListener("compositionstart", () => {
+        composing = true;
+      });
+      input.addEventListener("compositionend", () => {
+        composing = false;
+      });
+      input.oninput = () => saveDraft();
+      input.onkeydown = (event) => {
+        if (event.key === "Enter" && !event.shiftKey && !event.isComposing && !composing && event.keyCode !== 229) {
+          event.preventDefault();
+          void send(input.value);
+        }
+      };
+      el4("wt-emoji-btn").onclick = () => {
+        if (!el4("wt-emoji-drawer").hidden) {
+          closeDrawer();
+          return;
+        }
+        ;
+        closeDialog(false);
+        el4("wt-emoji-drawer").hidden = false;
+        el4("wt-emoji-btn").setAttribute("aria-expanded", "true");
+        renderDrawer();
+        el4(drawerTab === "player" ? "wt-tab-player" : "wt-tab-sister").focus();
+      };
+      el4("wt-emoji-drawer").onkeydown = (event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          closeDrawer();
+        }
+      };
+      el4("wt-tab-player").onclick = () => {
+        drawerTab = "player";
+        renderDrawer();
+      };
+      el4("wt-tab-sister").onclick = () => {
+        drawerTab = "sister";
+        renderDrawer();
+      };
+      el4("wt-manage-emojis").onclick = () => openSettings(true);
+      el4("wt-packet-btn").onclick = () => {
+        if (!active()) return;
+        el4("wt-packet-target").textContent = `发送给 ${titleFor(active())}`;
+        el4("wt-packet-feedback").textContent = "";
+        showDialog("wt-packet-modal", el4("wt-packet-btn"));
+        el4("wt-custom-amt").focus();
+      };
+      el4("wt-confirm-packet").onclick = () => {
+        const content = el4("wt-custom-amt").value.trim(), note = el4("wt-packet-note").value.trim();
+        if (!content) {
+          el4("wt-packet-feedback").textContent = "请填写想发送的内容。";
+          el4("wt-custom-amt").focus();
+          return;
+        }
+        if (activeKey && pending.has(activeKey)) {
+          el4("wt-packet-feedback").textContent = "请等待此联系人回复后再发送。";
+          return;
+        }
+        closeDialog();
+        el4("wt-custom-amt").value = "";
+        el4("wt-packet-note").value = "";
+        void send(content, "red_packet", "player", note);
+      };
+      el4("wt-btn-save-settings").onclick = () => {
+        const previous = data.config, priorScopes = data.profileEditorScopes;
+        feedback.dataset.kind = "";
+        try {
+          const config = profileSettings.save(data.config);
+          config.apiKey = el4("wt-cfg-key").value.trim();
+          config.apiUrl = el4("wt-cfg-url").value.trim();
+          config.model = el4("wt-cfg-model").value.trim();
+          if (config.apiKey) {
+            const url = new URL(config.apiUrl || "");
+            if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("请输入有效的 HTTP(S) API 地址");
+            if (!config.model) throw new Error("请填写模型名称");
+          }
+          data.config = config;
+          persist();
+          feedback.textContent = "设置已保存 ✓ 下一条消息开始使用。";
+          ctx.toast("success", "微信设置已保存");
+          if (active()) {
+            syncState();
+            renderMessages();
+          } else renderList();
+          notice();
+        } catch (error) {
+          data.config = previous;
+          data.profileEditorScopes = priorScopes;
+          feedback.dataset.kind = "error";
+          feedback.textContent = `未保存：${error.message}`;
+          ctx.toast("error", feedback.textContent);
+        }
+      };
+      el4("wt-btn-clear-chat").onclick = () => {
+        feedback.dataset.kind = "";
+        const conv = active();
+        if (!conv || !activeKey) return;
+        if (el4("wt-btn-clear-chat").textContent !== "再次点击确认清空") {
+          el4("wt-btn-clear-chat").textContent = "再次点击确认清空";
+          feedback.textContent = "将删除此微信会话的消息、草稿和角色状态。";
+          return;
+        }
+        pending.get(activeKey)?.abort();
+        pending.delete(activeKey);
+        conv.messages = [];
+        conv.draft = "";
+        conv.unreadCount = 0;
+        delete conv.state.innerThought;
+        delete conv.state.currentStatus;
+        input.value = "";
+        persist();
+        renderMessages();
+        syncState();
+        feedback.textContent = "此会话记录已清空。";
+        el4("wt-btn-clear-chat").textContent = "清空此会话记录";
+      };
+      function renderContacts() {
+        const options = el4("wt-contact-options"), search = el4("wt-contact-search").value.trim().toLocaleLowerCase();
+        options.replaceChildren();
+        const contacts = listContacts(ctx).filter((item) => item.name.toLocaleLowerCase().includes(search));
+        if (!contacts.length) {
+          options.textContent = "没有匹配的角色卡。可先在酒馆导入角色，再回到这里。";
+          return;
+        }
+        for (const item of contacts) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "wt-conversation";
+          btn.dataset.contact = item.id;
+          const label = document.createElement("span");
+          label.textContent = item.name;
+          const identity = document.createElement("small");
+          identity.className = "wt-conversation-preview";
+          identity.textContent = item.avatar || "";
+          label.append(identity);
+          btn.append(avatar(item.avatar), label);
+          btn.onclick = async () => {
+            const request = ++selecting;
+            btn.disabled = true;
+            el4("wt-contact-feedback").textContent = "正在读取角色卡…";
+            try {
+              const loaded = await loadContact(ctx, item.id);
+              if (!alive || request !== selecting || currentDialog?.id !== "wt-contacts-modal") return;
+              const conv = addContactConversation(data, loaded);
+              persist();
+              openConversation(conv.scopeKey);
+            } catch (error) {
+              if (alive && request === selecting) el4("wt-contact-feedback").textContent = error.message;
+            } finally {
+              if (alive && btn.isConnected) btn.disabled = false;
+            }
+          };
+          options.append(btn);
+        }
+      }
+      el4("wt-add-contact").onclick = () => {
+        el4("wt-contact-search").value = "";
+        el4("wt-contact-feedback").textContent = "";
+        showDialog("wt-contacts-modal", el4("wt-add-contact"));
+        renderContacts();
+      };
+      el4("wt-contact-search").oninput = renderContacts;
+      const unsubscribe = ctx.onCharacterChanged(() => {
+        if (alive && currentDialog?.id === "wt-contacts-modal") renderContacts();
+      });
+      renderList();
+      notice();
+      cleanup = () => {
+        saveDraft();
+        alive = false;
+        selecting++;
+        closeDialog(false);
+        unsubscribe();
+        for (const controller of pending.values()) controller.abort();
+        for (const timer of timers) window.clearTimeout(timer);
+        timers.clear();
+        pending.clear();
+      };
     },
     unmount() {
-      mountSessionId++;
-      activeScopeSessionId++;
-      pipeline = null;
-      if (unbindEvents) {
-        unbindEvents();
-        unbindEvents = null;
-      }
+      cleanup?.();
+      cleanup = void 0;
     }
   };
 }
@@ -20282,12 +21040,14 @@ function createNewvarDesigner(deps) {
   let formDraft = null;
   let editingIndex = null;
   let scrollToEditor = false;
+  let stopViewport = null;
   function applyBackdropSize() {
     if (!backdrop) return;
-    backdrop.style.left = "0";
-    backdrop.style.top = "0";
-    backdrop.style.width = `${window.innerWidth}px`;
-    backdrop.style.height = `${window.innerHeight}px`;
+    const viewport = fixedViewport();
+    backdrop.style.left = `${viewport.left}px`;
+    backdrop.style.top = `${viewport.top}px`;
+    backdrop.style.width = `${viewport.width}px`;
+    backdrop.style.height = `${viewport.height}px`;
   }
   function open() {
     if (backdrop) {
@@ -20297,7 +21057,7 @@ function createNewvarDesigner(deps) {
     formDraft = null;
     editingIndex = null;
     backdrop = el2("div", "so-manager-backdrop");
-    window.addEventListener("resize", applyBackdropSize);
+    stopViewport = observeFixedViewport(applyBackdropSize);
     applyBackdropSize();
     const dialog = el2("div", "so-manager");
     dialog.setAttribute("role", "dialog");
@@ -20334,7 +21094,8 @@ function createNewvarDesigner(deps) {
     const closingFocus = focus;
     focus = null;
     closingFocus?.dispose();
-    window.removeEventListener("resize", applyBackdropSize);
+    stopViewport?.();
+    stopViewport = null;
     backdrop.remove();
     backdrop = null;
     body = null;
@@ -20765,7 +21526,7 @@ function getRequiredString(value, key, label, maxLength) {
   const field = value[key];
   if (typeof field !== "string" || field.trim().length === 0) return `${label}.${key} 必须是非空字符串`;
   if (field.length > maxLength) return `${label}.${key} 超过最大长度 ${maxLength}`;
-  if (/<\/?[a-z][^>]*>/i.test(field)) return `${label}.${key} 不接受 HTML`;
+  if (/<\/?[a-z][a-z0-9:-]*(?=[\s/>])[^>]*>/i.test(field)) return `${label}.${key} 不接受 HTML`;
   return null;
 }
 function getOptionalString(value, key, label, maxLength) {
@@ -20773,7 +21534,7 @@ function getOptionalString(value, key, label, maxLength) {
   const field = value[key];
   if (typeof field !== "string") return `${label}.${key} 必须是字符串`;
   if (field.length > maxLength) return `${label}.${key} 超过最大长度 ${maxLength}`;
-  if (/<\/?[a-z][^>]*>/i.test(field)) return `${label}.${key} 不接受 HTML`;
+  if (/<\/?[a-z][a-z0-9:-]*(?=[\s/>])[^>]*>/i.test(field)) return `${label}.${key} 不接受 HTML`;
   return null;
 }
 function getNumber(value, key, label, min, max) {
@@ -20883,14 +21644,15 @@ function validateGal(value) {
 function validateCard(value, index) {
   if (!isRecord3(value)) return `cards.cards[${index}] 必须是对象`;
   const label = `cards.cards[${index}]`;
-  const keyError = checkKeys(value, ["id", "title", "description", "consequence", "action"], label);
+  const keyError = checkKeys(value, ["id", "title", "description", "consequence", "action", "branch"], label);
   if (keyError) return keyError;
   const errors = [
     getRequiredString(value, "id", label, 100),
     getRequiredString(value, "title", label, 200),
     getRequiredString(value, "description", label, 1e3),
     getOptionalString(value, "consequence", label, 1e3),
-    getRequiredString(value, "action", label, 2e3)
+    getRequiredString(value, "action", label, 2e3),
+    getOptionalString(value, "branch", label, 4e3)
   ];
   const error = firstError(...errors);
   if (error) return error;
@@ -20899,7 +21661,8 @@ function validateCard(value, index) {
     title: value.title,
     description: value.description,
     ...value.consequence === void 0 ? {} : { consequence: value.consequence },
-    action: value.action
+    action: value.action,
+    ...value.branch === void 0 ? {} : { branch: value.branch }
   };
 }
 function validateCards(value) {
@@ -21162,6 +21925,15 @@ function parseRendererBlocks(source) {
 }
 
 // st-extension/src/apps/renderer/runtime.ts
+function snapshotNode(node) {
+  return { node, value: node.nodeValue, children: Array.from(node.childNodes, snapshotNode) };
+}
+function restoreNode(snapshot2) {
+  const { node, value, children } = snapshot2;
+  if (node instanceof Element) node.replaceChildren(...children.map(restoreNode));
+  else node.nodeValue = value;
+  return node;
+}
 var RENDERER_CLASS = "st-stage-renderer";
 var SOURCE_CLASS = "st-stage-render-source";
 var MARKER_CLASS2 = "st-stage-render-marker";
@@ -21229,7 +22001,7 @@ function createRendererRuntime(deps) {
     if (!state2) return;
     for (const mount of state2.mounts) destroyMount(mount);
     if (stillOwnsDom(root, state2)) {
-      root.replaceChildren(...state2.snapshot);
+      root.replaceChildren(...state2.snapshot.map(restoreNode));
     } else {
       for (const mount of state2.mounts) {
         mount.marker.remove();
@@ -21251,23 +22023,24 @@ function createRendererRuntime(deps) {
     if (!root.isConnected) return;
     const settings = deps.getSettings();
     const current2 = states.get(root);
-    if (current2 && stillOwnsDom(root, current2) && settings.enabled && current2.mounts.every((mount) => isModeEnabled(settings, mount.mode))) return;
+    if (current2 && stillOwnsDom(root, current2) && settings.enabled && current2.mounts.every((mount) => isModeEnabled(settings, mount.mode)) && current2.mounts.every((mount) => !mount.isCurrent || mount.isCurrent())) return;
     if (current2) cleanupRoot(root);
     const message = root.closest(".mes");
     if (message?.getAttribute("is_user") === "true" || message?.getAttribute("is_system") === "true") return;
     if (!settings.enabled) return;
-    const snapshot = Array.from(root.childNodes).map((node) => node.cloneNode(true));
+    const snapshot2 = Array.from(root.childNodes, snapshotNode);
     const prepared = [];
-    for (const parsed of parseRendererBlocks(root.textContent ?? "")) {
+    for (const [index, parsed] of parseRendererBlocks(root.textContent ?? "").entries()) {
       if (!isModeEnabled(settings, parsed.block.mode)) continue;
       const factory = deps.factories[parsed.block.mode];
       if (!factory) continue;
       const container = document.createElement("section");
       container.className = RENDERER_CLASS;
       try {
-        const mount = factory(container, parsed.block, modeDeps);
+        const blockDeps = { ...modeDeps, ...deps.getBlockDeps?.(root, parsed, index) };
+        const mount = factory(container, parsed.block, blockDeps);
         if (!mount || typeof mount.destroy !== "function") continue;
-        prepared.push({ parsed, container, mount });
+        prepared.push({ parsed, container, mount, isCurrent: blockDeps.choiceMemory?.isCurrent });
       } catch {
         continue;
       }
@@ -21298,12 +22071,13 @@ function createRendererRuntime(deps) {
         source,
         container: item.container,
         mode: item.parsed.block.mode,
-        destroyed: false
+        destroyed: false,
+        isCurrent: item.isCurrent
       });
     }
     if (mounts.length === 0) return;
     for (const mount of mounts) root.append(mount.marker, mount.container);
-    states.set(root, { mounts, snapshot, outsideSignature: outsideSignature(root, mounts) });
+    states.set(root, { mounts, snapshot: snapshot2, outsideSignature: outsideSignature(root, mounts) });
     mountedRoots.add(root);
   }
   function reprocessAll(scope = document) {
@@ -21510,12 +22284,25 @@ function createCard(card) {
     textElement2("p", "st-render-card-description", card.description)
   );
   if (card.consequence) article.append(textElement2("p", "st-render-card-consequence", card.consequence));
+  if (card.branch) {
+    const preview = document.createElement("details");
+    preview.className = "st-render-card-branch";
+    preview.append(textElement2("summary", "", t("cardChoices.preview", "预览可能的分支")), textElement2("p", "", card.branch));
+    article.append(preview);
+  }
+  const remember = document.createElement("button");
+  remember.type = "button";
+  remember.className = "st-render-card-remember";
+  remember.dataset.cardId = card.id;
+  remember.setAttribute("aria-pressed", "false");
+  remember.textContent = t("cardChoices.remember", "记住此选择");
+  article.append(remember);
   const button2 = document.createElement("button");
   button2.type = "button";
   button2.className = "st-render-card-select";
   button2.dataset.cardId = card.id;
   button2.setAttribute("aria-pressed", "false");
-  button2.textContent = "✓ 填入输入框";
+  button2.textContent = t("cardChoices.insert", "✓ 填入输入框");
   article.append(button2);
   return article;
 }
@@ -21523,16 +22310,45 @@ function mountCardsMode(root, block, deps) {
   const section2 = document.createElement("section");
   section2.className = "st-render-cards";
   const title2 = textElement2("h2", "st-render-cards-title", block.title);
+  const note = textElement2("p", "st-render-cards-note", t("cardChoices.note", "分支是可能的发展。预览或记住选择不会修改主剧情；填入输入框后，仍需你确认发送。"));
   const grid = document.createElement("div");
   grid.className = "st-render-cards-grid";
   for (const card of block.cards) grid.append(createCard(card));
   const status = textElement2("div", "st-render-cards-status", "");
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
-  section2.append(title2, grid, status);
+  const reset = document.createElement("button");
+  reset.type = "button";
+  reset.className = "st-render-cards-reset";
+  reset.textContent = t("cardChoices.reset", "清除记住的选择");
+  section2.append(title2, note, grid, reset, status);
   root.replaceChildren(section2);
   const cards = new Map(block.cards.map((card) => [card.id, card]));
   let destroyed = false;
+  let remembered = deps.choiceMemory?.read() ?? null;
+  function showRemembered() {
+    for (const element2 of grid.querySelectorAll(".st-render-card")) {
+      const selected = element2.dataset.cardId === remembered;
+      element2.classList.toggle("st-render-card-saved", selected);
+      const button2 = element2.querySelector(".st-render-card-remember");
+      button2.setAttribute("aria-pressed", String(selected));
+      button2.textContent = selected ? t("cardChoices.remembered", "已记住此选择") : t("cardChoices.remember", "记住此选择");
+    }
+    reset.disabled = remembered === null;
+  }
+  function remember(id) {
+    const result = deps.choiceMemory?.write(id);
+    if (result && !result.ok) {
+      status.textContent = result.error;
+      status.className = "st-render-cards-status st-render-cards-status-error";
+      return false;
+    }
+    remembered = id;
+    showRemembered();
+    return true;
+  }
+  showRemembered();
+  if (remembered) status.textContent = t("cardChoices.restored", "已恢复上次记住的选择；未写入输入框。");
   function setSelected(selectedId) {
     for (const element2 of Array.from(grid.querySelectorAll(".st-render-card"))) {
       const selected = selectedId !== null && element2.dataset.cardId === selectedId;
@@ -21542,11 +22358,29 @@ function mountCardsMode(root, block, deps) {
   }
   function onClick(event) {
     if (destroyed || !(event.target instanceof Element)) return;
-    const button2 = event.target.closest(".st-render-card-select");
+    const button2 = event.target.closest(".st-render-card-select, .st-render-card-remember, .st-render-cards-reset");
     if (!button2 || !root.contains(button2)) return;
+    if (deps.choiceMemory && !deps.choiceMemory.isCurrent()) {
+      status.textContent = t("cardChoices.stale", "聊天或消息已变化，请重新打开当前消息。");
+      return;
+    }
+    if (button2 === reset) {
+      if (remember(null)) {
+        setSelected(null);
+        status.textContent = t("cardChoices.cleared", "已清除选择；输入框和聊天记录保持原样。");
+      }
+      return;
+    }
     const card = cards.get(button2.dataset.cardId ?? "");
     if (!card) return;
-    const result = deps.insertDraft?.(card.action) ?? { ok: false, error: "未找到 SillyTavern 输入框。" };
+    if (button2.classList.contains("st-render-card-remember")) {
+      if (remember(card.id)) {
+        status.className = "st-render-cards-status st-render-cards-status-success";
+        status.textContent = deps.choiceMemory ? t("cardChoices.saved", "选择已保存；未写入输入框。") : t("cardChoices.local", "选择仅在本次打开时保留，当前消息缺少可用于恢复的身份。");
+      }
+      return;
+    }
+    const result = deps.insertDraft?.(card.action) ?? { ok: false, error: t("cardChoices.noComposer", "未找到 SillyTavern 输入框。") };
     if (!result.ok) {
       setSelected(null);
       status.textContent = result.error;
@@ -21554,8 +22388,9 @@ function mountCardsMode(root, block, deps) {
       return;
     }
     setSelected(card.id);
+    if (deps.choiceMemory && !remember(card.id)) return;
     status.className = "st-render-cards-status st-render-cards-status-success";
-    status.textContent = `已填入，请检查后发送：${card.title}`;
+    status.textContent = `${t("cardChoices.inserted", "已填入，请检查后发送：")}${card.title}`;
   }
   root.addEventListener("click", onClick);
   return {
@@ -21632,21 +22467,21 @@ function createBattleEngine(config, deps = {}) {
     log: [],
     allowFlee: config.allowFlee === true
   };
-  function record(events, kind, text4) {
+  function record2(events, kind, text4) {
     const entry = { kind, text: text4 };
     events.push(entry);
     state2.log.push({ ...entry });
   }
   function dealDamage(attacker, target, power, events, allowCritical = true) {
     if (random() * 100 < target.dodge) {
-      record(events, "dodge", `${target.name} 闪避了 ${attacker.name} 的攻击。`);
+      record2(events, "dodge", `${target.name} 闪避了 ${attacker.name} 的攻击。`);
       return;
     }
     const critical = allowCritical && random() * 100 < attacker.crit;
     const raw = critical ? Math.floor(power * 1.5) : power;
     const damage = Math.max(1, bounded(raw - effectiveStat(target, "defense")));
     target.hp = bounded(target.hp - damage, 0, target.maxHp);
-    record(events, "damage", `${attacker.name}${critical ? "暴击" : ""}对 ${target.name} 造成 ${damage} 点伤害。`);
+    record2(events, "damage", `${attacker.name}${critical ? "暴击" : ""}对 ${target.name} 造成 ${damage} 点伤害。`);
   }
   function updateOutcome() {
     if (state2.enemy.hp <= 0) state2.outcome = "won";
@@ -21658,7 +22493,7 @@ function createBattleEngine(config, deps = {}) {
       if ((status.damagePerTurn ?? 0) > 0 && fighter.hp > 0) {
         const damage = bounded(status.damagePerTurn ?? 0);
         fighter.hp = bounded(fighter.hp - damage, 0, fighter.maxHp);
-        record(events, "status-damage", `${fighter.name} 受到 ${status.name} 的 ${damage} 点伤害。`);
+        record2(events, "status-damage", `${fighter.name} 受到 ${status.name} 的 ${damage} 点伤害。`);
       }
       const duration = status.duration - 1;
       if (duration > 0) next.push({ ...status, duration });
@@ -21710,14 +22545,14 @@ function createBattleEngine(config, deps = {}) {
         duration: 1,
         defenseDelta: Math.max(10, effectiveStat(state2.player, "defense"))
       });
-      record(events, "defend", `${state2.player.name} 进入防御姿态。`);
+      record2(events, "defend", `${state2.player.name} 进入防御姿态。`);
     } else if (action.type === "skill" && skill) {
       state2.player.mp = bounded(state2.player.mp - skill.mpCost, 0, state2.player.maxMp);
       if (skill.type === "damage") dealDamage(state2.player, state2.enemy, skill.power, events);
       else {
         const before = state2.player.hp;
         state2.player.hp = bounded(state2.player.hp + skill.power, 0, state2.player.maxHp);
-        record(events, "heal", `${state2.player.name} 恢复 ${state2.player.hp - before} 点生命。`);
+        record2(events, "heal", `${state2.player.name} 恢复 ${state2.player.hp - before} 点生命。`);
       }
     } else if (action.type === "item" && item) {
       item.quantity -= 1;
@@ -21725,14 +22560,14 @@ function createBattleEngine(config, deps = {}) {
       const maxField = item.effect === "heal_hp" ? "maxHp" : "maxMp";
       const before = state2.player[field];
       state2.player[field] = bounded(before + item.power, 0, state2.player[maxField]);
-      record(events, "heal", `${state2.player.name} 使用 ${item.name}，恢复 ${state2.player[field] - before} 点资源。`);
+      record2(events, "heal", `${state2.player.name} 使用 ${item.name}，恢复 ${state2.player[field] - before} 点资源。`);
     } else if (action.type === "flee") {
       if (random() < 0.5) {
         state2.outcome = "fled";
-        record(events, "flee", `${state2.player.name} 成功脱离战斗。`);
+        record2(events, "flee", `${state2.player.name} 成功脱离战斗。`);
         return { ok: true, state: cloneState(state2), events: events.map((event) => ({ ...event })) };
       }
-      record(events, "flee", `${state2.player.name} 逃跑失败。`);
+      record2(events, "flee", `${state2.player.name} 逃跑失败。`);
     }
     updateOutcome();
     if (state2.outcome === "ongoing") runEnemyTurn(events);
@@ -22038,6 +22873,16 @@ function createApiManager(deps) {
   let draft = null;
   let editingId = null;
   let notice = "";
+  let focus = null;
+  let stopViewport = null;
+  function applyBackdropSize() {
+    if (!backdrop) return;
+    const viewport = fixedViewport();
+    backdrop.style.left = `${viewport.left}px`;
+    backdrop.style.top = `${viewport.top}px`;
+    backdrop.style.width = `${viewport.width}px`;
+    backdrop.style.height = `${viewport.height}px`;
+  }
   const section2 = (title2) => {
     const box = el2("div", "so-section");
     const heading = el2("div", "so-section-title");
@@ -22051,15 +22896,17 @@ function createApiManager(deps) {
     box.append(line);
   };
   const save = (data) => {
-    deps.setData(data);
+    deps.setData({ ...deps.getData(), ...data });
     render2();
   };
   function open() {
     if (backdrop) return render2();
     backdrop = el2("div", "so-manager-backdrop");
-    backdrop.style.inset = "0";
+    stopViewport = observeFixedViewport(applyBackdropSize);
+    applyBackdropSize();
     const dialog = el2("div", "so-manager");
     dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
     dialog.setAttribute("aria-label", "API 连接档案管理");
     const header = el2("div", "so-manager-header");
     const title2 = el2("div", "so-manager-title");
@@ -22072,15 +22919,24 @@ function createApiManager(deps) {
     dialog.append(header, body);
     backdrop.append(dialog);
     document.body.append(backdrop);
+    focus = manageDialogFocus(dialog, { onEscape: close, layer: backdrop });
     render2();
+    focus.focusInitial();
   }
   function close() {
-    backdrop?.remove();
+    if (!backdrop) return;
+    const closingFocus = focus;
+    focus = null;
+    closingFocus?.dispose();
+    stopViewport?.();
+    stopViewport = null;
+    backdrop.remove();
     backdrop = null;
     body = null;
     draft = null;
     editingId = null;
     deps.onClosed?.();
+    closingFocus?.restoreFocus();
   }
   function edit(profile) {
     const { id: _id, version: _version, ...value } = profile;
@@ -22115,6 +22971,13 @@ function createApiManager(deps) {
       meta.textContent = profileSummary(profile).join(" · ");
       main.append(name, meta);
       main.addEventListener("click", () => edit(profile));
+      main.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          event.stopPropagation();
+          edit(profile);
+        }
+      });
       const move = (label, delta) => {
         const button2 = el2("button", "vm-del stapi-move");
         button2.textContent = label;
@@ -22268,6 +23131,83 @@ ${models.join("\n")}
   return { open, close, isOpen: () => backdrop !== null };
 }
 
+// st-extension/src/apps/renderer/bridge.ts
+function readChoiceHostContext() {
+  try {
+    return window.SillyTavern?.getContext();
+  } catch {
+    return void 0;
+  }
+}
+
+// st-extension/src/apps/renderer/choices.ts
+var CARD_CHOICES_APP_ID = "renderer-choices";
+function normalizeChoiceHistory(raw) {
+  const value = raw;
+  if (value?.version !== 1 || !Array.isArray(value.entries)) return { version: 1, entries: [] };
+  const entries = /* @__PURE__ */ new Map();
+  for (const item of value.entries.slice(-1e3)) {
+    if (!item || typeof item !== "object" || typeof item.key !== "string" || !item.key || item.key.length > 2048 || typeof item.cardId !== "string" || !item.cardId || item.cardId.length > 100) continue;
+    entries.delete(item.key);
+    entries.set(item.key, { key: item.key, cardId: item.cardId });
+  }
+  return { version: 1, entries: [...entries.values()].slice(-200) };
+}
+function fingerprint(text4) {
+  let a = 2166136261, b = 2654435769;
+  for (let i = 0; i < text4.length; i++) {
+    a = Math.imul(a ^ text4.charCodeAt(i), 16777619);
+    b = Math.imul(b ^ text4.charCodeAt(i), 2246822507);
+  }
+  return `${text4.length.toString(36)}-${(a >>> 0).toString(36)}-${(b >>> 0).toString(36)}`;
+}
+function createChoicePersistence(deps) {
+  const context2 = deps.getContext ?? readChoiceHostContext;
+  function keyFor(root, parsed, index) {
+    try {
+      const st = context2(), id = root.closest(".mes")?.getAttribute("mesid");
+      if (!st || !id || !/^\d+$/.test(id) || st.chatId === void 0 || st.chatId === null || String(st.chatId) === "") return null;
+      const message = st.chat?.[Number(id)];
+      if (!message || typeof message.mes !== "string" || !message.mes.includes(parsed.raw) || !["string", "number"].includes(typeof message.send_date)) return null;
+      const card = st.characterId !== void 0 && st.characterId !== null && String(st.characterId) !== "" ? st.characters?.[Number(st.characterId)] : void 0;
+      const scope = st.groupId !== void 0 && st.groupId !== null && String(st.groupId) !== "" ? `group:${st.groupId}` : stableCharacterKey(card);
+      if (!scope) return null;
+      const key = JSON.stringify([scope, String(st.chatId), id, message.send_date, message.swipe_id ?? 0, fingerprint(message.mes), index, fingerprint(parsed.raw)]);
+      return key.length <= 2048 ? key : null;
+    } catch {
+      return null;
+    }
+  }
+  return {
+    forBlock(root, parsed, index) {
+      if (parsed.block.mode !== "cards") return void 0;
+      const key = keyFor(root, parsed, index);
+      if (!key) return void 0;
+      const ids = new Set(parsed.block.cards.map((card) => card.id));
+      const valid2 = () => root.isConnected && keyFor(root, parsed, index) === key;
+      return {
+        isCurrent: valid2,
+        read() {
+          if (!valid2()) return null;
+          const id = normalizeChoiceHistory(deps.getData()).entries.find((item) => item.key === key)?.cardId;
+          return id && ids.has(id) ? id : null;
+        },
+        write(id) {
+          if (!valid2() || id !== null && !ids.has(id)) return { ok: false, error: t("cardChoices.stale", "聊天或消息已变化，请重新打开当前消息。") };
+          try {
+            const entries = normalizeChoiceHistory(deps.getData()).entries.filter((item) => item.key !== key);
+            if (id !== null) entries.push({ key, cardId: id });
+            deps.setData({ version: 1, entries: entries.slice(-200) });
+            return { ok: true };
+          } catch {
+            return { ok: false, error: t("cardChoices.saveFailed", "保存选择失败，请稍后重试。") };
+          }
+        }
+      };
+    }
+  };
+}
+
 // st-extension/src/lifecycle.ts
 function beginExtensionLifecycle(target, doc) {
   target.__stStageDispose?.();
@@ -22299,6 +23239,38 @@ function runWhenDomReady(doc, lifecycle, start) {
   } else {
     run();
   }
+}
+
+// st-extension/src/role-summary.ts
+function buildRoleSummary(settings, characterName, chatTitle, external) {
+  const binding = settings.bindings.find((item) => item.characterName === characterName);
+  const packs = (binding?.packIds ?? []).map((id) => settings.packs.find((pack) => pack.id === id)).filter((pack) => !!pack);
+  const newvar = normalizeNewvarData(settings.apps.newvar);
+  const renderer = normalizeRendererSettings(settings.apps.renderer);
+  const rawWechat = settings.apps["wechat-sister"];
+  const hasKey = typeof rawWechat?.config?.apiKey === "string" && !!rawWechat.config.apiKey.trim();
+  const enabled = t("phone.role.enabled", "已启用"), disabled = t("phone.role.disabled", "已关闭");
+  const externalText = {
+    checking: t("phone.role.checking", "正在检查"),
+    mvu: t("phone.role.mvu_ready", "MVU · 当前聊天有数据"),
+    helper: t("phone.role.helper_ready", "酒馆助手 · 当前聊天有数据"),
+    empty: t("phone.role.variables_empty", "当前聊天无变量数据"),
+    unavailable: t("phone.role.variables_unavailable", "未检测到可用变量接口"),
+    error: t("phone.role.variables_error", "读取失败，打开面板检查"),
+    preview: t("phone.role.preview", "模拟器不读取外部变量")
+  };
+  return {
+    title: characterName || t("phone.role.no_character", "尚未选择角色"),
+    subtitle: characterName ? chatTitle : t("phone.role.select_hint", "先在酒馆打开角色聊天，再配置体验"),
+    rows: characterName ? [
+      { id: "gallery", appId: "gallery", label: t("phone.role.packs", "图包"), value: packs.length ? t("phone.role.pack_count", "{{count}} 个图包 · {{state}}", { count: packs.length, state: binding?.enabled ? enabled : disabled }) : t("phone.role.no_packs", "尚未绑定，前往图库") },
+      { id: "sprites", appId: "sprites", label: t("phone.role.sprites", "立绘"), value: !settings.enabled ? disabled : !binding?.enabled || !packs.some((pack) => pack.sprites.length > 0) ? t("phone.role.needs_pack", "待启用有图片的图包") : enabled },
+      { id: "newvar", appId: "newvar", label: t("phone.role.newvar", "新变量"), value: !newvar.enabled ? disabled : !newvar.schema.variables.length ? t("phone.role.needs_schema", "已开启，尚未定义变量") : t("phone.role.variable_count", "已启用 · {{count}} 个定义", { count: newvar.schema.variables.length }) },
+      { id: "mvu", appId: "mvu", label: t("phone.role.external", "外部变量"), value: externalText[external] },
+      { id: "renderer", appId: "renderer", label: t("phone.role.renderer", "渲染"), value: !renderer.enabled ? disabled : !(renderer.galEnabled || renderer.cardsEnabled || renderer.battleEnabled) ? t("phone.role.needs_mode", "已开启，未选择模式") : enabled },
+      { id: "wechat", appId: "wechat-sister", label: t("phone.role.wechat", "微信"), value: hasKey ? t("phone.role.ai_configured", "已配置 AI · 连接未验证") : t("phone.role.local_replies", "本地回复 · 可配置 AI") }
+    ] : []
+  };
 }
 
 // st-extension/src/index.ts
@@ -22337,6 +23309,7 @@ async function init(lifecycle) {
     const nextHidesUpdates = nextNewvar.enabled && nextNewvar.hideUpdateBlocks;
     settings = next;
     adapter.saveSettings(settings);
+    phone.refreshHome();
     if (previousHidesUpdates !== nextHidesUpdates) {
       reprocessAllMessages(settings);
     }
@@ -22445,14 +23418,26 @@ async function init(lifecycle) {
       }
     });
   }
+  function homeSummary(external = "checking") {
+    const ctx = window.SillyTavern?.getContext();
+    const hasCharacter = ctx?.characterId !== void 0 && ctx.characterId !== null && String(ctx.characterId) !== "";
+    return buildRoleSummary(settings, hasCharacter ? adapter.getCurrentCharacterName() : "", hasCharacter ? adapter.getStoryContext().title : "", external);
+  }
   const phone = createPhoneShell(settings.phone, {
     registry,
     createAppContext,
+    getHomeSummary: () => homeSummary(),
+    readHomeSummary: async () => {
+      const result = await readVariables({ type: "message", message_id: "latest" }, getLastMessageId());
+      const status = result.status === "ready" ? result.meta.source === "mvu" ? "mvu" : "helper" : result.status;
+      return homeSummary(status);
+    },
     onStateChange: (state2) => {
       saveSettingsOnly({ ...settings, phone: state2 });
     }
   });
   lifecycle.track(() => phone.destroy());
+  lifecycle.track(subscribeVarEvents(() => phone.refreshHome()));
   openSpritesApp = () => phone.openApp("sprites");
   function collapsePhone() {
     settings = { ...settings, phone: { ...settings.phone, open: false } };
@@ -22468,9 +23453,14 @@ async function init(lifecycle) {
   const getRendererSettings = () => normalizeRendererSettings(settings.apps[RENDERER_APP_ID]);
   const composerBridge = createComposerBridge();
   lifecycle.track(() => composerBridge.dispose());
+  const choicePersistence = createChoicePersistence({
+    getData: () => settings.apps[CARD_CHOICES_APP_ID],
+    setData: (data) => saveSettingsOnly({ ...settings, apps: { ...settings.apps, [CARD_CHOICES_APP_ID]: data } })
+  });
   const rendererRuntime = createRendererRuntime({
     getSettings: getRendererSettings,
     factories: { gal: mountGalMode, cards: mountCardsMode, battle: mountBattleMode },
+    getBlockDeps: (root, parsed, index) => ({ choiceMemory: choicePersistence.forBlock(root, parsed, index) }),
     modeDeps: {
       getSettings: getRendererSettings,
       resolvePortrait: (address) => {
@@ -22693,6 +23683,8 @@ async function init(lifecycle) {
   let cancelPendingNavigation = () => {
   };
   const handleChatNavigation = () => {
+    composerBridge.dispose();
+    phone.refreshHome();
     appCharacterHub.emit(null);
     refresh();
     manager.refreshIfOpen();
@@ -22720,7 +23712,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-10-26 11:21"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-11-05 21:19"}`;
   console.log(`[sprite-overlay] 百工（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

@@ -1,58 +1,10 @@
-import { createHash } from 'node:crypto'
-import { readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
-import path from 'node:path'
+import { option, verifyArtifacts } from './release-artifacts.mjs'
 
-const runtimeFiles = ['manifest.json', 'index.js', 'bundle.js', 'style.css', 'version.json', 'locales/zh-CN.json', 'locales/en-US.json']
-const errors = []
-
-function option(name) {
-  const index = process.argv.indexOf(name)
-  if (index < 0 || !process.argv[index + 1] || process.argv[index + 1].startsWith('--')) throw new Error('missing ' + name)
-  return path.resolve(process.cwd(), process.argv[index + 1])
-}
-
-function fileInfo(root, relative) {
-  let parent = root
-  for (const segment of relative.split('/')) {
-    if (!readdirSync(parent).includes(segment)) throw new Error('missing or incorrectly cased file: ' + path.join(root, relative))
-    parent = path.join(parent, segment)
-  }
-  const file = path.resolve(root, relative)
-  const relativeResolved = path.relative(realpathSync(root), realpathSync(file))
-  if (relativeResolved.startsWith('..' + path.sep) || path.isAbsolute(relativeResolved)) {
-    throw new Error('path escapes root: ' + relative)
-  }
-  const stat = statSync(file)
-  if (!stat.isFile()) throw new Error('not a file: ' + file)
-  const hash = createHash('sha256').update(readFileSync(file)).digest('hex')
-  return { file, bytes: stat.size, hash }
-}
-
-function compareRoots(leftRoot, rightRoot, rightLabel, files = runtimeFiles) {
-  for (const relative of files) {
-    try {
-      const left = fileInfo(leftRoot, relative)
-      const right = fileInfo(rightRoot, relative)
-      console.log(relative + ' ' + left.bytes + ' bytes sha256=' + left.hash)
-      console.log('  ' + rightLabel + ': ' + right.bytes + ' bytes sha256=' + right.hash)
-      if (left.bytes !== right.bytes || left.hash !== right.hash) {
-        errors.push('artifact mismatch (' + rightLabel + '): ' + relative)
-      }
-    } catch (error) {
-      errors.push(error.message)
-    }
-  }
-}
-
-const root = option('--root')
-const distribution = option('--distribution')
-compareRoots(root, distribution, 'distribution')
-if (process.argv.includes('--release')) {
-  const release = option('--release')
-  compareRoots(distribution, release, 'release')
-  compareRoots(distribution, release, 'release README', ['README.md'])
-}
-if (errors.length) {
-  console.error(errors.join('\n'))
+try {
+  const files = verifyArtifacts({ root: option('--root'), distribution: option('--distribution'), release: option('--release', false), preview: option('--preview', false) })
+  if (process.argv.includes('--verbose')) for (const file of files) console.log(`${file.path} ${file.bytes} bytes sha256=${file.sha256}`)
+  console.log(`Artifact parity passed: ${files.length} files (${files.length - 8} WeChat assets), including generated README.`)
+} catch (error) {
+  console.error(error.message)
   process.exitCode = 1
 }

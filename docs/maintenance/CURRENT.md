@@ -4,43 +4,38 @@ project: st-stage
 base_branch: main
 working_branch: main
 verified_code_head: 4b615fec2898d55f4d71cfb25770d85abea3ac99
-remote_code_head_at_update: 4b615fec2898d55f4d71cfb25770d85abea3ac99
-build_version: 0.9.0+202610261121
-phase: merged-published-and-real-st-accepted
-updated_at: 2026-10-26
+remote_code_head_at_update: c8c73bb03fd874ca90217bde74652c4d9b3ecc55
+build_version: 0.9.0+202611052119
+phase: wechat-independent-conversations-manual-ready
+updated_at: 2026-11-05
 updated_by: Codex
-verification_source: real-st-1.18.0-edge-i18n-10-gallery-4-variables-4-export-4-wechat-2-2026-10-26
-history: docs/maintenance/history/2026-10-26-real-st-acceptance.md
-previous_history: docs/maintenance/history/2026-10-26-merge-and-release.md
+verification_source: final-68-affected-tests-40-host-workflow-checks-24-axe-scans-and-25-mobile-web-tests
+history: docs/maintenance/history/2026-11-05-wechat-experience.md
+previous_history: docs/maintenance/history/2026-11-05-character-play-mobile.md
 ---
 
 # 当前项目状态
 
-微信 App、手机壳与 W1-W9 修复已由 `752678d` 提交；`codex/i18n-acceptance` 的核心界面翻译、键盘与焦点维护随后合入 `main`，合并代码提交为 `7866559`。Variables 真实宿主脚本的角色列表水合竞态由 `4b615fe` 修正并已推送。
+微信体验改造 G1–G7 已完成本地实施与自动验收，候选 **0.9.0+202611052119** 已更新到 [原隔离实测入口](http://127.0.0.1:18771/)。保留原 mvu-data 与旧扩展备份，服务在本机运行。用户主要测试使用体验与操作逻辑，代码复核已由 agent 完成。没有提交、推送、发布或同步日常安装仓库。
 
-合并构建的本地门禁保持通过：100 个测试文件、1352 项测试，TypeScript、lint、i18n 完整性、Next.js 构建及运行产物一致性均通过。在隔离合成数据上的 SillyTavern 1.18.0 自动验收随后完成：i18n 10/10、Gallery 4/4、Variables 4/4、Cloud Export 4/4、微信桌面与 320×667 两个场景通过；浏览器页面错误为 0。移动结果是浏览器模拟，微信 AI 响应为本地拦截，物理设备、真实 AI、受控第三方 MVU 和完整无障碍验收未完成。
+## 本轮行为
 
-## 当前交付边界
+- 首页角色概览移至 App 网格底部，默认折叠并记住偏好。
+- 微信从会话列表进入，可在酒馆与 A 聊天时联系 B。稳定角色身份、独立历史/草稿/未读/状态，旧记录保留；在途回复归原会话，不读取另一个主聊天或 MVU。
+- 明确的右上角设置；常用字段直接编辑，通用/联系人专用两个目标，保存后重开一致；模板收起，保存/失败反馈固定在底部。
+- 全部聊天/状态/格式提示词可见、可改、可恢复、可预览；单次回复 JSON 同步内心想法和当前状态。钱包、天数、生活费和第二次评估退出新工作流。
+- 表情分组预览、修改、启停与图库导入；历史素材快照。红包支持任意内容和附言。
 
-| 位置 | 状态 |
-| --- | --- |
-| 开发仓库 `D:\8.Project\0_0_维护\st-stage` | `main` / 已推送代码 HEAD `4b615fe`；构建 `0.9.0+202610261121` |
-| 安装仓库 `D:\8.Project\0_0_维护\st-stage-ext` | `main` / `0b24014` 已推送；8 个基础文件、README 与 50 个微信素材均通过三方哈希/清单校验 |
-| 分支与工作树 | 6 个已合入的本地维护分支、i18n 工作树及 2 个已合入的远端旧分支已清理；工作树残留缓存移入回收站，可恢复 |
-| 保留远端旧分支 | `origin/v0/2405142193-6702-70a2066c` 含 `main` 尚未包含的独有提交，暂不删除 |
+## 证据与产物
 
-真实宿主结果与限制见 [2026-10-26 真实 SillyTavern 自动验收](history/2026-10-26-real-st-acceptance.md)，合并与发布记录见 [2026-10-26 合并与发布](history/2026-10-26-merge-and-release.md)。微信审查边界见 [第五次审查](history/2026-10-26-wechat-fifth-review.md)，运行和维护入口见 [维护指南](MAINTAINER.md)。
+最终相关 **9 文件 / 68 项**通过；此前全量 113 文件/1416 项经 3 个沙盒夹具权限失败重跑收敛。类型/lint、855 翻译键、最终 Next 与扩展构建、58 文件一致性、12 发布工具、25 网页移动 E2E 通过。
 
-## 仍未完成的验收
+真实 ST 四档布局共 **40 组流程检查、24 次 axe 扫描零检出**，保留 8 条不确定规则记录。桌面/320/390 对应 2114；2119 只补消息滚动区键盘入口与焦点轮廓，横屏完整复核通过，前面未变化业务证据仍保留原构建号。真实 AI/实体设备/完整读屏不在该自动证据内。
 
-1. 在物理设备与 OS 输入法上复核 320px 布局、组合输入、焦点返回和键盘操作；本轮 320px 仅为浏览器模拟。
-2. 以受控、明确识别的第三方 MVU 安装复核真实读写、事件与微信状态结算；仅检测到宿主 helper 全局不能关闭该门禁。
-3. 完整屏幕阅读器、WAVE、WCAG AA 与真实外部 AI 调用仍未验收。
-4. 图片迁移/恢复、标准 ZIP 导入及 [DEFERRED](DEFERRED.md) 中 Renderer、导出身份/取消/大小写、管家恢复、分享封面、素材托管与发布自动化等事项保持暂缓。
+[候选包](../../test-results/release-2026-11-05-2119/package/) · [验收汇总](../../test-results/release-2026-11-05-2119/acceptance-summary.json) · [详细交接](history/2026-11-05-wechat-experience.md) · [用户体验清单](UNIFIED-ACCEPTANCE.md) · [微信说明](../WECHAT.md)。实际 18771 HTTP 已核对 bundle SHA-256 为 `fa33178e26c32faf369c3fe040839a2b3bb80a3d529de60f222d1a44a568f07b`；自动 18772 服务已停止。
 
-## 发布边界
+## 既有成果与边界
 
-- 开发仓库保持 `st-stage`，新安装渠道保持 `st-stage-ext`；不重命名仓库、不重写或嫁接安装仓库历史。
-- 安装包包含 8 个基础文件：`manifest.json`、`index.js`、`bundle.js`、`style.css`、`version.json`、`README.md`、`locales/zh-CN.json`、`locales/en-US.json`，以及 `assets/wechat/` 的 50 个素材文件。
-- README 从 `st-extension/distribution-readme.md` 生成并同步；不以开发仓库首页覆盖安装仓库 README。
-- 发布顺序已完成：开发仓库先推送至 `131f1e3`，随后安装仓库推送至 `0b24014`；发布状态文档推送至 `cf8f0ce` 后完成分支清理，清理记录为 `6f4eb76`。验收脚本修正 `4b615fe` 已推送；本次文档收尾记录真实宿主验收及剩余门禁。
+A–F 未提交成果继续保留：原生 Connection Manager、角色推荐、卡片分支与选择恢复、图库存储/分享、逐类恢复/导出、Renderer/管家修复以及手机可视区定位。历史证据见 [F 交接](history/2026-11-05-character-play-mobile.md)。旧微信跟随主聊天、MVU 数值/钱包和双阶段请求已由本轮独立会话契约取代，不再要求用户验收旧行为；变量 App 自身的 MVU 能力保留。
+
+开发仓库 `main` / HEAD `c8c73bb`，未 fetch；协议基线祖先及提交后产品差异检查通过，工作树仍有先前和本轮未提交修改。安装仓库 `../st-stage-ext` 仅用于候选差异只读预览，没有写入；日常 ST `D:\6.YULE\ST\SillyTavern-1.18.0` 仅复用程序依赖。群聊/朋友圈、完整账户恢复、素材托管与正式发布仍属后续范围，[DEFERRED](DEFERRED.md) 保留到真实修复提交出现。

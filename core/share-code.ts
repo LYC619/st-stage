@@ -262,6 +262,10 @@ export function encodeShareStringV2(pack: SpritePack): ShareEncodeResultV2 | nul
   if (customTags.length > 0) {
     segments.push(`@tags=${encodeURIComponent(JSON.stringify(customTags))}`)
   }
+  const coverTag = normalizeTag(pack.coverTag ?? '')
+  if (coverTag && pack.sprites.some(sprite => sprite.tag === coverTag && shareableUrl(sprite))) {
+    segments.push(`@cover=${encodeURIComponent(coverTag)}`)
+  }
   segments.push(...entries)
 
   return {
@@ -285,6 +289,7 @@ export function decodeShareStringV2(raw: string): SpritePack {
   const name = sanitizePackName(segments[0] ?? '') || '分享立绘包'
   let author: string | undefined
   let kind: SpritePack['kind']
+  let coverTag: string | undefined
   let customTags: string[] = []
   const sprites: Sprite[] = []
   const seen = new Set<string>()
@@ -299,6 +304,10 @@ export function decodeShareStringV2(raw: string): SpritePack {
       const value = part.slice(eq + 1).trim()
       if (key === 'author') author = sanitizePackName(value) || undefined
       if (key === 'kind') kind = normalizePackKind(value)
+      if (key === 'cover') {
+        try { coverTag = normalizeTag(decodeURIComponent(value)) || undefined }
+        catch { coverTag = undefined }
+      }
       if (key === 'tags') {
         try {
           customTags = normalizeLabels(JSON.parse(decodeURIComponent(value)))
@@ -352,6 +361,7 @@ export function decodeShareStringV2(raw: string): SpritePack {
     name,
     author,
     ...(kind ? { kind } : {}),
+    ...(coverTag && sprites.some(sprite => sprite.tag === coverTag) ? { coverTag } : {}),
     ...(customTags.length > 0 ? { customTags } : {}),
     ...(commonRole ? { roleName: commonRole } : {}),
     ...(commonOutfit ? { outfit: commonOutfit } : {}),

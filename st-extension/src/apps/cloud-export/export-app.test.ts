@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { PhoneAppContext } from '../../../../core/phone-registry'
 import type { CloudExportBridge } from './bridge'
-import { cloudExportApp } from './export-app'
+import { cloudExportApp, findLinkedWorldbook } from './export-app'
 import type { ExportCharacter } from './types'
 
 const alice: ExportCharacter = { id: 'Alice.png', name: 'Alice', avatar: 'Alice.png', chats: [] }
@@ -64,6 +64,35 @@ function setCharacterChecked(container: HTMLElement, index: number, checked: boo
 }
 
 describe('cloud export app', () => {
+  it('prefers the exact worldbook filename and refuses an ambiguous case-insensitive fallback', () => {
+    const books = ['World', 'world'].map(name => ({ id: `${name}.json`, name, fileName: `${name}.json` }))
+    expect(findLinkedWorldbook({ ...alice, linkedWorldName: 'world' }, books)?.id).toBe('world.json')
+    expect(findLinkedWorldbook({ ...alice, linkedWorldName: 'WORLD' }, books)).toBeUndefined()
+    expect(findLinkedWorldbook({ ...alice, linkedWorldName: 'WORLD.json' }, books.slice(0, 1))?.id).toBe('World.json')
+  })
+
+  it.each(['cancel', 'unmount'] as const)('%s stops in-flight reads and prevents late downloads', async mode => {
+    const bridge = fakeBridge(), download = vi.fn(), ctx = context()
+    let signal: AbortSignal | undefined, release!: (value: ArrayBuffer) => void
+    vi.mocked(bridge.readCharacterCard).mockImplementation((_character, incoming) => {
+      signal = incoming
+      return new Promise(resolve => { release = resolve })
+    })
+    const app = cloudExportApp(bridge, download), container = document.createElement('div')
+    document.body.append(container)
+    app.mount(container, ctx); await settle()
+    checkCharacter(container); await settle()
+    clickText(container, '导出所选备份'); await settle()
+    if (mode === 'cancel') clickText(container, '取消导出')
+    else app.unmount?.()
+    release(new ArrayBuffer(0)); await settle()
+    expect(signal?.aborted).toBe(true)
+    expect(download).not.toHaveBeenCalled()
+    expect(ctx.toast).not.toHaveBeenCalledWith('success', expect.anything())
+    if (mode === 'cancel') expect(container.querySelector('[data-export-focus="export"]')?.getAttribute('aria-disabled')).toBe('false')
+    app.unmount?.(); container.remove()
+  })
+
   it('loads only the character list on mount and lazily loads chats once', async () => {
     const bridge = fakeBridge()
     const container = document.createElement('div')

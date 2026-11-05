@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SpritePack } from './types'
-import { DEFAULT_IMAGE_HOST } from './types'
+import { DEFAULT_IMAGE_HOST, getPackCover } from './types'
 import {
   decodeShareString,
   decodeShareStringV2,
@@ -267,6 +267,27 @@ describe('encodeShareStringV2', () => {
 })
 
 describe('decodeShareStringV2 roundtrip', () => {
+  it('保留非首图封面且不重排立绘，兼容没有封面元数据的旧分享码', () => {
+    const pack = { ...v2Pack(), coverTag: '冷漠' }
+    const decoded = decodeShareString(encodeShareStringV2(pack)!.text)
+    expect(decoded.coverTag).toBe('冷漠')
+    expect(getPackCover(decoded)?.url).toBe(getPackCover(pack)?.url)
+    expect(decoded.sprites.map(s => s.tag)).toEqual(pack.sprites.map(s => s.tag))
+    expect(decodeShareString('stpack2:旧包|微笑=https://h.com/a.png').coverTag).toBeUndefined()
+  })
+
+  it('忽略缺失、不可分享或损坏的封面引用', () => {
+    const pack = v2Pack()
+    pack.sprites.push({ tag: '本地', url: '/user/images/local.png' })
+    for (const coverTag of ['本地', '不存在']) {
+      expect(encodeShareStringV2({ ...pack, coverTag })!.text).not.toContain('@cover=')
+    }
+    for (const cover of ['不存在', '%E0%A4%A']) {
+      expect(decodeShareString(`stpack2:包|@cover=${cover}|微笑=https://h.com/a.png`).coverTag).toBeUndefined()
+    }
+    expect(decodeShareString(`stpack2:包|微笑=https://h.com/a.png|@cover=${encodeURIComponent('微笑')}`).coverTag).toBe('微笑')
+  })
+
   it('编码后解码回等价（三级地址、独立 URL、remoteUrl）', () => {
     const encoded = encodeShareStringV2(v2Pack())!
     const decoded = decodeShareStringV2(encoded.text)

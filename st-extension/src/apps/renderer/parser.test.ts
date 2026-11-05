@@ -58,6 +58,17 @@ const bareBlocks = [
 ] as const
 
 describe('parseRendererBlock', () => {
+  it('accepts bounded optional branch previews while preserving action-only cards', () => {
+    const cards = [{ id: 'a', title: 'A', description: 'A', action: 'Choose A', branch: 'A possible scene\nNext paragraph' }, { id: 'b', title: 'B', description: 'B', action: 'Choose B' }]
+    const value = { version: 1, mode: 'cards', title: 'Paths', cards }
+    expect(parseRendererBlock(wrap(value))).toMatchObject({ ok: true, block: value })
+    expectInvalid({ ...value, cards: [{ ...cards[0], branch: 'x'.repeat(4001) }, cards[1]] }, /branch/)
+    expectInvalid({ ...value, cards: [{ ...cards[0], branch: '<img src=x>' }, cards[1]] }, /HTML/)
+  })
+  it.each(['1<2 and 3>4', '温度<20°C，气压>1000', 'x<y+3 且 z>4'])('比较表达式 %s 是普通文字', (text) => {
+    expect(parseRendererBlock(wrap({ version: 1, mode: 'gal', scene: text, beats: [{ speaker: '我', text }] }))).toMatchObject({ ok: true })
+  })
+
   it('解析合法 Galgame 块', () => {
     const result = parseRendererBlock(
       wrap({

@@ -2,6 +2,7 @@ import type { ApiProfile, ConnectionIdentity, SecretMode } from './core'
 import { getSource, parseModelList } from './core'
 
 interface BridgeContext {
+  extensionSettings?: { disabledExtensions?: string[]; connectionManager?: { profiles?: unknown; selectedProfile?: unknown } }
   chatCompletionSettings?: Record<string, unknown>
   textCompletionSettings?: Record<string, unknown>
   powerUserSettings?: Record<string, unknown>
@@ -11,11 +12,13 @@ interface BridgeContext {
   mainApi?: string
   eventSource?: { on(event: string, handler: () => void): void; removeListener(event: string, handler: () => void): void }
   event_types?: Record<string, string>
+  eventTypes?: Record<string, string>
 }
 
 function getST(): BridgeContext | undefined {
   try { return window.SillyTavern?.getContext() as unknown as BridgeContext | undefined } catch { return undefined }
 }
+export const getApiHostContext = getST
 
 export function toast(kind: 'success' | 'error', message: string): void {
   const t = (window as { toastr?: Record<string, (msg: string, title?: string) => void> }).toastr
@@ -35,6 +38,8 @@ const SOURCE_SETTING_KEYS = ['custom_include_body', 'custom_exclude_body', 'cust
 
 export interface ConnectionInfo extends ConnectionIdentity {
   online: boolean
+  /** Native status can say "Status check bypassed"; online only means the host permits sending. */
+  statusText?: string
   settings: Record<string, string | number | boolean>
   key: string
   secretId: string
@@ -78,13 +83,14 @@ export async function readConnection(options: { withSecret?: boolean } = {}): Pr
     mainApi, source: descriptor.id, url: readString(settings, descriptor.urlField) || (descriptor.urlSelector ? document.querySelector<HTMLInputElement>(descriptor.urlSelector)?.value ?? '' : ''),
     model: readString(settings, descriptor.modelField) || (descriptor.modelSelector ? document.querySelector<HTMLInputElement | HTMLSelectElement>(descriptor.modelSelector)?.value ?? '' : ''),
     online: (st.onlineStatus ?? 'no_connection') !== 'no_connection', settings: snapshot, key: secret.key, secretId, secretMode: secret.mode,
+    statusText: st.onlineStatus ?? 'no_connection',
   }
 }
 
 export function onOnlineStatusChanged(handler: () => void): () => void {
   const st = getST(); const source = st?.eventSource
   if (!source) return () => {}
-  const eventName = st.event_types?.ONLINE_STATUS_CHANGED ?? 'online_status_changed'
+  const eventName = st.eventTypes?.ONLINE_STATUS_CHANGED ?? st.event_types?.ONLINE_STATUS_CHANGED ?? 'online_status_changed'
   source.on(eventName, handler); return () => source.removeListener(eventName, handler)
 }
 

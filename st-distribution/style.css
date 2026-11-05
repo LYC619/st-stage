@@ -2130,6 +2130,12 @@
   border-color: #79c9a4;
   box-shadow: inset 0 0 0 1px #79c9a4;
 }
+#chat .st-render-card-saved { border-color: #a7c9ef; }
+#chat .st-render-card-remember[aria-pressed=true] { background: #254965; }
+#chat .st-render-cards-note { margin: 0 0 12px; line-height: 1.5; font-size: 13px; }
+#chat .st-render-card-branch { min-width: 0; font-size: 14px; line-height: 1.6; }
+#chat .st-render-card-branch summary { min-height: 44px; display: list-item; cursor: pointer; padding-block: 10px; box-sizing: border-box; }
+#chat .st-render-card-branch p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0; }
 
 #chat .st-render-card-title,
 #chat .st-render-card-description,
@@ -2155,9 +2161,14 @@
   line-height: 1.4;
 }
 
-#chat .st-render-card-select {
+#chat .st-render-card-select,
+#chat .st-render-card-remember,
+#chat .st-render-cards-reset {
   width: 100%;
-  min-height: 36px;
+  min-height: 44px;
+  padding: 8px;
+  box-sizing: border-box;
+  white-space: normal;
   border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 6px;
   background: #30373d;
@@ -2165,10 +2176,15 @@
   cursor: pointer;
 }
 
-#chat .st-render-card-select:focus-visible {
+#chat .st-render-card-select:focus-visible,
+#chat .st-render-card-remember:focus-visible,
+#chat .st-render-cards-reset:focus-visible,
+#chat .st-render-card-branch summary:focus-visible {
   outline: 2px solid #79c9a4;
   outline-offset: 2px;
 }
+#chat .st-render-cards-reset { width: auto; margin-top: 12px; }
+#chat .st-render-cards-reset:disabled { opacity: 0.6; cursor: default; }
 
 #chat .st-render-cards-status {
   min-height: 20px;
@@ -2864,6 +2880,47 @@
 }
 
 /* Home 屏 App 栅格 */
+.so-phone-role {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.045);
+  overflow-wrap: anywhere;
+}
+.so-phone-role > summary { cursor: pointer; list-style: none; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 24px; }
+.so-phone-role > summary::-webkit-details-marker { display: none; }
+.so-phone-role > summary::after { content: '⌄'; font-size: 16px; }
+.so-phone-role[open] > summary::after { content: '⌃'; }
+.so-phone-role > summary .so-phone-role-eyebrow { margin: 0; letter-spacing: normal; }
+.so-phone-role > summary .so-phone-role-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.so-phone-role > summary .so-phone-role-subtitle { display: none; }
+.so-phone-role-actions { margin-top: 8px; }
+.so-phone-role-eyebrow { font-size: 10px; letter-spacing: 0.12em; color: #a9cbbd; margin-bottom: 5px; }
+.so-phone-role-title { display: block; font-size: 18px; line-height: 1.3; }
+.so-phone-role-subtitle { font-size: 11px; color: #c2c6cc; margin: 4px 0 8px; }
+.so-phone-role-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 7px 0;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.so-phone-role-action > span:first-child { flex: 0 0 auto; }
+.so-phone-role-action > span:last-child { text-align: right; color: #c2c6cc; font-size: 11px; }
+.so-phone-role-action:hover { background: rgba(255, 255, 255, 0.05); }
+.so-phone-role-action:focus-visible { outline: 2px solid #a9cbbd; outline-offset: 2px; border-radius: 3px; }
+
 .so-phone-home-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -2984,6 +3041,11 @@
   width: 100%;
   text-align: center;
   box-sizing: border-box;
+}
+
+/* The host's .menu_button display rule otherwise overrides native [hidden]. */
+.so-app-btn[hidden] {
+  display: none;
 }
 
 .so-app-toggle {
@@ -3846,6 +3908,14 @@
   flex: none;
   opacity: 0.8;
 }
+button.stapi-row .stapi-row-name,
+button.stapi-row .stapi-row-sub {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+button.stapi-row .stapi-row-mark { max-width: 6em; overflow-wrap: anywhere; }
+button.stapi-row:disabled { cursor: wait; opacity: 0.65; }
+[data-api-legacy] > summary { min-height: 44px; padding-block: 12px; cursor: pointer; }
 
 /* 连接状态点（当前连接卡） */
 .stapi-dot {

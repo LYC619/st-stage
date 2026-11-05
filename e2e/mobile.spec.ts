@@ -1,7 +1,26 @@
 import { test, expect, type Page } from '@playwright/test'
 import { resolve } from 'node:path'
+import { writeFileSync } from 'node:fs'
 
 const ROOT = resolve(__dirname, '..')
+
+test.afterEach(async ({ page }, testInfo) => {
+  if (testInfo.status === testInfo.expectedStatus) return
+  const layout = await page.evaluate(() => ({
+    scrollX, scrollY, innerWidth, innerHeight,
+    viewport: window.visualViewport && { width: visualViewport!.width, height: visualViewport!.height, left: visualViewport!.offsetLeft, top: visualViewport!.offsetTop, scale: visualViewport!.scale },
+    elements: ['html', 'body', '#chat', '.so-phone-shell', '.so-phone-screen', '[data-app-id="renderer"]'].map(selector => {
+      const node = document.querySelector<HTMLElement>(selector); if (!node) return { selector }
+      const rect = node.getBoundingClientRect(), style = getComputedStyle(node)
+      return { selector, rect: rect.toJSON(), inline: node.getAttribute('style'), position: style.position, zIndex: style.zIndex, transform: style.transform, scrollTop: node.scrollTop, scrollWidth: node.scrollWidth, hit: document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.className }
+    }),
+  })).catch(() => null)
+  const layoutPath = testInfo.outputPath('failure-layout.json')
+  writeFileSync(layoutPath, JSON.stringify(layout, null, 2))
+  await testInfo.attach('failure-layout', { path: layoutPath, contentType: 'application/json' })
+  const screenshotPath = testInfo.outputPath('failure-screen.png')
+  await page.screenshot({ path: screenshotPath }).then(() => testInfo.attach('failure-screen', { path: screenshotPath, contentType: 'image/png' })).catch(() => {})
+})
 
 const RENDERER_LONG_TEXT = '这是一段用于验证移动端自动换行的超长叙述文本，其中包含连续场景信息、行动理由与结果说明，确保窄屏和横屏都不会把消息容器撑出视口。'
 
@@ -138,6 +157,9 @@ async function loadRealExtensionRenderer(
   await page.goto('about:blank')
   await page.setContent(
     '<meta name="viewport" content="width=device-width, initial-scale=1">'
+      // Match ST's host layout contract. Unwrapped protocol JSON expands mobile's
+      // layout viewport and makes browser auto-panning chase the fixed phone.
+      + '<style>*{box-sizing:border-box}body{margin:0}.mes_text{overflow-wrap:anywhere}</style>'
       + '<main id="chat"></main>'
       + '<textarea id="send_textarea" aria-label="SillyTavern 输入框"></textarea>',
   )
@@ -224,6 +246,7 @@ async function loadRealExtensionRenderer(
     for (const id of [1, 2, 3]) emit?.('character_message_rendered', id)
   })
   await expect(page.locator('.st-stage-renderer')).toHaveCount(rendererEnabled ? 3 : 0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
   return originals
 }
 

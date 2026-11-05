@@ -187,6 +187,24 @@ describe('STAdapter runtime events', () => {
 })
 
 describe('STAdapter image persistence', () => {
+  it('calls browser fetch with the global receiver for upload and readback', async () => {
+    const receivers: unknown[] = []
+    let savedPath = ''
+    vi.stubGlobal('fetch', async function (this: unknown, input: RequestInfo | URL, init?: RequestInit) {
+      receivers.push(this)
+      if (this !== globalThis) throw new TypeError('Illegal invocation')
+      if (String(input) === '/api/images/upload') {
+        const payload = JSON.parse(String(init?.body)) as { filename: string; format: string }
+        savedPath = `/user/images/sprite_overlay/${payload.filename}.${payload.format}`
+        return new Response(JSON.stringify({ path: savedPath }))
+      }
+      return new Response('AAA')
+    })
+    window.SillyTavern = { getContext: () => ({ getRequestHeaders: () => ({ 'X-CSRF-Token': 'test' }) }) } as never
+    await expect(new STAdapter().saveDataUri('data:image/png;base64,QUFB')).resolves.toMatch(/^\/user\/images\//)
+    expect(receivers).toEqual([globalThis, globalThis])
+  })
+
   it('does not reuse a display filename and preserves the first uploaded bytes', async () => {
     const disk = new Map<string, Uint8Array>()
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

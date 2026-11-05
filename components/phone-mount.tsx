@@ -25,6 +25,7 @@ import { webAppEvents } from '@/lib/web-app-events'
 import { createPhoneShell, type PhoneShellController } from '@/core/phone-shell'
 import { getActivePacks } from '@/core/sprite-store'
 import { createWeChatApp } from '@/st-extension/src/apps/wechat/wechat-app'
+import { buildRoleSummary } from '@/st-extension/src/role-summary'
 
 interface PhoneMountProps {
   settings: PluginSettings
@@ -79,6 +80,7 @@ export function PhoneMount({ settings, characterName, onSettingsChange }: PhoneM
     const shell = createPhoneShell(latest.current.settings.phone, {
       registry,
       createAppContext,
+      getHomeSummary: () => buildRoleSummary(latest.current.settings, latest.current.characterName, '', 'preview'),
       onStateChange: (state: PhoneState) =>
         latest.current.onSettingsChange({ ...latest.current.settings, phone: state }),
     })
@@ -104,6 +106,8 @@ export function PhoneMount({ settings, characterName, onSettingsChange }: PhoneM
   useEffect(() => {
     shellRef.current?.setState(settings.phone)
   }, [settings.phone])
+
+  useEffect(() => { shellRef.current?.refreshHome() }, [settings, characterName])
 
   // 显示手机框开关（功能④）：即时显隐，不重建壳
   useEffect(() => {

@@ -383,9 +383,7 @@ function normalizeHistoryRecord(value: unknown): ButlerHistoryRecord | null {
 }
 
 function normalizeV2(value: Record<string, unknown>): ButlerDataV2 | null {
-  if (value.version !== BUTLER_DATA_VERSION
-    || typeof value.performanceModeOn !== 'boolean'
-    || !Array.isArray(value.history)) return null
+  if (value.version !== BUTLER_DATA_VERSION) return null
   const activeTransaction = value.activeTransaction === null
     ? null
     : normalizeButlerTransaction(value.activeTransaction)
@@ -404,16 +402,23 @@ function normalizeV2(value: Record<string, unknown>): ButlerDataV2 | null {
     : null
 
   const history: ButlerHistoryRecord[] = []
-  for (const candidate of value.history) {
+  for (const candidate of Array.isArray(value.history) ? value.history : []) {
     const normalized = normalizeHistoryRecord(candidate)
     if (normalized) history.push(normalized)
   }
+  const warnings = new Set<NonNullable<ButlerDataV2['recoveryWarnings']>[number]>()
+  for (const warning of Array.isArray(value.recoveryWarnings) ? value.recoveryWarnings : []) {
+    if (warning === 'performance' || warning === 'extensions') warnings.add(warning)
+  }
+  if (value.activeTransaction != null && !activeTransaction) warnings.add('performance')
+  if (value.pendingExperiment != null && !pendingExperiment) warnings.add('extensions')
   return {
     version: BUTLER_DATA_VERSION,
-    performanceModeOn: value.performanceModeOn,
+    performanceModeOn: value.performanceModeOn === true && recoverableTransaction !== null,
     activeTransaction: recoverableTransaction,
     pendingExperiment: resumableExperiment,
     history,
+    ...(warnings.size ? { recoveryWarnings: [...warnings] } : {}),
   }
 }
 
