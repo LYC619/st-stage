@@ -14955,7 +14955,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-11-05 21:19"}`;
+  return `${"0.9.0"}+${"2026-11-05 22:52"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -19256,7 +19256,7 @@ var WECHAT_VIEW = `
 </div>`;
 
 // st-extension/src/apps/wechat/wechat-app.ts
-function initialize(host) {
+function initialize(host, entering = false) {
   const existing = host.getAppData();
   const data = existing ?? { config: { profile: { preset: "general", contextMessageCount: 0 } } };
   data.config ?? (data.config = {});
@@ -19275,8 +19275,9 @@ function initialize(host) {
       if (match) conv.card = match.card;
     }
   }
-  if (!existing && profileCharacterKey(current2.card)) {
-    addContactConversation(data, { id: profileCharacterKey(current2.card), name: current2.characterName, avatar: current2.card?.avatar, card: current2.card, kind: "character" });
+  const contactId = profileCharacterKey(current2.card);
+  if (entering && contactId && !data.conversations[`direct:${contactId}`]) {
+    addContactConversation(data, { id: contactId, name: current2.card?.name || current2.characterName, avatar: current2.card?.avatar, card: current2.card, kind: "character" });
   }
   host.setAppData(data);
   return data;
@@ -19294,7 +19295,7 @@ function createWeChatApp() {
     },
     mount(container, ctx) {
       cleanup?.();
-      const data = initialize(ctx), conversations = data.conversations;
+      const data = initialize(ctx, true), conversations = data.conversations;
       let alive = true, activeKey = null, drawerTab = "player", selecting = 0;
       const pending = /* @__PURE__ */ new Map();
       const timers = /* @__PURE__ */ new Set();
@@ -23712,7 +23713,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-11-05 21:19"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-11-05 22:52"}`;
   console.log(`[sprite-overlay] 百工（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);

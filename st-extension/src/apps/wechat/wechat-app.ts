@@ -13,7 +13,7 @@ import { WECHAT_VIEW } from './view'
 import type { CharacterConversation, ChatMessage, WeChatAppData } from './types'
 export { getScopedConversation } from './legacy-conversation'
 
-function initialize(host: AppHost): WeChatAppData {
+function initialize(host: AppHost, entering = false): WeChatAppData {
   const existing = host.getAppData<WeChatAppData>()
   const data: WeChatAppData = existing ?? { config: { profile: { preset: 'general', contextMessageCount: 0 } } }
   data.config ??= {}; data.conversations ??= {}; data.contacts ??= {}
@@ -32,9 +32,11 @@ function initialize(host: AppHost): WeChatAppData {
       if (match) conv.card = match.card
     }
   }
-  // A fresh install can offer the current card, while always opening at the conversation list.
-  if (!existing && profileCharacterKey(current.card)) {
-    addContactConversation(data, { id: profileCharacterKey(current.card)!, name: current.characterName, avatar: current.card?.avatar, card: current.card, kind: 'character' })
+  // setup can run before a card is selected. Offer the current card on each entry,
+  // preserving an existing conversation and its saved persona instead of refreshing it.
+  const contactId = profileCharacterKey(current.card)
+  if (entering && contactId && !data.conversations[`direct:${contactId}`]) {
+    addContactConversation(data, { id: contactId, name: current.card?.name || current.characterName, avatar: current.card?.avatar, card: current.card, kind: 'character' })
   }
   host.setAppData(data)
   return data
@@ -47,7 +49,7 @@ export function createWeChatApp(): PhoneApp {
     setup(host) { initialize(host) },
     mount(container: HTMLElement, ctx: PhoneAppContext) {
       cleanup?.()
-      const data = initialize(ctx), conversations = data.conversations!
+      const data = initialize(ctx, true), conversations = data.conversations!
       let alive = true, activeKey: string | null = null, drawerTab: 'player' | 'sister' = 'player', selecting = 0
       const pending = new Map<string, AbortController>()
       const timers = new Set<number>()
