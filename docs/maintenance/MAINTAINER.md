@@ -40,7 +40,7 @@ pnpm dev
 | 标准 ZIP 导出 | [cloud-export/README](../../st-extension/src/apps/cloud-export/README.md)、[export-app.ts](../../st-extension/src/apps/cloud-export/export-app.ts)、[bridge.ts](../../st-extension/src/apps/cloud-export/bridge.ts) | 合成新下载包，不写回 ST；不是完整账户备份；ZIP 导入另行验收 |
 | 设置结构与升级兼容 | [types.ts](../../core/types.ts)、[migrate.ts](../../core/migrate.ts) | 默认值、版本迁移与历史用户数据；不要随产品改名重命名持久化 key |
 | 中英文本 | [i18n.ts](../../core/i18n.ts)、[字典目录](../../st-extension/locales/)、[用法与支持范围](../i18n-usage.md) | 核心界面及五个主要 App 已支持中英文；其余 App 和实体设备/读屏验收另见 CURRENT |
-| 微信角色对话 | [wechat-app.ts](../../st-extension/src/apps/wechat/wechat-app.ts)、[bridge.ts](../../st-extension/src/apps/wechat/bridge.ts)、[pipeline.ts](../../st-extension/src/apps/wechat/pipeline.ts) | 按角色与聊天隔离；区分外部变量所有权、合成响应和真实 AI/MVU 验收 |
+| 微信角色对话 | [wechat-app.ts](../../st-extension/src/apps/wechat/wechat-app.ts)、[conversations.ts](../../st-extension/src/apps/wechat/conversations.ts)、[pipeline.ts](../../st-extension/src/apps/wechat/pipeline.ts) | 按独立联系人保存历史/草稿/状态；不读取另一个主聊天或 MVU；区分合成响应与真实 AI 验收 |
 
 一条典型链路：图库导入经 `pack-io` 校验，图片准备成功后写入图包与绑定；`index.ts` 用 `sprite-store` 和 `prompt-builder` 给当前角色生成清单，经 STAdapter 注入宿主。宿主消息事件回来后用 `tag-parser` 提取标签、`sprite-store` 寻址，再由 DOM overlay 显示。设置通过 adapter 保存。修改标签格式会同时影响解析、注入和寻址；修改图片路径会碰到导入、存储与备份，不能只改界面。
 
@@ -58,7 +58,7 @@ pnpm build
 
 定向测试证明受测逻辑，类型与 lint 检查静态约束；全套测试与 Next 构建仍不能证明真实 ST 的宿主行为。UI 变更另看 [设计走查](../DESIGN-WALKTHROUGH.md)；`pnpm test:mobile` 是 Playwright 的网页移动视口检查，首次需安装其 Chromium，不是物理手机或 OS 输入法验收。控制测试并发以免重型测试与构建争用资源。
 
-真实微信/MVU 回归入口为 `node scripts/verify-wechat-mvu-browser.mjs --url http://127.0.0.1:18771 --isolated-data`，必须先准备独立测试用户及脚本锁定的酒馆助手/MVU，详见 [复现与版本记录](history/2026-11-04-real-mvu-acceptance.md)。脚本会重置该测试用户的微信配置，不能指向日常账户。若隔离 runtime 通过 junction 复用依赖，用 `node --preserve-symlinks server.js ...` 保持 WASM 路径位于 runtime 内；不要关闭宿主文件路径或聊天完整性校验来绕过错误。
+当前微信真实宿主回归入口为 `node scripts/verify-wechat-experience-browser.mjs --url http://127.0.0.1:18772/ --isolated-data`，须先启动独立自动测试 runtime/data。脚本会替换测试配置，明确拒绝使用保留用户实测数据的 18771；也不能指向日常账户。旧 `verify-wechat-mvu-browser.mjs` 只对应已退出新微信流程的历史主聊天/MVU 数值契约，见 [历史记录](history/2026-11-04-real-mvu-acceptance.md)，不要用于验收独立微信。若隔离 runtime 通过 junction 复用依赖，用 `node --preserve-symlinks server.js ...` 保持 WASM 路径位于 runtime 内；不要关闭宿主文件路径或聊天完整性校验来绕过错误。
 
 角色配置/原生档案/分支的整体验收使用 `node scripts/verify-character-play-browser.mjs --url http://127.0.0.1:18769 --isolated-data`；九 App 六档手机检查使用 `verify-mobile-apps-browser.mjs`，参数相同。它们会替换测试配置，使用同一用户的宿主脚本须顺序执行。`PLAYWRIGHT_CHANNEL=msedge` 可让脚本和网页移动回归复用已安装 Edge。Playwright 输出固定到 `test-results/playwright/`，不要将其清理目录设成整个 `test-results/`，其中还有隔离数据与候选包。失败时的布局附件用于区分产品、宿主样式和夹具问题。
 
@@ -91,7 +91,7 @@ pnpm release:sync --candidate test-results/release-candidate --release ../st-sta
 
 工具校验候选清单/哈希、独立安装仓库身份和干净状态，拒绝路径冲突及符号链接；先备份旧安装产物，再逐文件替换、检查最终清单。普通写入失败会自动回滚并写入备份目录的 `sync-report.json`。备份中 `originals/` 保留原文件；`rollback-failed` 或进程被强制终止时应停止后续发布，对照回执的 `previous`、`expected` 和 `changes` 手动恢复，再验证哈希。逐文件原子替换不等于整个批次可抵抗断电。工具不提交、推送、拉取、重写历史或设置远端。
 
-本轮仅在临时 Git 仓库验证实际同步/失败回滚，对真实 `st-stage-ext` 只执行默认预览。最终候选及人工实测入口见 [统一验收](UNIFIED-ACCEPTANCE.md)。
+2026-11-05 已在用户授权后实际同步 `st-stage-ext` 并完成提交推送；备份、哈希、提交和验证记录见 [发布记录](history/2026-11-05-publication.md)。失败回滚验证仍来自临时仓库，真实同步未发生失败。人工实测入口见 [统一验收](UNIFIED-ACCEPTANCE.md)。
 
 ## 故障定位与设计理由
 

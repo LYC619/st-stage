@@ -2,6 +2,14 @@
 
 Known follow-ups and pending review repairs are recorded here. Older sections retain their original non-blocking decisions; the review queue below is **not** a declaration that its risks are acceptable for a new release. Remove or resolve entries only with an actual fixing commit and fresh verification.
 
+## 2026-11-05 Publication — A–G Committed and Pushed
+
+The user authorized final integration, commits, pushes and installation-repository synchronization. Development code/build commit `d3d513930d0e65124718d8b8b883645a340e447f` and independent extension release `184e98741bec51be52c4c86377862109c6da0ce1` are pushed to their respective `main` branches at version `0.9.0+202611052119`. All 58 rebuilt candidate files match the accepted artifacts; the actual install checkout now passes full parity. See [publication evidence](history/2026-11-05-publication.md).
+
+This resolves the **uncommitted / unsynchronized / unpublished** status in the five historical roadmap sections below. Their implementation and acceptance records are retained with their original dates; statements about publication there describe the pre-release state. Controlled storage/restore, Renderer, export identity/cancellation, Butler recovery, sharing, native connection profiles, mobile viewport and independent-WeChat repairs are included in the fixing commit. Historical host-following WeChat/MVU-wallet contracts are superseded by independent conversations.
+
+Still open: real-model prompt quality/connectivity, physical devices and OS IME, complete screen-reader/WCAG acceptance and retained incomplete rules, other MVU versions, full-account restore, sprite hosting/catalog cleanup, groups/Moments and unattended publication automation. Publishing does not mark those checks or future features complete.
+
 ## 2026-11-05 WeChat Experience — Uncommitted
 
 Candidate `0.9.0+202611052119` replaces host-following WeChat with independent contact conversations, editable prompts, one-response character state, gallery-backed emoji and custom gifts. The old wallet/day/MVU-following/two-stage behavior is retired from the new WeChat workflow; historical acceptance records remain historical. See [G handoff](history/2026-11-05-wechat-experience.md).
