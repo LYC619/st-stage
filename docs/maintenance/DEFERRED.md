@@ -2,6 +2,14 @@
 
 Known follow-ups and pending review repairs are recorded here. Older sections retain their original non-blocking decisions; the review queue below is **not** a declaration that its risks are acceptable for a new release. Remove or resolve entries only with an actual fixing commit and fresh verification.
 
+## 2026-11-07 UX Step 1–5 — Published
+
+User-authorized full UX release **0.9.0+202611071934** is pushed to both main branches: development code/build 02c8da43a2b839d51d2ab60c0958fb37f721fe9f, installation 9aa11af869ad8167b408bb5ba6528f4899f6b2a8. [Publication evidence](history/2026-11-07-ux-publication.md) supersedes the uncommitted/unpublished statements in the phase-one and phase-two entries below. Detail tabs are now delivered; older statements deferring this specific feature are historical.
+
+All 1489 unit tests, typecheck, zero-warning lint, 25 release tests, Next/i18n, 25 mobile E2E, 152 WeChat and 35 detail-tab workflow checks pass. 78 scoped axe scans report zero violations with 99 distinct incomplete items retained. Four-way 60-file parity and committed inventory pass; the automatic release receipt is complete. Remote CI is not separately verified.
+
+Still deferred: gallery waterfall, inline @ suggestions, social menus and draggable width; actual microphone/recognition and AI/TTS services, physical devices/OS IME and full readers. Historical full-app 118 uncertainties remain separate from scoped results. Publication does not close those environment-dependent checks.
+
 ## 2026-11-07 UX Step 3 + Step 4 — Verified Worktree Candidate
 
 Local candidate `0.9.0+202611071730` includes Step 1–4. The user authorized the second phase and chose browser speech recognition into an editable draft with explicit sending and typed fallback. Integrated voice controls, group-only accessible @ selection, one deletion confirmation with optional exclusive local-file deletion, adaptive avatars and the guarded 380px desktop shell are implemented. Evidence: [phase-two acceptance](history/2026-11-07-ux-phase2.md).
