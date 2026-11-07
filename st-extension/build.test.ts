@@ -143,6 +143,28 @@ describe('extension bundle formatting', () => {
   })
 })
 
+describe('extension lazy chunk packaging', () => {
+  it('keeps lazy code out of the main bundle and refreshes hashed chunks across all outputs', async () => {
+    const root = createBuildFixture()
+    writeFileSync(join(root, 'st-extension/src/index.ts'), "globalThis.loadFixture = () => import('./lazy')\n")
+    writeFileSync(join(root, 'st-extension/src/lazy.ts'), "export function descriptiveFunction() { return 'LAZY_SENTINEL_ONE' }\n")
+    const env = { ...process.env, ST_STAGE_BUILD_TIME: '2026-11-06 23:00' }
+    await buildExtensionPair({ sourceRoot: root, env, logLevel: 'silent', log: () => {} })
+    const chunks = readdirSync(root).filter(name => /^chunk-.*\.js$/.test(name))
+    expect(chunks.length).toBeGreaterThan(0)
+    expect(readFileSync(join(root, 'bundle.js'), 'utf8')).not.toContain('LAZY_SENTINEL_ONE')
+    expect(chunks.map(name => readFileSync(join(root, name), 'utf8')).join('')).toContain('descriptiveFunction')
+    for (const output of ['st-distribution', 'public']) for (const name of ['bundle.js', ...chunks]) {
+      expect(readFileSync(join(root, output, name))).toEqual(readFileSync(join(root, name)))
+    }
+    writeFileSync(join(root, 'st-extension/src/lazy.ts'), "export function descriptiveFunction() { return 'LAZY_SENTINEL_TWO' }\n")
+    await buildExtensionPair({ sourceRoot: root, env, logLevel: 'silent', log: () => {} })
+    const next = readdirSync(root).filter(name => /^chunk-.*\.js$/.test(name))
+    expect(next).not.toEqual(chunks)
+    for (const name of chunks.filter(name => !next.includes(name))) expect(readdirSync(root)).not.toContain(name)
+  })
+})
+
 describe('extension build integration', () => {
   const fixedEnv = { ...process.env, ST_STAGE_BUILD_TIME: '2026-07-31 09:05' }
 

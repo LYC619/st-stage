@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { resolve } from 'node:path'
 import { writeFileSync } from 'node:fs'
+import { loadBuiltExtension } from './load-extension'
 
 const ROOT = resolve(__dirname, '..')
 
@@ -144,7 +145,7 @@ async function loadRealExtensionGallery(page: Page): Promise<void> {
   }, packs)
   await page.addStyleTag({ path: resolve(ROOT, 'st-extension/style.css') })
   await page.addStyleTag({ path: resolve(ROOT, 'core/phone-shell.css') })
-  await page.addScriptTag({ path: resolve(ROOT, 'bundle.js'), type: 'module' })
+  await loadBuiltExtension(page)
   await expect(page.locator('.so-phone-fab')).toBeVisible()
 }
 
@@ -238,7 +239,7 @@ async function loadRealExtensionRenderer(
   }, { phoneVisible: showPhone, rendererEnabled })
   await page.addStyleTag({ path: resolve(ROOT, 'st-extension/style.css') })
   await page.addStyleTag({ path: resolve(ROOT, 'core/phone-shell.css') })
-  await page.addScriptTag({ path: resolve(ROOT, 'bundle.js'), type: 'module' })
+  await loadBuiltExtension(page)
   await expect(page.locator('.so-phone-fab')).toHaveCount(1)
   await expect(page.locator('.so-phone-fab')).toBeVisible({ visible: showPhone })
   await page.evaluate(() => {

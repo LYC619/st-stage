@@ -1,0 +1,252 @@
+import assert from 'node:assert/strict'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { chromium, expect } from '@playwright/test'
+import AxeBuilder from '@axe-core/playwright'
+import { isolatedReady } from './isolated-browser-ready.mjs'
+
+const args = process.argv.slice(2), opt = key => args.includes(key) ? args[args.indexOf(key) + 1] : undefined
+assert.ok(args.includes('--isolated-data') && opt('--url'), 'Use disposable data and an explicit loopback URL')
+const url = new URL(opt('--url')); assert.ok(['localhost', '127.0.0.1'].includes(url.hostname))
+assert.notEqual(url.port, '18771', '18771 is reserved for user testing; never reset it')
+const out = opt('--output') || 'test-results/wechat-experience-browser'; mkdirSync(out, { recursive: true })
+const candidate = opt('--candidate-root') || '.'
+const report = { build: JSON.parse(readFileSync(candidate + '/version.json')).v, sha256: createHash('sha256').update(readFileSync(candidate + '/bundle.js')).digest('hex'), scope: 'Real isolated ST, synthetic contacts, intercepted AI responses; desktop and simulated mobile, not physical-device or real-model validation.', scenarios: [] }
+const browser = await chromium.launch({ channel: 'msedge', headless: true })
+try {
+  for (const size of [{ width: 1365, height: 900 }, { width: 320, height: 667 }, { width: 390, height: 844 }, { width: 667, height: 375 }].filter(size => !opt('--width') || size.width === Number(opt('--width')))) {
+    const result = { ...size, checks: [], scans: [], errors: [] }; report.scenarios.push(result)
+    const context = await browser.newContext({ viewport: size, isMobile: size.width < 700, hasTouch: size.width < 700 })
+    await context.addInitScript(() => localStorage.setItem('language', 'zh-cn'))
+    const requests = [], deferred = [], recoveryDeferred = [], heldRecovery = new Set(); let failedOnce = false
+    await context.route('**/*', async route => {
+      const target = new URL(route.request().url())
+      if (target.origin !== url.origin) return route.abort()
+      if (target.pathname !== '/wechat-experience-api') return route.continue()
+      const body = route.request().postDataJSON(); requests.push(body)
+      const full = JSON.stringify(body.messages)
+      const last = body.messages.at(-1)?.content || ''
+      if (full.includes('FAIL_ONCE') && !failedOnce) { failedOnce = true; return route.fulfill({ status: 503, body: 'synthetic outage' }) }
+      if (full.includes('photo_id')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ text: '沿着湖边散步，今天的风很舒服。', photo_id: 'bedroom1' }) } }] }) })
+      const response = { messages: [{ type: 'text', content: full.includes('WAIT_A') ? 'A 延迟回复' : 'B 测试回复' }], inner_thought: '想一起去旅行', current_status: '正在整理行李', mood: 82 }
+      if (full.includes('VOICE_REPLY')) response.messages = [{ type: 'voice', content: '这是一条测试语音。' }]
+      const fulfill = () => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: JSON.stringify(response) } }] }) })
+      const marker = ['HOLD_CANCEL', 'HOLD_TIMEOUT', 'HOLD_VOICE'].find(value => last.includes(value))
+      if (marker && !heldRecovery.has(marker)) { heldRecovery.add(marker); recoveryDeferred.push(() => fulfill().catch(() => {})); return }
+      if (full.includes('WAIT_A')) { deferred.push(fulfill); return }
+      await fulfill()
+    })
+    const page = await context.newPage(); page.setDefaultTimeout(20000)
+    page.on('pageerror', error => result.errors.push(error.message))
+    async function ready() {
+      await isolatedReady(page)
+    }
+    async function saved(fn) {
+      const save = page.waitForResponse(r => new URL(r.url()).pathname === '/api/settings/save' && r.ok()); await Promise.all([fn(), save])
+    }
+    async function openApp() {
+      if (await page.locator('#sprite-overlay-root').isVisible()) await page.locator('.sprite-overlay-close').click()
+      if (!await page.locator('.so-phone-shell').isVisible()) await page.locator('.so-phone-fab').click()
+      await page.locator('.so-phone-homebtn').click()
+      const role = page.locator('.so-phone-role')
+      assert.equal(await role.evaluate(node => node.previousElementSibling?.className), 'so-phone-home-grid')
+      await page.locator('[data-app-id="wechat-sister"]').click()
+      await page.locator('#wt-conversations').waitFor()
+    }
+    async function scan(name) {
+      const axe = await new AxeBuilder({ page }).include('.wechat-root').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze()
+      const compact = rule => ({ id: rule.id, nodes: rule.nodes.map(node => ({ target: node.target, html: node.html, failureSummary: node.failureSummary, any: node.any, all: node.all, none: node.none })) })
+      result.scans.push({ name, violations: axe.violations.map(compact), incomplete: axe.incomplete.map(compact) })
+      assert.equal(axe.violations.length, 0, JSON.stringify(result.scans.at(-1)))
+    }
+    async function fit(name) {
+      const bounds = await page.locator('.wechat-root').evaluate(root => {
+        const box = root.getBoundingClientRect()
+        return { width: box.width, height: box.height, right: box.right, bottom: box.bottom, innerWidth, innerHeight, overflow: root.scrollWidth - root.clientWidth,
+          clipped: [...root.querySelectorAll('button,input,textarea,select')].filter(node => node.checkVisibility() && !node.closest('details:not([open])')).filter(node => { const b = node.getBoundingClientRect(); return b.width > 0 && (b.left < box.left - 2 || b.right > box.right + 2) }).map(node => node.id || node.getAttribute('aria-label')) }
+      })
+      assert.ok(bounds.height > 100 && bounds.width > 200, `${name} size ${JSON.stringify(bounds)}`)
+      assert.ok(bounds.overflow <= 2 && bounds.right <= bounds.innerWidth + 2 && bounds.bottom <= bounds.innerHeight + 2, `${name} overflow ${JSON.stringify(bounds)}`)
+      assert.deepEqual(bounds.clipped, [], `${name} clipped`); result.checks.push(`${name}: fits`)
+    }
+    try {
+      await page.goto(url.href, { waitUntil: 'domcontentloaded' }); await ready()
+      assert.equal(await page.evaluate(async () => [...new Uint8Array(await crypto.subtle.digest('SHA-256', await (await fetch('/scripts/extensions/third-party/baigong-acceptance/bundle.js')).arrayBuffer()))].map(b => b.toString(16).padStart(2, '0')).join('')), report.sha256)
+      await saved(() => page.evaluate(async () => {
+        const ctx = window.SillyTavern.getContext(), post = async (endpoint, body) => { const r = await fetch(endpoint, { method: 'POST', headers: ctx.getRequestHeaders(), body: JSON.stringify(body) }); if (!r.ok) throw new Error(endpoint + ': ' + r.status); const text = await r.text(); try { return JSON.parse(text) } catch { return text } }
+        let all = await post('/api/characters/all', {})
+        for (const name of ['Experience A', 'Experience B']) {
+          if (!all.some(card => card.name === name)) { await post('/api/characters/create', { ch_name: name, description: name === 'Experience A' ? 'PRIVATE_A_PERSONA' : 'PRIVATE_B_PERSONA', first_mes: 'Synthetic greeting' }); all = await post('/api/characters/all', {}) }
+        }
+        const settings = ctx.extensionSettings.sprite_overlay
+        const bytes = new Uint8Array(await (await fetch('/scripts/extensions/third-party/baigong-acceptance/assets/wechat/emojies/player/angry.png')).arrayBuffer())
+        const upload = await post('/api/images/upload', { image: btoa(String.fromCharCode(...bytes)), format: 'png', ch_name: 'wechat_experience', filename: 'fixture' })
+        settings.packs = [{ id: 'wechat-experience-gallery', name: '验收图库', sprites: [{ tag: '船票', url: upload.path }] }]
+        settings.enabled = false; settings.showPhone = true; settings.phone = { x: 8, y: 8, open: false }
+        settings.apps['wechat-sister'] = { config: { apiKey: 'synthetic', apiUrl: location.origin + '/wechat-experience-api', model: 'fixture', profile: { preset: 'general' } }, conversations: {} }
+        ctx.saveSettingsDebounced()
+      }))
+      await page.reload({ waitUntil: 'domcontentloaded' }); await ready()
+      await page.waitForFunction(() => window.SillyTavern.getContext().characters.some(c => c.name === 'Experience A'))
+      await page.evaluate(async () => { const ctx = window.SillyTavern.getContext(); const id = ctx.characters.findIndex(c => c.name === 'Experience A'); await (await import('/script.js')).selectCharacterById(id, { switchMenu: false }) })
+      await page.waitForFunction(() => window.SillyTavern.getContext().name2 === 'Experience A')
+      await openApp(); await fit('list'); await scan('list')
+      assert.equal(await page.locator('#wt-chat').isVisible(), false)
+      await expect(page.locator('[data-conversation]').filter({ hasText: 'Experience A' })).toHaveCount(1)
+      await openApp()
+      await expect(page.locator('[data-conversation]').filter({ hasText: 'Experience A' })).toHaveCount(1)
+      result.checks.push('current host A is added on entry; re-entry keeps one conversation')
+      await page.locator('#wt-add-contact').click(); await page.locator('#wt-contact-search').fill('Experience B')
+      await page.locator('[data-contact]').filter({ hasText: 'Experience B' }).click()
+      await expect(page.locator('#wt-contact-name')).toHaveText('Experience B')
+      assert.equal(await page.evaluate(() => window.SillyTavern.getContext().name2), 'Experience A')
+      await fit('chat'); await scan('chat')
+      await page.locator('#wt-input-text').fill('B hello')
+      await saved(async () => { await page.locator('#wt-send-btn').click(); await expect(page.locator('#wt-current-status')).toHaveText('正在整理行李') })
+      assert.equal(requests.length, 1); assert.ok(JSON.stringify(requests[0]).includes('PRIVATE_B_PERSONA')); assert.ok(!JSON.stringify(requests[0]).includes('PRIVATE_A_PERSONA'))
+      result.checks.push('B reply + state, one request, host A retained')
+      await page.locator('#wt-emoji-btn').click(); await page.locator('#wt-emoji-grid img').first().waitFor()
+      await page.waitForFunction(() => [...document.querySelectorAll('#wt-emoji-grid img')].every(img => img.complete && img.naturalWidth > 0))
+      await fit('emoji'); await scan('emoji'); await page.locator('#wt-emoji-btn').click()
+      await page.locator('#wt-packet-btn').click(); await page.locator('#wt-custom-amt').fill('一张去火星的船票'); await page.locator('#wt-packet-note').fill('一起出发')
+      await fit('gift'); await scan('gift')
+      await saved(async () => { await page.locator('#wt-confirm-packet').click(); await expect(page.locator('#wt-scroll')).toContainText('一起出发'); await expect(page.locator('#wt-send-btn')).toBeEnabled() })
+      assert.ok(JSON.stringify(requests.at(-1)).includes('一张去火星的船票')); result.checks.push('custom gift + note')
+      await page.locator('#wt-settings-btn').click(); await fit('settings'); await scan('settings')
+      await expect(page.locator('[data-profile-scope]')).toHaveValue('global')
+      assert.equal(await page.locator('[data-profile-template-panel]').evaluate(node => node.open), false)
+      await page.getByLabel('场景补充（留空遵循角色卡）', { exact: true }).fill('太空旅行')
+      await saved(() => page.locator('#wt-btn-save-settings').click()); await expect(page.locator('#wt-settings-feedback')).toContainText('已保存')
+      await expect(page.locator('#wt-settings-feedback')).toBeInViewport()
+      await page.locator('#wt-close-settings').click(); await page.locator('#wt-settings-btn').click(); await expect(page.locator('[data-profile-scope]')).toHaveValue('global')
+      await page.getByText('提示词 · 查看、编辑与恢复默认', { exact: true }).click(); await expect(page.getByLabel('聊天提示词', { exact: true })).toHaveValue(/\{角色\}/)
+      await page.getByLabel('聊天提示词', { exact: true }).fill('CUSTOM {角色} {人设} {场景}')
+      await page.getByText('预览实际发送的提示词', { exact: true }).click(); await expect(page.getByLabel('实际提示词预览')).toHaveValue(/CUSTOM Experience B PRIVATE_B_PERSONA 太空旅行/)
+      await saved(() => page.locator('#wt-btn-save-settings').click()); await page.locator('#wt-close-settings').click()
+      await page.locator('#wt-emoji-btn').click(); await page.locator('#wt-manage-emojis').click()
+      await page.getByLabel('从图库选择图片', { exact: true }).selectOption({ label: '验收图库 · 船票' }); await page.getByText('添加图库图片', { exact: true }).click()
+      await page.getByLabel('素材显示名', { exact: true }).fill('一起旅行')
+      await saved(() => page.locator('#wt-btn-save-settings').click()); await expect(page.locator('#wt-settings-feedback')).toBeInViewport(); await page.locator('#wt-close-settings').click()
+      await page.locator('#wt-emoji-btn').click(); await page.locator('#wt-emoji-grid button[aria-label="一起旅行"]').click()
+      await expect(page.locator('#wt-send-btn')).toBeEnabled()
+      await page.waitForFunction(() => [...document.querySelectorAll('#wt-scroll img')].some(img => img.alt === '一起旅行' && img.complete && img.naturalWidth > 0))
+      result.checks.push('gallery image added, renamed, sent and loaded')
+      await scan('messages-with-gift-and-gallery')
+      await page.locator('#wt-back').click(); await page.locator('#wt-add-contact').click(); await page.locator('#wt-contact-search').fill('Experience A'); await page.locator('[data-contact]').filter({ hasText: 'Experience A' }).click()
+      await page.locator('#wt-input-text').fill('WAIT_A'); await page.locator('#wt-send-btn').click(); await expect.poll(() => deferred.length).toBe(1)
+      await page.locator('#wt-back').click(); await page.locator('[data-conversation]').filter({ hasText: 'Experience B' }).click()
+      await deferred.shift()(); await expect.poll(() => page.evaluate(() => Object.values(window.SillyTavern.getContext().extensionSettings.sprite_overlay.apps['wechat-sister'].conversations).find(c => c.characterName === 'Experience A').unreadCount)).toBe(1)
+      await expect(page.locator('#wt-scroll')).not.toContainText('A 延迟回复'); result.checks.push('pending A reply goes to A, B stays active')
+      await page.screenshot({ path: `${out}/${size.width}-chat.png` })
+      await page.locator('#wt-back').click(); await page.screenshot({ path: `${out}/${size.width}-list.png` })
+      await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); await openApp(); await page.locator('[data-conversation]').filter({ hasText: 'Experience B' }).click()
+      await page.locator('#wt-settings-btn').click(); await expect(page.locator('[data-profile-scope]')).toHaveValue('global')
+      await page.getByText('提示词 · 查看、编辑与恢复默认', { exact: true }).click(); await expect(page.getByLabel('聊天提示词', { exact: true })).toHaveValue('CUSTOM {角色} {人设} {场景}')
+      await page.getByText('恢复默认聊天提示词', { exact: true }).click(); await saved(() => page.locator('#wt-btn-save-settings').click())
+      result.checks.push('settings scope and prompt persist across reload; defaults restored')
+      await page.screenshot({ path: `${out}/${size.width}-settings.png` })
+      await page.locator('#wt-close-settings').click()
+      const groupHostName = await page.evaluate(() => window.SillyTavern.getContext().name2)
+      await page.locator('#wt-new-group').click()
+      await page.locator('#wt-group-title').fill('验收群聊')
+      await page.locator('#wt-group-options label').filter({ hasText: 'Experience A' }).locator('input').check()
+      await page.locator('#wt-group-options label').filter({ hasText: 'Experience B' }).locator('input').check()
+      await fit('group-members'); await scan('group-members')
+      await saved(async () => { await page.locator('#wt-save-group').click(); await expect(page.locator('#wt-contact-name')).toHaveText('验收群聊') })
+      await page.locator('#wt-input-text').fill('GROUP_HELLO')
+      await saved(async () => { await page.locator('#wt-send-btn').click(); await expect(page.locator('.wt-message-author')).toHaveCount(2); await expect(page.locator('#wt-send-btn')).toBeEnabled() })
+      assert.equal(await page.evaluate(() => window.SillyTavern.getContext().name2), groupHostName)
+      await fit('group-chat'); await scan('group-chat')
+      const groupCount = requests.length
+      await page.locator('#wt-mention').selectOption({ label: 'Experience B' })
+      await page.locator('#wt-send-btn').click(); await expect(page.locator('.wt-message-author')).toHaveCount(3); await expect(page.locator('#wt-send-btn')).toBeEnabled()
+      assert.equal(requests.length, groupCount + 1)
+      result.checks.push('group creation, per-member replies, named @ wake-up and host isolation')
+      await page.locator('#wt-input-text').fill('VOICE_REPLY')
+      await page.locator('#wt-send-btn').click(); await page.locator('.wt-voice').first().waitFor()
+      await expect(page.locator('#wt-send-btn')).toBeEnabled()
+      await page.locator('.wt-voice').first().getByRole('button', { name: /播放/ }).click()
+      await expect(page.locator('.wt-voice').first().locator('p')).toBeVisible()
+      await scan('voice-transcript'); await fit('voice-transcript')
+      result.checks.push('voice bubble and readable fallback without TTS')
+      await page.locator('#wt-input-text').fill('HOLD_VOICE')
+      await page.locator('#wt-send-btn').click(); await expect.poll(() => recoveryDeferred.length).toBe(1)
+      const voiceToggle = page.locator('.wt-voice').first().getByRole('button', { name: '收起文字' })
+      await voiceToggle.focus(); await recoveryDeferred.shift()()
+      await expect(page.locator('#wt-send-btn')).toBeEnabled()
+      await expect(voiceToggle).toBeFocused(); await expect(page.locator('.wt-voice').first().locator('p')).toBeVisible()
+      result.checks.push('voice transcript and keyboard focus survive a pending group reply')
+      // Exercise the installed speak callback's no-voice branch without requesting a provider.
+      await page.evaluate(() => {
+        const ctx = window.SillyTavern.getContext()
+        window.__ttsNativeRestore = { enabled: ctx.extensionSettings.tts.enabled, checked: document.querySelector('#tts_enabled')?.checked }
+        ctx.extensionSettings.tts.enabled = true
+        const checkbox = document.querySelector('#tts_enabled'); if (checkbox) checkbox.checked = false
+      })
+      await page.locator('.wt-voice').first().getByRole('button', { name: /播放/ }).click()
+      await expect(page.locator('.wt-voice').first().getByRole('status')).toContainText('无法确认播放状态')
+      await expect(page.locator('.wt-voice').first().locator('p')).toBeVisible()
+      await expect(page.locator('.wt-voice').first().getByRole('button', { name: /播放/ })).toBeEnabled()
+      await page.evaluate(() => {
+        window.SillyTavern.getContext().extensionSettings.tts.enabled = window.__ttsNativeRestore.enabled
+        const checkbox = document.querySelector('#tts_enabled'); if (checkbox) checkbox.checked = window.__ttsNativeRestore.checked
+      })
+      result.checks.push('installed TTS callback without mapped voice keeps transcript readable and playback unconfirmed')
+      await page.evaluate(() => {
+        const ctx = window.SillyTavern.getContext()
+        window.__ttsRestore = { enabled: ctx.extensionSettings.tts.enabled, callback: ctx.SlashCommandParser.commands.speak.callback }
+        window.__ttsCalls = []
+        ctx.extensionSettings.tts.enabled = true
+        ctx.SlashCommandParser.commands.speak.callback = async (args, text) => { window.__ttsCalls.push({ args, text }) }
+      })
+      await page.locator('.wt-voice').first().getByRole('button', { name: /播放/ }).click()
+      await expect.poll(() => page.evaluate(() => window.__ttsCalls.length)).toBe(1)
+      assert.equal(await page.evaluate(() => window.__ttsCalls[0].text), '这是一条测试语音。')
+      await page.evaluate(() => { const ctx = window.SillyTavern.getContext(); ctx.extensionSettings.tts.enabled = window.__ttsRestore.enabled; ctx.SlashCommandParser.commands.speak.callback = window.__ttsRestore.callback })
+      result.checks.push('gesture calls installed host TTS callback with the voice transcript')
+      await page.locator('#wt-moments').click()
+      await page.locator('#wt-moments-author').selectOption({ label: 'Experience B' })
+      await saved(async () => { await page.locator('#wt-generate-moment').click(); await page.locator('.wt-moment').waitFor() })
+      assert.equal(await page.evaluate(() => window.SillyTavern.getContext().extensionSettings.sprite_overlay.apps['wechat-sister'].moments[0].mood), 82)
+      result.checks.push('reply mood feeds the generated Moment state')
+      await page.locator('.wt-moment button').click(); await expect(page.locator('.wt-moment button')).toHaveAttribute('aria-pressed', 'true')
+      await fit('moments'); await scan('moments')
+      await page.screenshot({ path: out + '/' + size.width + '-moments.png' })
+      await page.locator('#wt-close-moments').click()
+      await page.locator('#wt-back').click(); await page.locator('[data-conversation]').filter({ hasText: 'Experience B' }).click()
+      await page.locator('#wt-input-text').fill('FAIL_ONCE')
+      await page.locator('#wt-send-btn').click(); await expect(page.locator('#wt-retry-reply')).toBeVisible()
+      const beforeRetry = await page.locator('.wt-message-player').count()
+      await scan('reply-failure'); await fit('reply-failure')
+      await page.locator('#wt-retry-reply').click(); await expect(page.locator('#wt-retry-reply')).toBeHidden(); await expect(page.locator('#wt-send-btn')).toBeEnabled()
+      assert.equal(await page.locator('.wt-message-player').count(), beforeRetry)
+      result.checks.push('HTTP failure is visible and retry preserves one player message')
+      for (const mode of ['CANCEL', 'TIMEOUT']) {
+        await page.locator('#wt-input-text').fill('HOLD_' + mode)
+        if (mode === 'TIMEOUT') await page.clock.install()
+        const waiting = recoveryDeferred.length
+        await page.locator('#wt-send-btn').click(); await expect.poll(() => recoveryDeferred.length).toBe(waiting + 1)
+        if (mode === 'CANCEL') await page.locator('#wt-cancel-reply').click()
+        else { await page.clock.fastForward(60001); await page.clock.resume() }
+        await expect(page.locator('#wt-retry-reply')).toBeVisible()
+        const count = await page.locator('.wt-message').count()
+        await recoveryDeferred.shift()()
+        await expect(page.locator('.wt-message')).toHaveCount(count)
+        await page.locator('#wt-retry-reply').click(); await expect(page.locator('#wt-send-btn')).toBeEnabled()
+        await expect(page.locator('.wt-message')).toHaveCount(count + 1)
+        result.checks.push(mode.toLowerCase() + ': saved message, late reply ignored, retry succeeds')
+      }
+      await saved(() => page.locator('#wt-input-text').fill('next draft'))
+      await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); await openApp()
+      await expect(page.locator('.wt-group-avatar img')).toHaveCount(2)
+      await page.locator('#wt-moments').click(); await expect(page.locator('.wt-moment button')).toHaveAttribute('aria-pressed', 'true')
+      result.checks.push('group and Moments likes survive reload')
+      await page.locator('#wt-close-moments').click()
+
+
+      assert.deepEqual(result.errors, []); result.passed = true
+    } catch (error) { result.failure = error.stack; await page.screenshot({ path: `${out}/${size.width}-failure.png` }).catch(() => {}); throw error }
+    finally { await context.close(); writeFileSync(`${out}/report.json`, JSON.stringify(report, null, 2)) }
+  }
+} finally { await browser.close(); writeFileSync(`${out}/report.json`, JSON.stringify(report, null, 2)) }
+console.log(`WeChat experience: ${report.scenarios.length} scenarios passed`)

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isolatedReady } from './isolated-browser-ready.mjs'
 import JSZip from 'jszip'
 import { chromium, expect } from '@playwright/test'
 
@@ -11,7 +12,8 @@ const option = name => args.includes(name) ? args[args.indexOf(name) + 1] : unde
 assert.ok(option('--url') && args.includes('--isolated-data'), 'Supply --url and --isolated-data; never use daily ST data')
 const url = new URL(option('--url'))
 assert.ok(['http:', 'https:'].includes(url.protocol) && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) && !url.username && !url.password)
-const root = fileURLToPath(new URL('..', import.meta.url)), output = path.join(root, 'test-results/export-browser')
+assert.notEqual(url.port, '18771', '18771 is reserved for user testing')
+const root = fileURLToPath(new URL('..', import.meta.url)), output = path.resolve(option('--output') || path.join(root, 'test-results/export-browser'))
 mkdirSync(output, { recursive: true })
 const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || 'msedge', headless: true })
 const report = { target: url.href, browser: browser.version(), buildVersion: JSON.parse(readFileSync(path.join(root, 'st-distribution/version.json'))).v,
@@ -24,8 +26,7 @@ const chatNames = ['Export聊天一', 'Export聊天二']
 const chats = chatNames.map((name, index) => [{ user_name: 'Acceptance', character_name: characterName, chat_metadata: {} }, { name: characterName, is_user: false, is_system: false, send_date: '2026-10-07T00:00:00.000Z', mes: `用户聊天正文 ${index + 1}` }])
 const cases = ['en', 'zh'].flatMap(language => ['desktop', 'mobile'].map(size => ({ name: `${size}-${language}`, language, size })))
 async function ready(page) {
-  await page.waitForFunction(async () => (await import('/script.js')).settingsReady)
-  await page.waitForSelector('.so-phone-fab', { state: 'attached' })
+  await isolatedReady(page)
 }
 // Category loads replace controls asynchronously; wait for the current control's focus.
 async function focused(locator) { await expect(locator).toBeFocused() }
@@ -43,6 +44,10 @@ try {
     await context.addInitScript(language => localStorage.setItem('language', language), scenario.language === 'en' ? 'en' : 'zh-cn')
     await context.route('**/*', route => new URL(route.request().url()).origin === url.origin ? route.continue() : route.abort())
     const page = await context.newPage(); page.setDefaultTimeout(15000)
+    const lazyChunks = []
+    const lazyName = readFileSync(path.join(root, 'bundle.js'), 'utf8').match(/import\("\.\/(chunk-[A-Z0-9]+\.js)"\)/)?.[1]
+    assert.ok(lazyName, 'built JSZip dynamic import must be present')
+    page.on('response', response => { if (new URL(response.url()).pathname.endsWith('/' + lazyName)) lazyChunks.push({ status: response.status(), url: response.url() }) })
     page.on('pageerror', error => entry.pageErrors.push(error.message))
     const shot = label => page.screenshot({ path: path.join(output, `${scenario.name}-${label}.png`) })
     try {
@@ -151,6 +156,30 @@ try {
         releaseRead(); await page.unroute('**/api/characters/export')
         page.off('download', countDownload)
       }
+      assert.deepEqual(lazyChunks, [], 'JSZip must stay unloaded until archive generation')
+      let releaseChunk, chunkRequests = 0, lateDownloads = 0
+      const heldChunk = new Promise(resolve => { releaseChunk = resolve })
+      const countLateDownload = () => { lateDownloads++ }
+      page.on('download', countLateDownload)
+      await page.route('**/' + lazyName, async route => {
+        chunkRequests++; await heldChunk; await route.continue().catch(() => {})
+      })
+      try {
+        await exportButton.press('Enter'); await expect.poll(() => chunkRequests).toBe(1)
+        await cancelButton.press('Enter')
+        await expect(cancelButton).toBeHidden(); await focused(exportButton)
+        await expect(exportButton).toHaveAttribute('aria-disabled', 'false')
+        // Both cancellations can still have a visible host toast with the same message.
+        await expect(page.getByText(d.cancelled, { exact: true }).first()).toBeVisible()
+        assert.equal(lazyChunks.length, 0, 'UI must recover while the module request is still pending')
+        const loaded = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/' + lazyName))
+        releaseChunk(); await loaded
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+        assert.equal(lateDownloads, 0)
+        entry.cancelChunkAndRetry = true
+      } finally {
+        releaseChunk(); await page.unroute('**/' + lazyName)
+      }
       const downloading = page.waitForEvent('download')
       await exportButton.press('Enter')
       const download = await downloading
@@ -158,6 +187,8 @@ try {
       const zipPath = path.join(output, `${scenario.name}.zip`); await download.saveAs(zipPath)
       await exportButton.waitFor(); await focused(exportButton)
       const zip = await JSZip.loadAsync(readFileSync(zipPath))
+      assert.equal(lazyChunks.length, 1); assert.equal(lazyChunks[0].status, 200)
+      entry.lazyChunks = lazyChunks
       const files = Object.keys(zip.files).filter(name => !zip.files[name].dir).sort()
       const stem = avatar.replace(/\.png$/i, '')
       assert.deepEqual(files, [`characters/${avatar}`, ...chatNames.map(name => `chats/${stem}/${name}.jsonl`), `worlds/${worldName}.json`, `OpenAI Settings/${presetName}.json`, 'settings.json'].sort())
@@ -166,6 +197,8 @@ try {
       assert.deepEqual(JSON.parse(await zip.file('settings.json').async('string')), { extension_settings: { regex }, world_info_settings: { world_info: { globalSelect: [worldName] } } })
       for (let i = 0; i < chatNames.length; i++) assert.deepEqual((await zip.file(`chats/${stem}/${chatNames[i]}.jsonl`).async('string')).trim().split('\n').map(line => JSON.parse(line)), chats[i])
       assert.deepEqual(Array.from((await zip.file(`characters/${avatar}`).async('uint8array')).slice(0, 8)), [137, 80, 78, 71, 13, 10, 26, 10])
+      assert.equal(lateDownloads, 1, 'cancelled import must not cause a second, late download')
+      page.off('download', countLateDownload)
       entry.archiveFiles = files
       await shot('complete')
       await page.keyboard.press('Escape'); await focused(page.locator('.so-phone-app-icon[data-app-id="cloud-export"]'))

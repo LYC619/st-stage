@@ -46,6 +46,8 @@ export interface ExternalCharacterState {
 }
 
 export interface ConversationScope {
+  contactId?: string
+  group?: { title: string; members: Array<{ id: string; name: string }> }
   scopeKey: string
   characterName: string
   characterId?: string
@@ -462,4 +464,19 @@ export async function resolveConversationScope(host: AppHost): Promise<Conversat
     ...syncScope,
     externalState,
   }
+}
+
+/** ST 1.18 exposes the registered speak callback through its public context.
+ * Call with raw values: never parse model text as slash commands or macros.
+ * True means the callback fulfilled, not that audio was queued or played: ST also
+ * fulfills when a voice is absent/disabled, and provider work can fail later. */
+export async function speakWeChatText(text: string, author: string): Promise<boolean> {
+  const context = (window as unknown as { SillyTavern?: { getContext?: () => {
+    extensionSettings?: { tts?: { enabled?: boolean } }
+    SlashCommandParser?: { commands?: Record<string, { callback?: (args: { voice: string }, value: string) => Promise<unknown> }> }
+  } } }).SillyTavern?.getContext?.()
+  const speak = context?.SlashCommandParser?.commands?.speak
+  if (!context?.extensionSettings?.tts?.enabled || !speak?.callback) return false
+  await speak.callback({ voice: author }, text)
+  return true
 }

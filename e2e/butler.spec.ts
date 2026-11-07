@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { resolve } from 'node:path'
+import { loadBuiltExtension } from './load-extension'
 
 const ROOT = resolve(__dirname, '..')
 
@@ -100,7 +101,7 @@ async function loadButler(page: Page): Promise<void> {
   })
   await page.addStyleTag({ path: resolve(ROOT, 'st-extension/style.css') })
   await page.addStyleTag({ path: resolve(ROOT, 'core/phone-shell.css') })
-  await page.addScriptTag({ path: resolve(ROOT, 'bundle.js'), type: 'module' })
+  await loadBuiltExtension(page)
   await expect(page.locator('.so-phone-fab')).toBeVisible()
   await page.locator('.so-phone-fab').click()
   await page.locator('.so-phone-app-icon', { hasText: '管家' }).click()

@@ -1,7 +1,7 @@
 // Produces a reviewable local package. Never writes to the release repository or pushes Git.
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { assetFiles, baseFiles, fileInfo, option, verifyArtifacts } from './release-artifacts.mjs'
+import { assetFiles, baseFiles, chunkFiles, fileInfo, option, verifyArtifacts } from './release-artifacts.mjs'
 
 try {
   const root = option('--root'), distribution = option('--distribution'), output = option('--output')
@@ -24,7 +24,7 @@ try {
       if (!existsSync(path.join(release, file.path))) differences.added.push(file.path)
       else differences[fileInfo(release, file.path).sha256 === file.sha256 ? 'unchanged' : 'changed'].push(file.path)
     }
-    differences.removed = previousAssets.filter(name => !files.some(file => file.path === name))
+    differences.removed = [...previousAssets, ...chunkFiles(release)].filter(name => !files.some(file => file.path === name))
   }
   mkdirSync(output, { recursive: true })
   const packageRoot = path.join(output, 'package')

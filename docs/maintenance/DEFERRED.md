@@ -2,6 +2,18 @@
 
 Known follow-ups and pending review repairs are recorded here. Older sections retain their original non-blocking decisions; the review queue below is **not** a declaration that its risks are acceptable for a new release. Remove or resolve entries only with an actual fixing commit and fresh verification.
 
+## 2026-11-07 Independent Review — Locally Repaired, Uncommitted
+
+The seven P2 findings now have local fixes: group-round configuration snapshots, per-member state recency, mention matching, truthful TTS fallback, voice state/focus retention, immediate cancellation during first JSZip import, and committed-artifact CI inventory. A further Moments generation/save snapshot race, mood update source, preview locale LF and visible like labels are also repaired. Fresh evidence: 1470 unit tests, 25 release tests, 104 real-ST WeChat checks, 25 mobile E2E, four export scenarios and 60 matching artifact hashes. See [repair evidence](history/2026-11-07-five-phase-repairs.md); the [original reproductions](history/2026-11-07-five-phase-review.md) remain historical. Entries remain here because no fixing commit, push or installation sync has occurred.
+
+The new candidate is `0.9.0+202611071003`. Its 44 scoped WeChat axe scans found zero violations and retained 45 distinct uncertainties; this is not a full-app rescan or closure of the historical 118. Real AI, audible providers, physical devices/IME, full screen readers and real remote CI remain open. The committed-inventory gate is expected to reject the uncommitted worktree; passing and omitted-file behavior was verified in temporary Git fixtures.
+
+## 2026-11-07 Five-phase Evolution — Local, Uncommitted
+
+Groups, Moments, transcript voice/TTS adaptation, lazy JSZip chunks and dual-repository release automation now have local implementations. Failed/canceled/timed-out replies retain their message and retry state. These supersede the historical future-feature descriptions only in the current worktree; no fixing commit or actual publication has occurred. See [current evidence](history/2026-11-07-five-phase-evolution.md).
+
+Historical axe incomplete records remain traceable. Fixed local findings include popup ID lifecycle, uncertain phone background and reproduced voice/Butler contrast failures. Node review is recorded in [the audit](history/2026-11-07-accessibility-review.md): 44 scans, zero violations, 118 distinct rule/target/reason uncertainties retained. Solid/equal-stop-gradient computations and popup references passed the recorded checks; image/overlap/theme and screen-reader acceptance remain open. Real models, audible TTS providers, physical devices/OS IME and full screen readers remain environment-dependent. Remote CI and actual publication are not confirmed by temporary local Git tests.
+
 ## 2026-11-05 Publication — A–G Committed and Pushed
 
 The user authorized final integration, commits, pushes and installation-repository synchronization. Development code/build commit `d3d513930d0e65124718d8b8b883645a340e447f` and independent extension release `184e98741bec51be52c4c86377862109c6da0ce1` are pushed to their respective `main` branches at version `0.9.0+202611052119`. All 58 rebuilt candidate files match the accepted artifacts; the actual install checkout now passes full parity. See [publication evidence](history/2026-11-05-publication.md).

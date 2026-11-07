@@ -1,4 +1,4 @@
-import JSZip from 'jszip'
+import type JSZip from 'jszip'
 import { t } from '../../../../core/i18n'
 import { isArchiveSegment } from './archive-path'
 import type { ExportFile } from './types'
@@ -18,6 +18,20 @@ export const REVOKE_DELAY_MS = 60_000
 export interface DownloadSchedulers {
   scheduleRevoke?: (revoke: () => void, delayMs: number) => void
   signal?: AbortSignal
+}
+
+/** Module fetching cannot be aborted, but a cancelled export must stop waiting for it. */
+async function loadJSZip(signal?: AbortSignal) {
+  signal?.throwIfAborted()
+  const loading = import('jszip')
+  if (!signal) return loading
+  let onAbort!: () => void
+  const cancelled = new Promise<never>((_, reject) => {
+    onAbort = () => reject(signal.reason)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+  try { return await Promise.race([loading, cancelled]) }
+  finally { signal.removeEventListener('abort', onAbort) }
 }
 
 /** 使用可暂停的公共流接口，取消时释放已收集的字节并停止压缩后续块。 */
@@ -76,6 +90,8 @@ export async function downloadSTBackup(
   schedulers.signal?.throwIfAborted()
   if (!files.length) throw new Error(t('cloudExport.no_assets', '没有选择任何可导出的资产'))
   assertUniqueArchivePaths(files)
+  const { default: JSZip } = await loadJSZip(schedulers.signal)
+  schedulers.signal?.throwIfAborted()
   const zip = new JSZip()
   for (const file of files) {
     zip.file(file.path, file.data, file.updatedAt ? { date: new Date(file.updatedAt) } : undefined)

@@ -17,3 +17,10 @@ st-distribution/*.js    text eol=lf
 st-distribution/*.css   text eol=lf
 st-distribution/*.json  text eol=lf
 st-distribution/*.md    text eol=lf
+
+/chunk-*.js text eol=lf
+/public/*.js text eol=lf
+/public/*.json text eol=lf
+/public/locales/*.json text eol=lf
+/public/*.css text eol=lf
+/public/*.md text eol=lf

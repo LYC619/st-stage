@@ -1,5 +1,5 @@
 import { normalizeProfile, safeAssetUrl, type WeChatProfile } from './profile'
-import { PLAYER_EMOJIS, SISTER_EMOJIS, SISTER_PHOTOS } from './manifest-data'
+import { PLAYER_EMOJIS, CONTACT_EMOJIS, CONTACT_PHOTOS } from './manifest-data'
 import { resolveWeChatAssetUrl } from './assets'
 import { DEFAULT_REPLY_PROMPT, DEFAULT_STATE_PROMPT, DEFAULT_FORMAT_PROMPT } from './prompts'
 import type { SpritePack } from '../../../../core/types'
@@ -58,8 +58,8 @@ export function createProfileEditor(parent: HTMLElement, packs: () => SpritePack
   let base = normalizeProfile(), selected = '', custom: WeChatProfile['customAssets'] = {}, edits: WeChatProfile['assetEdits'] = {}, overrides: Record<string, string> = {}
   const catalog = (): Record<string, EmojiItem> => ({
     ...Object.fromEntries(Object.entries(PLAYER_EMOJIS).map(([id, item]) => [`player.${id}`, item])),
-    ...Object.fromEntries(Object.entries(SISTER_EMOJIS).map(([id, item]) => [`contact.${id}`, item])),
-    ...Object.fromEntries(Object.entries(SISTER_PHOTOS).map(([id, item]) => [`photo.${id}`, item])), ...custom,
+    ...Object.fromEntries(Object.entries(CONTACT_EMOJIS).map(([id, item]) => [`contact.${id}`, item])),
+    ...Object.fromEntries(Object.entries(CONTACT_PHOTOS).map(([id, item]) => [`photo.${id}`, item])), ...custom,
   })
   function storeAsset() {
     const item = catalog()[selected]; if (!item) return

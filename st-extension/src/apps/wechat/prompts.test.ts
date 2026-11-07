@@ -5,7 +5,7 @@ import { DEFAULT_REPLY_PROMPT, DEFAULT_STATE_PROMPT } from './prompts'
 describe('editable prompts and single response state', () => {
   it('uses displayed defaults, renders custom templates and accepts only bounded state strings', () => {
     const pipe = new WeChatPipeline({ profile: { replyPrompt: 'Custom {角色} {人设}', statePrompt: 'State {状态}' } }, {}, {}, {})
-    const state = { mood: 60, interest: 15, money: 0, sisterLocation: '', playerLocation: '', currentStatus: 'reading' }
+    const state = { mood: 60, interest: 15, money: 0, contactLocation: '', playerLocation: '', currentStatus: 'reading' }
     expect(DEFAULT_REPLY_PROMPT).toContain('{角色}')
     expect(DEFAULT_STATE_PROMPT).toContain('inner_thought')
     const prompt = pipe.buildSystemPrompt(state, '20:00', { scopeKey: 'b', characterName: 'B', card: { description: 'B persona' }, externalState: { source: 'none' } })

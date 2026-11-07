@@ -1,4 +1,4 @@
-/** Scoped styles keep the phone usable under host themes and narrow viewports. */
+﻿/** Scoped styles keep the phone usable under host themes and narrow viewports. */
 export const WECHAT_VIEW = `
 <div class="wechat-root">
   <style>
@@ -73,6 +73,24 @@ export const WECHAT_VIEW = `
     #wt-photo-lightbox .wt-modal-card{background:transparent;color:white;align-items:center}
     #wt-lightbox-img{max-width:100%;max-height:65vh;object-fit:contain}
     @media(max-width:360px){.wechat-nav{padding:5px 7px}.wechat-nav button{padding:5px 7px}.wt-modal-card{padding:12px}.wechat-input-bar{gap:4px;padding:6px}.wechat-input-bar button{padding:6px 7px}}
+    .wt-social-nav,.wt-recovery{display:flex;gap:6px;padding:5px 10px;flex-shrink:0;flex-wrap:wrap;background:#f7f7f7}
+    .wt-social-nav button{flex:1}.wt-recovery p{flex:0 0 100%;margin:0;color:#9b2222}
+    .wt-group-avatar{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;padding:2px;overflow:hidden}
+    .wt-group-avatar .wt-avatar{width:12px;height:12px;border-radius:1px}
+    .wt-member-choice{display:flex;align-items:center;gap:10px;padding:8px;border-bottom:1px solid #ddd}
+    .wt-message-author{font-size:11px;color:#555;display:block}.wt-message-content{min-width:0;max-width:76%}.wt-message-content .wt-bubble{max-width:100%}
+    .wt-voice button{padding:5px;font-size:12px}.wechat-root .wt-voice small{display:block;color:#595959;opacity:1}.wt-voice p{margin:7px 0}
+    #wt-chat-tools{display:flex;gap:6px;padding:4px 10px;flex-shrink:0}#wt-chat-tools select{flex:1;width:0}
+    .wt-moment{padding:12px 0;border-bottom:1px solid #ddd}.wt-moment p{white-space:pre-wrap;overflow-wrap:anywhere}.wt-moment time{display:block;color:#595959;font-size:11px}
+    .wt-moment-author{display:flex;align-items:center;gap:8px}.wt-moment-image{display:block;max-width:100%;max-height:240px;object-fit:contain}
+    @media(max-height:480px){
+      .wechat-nav{min-height:38px;padding:2px 7px}.wechat-root button{min-height:30px;padding:3px 7px}
+      .wechat-root input,.wechat-root select{min-height:30px;padding:3px 7px}
+      .wt-social-nav{padding:2px 7px}#wt-notice{padding:1px 7px;font-size:11px}
+      #wt-state{padding:2px 7px}#wt-chat-tools{padding:2px 7px}.wechat-input-bar{padding:3px}
+      #wt-emoji-drawer{position:absolute;left:0;right:0;bottom:39px;height:min(190px,calc(100% - 45px));max-height:none;z-index:10}
+      #wt-emoji-grid{min-height:0;flex:1}.wt-tabs{padding:3px}
+    }
   </style>
   <header class="wechat-nav">
     <button id="wt-back" aria-label="返回会话列表" hidden>‹</button>
@@ -81,13 +99,16 @@ export const WECHAT_VIEW = `
     <button id="wt-settings-btn" aria-label="微信设置">⚙ 设置</button>
   </header>
   <div id="wt-notice" role="status"></div>
+  <nav class="wt-social-nav" aria-label="微信功能"><button id="wt-new-group">建群</button><button id="wt-moments">朋友圈</button><button id="wt-group-edit" hidden>群成员</button></nav>
   <div id="wt-conversations" role="region" aria-label="微信会话列表"></div>
   <section id="wt-chat" aria-label="微信聊天" hidden>
     <details id="wt-state"><summary id="wt-state-summary">角色状态 · 等待更新</summary><p><strong>内心想法</strong><br><span id="wt-inner-thought">等待角色回复</span></p><p><strong>当前状态</strong><br><span id="wt-current-status">等待角色回复</span></p></details>
     <div id="wt-scroll" role="log" aria-label="聊天消息" tabindex="0"></div>
     <div id="wt-typing-badge" role="status" hidden>对方正在输入…</div>
+    <div class="wt-recovery" id="wt-recovery" hidden><p id="wt-reply-error" role="status"></p><button id="wt-cancel-reply" hidden>取消回复</button><button id="wt-retry-reply" hidden>重试回复</button></div>
+    <div id="wt-chat-tools"><select id="wt-mention" aria-label="提及群成员" hidden></select><button id="wt-voice-mode" aria-pressed="false">语音消息</button></div>
     <div id="wt-emoji-drawer" aria-label="表情包" role="region" hidden>
-      <div class="wt-tabs"><button id="wt-tab-player">我的表情</button><button id="wt-tab-sister">联系人表情</button><button id="wt-manage-emojis">管理</button></div>
+      <div class="wt-tabs"><button id="wt-tab-player">我的表情</button><button id="wt-tab-contact">联系人表情</button><button id="wt-manage-emojis">管理</button></div>
       <div id="wt-emoji-grid"></div>
     </div>
     <div class="wechat-input-bar"><button id="wt-emoji-btn" aria-label="表情包" aria-expanded="false" aria-controls="wt-emoji-drawer">😀</button><button id="wt-packet-btn" aria-label="发红包或礼物">🧧</button><input id="wt-input-text" aria-label="消息" placeholder="发消息…" maxlength="8000"><button id="wt-send-btn" class="wt-primary">发送</button></div>
@@ -118,6 +139,16 @@ export const WECHAT_VIEW = `
     <label class="wt-field">发送什么<input id="wt-custom-amt" placeholder="例如：一杯奶茶、520 元、一张船票" maxlength="120"></label>
     <label class="wt-field">附言（可选）<textarea id="wt-packet-note" rows="2" maxlength="300" placeholder="想对 TA 说的话…"></textarea></label>
     <p class="wt-hint">用于角色互动的虚构礼物。</p><p id="wt-packet-feedback" role="status"></p><button id="wt-confirm-packet" class="wt-primary">发送红包</button>
+  </div></div>
+  <div id="wt-group-modal" class="wt-modal" role="dialog" aria-modal="true" aria-labelledby="wt-group-heading" hidden><div class="wt-modal-card">
+    <div class="wt-modal-header"><h2 id="wt-group-heading">群聊成员</h2><button id="wt-close-group" aria-label="关闭群成员">关闭</button></div>
+    <label class="wt-field">群名称<input id="wt-group-title" maxlength="60"></label><p class="wt-hint">选择 2–50 位角色；发送消息后群成员依次回复，也可用 @ 选择发言者。</p><div id="wt-group-options"></div><p id="wt-group-feedback" role="status"></p><button id="wt-save-group" class="wt-primary">保存群聊</button>
+  </div></div>
+  <div id="wt-moments-modal" class="wt-modal" role="dialog" aria-modal="true" aria-labelledby="wt-moments-heading" hidden><div class="wt-modal-card">
+    <div class="wt-modal-header"><h2 id="wt-moments-heading">朋友圈</h2><button id="wt-close-moments" aria-label="关闭朋友圈">关闭</button></div>
+    <label class="wt-field">看看谁的近况<select id="wt-moments-author"></select></label><button id="wt-generate-moment" class="wt-primary">生成新动态</button><button id="wt-cancel-moment" hidden>取消生成</button><p id="wt-moments-feedback" role="status"></p>
+    <details><summary>动态提示词</summary><label class="wt-field">朋友圈提示词<textarea id="wt-moments-prompt" maxlength="8000" rows="5"></textarea></label><button id="wt-reset-moments-prompt">恢复默认</button><button id="wt-save-moments-prompt">保存提示词</button></details>
+    <div id="wt-moments-feed" role="region" aria-label="朋友圈动态"></div>
   </div></div>
   <div id="wt-photo-lightbox" class="wt-modal" role="dialog" aria-modal="true" aria-label="查看图片" hidden><div class="wt-modal-card"><button id="wt-close-lightbox" aria-label="关闭图片">关闭</button><img id="wt-lightbox-img" alt=""><p id="wt-lightbox-desc"></p></div></div>
 </div>`

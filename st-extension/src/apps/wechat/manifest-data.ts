@@ -1,5 +1,5 @@
 import type { EmojiItem, PhotoItem } from './types'
-export { DEFAULT_PLAYER_AVATAR, DEFAULT_SISTER_AVATAR } from './avatars-data'
+export { DEFAULT_PLAYER_AVATAR, DEFAULT_CONTACT_AVATAR } from './avatars-data'
 
 export const SISTER_LOCATIONS: Record<string, string> = {
   TOILET: '厕所，妹妹正在上厕所',
@@ -31,7 +31,7 @@ export const PLAYER_EMOJIS: Record<string, EmojiItem> = {
   shock: { id: 'shock', name: '惊讶', description: '黄色橘猫惊讶的表情，表示有点搞怪的惊讶。', file: 'emojies/player/shock.png' },
 }
 
-export const SISTER_EMOJIS: Record<string, EmojiItem> = {
+export const CONTACT_EMOJIS: Record<string, EmojiItem> = {
   angry: { id: 'angry', name: '生气', description: '妹妹Q版形象的生气表情，代表有点赌气含义。', file: 'emojies/sister/angry.png' },
   confuseed: { id: 'confuseed', name: '疑惑', description: '妹妹Q版形象的疑惑表情。', file: 'emojies/sister/confused.png' },
   frown: { id: 'frown', name: '皱眉', description: '双手抱胸，皱着眉头的熊猫头表情包，代表有点搞怪的怀疑态度。', file: 'emojies/sister/frown.png' },
@@ -53,7 +53,7 @@ export const SISTER_EMOJIS: Record<string, EmojiItem> = {
   surprise_cat_2: { id: 'surprise_cat_2', name: '惊讶猫2', description: '一只橘猫夸张的表情，代表有点搞怪的惊讶含义。', file: 'emojies/sister/surprise_cat_2.png' },
 }
 
-export const SISTER_PHOTOS: Record<string, PhotoItem> = {
+export const CONTACT_PHOTOS: Record<string, PhotoItem> = {
   bedroom1: { id: 'bedroom1', name: '卧室自拍1', description: '妹妹在卧室的自拍：撩起卫衣，露出内衣，表情害羞', file: 'photos/bedroom1.png' },
   bedroom2: { id: 'bedroom2', name: '卧室自拍2', description: '妹妹在卧室的自拍：撩起卫衣和内衣，用手遮住胸部，表情平静', file: 'photos/bedroom2.png' },
   bedroom3: { id: 'bedroom3', name: '卧室自拍3', description: '妹妹在卧室的自拍：上半身裸体，露出胸部，一只手比着“耶”，坏笑表情', file: 'photos/bedroom3.png' },

@@ -4,11 +4,11 @@ import { mountWeChat } from './test-fixture'
 import { getScopedConversation } from './wechat-app'
 import { WeChatPipeline } from './pipeline'
 import { messageToRagText } from './rag'
-import { PLAYER_EMOJIS, SISTER_EMOJIS } from './manifest-data'
+import { PLAYER_EMOJIS, CONTACT_EMOJIS } from './manifest-data'
 let fixture: ReturnType<typeof mountWeChat> | undefined
 afterEach(() => { fixture?.app.unmount?.(); fixture = undefined; vi.restoreAllMocks(); document.body.replaceChildren() })
 function mount() {
-  const send = vi.spyOn(WeChatPipeline.prototype, 'requestSisterReply').mockImplementation(() => new Promise(() => {}))
+  const send = vi.spyOn(WeChatPipeline.prototype, 'requestContactReply').mockImplementation(() => new Promise(() => {}))
   const f = fixture = mountWeChat(); f.open(f.a.scopeKey!)
   return { ...f, send }
 }
@@ -27,7 +27,7 @@ describe('WeChat keyboard surfaces', () => {
     expect(send).toHaveBeenCalledOnce(); expect(el('#wt-packet-modal').hidden).toBe(true); expect(document.activeElement).toBe(opener)
   })
   it('opens images with native buttons and restores their focus after Escape', () => {
-    const f = mount(); f.a.messages.push({ sender: 'sister', type: 'image', content: 'bedroom1', time: { day: 1, hour: 19, minute: 0 } }); f.open(f.a.scopeKey!)
+    const f = mount(); f.a.messages.push({ sender: 'contact', type: 'image', content: 'bedroom1', time: { day: 1, hour: 19, minute: 0 } }); f.open(f.a.scopeKey!)
     const photo = f.el<HTMLButtonElement>('#wt-scroll button'); photo.focus(); photo.click()
     expect(document.activeElement).toBe(f.el('#wt-close-lightbox')); key('Escape')
     expect(f.el('#wt-photo-lightbox').hidden).toBe(true); expect(document.activeElement).toBe(photo)
@@ -43,27 +43,27 @@ describe('WeChat keyboard surfaces', () => {
     let finish!: (value: { messages: { type: 'text'; content: string }[] }) => void
     const f = mount()
     f.send.mockImplementation(() => new Promise(resolve => { finish = resolve }))
-    f.a.messages.push({ sender: 'sister', type: 'image', content: 'bedroom1', time: { day: 1, hour: 19, minute: 0 } }); f.open(f.a.scopeKey!)
+    f.a.messages.push({ sender: 'contact', type: 'image', content: 'bedroom1', time: { day: 1, hour: 19, minute: 0 } }); f.open(f.a.scopeKey!)
     f.el<HTMLInputElement>('#wt-input-text').value = 'hello'; f.el('#wt-send-btn').click()
     const photo = f.el<HTMLButtonElement>('#wt-scroll button'); photo.click()
     finish({ messages: [{ type: 'text', content: 'new reply' }] }); await vi.waitFor(() => expect(photo.isConnected).toBe(false))
     key('Escape'); expect(document.activeElement).toBe(f.el('#wt-scroll button'))
   })
   it.each([0, 1])('preserves chosen contact emoji %s after disabling its group and remounting', index => {
-    const f = mount(); f.el('#wt-emoji-btn').click(); f.el('#wt-tab-sister').click()
+    const f = mount(); f.el('#wt-emoji-btn').click(); f.el('#wt-tab-contact').click()
     const choice = f.el(`#wt-emoji-grid button:nth-child(${index + 1})`), src = choice.querySelector('img')!.src
     choice.click(); expect(f.el<HTMLImageElement>('#wt-scroll .wt-media img').src).toBe(src)
     f.data().config.profile = { assetGroups: { player: true, contact: false, photo: false } }
     f.remount(); f.open(f.a.scopeKey!); expect(f.el<HTMLImageElement>('#wt-scroll .wt-media img').src).toBe(src)
-    f.el('#wt-emoji-btn').click(); f.el('#wt-tab-sister').click(); expect(f.el('#wt-emoji-grid').textContent).toContain('未启用')
+    f.el('#wt-emoji-btn').click(); f.el('#wt-tab-contact').click(); expect(f.el('#wt-emoji-grid').textContent).toContain('未启用')
   })
   it('uses the selected emoji meaning in current prompts and recalled history while retaining legacy behavior', () => {
-    const msg = { sender: 'player', type: 'emoji', content: 'angry', emojiSource: 'sister', time: { day: 1, hour: 19, minute: 0 } } as const
-    const pipeline = new WeChatPipeline({}, PLAYER_EMOJIS, SISTER_EMOJIS, {})
+    const msg = { sender: 'player', type: 'emoji', content: 'angry', emojiSource: 'contact', time: { day: 1, hour: 19, minute: 0 } } as const
+    const pipeline = new WeChatPipeline({}, PLAYER_EMOJIS, CONTACT_EMOJIS, {})
     const conv = getScopedConversation({ config: {} }, 'Alice')
-    expect(pipeline.buildContextMessages([msg], conv.state, 1, '19:00').at(-1)?.content).toContain(SISTER_EMOJIS.angry.description)
-    expect(messageToRagText(msg, PLAYER_EMOJIS, SISTER_EMOJIS, {})).toContain(SISTER_EMOJIS.angry.description)
-    expect(messageToRagText({ ...msg, emojiSource: undefined }, PLAYER_EMOJIS, SISTER_EMOJIS, {})).toContain(PLAYER_EMOJIS.angry.description)
+    expect(pipeline.buildContextMessages([msg], conv.state, 1, '19:00').at(-1)?.content).toContain(CONTACT_EMOJIS.angry.description)
+    expect(messageToRagText(msg, PLAYER_EMOJIS, CONTACT_EMOJIS, {})).toContain(CONTACT_EMOJIS.angry.description)
+    expect(messageToRagText({ ...msg, emojiSource: undefined }, PLAYER_EMOJIS, CONTACT_EMOJIS, {})).toContain(PLAYER_EMOJIS.angry.description)
   })
 
   it.each(['#wt-packet-btn', '#wt-settings-btn', '#wt-emoji-btn'])('keeps independent surface %s when host switches and closes it on WeChat navigation', opener => {

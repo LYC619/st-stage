@@ -11,11 +11,11 @@ import { resolveWeChatAssetUrl } from './assets'
 import { WeChatPipeline } from './pipeline'
 import {
   PLAYER_EMOJIS,
-  SISTER_EMOJIS,
-  SISTER_PHOTOS,
+  CONTACT_EMOJIS,
+  CONTACT_PHOTOS,
   FALLBACK_DIALOGUES,
 } from './manifest-data'
-import type { ChatMessage, SisterState, WeChatConfig } from './types'
+import type { ChatMessage, ContactState, WeChatConfig } from './types'
 
 describe('WeChat Typing Simulation', () => {
   it('clamps base typing delay between 600ms and 2000ms', () => {
@@ -70,7 +70,7 @@ describe('WeChat RAG Algorithm', () => {
         time: { day: 1, hour: 12, minute: 0 },
       },
       {
-        sender: 'sister',
+        sender: 'contact',
         content: '我给你买了可乐放冰箱了',
         type: 'text',
         time: { day: 1, hour: 13, minute: 0 },
@@ -88,8 +88,8 @@ describe('WeChat RAG Algorithm', () => {
       history,
       2, // 今天是第2天
       PLAYER_EMOJIS,
-      SISTER_EMOJIS,
-      SISTER_PHOTOS,
+      CONTACT_EMOJIS,
+      CONTACT_PHOTOS,
     )
 
     expect(matched.length).toBeGreaterThanOrEqual(1)
@@ -100,8 +100,8 @@ describe('WeChat RAG Algorithm', () => {
       history,
       2,
       PLAYER_EMOJIS,
-      SISTER_EMOJIS,
-      SISTER_PHOTOS,
+      CONTACT_EMOJIS,
+      CONTACT_PHOTOS,
     )
     expect(prompt).toContain('相关历史')
     expect(prompt).toContain('可乐')
@@ -113,15 +113,15 @@ describe('WeChat Pipeline & Fallback Engine', () => {
   const pipeline = new WeChatPipeline(
     config,
     PLAYER_EMOJIS,
-    SISTER_EMOJIS,
-    SISTER_PHOTOS,
+    CONTACT_EMOJIS,
+    CONTACT_PHOTOS,
     FALLBACK_DIALOGUES,
   )
 
-  const defaultState: SisterState = {
+  const defaultState: ContactState = {
     mood: 60,
     interest: 20,
-    sisterLocation: 'SISTER_ROOM',
+    contactLocation: 'SISTER_ROOM',
     playerLocation: 'COMPANY',
     money: 5000,
   }
@@ -144,7 +144,7 @@ describe('WeChat Pipeline & Fallback Engine', () => {
       },
     ]
 
-    const reply = await pipeline.requestSisterReply(history, defaultState, 1, '18:00')
+    const reply = await pipeline.requestContactReply(history, defaultState, 1, '18:00')
     expect(reply.messages.length).toBeGreaterThanOrEqual(1)
     expect(reply.messages[0].content).toBe('收到你的消息了。')
   })
@@ -159,7 +159,7 @@ describe('WeChat Pipeline & Fallback Engine', () => {
       },
     ]
 
-    const reply = await pipeline.requestSisterReply(history, defaultState, 1, '18:00')
+    const reply = await pipeline.requestContactReply(history, defaultState, 1, '18:00')
     expect(reply.messages[0].content).toContain('礼物')
   })
 

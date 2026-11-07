@@ -1,12 +1,13 @@
-import type { WeChatAppData, CharacterConversation, SisterState } from './types'
+import type { WeChatAppData, Conversation, ContactState } from './types'
+import { migrateConversation } from './migrations'
 import type { ConversationScope } from './bridge'
 import { resolveProfile, profileCharacterKey } from './profile-library'
-function createDefaultSisterState(): SisterState {
+function createDefaultContactState(): ContactState {
   return {
     hasExternalState: false,
     mood: 60.0,
     interest: 15.0,
-    sisterLocation: 'SISTER_ROOM',
+    contactLocation: 'SISTER_ROOM',
     playerLocation: 'COMPANY',
     money: 5200,
   }
@@ -18,7 +19,7 @@ function createDefaultSisterState(): SisterState {
 export function getScopedConversation(
   appData: WeChatAppData,
   scopeOrName: ConversationScope | string,
-): CharacterConversation {
+): Conversation {
   if (!appData.conversations) {
     appData.conversations = {}
   }
@@ -51,7 +52,7 @@ export function getScopedConversation(
       chatId,
       scopeKey,
       messages: [...appData.messages],
-      state: appData.state ? { ...appData.state } : createDefaultSisterState(),
+      state: appData.state ? { ...appData.state } : createDefaultContactState(),
       currentDay: appData.currentDay || 1,
     }
     appData.conversations[scopeKey] = conv
@@ -62,7 +63,7 @@ export function getScopedConversation(
 
   // 3. 首次新建独立会话
   if (!conv) {
-    const isSister = !characterName || characterName === '妹妹'
+    const isOriginalPreset = !characterName || characterName === '妹妹'
     const profile = resolveProfile(appData.config, isScope ? profileCharacterKey(scopeOrName.card) : null)
     conv = {
       characterName,
@@ -71,15 +72,15 @@ export function getScopedConversation(
       scopeKey,
       messages: [
         {
-          sender: 'sister',
-          content: profile.openingMessage || (profile.preset === 'cohabitation' && isSister ? '哥，下班没？今天晚上想吃什么呀？' : '在吗？发个微信聊聊。'),
+          sender: 'contact',
+          content: profile.openingMessage || (profile.preset === 'cohabitation' && isOriginalPreset ? '哥，下班没？今天晚上想吃什么呀？' : '在吗？发个微信聊聊。'),
           type: 'text',
           time: { day: 1, hour: 18, minute: 30 },
         },
       ],
       state: profile.preset === 'general'
-        ? { ...createDefaultSisterState(), sisterLocation: '未设定', playerLocation: '未设定', money: 0 }
-        : createDefaultSisterState(),
+        ? { ...createDefaultContactState(), contactLocation: '未设定', playerLocation: '未设定', money: 0 }
+        : createDefaultContactState(),
       currentDay: 1,
     }
     appData.conversations[scopeKey] = conv
@@ -93,7 +94,7 @@ export function getScopedConversation(
     if (externalState.mood !== undefined) conv.state.mood = externalState.mood
     if (externalState.interest !== undefined) conv.state.interest = externalState.interest
     if (externalState.money !== undefined) conv.state.money = externalState.money
-    if (externalState.location !== undefined) conv.state.sisterLocation = externalState.location
+    if (externalState.location !== undefined) conv.state.contactLocation = externalState.location
   } else if (externalState && externalState.source === 'none') {
     // 失去外部状态源时清理
     conv.state.hasExternalState = false
@@ -101,5 +102,6 @@ export function getScopedConversation(
     conv.state.externalFields = undefined
   }
 
+  migrateConversation(conv)
   return conv
 }

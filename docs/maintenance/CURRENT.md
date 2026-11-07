@@ -4,46 +4,38 @@ project: st-stage
 base_branch: main
 working_branch: main
 verified_code_head: 4d635f4efb9801396dc9a55815278e70d2fcf963
-remote_code_head_at_update: 4d635f4efb9801396dc9a55815278e70d2fcf963
-build_version: 0.9.0+202611052252
-phase: wechat-current-contact-entry-published
-updated_at: 2026-11-05
+worktree_base_head: 2b642a416924b301d8b0bd0def9cdf92dbaa540b
+remote_code_head_at_update: 2b642a416924b301d8b0bd0def9cdf92dbaa540b
+build_version: 0.9.0+202611071003
+phase: five-phase-review-repaired-uncommitted
+updated_at: 2026-11-07
 updated_by: Codex
-verification_source: 54-wechat-tests-typecheck-lint-11-host-workflow-checks-and-58-file-parity
-history: docs/maintenance/history/2026-11-05-wechat-current-contact.md
-previous_history: docs/maintenance/history/2026-11-05-publication.md
+verification_source: 1470-unit-25-release-104-wechat-25-mobile-4-export-44-scoped-axe-60-artifact-hashes
+history: docs/maintenance/history/2026-11-07-five-phase-repairs.md
+previous_history: docs/maintenance/history/2026-11-07-five-phase-review.md
 ---
 
 # 当前项目状态
 
-当前发布 **0.9.0+202611052252** 修复从角色卡进入微信时未加入该角色的问题：每次进入会话列表都会补上当前角色，已有会话不重复创建或重置，未选角色不创建占位联系人。开发提交 **`4d635f4`**、扩展发布 **`6e6eb95`** 均已推送两个仓库的 `main`；本会话 A–G 成果继续包含在发布中。日常 SillyTavern 安装目录和用户数据未修改。[原隔离实测入口](http://127.0.0.1:18771/) 已更新且保留原 mvu-data。
+**2026-11-07 复审修复与本地验收完成。** 七项 P2 已修复，另补朋友圈生成/保存状态快照竞态和心情更新来源；独立交叉复核未发现新的 P1/P2。详见 [修复与证据](history/2026-11-07-five-phase-repairs.md)。五阶段功能和本轮修复仍全部未提交、未推送，安装仓库未同步。
 
-## 本轮行为
+最新已发布版本仍是 **0.9.0+202611052252**（开发 4d635f4、安装仓库 6e6eb95）。本地新候选为 **0.9.0+202611071003**，不属于 verified_code_head。HEAD 与本地跟踪 origin/main 为 2b642a4，本轮未重新查询真实远端；发布基线祖先及已提交产品差异检查通过，工作区变更单独验收。
 
-- 首页角色概览移至 App 网格底部，默认折叠并记住偏好。
-- 微信从会话列表进入，可在酒馆与 A 聊天时联系 B。稳定角色身份、独立历史/草稿/未读/状态，旧记录保留；在途回复归原会话，不读取另一个主聊天或 MVU。
-- 明确的右上角设置；常用字段直接编辑，通用/联系人专用两个目标，保存后重开一致；模板收起，保存/失败反馈固定在底部。
-- 全部聊天/状态/格式提示词可见、可改、可恢复、可预览；单次回复 JSON 同步内心想法和当前状态。钱包、天数、生活费和第二次评估退出新工作流。
-- 表情分组预览、修改、启停与图库导入；历史素材快照。红包支持任意内容和附言。
+## 实现与修复
 
-## 当前修复证据与产物
+- 图库职责拆分；微信 Contact/Group 模型及历史数据迁移保留旧身份和记录。
+- 群聊、@、九格头像、朋友圈/点赞、语音/TTS 和取消/超时/失败恢复均已实现。整轮群回复冻结配置和角色快照；状态按成员更新时间选择，朋友圈请求与保存使用同一快照；提及支持完整边界和身份/名字并集。
+- 语音点击即展开文字，宿主回调返回不宣称播放成功；控件跨重绘保留展开、请求状态及焦点，超时可重试，卸载忽略迟到结果。
+- JSZip 按需分块等待可立即取消；CI 核对 HEAD 中完整产物清单，防止未跟踪 chunk 掩盖漏提交；预览 locale 固定 LF。
+- `pnpm release:full` 提供构建、检查、候选、备份同步、双仓正常推送和恢复回执，默认只准备，见 [发布说明](../RELEASE.md)。本轮未执行真实发布。
 
-新增 4 项入口回归先复现失败后通过；微信模块 **9 文件 / 54 项**通过，类型及定向 lint 通过。真实隔离 ST 320×667 完成 **11 组流程检查、6 次 axe 扫描零检出**，保留 2 条 incomplete 规则。源码/预览/分发/安装仓库 **58 文件**一致，实际仅 bundle/version 变化。18771 HTTP 已核对版本和 bundle SHA-256 `75a90031849a832a6ec451af11366d7280a7ac54eec262c520113c31ceb54391`；临时 18772 已停止。
+## 最新验证
 
-[当前交接](history/2026-11-05-wechat-current-contact.md) · [候选与清单](../../test-results/release-2026-11-05-2252/) · [回归报告](../../test-results/wechat-entry-2026-11-05/browser/report.json) · [用户体验清单](UNIFIED-ACCEPTANCE.md) · [微信说明](../WECHAT.md)。日志与备份是本地忽略产物；远端维护者可按提交和交接摘要追溯。
+- 全量 119 文件 / **1470 项**、发布工具 **25 项**、类型、lint、855 翻译键和 Next 构建全部通过。
+- 真实隔离 ST 微信四布局 **104 项**流程通过；移动 E2E **25 项**通过；中英文桌面/手机导出 **4 场景**通过，含真实 JSZip chunk 挂起取消、重试一次下载及 ZIP 内容核对。
+- 微信范围 **44 次 axe 扫描零检出**；保留 45 个规则/目标/原因去重不确定项。本次未重跑全部应用扫描；历史全界面 118 个去重不确定项与节点复核仍保留于 [无障碍记录](history/2026-11-07-accessibility-review.md)，不宣称完整 WCAG 达标。
+- 三通道 **60 文件**一致，候选归档逐文件 SHA-256 校验通过。主包 **614748 bytes**，SHA-256 `b35358be6cc134914f2092730e79cd8f8ff6fe14b81b71f2c81e4ef560343840`。候选：`test-results/review-fixes-2026-11-07/candidate-1003/`。
 
-## 前一版 A–G 验收（2119）
+本次 18772 ST 和 3101 Next 临时服务已停止；18771 原测试入口与数据保留。真实 AI、实际音频供应商、实体设备/系统输入法、完整读屏和真实远端 CI 尚未验证。新 `--committed` 门禁在当前未提交工作区应失败，成功/失败场景由临时 Git fixture 验证。
 
-最终相关 **9 文件 / 68 项**通过；此前全量 113 文件/1416 项经 3 个沙盒夹具权限失败重跑收敛。类型/lint、855 翻译键、最终 Next 与扩展构建、58 文件一致性、12 发布工具、25 网页移动 E2E 通过。
-
-真实 ST 四档布局共 **40 组流程检查、24 次 axe 扫描零检出**，保留 8 条不确定规则记录。桌面/320/390 对应 2114；2119 只补消息滚动区键盘入口与焦点轮廓，横屏完整复核通过，前面未变化业务证据仍保留原构建号。真实 AI/实体设备/完整读屏不在该自动证据内。
-
-[发布记录](history/2026-11-05-publication.md) · [验收汇总](../../test-results/release-2026-11-05-2119/acceptance-summary.json) · [功能交接](history/2026-11-05-wechat-experience.md) · [用户体验清单](UNIFIED-ACCEPTANCE.md) · [微信说明](../WECHAT.md)。发布前按相同构建时间重新生成的 58 文件与验收候选逐一哈希一致；同步后源码/预览/分发/安装仓库完整一致。bundle SHA-256 为 `fa33178e26c32faf369c3fe040839a2b3bb80a3d529de60f222d1a44a568f07b`，与实际 18771 HTTP 一致；自动 18772 服务已停止。测试日志和备份为本地忽略产物，远端仓库中的证据摘要见发布记录。
-
-## 既有成果与边界
-
-A–F 成果与 G 一起提交发布：原生 Connection Manager、角色推荐、卡片分支与选择恢复、图库存储/分享、逐类恢复/导出、Renderer/管家修复以及手机可视区定位。历史证据见 [F 交接](history/2026-11-05-character-play-mobile.md)。旧微信跟随主聊天、MVU 数值/钱包和双阶段请求已由本轮独立会话契约取代，不再要求用户验收旧行为；变量 App 自身的 MVU 能力保留。
-
-发布前已 fetch 两个 origin，均与本地基线一致；正常快进推送，没有重写历史。最新扩展同步备份及回执在 `test-results/wechat-entry-2026-11-05/ext-backup/`。群聊/朋友圈、完整账户恢复、素材托管、真实 AI/实体设备/完整读屏验收仍属后续范围；[DEFERRED](DEFERRED.md) 已记录本次提交对历史未发布状态的取代关系。
-
-远端 Actions 因当前 API/浏览器无可用读取登录而未确认；本地验收和产物一致性通过不代表远端 CI 通过，详情见发布记录。
+[五阶段计划](../superpowers/plans/2026-11-06-five-phase-evolution.md) · [微信说明](../WECHAT.md) · [后续事项](DEFERRED.md)

@@ -2759,7 +2759,7 @@
   flex-direction: column;
   border-radius: 28px;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  background: linear-gradient(160deg, rgba(28, 28, 36, 0.97), rgba(16, 16, 22, 0.97));
+  background: #181820;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), inset 0 0 0 2px rgba(0, 0, 0, 0.5);
   overflow: hidden;
   user-select: none;
@@ -3197,7 +3197,7 @@
 }
 
 .so-butler-summary-item small {
-  color: rgba(255, 255, 255, 0.58);
+  color: #b8b8bf;
   font-size: 10.5px;
 }
 
@@ -3771,6 +3771,7 @@
 }
 .nv-tpl-desc {
   flex: 1;
+  opacity: 0.8;
 }
 .nv-tpl-actions {
   display: flex;

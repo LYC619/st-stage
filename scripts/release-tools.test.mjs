@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs'
+import { cpSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
@@ -77,4 +77,63 @@ test('invalid artifacts produce no prepared directory', t => {
   const result = run('prepare-release.mjs', ['--root', f.root, '--distribution', f.distribution, '--output', output])
   assert.notEqual(result.status, 0)
   assert.equal(existsSync(output), false)
+})
+
+test('chunk graph parity rejects missing, modified and orphan chunks', t => {
+  const f = fixture(t)
+  for (const root of [f.root, f.distribution]) {
+    put(root, 'bundle.js', 'import("./chunk-ABC123.js")')
+    put(root, 'chunk-ABC123.js', 'export const value = 1')
+  }
+  assert.equal(parity(f).status, 0)
+  rmSync(path.join(f.distribution, 'chunk-ABC123.js'))
+  assert.notEqual(parity(f).status, 0)
+  put(f.distribution, 'chunk-ABC123.js', 'changed')
+  assert.notEqual(parity(f).status, 0)
+  put(f.distribution, 'chunk-ABC123.js', 'export const value = 1')
+  put(f.distribution, 'chunk-ORPHAN.js', 'stale')
+  assert.notEqual(parity(f).status, 0)
+})
+
+function committedFixture(t) {
+  const f = fixture(t)
+  const distribution = path.join(f.root, 'st-distribution'), preview = path.join(f.root, 'public')
+  cpSync(f.distribution, distribution, { recursive: true })
+  cpSync(f.distribution, preview, { recursive: true })
+  for (const root of [f.root, distribution, preview]) {
+    put(root, 'bundle.js', 'import "./chunk-SHARED.js"; import("./chunk-LAZY.js")\n')
+    put(root, 'chunk-SHARED.js', 'export const shared = 1\n')
+    put(root, 'chunk-LAZY.js', 'import "./chunk-SHARED.js"; export const lazy = 2\n')
+  }
+  const git = (...args) => execFileSync('git', ['-C', f.root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  git('init', '-q'); git('config', 'core.autocrlf', 'false')
+  git('add', '.')
+  git('-c', 'user.name=Release Test', '-c', 'user.email=release@example.invalid', 'commit', '--no-gpg-sign', '-qm', 'artifacts')
+  const verify = () => run('verify-runtime-parity.mjs', ['--root', f.root, '--distribution', distribution, '--preview', preview, '--committed'])
+  return { ...f, distribution, preview, git, verify }
+}
+
+test('committed artifact verification accepts the complete module graph and all channels', t => {
+  const f = committedFixture(t), result = f.verify()
+  assert.equal(result.status, 0, result.stderr)
+})
+
+for (const file of ['chunk-SHARED.js', 'st-distribution/chunk-LAZY.js', 'public/chunk-SHARED.js', 'public/locales/en-US.json']) {
+  test(`committed artifact verification rejects a generated but uncommitted ${file}`, t => {
+    const f = committedFixture(t)
+    f.git('rm', '--cached', file)
+    f.git('-c', 'user.name=Release Test', '-c', 'user.email=release@example.invalid', 'commit', '--no-gpg-sign', '-qm', 'omit artifact')
+    const result = f.verify()
+    assert.notEqual(result.status, 0, 'rebuilding an omitted artifact must not conceal it from CI')
+    assert.match(result.stderr, /not committed/)
+    assert.ok(result.stderr.includes(file), result.stderr)
+  })
+}
+
+test('committed artifact verification rejects staged and unstaged artifact changes', t => {
+  const f = committedFixture(t)
+  for (const root of [f.root, f.distribution, f.preview]) put(root, 'chunk-SHARED.js', 'export const shared = 9\n')
+  assert.notEqual(f.verify().status, 0)
+  f.git('add', '.')
+  assert.notEqual(f.verify().status, 0, 'staging regenerated files is not committing them')
 })

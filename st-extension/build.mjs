@@ -18,7 +18,7 @@
  */
 
 import { build } from 'esbuild'
-import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, lstatSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { buildVersion, resolveBuildTime } from './build-time.mjs'
@@ -60,14 +60,18 @@ export async function buildExtension({
   const version = buildVersion(manifest.version ?? '0.0.0', buildTime)
 
   const bundlePath = path.join(outputRoot, 'bundle.js')
-  await build({
-    entryPoints: [path.join(extensionDir, 'src/index.ts')],
-    outfile: bundlePath,
+  const result = await build({
+    entryPoints: { bundle: path.join(extensionDir, 'src/index.ts') },
+    outdir: outputRoot,
     bundle: true,
     format: 'esm',
     target: 'es2020',
     platform: 'browser',
-    minify: false,
+    minify: true,
+    keepNames: true,
+    splitting: true,
+    chunkNames: 'chunk-[hash]',
+    write: false,
     charset: 'utf8',
     logLevel,
     define: {
@@ -75,10 +79,17 @@ export async function buildExtension({
       __BUILD_TIME__: JSON.stringify(buildTime),
     },
   })
-  writeFileSync(
-    bundlePath,
-    normalizeArtifactNewlines(normalizeBundleWhitespace(readFileSync(bundlePath, 'utf8'))),
-  )
+  const generated = new Set(result.outputFiles.map(file => path.basename(file.path)))
+  for (const file of result.outputFiles) writeFileSync(file.path, normalizeArtifactNewlines(normalizeBundleWhitespace(file.text)))
+  for (const name of readdirSync(outputRoot)) {
+    if (/^chunk-[A-Z0-9]+\.js$/.test(name) && !generated.has(name)) {
+      const old = path.join(outputRoot, name)
+      if (!lstatSync(old).isFile() || lstatSync(old).isSymbolicLink()) throw new Error('unsafe generated chunk: ' + old)
+      unlinkSync(old)
+    }
+  }
+  const bytes = readFileSync(bundlePath).length
+  if (bytes >= 1000000) throw new Error('bundle.js must stay below 1 MB; got ' + bytes + ' bytes')
 
   // 版本探针：stub 以 cache:no-store 读取，作为 bundle/css 的缓存破坏参数
   writeFileSync(path.join(outputRoot, 'version.json'), `${JSON.stringify({ v: version })}\n`)
@@ -175,6 +186,7 @@ export async function buildExtensionPair({
   const pairedEnv = { ...env, ST_STAGE_BUILD_TIME: buildTime }
   const result = await buildExtension({ sourceRoot, outputRoot: sourceRoot, env: pairedEnv, logLevel, log })
   await buildExtension({ sourceRoot, outputRoot: path.join(sourceRoot, 'st-distribution'), env: pairedEnv, logLevel, log })
+  await buildExtension({ sourceRoot, outputRoot: path.join(sourceRoot, 'public'), env: pairedEnv, logLevel, log })
   return result
 }
 

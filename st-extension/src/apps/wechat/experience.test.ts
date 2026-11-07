@@ -14,7 +14,7 @@ const reply = (text: string): LLMReplyPayload => ({ messages: [{ type: 'text', c
 
 describe('WeChat independent conversation experience', () => {
   it('starts with the list, sends to B while host A stays active and never reads host variables/history', async () => {
-    const request = vi.spyOn(WeChatPipeline.prototype, 'requestSisterReply').mockResolvedValue(reply('B reply'))
+    const request = vi.spyOn(WeChatPipeline.prototype, 'requestContactReply').mockResolvedValue(reply('B reply'))
     const f = setup(); expect(f.el('#wt-chat').hidden).toBe(true)
     expect(f.el('#wt-conversations').hidden).toBe(false)
     f.open(f.b.scopeKey!)
@@ -33,7 +33,7 @@ describe('WeChat independent conversation experience', () => {
   })
   it('routes simultaneous pending replies to their originating conversations, with unread counts and separate drafts', async () => {
     const a = deferred(), b = deferred()
-    vi.spyOn(WeChatPipeline.prototype, 'requestSisterReply').mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise)
+    vi.spyOn(WeChatPipeline.prototype, 'requestContactReply').mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise)
     const f = setup(); f.open(f.a.scopeKey!); f.el<HTMLInputElement>('#wt-input-text').value = 'to A'; f.el('#wt-send-btn').click()
     f.el<HTMLInputElement>('#wt-input-text').value = 'A draft'
     f.open(f.b.scopeKey!); expect(f.el<HTMLInputElement>('#wt-input-text').value).toBe('')
@@ -45,7 +45,7 @@ describe('WeChat independent conversation experience', () => {
     f.open(f.b.scopeKey!); expect(f.el<HTMLInputElement>('#wt-input-text').value).toBe('B draft')
   })
   it.each(['unmount', 'clear'] as const)('rejects late reply after %s and aborts the request', async mode => {
-    const work = deferred(), request = vi.spyOn(WeChatPipeline.prototype, 'requestSisterReply').mockReturnValue(work.promise)
+    const work = deferred(), request = vi.spyOn(WeChatPipeline.prototype, 'requestContactReply').mockReturnValue(work.promise)
     const f = setup(); f.open(f.a.scopeKey!); f.el<HTMLInputElement>('#wt-input-text').value = 'hello'; f.el('#wt-send-btn').click()
     if (mode === 'unmount') f.app.unmount?.()
     else { f.el('#wt-settings-btn').click(); f.el('#wt-btn-clear-chat').click(); f.el('#wt-btn-clear-chat').click() }
@@ -56,7 +56,7 @@ describe('WeChat independent conversation experience', () => {
     if (mode === 'clear') expect(f.a.messages).toHaveLength(0)
   })
   it('protects IME input and blocks duplicate sends while preserving the next draft', async () => {
-    const work = deferred(), request = vi.spyOn(WeChatPipeline.prototype, 'requestSisterReply').mockReturnValue(work.promise)
+    const work = deferred(), request = vi.spyOn(WeChatPipeline.prototype, 'requestContactReply').mockReturnValue(work.promise)
     const f = setup(); f.open(f.a.scopeKey!); const input = f.el<HTMLInputElement>('#wt-input-text'); input.value = '你好'
     input.dispatchEvent(new CompositionEvent('compositionstart'))
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
@@ -67,7 +67,7 @@ describe('WeChat independent conversation experience', () => {
     work.resolve(reply('hello')); await Promise.resolve()
   })
   it('sends arbitrary gift content and note without mutating legacy wallet or external state', async () => {
-    const request = vi.spyOn(WeChatPipeline.prototype, 'requestSisterReply').mockResolvedValue(reply('Thanks'))
+    const request = vi.spyOn(WeChatPipeline.prototype, 'requestContactReply').mockResolvedValue(reply('Thanks'))
     const f = setup(); f.a.state.money = 1000; f.a.state.hasExternalState = true; f.a.state.externalFields = { money: true }
     f.open(f.a.scopeKey!); f.el('#wt-packet-btn').click()
     f.el<HTMLInputElement>('#wt-custom-amt').value = '一张去火星的船票'; f.el<HTMLTextAreaElement>('#wt-packet-note').value = '一起出发'
@@ -105,7 +105,7 @@ describe('WeChat independent conversation experience', () => {
     expect(f.data().config.apiKey).toBe('')
   })
   it('imports a selected gallery image as a usable emoji and retains its sent snapshot', async () => {
-    vi.spyOn(WeChatPipeline.prototype, 'requestSisterReply').mockResolvedValue(reply('Hi'))
+    vi.spyOn(WeChatPipeline.prototype, 'requestContactReply').mockResolvedValue(reply('Hi'))
     const f = setup(); f.settings.packs.push({ id: 'gallery', name: '旅行', sprites: [{ tag: '船票', url: 'https://example.test/ticket.png' }] })
     f.open(f.b.scopeKey!); f.el('#wt-settings-btn').click()
     const gallery = f.el<HTMLSelectElement>('select[aria-label="从图库选择图片"]'); gallery.value = '0'
@@ -121,7 +121,7 @@ describe('WeChat independent conversation experience', () => {
   })
   it('times out safely and allows another send without accepting the old completion', async () => {
     vi.useFakeTimers(); const work = deferred()
-    const request = vi.spyOn(WeChatPipeline.prototype, 'requestSisterReply').mockReturnValueOnce(work.promise).mockResolvedValue(reply('new'))
+    const request = vi.spyOn(WeChatPipeline.prototype, 'requestContactReply').mockReturnValueOnce(work.promise).mockResolvedValue(reply('new'))
     const f = setup(); f.open(f.a.scopeKey!); f.el<HTMLInputElement>('#wt-input-text').value = 'first'; f.el('#wt-send-btn').click()
     await vi.advanceTimersByTimeAsync(60001)
     expect(request.mock.calls[0][5]?.aborted).toBe(true)

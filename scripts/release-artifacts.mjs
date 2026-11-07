@@ -1,9 +1,30 @@
 import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { lstatSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 
 export const runtimeFiles = ['manifest.json', 'index.js', 'bundle.js', 'style.css', 'version.json', 'locales/zh-CN.json', 'locales/en-US.json']
 export const baseFiles = [...runtimeFiles, 'README.md']
+
+export function chunkFiles(root) {
+  return readdirSync(root).filter(name => /^chunk-[A-Z0-9]+\.js$/.test(name)).sort()
+}
+
+export function verifyChunks(root) {
+  const files = chunkFiles(root), reached = new Set(), pending = ['bundle.js']
+  while (pending.length) {
+    const current = pending.pop()
+    if (reached.has(current)) continue
+    reached.add(current)
+    const source = readFileSync(checkedPath(root, current), 'utf8')
+    for (const match of source.matchAll(/["']\.\/(chunk-[A-Z0-9]+\.js)["']/g)) {
+      if (!files.includes(match[1])) throw new Error('missing imported chunk: ' + match[1])
+      pending.push(match[1])
+    }
+  }
+  if (files.some(file => !reached.has(file))) throw new Error('unreferenced chunk in ' + root)
+  return files
+}
 
 export function option(name, required = true) {
   const index = process.argv.indexOf(name)
@@ -57,21 +78,48 @@ export function compareFiles(leftRoot, rightRoot, files) {
 }
 
 export function verifyArtifacts({ root, distribution, release, preview }) {
+  const chunks = verifyChunks(root)
   const assets = assetFiles(root)
   if (!assets.length) throw new Error('assets/wechat must not be empty')
   const targets = [distribution, ...(release ? [release] : []), ...(preview ? [preview] : [])]
   for (const target of targets) {
+    if (JSON.stringify(verifyChunks(target)) !== JSON.stringify(chunks)) throw new Error('chunk inventory mismatch in ' + target)
+    compareFiles(root, target, chunks)
     const actual = assetFiles(target)
     const missing = assets.filter(name => !actual.includes(name)), extra = actual.filter(name => !assets.includes(name))
     if (missing.length || extra.length) throw new Error(`assets/wechat inventory mismatch in ${target}: missing=[${missing.join(', ')}], extra=[${extra.join(', ')}]`)
     compareFiles(root, target, assets)
   }
   compareFiles(root, distribution, runtimeFiles)
+  if (preview) compareFiles(root, preview, runtimeFiles)
   const sourceReadme = checkedPath(root, 'st-extension/distribution-readme.md')
   const generatedReadme = checkedPath(distribution, 'README.md')
   if (readFileSync(sourceReadme, 'utf8').replace(/\r\n/g, '\n') !== readFileSync(generatedReadme, 'utf8')) {
     throw new Error('artifact mismatch: generated README.md does not match distribution-readme.md')
   }
   if (release) compareFiles(distribution, release, baseFiles)
-  return [...baseFiles, ...assets].map(name => fileInfo(distribution, name))
+  return [...baseFiles, ...chunks, ...assets].map(name => fileInfo(distribution, name))
+}
+
+/** Check the committed tree as well as rebuilt bytes; Git diff alone ignores new chunks. */
+export function verifyCommittedArtifacts({ root, distribution, release, preview }) {
+  const files = verifyArtifacts({ root, distribution, release, preview })
+  const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  if (path.resolve(root) !== path.resolve(git('rev-parse', '--show-toplevel').trim())) throw new Error('expected Git checkout root')
+  const relative = target => {
+    const name = path.relative(root, target).split(path.sep).join('/')
+    if (!name || name === '..' || name.startsWith('../') || path.isAbsolute(name)) throw new Error('artifact channel must be inside the Git checkout')
+    return name
+  }
+  const channels = [relative(distribution), ...(preview ? [relative(preview)] : [])]
+  const generated = files.map(file => file.path)
+  const expected = [...generated.filter(name => name !== 'README.md'), ...channels.flatMap(channel => generated.map(name => channel + '/' + name))]
+  const committed = new Set(git('ls-tree', '-r', '--name-only', '-z', 'HEAD').split('\0').filter(Boolean))
+  const missing = expected.filter(name => !committed.has(name))
+  if (missing.length) throw new Error('generated artifacts are not committed: ' + missing.join(', '))
+  // Include removed chunks/assets and staged edits, which are absent from the current inventory.
+  const changed = git('diff', '--name-only', '-z', 'HEAD', '--', ...runtimeFiles, 'chunk-*.js', 'assets/wechat', 'locales', ...channels)
+    .split('\0').filter(Boolean)
+  if (changed.length) throw new Error('generated artifacts differ from HEAD: ' + changed.join(', '))
+  return files
 }

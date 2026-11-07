@@ -1,7 +1,7 @@
 import type { AppHost } from '../../../../core/phone-registry'
 import { stableCharacterKey } from '../../../../core/character-identity'
 import type { ConversationScope, STCharacterCard } from './bridge'
-import type { CharacterConversation, WeChatAppData, WeChatContact } from './types'
+import type { Conversation, WeChatAppData, Contact } from './types'
 import { resolveProfile } from './profile-library'
 
 import { getWeChatHostContext, type HostCharacterCard } from './bridge'
@@ -15,19 +15,19 @@ function snapshot(raw: HostCard): STCharacterCard {
   }
   return result
 }
-function contact(raw: HostCard): WeChatContact | undefined {
+function contact(raw: HostCard): Contact | undefined {
   const id = stableCharacterKey(raw)
   return id ? { id, name: raw.name?.trim() || raw.data?.name?.trim() || '未命名角色', avatar: raw.avatar, kind: 'character', card: snapshot(raw) } : undefined
 }
-export function listContacts(host: AppHost): WeChatContact[] {
+export function listContacts(host: AppHost): Contact[] {
   const cards = [...(hostContext()?.characters ?? [])]
   const current = host.getCharacterCard?.()
   if (current) cards.push(current)
-  const result = new Map<string, WeChatContact>()
+  const result = new Map<string, Contact>()
   for (const card of cards) { const item = contact(card); if (item && !result.has(item.id)) result.set(item.id, item) }
   return [...result.values()]
 }
-export async function loadContact(host: AppHost, id: string): Promise<WeChatContact> {
+export async function loadContact(host: AppHost, id: string): Promise<Contact> {
   const context = hostContext()
   const index = context?.characters?.findIndex(item => stableCharacterKey(item) === id) ?? -1
   if (index >= 0 && context?.characters?.[index].shallow) {
@@ -41,7 +41,7 @@ export async function loadContact(host: AppHost, id: string): Promise<WeChatCont
   if (!item) throw new Error('此角色卡已不存在，请重新选择')
   return item
 }
-export function addContactConversation(data: WeChatAppData, item: WeChatContact): CharacterConversation {
+export function addContactConversation(data: WeChatAppData, item: Contact): Conversation {
   if (!stableCharacterKey(item.card) || stableCharacterKey(item.card) !== item.id) throw new Error('联系人缺少稳定的角色卡身份')
   data.contacts ??= {}; data.conversations ??= {}
   data.contacts[item.id] = { ...item, card: snapshot(item.card!) }
@@ -50,13 +50,13 @@ export function addContactConversation(data: WeChatAppData, item: WeChatContact)
     const profile = resolveProfile(data.config, item.id)
     data.conversations[key] = {
       scopeKey: key, contactId: item.id, conversationType: 'direct', memberIds: [item.id], characterName: item.name,
-      messages: profile.openingMessage ? [{ sender: 'sister', type: 'text', content: profile.openingMessage, time: { day: 1, hour: 0, minute: 0 } }] : [],
-      state: { mood: 60, interest: 15, money: 0, sisterLocation: '', playerLocation: '' }, currentDay: 1, unreadCount: 0,
+      messages: profile.openingMessage ? [{ sender: 'contact', contactId: item.id, authorName: item.name, type: 'text', content: profile.openingMessage, time: { day: 1, hour: 0, minute: 0 } }] : [],
+      state: { mood: 60, interest: 15, money: 0, contactLocation: '', playerLocation: '', updatedAt: 0 }, currentDay: 1, unreadCount: 0,
     }
   }
   return data.conversations[key]
 }
-export function conversationScope(data: WeChatAppData, conv: CharacterConversation): ConversationScope {
+export function conversationScope(data: WeChatAppData, conv: Conversation): ConversationScope {
   const item = conv.contactId ? data.contacts?.[conv.contactId] : undefined
   // Old keys contain a stable avatar when available. Link only that exact identity.
   const avatarKey = conv.scopeKey?.match(/^(avatar:[^:]+)(?:::|$)/)?.[1]

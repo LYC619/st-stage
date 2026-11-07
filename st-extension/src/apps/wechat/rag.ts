@@ -40,8 +40,8 @@ export function getRagTokens(text: string): string[] {
 export function messageToRagText(
   msg: ChatMessage,
   playerEmojis: Record<string, EmojiItem>,
-  sisterEmojis: Record<string, EmojiItem>,
-  sisterPhotos: Record<string, PhotoItem>,
+  contactEmojis: Record<string, EmojiItem>,
+  contactPhotos: Record<string, PhotoItem>,
 ): string {
   const { sender, content, type } = msg
 
@@ -50,11 +50,11 @@ export function messageToRagText(
       return content
     case 'emoji': {
       const fromPlayer = msg.emojiSource ? msg.emojiSource === 'player' : sender === 'player'
-      const item = msg.asset ?? (fromPlayer ? playerEmojis : sisterEmojis)[content]
+      const item = msg.asset ?? (fromPlayer ? playerEmojis : contactEmojis)[content]
       if (sender === 'player' && item) {
         return `玩家发送了一个表情包：id=${content}，名称=${item.name}，含义=${item.description}`
       }
-      if (sender === 'sister' && item) {
+      if (sender === 'contact' && item) {
         return `${item.name} ${item.description}`
       }
       return content
@@ -63,8 +63,8 @@ export function messageToRagText(
       return `红包 礼物 ${content}${msg.note ? ` 留言 ${msg.note}` : ''}`
     case 'image':
       if (msg.asset) return `${msg.asset.name} ${msg.asset.description}`
-      if (sender === 'sister' && sisterPhotos[content]) {
-        return `${sisterPhotos[content].name} ${sisterPhotos[content].description}`
+      if (sender === 'contact' && contactPhotos[content]) {
+        return `${contactPhotos[content].name} ${contactPhotos[content].description}`
       }
       return '图片'
     default:
@@ -77,10 +77,10 @@ export function calculateRagScore(
   msg: ChatMessage,
   index: number,
   playerEmojis: Record<string, EmojiItem>,
-  sisterEmojis: Record<string, EmojiItem>,
-  sisterPhotos: Record<string, PhotoItem>,
+  contactEmojis: Record<string, EmojiItem>,
+  contactPhotos: Record<string, PhotoItem>,
 ): number {
-  const msgText = messageToRagText(msg, playerEmojis, sisterEmojis, sisterPhotos)
+  const msgText = messageToRagText(msg, playerEmojis, contactEmojis, contactPhotos)
   if (!msgText) return 0.0
 
   const queryTokens = getRagTokens(query)
@@ -108,8 +108,8 @@ export function getRagMessages(
   allMessages: ChatMessage[],
   today: number,
   playerEmojis: Record<string, EmojiItem>,
-  sisterEmojis: Record<string, EmojiItem>,
-  sisterPhotos: Record<string, PhotoItem>,
+  contactEmojis: Record<string, EmojiItem>,
+  contactPhotos: Record<string, PhotoItem>,
   maxCount: number = 3,
 ): ChatMessage[] {
   const scored: { score: number; message: ChatMessage }[] = []
@@ -121,7 +121,7 @@ export function getRagMessages(
       continue
     }
 
-    const score = calculateRagScore(query, msg, i, playerEmojis, sisterEmojis, sisterPhotos)
+    const score = calculateRagScore(query, msg, i, playerEmojis, contactEmojis, contactPhotos)
     if (score > 0) {
       scored.push({ score, message: msg })
     }
@@ -136,18 +136,18 @@ export function buildRagPrompt(
   allMessages: ChatMessage[],
   today: number,
   playerEmojis: Record<string, EmojiItem>,
-  sisterEmojis: Record<string, EmojiItem>,
-  sisterPhotos: Record<string, PhotoItem>,
+  contactEmojis: Record<string, EmojiItem>,
+  contactPhotos: Record<string, PhotoItem>,
   maxCount: number = 3,
 ): string {
-  const ragMessages = getRagMessages(query, allMessages, today, playerEmojis, sisterEmojis, sisterPhotos, maxCount)
+  const ragMessages = getRagMessages(query, allMessages, today, playerEmojis, contactEmojis, contactPhotos, maxCount)
   if (ragMessages.length === 0) return ''
 
   let text = '\n以下是从过去聊天记录中检索出的可能相关内容。\n这些内容仅供参考，不一定与当前问题有关。\n不要直接提及“历史记录”“RAG”或“检索”。\n请结合当前角色的人设和当天上下文自然回复。\n\n相关历史：\n'
 
   for (const msg of ragMessages) {
-    const senderName = msg.sender === 'player' ? '玩家' : '角色'
-    const content = messageToRagText(msg, playerEmojis, sisterEmojis, sisterPhotos)
+    const senderName = msg.sender === 'player' ? '玩家' : msg.authorName || '角色'
+    const content = messageToRagText(msg, playerEmojis, contactEmojis, contactPhotos)
     text += `[第${msg.time.day}天][${senderName}] ${content}\n`
   }
 

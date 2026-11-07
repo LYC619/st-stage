@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { assetFiles, baseFiles, fileInfo, option } from './release-artifacts.mjs'
+import { assetFiles, baseFiles, chunkFiles, verifyChunks, fileInfo, option } from './release-artifacts.mjs'
 
 const within = (parent, child) => {
   const relative = path.relative(parent, child)
@@ -44,6 +44,7 @@ function sameFiles(root, expected) {
   const assets = assetFiles(root)
   const expectedAssets = expected.filter(file => file.path.startsWith('assets/wechat/')).map(file => file.path).sort()
   if (JSON.stringify(assets) !== JSON.stringify(expectedAssets)) throw new Error('asset inventory changed')
+  if (JSON.stringify(chunkFiles(root)) !== JSON.stringify(expected.filter(file => /^chunk-/.test(file.path)).map(file => file.path).sort())) throw new Error('chunk inventory changed')
 }
 
 export function syncRelease({ candidate, release, backup, apply = false }, replaceFile = atomicCopy) {
@@ -53,7 +54,7 @@ export function syncRelease({ candidate, release, backup, apply = false }, repla
   if (report.format !== 1 || !Array.isArray(report.files)) throw new Error('unsupported candidate report')
   const version = JSON.parse(readFileSync(path.join(packageRoot, 'version.json'), 'utf8')).v
   if (version !== report.version || !/^\d+\.\d+\.\d+\+\d{12}$/.test(version)) throw new Error('candidate version mismatch')
-  const expected = [...baseFiles, ...assetFiles(packageRoot)].map(name => fileInfo(packageRoot, name))
+  const expected = [...baseFiles, ...verifyChunks(packageRoot), ...assetFiles(packageRoot)].map(name => fileInfo(packageRoot, name))
   const declared = new Map(report.files.map(file => [file.path, file]))
   if (declared.size !== expected.length || declared.size !== report.files.length || expected.some(file => {
     const entry = declared.get(file.path)
@@ -71,10 +72,10 @@ export function syncRelease({ candidate, release, backup, apply = false }, repla
   const head = git(release, 'rev-parse', 'HEAD')
   const tracked = git(release, 'ls-files', '-z').split('\0').filter(Boolean)
   if (baseFiles.some(name => !tracked.includes(name)) || tracked.some(name => !baseFiles.includes(name)
-    && !name.startsWith('assets/wechat/') && !['.gitignore', '.gitattributes', 'LICENSE'].includes(name))) {
+    && !/^chunk-[A-Z0-9]+\.js$/.test(name) && !name.startsWith('assets/wechat/') && !['.gitignore', '.gitattributes', 'LICENSE'].includes(name))) {
     throw new Error('target is not a standalone install-artifact checkout')
   }
-  const previous = [...baseFiles, ...assetFiles(release)].map(name => fileInfo(release, name))
+  const previous = [...baseFiles, ...chunkFiles(release), ...assetFiles(release)].map(name => fileInfo(release, name))
   const old = new Map(previous.map(file => [file.path, file]))
   const changes = {
     added: expected.filter(file => !old.has(file.path)).map(file => file.path),

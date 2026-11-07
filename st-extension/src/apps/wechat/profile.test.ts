@@ -22,7 +22,7 @@ describe('WeChat configurable scene', () => {
     const next = getScopedConversation(data, 'Bob')
     expect(next.messages[0].content).toBe('自定义开场')
     expect(next.state.money).toBe(0)
-    expect(next.state.sisterLocation).toBe('未设定')
+    expect(next.state.contactLocation).toBe('未设定')
   })
   it('uses explicit nested mappings without unrelated alias fallback and preserves tuples', () => {
     const raw = { stat_data: { mood: 99, Alice: { score: [42, 'description'], place: '图书馆' } } }

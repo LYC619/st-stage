@@ -10,14 +10,15 @@
     "lint": "eslint core st-extension/src lib components app",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:release": "node --test scripts/release-tools.test.mjs scripts/sync-release.test.mjs",
+    "test:release": "node --test scripts/release-tools.test.mjs scripts/sync-release.test.mjs scripts/release-full.test.mjs",
     "release:sync": "node scripts/sync-release.mjs",
     "release:prepare": "node scripts/prepare-release.mjs --root . --distribution st-distribution --preview public",
     "test:mobile": "playwright test",
     "typecheck": "tsc --noEmit",
     "build:ext": "node st-extension/build.mjs",
     "build:all": "node st-extension/build.mjs --all",
-    "build:st": "node st-extension/build.mjs --output-root st-distribution"
+    "build:st": "node st-extension/build.mjs --output-root st-distribution",
+    "release:full": "node scripts/release-full.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
