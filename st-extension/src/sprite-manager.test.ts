@@ -29,7 +29,7 @@ import { createSpriteManager } from './sprite-manager'
 import type { STAdapter } from './st-adapter'
 
 function findButton(scope: ParentNode, text: string): HTMLElement {
-  const button = [...scope.querySelectorAll<HTMLElement>('[role="button"]')].find(
+  const button = [...scope.querySelectorAll<HTMLElement>('[role="button"],button')].find(
     (item) => item.textContent === text,
   )
   if (!button) throw new Error(`找不到按钮：${text}`)
@@ -1141,6 +1141,7 @@ describe('createSpriteManager 实测反馈批次（上传默认不拆分 / 批�
     cardOf('乙包').click()
     cardOf('丙包').click()
     findButton(document, '删除所选（2）').click()
+    findButton(document.querySelector('.so-delete-dialog')!, '删除').click()
     expect(getSettings().packs.map((p) => p.id)).toEqual(['a'])
     expect(getSettings().bindings).toEqual([{ characterName: '阿珍', packIds: ['a'], enabled: true }])
 
@@ -1166,6 +1167,45 @@ describe('createSpriteManager 实测反馈批次（上传默认不拆分 / 批�
       .find((details) => details.querySelector('summary')?.textContent === '包信息')
     expect(panelAfter?.open).toBe(true)
     expect(panelAfter?.querySelector('.so-meta-save-row')).not.toBeNull()
+    manager.close()
+  })
+
+  it('keeps both tab drafts and outfit notes until one explicit save, including keyboard navigation', () => {
+    const { manager, getSettings } = createManager(threePackSettings())
+    manager.open()
+    ;([...document.querySelectorAll<HTMLElement>('.so-pack-card')].find(card => card.textContent?.includes('甲包')))!.click()
+    const panel = openPackInfoPanel(); panel.dispatchEvent(new Event('toggle'))
+    const tabs = [...panel.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+    const sections = [...panel.querySelectorAll<HTMLElement>('[role="tabpanel"]')]
+    expect(panel.querySelector('[role="tablist"]')?.getAttribute('aria-label')).toBe('包信息')
+    tabs.forEach((tab, i) => {
+      expect(tab.getAttribute('aria-controls')).toBe(sections[i].id)
+      expect(sections[i].getAttribute('aria-labelledby')).toBe(tab.id)
+    })
+    const name = panel.querySelector<HTMLInputElement>('input[placeholder="包名"]')!
+    const outfit = panel.querySelector<HTMLInputElement>('input[placeholder="服装（可空）"]')!
+    name.value = '尚未保存的名字'; outfit.value = '新服装'; outfit.dispatchEvent(new Event('change'))
+    tabs[0].focus(); tabs[0].dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowRight',bubbles:true}))
+    expect(document.activeElement).toBe(tabs[1]); expect(tabs[1].getAttribute('aria-selected')).toBe('true')
+    expect(tabs.map(tab=>tab.tabIndex)).toEqual([-1,0]); expect(sections[0].hidden).toBe(true)
+    const note = panel.querySelector<HTMLTextAreaElement>('.so-pack-prompt-note')!
+    const inventory = panel.querySelector<HTMLTextAreaElement>('.so-pack-inventory-prompt')!
+    const outfitNote = panel.querySelector<HTMLTextAreaElement>('[data-outfit="新服装"]')!
+    note.value = '新图包备注'; inventory.value = '新清单'; outfitNote.value = '新服装场景'
+    panel.querySelector<HTMLSelectElement>('.so-pack-prompt-placement')!.value = 'after-list'
+    tabs[1].dispatchEvent(new KeyboardEvent('keydown', {key:'Home',bubbles:true}))
+    expect(document.activeElement).toBe(tabs[0]); expect(name.value).toBe('尚未保存的名字')
+    tabs[0].dispatchEvent(new KeyboardEvent('keydown', {key:'End',bubbles:true}))
+    expect(note.value).toBe('新图包备注'); expect(outfitNote.value).toBe('新服装场景')
+    expect(getSettings().packs.find(pack=>pack.id==='a')?.name).toBe('甲包')
+    const save = findButton(panel,'保存包信息')
+    expect(save.closest('[role="tabpanel"]')).toBeNull()
+    save.click()
+    expect(getSettings().packs.find(pack=>pack.id==='a')).toMatchObject({name:'尚未保存的名字',outfit:'新服装',promptNote:'新图包备注',promptNotePlacement:'after-list',inventoryPrompt:'新清单',outfitNotes:{新服装:'新服装场景'}})
+    const savedPanel = openPackInfoPanel()
+    expect(savedPanel.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('提示词扩展')
+    savedPanel.open = false; savedPanel.dispatchEvent(new Event('toggle')); manager.refreshIfOpen()
+    expect(document.querySelector<HTMLDetailsElement>('.so-pack-meta')?.open).toBe(false)
     manager.close()
   })
 
@@ -1209,6 +1249,39 @@ describe('createSpriteManager safe pack deletion', () => {
     vi.restoreAllMocks()
   })
 
+  it('uses one panel, cancels with Escape, and preserves a newly shared source when confirmed', async () => {
+    let settings: PluginSettings = { ...createDefaultSettings(), packs: [{ id: 'a', name: '本地包', sprites: [
+      { tag: 'one', url: '/user/images/a.webp' }, { tag: 'two', url: '/user/images/b.webp' },
+    ] }] }
+    const deleteImage = vi.fn().mockResolvedValue(undefined), confirm = vi.spyOn(window, 'confirm')
+    const manager = createSpriteManager({ adapter: { getCurrentCharacterName: () => '', deleteImage } as unknown as STAdapter,
+      getSettings: () => settings, updateSettings: next => { settings = next } })
+    manager.open(); document.querySelector<HTMLElement>('.so-pack-card')!.click()
+    const opener = findButton(document, '删除立绘包'); opener.focus(); opener.click()
+    expect(document.querySelector('.so-delete-dialog')!.textContent).toContain('共 2 张')
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(document.querySelector('.so-delete-dialog')).toBeNull(); expect(document.activeElement).toBe(opener)
+    expect(deleteImage).not.toHaveBeenCalled(); expect(settings.packs).toHaveLength(1)
+    opener.click(); settings = { ...settings, packs: [...settings.packs, { id: 'b', name: '共享包', sprites: [{ tag: 'one', url: '/user/images/a.webp' }] }] }
+    const modal = document.querySelector('.so-delete-dialog')!
+    modal.querySelector<HTMLInputElement>('input')!.click(); findButton(modal, '删除').click(); findButton(modal, '删除').click()
+    await vi.waitFor(() => expect(settings.packs.map(p => p.id)).toEqual(['b']))
+    expect(deleteImage).toHaveBeenCalledExactlyOnceWith('/user/images/b.webp'); expect(confirm).not.toHaveBeenCalled()
+    manager.destroy()
+  })
+
+  it('refuses a changed deletion target and discards an unconfirmed panel when the manager closes', () => {
+    let settings: PluginSettings = { ...createDefaultSettings(), packs: [{ id: 'a', name: '旧包', sprites: [] }] }
+    const updateSettings = vi.fn(next => { settings = next })
+    const manager = createSpriteManager({ adapter: { getCurrentCharacterName: () => '' } as STAdapter, getSettings: () => settings, updateSettings })
+    manager.open(); document.querySelector<HTMLElement>('.so-pack-card')!.click(); findButton(document, '删除立绘包').click()
+    settings = { ...settings, packs: [{ ...settings.packs[0], name: '新的修改' }] }
+    const modal = document.querySelector('.so-delete-dialog')!; findButton(modal, '删除').click()
+    expect(modal.textContent).toContain('图包已更改'); expect(updateSettings).not.toHaveBeenCalled()
+    manager.close(); expect(modal.isConnected).toBe(false); expect(settings.packs[0].name).toBe('新的修改')
+    manager.destroy()
+  })
+
   it('removes metadata only when local deletion is declined', async () => {
     let settings: PluginSettings = {
       ...createDefaultSettings(),
@@ -1225,6 +1298,7 @@ describe('createSpriteManager safe pack deletion', () => {
     document.querySelector<HTMLElement>('.so-pack-card')!.click()
 
     findButton(document, '删除立绘包').click()
+    findButton(document.querySelector('.so-delete-dialog')!, '删除').click()
     await Promise.resolve()
 
     expect(settings.packs).toHaveLength(0)
@@ -1255,6 +1329,8 @@ describe('createSpriteManager safe pack deletion', () => {
     document.querySelector<HTMLElement>('.so-pack-card')!.click()
 
     findButton(document, '删除立绘包').click()
+    document.querySelector<HTMLInputElement>('.so-delete-dialog input')!.click()
+    findButton(document.querySelector('.so-delete-dialog')!, '删除').click()
     await vi.waitFor(() => expect(deleteImage).toHaveBeenCalledTimes(2))
 
     expect(settings.packs).toHaveLength(1)
@@ -1283,6 +1359,8 @@ describe('createSpriteManager safe pack deletion', () => {
     document.querySelector<HTMLElement>('.so-pack-card')!.click()
 
     findButton(document, '删除立绘包').click()
+    document.querySelector<HTMLInputElement>('.so-delete-dialog input')!.click()
+    findButton(document.querySelector('.so-delete-dialog')!, '删除').click()
     await vi.waitFor(() => expect(document.querySelector('.so-toast')?.textContent).toContain('已删除'))
 
     expect(settings.packs.map((pack) => pack.id)).toEqual(['concurrent'])
@@ -2104,6 +2182,7 @@ describe('createSpriteManager selected-pack resource actions', () => {
 
     expect(findButton(document, '保存本地（2）')).toBeTruthy()
     findButton(document, '删除所选（1）').click()
+    findButton(document.querySelector('.so-delete-dialog')!, '删除').click()
 
     expect(settings.packs.map((pack) => pack.id)).toEqual(['preset_seraphina_casual'])
     manager.close()

@@ -272,7 +272,10 @@
           "packs_kept_files": "Deleted {{p0}} sprite packs; local files were kept",
           "files_partial": "Deleted {{p0}} local files; {{p1}} failed. The packs were kept so you can retry.",
           "packs_and_files": "Deleted {{p0}} sprite packs and {{p1}} local files",
-          "pack": "Delete sprite pack"
+          "pack": "Delete sprite pack",
+          "title": "Delete packs",
+          "local_choice": "Also delete local source images used only by these packs ({{count}} files)",
+          "changed": "The selected packs have changed. Cancel and select them again."
         },
         "move_earlier": "Move earlier",
         "add": {
@@ -298,6 +301,8 @@
         },
         "info": {
           "title": "Pack information",
+          "basic_tab": "Basic Info",
+          "prompt_tab": "Prompt & Notes",
           "name": "Pack name",
           "author": "Author",
           "description_placeholder": "Description (optional)",

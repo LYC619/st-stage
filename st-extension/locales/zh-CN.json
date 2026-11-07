@@ -272,7 +272,10 @@
           "packs_kept_files": "已删除 {{p0}} 个立绘包，本地文件未删除",
           "files_partial": "本地文件删除成功 {{p0}} 张，失败 {{p1}} 张；图包尚未删除，可再次重试",
           "packs_and_files": "已删除 {{p0}} 个立绘包及 {{p1}} 张本地文件",
-          "pack": "删除立绘包"
+          "pack": "删除立绘包",
+          "title": "删除图包",
+          "local_choice": "同时删除本地服务器上的独占图片源文件（共 {{count}} 张）",
+          "changed": "图包已更改，请取消后重新选择。"
         },
         "move_earlier": "前移",
         "add": {
@@ -298,6 +301,8 @@
         },
         "info": {
           "title": "包信息",
+          "basic_tab": "基本信息",
+          "prompt_tab": "提示词扩展",
           "name": "包名",
           "author": "作者",
           "description_placeholder": "描述（可选）",

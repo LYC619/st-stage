@@ -9,12 +9,13 @@ import { MAX_NOTE_CODE_POINTS, MAX_INVENTORY_PROMPT_CODE_POINTS, normalizeNote, 
 import { DEFAULT_PROMPT_NOTE_PLACEMENT, getSpriteSource } from '../../../core/types'
 import { setPresetMetadata, clearPresetMetadata } from '../../../core/preset-overrides'
 import { previewGroupSplit, splitPackByGroup } from '../../../core/pack-split'
-import { el, button, pickFile, toast, downloadJson, copyText, textInput, labeled, statusBar } from './ui'
+import { el, button, pickFile, toast, downloadJson, copyText, textInput, labeled, statusBar, nextManagerId } from './ui'
 import type { ManagerContext } from './types'
 import { SPRITE_PAGE_SIZE } from './types'
 
 export function createDetail(ctx: ManagerContext) {
   const { deps } = ctx
+  let activeInfoTab: { packId: string; index: number } | undefined
 
 
   /* ---------------- 详情页 ---------------- */
@@ -136,6 +137,7 @@ export function createDetail(ctx: ManagerContext) {
     // 包信息：折叠面板（默认收起——顶部留给图墙；展开后输入框均分一行、窄屏自动换行）
     {
       const metaPanel = ctx.actions.collapsible(t("sprite.manager.content.info.title", "包信息"), false, `pack-meta:${pack.id}`)
+      metaPanel.box.classList.add('so-pack-meta')
       const metaRow = el('div', 'so-row so-meta-row')
       const nameInput = textInput(t("sprite.manager.content.info.name", "包名"))
       nameInput.value = pack.name
@@ -314,7 +316,45 @@ export function createDetail(ctx: ManagerContext) {
         readonly
           ? t("sprite.manager.content.info.preset_hint", "可覆盖预设包信息；立绘图片本身仍不可添加、改名或删除。")
           : t("sprite.manager.content.info.address_hint", "人名/服装用于三级寻址 [立绘:人名/服装/图名]：整包同一角色时填人名，包内立绘用纯图名即可。")
-      metaPanel.body.append(metaRow, promptRow, inventoryRow, outfitNotesBox, metaHint, saveRow)
+      const tablist = el('div', 'so-meta-tabs'), panels = el('div', 'so-meta-panels')
+      tablist.setAttribute('role', 'tablist')
+      tablist.setAttribute('aria-label', t('sprite.manager.content.info.title', '包信息'))
+      const basicPanel = el('div', 'so-meta-tabpanel'), promptPanel = el('div', 'so-meta-tabpanel')
+      basicPanel.append(metaRow, metaHint)
+      promptPanel.append(promptRow, inventoryRow, outfitNotesBox)
+      const sections = [basicPanel, promptPanel]
+      const tabs = [
+        t('sprite.manager.content.info.basic_tab', '基本信息'),
+        t('sprite.manager.content.info.prompt_tab', '提示词扩展'),
+      ].map((label, index) => {
+        const tab = document.createElement('button')
+        tab.type = 'button'; tab.textContent = label; tab.id = nextManagerId()
+        tab.setAttribute('role', 'tab'); tab.dataset.managerFocus = `pack-info:${pack.id}:${index}`
+        const section = sections[index]; section.id = nextManagerId(); section.tabIndex = 0
+        section.setAttribute('role', 'tabpanel'); section.setAttribute('aria-labelledby', tab.id)
+        tab.setAttribute('aria-controls', section.id)
+        tab.onclick = () => selectTab(index)
+        tab.onkeydown = event => {
+          const target = event.key === 'Home' ? 0 : event.key === 'End' ? 1
+            : event.key === 'ArrowLeft' || event.key === 'ArrowRight' ? 1 - index : undefined
+          if (target === undefined) return
+          event.preventDefault(); selectTab(target); tabs[target].focus({ preventScroll: true })
+        }
+        tablist.append(tab)
+        return tab
+      })
+      function selectTab(index: number) {
+        // Keep both forms mounted: field values and outfit-note drafts survive every tab switch.
+        activeInfoTab = { packId: pack.id, index }
+        tabs.forEach((tab, i) => {
+          tab.setAttribute('aria-selected', String(i === index)); tab.tabIndex = i === index ? 0 : -1
+          sections[i].hidden = i !== index
+        })
+        panels.scrollTop = 0
+      }
+      selectTab(activeInfoTab?.packId === pack.id ? activeInfoTab.index : 0)
+      panels.append(...sections)
+      metaPanel.body.append(tablist, panels, saveRow)
       body.append(metaPanel.box)
     }
 

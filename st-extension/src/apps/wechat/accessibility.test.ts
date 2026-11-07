@@ -39,14 +39,15 @@ describe('WeChat keyboard surfaces', () => {
     opener.click(); el('#wt-emoji-grid button').click()
     expect(send).toHaveBeenCalledOnce(); expect(el('#wt-emoji-drawer').hidden).toBe(true); expect(document.activeElement).toBe(opener)
   })
-  it('returns image focus to its replacement when a reply arrives while the lightbox is open', async () => {
+  it('returns image focus to the retained media control when a reply arrives while the lightbox is open', async () => {
     let finish!: (value: { messages: { type: 'text'; content: string }[] }) => void
     const f = mount()
     f.send.mockImplementation(() => new Promise(resolve => { finish = resolve }))
     f.a.messages.push({ sender: 'contact', type: 'image', content: 'bedroom1', time: { day: 1, hour: 19, minute: 0 } }); f.open(f.a.scopeKey!)
     f.el<HTMLInputElement>('#wt-input-text').value = 'hello'; f.el('#wt-send-btn').click()
     const photo = f.el<HTMLButtonElement>('#wt-scroll button'); photo.click()
-    finish({ messages: [{ type: 'text', content: 'new reply' }] }); await vi.waitFor(() => expect(photo.isConnected).toBe(false))
+    finish({ messages: [{ type: 'text', content: 'new reply' }] }); await vi.waitFor(() => expect(f.el('#wt-scroll').textContent).toContain('new reply'))
+    expect(f.el('#wt-scroll button')).toBe(photo)
     key('Escape'); expect(document.activeElement).toBe(f.el('#wt-scroll button'))
   })
   it.each([0, 1])('preserves chosen contact emoji %s after disabling its group and remounting', index => {

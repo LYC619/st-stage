@@ -34,13 +34,22 @@ export const WECHAT_VIEW = `
     .wt-message .wt-avatar{width:34px;height:34px}
     .wt-bubble{background:#fff;border-radius:7px;padding:9px 11px;max-width:76%;white-space:pre-wrap;overflow-wrap:anywhere;color:#181818}
     .wt-message-player .wt-bubble{background:#95ec69}
-    .wt-bubble img{max-width:100%;max-height:200px;object-fit:contain;display:block;border-radius:5px}
-    .wechat-root .wt-media{background:transparent;border:0;padding:0;width:110px}
+    .wt-bubble img{max-width:100%;height:auto;max-height:220px;object-fit:contain;display:block;border-radius:5px}
+    .wechat-root .wt-media{background:transparent;border:0;padding:0;max-width:min(72%,220px);min-width:120px}
+    .wechat-root .wt-media.wt-emoji{width:110px;min-width:0;max-width:110px}
+    .wt-emoji img{width:110px;height:110px;object-fit:contain}
+    .wt-image-failure{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:100px;padding:12px;border:1px solid #c8c8c8;border-radius:7px;background:#f5f5f5;color:#595959;font-size:12px;white-space:normal;overflow-wrap:anywhere}
     .wechat-root .wt-gift{background:#f4ac58;color:#432100;min-width:140px}
     .wechat-root .wt-gift small{display:block;margin-top:7px;font-size:12px;color:#432100;opacity:1}
     .wechat-input-bar{display:flex;align-items:center;gap:5px;padding:8px;background:#f7f7f7;border-top:1px solid #ddd;flex-shrink:0}
-    .wechat-input-bar input{flex:1;width:0}
+    .wt-compose-field{flex:1;min-width:0;display:flex}
+    .wt-compose-field input,.wt-compose-field button{flex:1;width:100%;min-width:0}
     .wechat-input-bar button{flex-shrink:0;padding:6px 9px}
+    .wechat-input-bar #wt-voice-mode,.wechat-input-bar #wt-emoji-btn,.wechat-input-bar #wt-packet-btn{width:34px;padding:4px}
+    #wt-voice-feedback{display:flex;gap:6px;align-items:center;padding:4px 8px;background:#f7f7f7;flex-shrink:0;font-size:12px}
+    #wt-voice-status{flex:1;min-width:0;overflow-wrap:anywhere;color:#595959}
+    #wt-voice-edit{font-size:12px;padding:3px 6px}
+    #wt-record{font-size:12px;padding:4px;overflow-wrap:anywhere;touch-action:manipulation}
     #wt-typing-badge{padding:3px 12px;color:#087b3e;font-size:12px;background:#f7f7f7}
     #wt-emoji-drawer{height:210px;max-height:38%;display:flex;flex-direction:column;flex-shrink:0;background:#f7f7f7;border-top:1px solid #ddd}
     .wt-tabs{display:flex;gap:4px;padding:4px;flex-shrink:0}
@@ -75,14 +84,27 @@ export const WECHAT_VIEW = `
     @media(max-width:360px){.wechat-nav{padding:5px 7px}.wechat-nav button{padding:5px 7px}.wt-modal-card{padding:12px}.wechat-input-bar{gap:4px;padding:6px}.wechat-input-bar button{padding:6px 7px}}
     .wt-social-nav,.wt-recovery{display:flex;gap:6px;padding:5px 10px;flex-shrink:0;flex-wrap:wrap;background:#f7f7f7}
     .wt-social-nav button{flex:1}.wt-recovery p{flex:0 0 100%;margin:0;color:#9b2222}
-    .wt-group-avatar{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;padding:2px;overflow:hidden}
-    .wt-group-avatar .wt-avatar{width:12px;height:12px;border-radius:1px}
+    .wt-group-avatar{display:grid;grid-template-columns:repeat(3,13px);grid-auto-rows:13px;gap:1px;padding:1px;align-content:center;justify-content:center;overflow:hidden}
+    .wt-group-avatar .wt-avatar{width:13px;height:13px;border-radius:2px}
+    .wt-group-avatar[data-columns="2"]{grid-template-columns:repeat(2,18px);grid-auto-rows:18px;gap:2px;padding:3px}
+    .wt-group-avatar[data-columns="2"] .wt-avatar{width:18px;height:18px}
     .wt-member-choice{display:flex;align-items:center;gap:10px;padding:8px;border-bottom:1px solid #ddd}
     .wt-message-author{font-size:11px;color:#555;display:block}.wt-message-content{min-width:0;max-width:76%}.wt-message-content .wt-bubble{max-width:100%}
+    .wt-message-content:has(.wt-media:not(.wt-emoji)){width:min(72%,220px)}
+    .wechat-root .wt-message-content .wt-media:not(.wt-emoji){max-width:100%}
     .wt-voice button{padding:5px;font-size:12px}.wechat-root .wt-voice small{display:block;color:#595959;opacity:1}.wt-voice p{margin:7px 0}
-    #wt-chat-tools{display:flex;gap:6px;padding:4px 10px;flex-shrink:0}#wt-chat-tools select{flex:1;width:0}
+    #wt-chat-tools{display:flex;padding:3px 8px;flex-shrink:0;background:#f7f7f7}#wt-chat-tools select{width:auto;max-width:100%;min-height:32px;padding:3px 8px;border-radius:16px;font-size:12px}
     .wt-moment{padding:12px 0;border-bottom:1px solid #ddd}.wt-moment p{white-space:pre-wrap;overflow-wrap:anywhere}.wt-moment time{display:block;color:#595959;font-size:11px}
-    .wt-moment-author{display:flex;align-items:center;gap:8px}.wt-moment-image{display:block;max-width:100%;max-height:240px;object-fit:contain}
+    .wt-moment-author{display:flex;align-items:center;gap:8px}.wt-moment-image{display:block;max-width:100%;height:auto;max-height:220px;object-fit:contain}
+    #wt-moments-modal>.wt-modal-card{height:100%;overflow:hidden;gap:8px}
+    #wt-moments-composer{margin:0;max-height:45%;overflow:auto;padding:6px 10px}
+    #wt-moments-composer>summary{min-height:32px;display:list-item;align-content:center}
+    #wt-moments-composer .wt-field{margin:6px 0}
+    #wt-moments-feedback{margin:0;font-size:12px;overflow-wrap:anywhere;flex-shrink:0}
+    #wt-moments-feedback:empty{display:none}
+    #wt-moments-feed{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;overflow-anchor:none}
+    .wt-moment-media{height:220px;display:flex;align-items:center;max-width:100%}
+    .wt-moment-media .wt-image-failure{width:100%}
     @media(max-height:480px){
       .wechat-nav{min-height:38px;padding:2px 7px}.wechat-root button{min-height:30px;padding:3px 7px}
       .wechat-root input,.wechat-root select{min-height:30px;padding:3px 7px}
@@ -106,12 +128,13 @@ export const WECHAT_VIEW = `
     <div id="wt-scroll" role="log" aria-label="聊天消息" tabindex="0"></div>
     <div id="wt-typing-badge" role="status" hidden>对方正在输入…</div>
     <div class="wt-recovery" id="wt-recovery" hidden><p id="wt-reply-error" role="status"></p><button id="wt-cancel-reply" hidden>取消回复</button><button id="wt-retry-reply" hidden>重试回复</button></div>
-    <div id="wt-chat-tools"><select id="wt-mention" aria-label="提及群成员" hidden></select><button id="wt-voice-mode" aria-pressed="false">语音消息</button></div>
     <div id="wt-emoji-drawer" aria-label="表情包" role="region" hidden>
       <div class="wt-tabs"><button id="wt-tab-player">我的表情</button><button id="wt-tab-contact">联系人表情</button><button id="wt-manage-emojis">管理</button></div>
       <div id="wt-emoji-grid"></div>
     </div>
-    <div class="wechat-input-bar"><button id="wt-emoji-btn" aria-label="表情包" aria-expanded="false" aria-controls="wt-emoji-drawer">😀</button><button id="wt-packet-btn" aria-label="发红包或礼物">🧧</button><input id="wt-input-text" aria-label="消息" placeholder="发消息…" maxlength="8000"><button id="wt-send-btn" class="wt-primary">发送</button></div>
+    <div id="wt-chat-tools" hidden><select id="wt-mention" aria-label="提及群成员" hidden></select></div>
+    <div id="wt-voice-feedback" hidden><span id="wt-voice-status" role="status"></span><button id="wt-voice-edit">输入文字</button></div>
+    <div class="wechat-input-bar"><button id="wt-voice-mode" aria-label="切换为语音消息" aria-pressed="false" aria-controls="wt-compose-field">🎙️</button><button id="wt-emoji-btn" aria-label="表情包" aria-expanded="false" aria-controls="wt-emoji-drawer">😀</button><button id="wt-packet-btn" aria-label="发红包或礼物">🧧</button><div id="wt-compose-field" class="wt-compose-field"><input id="wt-input-text" aria-label="消息" placeholder="发消息…" maxlength="8000"><button id="wt-record" aria-label="点击录音" hidden>点击录音</button></div><button id="wt-send-btn" class="wt-primary">发送</button></div>
   </section>
   <div id="wt-settings-modal" class="wt-modal" role="dialog" aria-modal="true" aria-labelledby="wt-modal-title" hidden>
     <div class="wt-modal-card">
@@ -146,9 +169,11 @@ export const WECHAT_VIEW = `
   </div></div>
   <div id="wt-moments-modal" class="wt-modal" role="dialog" aria-modal="true" aria-labelledby="wt-moments-heading" hidden><div class="wt-modal-card">
     <div class="wt-modal-header"><h2 id="wt-moments-heading">朋友圈</h2><button id="wt-close-moments" aria-label="关闭朋友圈">关闭</button></div>
-    <label class="wt-field">看看谁的近况<select id="wt-moments-author"></select></label><button id="wt-generate-moment" class="wt-primary">生成新动态</button><button id="wt-cancel-moment" hidden>取消生成</button><p id="wt-moments-feedback" role="status"></p>
+    <details id="wt-moments-composer"><summary>发布动态</summary>
+    <label class="wt-field">看看谁的近况<select id="wt-moments-author"></select></label><button id="wt-generate-moment" class="wt-primary">生成新动态</button><button id="wt-cancel-moment" hidden>取消生成</button>
     <details><summary>动态提示词</summary><label class="wt-field">朋友圈提示词<textarea id="wt-moments-prompt" maxlength="8000" rows="5"></textarea></label><button id="wt-reset-moments-prompt">恢复默认</button><button id="wt-save-moments-prompt">保存提示词</button></details>
-    <div id="wt-moments-feed" role="region" aria-label="朋友圈动态"></div>
+    </details><p id="wt-moments-feedback" role="status"></p>
+    <div id="wt-moments-feed" role="region" aria-label="朋友圈动态" tabindex="0"></div>
   </div></div>
-  <div id="wt-photo-lightbox" class="wt-modal" role="dialog" aria-modal="true" aria-label="查看图片" hidden><div class="wt-modal-card"><button id="wt-close-lightbox" aria-label="关闭图片">关闭</button><img id="wt-lightbox-img" alt=""><p id="wt-lightbox-desc"></p></div></div>
+  <div id="wt-photo-lightbox" class="wt-modal" role="dialog" aria-modal="true" aria-label="查看图片" hidden><div class="wt-modal-card"><button id="wt-close-lightbox" aria-label="关闭图片">关闭</button><div id="wt-lightbox-media"></div><p id="wt-lightbox-desc"></p></div></div>
 </div>`

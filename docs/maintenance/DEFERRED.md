@@ -2,6 +2,20 @@
 
 Known follow-ups and pending review repairs are recorded here. Older sections retain their original non-blocking decisions; the review queue below is **not** a declaration that its risks are acceptable for a new release. Remove or resolve entries only with an actual fixing commit and fresh verification.
 
+## 2026-11-07 UX Step 3 + Step 4 — Verified Worktree Candidate
+
+Local candidate `0.9.0+202611071730` includes Step 1–4. The user authorized the second phase and chose browser speech recognition into an editable draft with explicit sending and typed fallback. Integrated voice controls, group-only accessible @ selection, one deletion confirmation with optional exclusive local-file deletion, adaptive avatars and the guarded 380px desktop shell are implemented. Evidence: [phase-two acceptance](history/2026-11-07-ux-phase2.md).
+
+Final source passes 1488 unit tests, typecheck and zero-warning lint; release tools 25, mobile E2E 25, four-layout ST workflows 152 and ordinary 60-file parity pass. The 68 scoped axe scans detect zero violations and retain 52 distinct incomplete items. These include 64 WeChat and four deletion-panel scans; historical full-app 118 uncertainties remain separate. Actual microphone/recognition service, real AI/TTS, physical devices/OS IME and full readers remain environment checks.
+
+Changes are uncommitted and unpublished; installation stays at `0.9.0+202611071003`. The older phase-one statement that input/delete/avatar/shell work is outside authorization is superseded by this completed user-authorized batch. Detail tabs, gallery waterfall, inline @ suggestions, social menus and draggable width remain deferred; no automatic continuation or publication.
+
+## 2026-11-07 UX Step 1 + Step 2 — Verified Worktree Candidate
+
+Local candidate `0.9.0+202611071340` completes photo/emoji sizing, accessible image failure/retry, actual 44px shell targets, and incremental Moments publication with retained reading position/focus. Evidence: [phase-one acceptance](history/2026-11-07-ux-phase1.md). It passes 1473 unit tests, 128 real isolated-ST workflow checks across four layouts, 25 mobile E2E tests and 52 scoped WeChat axe scans with zero violations. Retain its 46 distinct incomplete items and the historical full-app 118; these are different scopes.
+
+The changes remain uncommitted and unpublished. The installation repository still represents `0.9.0+202611071003`. Later UX steps (input toolbar/delete confirmation, group avatars/shell width, detail tabs/gallery waterfall) remain outside this authorization; no automatic continuation into them. Real devices/OS IME, full readers and provider-dependent checks remain separate.
+
 ## 2026-11-07 Five-phase Publication — Committed and Pushed
 
 Development code/build commit `9eeeb44b66bc9967921300bd6c0559862b6baf12` and installation commit `eaa9ca333348084b72767fcd7b64de62486f19b8` are pushed to their respective `main` branches at `0.9.0+202611071003`. This resolves the seven P2 review findings, the additional Moments snapshot race, mood update source, preview locale LF and like labels. Groups, Moments, voice/TTS, lazy JSZip and dual-repository publication are now delivered. See [publication evidence](history/2026-11-07-publication.md) and [repair evidence](history/2026-11-07-five-phase-repairs.md). Historical descriptions of these features as uncommitted or deferred are superseded for this published scope.

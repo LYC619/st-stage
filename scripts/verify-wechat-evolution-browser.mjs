@@ -4,6 +4,8 @@ import { createHash } from 'node:crypto'
 import { chromium, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { isolatedReady } from './isolated-browser-ready.mjs'
+import { verifyWechatUX } from './verify-wechat-ux.mjs'
+import { verifyWechatUXPhase2 } from './verify-wechat-ux-phase2.mjs'
 
 const args = process.argv.slice(2), opt = key => args.includes(key) ? args[args.indexOf(key) + 1] : undefined
 assert.ok(args.includes('--isolated-data') && opt('--url'), 'Use disposable data and an explicit loopback URL')
@@ -205,11 +207,12 @@ try {
       await page.evaluate(() => { const ctx = window.SillyTavern.getContext(); ctx.extensionSettings.tts.enabled = window.__ttsRestore.enabled; ctx.SlashCommandParser.commands.speak.callback = window.__ttsRestore.callback })
       result.checks.push('gesture calls installed host TTS callback with the voice transcript')
       await page.locator('#wt-moments').click()
+      await page.locator('#wt-moments-composer > summary').click()
       await page.locator('#wt-moments-author').selectOption({ label: 'Experience B' })
       await saved(async () => { await page.locator('#wt-generate-moment').click(); await page.locator('.wt-moment').waitFor() })
       assert.equal(await page.evaluate(() => window.SillyTavern.getContext().extensionSettings.sprite_overlay.apps['wechat-sister'].moments[0].mood), 82)
       result.checks.push('reply mood feeds the generated Moment state')
-      await page.locator('.wt-moment button').click(); await expect(page.locator('.wt-moment button')).toHaveAttribute('aria-pressed', 'true')
+      await page.locator('.wt-moment button[aria-pressed]').click(); await expect(page.locator('.wt-moment button[aria-pressed]')).toHaveAttribute('aria-pressed', 'true')
       await fit('moments'); await scan('moments')
       await page.screenshot({ path: out + '/' + size.width + '-moments.png' })
       await page.locator('#wt-close-moments').click()
@@ -239,11 +242,13 @@ try {
       await saved(() => page.locator('#wt-input-text').fill('next draft'))
       await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); await openApp()
       await expect(page.locator('.wt-group-avatar img')).toHaveCount(2)
-      await page.locator('#wt-moments').click(); await expect(page.locator('.wt-moment button')).toHaveAttribute('aria-pressed', 'true')
+      await page.locator('#wt-moments').click(); await expect(page.locator('.wt-moment button[aria-pressed]')).toHaveAttribute('aria-pressed', 'true')
       result.checks.push('group and Moments likes survive reload')
       await page.locator('#wt-close-moments').click()
 
 
+      await verifyWechatUX({ page, context, saved, openApp, fit, scan, result, out, size })
+      await verifyWechatUXPhase2({ page, context, saved, openApp, ready, fit, scan, result, out, size })
       assert.deepEqual(result.errors, []); result.passed = true
     } catch (error) { result.failure = error.stack; await page.screenshot({ path: `${out}/${size.width}-failure.png` }).catch(() => {}); throw error }
     finally { await context.close(); writeFileSync(`${out}/report.json`, JSON.stringify(report, null, 2)) }

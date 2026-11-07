@@ -580,44 +580,62 @@ export function createList(ctx: ManagerContext) {
 
 
   async function deletePacksWithChoice(packIds: string[], names: string[], preview: string): Promise<void> {
-    if (!window.confirm(t("sprite.manager.content.delete.confirm_packs", "确定删除 {{p0}} 个立绘包？\n{{p1}}\n绑定关系会一并清除。", { p0: names.length, p1: preview }))) return
+    if (!ctx.state.backdrop || ctx.state.backdrop.querySelector('.so-delete-dialog')) return
     const current = deps.getSettings()
+    packIds = packIds.filter(id => !isPresetPack(id) && current.packs.some(pack => pack.id === id))
+    if (!packIds.length) return
     const localPaths = deletableLocalSpritePaths(current, packIds)
-    const deleteLocal = localPaths.length > 0 && window.confirm(
-      t("sprite.manager.content.delete.local_detected", "检测到 {{p0}} 个仅由这些包使用的本地图片文件。\n", { p0: localPaths.length }) +
-      t("sprite.manager.content.delete.local_confirm", "同时从 SillyTavern 服务器删除它们吗？\n\n选择“取消”将只删除图包记录，文件继续保留。"),
-    )
-
-    if (!deleteLocal) {
-      ctx.state.selectedPackIds.clear()
-      ctx.state.view = { kind: 'list' }
-      ctx.actions.commit(removePacks(current, packIds))
-      toast(ctx.actions.currentManagerBody(), t("sprite.manager.content.delete.packs_kept_files", "已删除 {{p0}} 个立绘包，本地文件未删除", { p0: names.length }))
-      return
-    }
-
-    let deleted = 0
-    let failed = 0
-    for (const path of localPaths) {
+    const snapshot = JSON.stringify(current.packs.filter(pack => packIds.includes(pack.id)))
+    const changed = () => snapshot !== JSON.stringify(deps.getSettings().packs.filter(pack => packIds.includes(pack.id)))
+    const modal = el('div', 'so-upload-modal so-delete-dialog'), panel = el('div', 'so-upload-panel')
+    modal.setAttribute('aria-label', t('sprite.manager.content.delete.title', '删除图包'))
+    const title = el('b'); title.textContent = t('sprite.manager.content.delete.title', '删除图包')
+    const description = el('p', 'so-status'); description.style.whiteSpace = 'pre-wrap'
+    description.textContent = t('sprite.manager.content.delete.confirm_packs', '确定删除 {{p0}} 个立绘包？\n{{p1}}\n绑定关系会一并清除。', { p0: names.length, p1: preview })
+    let deleteLocal = false, busy = false
+    const choice = checkboxRow(t('sprite.manager.content.delete.local_choice', '同时删除本地服务器上的独占图片源文件（共 {{count}} 张）', { count: localPaths.length }), false, value => { deleteLocal = value })
+    const checkbox = choice.querySelector('input')!; checkbox.disabled = !localPaths.length
+    const status = statusBar(), actions = el('div', 'so-row')
+    const cancel = document.createElement('button'), confirm = document.createElement('button')
+    for (const control of [cancel, confirm]) { control.type = 'button'; control.className = 'so-btn' }
+    cancel.textContent = t('common.cancel', '取消'); confirm.textContent = t('common.delete', '删除'); confirm.classList.add('so-btn-danger')
+    actions.append(cancel, confirm); panel.append(title, description, choice, status, actions); modal.append(panel)
+    ctx.state.backdrop.append(modal)
+    const closeModal = ctx.actions.manageChildDialog(modal, () => !busy)
+    cancel.onclick = () => { if (!busy) closeModal() }
+    confirm.onclick = async () => {
+      if (busy || !modal.isConnected || ctx.state.destroyed) return
+      if (changed()) { status.textContent = t('sprite.manager.content.delete.changed', '图包已更改，请取消后重新选择。'); return }
+      busy = true; confirm.disabled = true; cancel.disabled = true; checkbox.disabled = true
+      status.textContent = t('common.loading', '加载中...')
+      let deleted = 0, failed = 0
       try {
-        await deps.adapter.deleteImage(path)
-        deleted++
+        if (deleteLocal) for (const path of localPaths) {
+          if (!modal.isConnected || ctx.state.destroyed) return
+          if (changed()) throw new Error(t('sprite.manager.content.delete.changed', '图包已更改，请取消后重新选择。'))
+          // A new reference added while this panel was open must keep its source file.
+          if (!deletableLocalSpritePaths(deps.getSettings(), packIds).includes(path)) continue
+          try { await deps.adapter.deleteImage(path); deleted++ }
+          catch (error) { console.warn('[sprite-overlay] 删除本地图片失败', { path, error }); failed++ }
+        }
+        if (!modal.isConnected || ctx.state.destroyed) return
+        if (changed()) throw new Error(t('sprite.manager.content.delete.changed', '图包已更改，请取消后重新选择。'))
+        if (failed > 0) {
+          closeModal()
+          toast(ctx.actions.currentManagerBody(), t('sprite.manager.content.delete.files_partial', '本地文件删除成功 {{p0}} 张，失败 {{p1}} 张；图包尚未删除，可再次重试', { p0: deleted, p1: failed }))
+          return
+        }
+        deps.updateSettings(removePacks(deps.getSettings(), packIds))
+        closeModal(); ctx.state.selectedPackIds.clear(); ctx.state.view = { kind: 'list' }; ctx.actions.render(); ctx.actions.refreshLightbox()
+        toast(ctx.actions.currentManagerBody(), deleteLocal
+          ? t('sprite.manager.content.delete.packs_and_files', '已删除 {{p0}} 个立绘包及 {{p1}} 张本地文件', { p0: packIds.length, p1: deleted })
+          : t('sprite.manager.content.delete.packs_kept_files', '已删除 {{p0}} 个立绘包，本地文件未删除', { p0: packIds.length }))
       } catch (error) {
-        console.warn('[sprite-overlay] 删除本地图片失败', { path, error })
-        failed++
+        if (modal.isConnected) status.textContent = error instanceof Error ? error.message : t('common.error', '错误')
+      } finally {
+        busy = false; confirm.disabled = false; cancel.disabled = false; checkbox.disabled = !localPaths.length
       }
     }
-    if (failed > 0) {
-      toast(
-        ctx.actions.currentManagerBody(),
-        t("sprite.manager.content.delete.files_partial", "本地文件删除成功 {{p0}} 张，失败 {{p1}} 张；图包尚未删除，可再次重试", { p0: deleted, p1: failed }),
-      )
-      return
-    }
-    ctx.state.selectedPackIds.clear()
-    ctx.state.view = { kind: 'list' }
-    ctx.actions.commit(removePacks(deps.getSettings(), packIds))
-    toast(ctx.actions.currentManagerBody(), t("sprite.manager.content.delete.packs_and_files", "已删除 {{p0}} 个立绘包及 {{p1}} 张本地文件", { p0: names.length, p1: deleted }))
   }
 
 

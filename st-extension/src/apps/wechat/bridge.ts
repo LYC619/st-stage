@@ -480,3 +480,15 @@ export async function speakWeChatText(text: string, author: string): Promise<boo
   await speak.callback({ voice: author }, text)
   return true
 }
+export interface BrowserRecognition {
+  lang: string; continuous: boolean; interimResults: boolean
+  onresult: ((event: { results: ArrayLike<{ isFinal: boolean; [index: number]: { transcript: string } }> }) => void) | null
+  onerror: ((event: { error: string }) => void) | null
+  onend: (() => void) | null
+  start(): void; stop(): void; abort(): void
+}
+export function browserRecognition(): (new () => BrowserRecognition) | undefined {
+  if (window.isSecureContext === false) return undefined
+  const browser = window as Window & { SpeechRecognition?: new () => BrowserRecognition; webkitSpeechRecognition?: new () => BrowserRecognition }
+  return browser.SpeechRecognition ?? browser.webkitSpeechRecognition
+}

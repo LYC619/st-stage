@@ -7,6 +7,10 @@ export const isGroup = (conv: Conversation): conv is Group => conv.conversationT
 export function groupContacts(data: WeChatAppData, conv: Conversation): Contact[] {
   return (conv.memberIds ?? []).flatMap(id => data.contacts?.[id] ? [data.contacts[id]] : [])
 }
+export function groupAvatarMembers(data: WeChatAppData, conv: Conversation) {
+  const members = groupContacts(data, conv).slice(0, 9)
+  return { members, columns: members.length <= 4 ? 2 : 3 }
+}
 function checkedMembers(items: Contact[]): Contact[] {
   const unique = [...new Map(items.map(item => [item.id, item])).values()]
   if (unique.length < 2 || unique.length > MAX_GROUP_MEMBERS) throw new Error('请选择 2–50 位不同的群成员')

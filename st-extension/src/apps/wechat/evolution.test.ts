@@ -100,9 +100,9 @@ describe('Moments and voice', () => {
     f.el('#wt-moments').click(); f.el<HTMLSelectElement>('#wt-moments-author').value = 'avatar:b.png'; f.el('#wt-generate-moment').click()
     await vi.waitFor(() => expect(f.data().moments).toHaveLength(1))
     expect(generate.mock.calls[0][1]).toMatchObject({ mood: 82, currentStatus: 'walking' })
-    f.el<HTMLButtonElement>('.wt-moment button').click(); expect(f.data().moments![0].likedByPlayer).toBe(true)
+    f.el<HTMLButtonElement>('.wt-moment button[aria-pressed]').click(); expect(f.data().moments![0].likedByPlayer).toBe(true)
     f.remount(); f.el('#wt-moments').click()
-    expect(f.el('.wt-moment button').getAttribute('aria-pressed')).toBe('true')
+    expect(f.el('.wt-moment button[aria-pressed]').getAttribute('aria-pressed')).toBe('true')
     expect(f.el<HTMLImageElement>('.wt-moment-image').src).toBe('https://example.test/park.png')
   })
   it('cancels Moments when the dialog closes and ignores a late generated post', async () => {

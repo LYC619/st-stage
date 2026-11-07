@@ -1041,6 +1041,24 @@
   text-align: center;
 }
 
+/* Tabs and save actions stay outside the form scroll area, leaving room for the gallery. */
+.so-manager .so-pack-meta .so-collapse-body { max-height: min(300px, 35vh); }
+.so-manager .so-meta-tabs { display: flex; gap: 6px; flex-shrink: 0; }
+.so-manager .so-meta-tabs button {
+  flex: 1; min-width: 0; min-height: 40px; padding: 6px 8px; font: inherit;
+  color: #eee; background: #282830; border: 1px solid #777; border-radius: 6px; cursor: pointer;
+}
+.so-manager .so-meta-tabs [aria-selected="true"] { background: #354c66; border-color: #a4caff; font-weight: 600; }
+.so-manager .so-meta-tabs button:focus-visible,
+.so-manager .so-meta-tabpanel:focus-visible { outline: 2px solid #87bfff; outline-offset: -2px; }
+.so-manager .so-meta-panels { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 2px; }
+.so-manager .so-meta-tabpanel { display: flex; flex-direction: column; gap: 8px; }
+.so-manager .so-meta-tabpanel[hidden] { display: none !important; }
+.so-manager .so-pack-meta .so-meta-save-row { flex-shrink: 0; margin: 0; }
+@media (max-width: 360px) {
+  .so-manager .so-pack-meta .so-collapse-body { max-height: 30vh; }
+}
+
 /* ---- 列表页批量管理（实测反馈批次）：勾选删除 + 拖拽/按钮排序 ---- */
 .so-manager .so-batch-tip {
   margin-top: 8px;
@@ -1757,6 +1775,15 @@
   overflow-y: auto;
   min-height: 0;
 }
+
+.so-delete-dialog .so-upload-panel { width: min(480px, 100%); overflow: auto; color: #eee; }
+.so-delete-dialog .so-row { flex-wrap: wrap; }
+.so-delete-dialog .checkbox_label { align-items: flex-start; }
+.so-delete-dialog .checkbox_label span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.so-delete-dialog .checkbox_label input { flex: 0 0 auto; }
+.so-delete-dialog button { min-height: 40px; padding: 8px 16px; color: #eee; font: inherit; background: #34343e; border: 1px solid #777; border-radius: 6px; }
+.so-delete-dialog button:focus-visible { outline: 2px solid #87bfff; outline-offset: 2px; }
+.so-delete-dialog button:disabled { opacity: .6; }
 
 .so-upload-row {
   display: flex;
@@ -2754,14 +2781,15 @@
 .so-phone-shell {
   position: fixed;
   z-index: 9999;
-  width: 320px;
+  width: min(320px, calc(100vw - 16px));
   display: flex;
   flex-direction: column;
   border-radius: 28px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: #181820;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), inset 0 0 0 2px rgba(0, 0, 0, 0.5);
-  overflow: hidden;
+  /* The screen clips its own content. Let transparent status targets extend above the rounded shell. */
+  overflow: visible;
   user-select: none;
 }
 
@@ -2836,6 +2864,20 @@
   opacity: 1;
   outline: none;
 }
+
+/* Keep visual layout unchanged; the targets end at the status bar bottom, above app controls. */
+.so-phone-back,
+.so-phone-close { position: relative; z-index: 1; }
+.so-phone-back::after,
+.so-phone-close::after {
+  content: '';
+  position: absolute;
+  top: -12px;
+  width: 44px;
+  height: 44px;
+}
+.so-phone-back::after { left: -7px; }
+.so-phone-close::after { right: -7px; }
 
 /* 屏幕 */
 .so-phone-screen {
@@ -3557,10 +3599,10 @@
   border-color: rgba(255, 255, 255, 0.4);
 }
 
-/* 窄屏（ST 手机端）：手机壳全屏化 */
-@media (max-width: 480px) {
+/* Match the JS fallback; inline layout also follows visual viewport zoom/panning. */
+@media (min-width: 768px) {
   .so-phone-shell {
-    width: min(320px, calc(100vw - 16px));
+    width: min(380px, calc(100vw - 16px));
   }
 }
 

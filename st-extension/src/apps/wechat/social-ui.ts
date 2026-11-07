@@ -4,7 +4,8 @@ import { groupContacts, isGroup, saveGroup, mentionToken } from './groups'
 import { addMoment, DEFAULT_MOMENTS_PROMPT, latestContactState } from './moments'
 import { contactPipeline } from './replies'
 import { resolveWeChatAssetUrl } from './assets'
-import type { Contact, Conversation, Group, WeChatAppData } from './types'
+import { createImageMedia } from './image-media'
+import type { Contact, Conversation, Group, Moment, WeChatAppData } from './types'
 
 export function createSocialUI(container: HTMLElement, data: WeChatAppData, host: AppHost, options: {
   active: () => Conversation | undefined
@@ -15,6 +16,7 @@ export function createSocialUI(container: HTMLElement, data: WeChatAppData, host
   avatar: (url?: string, name?: string) => HTMLElement
   beforeGroupEdit: (conv: Conversation) => void
   input: HTMLInputElement
+  beforeMention: () => void
 }) {
   const el = <T extends HTMLElement = HTMLElement>(id: string) => container.querySelector<T>('#' + id)!
   let alive = true, generation = 0, editing: Group | undefined, momentController: AbortController | undefined
@@ -65,14 +67,12 @@ export function createSocialUI(container: HTMLElement, data: WeChatAppData, host
   el<HTMLSelectElement>('wt-mention').onchange = event => {
     const select = event.currentTarget as HTMLSelectElement, conv = options.active()
     if (!conv || !select.value) return
+    options.beforeMention()
     const item = data.contacts?.[select.value]
     options.input.value += (options.input.value ? ' ' : '') + (item ? mentionToken(item) : '@所有人') + ' '
     conv.draft = options.input.value; options.persist(); select.value = ''; options.input.focus()
   }
-  function renderMoments() {
-    const feed = el('wt-moments-feed'); feed.replaceChildren()
-    if (!data.moments?.length) feed.textContent = '还没有动态，选择一位角色看看 TA 的近况。'
-    for (const moment of data.moments ?? []) {
+  function momentArticle(moment: Moment) {
       const article = document.createElement('article'); article.className = 'wt-moment'; article.dataset.moment = moment.id
       const header = document.createElement('div'); header.className = 'wt-moment-author'
       const name = document.createElement('strong'); name.textContent = moment.authorName
@@ -81,7 +81,8 @@ export function createSocialUI(container: HTMLElement, data: WeChatAppData, host
       const time = document.createElement('time'); time.dateTime = new Date(moment.createdAt).toISOString(); time.textContent = new Date(moment.createdAt).toLocaleString()
       article.append(header, text)
       if (moment.image) {
-        const img = document.createElement('img'); img.className = 'wt-moment-image'; img.src = resolveWeChatAssetUrl(moment.image.file); img.alt = moment.image.description || moment.image.name; article.append(img)
+        const media = createImageMedia(resolveWeChatAssetUrl(moment.image.file), moment.image.description || moment.image.name)
+        media.element.classList.add('wt-moment-media'); media.image.className = 'wt-moment-image'; article.append(media.element)
       }
       const like = document.createElement('button'); like.type = 'button'
       const updateLike = () => {
@@ -96,14 +97,37 @@ export function createSocialUI(container: HTMLElement, data: WeChatAppData, host
         try { options.persist(); updateLike() }
         catch { moment.likedByPlayer = !moment.likedByPlayer; el('wt-moments-feedback').textContent = '点赞未保存，请重试。' }
       }
-      article.append(time, like); feed.append(article)
+      article.append(time, like); return article
+  }
+  function renderMoments() {
+    const feed = el('wt-moments-feed'); feed.replaceChildren()
+    if (!data.moments?.length) { const empty = document.createElement('p'); empty.dataset.momentsEmpty = ''; empty.textContent = '还没有动态，展开“发布动态”看看角色的近况。'; feed.append(empty) }
+    for (const moment of data.moments ?? []) feed.append(momentArticle(moment))
+    feed.scrollTop = 0
+  }
+  function prependMoment(moment: Moment) {
+    const feed = el('wt-moments-feed'), top = feed.getBoundingClientRect().top
+    const retained = new Set(data.moments?.map(item => item.id))
+    const surviving = [...feed.querySelectorAll<HTMLElement>('[data-moment]')].filter(node => retained.has(node.dataset.moment!))
+    const anchor = feed.scrollTop > 0 ? surviving.find(node => node.getBoundingClientRect().bottom > top) ?? surviving.at(-1) : undefined
+    const offset = anchor ? anchor.getBoundingClientRect().top - top : undefined
+    cancelMoment(); el('wt-moments-feedback').textContent = '新动态已发布。'
+    feed.querySelector('[data-moments-empty]')?.remove()
+    feed.prepend(momentArticle(moment))
+    for (const node of feed.querySelectorAll<HTMLElement>('[data-moment]')) if (!retained.has(node.dataset.moment!)) {
+      if (node.contains(document.activeElement)) feed.focus({ preventScroll: true })
+      node.remove()
     }
+    // Image slots reserve their height, including error/retry, so late loads cannot move this anchor.
+    if (anchor && offset !== undefined) feed.scrollTop += anchor.getBoundingClientRect().top - feed.getBoundingClientRect().top - offset
+    else feed.scrollTop = 0
   }
   el('wt-moments').onclick = () => {
     const select = el<HTMLSelectElement>('wt-moments-author'); select.replaceChildren()
     for (const item of catalogue()) select.add(new Option(item.name, item.id))
     el('wt-moments-feedback').textContent = data.config.apiKey ? '' : '本地演示动态 · 连接 AI 后可生成角色近况'
     el<HTMLTextAreaElement>('wt-moments-prompt').value = data.config.momentsPrompt || DEFAULT_MOMENTS_PROMPT
+    el<HTMLDetailsElement>('wt-moments-composer').open = false
     renderMoments(); options.showDialog('wt-moments-modal', el('wt-moments'))
   }
   function cancelMoment() {
@@ -135,9 +159,9 @@ export function createSocialUI(container: HTMLElement, data: WeChatAppData, host
       const moment = await pipe.requestMoment(item, state, controller.signal)
       if (!alive || controller.signal.aborted || momentController !== controller) return
       const previous = data.moments
-      addMoment(data, item, moment.text, moment.image, state)
+      const added = addMoment(data, item, moment.text, moment.image, state)
       try { options.persist() } catch (error) { data.moments = previous; throw error }
-      renderMoments(); el('wt-moments-feedback').textContent = '新动态已发布。'
+      prependMoment(added)
     } catch (error) { if (alive && momentController === controller) el('wt-moments-feedback').textContent = (error as Error).message }
     finally { clearTimeout(timeout); if (momentController === controller) cancelMoment() }
   }
@@ -149,6 +173,7 @@ export function createSocialUI(container: HTMLElement, data: WeChatAppData, host
     sync() {
       const conv = options.active(), group = conv && isGroup(conv) ? conv : undefined
       el('wt-group-edit').hidden = !group
+      el('wt-chat-tools').hidden = !group
       const select = el<HTMLSelectElement>('wt-mention'); select.hidden = !group; select.replaceChildren(new Option('@ 提及成员', ''), new Option('所有人', '*'))
       if (group) for (const item of groupContacts(data, group)) select.add(new Option(item.name, item.id))
     },

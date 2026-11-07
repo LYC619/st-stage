@@ -10,10 +10,12 @@ import { DEFAULT_PLAYER_AVATAR, DEFAULT_CONTACT_AVATAR, PLAYER_EMOJIS, CONTACT_E
 import { resolveWeChatAssetUrl } from './assets'
 import { WeChatPipeline } from './pipeline'
 import { migrateWeChatData } from './migrations'
-import { isGroup, groupContacts } from './groups'
+import { isGroup, groupContacts, groupAvatarMembers } from './groups'
 import { createReplyController } from './replies'
 import { createSocialUI } from './social-ui'
 import { createVoiceBubble, type VoiceBubbleController } from './voice'
+import { createImageMedia } from './image-media'
+import { createVoiceInput } from './voice-input'
 import { WECHAT_VIEW } from './view'
 import type { Conversation, ChatMessage, WeChatAppData } from './types'
 export { getScopedConversation } from './legacy-conversation'
@@ -57,7 +59,6 @@ export function createWeChatApp(): PhoneApp {
       cleanup?.()
       const data = initialize(ctx, true), conversations = data.conversations!
       let alive = true, activeKey: string | null = null, drawerTab: 'player' | 'contact' = 'player', selecting = 0
-      let voiceMode = false
       let dialogFocus: ReturnType<typeof manageDialogFocus> | null = null
       let currentDialog: HTMLElement | null = null
       let photoMessage: ChatMessage | undefined, photoScopeKey: string | null = null
@@ -66,6 +67,7 @@ export function createWeChatApp(): PhoneApp {
       const input = el<HTMLInputElement>('wt-input-text'), list = el('wt-conversations'), scroll = el('wt-scroll')
       // Scope by the actual conversation/message, including legacy messages without IDs.
       const voices = new Map<Conversation, Map<ChatMessage, { text: string; author: string; view: VoiceBubbleController }>>()
+      const images = new WeakMap<ChatMessage, { key: string; element: HTMLElement }>()
       function pruneVoices() {
         const retained = new Set(Object.values(conversations))
         for (const [conv, entries] of voices) {
@@ -94,6 +96,7 @@ export function createWeChatApp(): PhoneApp {
         return { player: applyAssetProfile(PLAYER_EMOJIS, 'player', profile), contact: applyAssetProfile(CONTACT_EMOJIS, 'contact', profile), photo: applyAssetProfile(CONTACT_PHOTOS, 'photo', profile) }
       }
       const persist = () => ctx.setAppData(data)
+      const voiceInput = createVoiceInput(container, saveDraft)
       const pending = createReplyController(data, { persist, activeKey: () => activeKey, report: message => ctx.toast('error', message),
         changed: key => { if (!alive) return; if (activeKey === key) { renderMessages(); syncState() } else renderList() } })
       function saveDraft() { const conv = active(); if (conv) { conv.draft = input.value; persist() } }
@@ -112,6 +115,7 @@ export function createWeChatApp(): PhoneApp {
         if (wasPhoto) { photoMessage = undefined; photoScopeKey = null }
       }
       function showDialog(id: string, opener: HTMLElement) {
+        voiceInput.interrupt()
         closeDrawer(false); closeDialog(false)
         currentDialog = el(id); currentDialog.hidden = false
         dialogFocus = manageDialogFocus(currentDialog, { onEscape: () => closeDialog(), opener })
@@ -146,7 +150,11 @@ export function createWeChatApp(): PhoneApp {
           if (!conv.contactId && !isGroup(conv)) preview.textContent = `旧会话${conv.chatId ? ` · ${conv.chatId}` : ''} · ${preview.textContent}`
           copy.append(title, preview)
           let picture: HTMLElement = avatar(scopeFor(conv).card?.avatar)
-          if (isGroup(conv)) { picture = document.createElement('span'); picture.className = 'wt-avatar wt-group-avatar'; picture.setAttribute('aria-label', '群头像'); for (const member of groupContacts(data, conv).slice(0,9)) picture.append(avatar(member.avatar ?? member.card?.avatar)) }
+          if (isGroup(conv)) {
+            const { members, columns } = groupAvatarMembers(data, conv)
+            picture = document.createElement('span'); picture.className = 'wt-avatar wt-group-avatar'; picture.dataset.columns = String(columns)
+            picture.setAttribute('aria-label', '群头像'); for (const member of members) picture.append(avatar(member.avatar ?? member.card?.avatar))
+          }
           btn.append(picture, copy)
           if (conv.unreadCount) { const badge = document.createElement('span'); badge.className = 'wt-unread'; badge.textContent = String(conv.unreadCount); badge.setAttribute('aria-label', `${conv.unreadCount} 条未读`); btn.append(badge) }
           btn.onclick = () => openConversation(key); list.append(btn)
@@ -161,7 +169,7 @@ export function createWeChatApp(): PhoneApp {
         el('wt-state-summary').textContent = `角色状态 · ${conv.state.currentStatus || '等待更新'}`
         el('wt-typing-badge').hidden = !pending.has(activeKey!)
         const busy = pending.has(activeKey!)
-        el<HTMLButtonElement>('wt-send-btn').disabled = busy
+        voiceInput.setBusy(busy)
         el('wt-recovery').hidden = !busy && !conv.replyAttempt
         el('wt-cancel-reply').hidden = !busy
         el('wt-retry-reply').hidden = busy || !conv.replyAttempt
@@ -170,14 +178,14 @@ export function createWeChatApp(): PhoneApp {
       }
       function openConversation(key: string) {
         if (!conversations[key]) return
-        saveDraft(); closeDialog(false); closeDrawer(false)
+        voiceInput.textMode(); saveDraft(); closeDialog(false); closeDrawer(false)
         activeKey = key; data.activeScopeKey = key; conversations[key].unreadCount = 0
         list.hidden = true; el('wt-chat').hidden = false; el('wt-back').hidden = false; el('wt-add-contact').hidden = true
         input.value = conversations[key].draft || ''; persist(); renderMessages(); syncState(); notice()
         input.focus({ preventScroll: true })
       }
       function showList() {
-        saveDraft(); closeDialog(false); closeDrawer(false); activeKey = null
+        voiceInput.textMode(); saveDraft(); closeDialog(false); closeDrawer(false); activeKey = null
         list.hidden = false; el('wt-chat').hidden = true; el('wt-back').hidden = true; el('wt-add-contact').hidden = false
         el('wt-contact-name').textContent = '微信'; social.sync(); renderList(); notice()
         list.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true })
@@ -186,8 +194,8 @@ export function createWeChatApp(): PhoneApp {
         const conv = active(); if (!conv) return
         pruneVoices()
         const priorPhoto = (document.activeElement as HTMLElement | null)?.dataset.wtPhoto
-        const priorVoice = document.activeElement instanceof HTMLElement && scroll.contains(document.activeElement)
-          && document.activeElement.closest('.wt-voice') ? document.activeElement : null
+        const priorControl = document.activeElement instanceof HTMLElement && scroll.contains(document.activeElement)
+          && document.activeElement.closest('.wt-voice,.wt-media') ? document.activeElement : null
         scroll.replaceChildren(); const media = mediaFor(conv), profile = profileFor(conv)
         for (const [index, msg] of conv.messages.entries()) {
           const player = msg.sender === 'player', row = document.createElement('div'); row.className = `wt-message${player ? ' wt-message-player' : ''}`
@@ -204,9 +212,19 @@ export function createWeChatApp(): PhoneApp {
             const fromPlayer = msg.emojiSource ? msg.emojiSource === 'player' : player
             const item = msg.asset ?? (msg.type === 'image' ? media.photo[msg.content] ?? CONTACT_PHOTOS[msg.content] : (fromPlayer ? media.player : media.contact)[msg.content] ?? (fromPlayer ? PLAYER_EMOJIS : CONTACT_EMOJIS)[msg.content])
             if (item) {
-              bubble = document.createElement('button'); bubble.className = 'wt-bubble wt-media'; bubble.dataset.wtPhoto = String(index); bubble.setAttribute('aria-label', `查看图片：${item.name}`)
-              const img = document.createElement('img'); img.src = resolveWeChatAssetUrl(item.file); img.alt = item.name; bubble.append(img)
-              bubble.onclick = () => { el<HTMLImageElement>('wt-lightbox-img').src = img.src; el<HTMLImageElement>('wt-lightbox-img').alt = item.name; el('wt-lightbox-desc').textContent = item.description; showDialog('wt-photo-lightbox', bubble); photoMessage = msg; photoScopeKey = activeKey }
+              const key = JSON.stringify([msg.type, item.file, item.name, item.description])
+              let cached = images.get(msg)
+              if (!cached || cached.key !== key) {
+                const view = createImageMedia(resolveWeChatAssetUrl(item.file), item.name, () => {
+                  const preview = createImageMedia(view.image.src, item.name); preview.image.id = 'wt-lightbox-img'
+                  el('wt-lightbox-media').replaceChildren(preview.element)
+                  el('wt-lightbox-desc').textContent = item.description; showDialog('wt-photo-lightbox', view.element); photoMessage = msg; photoScopeKey = activeKey
+                })
+                view.element.classList.add('wt-bubble', 'wt-media')
+                if (msg.type === 'emoji') view.element.classList.add('wt-emoji')
+                cached = { key, element: view.element }; images.set(msg, cached)
+              }
+              bubble = cached.element; bubble.dataset.wtPhoto = String(index)
             } else bubble.textContent = msg.type === 'image' ? `[图片：${msg.content}]` : `[表情：${msg.content}]`
           }
           if (isGroup(conv) && !player) { const content = document.createElement('div'); content.className = 'wt-message-content'; const label = document.createElement('span'); label.className = 'wt-message-author'; label.textContent = author; content.append(label, bubble); row.append(content) } else row.append(bubble)
@@ -214,7 +232,7 @@ export function createWeChatApp(): PhoneApp {
         }
         scroll.scrollTop = scroll.scrollHeight
         if (priorPhoto) scroll.querySelector<HTMLElement>(`[data-wt-photo="${priorPhoto}"]`)?.focus({ preventScroll: true })
-        if (priorVoice?.isConnected && scroll.contains(priorVoice)) priorVoice.focus({ preventScroll: true })
+        if (priorControl?.isConnected && scroll.contains(priorControl)) priorControl.focus({ preventScroll: true })
       }
       function renderDrawer() {
         const media = mediaFor(active()), entries = Object.entries(drawerTab === 'player' ? media.player : media.contact)
@@ -243,14 +261,9 @@ export function createWeChatApp(): PhoneApp {
         el<HTMLInputElement>('wt-cfg-model').value = data.config.model || 'deepseek-chat'
         el('wt-history-actions').hidden = !active(); el('wt-btn-clear-chat').textContent = '清空此会话记录'; feedback.textContent = ''
       }
-      const social = createSocialUI(container, data, ctx, { active, persist, showDialog, closeDialog, openConversation, avatar, input, beforeGroupEdit: conv => pending.cancel(conv) })
+      const social = createSocialUI(container, data, ctx, { active, persist, showDialog, closeDialog, openConversation, avatar, input, beforeMention: voiceInput.textMode, beforeGroupEdit: conv => pending.cancel(conv) })
       el('wt-cancel-reply').onclick = () => { const conv = active(); if (conv) pending.cancel(conv) }
       el('wt-retry-reply').onclick = () => { const conv = active(); if (conv) void pending.retry(conv) }
-      el('wt-voice-mode').onclick = () => {
-        voiceMode = !voiceMode; el('wt-voice-mode').setAttribute('aria-pressed', String(voiceMode))
-        input.placeholder = voiceMode ? '输入语音文字…' : '发消息…'
-        input.setAttribute('aria-label', voiceMode ? '语音文字' : '消息'); input.focus()
-      }
       async function send(content: string, type: ChatMessage['type'] = 'text', emojiSource: 'player' | 'contact' = 'player', note?: string) {
         const target = active(), key = activeKey
         if (!target || !key || !content.trim()) return
@@ -267,6 +280,7 @@ export function createWeChatApp(): PhoneApp {
           if (type === 'text' || type === 'voice') input.value = content
           notice('消息保存失败，请重试。'); return
         }
+        if (type === 'voice') voiceInput.sent()
         notice(); await pending.send(target, player)
       }
 
@@ -274,12 +288,12 @@ export function createWeChatApp(): PhoneApp {
       el('wt-settings-btn').onclick = () => openSettings()
       el('wt-close-settings').onclick = () => closeDialog(); el('wt-cancel-settings').onclick = () => closeDialog()
       el('wt-close-lightbox').onclick = () => closeDialog(); el('wt-packet-close').onclick = () => closeDialog(); el('wt-close-contacts').onclick = () => closeDialog()
-      el('wt-send-btn').onclick = () => { void send(input.value, voiceMode ? 'voice' : 'text') }
+      el('wt-send-btn').onclick = () => { if (!input.hidden) void send(input.value, voiceInput.isVoice() ? 'voice' : 'text') }
       let composing = false
       input.addEventListener('compositionstart', () => { composing = true }); input.addEventListener('compositionend', () => { composing = false })
       input.oninput = () => saveDraft()
-      input.onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !composing && event.keyCode !== 229) { event.preventDefault(); void send(input.value, voiceMode ? 'voice' : 'text') } }
-      el('wt-emoji-btn').onclick = () => { if (!el('wt-emoji-drawer').hidden) { closeDrawer(); return }; closeDialog(false); el('wt-emoji-drawer').hidden = false; el('wt-emoji-btn').setAttribute('aria-expanded', 'true'); renderDrawer(); el(drawerTab === 'player' ? 'wt-tab-player' : 'wt-tab-contact').focus() }
+      input.onkeydown = event => { if (event.key === 'Enter' && !input.hidden && !event.shiftKey && !event.isComposing && !composing && event.keyCode !== 229) { event.preventDefault(); void send(input.value, voiceInput.isVoice() ? 'voice' : 'text') } }
+      el('wt-emoji-btn').onclick = () => { voiceInput.interrupt(); if (!el('wt-emoji-drawer').hidden) { closeDrawer(); return }; closeDialog(false); el('wt-emoji-drawer').hidden = false; el('wt-emoji-btn').setAttribute('aria-expanded', 'true'); renderDrawer(); el(drawerTab === 'player' ? 'wt-tab-player' : 'wt-tab-contact').focus() }
       el('wt-emoji-drawer').onkeydown = event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeDrawer() } }
       el('wt-tab-player').onclick = () => { drawerTab = 'player'; renderDrawer() }; el('wt-tab-contact').onclick = () => { drawerTab = 'contact'; renderDrawer() }
       el('wt-manage-emojis').onclick = () => openSettings(true)
@@ -339,7 +353,7 @@ export function createWeChatApp(): PhoneApp {
       const unsubscribe = ctx.onCharacterChanged(() => { if (alive && currentDialog?.id === 'wt-contacts-modal') renderContacts() })
       renderList(); notice()
       cleanup = () => {
-        saveDraft(); alive = false; selecting++; closeDialog(false); unsubscribe()
+        voiceInput.dispose(); saveDraft(); alive = false; selecting++; closeDialog(false); unsubscribe()
         pending.destroy(); social.destroy()
         for (const entries of voices.values()) for (const entry of entries.values()) entry.view.dispose()
         voices.clear()

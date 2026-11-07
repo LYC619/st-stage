@@ -42,14 +42,15 @@
 .so-phone-shell {
   position: fixed;
   z-index: 9999;
-  width: 320px;
+  width: min(320px, calc(100vw - 16px));
   display: flex;
   flex-direction: column;
   border-radius: 28px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: #181820;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), inset 0 0 0 2px rgba(0, 0, 0, 0.5);
-  overflow: hidden;
+  /* The screen clips its own content. Let transparent status targets extend above the rounded shell. */
+  overflow: visible;
   user-select: none;
 }
 
@@ -124,6 +125,20 @@
   opacity: 1;
   outline: none;
 }
+
+/* Keep visual layout unchanged; the targets end at the status bar bottom, above app controls. */
+.so-phone-back,
+.so-phone-close { position: relative; z-index: 1; }
+.so-phone-back::after,
+.so-phone-close::after {
+  content: '';
+  position: absolute;
+  top: -12px;
+  width: 44px;
+  height: 44px;
+}
+.so-phone-back::after { left: -7px; }
+.so-phone-close::after { right: -7px; }
 
 /* 屏幕 */
 .so-phone-screen {
@@ -845,10 +860,10 @@
   border-color: rgba(255, 255, 255, 0.4);
 }
 
-/* 窄屏（ST 手机端）：手机壳全屏化 */
-@media (max-width: 480px) {
+/* Match the JS fallback; inline layout also follows visual viewport zoom/panning. */
+@media (min-width: 768px) {
   .so-phone-shell {
-    width: min(320px, calc(100vw - 16px));
+    width: min(380px, calc(100vw - 16px));
   }
 }
 

@@ -200,7 +200,8 @@ export function createPhoneShell(
     shell.style.display = state.open ? 'flex' : 'none'
     if (state.open) {
       // 手机按真实尺寸完整钳入视口：窄屏收窄、矮屏压高，保证四边都在可视区内
-      const shellW = Math.min(320, vw - 16)
+      const targetMaxW = vw >= 768 ? 380 : 320
+      const shellW = Math.min(targetMaxW, vw - 16)
       const shellH = Math.min(580, vh - 16)
       shell.style.width = `${shellW}px`
       shell.style.height = `${shellH}px`
