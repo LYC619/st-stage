@@ -1,6 +1,6 @@
 # 五阶段演进实施与验收
 
-状态：本地实现、独立复审修复与最新验收完成，未提交/发布。七项 P2 和朋友圈快照竞态已修复；最新证据见 [修复交接](../../maintenance/history/2026-11-07-five-phase-repairs.md)，原 [独立复审](../../maintenance/history/2026-11-07-five-phase-review.md) 保留。2026-11-06 从干净的 `main` / `2b642a416924b301d8b0bd0def9cdf92dbaa540b` 开始；`CURRENT.md` 的 `4d635f4` 基线祖先与产品差异检查均通过。`rtk` 当前不可用，直接运行原命令。
+状态：实现、独立复审修复、验收及双仓发布完成。用户随后授权提交/推送/同步，开发 `9eeeb44`、安装仓库 `eaa9ca3` 已发布为 `0.9.0+202611071003`，见 [发布交接](../../maintenance/history/2026-11-07-publication.md)。原 [修复交接](../../maintenance/history/2026-11-07-five-phase-repairs.md) 与 [独立复审](../../maintenance/history/2026-11-07-five-phase-review.md) 保留。实施始于干净的 `main` / `2b642a416924b301d8b0bd0def9cdf92dbaa540b`；当时发布基线为 `4d635f4`。`rtk` 当前不可用，直接运行原命令。
 
 ## 范围与执行边界
 
