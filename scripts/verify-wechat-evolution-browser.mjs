@@ -74,7 +74,7 @@ try {
     try {
       await page.goto(url.href, { waitUntil: 'domcontentloaded' }); await ready()
       assert.equal(await page.evaluate(async () => [...new Uint8Array(await crypto.subtle.digest('SHA-256', await (await fetch('/scripts/extensions/third-party/baigong-acceptance/bundle.js')).arrayBuffer()))].map(b => b.toString(16).padStart(2, '0')).join('')), report.sha256)
-      await saved(() => page.evaluate(async () => {
+      await page.evaluate(async () => {
         const ctx = window.SillyTavern.getContext(), post = async (endpoint, body) => { const r = await fetch(endpoint, { method: 'POST', headers: ctx.getRequestHeaders(), body: JSON.stringify(body) }); if (!r.ok) throw new Error(endpoint + ': ' + r.status); const text = await r.text(); try { return JSON.parse(text) } catch { return text } }
         let all = await post('/api/characters/all', {})
         for (const name of ['Experience A', 'Experience B']) {
@@ -86,9 +86,11 @@ try {
         settings.packs = [{ id: 'wechat-experience-gallery', name: '验收图库', sprites: [{ tag: '船票', url: upload.path }] }]
         settings.enabled = false; settings.showPhone = true; settings.phone = { x: 8, y: 8, open: false }
         settings.apps['wechat-sister'] = { config: { apiKey: 'synthetic', apiUrl: location.origin + '/wechat-experience-api', model: 'fixture', profile: { preset: 'general' } }, conversations: {} }
-        ctx.saveSettingsDebounced()
-      }))
+        // Wait for this fixture's own write; an unrelated debounced save can finish first.
+        await (await import('/script.js')).saveSettings()
+      })
       await page.reload({ waitUntil: 'domcontentloaded' }); await ready()
+      assert.equal(await page.evaluate(() => window.SillyTavern.getContext().extensionSettings.sprite_overlay.packs.some(p => p.id === 'wechat-experience-gallery')), true, 'gallery fixture persisted')
       await page.waitForFunction(() => window.SillyTavern.getContext().characters.some(c => c.name === 'Experience A'))
       await page.evaluate(async () => { const ctx = window.SillyTavern.getContext(); const id = ctx.characters.findIndex(c => c.name === 'Experience A'); await (await import('/script.js')).selectCharacterById(id, { switchMenu: false }) })
       await page.waitForFunction(() => window.SillyTavern.getContext().name2 === 'Experience A')

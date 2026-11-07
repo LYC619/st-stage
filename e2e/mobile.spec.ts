@@ -544,6 +544,7 @@ test('真实图库在横竖屏中保持可操作，并支持角色折叠与搜�
 
   const packInfo = page.locator('details.so-collapse', { hasText: '包信息' })
   await packInfo.locator('summary').tap()
+  await packInfo.getByRole('tab', { name: '提示词扩展', exact: true }).tap()
   const promptNote = packInfo.locator('.so-pack-prompt-note')
   await expect(promptNote).toHaveValue('适用于日常剧情')
   await expect(packInfo.locator('.so-pack-prompt-placement')).toHaveValue('before-list')
