@@ -49,6 +49,7 @@ import { CARD_CHOICES_APP_ID, createChoicePersistence } from './apps/renderer/ch
 import { beginExtensionLifecycle, runWhenDomReady } from './lifecycle'
 import { initI18n } from './st-adapter'
 import { buildRoleSummary, type ExternalVariableStatus } from './role-summary'
+import { registerPhoneCommand } from './slash-commands'
 
 declare global {
   interface Window {
@@ -69,6 +70,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
 
   const adapter = new STAdapter()
   let settings: PluginSettings
+  let phoneVisible = false
   try {
     settings = await adapter.loadSettings()
   } catch (err) {
@@ -94,6 +96,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     overlay.setLayout(settings.overlay)
     overlay.setOpacity(settings.spriteOpacity)
     phone.setVisible(settings.showPhone)
+    phoneVisible = settings.showPhone
     if (autoChanged) overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds)
     refresh()
     // 显示相关设置变更：先恢复原始 DOM 再按新规则补渲染（总开关关闭时只恢复）
@@ -272,6 +275,22 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     adapter.saveSettings(settings)
     phone.setState(settings.phone)
   }
+
+  function expandPhone(): void {
+    settings = { ...settings, phone: { ...settings.phone, open: true } }
+    adapter.saveSettings(settings)
+    phoneVisible = true
+    phone.setVisible(true)
+    phone.setState(settings.phone)
+  }
+
+  registerPhoneCommand(window.SillyTavern?.getContext(), {
+    isOpen: () => phoneVisible && settings.phone.open,
+    expand: expandPhone,
+    collapse: collapsePhone,
+    hasApp: id => !!registry.get(id),
+    openApp: id => phone.openApp(id),
+  })
 
   // 「新变量」运行时：注入走独立命名通道（与立绘 injectPrompt 互不覆盖），解析/存储常驻
   const newvarRuntime = createNewvarRuntime({
@@ -589,6 +608,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   newvarRuntime.start()
   phone.setState(settings.phone)
   phone.setVisible(settings.showPhone)
+  phoneVisible = settings.showPhone
   const version =
     typeof __EXT_VERSION__ === 'undefined' ? 'dev' : `v${__EXT_VERSION__} · ${__BUILD_TIME__}`
   console.log(`[sprite-overlay] 百工（st-stage）已加载（含手机框架）${version}`)
