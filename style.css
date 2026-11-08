@@ -2762,6 +2762,38 @@
   opacity: 0.6;
 }
 
+/* 小剧场：独立作用域，隔离宿主主题。 */
+.th-root{color:#26222b;background:#f6f3f8;font:13px/1.6 -apple-system,BlinkMacSystemFont,'Microsoft YaHei',sans-serif;min-width:0;padding:10px;overflow-wrap:anywhere}
+.th-root *{box-sizing:border-box}
+.th-root [hidden]{display:none!important}
+.th-root button,.th-root input{font:inherit;color:#26222b;border:1px solid #cfc5d8;border-radius:8px;background:#fff;min-width:0;max-width:100%;box-shadow:none;text-shadow:none}
+.th-root button{min-height:44px;padding:8px 12px;cursor:pointer;white-space:normal}
+.th-root input[type=checkbox]{width:20px;height:20px;accent-color:#7850a0}
+.th-root :focus-visible{outline:2px solid #7850a0;outline-offset:2px}
+.th-header,.th-tabs,.th-author,.th-tags{display:flex;align-items:center;gap:8px}
+.th-header{justify-content:space-between;margin-bottom:10px}
+.th-header>strong{font-size:18px}
+.th-tabs{margin-bottom:10px}
+.th-tabs button{flex:1}
+.th-tabs [aria-selected=true]{background:#7850a0;color:#fff;border-color:#7850a0}
+.th-status{color:#8a3434;font-size:12px}
+.th-panel{min-width:0}
+.th-card{background:#fff;border:1px solid #e2dbe8;border-radius:12px;padding:12px;margin:10px 0}
+.th-card h3{font-size:16px;margin:6px 0;color:inherit}
+.th-card p{margin:7px 0}
+.th-avatar{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:#e8ddf1;flex-shrink:0}
+.th-muted,.th-empty{color:#665e6e}
+.th-copy{white-space:pre-wrap}
+.th-topics{color:#69418c}
+.th-comments{padding:6px 9px;margin:10px 0;background:#f6f3f8;border-radius:6px;font-size:12px}
+.th-forum{border-top:5px solid}
+.th-tags{flex-wrap:wrap;margin:8px 0}
+.th-tags span{background:#eee6f4;border-radius:12px;padding:2px 9px;font-size:11px}
+.th-danmaku{max-height:240px;overflow:auto;background:#f8f5fb;border-radius:8px;padding:10px}
+.th-danmaku-track{animation:th-drift 24s linear infinite}
+@keyframes th-drift{0%,10%{transform:translateY(0)}90%,100%{transform:translateY(-35%)}}
+@media(prefers-reduced-motion:reduce){.th-danmaku-track{animation:none}}
+
 /* 手机框架样式 — 双端共用（ST 由 build.mjs 拼进 style.css；Web 由 globals.css import） */
 
 /* ==================== 手机框架 ==================== */
