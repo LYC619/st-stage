@@ -8,7 +8,7 @@
 2. 按 [PROTOCOL](PROTOCOL.md) 检查 `git status --short --branch`、`git worktree list`、`git branch -avv` 和代码基线。记录过期时先用 Git 和相关 history 校正；提交检查不会覆盖未提交修改。
 3. 查 [DEFERRED](DEFERRED.md)，判断本次修改是否碰到已知边界。设计理由在 [specs](../superpowers/specs/)，实施过程在 [plans](../superpowers/plans/) 与 [history](history/)；计划中的勾选不单独证明已经实现或发布。
 
-历史分支已经合并清理，不再依赖旧分支名读取成果。追溯实现时使用 CURRENT 中记录的提交及 `history/`；判断当前能力时核对实际源码和 `package.json`。
+已完成的历史分支已合并清理；仍单独保留 `v0/2405142193-6702-70a2066c`，其中 `4e1d1ac` 涉及不同的图包格式和 App API，用户在 2026-11-08 明确选择本次不整合。追溯当前成果时使用 CURRENT 中记录的提交及 `history/`；判断当前能力时核对实际源码和 `package.json`。
 
 ## 准备与运行
 

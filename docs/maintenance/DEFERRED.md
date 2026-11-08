@@ -2,6 +2,12 @@
 
 Known follow-ups and pending review repairs are recorded here. Older sections retain their original non-blocking decisions; the review queue below is **not** a declaration that its risks are acceptable for a new release. Remove or resolve entries only with an actual fixing commit and fresh verification.
 
+## 2026-11-08 WeChat and UX — Published
+
+User-authorized release `0.9.0+202611081358` is pushed to both main branches: development `4ee95e883c723f253262daf2e26e7ec115f543a7`, installation `205e4481e96fc751e18ba33b64affbf044f8ef79`. [Publication record](history/2026-11-08-wechat-ux-publication.md). This closes the uncommitted status below, the implemented + social menu, settings performance repairs, stale preview and failed-mount cleanup, and current browser-script repairs. The old WeChat MVU contract is retired rather than treated as a passing integration test.
+
+Release gates pass 1527 unit and 25 tooling tests; the identical 60-file rebuilt candidate retains the 25 mobile E2E and 208 browser checks. Four-way artifact and committed-inventory parity pass. The 92 scoped axe scans have no detected violations and retain 53 distinct rule/target incomplete items. Real AI/voice providers, physical devices/IME and full readers remain environment-dependent; gallery waterfall, inline @ suggestions and draggable width remain deferred. At the user's explicit choice, the old v0 branch remains separate and is not deleted.
+
 ## 2026-11-08 UX Review — Verified Worktree Candidate
 
 Follow-up in local candidate `0.9.0+202611081358`: settings and asset work is now lazy, hidden controls avoid unnecessary style walks, stale prompt previews are cancelled, and failed App mounts immediately release subscriptions. Unit timeouts are unchanged. The profile browser suite now validates the current product; experience delegates to evolution; the old WeChat MVU contract is explicitly retired with guarded historical reproduction. Social fixture setup now waits for the host character list. [Follow-up evidence](history/2026-11-08-ux-follow-up.md) and [current browser entry points](BROWSER-ACCEPTANCE.md). These repairs remain uncommitted; retain the original findings below until a fixing commit exists. Real-provider/physical-device/full-reader validation remains open.
