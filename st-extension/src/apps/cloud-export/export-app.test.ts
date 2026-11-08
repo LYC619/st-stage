@@ -307,6 +307,27 @@ describe('cloud export app', () => {
     expect(container.textContent).toContain('已选 2 个角色、2 段聊天、1 本世界书')
   })
 
+  // 「清空当前分类」等于逐个取消角色：整体勾选带进来的关联世界书也要一起放掉
+  it('releases bundled worldbooks when the character category is cleared', async () => {
+    const bridge = fakeBridge()
+    vi.mocked(bridge.listCharacters).mockResolvedValue([
+      { ...alice, linkedWorldName: 'World' },
+      { id: 'Bob.png', name: 'Bob', avatar: 'Bob.png', chats: [], linkedWorldName: 'World' },
+    ])
+    vi.mocked(bridge.listChats).mockImplementation(async (character) => [
+      { id: `${character.id}:first`, name: 'first', path: 'first.jsonl' },
+    ])
+    const container = document.createElement('div')
+    cloudExportApp(bridge).mount(container, context())
+    await settle()
+    clickText(container, '全选当前结果')
+    await settle()
+    expect(container.textContent).toContain('已选 2 个角色、2 段聊天、1 本世界书')
+    clickText(container, '清空当前分类')
+    await settle()
+    expect(container.textContent).toContain('已选 0 个角色、0 段聊天、0 本世界书')
+  })
+
   // 勾选是整体选中，取消也必须对称：否则用户取消了角色，世界书还留在导出清单里
   it('releases the linked worldbook when the character is deselected', async () => {
     const bridge = fakeBridge()

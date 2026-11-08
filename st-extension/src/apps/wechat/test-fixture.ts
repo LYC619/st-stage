@@ -7,7 +7,11 @@ import { addContactConversation } from './conversations'
 
 export function mountWeChat(initial?: WeChatAppData) {
   let data = initial ?? { config: { profile: { preset: 'general' as const } } }
-  let changed = () => {}, hostName = 'A'
+  // These legacy interaction cases explicitly opt out of background generation/memory.
+  // Dedicated integration tests enable them and inspect the outgoing requests.
+  data.memoryVersion ??= 1
+  data.config = { autoMoments: false, ...data.config, profile: { contextMessageCount: 0, includeWorldbook: false, ...data.config.profile } }
+  const changed = new Set<() => void>(), received = new Set<(text: string) => void>(); let hostName = 'A'
   const settings = createDefaultSettings()
   const a = addContactConversation(data, { id: 'avatar:a.png', name: 'A', card: { name: 'A', avatar: 'a.png', description: 'PRIVATE_PERSONA_A' } })
   const b = addContactConversation(data, { id: 'avatar:b.png', name: 'B', card: { name: 'B', avatar: 'b.png', description: 'PRIVATE_PERSONA_B' } })
@@ -18,7 +22,7 @@ export function mountWeChat(initial?: WeChatAppData) {
     getCharacterCard: () => ({ name: hostName, avatar: `${hostName.toLowerCase()}.png` }),
     getChatContext: () => ({ characterId: '0', chatId: 'main-chat', chat: [{ is_user: true, mes: 'PRIVATE_MAIN_CHAT_A' }] }),
     getVariables, getAppData: <T>() => data as T, setAppData: <T>(value: T) => { data = value as WeChatAppData },
-    onCharacterChanged: callback => { changed = callback; return () => {} }, onMessageReceived: () => () => {},
+    onCharacterChanged: callback => { changed.add(callback); return () => { changed.delete(callback) } }, onMessageReceived: callback => { received.add(callback); return () => { received.delete(callback) } },
     injectPrompt: vi.fn(), toast, updateSettings: vi.fn(), goHome: vi.fn(), openModal: vi.fn(),
     setTimeout: window.setTimeout.bind(window), setInterval: window.setInterval.bind(window),
   }
@@ -31,7 +35,8 @@ export function mountWeChat(initial?: WeChatAppData) {
     button.click()
   }
   return { app, ctx, settings, el, container, a, b, open, getVariables, toast, data: () => data,
-    hostChange: (name: string) => { hostName = name; changed() },
+    hostChange: (name: string) => { hostName = name; for (const callback of changed) callback() },
+    hostMessage: (text: string) => { for (const callback of received) callback(text) },
     remount: () => { app.unmount?.(); data = JSON.parse(JSON.stringify(data)); app.mount(container, ctx) },
   }
 }

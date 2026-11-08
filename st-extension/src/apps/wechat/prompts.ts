@@ -1,6 +1,7 @@
 import type { ConversationScope } from './bridge'
 import type { ContactState } from './types'
 import type { WeChatProfile } from './profile'
+import { formatStoryMemory } from './memory'
 
 export const DEFAULT_REPLY_PROMPT = `你正在扮演「{角色}」，通过微信与用户进行虚构角色互动。
 遵循以下角色卡，保持其说话习惯、关系边界和已知经历；不要擅自添加亲属关系、职业或共同生活的设定。
@@ -38,8 +39,10 @@ export function renderWeChatPrompt(profile: WeChatProfile, state: ContactState, 
     '用户': profile.playerName || '用户', '称呼': profile.contactName || scope.characterName,
     '时间': time, '状态': `心情：${state.mood}/100；内心想法：${state.innerThought || '未更新'}；当前状态：${state.currentStatus || '未更新'}`,
     '表情': emojis || '无', '图片': photos || '无',
-    '背景': profile.contextMessageCount > 0 && scope.stRecentMessages?.length ? scope.stRecentMessages.slice(-profile.contextMessageCount).map(m => `${m.sender}: ${m.text}`).join('\n') : '',
+    '背景': formatStoryMemory({ ...scope, stRecentMessages: profile.contextMessageCount > 0 ? scope.stRecentMessages?.slice(-profile.contextMessageCount) : [] }),
   }
-  return [profile.replyPrompt || DEFAULT_REPLY_PROMPT, profile.statePrompt || DEFAULT_STATE_PROMPT, profile.formatPrompt || DEFAULT_FORMAT_PROMPT]
+  const templates = [profile.replyPrompt || DEFAULT_REPLY_PROMPT, profile.statePrompt || DEFAULT_STATE_PROMPT, profile.formatPrompt || DEFAULT_FORMAT_PROMPT]
+  if (!templates.some(template => template.includes('{背景}')) && values['背景']) templates.push('{背景}')
+  return templates
     .map(text => text.replace(/\{(角色|人设|用户|称呼|场景|时间|状态|表情|图片|背景)\}/g, (all, key: string) => values[key] ?? all)).join('\n\n')
 }

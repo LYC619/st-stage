@@ -42,6 +42,7 @@
       "enable": "启用包 ▾",
       "enable_for": "为「{{name}}」勾选启用立绘包",
       "content": {
+        "image_failed": "图片加载失败",
         "conflict": {
           "address": "操作未生效，存在地址冲突：{{p0}}"
         },
@@ -362,6 +363,7 @@
     "open": "打开手机",
     "open_panel": "打开手机面板",
     "back": "返回主屏",
+    "back_step": "返回",
     "collapse": "收起手机",
     "app_error": "App 打开失败，详见控制台",
     "open_app": "打开 {{name}}",

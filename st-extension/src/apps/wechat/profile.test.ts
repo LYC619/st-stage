@@ -63,6 +63,7 @@ describe('WeChat configurable scene', () => {
     const profile = normalizeProfile({ profile: { preset: 'general', contactName: '<img onerror=alert(1)>', contextMessageCount: 0, mappings: { mood: 'Alice.score' } } })
     editor.fill(profile)
     expect(editor.read()).toEqual(profile)
+    editor.showAssets()
     expect(document.querySelector('img')?.getAttribute('src')).toContain('/assets/wechat/')
     const input = document.querySelector<HTMLInputElement>('input[aria-label^="素材图片地址"]')!
     input.value = 'javascript:alert(1)'

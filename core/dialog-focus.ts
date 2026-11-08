@@ -18,13 +18,14 @@ const selector = 'button, a[href], input, select, textarea, summary, [contentedi
 
 function isVisible(element: HTMLElement): boolean {
   if (!element.isConnected || element.closest('[hidden], [inert]')) return false
+  // Reject closed disclosures before asking the browser for computed styles of every
+  // hidden control. Large settings forms otherwise force work for their entire tree.
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    if (node.tagName === 'DETAILS' && !node.hasAttribute('open') && !node.querySelector(':scope > summary')?.contains(element)) return false
+  }
   for (let node: HTMLElement | null = element; node; node = node.parentElement) {
     const style = getComputedStyle(node)
     if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false
-    if (node.tagName === 'DETAILS' && !node.hasAttribute('open')) {
-      const summary = node.querySelector(':scope > summary')
-      if (!summary?.contains(element)) return false
-    }
   }
   return true
 }

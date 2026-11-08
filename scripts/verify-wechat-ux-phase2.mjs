@@ -13,7 +13,7 @@ export async function verifyWechatUXPhase2({ page, context, saved, openApp, read
       abort() { this.aborted = true }
     }
   })
-  await openApp(); await page.locator('[data-conversation]').filter({ hasText: 'Experience B' }).click()
+  await openApp(); await page.locator('[data-conversation^="direct:"]').filter({ hasText: 'Experience B' }).click()
   await expect(page.locator('#wt-chat-tools')).toBeHidden()
   const shell = page.locator('.so-phone-shell'), toggle = page.locator('#wt-voice-mode'), input = page.locator('#wt-input-text')
   assert.equal(await shell.evaluate(node => node.getBoundingClientRect().width), size.width >= 768 ? 380 : Math.min(320,size.width - 16))
@@ -34,7 +34,7 @@ export async function verifyWechatUXPhase2({ page, context, saved, openApp, read
   await page.evaluate(() => { window.__oldRecognition = window.__recognition; window.__oldResult = window.__recognition.onresult; window.__oldEnd = window.__recognition.onend })
   await page.locator('#wt-back').click(); assert.equal(await page.evaluate(() => window.__oldRecognition.aborted), true)
   await page.evaluate(() => { window.__oldResult({ results: [{ isFinal: true,0: { transcript: '迟到结果' } }] }); window.__oldEnd() })
-  await page.locator('[data-conversation]').filter({ hasText: 'Experience B' }).click(); await expect(input).toHaveValue('')
+  await page.locator('[data-conversation^="direct:"]').filter({ hasText: 'Experience B' }).click(); await expect(input).toHaveValue('')
   await toggle.click(); await page.locator('#wt-record').click(); await page.evaluate(() => window.__recognition.onerror({ error: 'not-allowed' }))
   await expect(input).toBeVisible(); await expect(page.locator('#wt-voice-status')).toContainText('未获授权')
   await scan('voice-denied'); await page.screenshot({ path: `${out}/${size.width}-phase2-voice.png` })
@@ -45,7 +45,7 @@ export async function verifyWechatUXPhase2({ page, context, saved, openApp, read
   await expect(input).toBeFocused(); await expect(toggle).toHaveAttribute('aria-pressed','false')
   await expect(input).toHaveValue(/@/); await fit('group-mention-capsule')
   await page.evaluate(() => { window.SpeechRecognition = undefined; window.webkitSpeechRecognition = undefined })
-  await openApp(); await page.locator('[data-conversation]').filter({ hasText: 'Experience B' }).click(); await toggle.click()
+  await openApp(); await page.locator('[data-conversation^="direct:"]').filter({ hasText: 'Experience B' }).click(); await toggle.click()
   await expect(input).toBeVisible(); await expect(page.locator('#wt-voice-status')).toContainText('无法语音识别')
   await input.fill('手动语音草稿'); await toggle.click(); await expect(input).toHaveValue('手动语音草稿')
   result.checks.push('voice: keyboard capture/stop, editable confirmation before send, denied/unsupported fallback and late-result cancellation; @ stays keyboard accessible')

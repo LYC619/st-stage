@@ -6,7 +6,7 @@ import type { WeChatAppData, WeChatConfig } from './types'
 import type { SpritePack } from '../../../../core/types'
 
 /** The form is a draft. Applying/importing a template never changes a conversation until Save. */
-export function createProfileSettings(parent: HTMLElement, data: WeChatAppData, persist: () => void, options: { packs?: () => SpritePack[]; preview?: (profile: ReturnType<typeof normalizeProfile>) => string } = {}) {
+export function createProfileSettings(parent: HTMLElement, data: WeChatAppData, persist: () => void, options: { packs?: () => SpritePack[]; preview?: (profile: ReturnType<typeof normalizeProfile>, signal: AbortSignal) => string | Promise<string> } = {}) {
   const root = document.createElement('section')
   root.className = 'wt-profile-settings'
   root.style.cssText = 'display:flex;flex-direction:column;gap:10px;min-width:0;flex-shrink:0;font-size:12px;color:#222;'
@@ -24,9 +24,11 @@ export function createProfileSettings(parent: HTMLElement, data: WeChatAppData, 
   const editor = createProfileEditor(root, options.packs)
   let characterKey: string | null = null
   let resetOverride = false
+  let cancelPreview = () => {}
   const reset = document.createElement('button'); reset.type = 'button'; reset.textContent = '此联系人改用通用设置'
   root.insertBefore(reset, editor.element)
   function fillScope() {
+    cancelPreview()
     editor.fill(scope.value === 'global' ? normalizeProfile(data.config) : resolveProfile(data.config, characterKey))
     editor.setDisabled(false)
     reset.hidden = !characterKey || !hasCharacterProfile(data.config, characterKey) || resetOverride
@@ -61,6 +63,7 @@ export function createProfileSettings(parent: HTMLElement, data: WeChatAppData, 
     templates.value = id ?? ''; remove.dataset.confirm = ''; remove.textContent = t('wechatProfiles.delete', '删除模板')
   }
   function preview(profile: ReturnType<typeof normalizeProfile>) {
+    cancelPreview()
     editor.fill(profile)
     status.textContent = t('wechatProfiles.previewed', '已填入表单供预览。点击下方“保存”后才会用于会话。')
   }
@@ -85,12 +88,27 @@ export function createProfileSettings(parent: HTMLElement, data: WeChatAppData, 
   if (options.preview) {
     const previewButton = document.createElement('button'); previewButton.type = 'button'; previewButton.textContent = '预览实际发送的提示词'
     const previewText = document.createElement('textarea'); previewText.readOnly = true; previewText.rows = 10; previewText.hidden = true; previewText.setAttribute('aria-label', '实际提示词预览')
-    previewButton.onclick = () => { try { previewText.value = options.preview!(editor.read()); previewText.hidden = false; status.textContent = '以下预览使用当前表单与当前联系人，尚未保存。' } catch (error) { status.textContent = (error as Error).message } }
+    let pending: AbortController | undefined
+    cancelPreview = () => {
+      pending?.abort(); pending = undefined; previewButton.disabled = false
+      previewText.hidden = true; previewText.value = ''
+    }
+    previewButton.onclick = async () => {
+      cancelPreview()
+      const request = new AbortController(); pending = request; previewButton.disabled = true
+      try {
+        const value = await options.preview!(editor.read(), request.signal)
+        if (pending !== request) return
+        previewText.value = value; previewText.hidden = false; status.textContent = '以下预览使用当前表单与当前联系人，尚未保存。'
+      } catch (error) { if (pending === request) status.textContent = (error as Error).message }
+      finally { if (pending === request) { pending = undefined; previewButton.disabled = false } }
+    }
     root.insertBefore(previewButton, templatePanel); root.insertBefore(previewText, templatePanel)
   }
   root.append(status)
 
   return {
+    close() { cancelPreview() },
     open(key: string | null, assets = false) {
       characterKey = key; resetOverride = false
       scope.replaceChildren(new Option('通用设置', 'global'))

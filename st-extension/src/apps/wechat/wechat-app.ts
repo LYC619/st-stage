@@ -16,13 +16,18 @@ import { createSocialUI } from './social-ui'
 import { createVoiceBubble, type VoiceBubbleController } from './voice'
 import { createImageMedia } from './image-media'
 import { createVoiceInput } from './voice-input'
+import { createWeChatNavigation, type WeChatPage } from './navigation'
+import { createMomentsController } from './moments-controller'
+import { readStoryMemory } from './memory'
+import { conversationPreview, listTime } from './list-format'
+import { latestContactState } from './moments'
 import { WECHAT_VIEW } from './view'
-import type { Conversation, ChatMessage, WeChatAppData } from './types'
+import type { Conversation, ChatMessage, EmojiItem, WeChatAppData } from './types'
 export { getScopedConversation } from './legacy-conversation'
 
 function initialize(host: AppHost, entering = false): WeChatAppData {
   const existing = host.getAppData<WeChatAppData>()
-  const data: WeChatAppData = existing ?? { config: { profile: { preset: 'general', contextMessageCount: 0 } } }
+  const data: WeChatAppData = existing ?? { config: { profile: { preset: 'general', contextMessageCount: 12 } } }
   data.config ??= {}; data.conversations ??= {}; data.contacts ??= {}
   const current = resolveConversationScopeSync(host, 0)
   // Flat legacy records belong to their saved character. Do not silently attach them to another card.
@@ -52,9 +57,12 @@ function initialize(host: AppHost, entering = false): WeChatAppData {
 
 export function createWeChatApp(): PhoneApp {
   let cleanup: (() => void) | undefined
+  /** In-app back for the phone shell: overlays first, then chat → list. */
+  let stepBack: (() => boolean) | undefined
+  let background: ReturnType<typeof createMomentsController> | undefined
   return {
     id: 'wechat-sister', name: '微信', icon: '💬', order: 25, fullbleed: true,
-    setup(host) { initialize(host) },
+    setup(host) { initialize(host); background?.destroy(); background = createMomentsController(host); return () => { background?.destroy(); background = undefined } },
     mount(container: HTMLElement, ctx: PhoneAppContext) {
       cleanup?.()
       const data = initialize(ctx, true), conversations = data.conversations!
@@ -64,15 +72,18 @@ export function createWeChatApp(): PhoneApp {
       let photoMessage: ChatMessage | undefined, photoScopeKey: string | null = null
       container.classList.add('so-phone-app-fullbleed'); container.innerHTML = WECHAT_VIEW
       const el = <T extends HTMLElement = HTMLElement>(id: string) => container.querySelector<T>(`#${id}`)!
-      const input = el<HTMLInputElement>('wt-input-text'), list = el('wt-conversations'), scroll = el('wt-scroll')
+      const input = el<HTMLInputElement>('wt-input-text'), list = el('wt-conversations'), scroll = el('wt-scroll'), jump = el<HTMLButtonElement>('wt-jump-latest')
       // Scope by the actual conversation/message, including legacy messages without IDs.
       const voices = new Map<Conversation, Map<ChatMessage, { text: string; author: string; view: VoiceBubbleController }>>()
       const images = new WeakMap<ChatMessage, { key: string; element: HTMLElement }>()
+      // Rows are cached per message object: a new reply appends instead of rebuilding every bubble and avatar.
+      const rows = new WeakMap<ChatMessage, { key: string; row: HTMLElement }>()
+      let renderedKey: string | null = null, renderedCount = 0, stickNext = false
       function pruneVoices() {
         const retained = new Set(Object.values(conversations))
         for (const [conv, entries] of voices) {
           const messages = new Set(retained.has(conv) ? conv.messages.filter(message => message.type === 'voice') : [])
-          for (const [message, entry] of entries) if (!messages.has(message)) { entry.view.dispose(); entries.delete(message) }
+          for (const [message, entry] of entries) if (!messages.has(message)) { entry.view.dispose(); entries.delete(message); rows.delete(message) }
           if (!entries.size) voices.delete(conv)
         }
       }
@@ -97,11 +108,13 @@ export function createWeChatApp(): PhoneApp {
       }
       const persist = () => ctx.setAppData(data)
       const voiceInput = createVoiceInput(container, saveDraft)
-      const pending = createReplyController(data, { persist, activeKey: () => activeKey, report: message => ctx.toast('error', message),
-        changed: key => { if (!alive) return; if (activeKey === key) { renderMessages(); syncState() } else renderList() } })
+      const pending = createReplyController(data, { host: ctx, persist, activeKey: () => activeKey, report: message => ctx.toast('error', message),
+        changed: key => { if (!alive) return; if (activeKey === key) { renderMessages(); syncState() } else renderList() },
+        progress: key => { if (alive && activeKey === key) syncState() } })
       function saveDraft() { const conv = active(); if (conv) { conv.draft = input.value; persist() } }
       function closeDialog(restore = true) {
         if (currentDialog) social.dialogClosed(currentDialog.id)
+        if (currentDialog?.id === 'wt-settings-modal') profileSettings?.close()
         const wasPhoto = currentDialog?.id === 'wt-photo-lightbox'
         if (currentDialog?.id === 'wt-contacts-modal') selecting++
         const focus = dialogFocus; dialogFocus = null; focus?.dispose()
@@ -115,6 +128,7 @@ export function createWeChatApp(): PhoneApp {
         if (wasPhoto) { photoMessage = undefined; photoScopeKey = null }
       }
       function showDialog(id: string, opener: HTMLElement) {
+        navigation.closeMenu()
         voiceInput.interrupt()
         closeDrawer(false); closeDialog(false)
         currentDialog = el(id); currentDialog.hidden = false
@@ -133,106 +147,178 @@ export function createWeChatApp(): PhoneApp {
       }
       function titleFor(conv: Conversation) { return conv.title || profileFor(conv).contactName || scopeFor(conv).characterName }
       function notice(message?: string) {
-        el('wt-notice').textContent = message ?? (data.config.apiKey ? '平行世界 · 独立微信会话' : '本地演示模式 · 可在右上角设置中连接 AI')
+        // Demo mode is a state, not an error: say what it means and offer the fix in place.
+        const demo = !message && !data.config.apiKey
+        el('wt-notice').textContent = message ?? (demo ? '本地演示模式 · 回复为示例文字' : '')
+        el('wt-connect-ai').hidden = !demo
+        el('wt-notice-bar').hidden = !el('wt-notice').textContent
+      }
+      function conversationAvatar(conv: Conversation): HTMLElement {
+        if (!isGroup(conv)) return avatar(scopeFor(conv).card?.avatar)
+        const { members, columns } = groupAvatarMembers(data, conv)
+        const picture = document.createElement('span'); picture.className = 'wt-avatar wt-group-avatar'; picture.dataset.columns = String(columns)
+        picture.setAttribute('aria-label', '群头像'); for (const member of members) picture.append(avatar(member.avatar ?? member.card?.avatar))
+        return picture
       }
       function renderList() {
         pruneVoices()
         list.replaceChildren()
         const entries = Object.entries(conversations).sort(([, a], [, b]) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
-        if (!entries.length) { const empty = document.createElement('p'); empty.className = 'wt-empty'; empty.textContent = '还没有会话。点击右上角“新会话”，选择想联系的角色。'; list.append(empty) }
+        if (!entries.length) { const empty = document.createElement('p'); empty.className = 'wt-empty'; empty.textContent = '还没有会话。点击右上角 + 添加好友。'; list.append(empty) }
         for (const [key, conv] of entries) {
           const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'wt-conversation'; btn.dataset.conversation = key
           const copy = document.createElement('span'); copy.className = 'wt-conversation-copy'
           const title = document.createElement('span'); title.className = 'wt-conversation-title'; title.textContent = titleFor(conv)
           const preview = document.createElement('span'); preview.className = 'wt-conversation-preview'
-          const last = conv.messages.at(-1)
-          preview.textContent = pending.has(key) ? '正在回复…' : conv.draft ? `[草稿] ${conv.draft}` : last ? (last.type === 'voice' ? '[语音]' : last.type === 'emoji' ? '[表情]' : last.type === 'image' ? '[图片]' : last.type === 'red_packet' ? `[红包] ${last.content}` : last.content) : '开始聊天'
-          if (!conv.contactId && !isGroup(conv)) preview.textContent = `旧会话${conv.chatId ? ` · ${conv.chatId}` : ''} · ${preview.textContent}`
+          preview.textContent = conversationPreview(conv, isGroup(conv), pending.has(key))
           copy.append(title, preview)
-          let picture: HTMLElement = avatar(scopeFor(conv).card?.avatar)
-          if (isGroup(conv)) {
-            const { members, columns } = groupAvatarMembers(data, conv)
-            picture = document.createElement('span'); picture.className = 'wt-avatar wt-group-avatar'; picture.dataset.columns = String(columns)
-            picture.setAttribute('aria-label', '群头像'); for (const member of members) picture.append(avatar(member.avatar ?? member.card?.avatar))
-          }
-          btn.append(picture, copy)
-          if (conv.unreadCount) { const badge = document.createElement('span'); badge.className = 'wt-unread'; badge.textContent = String(conv.unreadCount); badge.setAttribute('aria-label', `${conv.unreadCount} 条未读`); btn.append(badge) }
+          btn.append(conversationAvatar(conv), copy)
+          const meta = document.createElement('span'); meta.className = 'wt-conversation-meta'
+          const time = listTime(conv.updatedAt)
+          if (time) { const stamp = document.createElement('span'); stamp.className = 'wt-conversation-time'; stamp.textContent = time; meta.append(stamp) }
+          if (conv.unreadCount) { const badge = document.createElement('span'); badge.className = 'wt-unread'; badge.textContent = String(conv.unreadCount); badge.setAttribute('aria-label', `${conv.unreadCount} 条未读`); meta.append(badge) }
+          if (meta.childElementCount) btn.append(meta)
           btn.onclick = () => openConversation(key); list.append(btn)
         }
       }
       function syncState() {
         const conv = active(); if (!conv) return
         el('wt-contact-name').textContent = titleFor(conv)
-        const states = isGroup(conv) ? groupContacts(data, conv).map(member => ({ name: member.name, state: conv.memberStates[member.id] })) : []
+        const members = isGroup(conv) ? groupContacts(data, conv) : []
+        const states = members.map(member => ({ name: member.name, state: conv.memberStates?.[member.id] }))
         el('wt-inner-thought').textContent = states.length ? states.map(item => item.name + '：' + (item.state?.innerThought || '等待回复')).join('\n') : conv.state.innerThought || '等待角色回复'
         el('wt-current-status').textContent = states.length ? states.map(item => item.name + '：' + (item.state?.currentStatus || '等待回复')).join('\n') : conv.state.currentStatus || '等待角色回复'
-        el('wt-state-summary').textContent = `角色状态 · ${conv.state.currentStatus || '等待更新'}`
-        el('wt-typing-badge').hidden = !pending.has(activeKey!)
-        const busy = pending.has(activeKey!)
+        // A group has no single state; summarize the member who updated most recently.
+        const latest = states.filter(item => item.state?.currentStatus).sort((a, b) => (b.state!.updatedAt ?? 0) - (a.state!.updatedAt ?? 0))[0]
+        el('wt-state-summary').textContent = states.length
+          ? `成员状态 · ${latest ? latest.name + '：' + latest.state!.currentStatus : '等待更新'}`
+          : `角色状态 · ${conv.state.currentStatus || '等待更新'}`
+        const busy = pending.has(activeKey!), progress = pending.progress(activeKey!)
+        el('wt-typing-badge').hidden = !busy
+        el('wt-typing-badge').textContent = progress ? `${progress.name} 正在输入…（${progress.index + 1}/${progress.total}）` : '对方正在输入…'
         voiceInput.setBusy(busy)
         el('wt-recovery').hidden = !busy && !conv.replyAttempt
         el('wt-cancel-reply').hidden = !busy
         el('wt-retry-reply').hidden = busy || !conv.replyAttempt
         el('wt-reply-error').textContent = conv.replyAttempt?.error ?? ''
         social.sync()
+        // Typing, recovery and @ share one compact row so a pending reply does not squeeze the conversation.
+        el('wt-chat-status').hidden = el('wt-chat-tools').hidden && el('wt-typing-badge').hidden && el('wt-recovery').hidden
       }
       function openConversation(key: string) {
         if (!conversations[key]) return
         voiceInput.textMode(); saveDraft(); closeDialog(false); closeDrawer(false)
-        activeKey = key; data.activeScopeKey = key; conversations[key].unreadCount = 0
-        list.hidden = true; el('wt-chat').hidden = false; el('wt-back').hidden = false; el('wt-add-contact').hidden = true
+        activeKey = key; data.activeScopeKey = key; conversations[key].unreadCount = 0; renderedKey = null
+        navigation.showChat()
         input.value = conversations[key].draft || ''; persist(); renderMessages(); syncState(); notice()
         input.focus({ preventScroll: true })
       }
       function showList() {
-        voiceInput.textMode(); saveDraft(); closeDialog(false); closeDrawer(false); activeKey = null
-        list.hidden = false; el('wt-chat').hidden = true; el('wt-back').hidden = true; el('wt-add-contact').hidden = false
-        el('wt-contact-name').textContent = '微信'; social.sync(); renderList(); notice()
-        list.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true })
+        showPage(navigation.page())
+        container.querySelector<HTMLElement>('[role=tab][aria-selected=true]')?.focus({ preventScroll: true })
       }
+      function showPage(page: WeChatPage) {
+        voiceInput.textMode(); saveDraft(); closeDialog(false); closeDrawer(false); activeKey = null
+        navigation.show(page); social.sync(); renderList(); renderAddressBook(); notice()
+        if (page === 'moments') social.refresh()
+      }
+      function renderAddressBook() {
+        const directory = el('wt-address-book'); directory.replaceChildren()
+        const heading = (text: string) => { const h = document.createElement('h2'); h.className = 'wt-directory-heading'; h.textContent = text; directory.append(h) }
+        const row = (name: string, detail: string, picture: HTMLElement, open: () => void) => {
+          const button = document.createElement('button'); button.type = 'button'; button.className = 'wt-conversation'
+          const copy = document.createElement('span'); copy.className = 'wt-conversation-copy'
+          const title = document.createElement('span'); title.className = 'wt-conversation-title'; title.textContent = name; copy.append(title)
+          if (detail) { const sub = document.createElement('span'); sub.className = 'wt-conversation-preview'; sub.textContent = detail; copy.append(sub) }
+          button.append(picture, copy); button.onclick = open; directory.append(button); return button
+        }
+        heading('群聊')
+        const groups = Object.values(conversations).filter(isGroup)
+        for (const group of groups) row(group.title, `${group.memberIds.length} 位成员`, conversationAvatar(group), () => openConversation(group.scopeKey!))
+        if (!groups.length) { const hint = document.createElement('p'); hint.className = 'wt-hint'; hint.style.padding = '0 14px'; hint.textContent = '点击右上角 + 发起群聊'; directory.append(hint) }
+        heading('好友')
+        for (const contact of Object.values(data.contacts ?? {}).sort((a, b) => a.name.localeCompare(b.name))) {
+          // Like a WeChat signature line: the character's latest known status, when there is one.
+          const button = row(contact.name, latestContactState(data, contact.id).currentStatus ?? '', avatar(contact.avatar ?? contact.card?.avatar), () => { const conv = addContactConversation(data, contact); persist(); openConversation(conv.scopeKey!) })
+          button.dataset.friend = contact.id
+        }
+      }
+      /** The visual bubble for one message; image and voice controls keep their own caches. */
+      function messageBubble(conv: Conversation, msg: ChatMessage, author: string, item: EmojiItem | undefined): HTMLElement {
+        if (msg.type === 'voice') return voiceFor(conv, msg, author)
+        const bubble = document.createElement('div'); bubble.className = 'wt-bubble'
+        if (msg.type === 'text') { bubble.textContent = msg.content; return bubble }
+        if (msg.type === 'red_packet') {
+          bubble.classList.add('wt-gift'); bubble.textContent = `🧧 ${msg.content}`
+          const sub = document.createElement('small'); sub.textContent = msg.note || '微信红包 / 礼物'; bubble.append(sub); return bubble
+        }
+        if (!item) { bubble.textContent = msg.type === 'image' ? `[图片：${msg.content}]` : `[表情：${msg.content}]`; return bubble }
+        const key = JSON.stringify([msg.type, item.file, item.name, item.description])
+        let cached = images.get(msg)
+        if (!cached || cached.key !== key) {
+          const view = createImageMedia(resolveWeChatAssetUrl(item.file), item.name, () => {
+            const preview = createImageMedia(view.image.src, item.name); preview.image.id = 'wt-lightbox-img'
+            el('wt-lightbox-media').replaceChildren(preview.element)
+            el('wt-lightbox-desc').textContent = item.description; showDialog('wt-photo-lightbox', view.element); photoMessage = msg; photoScopeKey = activeKey
+          })
+          view.element.classList.add('wt-bubble', 'wt-media')
+          if (msg.type === 'emoji') view.element.classList.add('wt-emoji')
+          cached = { key, element: view.element }; images.set(msg, cached)
+        }
+        return cached.element
+      }
+      function messageRow(conv: Conversation, msg: ChatMessage, index: number, media: ReturnType<typeof mediaFor>, profile: ReturnType<typeof profileFor>): HTMLElement {
+        const player = msg.sender === 'player', grouped = isGroup(conv) && !player
+        const author = player ? profile.playerName || '用户' : msg.authorName || titleFor(conv)
+        const card = msg.contactId ? data.contacts?.[msg.contactId]?.card : scopeFor(conv).card
+        const avatarUrl = player ? DEFAULT_PLAYER_AVATAR : card?.avatar
+        const fromPlayer = msg.emojiSource ? msg.emojiSource === 'player' : player
+        const item = msg.type === 'emoji' || msg.type === 'image'
+          ? msg.asset ?? (msg.type === 'image' ? media.photo[msg.content] ?? CONTACT_PHOTOS[msg.content] : (fromPlayer ? media.player : media.contact)[msg.content] ?? (fromPlayer ? PLAYER_EMOJIS : CONTACT_EMOJIS)[msg.content])
+          : undefined
+        const key = JSON.stringify([author, avatarUrl, grouped, msg.type, msg.content, msg.note, item && [item.file, item.name, item.description]])
+        let cached = rows.get(msg)
+        if (!cached || cached.key !== key) {
+          const row = document.createElement('div'); row.className = `wt-message${player ? ' wt-message-player' : ''}`
+          row.append(avatar(avatarUrl, author))
+          const bubble = messageBubble(conv, msg, author, item)
+          if (grouped) { const content = document.createElement('div'); content.className = 'wt-message-content'; const label = document.createElement('span'); label.className = 'wt-message-author'; label.textContent = author; content.append(label, bubble); row.append(content) } else row.append(bubble)
+          cached = { key, row }; rows.set(msg, cached)
+        }
+        const photo = item ? cached.row.querySelector<HTMLElement>('.wt-media') : null
+        if (photo) photo.dataset.wtPhoto = String(index)
+        return cached.row
+      }
+      const nearBottom = () => scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 48
+      /** Whether the reader is at the newest end; rows that open below the log (status, voice, emoji) must not hide it. */
+      let pinned = true
       function renderMessages() {
         const conv = active(); if (!conv) return
         pruneVoices()
-        const priorPhoto = (document.activeElement as HTMLElement | null)?.dataset.wtPhoto
-        const priorControl = document.activeElement instanceof HTMLElement && scroll.contains(document.activeElement)
-          && document.activeElement.closest('.wt-voice,.wt-media') ? document.activeElement : null
-        scroll.replaceChildren(); const media = mediaFor(conv), profile = profileFor(conv)
-        for (const [index, msg] of conv.messages.entries()) {
-          const player = msg.sender === 'player', row = document.createElement('div'); row.className = `wt-message${player ? ' wt-message-player' : ''}`
-          const author = player ? profile.playerName || '用户' : msg.authorName || titleFor(conv)
-          const card = msg.contactId ? data.contacts?.[msg.contactId]?.card : scopeFor(conv).card
-          row.append(avatar(player ? DEFAULT_PLAYER_AVATAR : card?.avatar, author))
-          let bubble: HTMLElement = document.createElement('div'); bubble.className = 'wt-bubble'
-          if (msg.type === 'text') bubble.textContent = msg.content
-          else if (msg.type === 'voice') bubble = voiceFor(conv, msg, author)
-          else if (msg.type === 'red_packet') {
-            bubble.classList.add('wt-gift'); bubble.textContent = `🧧 ${msg.content}`
-            const sub = document.createElement('small'); sub.textContent = msg.note || '微信红包 / 礼物'; bubble.append(sub)
-          } else {
-            const fromPlayer = msg.emojiSource ? msg.emojiSource === 'player' : player
-            const item = msg.asset ?? (msg.type === 'image' ? media.photo[msg.content] ?? CONTACT_PHOTOS[msg.content] : (fromPlayer ? media.player : media.contact)[msg.content] ?? (fromPlayer ? PLAYER_EMOJIS : CONTACT_EMOJIS)[msg.content])
-            if (item) {
-              const key = JSON.stringify([msg.type, item.file, item.name, item.description])
-              let cached = images.get(msg)
-              if (!cached || cached.key !== key) {
-                const view = createImageMedia(resolveWeChatAssetUrl(item.file), item.name, () => {
-                  const preview = createImageMedia(view.image.src, item.name); preview.image.id = 'wt-lightbox-img'
-                  el('wt-lightbox-media').replaceChildren(preview.element)
-                  el('wt-lightbox-desc').textContent = item.description; showDialog('wt-photo-lightbox', view.element); photoMessage = msg; photoScopeKey = activeKey
-                })
-                view.element.classList.add('wt-bubble', 'wt-media')
-                if (msg.type === 'emoji') view.element.classList.add('wt-emoji')
-                cached = { key, element: view.element }; images.set(msg, cached)
-              }
-              bubble = cached.element; bubble.dataset.wtPhoto = String(index)
-            } else bubble.textContent = msg.type === 'image' ? `[图片：${msg.content}]` : `[表情：${msg.content}]`
-          }
-          if (isGroup(conv) && !player) { const content = document.createElement('div'); content.className = 'wt-message-content'; const label = document.createElement('span'); label.className = 'wt-message-author'; label.textContent = author; content.append(label, bubble); row.append(content) } else row.append(bubble)
-          scroll.append(row)
+        // Follow new messages only when the reader is already at the end; otherwise keep their place and offer a jump.
+        const same = renderedKey === activeKey, stick = stickNext || !same || nearBottom()
+        stickNext = false
+        const media = mediaFor(conv), profile = profileFor(conv)
+        const next: HTMLElement[] = conv.messages.map((msg, index) => messageRow(conv, msg, index, media, profile))
+        if (!next.length) { const empty = document.createElement('p'); empty.className = 'wt-chat-empty'; empty.textContent = isGroup(conv) ? '在群里说点什么吧。' : `给 ${titleFor(conv)} 发条消息吧。`; next.push(empty) }
+        const current = [...scroll.children]
+        if (current.length <= next.length && current.every((node, index) => node === next[index])) scroll.append(...next.slice(current.length))
+        else {
+          // Structural change (switch, clear, edited labels): rebuild while keeping focus and reading position.
+          const priorPhoto = (document.activeElement as HTMLElement | null)?.dataset.wtPhoto
+          const priorControl = document.activeElement instanceof HTMLElement && scroll.contains(document.activeElement)
+            && document.activeElement.closest('.wt-voice,.wt-media') ? document.activeElement : null
+          const top = scroll.scrollTop
+          scroll.replaceChildren(...next)
+          if (!stick) scroll.scrollTop = top
+          if (priorPhoto) scroll.querySelector<HTMLElement>(`[data-wt-photo="${priorPhoto}"]`)?.focus({ preventScroll: true })
+          if (priorControl?.isConnected && scroll.contains(priorControl)) priorControl.focus({ preventScroll: true })
         }
-        scroll.scrollTop = scroll.scrollHeight
-        if (priorPhoto) scroll.querySelector<HTMLElement>(`[data-wt-photo="${priorPhoto}"]`)?.focus({ preventScroll: true })
-        if (priorControl?.isConnected && scroll.contains(priorControl)) priorControl.focus({ preventScroll: true })
+        const added = same && conv.messages.length > renderedCount
+        renderedKey = activeKey; renderedCount = conv.messages.length
+        if (stick) { scroll.scrollTop = scroll.scrollHeight; jump.hidden = true }
+        else if (added) jump.hidden = false
+        pinned = nearBottom()
       }
       function renderDrawer() {
         const media = mediaFor(active()), entries = Object.entries(drawerTab === 'player' ? media.player : media.contact)
@@ -245,23 +331,46 @@ export function createWeChatApp(): PhoneApp {
           btn.onclick = () => { closeDrawer(); void send(id, 'emoji', drawerTab) }; grid.append(btn)
         }
       }
-      const profileSettings = createProfileSettings(el('wt-profile-container'), data, persist, {
+      let profileSettings: ReturnType<typeof createProfileSettings> | undefined
+      const settingsForm = () => profileSettings ??= createProfileSettings(el('wt-profile-container'), data, persist, {
         packs: () => ctx.getSettings().packs,
-        preview: profile => {
+        preview: async (profile, signal) => {
           const conv = active(), scope = conv ? scopeFor(conv) : { scopeKey: '', characterName: '所选联系人', externalState: { source: 'none' as const } }
+          const memory = await readStoryMemory(ctx, scope, profile, AbortSignal.any([signal, AbortSignal.timeout(15000)]))
           return new WeChatPipeline({ profile }, applyAssetProfile(PLAYER_EMOJIS, 'player', profile), applyAssetProfile(CONTACT_EMOJIS, 'contact', profile), applyAssetProfile(CONTACT_PHOTOS, 'photo', profile))
-            .buildSystemPrompt(conv?.state ?? { mood: 0, interest: 0, money: 0, contactLocation: '', playerLocation: '' }, new Date().toLocaleTimeString(), scope)
+            .buildSystemPrompt(conv?.state ?? { mood: 0, interest: 0, money: 0, contactLocation: '', playerLocation: '' }, new Date().toLocaleTimeString(), memory) + (memory.memoryWarnings?.length ? '\n读取提示：' + memory.memoryWarnings.join(' ') : '')
         },
       })
-      function openSettings(assets = false) {
-        showDialog('wt-settings-modal', assets ? el('wt-emoji-btn') : el('wt-settings-btn'))
-        profileSettings.open(active() ? profileCharacterKey(scopeFor(active()!).card) : null, assets)
+      function syncConnection() {
+        const model = data.config.model || 'deepseek-chat'
+        el('wt-ai-summary').textContent = data.config.apiKey ? `AI 连接 · 已配置 ${model}` : 'AI 连接 · 未连接（本地演示）'
+      }
+      function openSettings(assets = false, connect = false) {
+        showDialog('wt-settings-modal', assets ? el('wt-emoji-btn') : connect ? el('wt-connect-ai') : el('wt-settings-btn'))
+        settingsForm().open(active() ? profileCharacterKey(scopeFor(active()!).card) : null, assets)
+        social.settings()
         el<HTMLInputElement>('wt-cfg-key').value = data.config.apiKey || ''
         el<HTMLInputElement>('wt-cfg-url').value = data.config.apiUrl || 'https://api.deepseek.com/chat/completions'
         el<HTMLInputElement>('wt-cfg-model').value = data.config.model || 'deepseek-chat'
         el('wt-history-actions').hidden = !active(); el('wt-btn-clear-chat').textContent = '清空此会话记录'; feedback.textContent = ''
+        // The connection decides whether anything is generated; show it first and open it until configured.
+        syncConnection(); el<HTMLDetailsElement>('wt-ai-settings').open = connect || !data.config.apiKey
+        if (connect) el('wt-cfg-key').focus()
       }
       const social = createSocialUI(container, data, ctx, { active, persist, showDialog, closeDialog, openConversation, avatar, input, beforeMention: voiceInput.textMode, beforeGroupEdit: conv => pending.cancel(conv) })
+      const navigation = createWeChatNavigation(container, showPage)
+      function syncMoments() {
+        if (!alive) return
+        data.moments = ctx.getAppData<WeChatAppData>()?.moments
+        social.refresh()
+        const state = background?.status()
+        el('wt-moments-feedback').textContent = state?.busy ? '朋友们正在分享近况…' : state?.error || (data.config.apiKey ? '' : '在设置中连接 AI，即可随剧情更新。')
+        el<HTMLButtonElement>('wt-refresh-moments').disabled = !!state?.busy
+        el('wt-stop-auto-moments').hidden = !state?.busy
+      }
+      const offMoments = background?.subscribe(syncMoments)
+      el('wt-refresh-moments').onclick = () => { if (data.config.autoMoments === false) { el('wt-moments-feedback').textContent = '自动动态已关闭，可在设置中开启或手动查看角色近况。'; return }; void background?.trigger(true) }
+      el('wt-stop-auto-moments').onclick = () => background?.cancel()
       el('wt-cancel-reply').onclick = () => { const conv = active(); if (conv) pending.cancel(conv) }
       el('wt-retry-reply').onclick = () => { const conv = active(); if (conv) void pending.retry(conv) }
       async function send(content: string, type: ChatMessage['type'] = 'text', emojiSource: 'player' | 'contact' = 'player', note?: string) {
@@ -281,11 +390,20 @@ export function createWeChatApp(): PhoneApp {
           notice('消息保存失败，请重试。'); return
         }
         if (type === 'voice') voiceInput.sent()
+        // Your own message always brings the conversation back to its newest end.
+        stickNext = true
         notice(); await pending.send(target, player)
       }
 
       el('wt-back').onclick = showList
       el('wt-settings-btn').onclick = () => openSettings()
+      el('wt-connect-ai').onclick = () => openSettings(false, true)
+      scroll.addEventListener('scroll', () => { pinned = nearBottom(); if (pinned) jump.hidden = true }, { passive: true })
+      const resize = typeof ResizeObserver === 'function'
+        ? new ResizeObserver(() => { if (pinned && activeKey && !el('wt-chat').hidden) scroll.scrollTop = scroll.scrollHeight })
+        : undefined
+      resize?.observe(scroll)
+      jump.onclick = () => { scroll.scrollTop = scroll.scrollHeight; jump.hidden = true; pinned = true; scroll.focus({ preventScroll: true }) }
       el('wt-close-settings').onclick = () => closeDialog(); el('wt-cancel-settings').onclick = () => closeDialog()
       el('wt-close-lightbox').onclick = () => closeDialog(); el('wt-packet-close').onclick = () => closeDialog(); el('wt-close-contacts').onclick = () => closeDialog()
       el('wt-send-btn').onclick = () => { if (!input.hidden) void send(input.value, voiceInput.isVoice() ? 'voice' : 'text') }
@@ -308,7 +426,8 @@ export function createWeChatApp(): PhoneApp {
         const previous = data.config, priorScopes = data.profileEditorScopes
         feedback.dataset.kind = ''
         try {
-          const config = profileSettings.save(data.config)
+          const config = settingsForm().save(data.config)
+          config.autoMoments = el<HTMLInputElement>('wt-auto-moments').checked; config.privateMoments = el<HTMLInputElement>('wt-private-moments').checked
           config.apiKey = el<HTMLInputElement>('wt-cfg-key').value.trim(); config.apiUrl = el<HTMLInputElement>('wt-cfg-url').value.trim(); config.model = el<HTMLInputElement>('wt-cfg-model').value.trim()
           if (config.apiKey) {
             const url = new URL(config.apiUrl || '')
@@ -316,6 +435,9 @@ export function createWeChatApp(): PhoneApp {
             if (!config.model) throw new Error('请填写模型名称')
           }
           data.config = config; persist(); feedback.textContent = '设置已保存 ✓ 下一条消息开始使用。'; ctx.toast('success', '微信设置已保存')
+          syncConnection()
+          if (config.autoMoments === false) background?.cancel()
+          else void background?.trigger()
           if (active()) { syncState(); renderMessages() } else renderList()
           notice()
         } catch (error) { data.config = previous; data.profileEditorScopes = priorScopes; feedback.dataset.kind = 'error'; feedback.textContent = `未保存：${(error as Error).message}`; ctx.toast('error', feedback.textContent) }
@@ -348,17 +470,33 @@ export function createWeChatApp(): PhoneApp {
           }; options.append(btn)
         }
       }
-      el('wt-add-contact').onclick = () => { el<HTMLInputElement>('wt-contact-search').value = ''; el('wt-contact-feedback').textContent = ''; showDialog('wt-contacts-modal', el('wt-add-contact')); renderContacts() }
+      el('wt-add-contact').onclick = () => { el<HTMLInputElement>('wt-contact-search').value = ''; el('wt-contact-feedback').textContent = ''; showDialog('wt-contacts-modal', el('wt-plus')); renderContacts() }
       el<HTMLInputElement>('wt-contact-search').oninput = renderContacts
-      const unsubscribe = ctx.onCharacterChanged(() => { if (alive && currentDialog?.id === 'wt-contacts-modal') renderContacts() })
-      renderList(); notice()
+      const unsubscribe = ctx.onCharacterChanged(() => {
+        if (!alive) return
+        social.cancelMoment()
+        for (const conv of Object.values(conversations)) if (pending.has(conv.scopeKey!)) pending.cancel(conv)
+        if (currentDialog?.id === 'wt-contacts-modal') renderContacts()
+      })
+      navigation.show('chats'); renderList(); renderAddressBook(); notice(); syncMoments(); void background?.trigger()
+      // The shell's ‹ and Escape step back like a phone: close the open layer first, then leave the chat.
+      stepBack = () => {
+        if (!el('wt-plus-menu').hidden) { navigation.closeMenu(true); return true }
+        if (currentDialog) { closeDialog(); return true }
+        if (!el('wt-emoji-drawer').hidden) { closeDrawer(); return true }
+        if (activeKey) { showList(); return true }
+        return false
+      }
       cleanup = () => {
+        stepBack = undefined; resize?.disconnect()
         voiceInput.dispose(); saveDraft(); alive = false; selecting++; closeDialog(false); unsubscribe()
         pending.destroy(); social.destroy()
+        navigation.destroy(); offMoments?.()
         for (const entries of voices.values()) for (const entry of entries.values()) entry.view.dispose()
         voices.clear()
       }
     },
     unmount() { cleanup?.(); cleanup = undefined },
+    back() { return stepBack?.() ?? false },
   }
 }

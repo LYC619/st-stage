@@ -2,12 +2,15 @@ import { fixedViewport, observeFixedViewport } from '../../../core/fixed-viewpor
 import { t } from '../../../core/i18n'
 import { manageDialogFocus } from '../../../core/dialog-focus'
 import type { PluginSettings } from '../../../core/types'
-import { el } from './ui'
+import { el, toast } from './ui'
 import type { ManagerSource, ManagerContext } from './types'
 import { SPRITE_PAGE_SIZE } from './types'
 
 export function createLifecycle(ctx: ManagerContext) {
   const { deps } = ctx
+  /** Scroll memory per view; reset whenever a new manager window opens. */
+  let renderedView = '', listScrollTop = 0
+  const viewKey = () => ctx.state.view.kind === 'pack' ? `pack:${ctx.state.view.packId}` : 'list'
 
   function applyBackdropSize(): void {
     if (!ctx.state.backdrop) return
@@ -39,6 +42,7 @@ export function createLifecycle(ctx: ManagerContext) {
     ctx.state.enableListOpen = false
     ctx.state.batchMode = false
     ctx.state.selectedPackIds.clear()
+    renderedView = ''; listScrollTop = 0
     ctx.state.backdrop = el('div', 'so-manager-backdrop')
     // 点空白不再关闭（用户实测：误触退出后要重新逐层进入，受挫感强）；关闭走 ✕ 按钮或 Esc
     ctx.state.stopViewport = observeFixedViewport(applyBackdropSize)
@@ -185,6 +189,10 @@ export function createLifecycle(ctx: ManagerContext) {
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const restoreAfterRender = Boolean(active && (body.contains(active) || actions.contains(active) || active.closest('.so-popover')))
     const focusKey = restoreAfterRender ? active?.dataset.managerFocus : undefined
+    const previousTop = body.scrollTop
+    if (renderedView === 'list' && viewKey() !== 'list') listScrollTop = previousTop
+    // The status bar lives inside the body; carry its message across the rebuild so results ("已导入…") stay readable.
+    const message = body.querySelector('.so-toast')?.textContent ?? ''
     body.innerHTML = ''
     actions.innerHTML = ''
     ctx.state.backdrop.querySelector('.so-manager')?.classList.toggle('so-manager-batch-mode', ctx.state.batchMode)
@@ -212,6 +220,11 @@ export function createLifecycle(ctx: ManagerContext) {
       msg.textContent = t("sprite.manager.content.error.render", "界面渲染出错：{{p0}}", { p0: err instanceof Error ? err.message : String(err) })
       body.append(msg)
     } finally {
+      // Re-rendering the same view keeps its place; a pack opens at its top; going back returns to the card you left.
+      const shown = viewKey()
+      body.scrollTop = shown === renderedView ? previousTop : shown === 'list' ? listScrollTop : 0
+      renderedView = shown
+      if (message && !body.querySelector('.so-toast')?.textContent) toast(body, message)
       if (restoreAfterRender && ctx.state.dialogFocus?.isTop()) {
         const candidates = focusKey ? [...ctx.state.backdrop.querySelectorAll<HTMLElement>('[data-manager-focus]')]
           .filter(node => node.dataset.managerFocus === focusKey && !node.matches(':disabled')) : []

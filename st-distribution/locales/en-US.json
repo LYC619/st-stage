@@ -42,6 +42,7 @@
       "enable": "Enable packs ▾",
       "enable_for": "Select sprite packs for {{name}}",
       "content": {
+        "image_failed": "Image failed to load",
         "conflict": {
           "address": "No changes applied because of address conflicts: {{p0}}"
         },
@@ -362,6 +363,7 @@
     "open": "Open phone",
     "open_panel": "Open phone panel",
     "back": "Return home",
+    "back_step": "Back",
     "collapse": "Collapse phone",
     "app_error": "Could not open App. See the console for details.",
     "open_app": "Open {{name}}",

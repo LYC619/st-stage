@@ -8,7 +8,7 @@ import { compressImage, formatBytes } from '../../../core/image-compress'
 import { uploadToImgbb, isValidImgbbResult } from '../../../core/imgbb'
 import { localizeSprite } from '.././sprite-localize'
 import { setPresetLocalSprite } from '../../../core/preset-overrides'
-import { toast, pickFile, el, addCardNavigation, iconButton } from './ui'
+import { toast, pickFile, el, addCardNavigation, iconButton, thumbnail } from './ui'
 import type { ActiveLightbox, ManagerContext } from './types'
 
 export function createLightbox(ctx: ManagerContext) {
@@ -276,11 +276,8 @@ export function createLightbox(ctx: ManagerContext) {
     addCardNavigation(cell, '.so-sprite-cell')
     if (pack.coverTag === sprite.tag) cell.classList.add('so-cover')
 
-    const img = document.createElement('img')
-    img.src = sprite.url
-    img.alt = sprite.tag
+    const img = thumbnail(sprite.url, sprite.tag)
     img.title = sprite.tag
-    img.loading = 'lazy'
 
     const tagEl = el('div', 'so-sprite-tag')
     tagEl.textContent = sprite.tag

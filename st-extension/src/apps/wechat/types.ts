@@ -105,6 +105,8 @@ export interface WeChatConfig {
   model?: string
   injectPrompt?: boolean
   momentsPrompt?: string
+  autoMoments?: boolean
+  privateMoments?: boolean
   profile?: Partial<import('./profile').WeChatProfile>
   /** Avatar filename is the stable card identity; never bind by a mutable display name or array index. */
   characterProfiles?: Record<string, Partial<import('./profile').WeChatProfile>>
@@ -133,6 +135,8 @@ export interface Conversation {
 
 /** 微信 App 全局存储：按角色与会话划分作用域隔离存储 */
 export interface WeChatAppData {
+  memoryVersion?: 1
+  momentActivity?: Record<string, { fingerprint: string; attemptedAt: number; completed?: boolean }>
   moments?: Moment[]
   schemaVersion?: 2
   config: WeChatConfig
@@ -160,6 +164,8 @@ export interface Group extends Conversation {
 }
 
 export interface Moment {
+  visibility?: 'public' | 'private'
+  storyKey?: string
   id: string
   contactId: string
   authorName: string

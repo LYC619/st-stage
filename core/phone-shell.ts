@@ -32,8 +32,10 @@ export interface PhoneShellController {
   setState(state: PhoneState): void
   /** 直接打开指定 App（展开手机并进入） */
   openApp(appId: string): void
-  /** 显隐整个手机（图标 + 壳）；隐藏时回退纯悬浮窗模式，即时生效 */
+  /** 显隐整个手机（图标 + 壳）；隐藏时回退纯悬浮窗模式，即时生效；与当前显隐相同时不做任何事 */
   setVisible(visible: boolean): void
+  /** App 自己提交核心设置后重绘它（保留滚动与焦点）；其他来源的设置变更不重挂载打开中的 App */
+  refreshApp(appId: string): void
   /** Refresh the current role card without remounting an open App. */
   refreshHome(): void
   destroy(): void
@@ -95,26 +97,26 @@ export function createPhoneShell(
     event.stopPropagation()
     if (event.key === 'Escape' && !event.defaultPrevented && !event.isComposing) {
       event.preventDefault()
-      if (activeApp) goHome()
+      if (activeApp) goBack()
       else collapse()
     }
   })
 
   const statusBar = document.createElement('div')
   statusBar.className = 'so-phone-status'
-  // App 内左上角返回键：固定在顶部，滚到哪都能返回
+  // App 内左上角返回键：固定在顶部，滚到哪都能返回；先让 App 内部后退一级，到顶层再回主屏
   const backBtn = document.createElement('div')
   backBtn.className = 'so-phone-back'
   backBtn.textContent = '‹'
-  backBtn.title = t('phone.back', '返回主屏')
+  backBtn.title = t('phone.back_step', '返回')
   backBtn.setAttribute('role', 'button')
-  backBtn.setAttribute('aria-label', t('phone.back', '返回主屏'))
+  backBtn.setAttribute('aria-label', t('phone.back_step', '返回'))
   backBtn.tabIndex = 0
-  backBtn.addEventListener('click', () => goHome())
+  backBtn.addEventListener('click', () => goBack())
   backBtn.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
-      goHome()
+      goBack()
     }
   })
   const statusTitle = document.createElement('span')
@@ -199,10 +201,11 @@ export function createPhoneShell(
     fab.style.display = state.open ? 'none' : 'flex'
     shell.style.display = state.open ? 'flex' : 'none'
     if (state.open) {
-      // 手机按真实尺寸完整钳入视口：窄屏收窄、矮屏压高，保证四边都在可视区内
+      // 手机按真实尺寸完整钳入视口：窄屏收窄、矮屏压高，保证四边都在可视区内。
+      // 高度跟随宽度取接近真机的 2:1（下限沿用 580），高屏不再把聊天类 App 压成矮条。
       const targetMaxW = vw >= 768 ? 380 : 320
       const shellW = Math.min(targetMaxW, vw - 16)
-      const shellH = Math.min(580, vh - 16)
+      const shellH = Math.min(Math.max(580, shellW * 2), vh - 16)
       shell.style.width = `${shellW}px`
       shell.style.height = `${shellH}px`
       shell.style.left = `${left + Math.max(8, Math.min(clampedX, vw - shellW - 8))}px`
@@ -288,17 +291,27 @@ export function createPhoneShell(
   })
 
   /* ---- 屏幕渲染 ---- */
+  /** 已执行 mount、尚未 unmount 的 App：同一 App 重挂载前必须先完整卸载，否则订阅/定时器泄漏 */
+  let mountedApp: PhoneApp | null = null
+
+  function unmountActive(): void {
+    if (!mountedApp) return
+    const app = mountedApp
+    mountedApp = null
+    try {
+      app.unmount?.()
+    } catch (err) {
+      console.error(`[sprite-overlay] App「${app.id}」unmount 失败`, err)
+    }
+    // ctx 资源回收在 unmount 之后：unmount 里仍可正常使用 ctx（如保存状态）
+    activeCtxDispose?.()
+    activeCtxDispose = null
+  }
+
   function leaveApp(): void {
     if (activeApp) {
       screen.classList.remove('so-phone-screen-fullbleed')
-      try {
-        activeApp.unmount?.()
-      } catch (err) {
-        console.error(`[sprite-overlay] App「${activeApp.id}」unmount 失败`, err)
-      }
-      // ctx 资源回收在 unmount 之后：unmount 里仍可正常使用 ctx（如保存状态）
-      activeCtxDispose?.()
-      activeCtxDispose = null
+      unmountActive()
       activeApp = null
     }
   }
@@ -310,6 +323,7 @@ export function createPhoneShell(
     const prevScrollAppId = screenScrollAppId
     const prevScrollTop = screen.scrollTop
     const restore = prevScrollAppId === activeApp?.id ? captureScreenFocus() : null
+    unmountActive()
     screen.innerHTML = ''
     backBtn.style.display = activeApp ? 'flex' : 'none'
     if (activeApp) {
@@ -331,9 +345,11 @@ export function createPhoneShell(
       try {
         const mounted = deps.createAppContext(activeApp.id, goHome)
         activeCtxDispose = mounted.dispose
+        mountedApp = activeApp
         activeApp.mount(container, mounted.ctx)
       } catch (err) {
         console.error(`[sprite-overlay] App「${activeApp.id}」mount 失败`, err)
+        unmountActive()
         // 强清容器：mount 半途抛错可能留下半渲染 DOM，错误占位页不与残骸混排
         container.replaceChildren()
         const errBox = document.createElement('div')
@@ -414,7 +430,8 @@ export function createPhoneShell(
   }
 
   function refreshHome(): void {
-    if (destroyed || activeApp || !homeCard || !deps.getHomeSummary) return
+    // 收起或隐藏时不读宿主变量：主屏下次展开会重新渲染并读取，避免后台反复轮询
+    if (destroyed || hidden || !state.open || activeApp || !homeCard || !deps.getHomeSummary) return
     const generation = ++homeGeneration
     renderSummary(deps.getHomeSummary())
     if (deps.readHomeSummary) void deps.readHomeSummary().then(summary => {
@@ -459,6 +476,16 @@ export function createPhoneShell(
     leaveApp()
     renderScreen()
     focusHome(appId)
+  }
+
+  /** 后退一级：App 有内部页面时先交给它（如聊天 → 列表），否则回主屏。 */
+  function goBack(): void {
+    try {
+      if (activeApp?.back?.()) return
+    } catch (err) {
+      console.error(`[sprite-overlay] App「${activeApp?.id}」back 失败`, err)
+    }
+    goHome()
   }
 
   function focusHome(appId?: string): void {
@@ -545,11 +572,17 @@ export function createPhoneShell(
     },
     setVisible(visible: boolean) {
       if (destroyed) return
+      // 平台每次改核心设置都会同步一次显隐；未变化时不重绘，打开中的 App（草稿、在途请求、勾选）不受外部设置打扰
+      if (hidden === !visible) return
       hidden = !visible
       // 整机隐藏时同样卸载 App（不可见的 App 不允许残留定时器）
       if (hidden) leaveApp()
       applyLayout()
       if (!hidden && state.open) renderScreen()
+    },
+    refreshApp(appId: string) {
+      if (destroyed || hidden || !state.open || activeApp?.id !== appId) return
+      renderScreen()
     },
     destroy() {
       if (destroyed) return

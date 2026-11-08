@@ -105,12 +105,12 @@ describe('Moments and voice', () => {
     expect(f.el('.wt-moment button[aria-pressed]').getAttribute('aria-pressed')).toBe('true')
     expect(f.el<HTMLImageElement>('.wt-moment-image').src).toBe('https://example.test/park.png')
   })
-  it('cancels Moments when the dialog closes and ignores a late generated post', async () => {
+  it('cancels manual Moments when settings closes and ignores a late generated post', async () => {
     let resolve!: (value: { text: string }) => void
     const request = vi.spyOn(WeChatPipeline.prototype, 'requestMoment').mockReturnValue(new Promise(done => { resolve = done }))
-    const f = setup(); f.el('#wt-moments').click(); f.el<HTMLSelectElement>('#wt-moments-author').value = 'avatar:b.png'; f.el('#wt-generate-moment').click()
+    const f = setup(); f.el('#wt-settings-btn').click(); f.el<HTMLSelectElement>('#wt-moments-author').value = 'avatar:b.png'; f.el('#wt-generate-moment').click()
     await vi.waitFor(() => expect(request).toHaveBeenCalledOnce())
-    f.el('#wt-moments-modal').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    f.el('#wt-settings-modal').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     expect(request.mock.calls[0][2]?.aborted).toBe(true)
     resolve({ text: 'late' }); await Promise.resolve(); await Promise.resolve()
     expect(f.data().moments ?? []).toHaveLength(0)

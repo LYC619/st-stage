@@ -28,6 +28,14 @@ export function migrateConversation(conversation: Conversation): void {
 }
 
 export function migrateWeChatData(data: WeChatAppData): void {
+  if (data.memoryVersion !== 1) {
+    // Previous entrypoint forced zero with no visible history setting. Upgrade once;
+    // a deliberate zero saved in the new memory controls remains an opt-out.
+    for (const profile of [data.config.profile, ...Object.values(data.config.characterProfiles ?? {})]) {
+      if (profile?.contextMessageCount === 0) profile.contextMessageCount = 12
+    }
+    data.memoryVersion = 1
+  }
   // Re-run at each boundary: imported records can be older than the saved schema.
   if (data.state) migrateContactState(data.state)
   for (const conversation of Object.values(data.conversations ?? {})) migrateConversation(conversation)

@@ -1,4 +1,4 @@
-
+import { t } from '../../../core/i18n'
 
 let managerControlId = 0
 export const nextManagerId = () => 'so-manager-control-' + ++managerControlId
@@ -10,6 +10,26 @@ export function el(tag: string, className?: string): HTMLElement {
   const node = document.createElement(tag)
   if (className) node.className = className
   return node
+}
+
+
+/**
+ * 图墙缩略图：懒加载 + 异步解码；图床不可达时换成同尺寸的「图片加载失败」占位，
+ * 不再露出浏览器的破图标和左上角原始 alt 文本。卡片本身仍可点击打开。
+ */
+export function thumbnail(src: string, alt: string): HTMLImageElement {
+  const img = document.createElement('img')
+  img.alt = alt
+  img.loading = 'lazy'
+  img.decoding = 'async'
+  img.addEventListener('error', () => {
+    const failed = el('span', 'so-img-failed')
+    failed.textContent = t('sprite.manager.content.image_failed', '图片加载失败')
+    failed.title = src
+    img.replaceWith(failed)
+  }, { once: true })
+  img.src = src
+  return img
 }
 
 

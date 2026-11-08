@@ -17,6 +17,7 @@ import { buildRagPrompt, messageToRagText } from './rag'
 import { renderWeChatPrompt } from './prompts'
 import { normalizeProfile } from './profile'
 import { DEFAULT_MOMENTS_PROMPT } from './moments'
+import { formatStoryMemory } from './memory'
 
 export interface FallbackBranch {
   min_mood: number
@@ -224,21 +225,21 @@ export class WeChatPipeline {
     }
   }
 
-  public async requestMoment(contact: Contact, state: ContactState, signal?: AbortSignal): Promise<{ text: string; image?: PhotoItem }> {
+  public async requestMoment(contact: Contact, state: ContactState, signal?: AbortSignal, scope?: ConversationScope, recent: string[] = []): Promise<{ text: string; image?: PhotoItem; visibility?: 'public' | 'private' }> {
     if (!this.config.apiKey) {
       const image = Object.values(this.contactPhotos)[0]
       return { text: state.currentStatus ? '今天的小记：' + state.currentStatus : state.mood >= 60 ? '今天心情不错，想把普通的一天也记下来。' : '今天想放慢一点，给自己留些安静的时间。', image }
     }
     const photos = Object.fromEntries(Object.entries(this.contactPhotos).map(([id,item]) => [id, item.description || item.name]))
     const raw = await this.requestJson([
-      { role: 'system', content: this.config.momentsPrompt || DEFAULT_MOMENTS_PROMPT },
-      { role: 'user', content: JSON.stringify({ character: contact.card, name: contact.name, mood: state.mood, status: state.currentStatus, photos }) },
+      { role: 'system', content: (this.config.momentsPrompt || DEFAULT_MOMENTS_PROMPT) + '\n' + (scope ? formatStoryMemory(scope) : '') + '\n' + (this.config.privateMoments === false ? 'visibility 必须为 public。' : '动态通常公开；仅在角色有自然的专属心情想分享给玩家时，偶尔使用 visibility: "private"，其余为 "public"。不要强制暧昧或编造共同经历。') },
+      { role: 'user', content: JSON.stringify({ character: contact.card, name: contact.name, mood: state.mood, status: state.currentStatus, photos, recentPosts: recent, instruction: '承接已发生的剧情，用角色自己的口吻分享此刻的生活或感受，不重复已有动态，不替玩家推进剧情。' }) },
     ], signal)
     try {
       const result = JSON.parse(this.cleanJsonString(raw))
       if (!result || typeof result.text !== 'string' || !result.text.trim()) throw new Error()
       const image = typeof result.photo_id === 'string' ? this.contactPhotos[result.photo_id] : undefined
-      return { text: result.text.trim().slice(0, 1000), ...(image ? { image } : {}) }
+      return { text: result.text.trim().slice(0, 1000), visibility: this.config.privateMoments !== false && result.visibility === 'private' ? 'private' : 'public', ...(image ? { image } : {}) }
     } catch { throw new Error('动态格式无效，请重试。') }
   }
 

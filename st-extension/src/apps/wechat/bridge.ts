@@ -54,6 +54,9 @@ export interface ConversationScope {
   chatId?: string
   card?: STCharacterCard
   stRecentMessages?: Array<{ sender: 'user' | 'character'; text: string }>
+  storySource?: string
+  loreText?: string
+  memoryWarnings?: string[]
   externalState: ExternalCharacterState
 }
 

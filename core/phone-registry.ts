@@ -103,6 +103,11 @@ export interface PhoneApp {
   mount(container: HTMLElement, ctx: PhoneAppContext): void
   /** 离开 App：清理（可选；经 ctx 建立的资源框架自动回收，这里只管自建的） */
   unmount?(): void
+  /**
+   * 应用内返回（可选）：状态栏「‹」与 Esc 先交给 App，返回 true 表示已在内部后退一级
+   * （如聊天详情 → 会话列表）；返回 false 或未实现时回到主屏。圆形 Home 键始终直接回主屏。
+   */
+  back?(): boolean
 }
 
 /** 平台注入的原始能力实现（未包装追踪；双端各自提供，Web 模拟器可降级为安全 no-op） */
@@ -268,6 +273,9 @@ function assertAppShape(app: PhoneApp): void {
   }
   if (o.unmount !== undefined && typeof o.unmount !== 'function') {
     throw new Error(`App「${o.id}」的 unmount 需为函数`)
+  }
+  if (o.back !== undefined && typeof o.back !== 'function') {
+    throw new Error(`App「${o.id}」的 back 需为函数`)
   }
   if (o.order !== undefined && typeof o.order !== 'number') {
     throw new Error(`App「${o.id}」的 order 需为数字`)

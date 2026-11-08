@@ -8,7 +8,7 @@
 import type { PhoneApp } from '../../../core/phone-registry'
 import { t } from '../../../core/i18n'
 import { DEFAULT_IMAGE_HOST } from '../../../core/types'
-import { el, appButton, textRow, toggleRow } from './widgets'
+import { el, appButton, textRow, toggleRow, foldSection, hintField } from './widgets'
 
 export interface GalleryAppDeps {
   /** 打开立绘包管理弹窗（index.ts 负责收起手机并标记来源） */
@@ -60,26 +60,15 @@ export function galleryApp(deps: GalleryAppDeps): PhoneApp {
        * 实测反馈：第一次用的人看不懂为什么有两个图床、自己该配哪个。原来的文案只标了
        * 「①自动直传」「②手动编码通道」，说的是机制，没说清两者的分工——真正的区别是
        * **一个负责把你的图传上去，一个负责把别人的编号还原成地址**，多数人只需要其中一个。
-       * 所以这里先用一句话让人对号入座，再展开每条通道。
+       * 所以这里先用一句话让人对号入座；每条通道的细节收进 ⓘ，整个分区默认折叠（多数人用默认值即可），
+       * 展开状态跨设置保存后的重挂载保留。
        */
-      const hostSection = el('div', 'so-app-section')
-      const hostTitle = el('div', 'so-app-title')
-      hostTitle.textContent = t('apps.gallery.hosting', '图床')
-      hostSection.append(hostTitle)
-
+      const hosting = foldSection(t('apps.gallery.hosting', '图床'), false, 'gallery-hosting')
       const hostIntro = el('div', 'so-app-desc')
       hostIntro.textContent = t('apps.gallery.host_intro', '两条通道各管一件事，按需要配，不用都配：要把自己的图变成能分享的链接 → 配 ①；只是想用别人给的图包/编号 → 什么都不用配，② 已有默认值。')
-      hostSection.append(hostIntro)
-
-      const autoDesc = el('div', 'so-app-desc')
-      autoDesc.textContent = t('apps.gallery.auto_description', '① 自动直传（imgbb，需要 Key）：上传/替换图片时自动传到 imgbb 并绑定编号，本地图保留作显示保底，直链用于分享串。别人才能看到你分享的图，靠的是这条。')
-      const autoWhy = el('div', 'so-app-desc')
-      autoWhy.textContent = t('apps.gallery.auto_why', '为什么是 imgbb 而不是 catbox：浏览器里只能传 imgbb。catbox 的接口不返回 CORS 头，网页无法直接上传，所以它只能用在下面那条「按编号还原地址」的通道上。')
       const hint = el('div', 'so-app-desc')
       hint.setAttribute('role', 'status')
       hint.setAttribute('aria-live', 'polite')
-      hint.textContent =
-        t('apps.gallery.key_storage_hint', 'Key 明文保存在 ST 扩展设置里（随 ST 服务端 settings.json 落盘），不会写入分享串或导出文件；上传失败时图片仍保留本地，可稍后补传。')
       const autoUploadRow = toggleRow(t('apps.gallery.auto_upload', '上传时自动直传 imgbb 并绑定编号'), settings.autoUpload, (v) => {
         const cur = ctx.getSettings()
         if (v && !cur.imgbbApiKey.trim()) {
@@ -90,35 +79,30 @@ export function galleryApp(deps: GalleryAppDeps): PhoneApp {
         }
         ctx.updateSettings({ ...cur, autoUpload: v })
       })
-      hostSection.append(
-        autoDesc,
-        autoWhy,
-        textRow(
+      hosting.body.append(
+        hostIntro,
+        hintField(textRow(
           t('apps.gallery.api_key', 'imgbb API Key（存 ST 设置，明文）'),
           settings.imgbbApiKey,
           t('apps.gallery.key_placeholder', '免费申请：api.imgbb.com'),
           (raw) => ctx.updateSettings({ ...ctx.getSettings(), imgbbApiKey: raw.trim() }),
           'password',
-        ),
-        autoUploadRow,
+        ), t('apps.gallery.key_storage_hint', 'Key 明文保存在 ST 扩展设置里（随 ST 服务端 settings.json 落盘），不会写入分享串或导出文件；上传失败时图片仍保留本地，可稍后补传。')),
+        hintField(autoUploadRow, [
+          t('apps.gallery.auto_description', '① 自动直传（imgbb，需要 Key）：上传/替换图片时自动传到 imgbb 并绑定编号，本地图保留作显示保底，直链用于分享串。别人才能看到你分享的图，靠的是这条。'),
+          t('apps.gallery.auto_why', '为什么是 imgbb 而不是 catbox：浏览器里只能传 imgbb。catbox 的接口不返回 CORS 头，网页无法直接上传，所以它只能用在下面那条「按编号还原地址」的通道上。'),
+        ].join(' ')),
         hint,
-      )
-
-      const manualDesc = el('div', 'so-app-desc')
-      manualDesc.textContent = t('apps.gallery.manual_description', '② 按编号还原地址（默认 catbox，不需要 Key）：「按编码添加」以及解析分享串和插图编码时，把编号接在下面这个前缀后面拼成完整地址。它只读不写，不会上传任何东西。')
-      const manualWhen = el('div', 'so-app-desc')
-      manualWhen.textContent =
-        t('apps.gallery.manual_when', '只有当对方的图不在 catbox 上时才需要改前缀——改成他们用的图床域名即可。')
-      hostSection.append(
-        manualDesc,
-        manualWhen,
-        textRow(t('apps.gallery.host_prefix', '图床前缀'), settings.imageHost, DEFAULT_IMAGE_HOST, (raw) => {
+        hintField(textRow(t('apps.gallery.host_prefix', '图床前缀'), settings.imageHost, DEFAULT_IMAGE_HOST, (raw) => {
           const v = raw.trim() || DEFAULT_IMAGE_HOST
           const value = /^https?:\/\/.+/.test(v) ? (v.endsWith('/') ? v : `${v}/`) : DEFAULT_IMAGE_HOST
           ctx.updateSettings({ ...ctx.getSettings(), imageHost: value })
-        }),
+        }), [
+          t('apps.gallery.manual_description', '② 按编号还原地址（默认 catbox，不需要 Key）：「按编码添加」以及解析分享串和插图编码时，把编号接在下面这个前缀后面拼成完整地址。它只读不写，不会上传任何东西。'),
+          t('apps.gallery.manual_when', '只有当对方的图不在 catbox 上时才需要改前缀——改成他们用的图床域名即可。'),
+        ].join(' ')),
       )
-      container.append(hostSection)
+      container.append(hosting.box)
     },
   }
 }

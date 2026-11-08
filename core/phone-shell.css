@@ -1425,6 +1425,22 @@ button.stapi-row:disabled { cursor: wait; opacity: 0.65; }
   font-weight: 600;
 }
 
+/* 全选 / 反选 / 清空：一行三格，不再竖排占掉三分之一屏 */
+.cloud-export-bulk {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.cloud-export-bulk > .so-app-btn {
+  min-width: 0;
+  min-height: 32px;
+  margin: 0;
+  padding: 4px 6px;
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: normal;
+}
+
 /*
  * 角色行的层级：角色卡是一个整体，它的聊天是下一级。
  *

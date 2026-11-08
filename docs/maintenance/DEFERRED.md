@@ -2,6 +2,20 @@
 
 Known follow-ups and pending review repairs are recorded here. Older sections retain their original non-blocking decisions; the review queue below is **not** a declaration that its risks are acceptable for a new release. Remove or resolve entries only with an actual fixing commit and fresh verification.
 
+## 2026-11-08 UX Review — Verified Worktree Candidate
+
+Follow-up in local candidate `0.9.0+202611081358`: settings and asset work is now lazy, hidden controls avoid unnecessary style walks, stale prompt previews are cancelled, and failed App mounts immediately release subscriptions. Unit timeouts are unchanged. The profile browser suite now validates the current product; experience delegates to evolution; the old WeChat MVU contract is explicitly retired with guarded historical reproduction. Social fixture setup now waits for the host character list. [Follow-up evidence](history/2026-11-08-ux-follow-up.md) and [current browser entry points](BROWSER-ACCEPTANCE.md). These repairs remain uncommitted; retain the original findings below until a fixing commit exists. Real-provider/physical-device/full-reader validation remains open.
+
+Claude Code's UX review on top of the WeChat batch is implemented in uncommitted candidate `0.9.0+202611081207` (supersedes `202611080043` below). [Handoff](history/2026-11-08-ux-review.md). Open items: several WeChat settings unit tests run 2–3 s against the 5 s timeout and timed out once under load (lazy-render settings or raise those timeouts); `verify-wechat-profile-browser` (uses removed `#wt-status-pill`), `verify-wechat-experience-browser` (hashes root `bundle.js`, ignores `--candidate-root`) and `verify-wechat-mvu-browser` (needs MVU/TavernHelper in the isolated runtime) need repair or retirement.
+
+## 2026-11-08 WeChat Social Memory — Verified Worktree Candidate
+
+User-authorized story/worldbook memory, bottom WeChat/Contacts/Moments navigation, + social menu, automatic Moments and private visibility are implemented in local candidate `0.9.0+202611080043`. This supersedes older deferral of the top social menu for the implemented + actions; the historical entries remain until a fixing commit exists. [Evidence and handoff](history/2026-11-08-wechat-social-memory.md).
+
+Full unit suite 1505 passes; after the final feedback-copy change the affected WeChat suite passes 132 tests. Final typecheck/lint, Next/extension builds, translations, 25 release-tool tests, 25 mobile E2E and four-layout ST checks (152 regressions + 36 social/memory checks) pass. 80 scoped axe scans detect zero violations with 40 distinct incomplete items retained. Root/distribution/preview 60-file parity passes; the installation repository remains at the published `0.9.0+202611071934`.
+
+No commit, push or publication of this batch has occurred. Worldbook extraction uses bounded constant/literal-keyword selection, secondary logic and character/tag filtering; native regex/vector/probability/recursive/timed scanning is outside this implementation. Private visibility is a narrative marker, not encrypted storage. Real AI quality, recognition/TTS, physical devices/OS IME, full readers and historical accessibility uncertainties remain environment-dependent. Gallery waterfall, inline @ suggestions and draggable width remain deferred.
+
 ## 2026-11-07 UX Step 1–5 — Published
 
 User-authorized full UX release **0.9.0+202611071934** is pushed to both main branches: development code/build 02c8da43a2b839d51d2ab60c0958fb37f721fe9f, installation 9aa11af869ad8167b408bb5ba6528f4899f6b2a8. [Publication evidence](history/2026-11-07-ux-publication.md) supersedes the uncommitted/unpublished statements in the phase-one and phase-two entries below. Detail tabs are now delivered; older statements deferring this specific feature are historical.

@@ -10,7 +10,7 @@ import { groupPacksByRole, normalizeLabels, packLabels } from '../../../core/spr
 import { setPresetMetadata } from '../../../core/preset-overrides'
 import { getPackCover } from '../../../core/types'
 import { summarizePackResources } from '../../../core/sprite-resources'
-import { button, toast, nextManagerId, el, textInput, pickFile, iconButton, checkboxRow, addCardNavigation, statusBar, labeled } from './ui'
+import { button, toast, nextManagerId, el, textInput, pickFile, iconButton, checkboxRow, addCardNavigation, statusBar, labeled, thumbnail } from './ui'
 import type { ManagerContext } from './types'
 import { SPRITE_PAGE_SIZE } from './types'
 
@@ -664,11 +664,7 @@ export function createList(ctx: ManagerContext) {
     const first = packs[0]
     const cover = first ? getPackCover(first) : null
     if (cover) {
-      const image = document.createElement('img')
-      image.src = cover.url
-      image.alt = ''
-      image.loading = 'lazy'
-      coverBox.append(image)
+      coverBox.append(thumbnail(cover.url, ''))
     } else {
       coverBox.textContent = t("sprite.manager.content.empty.sprites", "暂无立绘")
     }
@@ -706,11 +702,8 @@ export function createList(ctx: ManagerContext) {
     const coverBox = el('div', 'so-card-cover')
     const cover = getPackCover(pack)
     if (cover) {
-      const img = document.createElement('img')
-      img.src = cover.url
-      img.alt = cover.tag
-      img.loading = 'lazy'
-      coverBox.append(img)
+      // The alt names the cover sprite; a failed load shows a styled placeholder instead of raw alt text.
+      coverBox.append(thumbnail(cover.url, cover.tag))
     } else {
       coverBox.textContent = t("sprite.manager.content.empty.sprites", "暂无立绘")
     }

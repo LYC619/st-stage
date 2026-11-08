@@ -487,11 +487,14 @@ export function createDetail(ctx: ManagerContext) {
         }
       }
 
-      search.addEventListener('input', () => {
+      // Live filtering, but not on every pinyin keystroke: wait for the IME to commit the characters.
+      const applySearch = () => {
         ctx.state.spriteFilterQuery = search.value
         ctx.state.spriteVisibleCount = SPRITE_PAGE_SIZE
         renderFilteredGallery()
-      })
+      }
+      search.addEventListener('input', event => { if (!(event as InputEvent).isComposing) applySearch() })
+      search.addEventListener('compositionend', applySearch)
       labelSelect.addEventListener('change', () => {
         const label = labelSelect.value
         labelSelect.value = ''

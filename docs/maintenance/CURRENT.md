@@ -4,45 +4,44 @@ project: st-stage
 base_branch: main
 working_branch: main
 verified_code_head: 02c8da43a2b839d51d2ab60c0958fb37f721fe9f
-remote_code_head_at_update: 02c8da43a2b839d51d2ab60c0958fb37f721fe9f
+remote_code_head_at_update: 0bf8ae2444000b92058d015bea9b2e0168801f70
 release_code_head: 9aa11af869ad8167b408bb5ba6528f4899f6b2a8
-build_version: 0.9.0+202611071934
+candidate_base_head: 0bf8ae2444000b92058d015bea9b2e0168801f70
+build_version: 0.9.0+202611081358
 published_build_version: 0.9.0+202611071934
-phase: ux-refactoring-published
-updated_at: 2026-11-07
+phase: ux-follow-up-verified-worktree
+updated_at: 2026-11-08
 updated_by: Codex
-verification_source: release-full-1489-unit-25-release-25-mobile-152-wechat-35-tabs-78-axe-60-parity
-history: docs/maintenance/history/2026-11-07-ux-publication.md
-previous_history: docs/maintenance/history/2026-11-07-ux-phase2.md
+verification_source: local-1527-unit-25-mobile-208-browser-checks-92-scoped-axe-3-artifact-parity
+history: docs/maintenance/history/2026-11-08-ux-follow-up.md
+previous_history: docs/maintenance/history/2026-11-08-ux-review.md
 ---
 
 # 当前项目状态
 
-**UX Step 1–5 已完成并正式发布至两仓 main，版本 0.9.0+202611071934。** 用户明确授权的 pnpm release:full 已完成门禁、候选、备份同步、构建提交和正常推送；开发代码/构建提交 02c8da43a2b839d51d2ab60c0958fb37f721fe9f，安装提交 9aa11af869ad8167b408bb5ba6528f4899f6b2a8。共享维护文档随后单独提交；verified_code_head 指向已验证的产品提交。详见 [发布交接](history/2026-11-07-ux-publication.md)。
+本地候选 **0.9.0+202611081358** 包含此前微信记忆／社交升级、Claude UX 审查修改及本轮后续修复，替代 `202611081207`。**全部仍在工作区，未提交、未推送、未发布**；安装仓库正式版本仍为 `0.9.0+202611071934`。
 
-近几天的功能、修复、发布节点及剩余验证边界已汇总为 [2026-11-04—11-07 工作汇总](history/2026-11-07-recent-work-summary.md)。工作汇总及客户端接手记录作为文档收尾纳入 `main`，产品版本、产品基线与发布验证来源不变；收尾范围和验证见汇总末节。
+`verified_code_head` 指上次已验证的产品提交，不代表当前未提交改动。HEAD 和最近确认的 origin/main 均为 `0bf8ae2`；祖先及已提交产品差异检查通过。本轮按 [维护协议](PROTOCOL.md) 保存入场快照并区分增量。
 
-2026-11-07 客户端接手复核通过：产品基线祖先及提交后产品差异检查、四通道 60 文件 parity 与已提交库存门禁均通过；发布回执为 `complete`。CLI 会话接口及已检查的本地会话目录未找到指定记录，已通过 Git、共享档案和发布回执承接进度。当前无剩余实施或发布步骤，后续从下方暂缓范围及环境验证边界按需安排。
+## 已完成
 
-## 已交付
+- 微信默认读取最近 12 条主聊天及相关世界书；底部微信／通讯录／朋友圈三页、+ 菜单、自动朋友圈和仅你可见动态均保留。
+- Claude 的逐级返回、设置刷新隔离、手机比例、微信阅读位置与状态行、群聊逐成员超时和世界书共享读取、图墙失败占位及导出选择修复均保留。
+- 本轮让设置和图库按需加载，优化折叠区焦点查询；修复过期提示词预览覆盖和 App 加载失败时订阅滞留。设置测试不再依靠增加超时。
+- 重写资料设置验收；体验旧命令统一到 evolution；旧微信 MVU 契约明确退役并保存历史复现入口。社交脚本补上角色列表加载等待，避免过早读取新建角色卡。
 
-- 聊天/朋友圈图片自然比例与失败重试，表情保持 contain；手机返回/关闭实际 44px 热区；朋友圈发布区默认折叠、增量插入并保持阅读位置与焦点。
-- 语音切换并入输入条，浏览器识别生成可编辑草稿并由用户确认发送，不支持/失败时保留文字入口；群聊 @ 保留原生选择器和键盘操作。
-- 删除图包改为一次确认，默认保留本地文件，显式勾选仅删除独占源文件；保留共享引用、部分失败及并发设置保护。群头像使用四/九宫格；大屏手机壳最大 380px，320px 视口收缩至 304px。
-- Step 5 包信息使用基本信息/提示词扩展双 Tab，切换保留草稿，方向键/Home/End 可操作；表单内部滚动、保存行常驻，默认折叠和保存后的展开偏好保持，首屏保留图库。
+## 验证
 
-## 验证与发布
+**127 文件 / 1527 项单测、25 项发布工具测试、25 项手机 E2E**通过。类型检查、零警告 lint、Next 生产构建、扩展三通道构建、翻译检查及根目录／public／st-distribution **60 文件 parity**通过。
 
-最终源码 **121 文件 / 1489 单测**、类型、零警告 lint、**25 发布工具测试**、860 翻译键 / 942 源引用、Next 构建全部通过；release:full 重新执行门禁后构建固定候选。该候选通过 **25 项移动 E2E**、微信四布局 **152 项流程**及详情页四布局加 320px 英文 **35 项流程**。320px 无横向溢出，图片自然比例、朋友圈锚点和 Tab 草稿/保存/重载保持通过。
+隔离 ST 18774 的三套四布局验收共 **208 项检查**通过；**92 次局部 axe 扫描零违规检出，53 个不同的规则／目标不确定项保留**。检查了窄屏、横屏设置、聊天和朋友圈截图。600 张合成图库场景的桌面设置重复打开中位数由 **41.8ms 降至 12.2ms**；详见 [后续修复记录](history/2026-11-08-ux-follow-up.md)。本轮 18774 与 3101 测试服务已停止。
 
-共 **78 次局部 axe 扫描零违规检出**，保留 **99 个按规则/选择器/原因去重的不确定项**。真实麦克风/语音识别服务、AI/TTS 供应商、实体设备/系统输入法及完整读屏仍需对应环境；历史全界面 118 项不确定记录不因局部扫描而关闭。
+主包 **653026 bytes**，SHA-256 `29426c6164e32b34b24265dd39bdebed18e1cb9cc5002f74ccfd5423be08edbf`。证据位于 `test-results/ux-follow-up-2026-11-08/`，包括候选副本、入场文件、测试日志、报告和截图。
 
-主包 **625909 bytes**，SHA-256 9c04182281ec9e8212afa14eea95dab3b98aadac381e7194a96f71afc224253e。根目录、st-distribution、public 和安装仓库 **60 文件 parity 及开发提交库存门禁通过**。两仓远端 main 均核验实际提交；远端 CI 状态未另行查询，不宣称 CI 已完成。
+## 后续边界
 
-证据、截图、候选清单、同步前备份和完整发布回执在 test-results/ux-publication-2026-11-07/。本轮 18772/3101 服务已停止，原 18771 与日常酒馆数据保留。
+真实模型、麦克风／TTS、实体手机／系统输入法、完整读屏及真实 MVU 供应商仍需对应环境；局部无障碍扫描不关闭历史不确定项。世界书提取为有预算的常驻／普通文本关键词筛选，不等同原生完整扫描器。图库瀑布流、@ 内联推荐、拖拽调宽继续暂缓。
 
-## 后续范围
+下次提交应完整纳入三轮工作区成果与生成产物；本轮没有发布或安装同步授权。
 
-本次无剩余实施或发布项。图库瀑布流、@ 内联推荐、顶部社交菜单、拖拽调宽仍未授权实施，继续暂缓；不要重复已发布的 Step 1–5。
-
-[微信说明](../WECHAT.md) · [CLI 方案](../superpowers/plans/2026-11-07-frontend-ux-cli-handoff.md) · [后续事项](DEFERRED.md)
+[微信说明](../WECHAT.md) · [浏览器验收入口](BROWSER-ACCEPTANCE.md) · [实施计划](../superpowers/plans/2026-11-08-ux-follow-up.md) · [暂缓事项](DEFERRED.md)

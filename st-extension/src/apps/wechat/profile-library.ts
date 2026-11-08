@@ -39,7 +39,8 @@ function templateName(value: unknown): string {
 function strictProfile(value: unknown): WeChatProfile {
   if (!record(value)) throw new ProfileLibraryError('invalid')
   const keys = ['preset', 'playerName', 'contactName', 'openingMessage', 'contextMessageCount', 'useBuiltinAssets', 'mappings', 'assetOverrides']
-  const optional = ['assetGroups', 'assetEdits', 'customAssets', 'replyPrompt', 'statePrompt', 'formatPrompt', 'scene']
+  const optional = ['assetGroups', 'assetEdits', 'customAssets', 'replyPrompt', 'statePrompt', 'formatPrompt', 'scene', 'includeWorldbook']
+  if (own(value, 'includeWorldbook') && typeof value.includeWorldbook !== 'boolean') throw new ProfileLibraryError('invalid')
   if (Object.keys(value).some(key => !keys.includes(key) && !optional.includes(key)) || keys.some(key => !own(value, key))) throw new ProfileLibraryError('invalid')
   if (!['general', 'cohabitation'].includes(value.preset as string) || typeof value.useBuiltinAssets !== 'boolean'
     || !Number.isInteger(value.contextMessageCount) || (value.contextMessageCount as number) < 0 || (value.contextMessageCount as number) > 20) throw new ProfileLibraryError('invalid')

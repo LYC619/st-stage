@@ -23,9 +23,14 @@ export function createProfileEditor(parent: HTMLElement, packs: () => SpritePack
   const contact = field('联系人显示名（留空跟随角色卡）', document.createElement('input')); contact.maxLength = 60
   const scene = field('场景补充（留空遵循角色卡）', document.createElement('textarea')); scene.rows = 3; scene.maxLength = 2000
   const opening = field('新会话开场白（不改已有记录）', document.createElement('textarea')); opening.maxLength = 500; opening.rows = 2
+  const memoryPanel = details('主线记忆与世界书')
+  const count = field('读取最近主聊天条数（0 为关闭，最多 20）', document.createElement('input'), memoryPanel)
+  count.type = 'number'; count.min = '0'; count.max = '20'; count.step = '1'
+  const lore = field('读取绑定及全局启用的世界书', document.createElement('input'), memoryPanel); lore.type = 'checkbox'
+  const memoryNote = document.createElement('p'); memoryNote.className = 'wt-hint'; memoryNote.textContent = '主聊天作为故事背景供微信聊天和朋友圈使用。世界书按常驻或关键词筛选；微信消息和角色状态仍独立保存。'; memoryPanel.append(memoryNote)
   const promptPanel = details('提示词 · 查看、编辑与恢复默认')
   const promptNote = document.createElement('p'); promptNote.className = 'wt-hint'
-  promptNote.textContent = '以下文字就是实际使用的提示词。花括号会填入当前联系人的角色卡、称呼、场景、状态和可用素材。微信只使用此会话的历史；保存后下一次发送生效。'
+  promptNote.textContent = '花括号填入联系人角色卡、称呼、场景、状态和素材。启用的主线背景与世界书会加入请求；保存后下一次发送生效。'
   promptPanel.append(promptNote)
   const prompts = [
     ['replyPrompt', '聊天提示词', DEFAULT_REPLY_PROMPT, 12000],
@@ -55,7 +60,7 @@ export function createProfileEditor(parent: HTMLElement, packs: () => SpritePack
   const assetUrl = field('素材图片地址（留空恢复原图）', document.createElement('input'), assetsPanel)
   assetUrl.placeholder = 'HTTPS 或 /user/images/…'
   const preview = document.createElement('img'); preview.className = 'wt-asset-preview'; preview.alt = '选中素材预览'; assetsPanel.append(preview)
-  let base = normalizeProfile(), selected = '', custom: WeChatProfile['customAssets'] = {}, edits: WeChatProfile['assetEdits'] = {}, overrides: Record<string, string> = {}
+  let base = normalizeProfile(), selected = '', assetsDirty = true, custom: WeChatProfile['customAssets'] = {}, edits: WeChatProfile['assetEdits'] = {}, overrides: Record<string, string> = {}
   const catalog = (): Record<string, EmojiItem> => ({
     ...Object.fromEntries(Object.entries(PLAYER_EMOJIS).map(([id, item]) => [`player.${id}`, item])),
     ...Object.fromEntries(Object.entries(CONTACT_EMOJIS).map(([id, item]) => [`contact.${id}`, item])),
@@ -98,6 +103,14 @@ export function createProfileEditor(parent: HTMLElement, packs: () => SpritePack
   const destination = field('添加到', document.createElement('select'), assetsPanel)
   for (const [key, label] of [['player', '我的表情包'], ['contact', '联系人表情包'], ['photo', '联系人图片']]) destination.add(new Option(label, key))
   let galleryItems: { name: string; file: string }[] = []
+  function ensureAssets() {
+    if (!assetsDirty) return
+    drawAssets()
+    galleryItems = packs().flatMap(pack => pack.sprites.map(sprite => ({ name: `${pack.name} · ${sprite.tag}`, file: sprite.url })))
+    gallery.replaceChildren(new Option('选择图库中的图片', ''), ...galleryItems.map((item, index) => new Option(item.name, String(index))))
+    assetsDirty = false
+  }
+  assetsPanel.ontoggle = () => { if (assetsPanel.open) ensureAssets() }
   button('添加图库图片', assetsPanel, () => {
     const item = gallery.value === '' ? undefined : galleryItems[Number(gallery.value)]
     if (!item) { feedback.textContent = '请先在图库中保存图片，再回到这里选择。'; return }
@@ -112,21 +125,23 @@ export function createProfileEditor(parent: HTMLElement, packs: () => SpritePack
   browseGroup.onchange = () => { try { storeAsset(); drawAssets(); feedback.textContent = '' } catch (error) { browseGroup.value = selected.split('.')[0]; feedback.textContent = (error as Error).message } }
   return {
     element: section,
-    showAssets() { assetsPanel.open = true; assetsPanel.scrollIntoView?.({ block: 'start' }) },
+    showAssets() { assetsPanel.open = true; ensureAssets(); assetsPanel.scrollIntoView?.({ block: 'start' }) },
     setDisabled(disabled: boolean) { section.querySelectorAll<HTMLInputElement>('input,select,textarea,button').forEach(input => { input.disabled = disabled }) },
     fill(profile: WeChatProfile) {
       base = profile; player.value = profile.playerName; contact.value = profile.contactName; scene.value = profile.scene ?? ''; opening.value = profile.openingMessage
+      count.value = String(profile.contextMessageCount); lore.checked = profile.includeWorldbook !== false
       for (const key of Object.keys(groups) as Array<keyof typeof groups>) groups[key].checked = profile.assetGroups[key]
       for (const [key, , fallback] of prompts) promptInputs[key].value = profile[key] || fallback
-      custom = structuredClone(profile.customAssets); edits = structuredClone(profile.assetEdits); overrides = { ...profile.assetOverrides }; drawAssets()
-      galleryItems = packs().flatMap(pack => pack.sprites.map(sprite => ({ name: `${pack.name} · ${sprite.tag}`, file: sprite.url })))
-      gallery.replaceChildren(new Option('选择图库中的图片', ''))
-      galleryItems.forEach((item, index) => gallery.add(new Option(item.name, String(index))))
-      gallery.selectedIndex = 0; feedback.textContent = ''
+      custom = structuredClone(profile.customAssets); edits = structuredClone(profile.assetEdits); overrides = { ...profile.assetOverrides }
+      selected = ''; assetsDirty = true; grid.replaceChildren(); gallery.replaceChildren(); preview.removeAttribute('src')
+      if (assetsPanel.open) ensureAssets()
+      feedback.textContent = ''
     },
     read(): WeChatProfile {
       storeAsset()
+      if (!Number.isInteger(Number(count.value)) || Number(count.value) < 0 || Number(count.value) > 20) throw new Error('主聊天条数须为 0–20 的整数')
       return normalizeProfile({ profile: { ...base, playerName: player.value, contactName: contact.value, scene: scene.value, openingMessage: opening.value,
+        contextMessageCount: Number(count.value), includeWorldbook: lore.checked,
         assetGroups: { player: groups.player.checked, contact: groups.contact.checked, photo: groups.photo.checked },
         assetOverrides: overrides, assetEdits: edits, customAssets: custom,
         ...Object.fromEntries(prompts.map(([key, , fallback]) => [key, promptInputs[key].value.trim() === fallback ? '' : promptInputs[key].value])),

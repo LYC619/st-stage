@@ -126,6 +126,37 @@ describe('手机壳交互', () => {
     shell.destroy()
   })
 
+  it('lets an App step back through its own pages before the status-bar back and Escape return home', () => {
+    let depth = 2
+    const unmount = vi.fn()
+    const app: PhoneApp = { ...makeApp('chat', { unmount }), fullbleed: true, back: () => depth > 0 && depth-- > 0 }
+    const { shell } = setup([app])
+    shell.openApp('chat')
+    const back = document.querySelector<HTMLElement>('.so-phone-back')!
+    expect(back.getAttribute('aria-label')).toBe('返回')
+    back.click()
+    expect(depth).toBe(1); expect(unmount).not.toHaveBeenCalled()
+    document.querySelector('.so-phone-app-container')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(depth).toBe(0); expect(unmount).not.toHaveBeenCalled()
+    back.click()
+    expect(unmount).toHaveBeenCalledOnce()
+    expect(document.activeElement).toBe(document.querySelector('[data-app-id="chat"]'))
+    shell.openApp('chat'); depth = 3
+    document.querySelector<HTMLElement>('.so-phone-homebtn')!.click()
+    expect(depth).toBe(3); expect(unmount).toHaveBeenCalledTimes(2)
+    shell.destroy()
+  })
+
+  it('falls back to the home screen when an App back handler throws', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { shell } = setup([{ ...makeApp('broken'), back: () => { throw new Error('boom') } }])
+    shell.openApp('broken')
+    document.querySelector<HTMLElement>('.so-phone-back')!.click()
+    expect(document.querySelector('[data-app-id="broken"]')).not.toBeNull()
+    expect(error).toHaveBeenCalled()
+    error.mockRestore(); shell.destroy()
+  })
+
   it('opens from the keyboard, returns to the App icon and collapses back to the launcher', () => {
     const { shell } = setup([makeApp('gallery')])
     const fab = document.querySelector('.so-phone-fab') as HTMLElement
@@ -327,6 +358,45 @@ describe('App 生命周期', () => {
     shell.destroy()
   })
 
+  it('does not remount an open App when an unrelated settings sync repeats the same visibility', () => {
+    const mount = vi.fn(), unmount = vi.fn()
+    const { shell } = setup([makeApp('chat', { mount, unmount }), makeApp('other')], { open: true })
+    shell.openApp('chat')
+    shell.setVisible(true); shell.setVisible(true)
+    expect(mount).toHaveBeenCalledOnce(); expect(unmount).not.toHaveBeenCalled()
+    shell.refreshApp('other')
+    expect(mount).toHaveBeenCalledOnce()
+    shell.destroy()
+  })
+
+  it('fully unmounts the previous instance before an App-requested refresh remounts it', () => {
+    const unmount = vi.fn()
+    const app: PhoneApp = { id: 'sub-app', name: 'S', icon: 'S', mount(_container, ctx) { ctx.onMessageReceived(() => {}) }, unmount }
+    const { shell, subCount } = setup([app], { open: true })
+    shell.openApp('sub-app')
+    shell.refreshApp('sub-app'); shell.setState({ x: 20, y: 20, open: true })
+    expect(unmount).toHaveBeenCalledTimes(2)
+    expect(subCount()).toBe(1)
+    shell.destroy()
+    expect(subCount()).toBe(0)
+  })
+
+  it('skips host summary reads while the phone is collapsed and refreshes on the next open', () => {
+    const registry = new PhoneAppRegistry(), read = vi.fn(async () => ({ title: 'T', subtitle: '', rows: [] }))
+    const shell = createPhoneShell({ x: 0, y: 0, open: true }, {
+      registry, onStateChange: () => {}, readHomeSummary: read,
+      getHomeSummary: () => ({ title: 'T', subtitle: '', rows: [] }),
+      createAppContext: vi.fn(),
+    })
+    shell.setState({ x: 0, y: 0, open: true }); read.mockClear()
+    document.querySelector<HTMLElement>('.so-phone-close')!.click()
+    shell.refreshHome(); shell.refreshHome()
+    expect(read).not.toHaveBeenCalled()
+    shell.setState({ x: 0, y: 0, open: true })
+    expect(read).toHaveBeenCalledOnce()
+    shell.destroy()
+  })
+
   it('切换 App 会先卸载上一个', () => {
     const un1 = vi.fn()
     const un2 = vi.fn()
@@ -340,25 +410,31 @@ describe('App 生命周期', () => {
     expect(un2).toHaveBeenCalledTimes(1)
   })
 
-  it('mount 抛错：强清半渲染 DOM，只显示错误占位页', () => {
+  it('mount 抛错：立即清理订阅和资源，强清半渲染 DOM，只显示错误占位页', () => {
+    const unmount = vi.fn()
     const bad: PhoneApp = {
       id: 'bad-app',
       name: 'bad',
       icon: '💥',
-      mount(container) {
+      mount(container, ctx) {
+        ctx.onMessageReceived(() => {})
         const half = document.createElement('div')
         half.className = 'half-rendered'
         container.append(half)
         throw new Error('boom')
       },
+      unmount,
     }
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const { shell } = setup([bad], { open: true })
+    const { shell, subCount } = setup([bad], { open: true })
     shell.openApp('bad-app')
+    expect(subCount()).toBe(0)
+    expect(unmount).toHaveBeenCalledOnce()
     expect(document.querySelector('.half-rendered')).toBeNull()
     expect(document.querySelector('.so-phone-app-error')).not.toBeNull()
     errSpy.mockRestore()
     shell.destroy()
+    expect(unmount).toHaveBeenCalledOnce()
   })
 
   it('离开 App 时，经 ctx 建立的订阅被框架自动退订（能力层）', () => {

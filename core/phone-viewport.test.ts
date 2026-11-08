@@ -10,12 +10,16 @@ it('widens on desktop and reclamps after zoom, resize and panning', () => {
   const shell = createPhoneShell({ x: 1200, y: 20, open: true }, { registry: new PhoneAppRegistry(), createAppContext: vi.fn(), onStateChange: vi.fn() })
   try {
     const phone = document.querySelector<HTMLElement>('.so-phone-shell')!
-    for (const [width, expected] of [[1365,380],[768,380],[767,320],[320,304],[280,264]]) {
+    for (const [width, expected, height] of [[1365,380,760],[768,380,760],[767,320,640],[320,304,608],[280,264,580]]) {
       viewport.width = width; viewport.offsetLeft = 14; viewport.dispatchEvent(new Event('resize'))
       expect(parseFloat(phone.style.width)).toBe(expected)
+      // A phone-like 2:1 height gives chat Apps room on tall screens; short screens still clamp.
+      expect(parseFloat(phone.style.height)).toBe(height)
       expect(parseFloat(phone.style.left)).toBeGreaterThanOrEqual(22)
       expect(parseFloat(phone.style.left) + expected).toBeLessThanOrEqual(width + 6)
     }
+    viewport.width = 1365; viewport.height = 600; viewport.dispatchEvent(new Event('resize'))
+    expect(parseFloat(phone.style.height)).toBe(584)
   } finally { shell.destroy() }
 })
 it('keeps the phone inside an offset visual viewport and follows viewport panning', () => {

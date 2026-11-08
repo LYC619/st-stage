@@ -25,7 +25,7 @@ export async function verifyWechatUX({ page, context, saved, openApp, fit, scan,
     ctx.saveSettingsDebounced()
   }))
   await context.route('**/ux-media/retry-moment', route => route.fulfill({ status: 404, body: 'missing' }))
-  await openApp(); await page.locator('[data-conversation]').filter({ hasText: 'Experience B' }).click()
+  await openApp(); await page.locator('[data-conversation^="direct:"]').filter({ hasText: 'Experience B' }).click()
   await expect(page.locator('.wt-media').nth(2)).toContainText('图片加载失败')
   await page.waitForFunction(() => [...document.querySelectorAll('.wt-media img')].filter(img => !img.hidden).every(img => img.complete && img.naturalWidth))
   const media = await page.locator('.wt-media').evaluateAll(nodes => nodes.map(node => {
@@ -53,22 +53,23 @@ export async function verifyWechatUX({ page, context, saved, openApp, fit, scan,
   }))
   for (const width of groupWidths) assert.ok(width.width >= 120 && width.width <= width.available + 1 && (width.name !== 'wide' || width.width >= width.available - 1), JSON.stringify(width))
   result.groupMedia = groupWidths; await fit('group-photos')
-  await page.locator('#wt-back').click(); await page.locator('[data-conversation]').filter({ hasText: 'Experience B' }).click()
+  await page.locator('#wt-back').click(); await page.locator('[data-conversation^="direct:"]').filter({ hasText: 'Experience B' }).click()
 
-  await page.locator('#wt-moments').click()
+  await page.locator('#wt-back').click(); await page.locator('#wt-moments').click()
   await expect(page.locator('#wt-moments-composer')).not.toHaveAttribute('open', '')
   const feed = page.locator('#wt-moments-feed')
   const closedHeight = await feed.evaluate(node => node.clientHeight)
   assert.ok(closedHeight > 70, `Feed height ${closedHeight}`)
+  await page.locator('#wt-settings-btn').click()
   await page.locator('#wt-moments-composer > summary').focus(); await page.keyboard.press('Enter')
-  await page.keyboard.press('Tab'); await expect(page.locator('#wt-moments-author')).toBeFocused()
-  await page.locator('#wt-moments-author').selectOption({ label: 'Experience B' })
-  let publish
+  await page.keyboard.press('Tab'); await expect(page.locator('#wt-auto-moments')).toBeFocused()
+  await page.locator('#wt-auto-moments').check()
+  const publish = []
   await context.route('**/wechat-experience-api', route => {
-    publish = () => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ text: '新增动态', photo_id: 'bedroom1' }) } }] }) })
+    publish.push(() => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ text: '新增动态', photo_id: 'bedroom1' }) } }] }) }))
   })
-  await page.locator('#wt-generate-moment').click(); await expect.poll(() => typeof publish).toBe('function')
-  await page.locator('#wt-moments-composer > summary').click()
+  await saved(() => page.locator('#wt-btn-save-settings').click()); await expect.poll(() => publish.length).toBe(1)
+  await page.locator('#wt-close-settings').click()
   const oldLike = page.locator('[data-moment="ux-4"] button[aria-pressed]')
   await oldLike.click(); await oldLike.focus()
   const position = await feed.evaluate(node => {
@@ -76,7 +77,8 @@ export async function verifyWechatUX({ page, context, saved, openApp, fit, scan,
     window.__uxCard = card; window.__uxLike = card.querySelector('[aria-pressed]')
     return card.getBoundingClientRect().top - node.getBoundingClientRect().top
   })
-  await publish(); await expect(page.locator('.wt-moment')).toHaveCount(19)
+  await publish.shift()(); await expect.poll(() => publish.length).toBe(1); await publish.shift()()
+  await expect(page.locator('.wt-moment')).toHaveCount(20)
   const stable = () => feed.evaluate(node => ({ same: node.querySelector('[data-moment="ux-4"]') === window.__uxCard, focused: document.activeElement === window.__uxLike, liked: window.__uxLike.getAttribute('aria-pressed'), offset: window.__uxCard.getBoundingClientRect().top - node.getBoundingClientRect().top }))
   let state = await stable(); assert.equal(state.same, true); assert.equal(state.focused, true); assert.equal(state.liked,'true'); assert.ok(Math.abs(state.offset - position) <= 1, JSON.stringify({ position, state }))
   // The newly published post has a genuinely pending image request, not an already loaded replacement.
@@ -92,8 +94,11 @@ export async function verifyWechatUX({ page, context, saved, openApp, fit, scan,
   await page.keyboard.press('Enter'); await expect(page.locator('[data-moment="ux-4"] .wt-moment-image')).toBeVisible()
   await expect(page.locator('[data-moment="ux-4"] .wt-moment-media')).toBeFocused()
   await feed.evaluate(node => { node.scrollTop = 0 }); await page.screenshot({ path: `${out}/${size.width}-ux-moments.png` })
-  result.checks.push('Moments composer is keyboard reachable; prepend retains old card, like, focus and visual anchor through delayed image loading; retry recovers')
-  await page.keyboard.press('Escape'); await expect(page.locator('#wt-moments')).toBeFocused()
+  result.checks.push('Moments preferences are keyboard reachable; automatic prepend retains old card, like, focus and visual anchor through delayed image loading; retry recovers')
+  await page.locator('#wt-settings-btn').click(); await page.locator('#wt-moments-composer > summary').click()
+  await page.locator('#wt-auto-moments').uncheck(); await saved(() => page.locator('#wt-btn-save-settings').click()); await page.locator('#wt-close-settings').click()
+  await page.locator('#wt-tab-chats').click(); await expect(page.locator('#wt-tab-chats')).toBeFocused()
+  await expect(page.locator('#toast-container .toast')).toHaveCount(0)
 
   const targets = await page.locator('.so-phone-back,.so-phone-close').evaluateAll(nodes => nodes.map(node => {
     const b = node.getBoundingClientRect(), pseudo = getComputedStyle(node,'::after')

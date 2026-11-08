@@ -9,6 +9,7 @@ export interface WeChatProfile {
   openingMessage: string
   scene?: string
   contextMessageCount: number
+  includeWorldbook?: boolean
   useBuiltinAssets: boolean
   /** 内置素材组开关；旧数据缺省全部启用，避免通用角色出现空表情抽屉 */
   assetGroups: { player: boolean; contact: boolean; photo: boolean }
@@ -72,7 +73,8 @@ export function normalizeProfile(config?: WeChatConfig): WeChatProfile {
     playerName: text(raw?.playerName, 60), contactName: text(raw?.contactName, 60), openingMessage: text(raw?.openingMessage, 500),
     scene: text(raw?.scene, 2000),
     contextMessageCount: typeof raw?.contextMessageCount === 'number' && Number.isFinite(raw.contextMessageCount)
-      ? Math.max(0, Math.min(20, Math.trunc(raw.contextMessageCount))) : 6,
+      ? Math.max(0, Math.min(20, Math.trunc(raw.contextMessageCount))) : 12,
+    includeWorldbook: raw?.includeWorldbook !== false,
     useBuiltinAssets: raw?.useBuiltinAssets !== false,
     assetGroups,
     mappings, assetOverrides, assetEdits, customAssets,

@@ -348,7 +348,8 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
         const visibleCharacters = characters.data.filter((item) => item.name.toLowerCase().includes(query))
         const visibleWorldbooks = worldbooks.data.filter((item) => item.name.toLowerCase().includes(query))
         const visiblePresets = (settings.data?.presets ?? []).filter((item) => item.name.toLowerCase().includes(query))
-        const actions = el('div', 'so-app-section')
+        // Bulk actions sit in one row; stacked full-width they took a third of the phone screen.
+        const actions = el('div', 'so-app-section cloud-export-bulk')
         const addAction = (key: string, label: string, action: () => void | Promise<void>) => {
           const button = appButton(label, () => { if (!busy) void action() })
           button.dataset.exportFocus = `${activeTab}:${key}`; button.setAttribute('aria-disabled', String(busy)); actions.append(button)
@@ -364,7 +365,11 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
             if (toAdd.length === 0) { render(); return }
             void selectVisibleBundles(toAdd)
           })
-          addAction('clear', t('cloudExport.clear', '清空当前分类'), () => { selection.characterIds.clear(); selection.chatIds.clear(); render() })
+          // Release bundles symmetrically with unticking each card, so linked worldbooks are not left behind.
+          addAction('clear', t('cloudExport.clear', '清空当前分类'), () => {
+            for (const id of [...selection.characterIds]) deselectCharacter(id, selection, chats, characters.data, worldbooks.data)
+            selection.chatIds.clear(); render()
+          })
         } else if (activeTab === 'worldbooks' && worldbooks.status === 'ready' && visibleWorldbooks.length) {
           addAction('select-all', t('cloudExport.select_all', '全选当前结果'), () => { visibleWorldbooks.forEach((item) => selection.worldbookIds.add(item.id)); render() }); addAction('invert', t('cloudExport.invert', '反选当前结果'), () => { toggleSet(visibleWorldbooks, selection.worldbookIds); render() }); addAction('clear', t('cloudExport.clear', '清空当前分类'), () => { selection.worldbookIds.clear(); render() })
         } else if (activeTab === 'presets' && settings.status === 'ready' && visiblePresets.length) {

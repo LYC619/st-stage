@@ -94,7 +94,7 @@ describe('WeChat independent conversation experience', () => {
     prompt.value = 'CUSTOM {角色} {人设}'
     const button = (text: string) => [...f.container.querySelectorAll<HTMLButtonElement>('button')].find(btn => btn.textContent === text)!
     button('预览实际发送的提示词').click()
-    expect(f.el<HTMLTextAreaElement>('textarea[aria-label="实际提示词预览"]').value).toContain('CUSTOM B PRIVATE_PERSONA_B')
+    await vi.waitFor(() => expect(f.el<HTMLTextAreaElement>('textarea[aria-label="实际提示词预览"]').value).toContain('CUSTOM B PRIVATE_PERSONA_B'))
     f.el('#wt-btn-save-settings').click(); expect(f.el('#wt-settings-feedback').textContent).toContain('已保存')
     f.el('#wt-close-settings').click(); f.remount(); f.open(f.b.scopeKey!); f.el('#wt-settings-btn').click()
     expect(f.el<HTMLTextAreaElement>('textarea[aria-label="聊天提示词"]').value).toBe('CUSTOM {角色} {人设}')
@@ -108,6 +108,7 @@ describe('WeChat independent conversation experience', () => {
     vi.spyOn(WeChatPipeline.prototype, 'requestContactReply').mockResolvedValue(reply('Hi'))
     const f = setup(); f.settings.packs.push({ id: 'gallery', name: '旅行', sprites: [{ tag: '船票', url: 'https://example.test/ticket.png' }] })
     f.open(f.b.scopeKey!); f.el('#wt-settings-btn').click()
+    const assets = f.el<HTMLDetailsElement>('[data-asset-manager]'); assets.open = true; assets.dispatchEvent(new Event('toggle'))
     const gallery = f.el<HTMLSelectElement>('select[aria-label="从图库选择图片"]'); gallery.value = '0'
     const add = [...f.container.querySelectorAll<HTMLButtonElement>('button')].find(btn => btn.textContent === '添加图库图片')!
     add.click(); f.el<HTMLInputElement>('input[aria-label="素材显示名"]').value = '一起旅行'

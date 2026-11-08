@@ -226,7 +226,11 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   function createAppContext(appId: string, goHome: () => void) {
     return createPhoneAppContext({
       ...createHostDeps(appId),
-      updateSettings,
+      // 只有提交设置的 App 自己重绘；悬浮窗、设置面板等外部改动不再重挂载打开中的 App
+      updateSettings: (next) => {
+        updateSettings(next)
+        phone.refreshApp(appId)
+      },
       goHome,
       openModal: (id, build) => {
         // 三原则标准动作：收手机 → 全屏弹窗 → 关闭回本 App；平台销毁时兜底关闭
