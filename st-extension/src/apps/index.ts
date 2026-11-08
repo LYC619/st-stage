@@ -16,6 +16,7 @@ import { rendererApp } from './renderer-app'
 import { cloudExportApp } from './cloud-export/export-app'
 import { createWeChatApp } from './wechat/wechat-app'
 import { createTheaterApp } from './theater/theater-app'
+import { createStoryStateApp } from './story-state/story-state-app'
 import type { NewvarRuntime } from './newvar/runtime'
 import type { RendererRuntime } from './renderer/runtime'
 
@@ -46,5 +47,6 @@ export function createBuiltinApps(deps: BuiltinAppDeps): PhoneApp[] {
     cloudExportApp(),
     createWeChatApp(),
     createTheaterApp(),
+    createStoryStateApp(),
   ]
 }

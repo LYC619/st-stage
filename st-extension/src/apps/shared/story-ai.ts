@@ -11,12 +11,12 @@ export function getStoryAiConfig(host: AppHost): StoryAiConfig | null {
     model: typeof config.model === 'string' ? config.model : '' }
 }
 
-export async function requestChat(config: StoryAiConfig, messages: StoryAiMessage[], signal?: AbortSignal): Promise<string> {
+export async function requestChat(config: StoryAiConfig, messages: StoryAiMessage[], signal?: AbortSignal, jsonMode = true): Promise<string> {
   try {
     const resp = await fetch(config.apiUrl || 'https://api.deepseek.com/chat/completions', {
       signal, method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + config.apiKey },
-      body: JSON.stringify({ model: config.model || 'deepseek-chat', messages, temperature: 0.5, stream: false, response_format: { type: 'json_object' } }),
+      body: JSON.stringify({ model: config.model || 'deepseek-chat', messages, temperature: 0.5, stream: false, ...(jsonMode ? { response_format: { type: 'json_object' } } : {}) }),
     })
     if (!resp.ok) throw new Error('AI 连接失败（' + resp.status + '），请检查连接后重试。')
     const data = await resp.json()
