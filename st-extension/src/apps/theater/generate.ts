@@ -9,29 +9,32 @@ import type { TheaterData, TheaterFeeds, TheaterStory } from './types'
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const list = (value: unknown): unknown[] => Array.isArray(value) ? value : []
 const strings = (value: unknown): string[] => list(value).filter((item): item is string => typeof item === 'string')
-const fields = (value: Record<string, unknown>, keys: string[]) => keys.every(key => typeof value[key] === 'string')
+const str = (value: unknown) => typeof value === 'string' ? value : ''
 
-/** AI replies and persisted settings share this single data boundary. */
+/**
+ * AI replies and persisted settings share this single data boundary.
+ * Only the content field is required; models often omit decorative ones (tag, stats, heat).
+ */
 export function normalizeFeeds(value: unknown): TheaterFeeds {
   const raw = record(value), live = record(raw.live)
   return {
     square: list(raw.square).flatMap(value => {
       const p = record(value)
-      if (!fields(p, ['author', 'tag', 'time', 'text', 'stats']) || !Array.isArray(p.topics) || !Array.isArray(p.comments)) return []
-      return [{ author: p.author as string, tag: p.tag as string, time: p.time as string, text: p.text as string, stats: p.stats as string,
-        topics: strings(p.topics), comments: p.comments.flatMap(value => {
-          const c = record(value); return fields(c, ['name', 'text']) ? [{ name: c.name as string, text: c.text as string }] : []
+      if (!str(p.author) || !str(p.text)) return []
+      return [{ author: str(p.author), tag: str(p.tag), time: str(p.time), text: str(p.text), stats: str(p.stats),
+        topics: strings(p.topics), comments: list(p.comments).flatMap(value => {
+          const c = record(value); return str(c.name) && str(c.text) ? [{ name: str(c.name), text: str(c.text) }] : []
         }) }]
     }),
     forum: list(raw.forum).flatMap(value => {
       const p = record(value)
-      if (!fields(p, ['board', 'title', 'text', 'user', 'heat']) || !Array.isArray(p.tags) || !Array.isArray(p.comments)) return []
-      return [{ board: p.board as string, title: p.title as string, text: p.text as string, user: p.user as string, heat: p.heat as string,
+      if (!str(p.title) || !str(p.text)) return []
+      return [{ board: str(p.board), title: str(p.title), text: str(p.text), user: str(p.user), heat: str(p.heat),
         tags: strings(p.tags), comments: strings(p.comments) }]
     }),
-    live: fields(live, ['room', 'title', 'cast', 'summary', 'stats']) && Array.isArray(live.danmaku)
-      ? { room: live.room as string, title: live.title as string, cast: live.cast as string, summary: live.summary as string, stats: live.stats as string,
-        danmaku: live.danmaku.flatMap(value => { const d = record(value); return fields(d, ['fan', 'text']) ? [{ fan: d.fan as string, text: d.text as string }] : [] }) }
+    live: str(live.title)
+      ? { room: str(live.room), title: str(live.title), cast: str(live.cast), summary: str(live.summary), stats: str(live.stats),
+        danmaku: list(live.danmaku).flatMap(value => { const d = record(value); return str(d.text) ? [{ fan: str(d.fan), text: str(d.text) }] : [] }) }
       : null,
   }
 }
@@ -39,7 +42,9 @@ export function normalizeFeeds(value: unknown): TheaterFeeds {
 export function parseFeeds(text: string): TheaterFeeds {
   let raw: unknown
   try { raw = JSON.parse(text) } catch { throw new Error('小剧场返回的 JSON 无法解析，请重试。') }
-  return normalizeFeeds(raw)
+  const feeds = normalizeFeeds(raw)
+  if (!feeds.square.length && !feeds.forum.length && !feeds.live) throw new Error('小剧场返回的内容格式不对，请重试。')
+  return feeds
 }
 
 export function readTheaterData(host: AppHost): TheaterData {
@@ -52,7 +57,7 @@ export function readTheaterData(host: AppHost): TheaterData {
 }
 
 export function mergeFeeds(previous: TheaterFeeds, incoming: TheaterFeeds): TheaterFeeds {
-  return { square: [...incoming.square, ...previous.square].slice(0, 5), forum: [...incoming.forum, ...previous.forum].slice(0, 5), live: incoming.live }
+  return { square: [...incoming.square, ...previous.square].slice(0, 5), forum: [...incoming.forum, ...previous.forum].slice(0, 5), live: incoming.live ?? previous.live }
 }
 
 export function saveTheaterStory(data: TheaterData, key: string, story: TheaterStory): TheaterData {
