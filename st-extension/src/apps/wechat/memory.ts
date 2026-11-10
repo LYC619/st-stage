@@ -2,6 +2,11 @@ import type { AppHost } from '../../../../core/phone-registry'
 import { stableCharacterKey } from '../../../../core/character-identity'
 import { getWeChatHostContext, type ConversationScope } from './bridge'
 import type { WeChatProfile } from './profile'
+import { storyIdentity } from '../shared/chat-metadata'
+import { storyToday } from '../shared/story-date'
+import { readChronicleData } from '../chronicle/store'
+import { chronicleOverview } from '../chronicle/inject'
+export { storyIdentity } from '../shared/chat-metadata'
 
 type RecordValue = Record<string, unknown>
 const record = (value: unknown): RecordValue => value && typeof value === 'object' && !Array.isArray(value) ? value as RecordValue : {}
@@ -29,13 +34,6 @@ export function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> 
 export function storyText(value: string): string {
   const clean = value.replace(/<(think|thinking|analysis|script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
   return (clean.includes('<') ? new DOMParser().parseFromString(clean, 'text/html').body.textContent ?? '' : clean).trim()
-}
-
-export function storyIdentity(host: AppHost): string {
-  const native = record(getWeChatHostContext()), context = host.getChatContext?.()
-  const currentId = typeof native.getCurrentChatId === 'function' ? native.getCurrentChatId() : undefined
-  const id = String(currentId ?? context?.chatId ?? native.chatId ?? '')
-  return `${stableCharacterKey(host.getCharacterCard?.()) ?? host.getCharacterName()}::${id}`
 }
 
 export function captureStory(host: AppHost): StorySnapshot {
@@ -96,6 +94,9 @@ export async function readStoryMemory(host: AppHost, scope: ConversationScope, p
   check()
   const memory: ConversationScope = { ...scope, storySource: snapshot.name,
     stRecentMessages: profile.contextMessageCount > 0 ? snapshot.messages.slice(-profile.contextMessageCount) : [], loreText: '', memoryWarnings: [] }
+  const chronicles = readChronicleData().entries
+  memory.chronicleText = chronicles.length ? chronicleOverview(chronicles, await abortable(storyToday(host), signal)) : ''
+  check()
   if (!profile.includeWorldbook) return memory
   const native = record(getWeChatHostContext())
   const key = stableCharacterKey(scope.card)
@@ -166,6 +167,7 @@ export async function readStoryMemory(host: AppHost, scope: ConversationScope, p
 
 export function formatStoryMemory(scope: ConversationScope): string {
   const history = scope.stRecentMessages?.map(msg => `${'name' in msg ? msg.name : msg.sender}: ${msg.text}`).join('\n').slice(-16000)
-  return [history ? `【酒馆主线背景 · ${scope.storySource || '当前主聊天'}】\n${history}\n以上是故事背景，区分人物身份与亲历；不要把其他角色的行为当成自己的经历。` : '',
+  return [scope.chronicleText ? `【过去的剧情纪要】\n${scope.chronicleText}` : '',
+    history ? `【酒馆主线背景 · ${scope.storySource || '当前主聊天'}】\n${history}\n以上是故事背景，区分人物身份与亲历；不要把其他角色的行为当成自己的经历。` : '',
     scope.loreText ? `【世界书设定】\n${scope.loreText}` : ''].filter(Boolean).join('\n\n')
 }

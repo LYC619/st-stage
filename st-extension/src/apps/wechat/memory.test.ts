@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AppHost } from '../../../../core/phone-registry'
-import { captureStory, readStoryMemory, storyText } from './memory'
+import { captureStory, formatStoryMemory, readStoryMemory, storyText } from './memory'
+import { getWeChatHostContext } from './bridge'
+import * as storyDates from '../shared/story-date'
 import { normalizeProfile } from './profile'
 import { WeChatPipeline } from './pipeline'
 import { migrateWeChatData } from './migrations'
@@ -22,6 +24,15 @@ function fixture() {
   return { host, scope: { scopeKey: 'direct:b', characterName: 'B', card: b, externalState: { source: 'none' as const } }, change: () => { chatId = 'story-2' } }
 }
 describe('main-story and worldbook memory', () => {
+  it('prepends chronicle overviews even when worldbook reading is disabled', async () => {
+    const f = fixture(), native = getWeChatHostContext() as { chatMetadata: Record<string, unknown> }
+    vi.spyOn(storyDates, 'storyToday').mockResolvedValue(new Date(2026, 0, 2))
+    native.chatMetadata.st_stage_chronicle = { v: 1, lastMessageIndex: 0, entries: [{ code: 'AM0001', timeSpan: '2026-01-01', summary: '很早以前拿到通行证', text: '完整正文不发给微信', keyDialogue: [], createdAt: 1 }] }
+    const scope = await readStoryMemory(f.host, f.scope, normalizeProfile({ profile: { includeWorldbook: false } }), new AbortController().signal)
+    const prompt = formatStoryMemory(scope)
+    expect(prompt).toContain('AM0001 | 昨天 | 很早以前拿到通行证'); expect(prompt).not.toContain('完整正文不发给微信')
+    expect(prompt.indexOf('【过去的剧情纪要】')).toBeLessThan(prompt.indexOf('【酒馆主线背景'))
+  })
   it('filters by stable avatar filename and tag IDs, independently of the display name', async () => {
     const f = fixture()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ entries: [

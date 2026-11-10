@@ -2825,3 +2825,23 @@
 .ss-item[data-rarity=传说]{border-color:#a47c20}
 .ss-item[data-rarity=精良]{border-color:#42875b}
 .ss-root progress{display:block;width:100%;height:10px;margin:8px 0;accent-color:#286878}
+
+/* 纪要：按聊天保存的剧情记忆。 */
+.ch-root{color:#352b21;background:#faf7ef;font:13px/1.6 -apple-system,BlinkMacSystemFont,'Microsoft YaHei',sans-serif;min-width:0;padding:10px;overflow-wrap:anywhere}
+.ch-root *{box-sizing:border-box}
+.ch-root button,.ch-root input{font:inherit;color:inherit;border:1px solid #cbbca6;border-radius:8px;background:#fff;min-width:0;max-width:100%;box-shadow:none;text-shadow:none}
+.ch-root button{min-height:44px;padding:8px 10px;cursor:pointer;white-space:normal}
+.ch-root button:disabled{opacity:.5;cursor:default}
+.ch-root input[type=checkbox]{width:20px;height:20px;accent-color:#886130}
+.ch-root input[type=number]{width:65px;min-height:44px;padding:6px}
+.ch-root :focus-visible{outline:2px solid #886130;outline-offset:2px}
+.ch-header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ch-header>strong{font-size:18px}
+.ch-status{color:#8c3939;font-size:12px;white-space:pre-wrap}
+.ch-card{background:#fffdf8;border:1px solid #ddd0bb;border-radius:10px;margin:10px 0;padding:12px}
+.ch-card summary{cursor:pointer;min-height:44px}
+.ch-card summary strong{display:block;margin-top:5px;font-size:14px}
+.ch-meta,.ch-empty{color:#6c5d4c}
+.ch-meta{display:block;white-space:pre-wrap}
+.ch-copy,.ch-dialogue{white-space:pre-wrap}
+.ch-dialogue{margin:10px 0;padding:4px 10px;border-left:3px solid #b18c58;background:#f6f0e5}

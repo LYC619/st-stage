@@ -1,6 +1,6 @@
 import type { AppHost } from '../../../../core/phone-registry'
-import { getWeChatHostContext } from '../wechat/bridge'
-import { storyIdentity } from '../wechat/memory'
+import { readChatMetadata, writeChatMetadata, storyIdentity } from '../shared/chat-metadata'
+export { metadataContext } from '../shared/chat-metadata'
 import { getLastMessageId, readVariables } from '../mvu/bridge'
 
 export const META_KEY = 'st_stage_story_state'
@@ -14,13 +14,6 @@ export interface StoryState {
 }
 export interface StoryStateSnapshot { key: string; backend: 'mvu' | 'local'; raw: Record<string, unknown>; state: StoryState }
 export interface StoryStateSettings { autoSync: boolean; contextMessages: number }
-export interface MetadataContext {
-  name1?: string; chatMetadata?: Record<string, unknown>; getCurrentChatId?: () => string | number | undefined
-  chatId?: string | number
-  updateChatMetadata?: (entry: Record<string, unknown>, reset: boolean) => void
-  saveMetadata?: () => Promise<unknown>
-}
-export function metadataContext(): MetadataContext { return (getWeChatHostContext() as MetadataContext | undefined) ?? {} }
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const text = (value: unknown, fallback = '') => typeof value === 'string' ? value : fallback
 const number = (value: unknown, fallback = 0) => typeof value === 'number' && Number.isFinite(value) ? value : fallback
@@ -48,21 +41,13 @@ export async function readStoryState(host: AppHost): Promise<StoryStateSnapshot>
   const result = await readVariables({ type: 'message', message_id: id < 0 ? 'latest' : id }, id)
   if (key !== storyIdentity(host)) throw new Error('聊天已切换。')
   const backend = result.isMvu && result.status === 'ready' ? 'mvu' : 'local'
-  const raw = structuredClone(backend === 'mvu' ? result.data : record(record(metadataContext().chatMetadata?.[META_KEY]).stat_data))
+  const raw = structuredClone(backend === 'mvu' ? result.data : record(record(readChatMetadata(META_KEY)).stat_data))
   return { key, backend, raw, state: normalize(raw) }
 }
 
 export async function writeLocalState(host: AppHost, snapshot: StoryStateSnapshot, stat: Record<string, unknown>): Promise<boolean> {
-  if (snapshot.backend !== 'local' || snapshot.key !== storyIdentity(host)) return false
-  const context = metadataContext(), chatId = context.getCurrentChatId?.() ?? context.chatId ?? host.getChatContext?.()?.chatId
-  if (chatId === undefined || chatId === '') throw new Error('请先打开一个主聊天。')
-  if (typeof context.saveMetadata !== 'function') throw new Error('当前聊天无法保存状态。')
-  const entry = { [META_KEY]: { stat_data: stat, v: 1 } }
-  if (typeof context.updateChatMetadata === 'function') context.updateChatMetadata(entry, false)
-  else if (context.chatMetadata && typeof context.chatMetadata === 'object') Object.assign(context.chatMetadata, entry)
-  else throw new Error('当前聊天无法保存状态。')
-  await context.saveMetadata()
-  return true
+  if (snapshot.backend !== 'local') return false
+  return writeChatMetadata(host, snapshot.key, META_KEY, { stat_data: stat, v: 1 })
 }
 
 export function formatTime(time: StoryState['时间']): string {

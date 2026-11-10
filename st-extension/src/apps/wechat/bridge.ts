@@ -56,6 +56,7 @@ export interface ConversationScope {
   stRecentMessages?: Array<{ sender: 'user' | 'character'; text: string }>
   storySource?: string
   loreText?: string
+  chronicleText?: string
   memoryWarnings?: string[]
   externalState: ExternalCharacterState
 }
