@@ -37,4 +37,9 @@ describe('story-state app', () => {
     const f = await mount({}); expect(f.container.textContent).toContain('后台自动整理'); expect(f.container.textContent).toContain('请先在微信设置里连接 AI')
     f.tabs[1].click(); expect(f.container.textContent).toContain('还没有这类状态')
   })
+  it('omits the remaining count when using the last item', async () => {
+    const f = await mount({ 背包: [{ 名称: '药水', 数量: 1, 描述: '恢复生命', 稀有度: '普通' }] })
+    f.tabs[2].click(); f.container.querySelector<HTMLButtonElement>('.ss-item button')!.click()
+    expect(f.input.value).toBe('玩家使用了"药水"。（道具效果：恢复生命）')
+  })
 })
