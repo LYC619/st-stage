@@ -22,7 +22,7 @@ export async function generateMoment(host: AppHost, data: WeChatAppData, source:
   return { contact, state, result, storyKey: story.key, warnings: scope.memoryWarnings ?? [] }
 }
 
-function fingerprint(story: StorySnapshot): string {
+export function fingerprint(story: StorySnapshot): string {
   let hash = 2166136261
   for (const char of JSON.stringify([story.key, story.messages.slice(-20)])) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619)
   return (hash >>> 0).toString(36)

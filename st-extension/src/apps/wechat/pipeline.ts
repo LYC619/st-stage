@@ -18,6 +18,7 @@ import { renderWeChatPrompt } from './prompts'
 import { normalizeProfile } from './profile'
 import { DEFAULT_MOMENTS_PROMPT } from './moments'
 import { formatStoryMemory } from './memory'
+import { requestChat } from '../shared/story-ai'
 
 export interface FallbackBranch {
   min_mood: number
@@ -207,22 +208,7 @@ export class WeChatPipeline {
   }
 
   private async requestJson(messages: ChatCompletionMessage[], signal?: AbortSignal): Promise<string> {
-    try {
-      const resp = await fetch(this.config.apiUrl || 'https://api.deepseek.com/chat/completions', {
-        signal, method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + this.config.apiKey },
-        body: JSON.stringify({ model: this.config.model || 'deepseek-chat', messages, temperature: 0.5, stream: false, response_format: { type: 'json_object' } }),
-      })
-      if (!resp.ok) throw new Error('AI 连接失败（' + resp.status + '），请检查连接后重试。')
-      const data = await resp.json()
-      const content = data?.choices?.[0]?.message?.content
-      if (typeof content !== 'string' || !content.trim()) throw new Error('AI 返回了空回复，请重试。')
-      return content
-    } catch (error) {
-      if (signal?.aborted) throw error
-      if (error instanceof Error && error.message.startsWith('AI ')) throw error
-      throw new Error('AI 请求失败，请检查网络或连接设置后重试。', { cause: error })
-    }
+    return requestChat(this.config, messages, signal)
   }
 
   public async requestMoment(contact: Contact, state: ContactState, signal?: AbortSignal, scope?: ConversationScope, recent: string[] = []): Promise<{ text: string; image?: PhotoItem; visibility?: 'public' | 'private' }> {

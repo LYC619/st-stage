@@ -80,3 +80,5 @@ AI 连接在所有微信联系人中共用，使用兼容 OpenAI Chat Completion
 ## 参考实现
 
 本轮参考 [SillyTavern-WeiMeng](https://github.com/FR0MK3YT0E2D/SillyTavern-WeiMeng/tree/37e4c0609fb353025578df69434ac9a6d756bf13)（MIT，Copyright © 2026 FR0MK3YT0E2D）：借鉴 `variable-updater.js` 的近期聊天纯文本提取方法，以及 `moments-updater.js` 的剧情触发、任务互斥和主聊天切换校验。代码适配本项目既有联系人、请求与持久化结构，未引入参考项目的运行时依赖；世界书读取根据实际酒馆接口独立实现。参考版本及验证证据见 [本轮交接](maintenance/history/2026-11-08-wechat-social-memory.md)。
+
+小剧场复用微信的 AI 连接和主线记忆。
