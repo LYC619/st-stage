@@ -3,6 +3,7 @@ import { mergeFeeds, parseFeeds, saveTheaterStory } from './generate'
 import type { TheaterFeeds } from './types'
 
 export const feeds: TheaterFeeds = {
+  diary: [],
   square: [{ author: '配角', tag: '船长', time: '刚刚', text: '月港见闻', topics: ['月港'], comments: [{ name: '路人', text: '听说过' }], stats: '赞 12' }],
   forum: [{ board: '闲聊', title: '月港开幕', text: '公开消息', tags: ['新闻'], user: '匿名', heat: '热度 86', comments: ['来看看'] }],
   live: { room: '直播间', title: '雨中月港', cast: '阿青', summary: '抵达港口', stats: '观看 100', danmaku: [{ fan: '青团', text: '来了' }] },
@@ -12,7 +13,7 @@ describe('theater generation data', () => {
     expect(() => parseFeeds('```json\n{}')).toThrow('JSON')
     expect(() => parseFeeds(JSON.stringify({ square: [{ author: '坏条目' }], forum: [null] }))).toThrow('格式不对')
     expect(parseFeeds(JSON.stringify({ ...feeds, square: [feeds.square[0], { author: '坏条目' }], forum: [null], live: { title: 5 } })))
-      .toEqual({ square: feeds.square, forum: [], live: null })
+      .toEqual({ square: feeds.square, forum: [], live: null, diary: [] })
   })
   it('keeps posts whose decorative fields are missing', () => {
     const result = parseFeeds(JSON.stringify({ square: [{ author: '配角', text: '只有正文' }], forum: [{ title: '标题', text: '正文' }], live: { title: '直播', danmaku: [{ text: '来了' }] } }))

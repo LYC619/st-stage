@@ -5,7 +5,7 @@ import { createTheaterController } from './controller'
 import * as generate from './generate'
 import type { TheaterData, TheaterFeeds } from './types'
 
-const feeds: TheaterFeeds = { square: [], forum: [], live: null }
+const feeds: TheaterFeeds = { square: [], forum: [], live: null, diary: [] }
 let dispose = () => {}
 afterEach(() => { dispose(); vi.restoreAllMocks(); vi.useRealTimers() })
 function fixture() {

@@ -6,10 +6,14 @@ import { CHRONICLE_KEY } from './store'
 import type { ChronicleContent, ChronicleData } from './types'
 import * as generate from './generate'
 import * as dates from '../shared/story-date'
+import * as calendar from './calendar'
 
 const content: ChronicleContent = { summary: '概要', text: '正文', timeSpan: '2026-01-01', keyDialogue: [] }
 let dispose = () => {}
-beforeEach(() => vi.spyOn(dates, 'storyToday').mockResolvedValue(new Date(2026, 0, 2)))
+beforeEach(() => {
+  vi.spyOn(dates, 'storyToday').mockResolvedValue(new Date(2026, 0, 2))
+  vi.spyOn(calendar, 'generateCalendar').mockResolvedValue([])
+})
 afterEach(() => { dispose(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
 function fixture(initial?: ChronicleData) {
   let chatId = 'one', receive = () => {}, change = () => {}, settings = {}
@@ -40,6 +44,7 @@ describe('chronicle lifecycle', () => {
     await vi.waitFor(() => expect(f.controller.status().busy).toBe(false))
     expect(f.data()).toMatchObject({ v: 1, lastMessageIndex: 4, entries: [{ code: 'AM0001' }] })
     expect(f.host.injectPrompt).toHaveBeenLastCalledWith(expect.stringContaining('AM0001 | 昨天 | 概要'), 999)
+    await vi.waitFor(() => expect(calendar.generateCalendar).toHaveBeenCalledOnce())
     await f.controller.trigger(); expect(spy).toHaveBeenCalledOnce()
   })
   it.each(['switch', 'cancel'] as const)('discards late completion on %s and immediately clears the old injection on switch', async action => {

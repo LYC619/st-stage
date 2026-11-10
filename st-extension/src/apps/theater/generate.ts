@@ -5,6 +5,8 @@ import { resolveProfile } from '../wechat/profile-library'
 import type { WeChatConfig } from '../wechat/types'
 import { getStoryAiConfig, requestChat } from '../shared/story-ai'
 import type { TheaterData, TheaterFeeds, TheaterStory } from './types'
+import { formatStoryDate, storyToday } from '../shared/story-date'
+import { DIARY_PROMPT, mergeDiary } from './diary'
 
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const list = (value: unknown): unknown[] => Array.isArray(value) ? value : []
@@ -18,6 +20,10 @@ const str = (value: unknown) => typeof value === 'string' ? value : ''
 export function normalizeFeeds(value: unknown): TheaterFeeds {
   const raw = record(value), live = record(raw.live)
   return {
+    diary: list(raw.diary).flatMap(value => {
+      const row = record(value), role = str(row.role).trim(), content = str(row.content).trim()
+      return role && content ? [{ role, content, date: str(row.date) }] : []
+    }),
     square: list(raw.square).flatMap(value => {
       const p = record(value)
       if (!str(p.author) || !str(p.text)) return []
@@ -43,7 +49,7 @@ export function parseFeeds(text: string): TheaterFeeds {
   let raw: unknown
   try { raw = JSON.parse(text) } catch { throw new Error('小剧场返回的 JSON 无法解析，请重试。') }
   const feeds = normalizeFeeds(raw)
-  if (!feeds.square.length && !feeds.forum.length && !feeds.live) throw new Error('小剧场返回的内容格式不对，请重试。')
+  if (!feeds.square.length && !feeds.forum.length && !feeds.live && !feeds.diary.length) throw new Error('小剧场返回的内容格式不对，请重试。')
   return feeds
 }
 
@@ -57,7 +63,7 @@ export function readTheaterData(host: AppHost): TheaterData {
 }
 
 export function mergeFeeds(previous: TheaterFeeds, incoming: TheaterFeeds): TheaterFeeds {
-  return { square: [...incoming.square, ...previous.square].slice(0, 5), forum: [...incoming.forum, ...previous.forum].slice(0, 5), live: incoming.live ?? previous.live }
+  return { square: [...incoming.square, ...previous.square].slice(0, 5), forum: [...incoming.forum, ...previous.forum].slice(0, 5), live: incoming.live ?? previous.live, diary: mergeDiary(previous.diary, incoming.diary) }
 }
 
 export function saveTheaterStory(data: TheaterData, key: string, story: TheaterStory): TheaterData {
@@ -69,9 +75,10 @@ const PROMPT = `为当前故事制作旁观视角的小剧场，只输出 JSON�
 广场 square：新增 1–2 条，每位有名字的重要配角只发一条；主角和路人不发帖，路人可评论。每帖 4–8 条评论，各人只谈亲历、听闻或围观能知道的部分，禁止全知。
 论坛 forum：新增 1–2 条，只讨论已经公开传播的剧情事件，不编造线下窥探主角的见闻。网友说话随意口语化，每帖 4–8 条一句话评论。
 直播 live：只围绕眼前这一幕，12–20 条弹幕，分成 2–4 个粉丝团，每条写粉丝团名。
+${DIARY_PROMPT}
 所有内容不推进主线、不替主角决定、不复述人设，避开最近已发布的内容。数组按最新在前排列。
 结构（所有标量用字符串）：
-{"square":[{"author":"","tag":"","time":"","text":"","topics":[""],"comments":[{"name":"","text":""}],"stats":""}],"forum":[{"board":"","title":"","text":"","tags":[""],"user":"","heat":"","comments":[""]}],"live":{"room":"","title":"","cast":"","summary":"","stats":"","danmaku":[{"fan":"","text":""}]}}`
+{"square":[{"author":"","tag":"","time":"","text":"","topics":[""],"comments":[{"name":"","text":""}],"stats":""}],"forum":[{"board":"","title":"","text":"","tags":[""],"user":"","heat":"","comments":[""]}],"live":{"room":"","title":"","cast":"","summary":"","stats":"","danmaku":[{"fan":"","text":""}]},"diary":[{"role":"","content":""}]}`
 
 export async function generateTheater(host: AppHost, previous: TheaterFeeds, signal: AbortSignal, story: StorySnapshot = captureStory(host)): Promise<TheaterFeeds> {
   const config = getStoryAiConfig(host)
@@ -80,6 +87,9 @@ export async function generateTheater(host: AppHost, previous: TheaterFeeds, sig
   const profile = resolveProfile(record(wechat.config) as WeChatConfig, stableCharacterKey(story.card))
   const scope = await readStoryMemory(host, { scopeKey: 'theater', characterName: story.name, card: story.card, externalState: { source: 'none' } }, profile, signal, story)
   const recent = [...previous.square.map(p => p.text.slice(0, 30)), ...previous.forum.map(p => p.title + ' ' + p.text.slice(0, 30)), ...(previous.live ? [previous.live.title] : [])]
-  return parseFeeds(await requestChat(config, [{ role: 'system', content: PROMPT },
-    { role: 'user', content: `${formatStoryMemory(scope)}\n主角：${story.name}；玩家：${profile.playerName || '用户'}\n最近内容：${JSON.stringify(recent)}` }], signal))
+  const today = await storyToday(host), date = today ? formatStoryDate(today) : ''
+  signal.throwIfAborted()
+  const feeds = parseFeeds(await requestChat(config, [{ role: 'system', content: PROMPT },
+    { role: 'user', content: `${formatStoryMemory(scope)}\n主角：${story.name}；玩家：${profile.playerName || '用户'}\n剧情日期：${date || '未知'}\n最近内容：${JSON.stringify(recent)}\n上一批日记：${JSON.stringify(previous.diary)}` }], signal))
+  return { ...feeds, diary: feeds.diary.map(entry => ({ ...entry, date })) }
 }

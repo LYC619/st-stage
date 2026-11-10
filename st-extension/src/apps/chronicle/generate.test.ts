@@ -29,7 +29,7 @@ describe('chronicle generation', () => {
     const entries = [9, 3].map(n => ({ ...content, code: `AM000${n}`, createdAt: n }))
     vi.stubGlobal('SillyTavern', { getContext: () => ({ chatMetadata: { st_stage_chronicle: { entries, lastMessageIndex: 30 } } }) })
     const data = readChronicleData(); expect(nextCode(data)).toBe('AM0010'); expect(data.entries).toHaveLength(2)
-    expect(readChronicleSettings({ getAppData: () => undefined } as AppHost)).toEqual({ autoGenerate: true, inject: true, interval: 4 })
+    expect(readChronicleSettings({ getAppData: () => undefined } as AppHost)).toEqual({ autoGenerate: true, inject: true, interval: 4, autoCalendar: true })
     expect(readChronicleSettings({ getAppData: () => ({ interval: 50, inject: false }) } as AppHost).interval).toBe(20)
   })
   it('sends copied constraints and recent overviews, clearing an invented date when today is unknown', async () => {

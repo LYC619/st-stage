@@ -21,7 +21,7 @@ export function createTheaterController(host: AppHost, options: { cooldownMs?: n
     const current = new AbortController(); job = current
     status = { busy: true, error: '' }; notify()
     const timeout = setTimeout(() => current.abort(new Error('小剧场生成超时，请重试。')), options.timeoutMs ?? 60000)
-    const feeds = previous || { square: [], forum: [], live: null }
+    const feeds = previous || { square: [], forum: [], live: null, diary: [] }
     try {
       const incoming = await abortable(generateTheater(host, feeds, current.signal, story), current.signal)
       if (!alive || job !== current || current.signal.aborted || storyIdentity(host) !== story.key) return

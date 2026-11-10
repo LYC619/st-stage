@@ -6,12 +6,14 @@ import { storyToday } from '../shared/story-date'
 import { CHRONICLE_KEY, nextCode, readChronicleData, readChronicleSettings } from './store'
 import { generateChronicle, pendingStory } from './generate'
 import { chronicleInjection } from './inject'
+import { createCalendarController } from './calendar-controller'
 
 export function createChronicleController(host: AppHost, options: { timeoutMs?: number } = {}) {
   let alive = true, job: AbortController | undefined, revision = 0
   const status = { busy: false, error: '', today: null as Date | null }
   const listeners = new Set<() => void>()
   const notify = () => { for (const listener of listeners) listener() }
+  const calendar = createCalendarController(host, notify, options.timeoutMs)
   function cancel() { job?.abort(); job = undefined; status.busy = false; status.error = ''; notify() }
 
   async function refresh() {
@@ -46,7 +48,10 @@ export function createChronicleController(host: AppHost, options: { timeoutMs?: 
         data.entries.push({ ...content, code: nextCode(data), createdAt: Date.now() }); data.lastMessageIndex = pending.endIndex
       }
       if (!alive || job !== current || current.signal.aborted) return
-      if (await writeChatMetadata(host, key, CHRONICLE_KEY, data)) await refresh()
+      if (await writeChatMetadata(host, key, CHRONICLE_KEY, data)) {
+        await refresh()
+        if (generate && alive && job === current && !current.signal.aborted && key === storyIdentity(host)) void calendar.trigger()
+      }
     } catch (error) {
       if (alive && job === current) status.error = (error as Error).message
     } finally {
@@ -65,10 +70,10 @@ export function createChronicleController(host: AppHost, options: { timeoutMs?: 
   }
 
   const offMessage = host.onMessageReceived(() => { void trigger() })
-  const offChange = host.onCharacterChanged(() => { cancel(); status.today = null; host.injectPrompt('', 999); void refresh() })
+  const offChange = host.onCharacterChanged(() => { cancel(); calendar.cancel(); status.today = null; host.injectPrompt('', 999); void refresh() })
   void refresh()
-  return { trigger, cancel, refresh, deleteLatest, status: () => status,
+  return { trigger, cancel, refresh, deleteLatest, calendar, status: () => status,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
-    destroy() { alive = false; revision++; cancel(); offMessage(); offChange(); host.injectPrompt('', 999); listeners.clear() },
+    destroy() { alive = false; revision++; cancel(); calendar.cancel(); offMessage(); offChange(); host.injectPrompt('', 999); listeners.clear() },
   }
 }

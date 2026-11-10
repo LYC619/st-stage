@@ -29,6 +29,6 @@ export function nextCode(data: ChronicleData): string {
 
 export function readChronicleSettings(host: AppHost): ChronicleSettings {
   const raw = record(host.getAppData())
-  return { autoGenerate: raw.autoGenerate !== false, inject: raw.inject !== false,
+  return { autoGenerate: raw.autoGenerate !== false, inject: raw.inject !== false, autoCalendar: raw.autoCalendar !== false,
     interval: typeof raw.interval === 'number' && Number.isFinite(raw.interval) ? Math.max(2, Math.min(20, Math.round(raw.interval))) : 4 }
 }

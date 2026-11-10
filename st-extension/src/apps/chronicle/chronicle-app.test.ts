@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PhoneAppContext } from '../../../../core/phone-registry'
 import { createChronicleApp } from './chronicle-app'
 import * as dates from '../shared/story-date'
+import { calendarWindow } from './calendar'
+import { metadataContext } from '../shared/chat-metadata'
 
 let cleanup = () => {}
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.replaceChildren() })
@@ -46,5 +48,27 @@ describe('chronicle app', () => {
     const f = mount(false)
     expect(f.container.textContent).toContain('请先在微信设置里连接 AI')
     expect(f.container.querySelector<HTMLButtonElement>('.ch-header button')!.disabled).toBe(true)
+  })
+  it('renders seven calendar days, today highlighting and keyboard navigation', async () => {
+    const f = mount(true)
+    metadataContext().chatMetadata!.st_stage_calendar = { v: 1, days: calendarWindow(new Date(2026, 0, 2)).map(date => ({ date,
+      festival: '港口节', event: date + ' 修缮公告', status: '放假', weather: '小雨', content: '公共交通绕行安排' })) }
+    await vi.waitFor(() => expect(f.container.textContent).toContain('昨天'))
+    const tabs = f.container.querySelectorAll<HTMLButtonElement>('[role=tab]')
+    tabs[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    expect(document.activeElement).toBe(tabs[1]); expect(f.container.querySelectorAll('.ch-day')).toHaveLength(7)
+    const today = f.container.querySelector('.ch-day[data-today=true]')!
+    expect(today.textContent).toContain('2026-01-02'); expect(today.textContent).toContain('星期五')
+    for (const value of ['小雨', '港口节', '放假', '公共交通绕行安排']) expect(today.textContent).toContain(value)
+    expect(f.container.querySelector('.ch-header button')!.textContent).toBe('刷新日历')
+  })
+  it('explains a missing story date without inventing a calendar', async () => {
+    const f = mount(true)
+    vi.mocked(dates.storyToday).mockResolvedValue(null)
+    f.container.querySelectorAll<HTMLInputElement>('input[type=checkbox]')[1].click()
+    await Promise.resolve(); await Promise.resolve()
+    f.container.querySelectorAll<HTMLButtonElement>('[role=tab]')[1].click()
+    expect(f.container.textContent).toContain('剧情里还没有日期。在剧情状态里打开后台整理')
+    expect(f.container.querySelector('.ch-day')).toBeNull()
   })
 })

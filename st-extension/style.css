@@ -2845,3 +2845,10 @@
 .ch-meta{display:block;white-space:pre-wrap}
 .ch-copy,.ch-dialogue{white-space:pre-wrap}
 .ch-dialogue{margin:10px 0;padding:4px 10px;border-left:3px solid #b18c58;background:#f6f0e5}
+.ch-tabs{display:flex;gap:6px;margin:10px 0}
+.ch-tabs button{flex:1}
+.ch-tabs [aria-selected=true]{background:#886130;color:#fff;border-color:#886130}
+.ch-day[data-today=true]{border:2px solid #886130;background:#fff7de}
+.th-diary{background:#fff9df;border-color:#dfc987;box-shadow:2px 3px 0 #e8dfbd}
+.th-diary del{color:#81776a}
+.th-diary footer{margin-top:14px;padding-top:8px;border-top:1px dashed #c5b16e;font-size:12px}
