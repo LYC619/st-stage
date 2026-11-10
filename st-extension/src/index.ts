@@ -34,6 +34,7 @@ import { createStoryImageCapture } from './story-image-capture'
 import { localizeSprite } from './sprite-localize'
 import { compressImage } from '../../core/image-compress'
 import { createBuiltinApps } from './apps'
+import { readAppearance } from './apps/appearance/pack'
 import { createNewvarRuntime } from './apps/newvar/runtime'
 import { createNewvarDesigner } from './apps/newvar/designer'
 import { NEWVAR_CHANNEL, NEWVAR_APP_ID, normalizeNewvarData } from './apps/newvar/config'
@@ -266,6 +267,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     },
   })
   lifecycle.track(() => phone.destroy())
+  phone.setAppearance(readAppearance(settings.apps.appearance))
   lifecycle.track(subscribeVarEvents(() => phone.refreshHome()))
   openSpritesApp = () => phone.openApp('sprites')
 
@@ -417,6 +419,9 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   lifecycle.track(() => apiManager.close())
 
   for (const app of createBuiltinApps({
+    applyAppearance: data => phone.setAppearance(data),
+    saveImage: dataUri => adapter.saveDataUri(dataUri),
+    listApps: () => registry.list(),
     previewSpriteOpacity: (percent) => overlay.setOpacity(percent),
     // 从手机开图库弹窗：先收起手机（避免挡在弹窗上），来源标记=手机（关闭后回图库页）
     openGalleryManager: () => {

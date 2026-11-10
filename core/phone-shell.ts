@@ -18,6 +18,13 @@ export interface PhoneHomeSummary {
   rows: Array<{ id: string; appId: string; label: string; value: string }>
 }
 
+export interface PhoneAppearance {
+  wallpaper: string
+  icons: Record<string, { emoji?: string; image?: string }>
+  fonts: Array<{ name: string; cssUrl: string; family: string }>
+  activeFont: string
+}
+
 export interface PhoneShellDeps {
   registry: PhoneAppRegistry
   /** 构造传给 App 的上下文（goHome 由壳注入）；壳在 leaveApp 时调用其 dispose 回收 ctx 资源 */
@@ -29,6 +36,7 @@ export interface PhoneShellDeps {
 }
 
 export interface PhoneShellController {
+  setAppearance(appearance: PhoneAppearance): void
   setState(state: PhoneState): void
   /** 直接打开指定 App（展开手机并进入） */
   openApp(appId: string): void
@@ -64,6 +72,8 @@ export function createPhoneShell(
   let destroyed = false
   let homeGeneration = 0
   let homeCard: HTMLDetailsElement | null = null
+  let appearance: PhoneAppearance = { wallpaper: '', icons: {}, fonts: [], activeFont: '' }
+  let fontLink: HTMLLinkElement | undefined
 
   /* ---- 悬浮图标 ---- */
   const fab = document.createElement('div')
@@ -325,6 +335,7 @@ export function createPhoneShell(
     const restore = prevScrollAppId === activeApp?.id ? captureScreenFocus() : null
     unmountActive()
     screen.innerHTML = ''
+    screen.classList.toggle('so-phone-screen-wallpaper', !activeApp && !!appearance.wallpaper)
     backBtn.style.display = activeApp ? 'flex' : 'none'
     if (activeApp) {
       statusTitle.textContent = activeApp.name
@@ -449,7 +460,12 @@ export function createPhoneShell(
 
     const icon = document.createElement('div')
     icon.className = 'so-phone-app-glyph'
-    icon.textContent = app.icon
+    const custom = appearance.icons[app.id]
+    if (custom?.image) {
+      const image = document.createElement('img'); image.alt = app.name; image.src = custom.image
+      image.onerror = () => { icon.textContent = app.icon }
+      icon.append(image)
+    } else icon.textContent = custom?.emoji || app.icon
 
     const label = document.createElement('div')
     label.className = 'so-phone-app-label'
@@ -551,6 +567,21 @@ export function createPhoneShell(
 
   return {
     refreshHome,
+    setAppearance(next: PhoneAppearance) {
+      if (destroyed) return
+      appearance = next
+      if (next.wallpaper) screen.style.setProperty('--so-wallpaper', `url(${JSON.stringify(next.wallpaper)})`)
+      else screen.style.removeProperty('--so-wallpaper')
+      const font = next.fonts.find(font => font.name === next.activeFont)
+      if (font) {
+        if (!fontLink) {
+          fontLink = document.head.querySelector<HTMLLinkElement>('link[data-so-font]') ?? document.createElement('link')
+          fontLink.rel = 'stylesheet'; fontLink.dataset.soFont = ''; document.head.append(fontLink)
+        }
+        fontLink.href = font.cssUrl; shell.style.fontFamily = font.family
+      } else { fontLink?.remove(); fontLink = undefined; shell.style.removeProperty('font-family') }
+      if (!activeApp && state.open) renderScreen()
+    },
     setState(next: PhoneState) {
       if (destroyed) return
       const wasOpen = state.open
@@ -596,6 +627,7 @@ export function createPhoneShell(
       }
       fab.remove()
       shell.remove()
+      fontLink?.remove()
     },
   }
 }

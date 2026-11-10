@@ -2853,6 +2853,27 @@
 .th-diary del{color:#81776a}
 .th-diary footer{margin-top:14px;padding-top:8px;border-top:1px dashed #c5b16e;font-size:12px}
 
+/* 外观设置 */
+.ap-root{color:#243638;background:#f1f7f6;padding:12px;min-width:0;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.ap-root *{box-sizing:border-box}
+.ap-root h2{font-size:20px;margin:0;color:inherit}
+.ap-root h3{font-size:15px;margin:0 0 10px;color:inherit}
+.ap-status{color:#546660;white-space:pre-wrap}
+.ap-section{background:#fff;border:1px solid #c8d8d2;border-radius:12px;margin:12px 0;padding:12px;min-width:0}
+.ap-root button,.ap-root input,.ap-root textarea,.ap-root select{font:inherit;color:inherit;background:#fff;border:1px solid #9aafa7;border-radius:7px;min-width:0;max-width:100%;box-shadow:none;text-shadow:none}
+.ap-root button{min-height:44px;padding:8px 12px;margin:4px 6px 4px 0;cursor:pointer;white-space:normal}
+.ap-root input,.ap-root select{min-height:44px;padding:6px}
+.ap-root textarea{padding:8px;resize:vertical}
+.ap-root :focus-visible{outline:2px solid #286755;outline-offset:2px}
+.ap-field,.ap-upload{display:flex;flex-direction:column;gap:5px;margin:10px 0;font-size:12px}
+.ap-field input,.ap-field textarea,.ap-field select,.ap-upload input{width:100%}
+.ap-preview{width:42px;height:42px;border-radius:10px;background:#e1eee8;display:grid;place-items:center;overflow:hidden;flex-shrink:0;font-size:22px}
+.ap-preview img{width:100%;height:100%;object-fit:cover}
+.ap-wallpaper{width:100%;height:140px;border-radius:8px;font-size:13px}
+.ap-icon-row{border-top:1px solid #d8e4de;padding:9px 0}
+.ap-icon-row summary{display:flex;align-items:center;gap:10px;cursor:pointer;min-height:44px}
+.ap-hint{margin-left:auto;font-size:12px;color:#596f66}
+
 /* 手机框架样式 — 双端共用（ST 由 build.mjs 拼进 style.css；Web 由 globals.css import） */
 
 /* ==================== 手机框架 ==================== */
@@ -3085,6 +3106,14 @@
   gap: 14px 8px;
   padding: 8px 2px;
 }
+
+.so-phone-screen-wallpaper {
+  background-image: linear-gradient(180deg, rgba(0,0,0,.3), rgba(0,0,0,.7)), var(--so-wallpaper);
+  background-size: cover;
+  background-position: center;
+}
+.so-phone-screen-wallpaper .so-phone-app-label { opacity: 1; text-shadow: 0 1px 3px #000; }
+.so-phone-app-glyph img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 
 .so-phone-app-icon {
   display: flex;

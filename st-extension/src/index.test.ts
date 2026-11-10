@@ -24,6 +24,8 @@ const mocks = vi.hoisted(() => ({
   overlayDestroy: vi.fn(),
   overlayOpenSprites: undefined as (() => void) | undefined,
   phoneOpenApp: vi.fn(),
+  phoneSetAppearance: vi.fn(),
+  saveDataUri: vi.fn().mockResolvedValue('/user/images/appearance.png'),
   managerDestroy: vi.fn(),
   phoneDestroy: vi.fn(),
   newvarRuntimeDispose: vi.fn(),
@@ -48,6 +50,7 @@ vi.mock('./st-adapter', () => ({
   STAdapter: class {
     loadSettings = mocks.loadSettings
     saveSettings = vi.fn()
+    saveDataUri = mocks.saveDataUri
     injectPrompt = mocks.injectPrompt
     injectChannel = mocks.injectChannel
     getCurrentCharacterName = () => mocks.currentCharacterName
@@ -94,7 +97,7 @@ vi.mock('./sprite-manager', () => ({
 }))
 vi.mock('../../core/phone-shell', () => ({
   createPhoneShell: () => ({
-    setState: vi.fn(), openApp: mocks.phoneOpenApp, setVisible: vi.fn(), refreshHome: vi.fn(), destroy: mocks.phoneDestroy,
+    setState: vi.fn(), openApp: mocks.phoneOpenApp, setVisible: vi.fn(), refreshHome: vi.fn(), destroy: mocks.phoneDestroy, setAppearance: mocks.phoneSetAppearance,
   }),
 }))
 vi.mock('./apps', () => ({
@@ -179,6 +182,18 @@ afterEach(() => {
 })
 
 describe('extension entry lifecycle', () => {
+  it('restores saved appearance and connects changes and image storage to the phone', async () => {
+    const appearance = { wallpaper: '/user/images/wall.webp', icons: { alpha: { emoji: '🍵' } }, fonts: [], activeFont: '' }
+    const settings = createDefaultSettings(); settings.apps.appearance = appearance
+    mocks.loadSettings.mockResolvedValueOnce(settings)
+    await importEntry('appearance'); await flushInit()
+    expect(mocks.phoneSetAppearance).toHaveBeenCalledWith(appearance)
+    const apply = mocks.builtinDeps!.applyAppearance as (value: unknown) => void
+    apply({ ...appearance, wallpaper: '' }); expect(mocks.phoneSetAppearance).toHaveBeenLastCalledWith({ ...appearance, wallpaper: '' })
+    const save = mocks.builtinDeps!.saveImage as (dataUri: string) => Promise<string>
+    expect(await save('data:image/webp;base64,AAAA')).toBe('/user/images/appearance.png')
+    expect(mocks.saveDataUri).toHaveBeenCalledWith('data:image/webp;base64,AAAA')
+  })
   it('悬浮窗快捷入口直接打开立绘 App', async () => {
     await importEntry('overlay-open-sprites')
     await flushInit()

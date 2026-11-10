@@ -4,6 +4,7 @@ import { createBuiltinApps, type BuiltinAppDeps } from './index'
 describe('builtin app assembly', () => {
   it('registers the cloud export app in the built-in app list', () => {
     const deps = {
+      applyAppearance: () => {}, saveImage: async () => '/user/images/test.png', listApps: () => [],
       previewSpriteOpacity: () => {},
       openGalleryManager: () => {},
       newvarRuntime: {} as BuiltinAppDeps['newvarRuntime'],
@@ -16,6 +17,7 @@ describe('builtin app assembly', () => {
 
     expect(apps.map((app) => app.id)).toContain('cloud-export')
     expect(apps.map((app) => app.id)).toContain('wechat-sister')
+    expect(apps.find(app => app.id === 'appearance')).toMatchObject({ name: '外观', icon: '🎨', order: 90 })
     expect(apps.find((app) => app.id === 'wechat-sister')).toMatchObject({
       name: '微信',
       icon: '💬',

@@ -18,10 +18,11 @@ import { createWeChatApp } from './wechat/wechat-app'
 import { createTheaterApp } from './theater/theater-app'
 import { createStoryStateApp } from './story-state/story-state-app'
 import { createChronicleApp } from './chronicle/chronicle-app'
+import { createAppearanceApp, type AppearanceDeps } from './appearance/appearance-app'
 import type { NewvarRuntime } from './newvar/runtime'
 import type { RendererRuntime } from './renderer/runtime'
 
-export interface BuiltinAppDeps {
+export interface BuiltinAppDeps extends AppearanceDeps {
   /** 不持久化地预览悬浮立绘透明度。 */
   previewSpriteOpacity: (percent: number) => void
   /** 从手机打开图库管理弹窗（收起手机 + 记录来源，关闭后回手机图库页） */
@@ -50,5 +51,6 @@ export function createBuiltinApps(deps: BuiltinAppDeps): PhoneApp[] {
     createTheaterApp(),
     createStoryStateApp(),
     createChronicleApp(),
+    createAppearanceApp(deps),
   ]
 }
