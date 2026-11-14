@@ -2762,6 +2762,118 @@
   opacity: 0.6;
 }
 
+/* 小剧场：独立作用域，隔离宿主主题。 */
+.th-root{color:#26222b;background:#f6f3f8;font:13px/1.6 -apple-system,BlinkMacSystemFont,'Microsoft YaHei',sans-serif;min-width:0;padding:10px;overflow-wrap:anywhere}
+.th-root *{box-sizing:border-box}
+.th-root [hidden]{display:none!important}
+.th-root button,.th-root input{font:inherit;color:#26222b;border:1px solid #cfc5d8;border-radius:8px;background:#fff;min-width:0;max-width:100%;box-shadow:none;text-shadow:none}
+.th-root button{min-height:44px;padding:8px 12px;cursor:pointer;white-space:normal}
+.th-root input[type=checkbox]{width:20px;height:20px;accent-color:#7850a0}
+.th-root :focus-visible{outline:2px solid #7850a0;outline-offset:2px}
+.th-header,.th-tabs,.th-author,.th-tags{display:flex;align-items:center;gap:8px}
+.th-header{justify-content:space-between;margin-bottom:10px}
+.th-header>strong{font-size:18px}
+.th-tabs{margin-bottom:10px}
+.th-tabs button{flex:1}
+.th-tabs [aria-selected=true]{background:#7850a0;color:#fff;border-color:#7850a0}
+.th-status{color:#8a3434;font-size:12px}
+.th-panel{min-width:0}
+.th-card{background:#fff;border:1px solid #e2dbe8;border-radius:12px;padding:12px;margin:10px 0}
+.th-card h3{font-size:16px;margin:6px 0;color:inherit}
+.th-card p{margin:7px 0}
+.th-avatar{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:#e8ddf1;flex-shrink:0}
+.th-muted,.th-empty{color:#665e6e}
+.th-copy{white-space:pre-wrap}
+.th-topics{color:#69418c}
+.th-comments{padding:6px 9px;margin:10px 0;background:#f6f3f8;border-radius:6px;font-size:12px}
+.th-forum{border-top:5px solid}
+.th-tags{flex-wrap:wrap;margin:8px 0}
+.th-tags span{background:#eee6f4;border-radius:12px;padding:2px 9px;font-size:11px}
+.th-danmaku{max-height:240px;overflow:auto;background:#f8f5fb;border-radius:8px;padding:10px}
+.th-danmaku-track{animation:th-drift 24s linear infinite}
+@keyframes th-drift{0%,10%{transform:translateY(0)}90%,100%{transform:translateY(-35%)}}
+@media(prefers-reduced-motion:reduce){.th-danmaku-track{animation:none}}
+
+/* 剧情状态 */
+.ss-root{color:#25313b;background:#f3f6f7;font:13px/1.6 -apple-system,BlinkMacSystemFont,'Microsoft YaHei',sans-serif;min-width:0;padding:10px;overflow-wrap:anywhere}
+.ss-root *{box-sizing:border-box}
+.ss-root [hidden]{display:none!important}
+.ss-root button,.ss-root input{font:inherit;color:#25313b;border:1px solid #b6c7cd;border-radius:8px;background:#fff;min-width:0;max-width:100%;box-shadow:none;text-shadow:none}
+.ss-root button{min-height:44px;padding:8px 10px;cursor:pointer;white-space:normal}
+.ss-root input[type=checkbox]{width:20px;height:20px;accent-color:#286878}
+.ss-root input[type=number]{width:65px;min-height:40px;padding:6px}
+.ss-root :focus-visible{outline:2px solid #286878;outline-offset:2px}
+.ss-tabs{display:flex;gap:5px;margin-bottom:10px}
+.ss-tabs button{flex:1;padding:8px 4px}
+.ss-tabs [aria-selected=true]{background:#286878;color:#fff;border-color:#286878}
+.ss-status{color:#8c3939;font-size:12px;white-space:pre-wrap}
+.ss-time{font-size:24px;font-weight:600;line-height:1.4;margin:16px 0 6px}
+.ss-location{color:#45606a}
+.ss-muted,.ss-empty,.ss-source{color:#526571}
+.ss-source{display:block;margin-top:12px;text-align:center}
+.ss-card{background:#fff;border:1px solid #d5dfe3;border-radius:10px;padding:12px;margin:10px 0;min-width:0}
+.ss-card h3{font-size:15px;margin:0 0 6px;color:inherit}
+.ss-card p{margin:7px 0;white-space:pre-wrap}
+.ss-quest{border-left:4px solid #aa741c}
+.ss-quest[data-status=完成]{border-left-color:#27764b}
+.ss-quest[data-status=失败]{border-left-color:#aa4545}
+.ss-inventory{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.ss-inventory .ss-card{margin:0}
+.ss-inventory .ss-empty{grid-column:1/-1}
+.ss-item[data-rarity=稀有]{border-color:#487bb1}
+.ss-item[data-rarity=史诗]{border-color:#8c59ae}
+.ss-item[data-rarity=传说]{border-color:#a47c20}
+.ss-item[data-rarity=精良]{border-color:#42875b}
+.ss-root progress{display:block;width:100%;height:10px;margin:8px 0;accent-color:#286878}
+
+/* 纪要：按聊天保存的剧情记忆。 */
+.ch-root{color:#352b21;background:#faf7ef;font:13px/1.6 -apple-system,BlinkMacSystemFont,'Microsoft YaHei',sans-serif;min-width:0;padding:10px;overflow-wrap:anywhere}
+.ch-root *{box-sizing:border-box}
+.ch-root button,.ch-root input{font:inherit;color:inherit;border:1px solid #cbbca6;border-radius:8px;background:#fff;min-width:0;max-width:100%;box-shadow:none;text-shadow:none}
+.ch-root button{min-height:44px;padding:8px 10px;cursor:pointer;white-space:normal}
+.ch-root button:disabled{opacity:.5;cursor:default}
+.ch-root input[type=checkbox]{width:20px;height:20px;accent-color:#886130}
+.ch-root input[type=number]{width:65px;min-height:44px;padding:6px}
+.ch-root :focus-visible{outline:2px solid #886130;outline-offset:2px}
+.ch-header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ch-header>strong{font-size:18px}
+.ch-status{color:#8c3939;font-size:12px;white-space:pre-wrap}
+.ch-card{background:#fffdf8;border:1px solid #ddd0bb;border-radius:10px;margin:10px 0;padding:12px}
+.ch-card summary{cursor:pointer;min-height:44px}
+.ch-card summary strong{display:block;margin-top:5px;font-size:14px}
+.ch-meta,.ch-empty{color:#6c5d4c}
+.ch-meta{display:block;white-space:pre-wrap}
+.ch-copy,.ch-dialogue{white-space:pre-wrap}
+.ch-dialogue{margin:10px 0;padding:4px 10px;border-left:3px solid #b18c58;background:#f6f0e5}
+.ch-tabs{display:flex;gap:6px;margin:10px 0}
+.ch-tabs button{flex:1}
+.ch-tabs [aria-selected=true]{background:#886130;color:#fff;border-color:#886130}
+.ch-day[data-today=true]{border:2px solid #886130;background:#fff7de}
+.th-diary{background:#fff9df;border-color:#dfc987;box-shadow:2px 3px 0 #e8dfbd}
+.th-diary del{color:#81776a}
+.th-diary footer{margin-top:14px;padding-top:8px;border-top:1px dashed #c5b16e;font-size:12px}
+
+/* 外观设置 */
+.ap-root{color:#243638;background:#f1f7f6;padding:12px;min-width:0;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.ap-root *{box-sizing:border-box}
+.ap-root h2{font-size:20px;margin:0;color:inherit}
+.ap-root h3{font-size:15px;margin:0 0 10px;color:inherit}
+.ap-status{color:#546660;white-space:pre-wrap}
+.ap-section{background:#fff;border:1px solid #c8d8d2;border-radius:12px;margin:12px 0;padding:12px;min-width:0}
+.ap-root button,.ap-root input,.ap-root textarea,.ap-root select{font:inherit;color:inherit;background:#fff;border:1px solid #9aafa7;border-radius:7px;min-width:0;max-width:100%;box-shadow:none;text-shadow:none}
+.ap-root button{min-height:44px;padding:8px 12px;margin:4px 6px 4px 0;cursor:pointer;white-space:normal}
+.ap-root input,.ap-root select{min-height:44px;padding:6px}
+.ap-root textarea{padding:8px;resize:vertical}
+.ap-root :focus-visible{outline:2px solid #286755;outline-offset:2px}
+.ap-field,.ap-upload{display:flex;flex-direction:column;gap:5px;margin:10px 0;font-size:12px}
+.ap-field input,.ap-field textarea,.ap-field select,.ap-upload input{width:100%}
+.ap-preview{width:42px;height:42px;border-radius:10px;background:#e1eee8;display:grid;place-items:center;overflow:hidden;flex-shrink:0;font-size:22px}
+.ap-preview img{width:100%;height:100%;object-fit:cover}
+.ap-wallpaper{width:100%;height:140px;border-radius:8px;font-size:13px}
+.ap-icon-row{border-top:1px solid #d8e4de;padding:9px 0}
+.ap-icon-row summary{display:flex;align-items:center;gap:10px;cursor:pointer;min-height:44px}
+.ap-hint{margin-left:auto;font-size:12px;color:#596f66}
+
 /* 手机框架样式 — 双端共用（ST 由 build.mjs 拼进 style.css；Web 由 globals.css import） */
 
 /* ==================== 手机框架 ==================== */
@@ -2994,6 +3106,14 @@
   gap: 14px 8px;
   padding: 8px 2px;
 }
+
+.so-phone-screen-wallpaper {
+  background-image: linear-gradient(180deg, rgba(0,0,0,.3), rgba(0,0,0,.7)), var(--so-wallpaper);
+  background-size: cover;
+  background-position: center;
+}
+.so-phone-screen-wallpaper .so-phone-app-label { opacity: 1; text-shadow: 0 1px 3px #000; }
+.so-phone-app-glyph img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 
 .so-phone-app-icon {
   display: flex;

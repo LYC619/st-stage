@@ -161,8 +161,10 @@ App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发
 | `butler` | 管家 | ST 性能管家：一键性能模式 + 改动前快照还原、power_user 手动微调、体检与优化指南（仅 ST 内生效，Web 模拟器降级为只读指南）。ST 耦合收敛在 `butler/bridge.ts` | `st-extension/src/apps/butler-app.ts` + `butler/` |
 | `mvu` | MVU | MVU 楼层变量可视化/编辑：树状卡片 + 类型感知编辑 + delta 高亮 + 精准事件刷新（MVU/酒馆助手双通道，模拟器只读）。数据耦合收敛在 `mvu/bridge.ts` | `st-extension/src/apps/mvu-app.ts` + `mvu/` |
 | `newvar` | 新变量 | 内置轻量变量追踪：GUI 定义 schema → 注入状态+规则 → 解析 `<UpdateVariable>` → 逐楼快照。手机页仅开关+状态树，设计走全屏弹窗 | `st-extension/src/apps/newvar-app.ts` + `newvar/` |
-| `theater` | 小剧场 | 广场、论坛、直播；复用微信 AI 和主线记忆，按聊天保存 | `st-extension/src/apps/theater/` |
+| `theater` | 小剧场 | 广场、论坛、直播与配角日记共用一次请求；复用微信 AI 和主线记忆，按聊天保存 | `st-extension/src/apps/theater/` |
 | `story-state` | 剧情状态 | 时空、任务、背包、能力；MVU 只读或本聊天后台整理 | `st-extension/src/apps/story-state/` |
+| `chronicle` | 纪要 | 按聊天保存纪要与七天公共日历；纪要注入主聊天，微信和小剧场读取概览 | `st-extension/src/apps/chronicle/` |
+| `appearance` | 外观 | 主屏壁纸、App 图标、网络字体与外观包；图片压缩后保存为酒馆图片网址 | `st-extension/src/apps/appearance/` |
 | `api` | API | 版本化连接档案快切：新建 Chat 档案提供 OpenAI、Claude、OpenRouter、Google AI Studio 与自定义 OpenAI 兼容入口，历史冷门渠道仍可编辑；Key 在扩展档案中明文保存并同步写入 ST 密钥库。ST 交互收敛在 `api/bridge.ts`（模拟器降级只读） | `st-extension/src/apps/api-app.ts` + `api/` |
 | `renderer` | 渲染 | 结构化回复渲染：Galgame、卡片选择和本地确定性战斗；手机页含首次使用引导与配置状态 | `st-extension/src/apps/renderer-app.ts` |
 

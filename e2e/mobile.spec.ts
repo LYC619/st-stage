@@ -589,6 +589,42 @@ test('真实图库在横竖屏中保持可操作，并支持角色折叠与搜�
   await expectLightboxLayout(page)
 })
 
+test('外观包在手机上导入即生效并可导出，壁纸仅影响主屏', async ({ page }, testInfo) => {
+  await page.route('https://appearance.test/**', route => route.fulfill({ status: 200,
+    contentType: route.request().url().endsWith('.css') ? 'text/css' : 'image/svg+xml',
+    body: route.request().url().endsWith('.css') ? '@font-face{font-family:AppearanceTest;src:local("Arial")}' : '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="600"><rect width="300" height="600" fill="#557b68"/></svg>',
+  }))
+  await loadRealExtensionGallery(page)
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text: string) => {
+      (window as unknown as { appearanceClipboard: string }).appearanceClipboard = text
+    } } })
+  })
+  await page.locator('.so-phone-fab').tap()
+  await page.locator('[data-app-id=appearance]').tap()
+  const look = { wallpaper: 'https://appearance.test/wall.svg', icons: { chronicle: { emoji: '📘' }, theater: { image: 'https://appearance.test/icon.svg' } },
+    fonts: [{ name: '试用字体', family: 'AppearanceTest', cssUrl: 'https://appearance.test/font.css' }], activeFont: '试用字体' }
+  await page.getByLabel('粘贴外观包 JSON').fill(JSON.stringify(look))
+  page.once('dialog', dialog => dialog.accept())
+  await page.getByRole('button', { name: '导入粘贴的外观包', exact: true }).tap()
+  await expect(page.locator('.ap-status')).toHaveText('已应用。')
+  await expect(page.locator('.so-phone-screen')).not.toHaveClass(/so-phone-screen-wallpaper/)
+  await expect(page.locator('.so-phone-shell')).toHaveCSS('font-family', 'AppearanceTest')
+  expect(await page.locator('.ap-root').evaluate(root => root.scrollWidth <= root.clientWidth + 1)).toBe(true)
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: '导出外观包', exact: true }).tap()
+  expect((await download).suggestedFilename()).toBe('百工外观.json')
+  await expect(page.locator('.ap-status')).toHaveText('外观包已复制并下载。')
+  expect(await page.evaluate(() => JSON.parse((window as unknown as { appearanceClipboard: string }).appearanceClipboard))).toEqual(look)
+  await page.locator('.so-phone-homebtn').tap()
+  await expect(page.locator('.so-phone-screen')).toHaveClass(/so-phone-screen-wallpaper/)
+  await expect(page.locator('[data-app-id=chronicle] .so-phone-app-glyph')).toHaveText('📘')
+  await expect(page.locator('[data-app-id=theater] img')).toHaveAttribute('alt', '小剧场')
+  await page.screenshot({ path: testInfo.outputPath('appearance-home.png') })
+  await page.locator('[data-app-id=chronicle]').tap()
+  await expect(page.locator('.so-phone-screen')).not.toHaveClass(/so-phone-screen-wallpaper/)
+})
+
 test('真实 Renderer 三种模式在横竖屏中无溢出重叠且控件可操作', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await loadRealExtensionRenderer(page, false)

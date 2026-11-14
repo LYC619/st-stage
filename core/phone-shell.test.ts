@@ -7,7 +7,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createPhoneShell } from './phone-shell'
+import { createPhoneShell, type PhoneAppearance } from './phone-shell'
 import { PhoneAppRegistry, createPhoneAppContext, type PhoneApp } from './phone-registry'
 import { createDefaultSettings, type PhoneState } from './types'
 
@@ -57,6 +57,46 @@ function setup(apps: PhoneApp[], initial: Partial<PhoneState> = {}) {
 
 beforeEach(() => {
   document.body.innerHTML = ''
+})
+
+describe('phone appearance', () => {
+  const look: PhoneAppearance = { wallpaper: 'https://example.test/wall"paper.png', icons: { alpha: { emoji: '🍵' } },
+    fonts: [{ name: 'hand', family: 'Handwriting', cssUrl: 'https://example.test/font.css' }], activeFont: 'hand' }
+  it('applies the home wallpaper and emoji, keeps an open App mounted, and restores defaults', () => {
+    const mount = vi.fn(), { shell } = setup([makeApp('alpha', { mount })], { open: true })
+    shell.setAppearance(look)
+    const screen = document.querySelector<HTMLElement>('.so-phone-screen')!
+    expect(screen.style.getPropertyValue('--so-wallpaper')).toBe(`url(${JSON.stringify(look.wallpaper)})`)
+    expect(screen.classList.contains('so-phone-screen-wallpaper')).toBe(true)
+    expect(document.querySelector('.so-phone-app-glyph')!.textContent).toBe('🍵')
+    shell.openApp('alpha'); expect(screen.classList.contains('so-phone-screen-wallpaper')).toBe(false)
+    shell.setAppearance({ ...look, wallpaper: '/user/images/next.webp' }); expect(mount).toHaveBeenCalledOnce()
+    document.querySelector<HTMLElement>('.so-phone-homebtn')!.click(); expect(screen.classList.contains('so-phone-screen-wallpaper')).toBe(true)
+    shell.setAppearance({ wallpaper: '', icons: {}, fonts: [], activeFont: '' })
+    expect(screen.style.getPropertyValue('--so-wallpaper')).toBe(''); expect(screen.classList.contains('so-phone-screen-wallpaper')).toBe(false)
+    expect(document.querySelector('.so-phone-app-glyph')!.textContent).toBe('🔧'); shell.destroy()
+  })
+  it('shows image icons with app labels and falls back to the original emoji on error', () => {
+    const { shell, registry } = setup([makeApp('alpha')], { open: true })
+    shell.setAppearance({ ...look, icons: { alpha: { image: '/user/images/icon.webp', emoji: '🍵' }, beta: { emoji: '🎈' } } })
+    const image = document.querySelector<HTMLImageElement>('.so-phone-app-glyph img')!
+    expect(image.alt).toBe('alpha'); image.dispatchEvent(new Event('error'))
+    expect(document.querySelector('.so-phone-app-glyph')!.textContent).toBe('🔧')
+    registry.register(makeApp('beta')); expect(document.querySelector('[data-app-id=beta] .so-phone-app-glyph')!.textContent).toBe('🎈')
+    shell.destroy()
+  })
+  it('maintains one font link, scopes the font to the shell and removes it on default or disposal', () => {
+    const { shell } = setup([makeApp('alpha')], { open: true })
+    shell.setAppearance(look)
+    const link = document.querySelector<HTMLLinkElement>('link[data-so-font]')!
+    expect(link.href).toBe(look.fonts[0].cssUrl); expect(document.querySelector<HTMLElement>('.so-phone-shell')!.style.fontFamily).toBe('Handwriting')
+    expect(document.body.style.fontFamily).toBe('')
+    shell.setAppearance({ ...look, fonts: [{ ...look.fonts[0], cssUrl: 'https://example.test/new.css' }] })
+    expect(document.querySelectorAll('link[data-so-font]')).toHaveLength(1); expect(link.href).toBe('https://example.test/new.css')
+    shell.setAppearance({ ...look, activeFont: '' }); expect(document.querySelector('link[data-so-font]')).toBeNull()
+    expect(document.querySelector<HTMLElement>('.so-phone-shell')!.style.fontFamily).toBe('')
+    shell.setAppearance(look); shell.destroy(); expect(document.querySelector('link[data-so-font]')).toBeNull()
+  })
 })
 
 describe('role overview navigation', () => {

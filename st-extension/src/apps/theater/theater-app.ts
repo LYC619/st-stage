@@ -4,6 +4,7 @@ import { storyIdentity } from '../wechat/memory'
 import { getStoryAiConfig } from '../shared/story-ai'
 import { createTheaterController } from './controller'
 import { readTheaterData } from './generate'
+import { diaryCard } from './diary'
 
 function text(tag: string, className: string, value: string): HTMLElement {
   const node = document.createElement(tag); node.className = className; node.textContent = value; return node
@@ -28,12 +29,12 @@ export function createTheaterApp(): PhoneApp {
       header.append(text('strong', '', '小剧场'), refresh)
       const tabs = text('div', 'th-tabs', ''); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', '小剧场频道')
       const panel = text('div', 'th-panel', ''); panel.id = 'th-panel'; panel.setAttribute('role', 'tabpanel'); panel.tabIndex = 0
-      const buttons = ['广场', '论坛', '直播'].map((label, index) => {
+      const buttons = ['广场', '论坛', '直播', '日记'].map((label, index) => {
         const button = document.createElement('button'); button.type = 'button'; button.textContent = label
         button.id = `th-tab-${index}`; button.setAttribute('role', 'tab'); button.setAttribute('aria-controls', panel.id)
         button.onclick = () => { selected = index; render() }
         button.onkeydown = event => {
-          const target = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : event.key === 'ArrowRight' ? (index + 1) % 3 : event.key === 'ArrowLeft' ? (index + 2) % 3 : undefined
+          const target = event.key === 'Home' ? 0 : event.key === 'End' ? 3 : event.key === 'ArrowRight' ? (index + 1) % 4 : event.key === 'ArrowLeft' ? (index + 3) % 4 : undefined
           if (target === undefined) return
           event.preventDefault(); event.stopPropagation(); selected = target; render(); buttons[target].focus()
         }
@@ -54,7 +55,7 @@ export function createTheaterApp(): PhoneApp {
         buttons.forEach((button, index) => { button.setAttribute('aria-selected', String(index === selected)); button.tabIndex = index === selected ? 0 : -1 })
         panel.setAttribute('aria-labelledby', buttons[selected].id); panel.replaceChildren()
         const story = readTheaterData(ctx).stories[storyIdentity(ctx)]
-        if (!story || (selected === 0 ? !story.square.length : selected === 1 ? !story.forum.length : !story.live)) {
+        if (!story || (selected === 0 ? !story.square.length : selected === 1 ? !story.forum.length : selected === 2 ? !story.live : !story.diary.length)) {
           panel.append(text('p', 'th-empty', '这里还没有内容。刷新生成当前剧情的小剧场。')); return
         }
         if (selected === 0) for (const post of story.square) {
@@ -74,6 +75,7 @@ export function createTheaterApp(): PhoneApp {
           post.comments.forEach((comment, index) => comments.append(text('p', '', `${index + 1} 楼 · ${comment}`)))
           card.append(comments); panel.append(card)
         }
+        if (selected === 3) for (const entry of story.diary) panel.append(diaryCard(entry))
         if (selected === 2 && story.live) {
           const live = story.live, card = text('article', 'th-card th-live', '')
           card.append(text('small', 'th-muted', live.room), text('h3', '', live.title), text('strong', '', live.cast), text('p', 'th-copy', live.summary), text('small', 'th-muted', live.stats))
