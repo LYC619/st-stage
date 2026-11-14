@@ -32,16 +32,30 @@ describe('chronicle generation', () => {
     expect(readChronicleSettings({ getAppData: () => undefined } as AppHost)).toEqual({ autoGenerate: true, inject: true, interval: 4, autoCalendar: true })
     expect(readChronicleSettings({ getAppData: () => ({ interval: 50, inject: false }) } as AppHost).interval).toBe(20)
   })
-  it('sends copied constraints and recent overviews, clearing an invented date when today is unknown', async () => {
+  it('sends copied constraints and recent overviews, leaving the date empty for undated messages', async () => {
     vi.spyOn(dates, 'storyToday').mockResolvedValue(null)
-    const request = vi.spyOn(ai, 'requestChat').mockResolvedValue(JSON.stringify(content))
+    const request = vi.spyOn(ai, 'requestChat').mockResolvedValue(JSON.stringify({ ...content, timeSpan: '' }))
     const host = { getSettings: () => ({ apps: { 'wechat-sister': { config: { apiKey: 'test' } } } }) } as unknown as AppHost
     const entries = [1, 2, 3, 4].map(n => ({ ...content, code: `AM000${n}`, summary: `概要${n}`, createdAt: n }))
     const result = await generateChronicle(host, { lastMessageIndex: 0, endIndex: 1, aiCount: 1, messages: ['甲：走吧'] }, entries, new AbortController().signal)
     expect(result.timeSpan).toBe('')
     const messages = request.mock.calls[0][1]
     expect(messages[0].content).toContain('以第三方视角中立客观记录'); expect(messages[0].content).toContain('300–500字')
+    expect(messages[0].content).toContain('剧情没有明确日期时，timeSpan 必须写空字符串，不要编造日期')
     expect(messages[1].content).toContain('未知'); expect(messages[1].content).toContain('甲：走吧')
     expect(messages[1].content).not.toContain('概要1'); expect(messages[1].content).toContain('概要2')
+  })
+  it('establishes the story date from the first chronicle when the chat contains an explicit date', async () => {
+    const meta: Record<string, unknown> = {}
+    vi.stubGlobal('SillyTavern', { getContext: () => ({ chat: [], chatMetadata: meta }) })
+    const host = { getCharacterName: () => '角色', getSettings: () => ({ apps: { 'wechat-sister': { config: { apiKey: 'test' } } } }) } as unknown as AppHost
+    const dated = { ...content, timeSpan: '2026-01-01 09:00 ~ 2026-01-01 10:00' }
+    vi.spyOn(ai, 'requestChat').mockResolvedValue(JSON.stringify(dated))
+    expect(await dates.storyToday(host)).toBeNull()
+    const result = await generateChronicle(host, { lastMessageIndex: -1, endIndex: 0, aiCount: 1,
+      messages: ['角色：2026-01-01 09:00，众人找到船票，10:00 抵达码头。'] }, [], new AbortController().signal)
+    expect(result.timeSpan).toBe(dated.timeSpan)
+    meta.st_stage_chronicle = { v: 1, entries: [{ ...result, code: 'AM0001', createdAt: 1 }], lastMessageIndex: 0 }
+    expect(dates.formatStoryDate((await dates.storyToday(host))!)).toBe('2026-01-01')
   })
 })

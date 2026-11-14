@@ -54,7 +54,6 @@ export async function generateChronicle(host: AppHost, pending: PendingStory, pr
   if (!config) throw new Error('请先在微信设置里连接 AI。')
   const today = await storyToday(host)
   signal.throwIfAborted()
-  const content = parseChronicle(await requestChat(config, [{ role: 'system', content: SYSTEM }, { role: 'user', content:
-    `当前剧情日期：${today ? formatStoryDate(today) : '未知；timeSpan 写空字符串'}\n最近纪要概览：\n${previous.slice(-3).map(entry => entry.summary).join('\n')}\n待整理的消息：\n${pending.messages.join('\n')}` }], signal))
-  return { ...content, timeSpan: today ? content.timeSpan : '' }
+  return parseChronicle(await requestChat(config, [{ role: 'system', content: SYSTEM }, { role: 'user', content:
+    `当前剧情日期：${today ? formatStoryDate(today) : '未知；请从待整理消息提取明确日期，没有明确日期时 timeSpan 写空字符串'}\n最近纪要概览：\n${previous.slice(-3).map(entry => entry.summary).join('\n')}\n待整理的消息：\n${pending.messages.join('\n')}` }], signal))
 }
