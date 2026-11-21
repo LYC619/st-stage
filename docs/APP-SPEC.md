@@ -12,7 +12,7 @@ st-stage 在 SillyTavern 聊天界面提供一个「手机」悬浮框架：一�
 
 1. **新建模块**：`st-extension/src/apps/<你的功能>-app.ts`，导出一个返回 `PhoneApp` 对象的工厂函数（结构见下方外部注册示例，`mount`/`ctx` 完全相同；UI 小部件直接复用 `./widgets` 里的 `appButton/toggleRow/selectRow/numberRow/textRow/textareaRow`）。
 2. **加入装配清单**：在 `st-extension/src/apps/index.ts` 的 `createBuiltinApps` 返回数组里加一行。需要访问框架能力（如打开弹窗）就照 `galleryApp` 的样子通过 `BuiltinAppDeps` 传入。
-3. **构建发布**：`pnpm build:ext` 并提交根目录兼容产物。需要为未来独立 ST 仓库生成干净发布目录时运行 `pnpm build:st`，产物在 `st-distribution/`；不要手动复制源码、`public/` 或 `reference/`。热更新（v0.6 加载器）会让已安装用户在 git pull 后自动拿到新代码，无需清缓存。
+3. **构建与产物同步**：日常联调运行 `pnpm build:ext`；提交前运行 `pnpm build:all` 以同一时间戳同步生成根目录、`st-distribution/` 与网页模拟器 `public/` 产物（不要手动复制源码或 `reference/`），并通过 `node scripts/verify-runtime-parity.mjs --root . --distribution st-distribution --preview public` 核验。内置 App 新增或改名时需同步更新 `README.md` 并通过 `node scripts/verify-docs-apps.mjs`。
 
 App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发立绘刷新）；只有确实要改核心设置才用 `ctx.updateSettings`。
 
@@ -118,6 +118,9 @@ App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发
 | `onCharacterChanged(fn)` | 切换聊天/角色。返回退订函数；框架自动回收 |
 | `injectPrompt(text, depth?)` | 注入提示词：你的专属通道（`st-stage::app:<你的id>`），与立绘/其他 App 互不覆盖。last-write-wins，`''`=清除，超 20000 字符截断告警。**不随 unmount 清**，平台销毁时统一清空 |
 | `toast(kind, message)` | 通知（`info/success/warning/error`）：真 ST 走 toastr，模拟器降级 console |
+| `getCharacterCard?()` | 当前角色卡详情（`name`/`description`/`personality`/`scenario`/`avatar` 等，无则 `undefined`） |
+| `getChatContext?()` | 当前聊天会话上下文（`characterId`/`chatId`/`characterName`/`chat` 历史等，无则 `undefined`） |
+| `getVariables?()` | 读取外部状态变量（如 MVU / 酒馆助手 `stat_data`；支持同步或异步返回） |
 
 **PhoneAppContext 额外提供（仅 mount）：**
 
@@ -165,8 +168,10 @@ App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发
 | `story-state` | 剧情状态 | 时空、任务、背包、能力；MVU 只读或本聊天后台整理 | `st-extension/src/apps/story-state/` |
 | `chronicle` | 纪要 | 按聊天保存纪要与七天公共日历；纪要注入主聊天，微信和小剧场读取概览 | `st-extension/src/apps/chronicle/` |
 | `appearance` | 外观 | 主屏壁纸、App 图标、网络字体与外观包；图片压缩后保存为酒馆图片网址 | `st-extension/src/apps/appearance/` |
-| `api` | API | 版本化连接档案快切：新建 Chat 档案提供 OpenAI、Claude、OpenRouter、Google AI Studio 与自定义 OpenAI 兼容入口，历史冷门渠道仍可编辑；Key 在扩展档案中明文保存并同步写入 ST 密钥库。ST 交互收敛在 `api/bridge.ts`（模拟器降级只读） | `st-extension/src/apps/api-app.ts` + `api/` |
-| `renderer` | 渲染 | 结构化回复渲染：Galgame、卡片选择和本地确定性战斗；手机页含首次使用引导与配置状态 | `st-extension/src/apps/renderer-app.ts` |
+| `api` | API | 原生连接档案快切与角色推荐绑定；旧百工连接档案保留兼容管理入口。ST 交互收敛在 `api/bridge.ts` | `st-extension/src/apps/api-app.ts` + `api/` |
+| `renderer` | 渲染 | 结构化回复渲染：Galgame、卡片选择和本地确定性战斗；手机页含首次使用引导与配置状态 | `st-extension/src/apps/renderer-app.ts` + `renderer/` |
+| `cloud-export` | 导出 | 选择角色卡、聊天、世界书、预设与正则打包下载标准 ZIP 备份 | `st-extension/src/apps/cloud-export/` |
+| `wechat-sister` | 微信 | 独立角色单聊与群聊、朋友圈、角色状态与场景模板管理 | `st-extension/src/apps/wechat/` |
 
 装配清单：`st-extension/src/apps/index.ts`。
 

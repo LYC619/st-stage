@@ -99,8 +99,7 @@ async function loadButler(page: Page): Promise<void> {
     }
     ;(window as Window & { SillyTavern: unknown }).SillyTavern = { getContext: () => context }
   })
-  await page.addStyleTag({ path: resolve(ROOT, 'st-extension/style.css') })
-  await page.addStyleTag({ path: resolve(ROOT, 'core/phone-shell.css') })
+  await page.addStyleTag({ path: resolve(ROOT, 'style.css') })
   await loadBuiltExtension(page)
   await expect(page.locator('.so-phone-fab')).toBeVisible()
   await page.locator('.so-phone-fab').click()

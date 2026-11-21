@@ -20,23 +20,6 @@ import { DEFAULT_MOMENTS_PROMPT } from './moments'
 import { formatStoryMemory } from './memory'
 import { requestChat } from '../shared/story-ai'
 
-export interface FallbackBranch {
-  min_mood: number
-  reply: string
-}
-
-export interface FallbackKeywordItem {
-  pattern: string
-  reply?: string
-  branches?: FallbackBranch[]
-}
-
-export interface FallbackDialoguesConfig {
-  keywords?: FallbackKeywordItem[]
-  default_text?: string
-  red_packet_reply?: string
-}
-
 export interface ChatCompletionMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
@@ -48,13 +31,11 @@ export class WeChatPipeline {
   private contactEmojis: Record<string, EmojiItem>
   private contactPhotos: Record<string, PhotoItem>
 
-
   constructor(
     config: WeChatConfig,
     playerEmojis: Record<string, EmojiItem>,
     contactEmojis: Record<string, EmojiItem>,
     contactPhotos: Record<string, PhotoItem>,
-    _fallbackDialogues?: FallbackDialoguesConfig,
   ) {
     this.config = config
     this.playerEmojis = playerEmojis

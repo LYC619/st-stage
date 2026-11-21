@@ -62,7 +62,8 @@ export function createLightbox(ctx: ManagerContext) {
 
 
   function currentManagerBody(): HTMLElement | null {
-    return ctx.state.backdrop?.querySelector('.so-manager-body') as HTMLElement | null
+    return (ctx.state.backdrop?.querySelector('.so-lightbox') as HTMLElement | null)
+      ?? (ctx.state.backdrop?.querySelector('.so-manager-body') as HTMLElement | null)
   }
 
 
@@ -146,7 +147,8 @@ export function createLightbox(ctx: ManagerContext) {
               }
             }
             toast(currentManagerBody(), t("sprite.manager.content.replace.invalid_response", "已替换「{{p0}}」，但图床响应无效，标记为待上传", { p0: identity.tag }))
-          } catch {
+          } catch (err) {
+            console.warn('[sprite-overlay] 替换立绘后上传图床失败', err)
             toast(currentManagerBody(), t("sprite.manager.content.replace.upload_failed", "已替换「{{p0}}」，图床上传失败，标记为待上传", { p0: identity.tag }))
           }
         } else {

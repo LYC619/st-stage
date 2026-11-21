@@ -1,3 +1,4 @@
+import { safeCopyText } from '../shared/safe-runtime'
 // UI flow adapted from 玉子手机 modules/settings-app/pages/appearance.js; resources use ST's existing image storage.
 import type { PhoneApp } from '../../../../core/phone-registry'
 import { compressImage } from '../../../../core/image-compress'
@@ -109,8 +110,8 @@ export function createAppearanceApp(deps: AppearanceDeps): PhoneApp {
         packs.append(button('导出外观包', async () => {
           const value = exportAppearance(current()), url = URL.createObjectURL(new Blob([value], { type: 'application/json' })), link = document.createElement('a')
           link.href = url; link.download = '百工外观.json'; link.click(); URL.revokeObjectURL(url)
-          await navigator.clipboard.writeText(value)
-          if (alive) status.textContent = '外观包已复制并下载。'
+          const copied = await safeCopyText(value)
+          if (alive) status.textContent = copied ? '外观包已复制并下载。' : '外观包已下载（当前环境无法自动复制到剪贴板）。'
         }), pasteLabel, button('导入粘贴的外观包', () => applyPack(paste.value)), fileLabel)
       }
       render(); cleanup = () => { alive = false; root.remove() }

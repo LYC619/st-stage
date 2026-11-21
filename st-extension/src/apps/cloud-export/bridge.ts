@@ -167,22 +167,27 @@ async function readWorldbook(worldbook: ExportWorldbook, signal?: AbortSignal): 
 function loadPresets(raw: RawRecord): ExportPreset[] {
   const names = Array.isArray(raw.openai_setting_names) ? raw.openai_setting_names : []
   const contents = Array.isArray(raw.openai_settings) ? raw.openai_settings : []
-  return names.map((value, index) => {
+  return names.flatMap((value, index) => {
     const name = typeof value === 'string' && value ? value : `preset-${index + 1}`
     const fileName = name.endsWith('.json') ? name : `${name}.json`
     const rawContent = contents[index]
     let content: unknown = rawContent
     if (typeof rawContent === 'string') {
-      try { content = JSON.parse(rawContent) } catch { content = {} }
+      try {
+        content = JSON.parse(rawContent)
+      } catch (err) {
+        console.warn('[st-stage:cloud-export] 跳过损坏的 OpenAI 预设 JSON:', name, err)
+        return []
+      }
     }
-    return { id: fileName, name: name.replace(/\.json$/i, ''), fileName, content }
+    return [{ id: fileName, name: name.replace(/\.json$/i, ''), fileName, content }]
   })
 }
 
 function loadRegex(raw: RawRecord): ExportRegexSet | null {
   let settings: RawRecord = raw
   if (typeof raw.settings === 'string') {
-    try { settings = asRecord(JSON.parse(raw.settings)) } catch { settings = {} }
+    try { settings = asRecord(JSON.parse(raw.settings)) } catch (err) { console.warn('[st-stage:cloud-export] 解析全局 settings 字符串失败', err); settings = {} }
   }
   const extensionSettings = asRecord(settings.extension_settings ?? settings.extensions)
   const rules = Array.isArray(extensionSettings.regex) ? extensionSettings.regex : []

@@ -46,8 +46,6 @@ node scripts/verify-gallery-browser.mjs --url http://127.0.0.1:18769 --isolated-
 node scripts/verify-variables-browser.mjs --url http://127.0.0.1:18769 --isolated-data
 node scripts/verify-export-browser.mjs --url http://127.0.0.1:18769 --isolated-data
 node scripts/verify-accessibility-browser.mjs --url http://127.0.0.1:18769 --isolated-data
-# 需已安装并启用指定真实助手与 MVU 的隔离实例
-node scripts/verify-wechat-mvu-browser.mjs --url http://127.0.0.1:18771 --isolated-data
 ```
 
 前两项使用合成数据与生产模块；其余运行真实 ST 宿主和构建产物。图库脚本会替换隔离测试用户的图包；变量脚本创建测试角色、聊天并重设新变量配置；导出脚本创建测试角色／聊天／世界书／预设，替换测试正则并核对实际下载 ZIP。无障碍脚本重设测试 App 数据，使用内置表情及合成照片，并保存扫描、键盘断言、截图和无法自动判断的项目。MVU 脚本另用独立测试用户，记录第三方版本与构建哈希。均不用于日常 ST 数据。导出验收不等于 ZIP 导入验收。证据保存在忽略的 `test-results/`，当前未提交构建的结果及限制由 `docs/maintenance/CURRENT.md` 记录。

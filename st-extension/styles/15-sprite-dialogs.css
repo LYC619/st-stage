@@ -1,0 +1,722 @@
+/* 以下标签管理规则一律挂 .so-manager-backdrop：弹窗 append 到 backdrop，
+ * 是 .so-manager 的兄弟节点，`.so-manager 后代` 选择器够不到（见上方按钮注释）。 */
+.so-manager-backdrop .so-tag-manager-panel {
+  width: min(640px, 96vw);
+}
+
+.so-manager-backdrop .so-tag-manager-heading,
+.so-manager-backdrop .so-tag-manager-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.so-manager-backdrop .so-tag-manager-heading {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/* 添加行三个子项：两个 labeled 输入平分剩余宽度，按钮保持自身宽度。
+ * 不能继承上面的 1fr/auto/auto/auto——那会让「新标签」输入框缩到 min-content。 */
+.so-manager-backdrop .so-tag-manager-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.so-manager-backdrop .so-tag-manager-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.so-manager-backdrop .so-tag-manager-row {
+  padding: 8px;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+  border-radius: 6px;
+}
+
+/* 共用的 .so-labeled / .so-status 也是 .so-manager 作用域，同样够不到弹窗。
+ * 这里按弹窗需要的最小集合重新声明，不动主面板那份。 */
+.so-manager-backdrop .so-upload-modal .so-labeled {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.so-manager-backdrop .so-upload-modal .so-labeled-text {
+  font-size: 12px;
+  opacity: 0.75;
+  flex-shrink: 0;
+}
+
+.so-manager-backdrop .so-upload-modal .so-labeled .text_pole {
+  min-width: 0;
+  flex: 1;
+}
+
+.so-manager-backdrop .so-upload-modal .so-status {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 4px;
+}
+
+@media (max-width: 720px) {
+  .so-manager .so-pack-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .so-manager .so-pack-filter-search,
+  .so-manager .so-pack-filter-count {
+    grid-column: 1 / -1;
+  }
+
+  /* 窄屏两行式：输入框独占首行，用量与两个按钮排第二行。
+   * 不要只写 `1fr auto`——四个子项会流进隐式行，两个按钮落到不同宽度的轨道上。 */
+  .so-manager-backdrop .so-tag-manager-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .so-manager-backdrop .so-tag-manager-row > .text_pole {
+    grid-column: 1 / -1;
+  }
+
+  .so-manager-backdrop .so-tag-manager-add {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.so-manager .so-card-check-on {
+  background: rgba(120, 170, 255, 0.92);
+  border-color: transparent;
+}
+
+.so-manager .so-card-order {
+  justify-content: center;
+  gap: 12px;
+  padding: 2px 0 8px;
+}
+
+.so-manager .so-card-dragging {
+  opacity: 0.5;
+}
+
+.so-manager .so-pack-card.so-card-drop-target {
+  border-color: rgba(255, 214, 120, 0.9);
+  box-shadow: 0 0 0 2px rgba(255, 214, 120, 0.35);
+}
+
+/* ---- 「启用包」勾选浮层：包多时限高滚动 ---- */
+.so-manager .so-enable-pop {
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+}
+
+.so-manager .so-enable-pop .checkbox_label {
+  width: 100%;
+  margin: 0;
+}
+
+.so-manager .so-labeled {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.so-manager .so-labeled-text {
+  font-size: 12px;
+  opacity: 0.75;
+  flex-shrink: 0;
+}
+
+.so-manager .so-labeled .text_pole {
+  min-width: 0;
+  flex: 1;
+}
+
+/* 包信息一行式：输入框均分宽度，窄屏自动换行 */
+.so-manager .so-meta-row {
+  align-items: stretch;
+}
+
+.so-manager .so-meta-row .so-labeled {
+  flex: 1 1 150px;
+}
+
+.so-manager .so-pack-note-row {
+  align-items: stretch;
+}
+
+.so-manager .so-pack-note-row .so-labeled:first-child {
+  align-items: flex-start;
+  flex: 3 1 320px;
+}
+
+.so-manager .so-pack-note-row .so-labeled:last-child {
+  align-self: flex-start;
+  flex: 1 1 150px;
+}
+
+.so-manager .so-pack-prompt-note,
+.so-manager .so-outfit-note-input {
+  min-height: 58px;
+  resize: vertical;
+}
+
+.so-manager .so-outfit-note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.so-manager .so-outfit-note-row {
+  align-items: flex-start;
+}
+
+.so-manager .so-outfit-note-row .so-labeled-text {
+  flex: 0 1 120px;
+  overflow-wrap: anywhere;
+}
+
+/* 分组分区标题（功能②） */
+.so-manager .so-group-head {
+  margin: 12px 0 4px;
+  padding-bottom: 3px;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.85;
+  border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.12));
+}
+
+/* 立绘网格：移动端 2 列，桌面端（>=768px）4 列 */
+.so-manager .so-sprite-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin: 10px 0;
+}
+
+@media (min-width: 768px) {
+  .so-manager .so-sprite-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.so-manager .so-sprite-cell {
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.2);
+  cursor: zoom-in; /* 点击放大查看 */
+}
+
+.so-manager .so-sprite-actions {
+  cursor: zoom-in; /* 悬浮操作层空白区仍可点击放大 */
+}
+
+.so-manager .so-sprite-cell.so-cover {
+  border-color: rgba(255, 214, 90, 0.7);
+  box-shadow: 0 0 0 1px rgba(255, 214, 90, 0.35);
+}
+
+.so-manager .so-sprite-cell.so-cover::after {
+  content: '封面';
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  border-radius: 4px;
+  background: rgba(255, 214, 90, 0.9);
+  color: #402d00;
+}
+
+.so-manager .so-sprite-cell img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.so-manager .so-sprite-tag {
+  padding: 3px 6px;
+  font-size: 11px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.so-manager .so-sprite-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px;
+  background: rgba(0, 0, 0, 0.62);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.so-manager .so-sprite-cell:hover .so-sprite-actions,
+.so-manager .so-sprite-cell:focus-within .so-sprite-actions {
+  opacity: 1;
+}
+
+.so-manager .so-icon-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(30, 30, 36, 0.9);
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.12s ease, transform 0.08s ease;
+}
+
+.so-manager .so-icon-btn:hover {
+  background: rgba(70, 70, 80, 0.95);
+  transform: translateY(-1px);
+}
+
+/* 触屏设备：hover 才出现的控件全部常显（否则根本无法发现/点到） */
+@media (hover: none) {
+  .so-manager .so-sprite-actions {
+    top: auto;
+    bottom: 24px;
+    height: 42px;
+    box-sizing: border-box;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 4px;
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.35);
+  }
+
+  .so-manager .so-sprite-actions .so-icon-btn {
+    flex: 0 0 32px;
+  }
+
+  #sprite-overlay-root .sprite-overlay-gear,
+  #sprite-overlay-root .sprite-overlay-sprites,
+  #sprite-overlay-root .sprite-overlay-close {
+    opacity: 0.9;
+  }
+
+  #sprite-overlay-root .sprite-overlay-resize {
+    opacity: 0.55;
+    /* 触屏加大命中区，20px 手指很难点中 */
+    width: 28px;
+    height: 28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .so-manager .so-pack-card,
+  .so-manager .so-icon-btn {
+    transition: none;
+  }
+
+  .so-manager .so-pack-card:hover,
+  .so-manager .so-pack-card:active {
+    transform: none;
+  }
+}
+
+/* ---- 图片放大查看（lightbox） ---- */
+
+.so-lightbox {
+  position: fixed;
+  z-index: 10005;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 196px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: calc(12px + env(safe-area-inset-top))
+    calc(12px + env(safe-area-inset-right))
+    calc(12px + env(safe-area-inset-bottom))
+    calc(12px + env(safe-area-inset-left));
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.88);
+}
+
+.so-lightbox.so-lightbox-no-actions {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.so-lightbox-stage {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.so-lightbox-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  cursor: pointer; /* 左半区上一张 / 右半区下一张 */
+}
+
+.so-lightbox-caption {
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.6);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.so-lightbox-nav,
+.so-lightbox-close {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(30, 30, 36, 0.6);
+  color: #fff;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.12s ease;
+}
+
+.so-lightbox-nav {
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 56px;
+  font-size: 18px;
+}
+
+.so-lightbox-prev {
+  left: calc(12px + env(safe-area-inset-left));
+}
+
+.so-lightbox-next {
+  right: calc(220px + env(safe-area-inset-right));
+}
+
+.so-lightbox-no-actions .so-lightbox-next {
+  right: calc(12px + env(safe-area-inset-right));
+}
+
+.so-lightbox-close {
+  top: calc(12px + env(safe-area-inset-top));
+  right: calc(12px + env(safe-area-inset-right));
+  width: 44px;
+  height: 44px;
+  font-size: 16px;
+}
+
+.so-lightbox-nav:hover,
+.so-lightbox-close:hover,
+.so-lightbox-action:hover:not(:disabled) {
+  background: rgba(70, 70, 80, 0.9);
+}
+
+.so-lightbox-nav:disabled,
+.so-lightbox-action:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.so-lightbox-actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 56px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: auto;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(30, 30, 36, 0.72);
+}
+
+.so-lightbox-actions[hidden] {
+  display: none;
+}
+
+.so-lightbox-action {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(30, 30, 36, 0.66);
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  text-align: left;
+}
+
+.so-lightbox-action-icon {
+  flex: 0 0 20px;
+  text-align: center;
+}
+
+.so-lightbox-action-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.so-lightbox-action-danger {
+  margin-top: auto;
+  border-color: rgba(255, 105, 105, 0.45);
+  color: #ffb3b3;
+}
+
+@media (max-width: 700px) {
+  .so-lightbox {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto auto;
+    gap: 8px;
+    padding: calc(8px + env(safe-area-inset-top))
+      calc(8px + env(safe-area-inset-right))
+      calc(8px + env(safe-area-inset-bottom))
+      calc(8px + env(safe-area-inset-left));
+  }
+
+  .so-lightbox-caption {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .so-lightbox-actions {
+    grid-column: 1;
+    grid-row: 3;
+    max-height: 144px;
+    padding: 6px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    overflow: auto;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    border-left: 0;
+  }
+
+  .so-lightbox-action {
+    flex: 1 0 120px;
+    width: auto;
+  }
+
+  .so-lightbox-action-danger {
+    margin-top: 0;
+  }
+
+  .so-lightbox-prev {
+    left: calc(8px + env(safe-area-inset-left));
+  }
+
+  .so-lightbox-next {
+    right: calc(8px + env(safe-area-inset-right));
+  }
+
+  .so-lightbox-close {
+    top: calc(8px + env(safe-area-inset-top));
+    right: calc(8px + env(safe-area-inset-right));
+  }
+}
+
+/* ---- 消息内插图（message-postprocess） ---- */
+
+#chat .so-inline-image {
+  display: block;
+  text-align: center;
+  margin: 8px 0;
+}
+
+#chat .so-inline-image img {
+  max-width: min(85%, 480px);
+  max-height: 60vh;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* 楼层内立绘（spriteDisplayMode=inline/both）：立绘多为竖长图，高度比插图更收敛。
+   立绘是抠好的透明 PNG：插图那套边框/圆角/投影会把透明矩形轮廓画出来，全部去掉 */
+#chat .so-inline-sprite img {
+  max-height: 40vh;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+/* 加载失败：显示编码提示，方便发现写错的编码；整块可点击重试 */
+#chat .so-inline-image-error {
+  cursor: pointer;
+}
+
+#chat .so-inline-image-error img {
+  min-width: 120px;
+  min-height: 48px;
+  background: rgba(255, 100, 100, 0.12);
+}
+
+/* 加工标记元素（可逆渲染用），保险起见双保险隐藏 */
+#chat .so-processed-marker {
+  display: none;
+}
+
+/* ---- 批量上传预览弹窗（八期） ---- */
+.so-upload-modal {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 12px;
+}
+
+.so-upload-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* PC 端加宽：设置/按钮区在上、文件预览列表在下，一行放得下三个输入框 */
+  width: min(760px, 96vw);
+  max-height: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(24, 24, 30, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.so-upload-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.so-delete-dialog .so-upload-panel { width: min(480px, 100%); overflow: auto; color: #eee; }
+.so-delete-dialog .so-row { flex-wrap: wrap; }
+.so-delete-dialog .checkbox_label { align-items: flex-start; }
+.so-delete-dialog .checkbox_label span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.so-delete-dialog .checkbox_label input { flex: 0 0 auto; }
+.so-delete-dialog button { min-height: 40px; padding: 8px 16px; color: #eee; font: inherit; background: #34343e; border: 1px solid #777; border-radius: 6px; }
+.so-delete-dialog button:focus-visible { outline: 2px solid #87bfff; outline-offset: 2px; }
+.so-delete-dialog button:disabled { opacity: .6; }
+
+.so-upload-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.so-upload-fname {
+  flex: 1 1 100%;
+  font-size: 11px;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.so-upload-row .so-labeled {
+  flex: 1 1 90px;
+}
+
+.so-upload-row .text_pole {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#chat .so-inline-image-error:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+@media (max-width: 720px) {
+  /* Keep English labels from squeezing the editable preview values to one character. */
+  .so-manager-backdrop .so-upload-row .so-labeled {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+.so-upload-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.so-upload-status {
+  font-size: 12px;
+  opacity: 0.8;
+  min-height: 16px;
+}
+
+.so-upload-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+
+.so-upload-actions > * {
+  min-width: max-content;
+  white-space: nowrap;
+}

@@ -57,6 +57,7 @@ async function checksAndBuild(root, env) {
   run(root, 'node_modules/eslint/bin/eslint.js', ['core', 'st-extension/src', 'lib', 'components', 'app'])
   run(root, 'node_modules/vitest/vitest.mjs', ['run'])
   run(root, 'scripts/verify-i18n-completeness.mjs')
+  run(root, 'scripts/verify-docs-apps.mjs')
   execFileSync(process.execPath, ['--test', 'scripts/release-tools.test.mjs', 'scripts/sync-release.test.mjs', 'scripts/release-full.test.mjs'], { cwd: root, stdio: 'inherit' })
   run(root, 'node_modules/next/dist/bin/next', ['build'])
   await buildExtensionPair({ sourceRoot: root, env })

@@ -1,3 +1,4 @@
+import { safeRandomId } from '../shared/safe-runtime'
 import type { PhoneApp, PhoneAppContext, AppHost } from '../../../../core/phone-registry'
 import { manageDialogFocus } from '../../../../core/dialog-focus'
 import { resolveCharacterAvatarUrl, resolveConversationScopeSync } from './bridge'
@@ -379,7 +380,7 @@ export function createWeChatApp(): PhoneApp {
         if (pending.has(key)) { notice('此会话正在回复，可先切换到其他会话。'); return }
         const time = new Date(), media = mediaFor(target)
         const snapshot = type === 'emoji' ? (emojiSource === 'player' ? media.player : media.contact)[content] : undefined
-        const player: ChatMessage = { id: crypto.randomUUID(), sender: 'player', type, content: content.trim().slice(0, type === 'red_packet' ? 120 : 8000),
+        const player: ChatMessage = { id: safeRandomId(), sender: 'player', type, content: content.trim().slice(0, type === 'red_packet' ? 120 : 8000),
           time: { day: target.currentDay, hour: time.getHours(), minute: time.getMinutes() }, ...(type === 'emoji' ? { emojiSource, asset: snapshot } : {}), ...(note ? { note: note.slice(0, 300) } : {}) }
         const prior = { draft: target.draft, updatedAt: target.updatedAt, replyAttempt: target.replyAttempt }
         target.messages.push(player); target.updatedAt = Date.now(); delete target.replyAttempt

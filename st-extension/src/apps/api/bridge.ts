@@ -211,8 +211,23 @@ async function fetchModelsTransaction(profile: Pick<ApiProfile, 'mainApi' | 'sou
   const descriptor = getSource(profile.mainApi, profile.source)
   if (!descriptor.supportsModels) throw new Error('该来源不支持自动获取模型，请手动填写')
   const current = await readConnection()
+  const hasNewKey = Boolean(profile.key.trim())
+  // 若酒馆不允许读取原密钥，绝不临时覆盖线上密钥槽；优先尝试直连兼容 /models，不通则提示先保存启用
+  if (hasNewKey && current?.secretMode === 'unavailable') {
+    if (profile.url.trim()) {
+      const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 15000)
+      try {
+        const modelsUrl = `${profile.url.trim().replace(/\/+$/, '')}/models`
+        const response = await fetch(modelsUrl, { headers: { Authorization: `Bearer ${profile.key.trim()}` }, signal: controller.signal })
+        if (response.ok) return parseModelList(await response.json())
+      } catch (err) {
+        console.warn('[st-stage:api] 直连 /models 探测未通过', err)
+      } finally { clearTimeout(timer) }
+    }
+    throw new Error('当前酒馆不允许回读原密钥；为避免覆盖正在使用的连接密钥，请先保存并启用该档案后再获取模型')
+  }
   const temporary: ApiProfile = { version: 2, id: 'temporary', name: 'temporary', model: '', settings: {}, secretMode: 'stored', ...profile }
-  await writeSecret(st, temporary)
+  if (hasNewKey) await writeSecret(st, temporary)
   try {
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 20000)
     try {
@@ -221,6 +236,8 @@ async function fetchModelsTransaction(profile: Pick<ApiProfile, 'mainApi' | 'sou
       return parseModelList(await response.json())
     } finally { clearTimeout(timer) }
   } finally {
-    if (current?.key) await writeSecret(st, { ...temporary, mainApi: current.mainApi as ApiProfile['mainApi'], source: current.source, url: current.url, key: current.key, secretId: current.secretId })
+    if (hasNewKey && current?.secretMode === 'read') {
+      await writeSecret(st, { ...temporary, mainApi: current.mainApi as ApiProfile['mainApi'], source: current.source, url: current.url, key: current.key, secretId: current.secretId })
+    }
   }
 }

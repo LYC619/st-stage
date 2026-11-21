@@ -1,8 +1,13 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
-/* 手机框架样式（与 ST 扩展共用同一文件） */
+/* 手机框架与内置 App 样式（与 ST 扩展共用同一套分模块源样式） */
 @import '../core/phone-shell.css';
+@import '../st-extension/styles/20-renderer.css';
+@import '../st-extension/styles/40-butler.css';
+@import '../st-extension/styles/45-apps-system.css';
+@import '../st-extension/styles/50-apps-story.css';
+@import '../st-extension/styles/60-wechat.css';
 
 @custom-variant dark (&:is(.dark *));
 

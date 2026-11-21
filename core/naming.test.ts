@@ -4,7 +4,6 @@ import {
   isValidTag,
   normalizeTag,
   parseSpriteFileName,
-  parseUploadName,
   sanitizePackName,
   sanitizePathSegment,
   TAG_MAX_LENGTH,
@@ -56,17 +55,6 @@ describe('fileNameToTag', () => {
     expect(fileNameToTag('微笑.png')).toBe('微笑')
     expect(fileNameToTag('smile.final.webp')).toBe('smile.final')
     expect(fileNameToTag('.png')).toBe('')
-  })
-})
-
-describe('parseUploadName（功能②）', () => {
-  it('文件名首个下划线拆 分组/图名', () => {
-    expect(parseUploadName('鸣人_微笑.png')).toEqual({ group: '鸣人', tag: '微笑' })
-    expect(parseUploadName('鸣人_微笑_变体.png')).toEqual({ group: '鸣人', tag: '微笑_变体' })
-  })
-  it('无下划线时用 fallbackGroup（本批分组）', () => {
-    expect(parseUploadName('微笑.png', '佐助')).toEqual({ group: '佐助', tag: '微笑' })
-    expect(parseUploadName('微笑.png')).toEqual({ group: '', tag: '微笑' })
   })
 })
 

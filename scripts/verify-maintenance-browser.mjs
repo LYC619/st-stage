@@ -102,7 +102,7 @@ async function searchState(value, caret = value.length) {
 try {
   await context.route('**/*', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body></body></html>' }))
   await page.goto('https://st-stage.test/')
-  await page.addStyleTag({ content: readFileSync(path.join(root, 'st-extension/style.css'), 'utf8') })
+  await page.addStyleTag({ content: readFileSync(path.join(root, 'style.css'), 'utf8') })
   await page.addStyleTag({ content: 'body{margin:0;background:#303034;color:#eee;font:14px Arial,sans-serif} input,button{font:inherit} input{max-width:100%}' })
   await page.addScriptTag({ content: built.outputFiles[0].text })
 

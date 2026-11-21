@@ -60,7 +60,12 @@ export function createApiManager(deps: ApiManagerDeps): ApiManager {
     void readConnection({ withSecret: false }).then((connection) => {
       if (!connection || !body) return
       const active = findActiveProfile(data.profiles, connection)
-      body.querySelector(`[data-profile-id="${active?.id ?? ''}"]`)?.classList.add('stapi-row-on')
+      if (!active?.id) return
+      Array.from(body.querySelectorAll<HTMLElement>('[data-profile-id]'))
+        .find((node) => node.dataset.profileId === active.id)
+        ?.classList.add('stapi-row-on')
+    }).catch((err) => {
+      console.warn('[st-stage:api] 读取当前连接状态失败', err)
     })
     for (const profile of data.profiles) {
       const row = el('div', 'vm-leaf'); row.dataset.profileId = profile.id

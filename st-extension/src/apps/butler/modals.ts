@@ -429,6 +429,12 @@ export function buildExtensionModal(
       if (disposed) return
       inventory = value
       render()
+    }).catch((err) => {
+      if (disposed) return
+      const reason = err instanceof Error ? err.message : '扩展清单读取失败'
+      console.warn('[st-stage:butler] 读取扩展清单失败', err)
+      inventory = { status: 'unavailable', reason, governance: { writable: false, reason }, disabledExtensions: [], extensions: [] }
+      render()
     })
     return () => { disposed = true }
   }

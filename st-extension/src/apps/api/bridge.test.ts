@@ -132,4 +132,18 @@ describe('SillyTavern bridge', () => {
     installST()
     await expect(fetchModels(profile({ source: 'openai', url: '' }))).rejects.toThrow('不支持自动获取模型')
   })
+
+  it('never overwrites live ST secret when /api/secrets/find is unavailable, probing /models directly instead', async () => {
+    installST()
+    const writes: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/find')) return response(false)
+      if (url.endsWith('/write')) { writes.push(String(init?.body)); return response(true) }
+      if (url === 'https://example.com/v1/models') return response(true, { data: [{ id: 'direct-model' }] })
+      return response(false)
+    }))
+    await expect(fetchModels(profile({ key: 'preview-only-key' }))).resolves.toEqual(['direct-model'])
+    expect(writes).toEqual([])
+  })
 })

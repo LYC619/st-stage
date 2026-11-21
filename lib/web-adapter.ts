@@ -38,7 +38,8 @@ export class WebAdapter implements PlatformAdapter {
         bindings: saved.bindings.length > 0 ? saved.bindings : defaults.bindings,
         packs: [...mergePresetPacks(saved.presetOverrides), ...customPacks],
       }
-    } catch {
+    } catch (err) {
+      console.warn('[st-stage:web-adapter] 读取本地设置失败，已回退默认配置', err)
       return defaults
     }
   }

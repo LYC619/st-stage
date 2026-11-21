@@ -92,10 +92,19 @@ export function createDetail(ctx: ManagerContext) {
     const topRow = el('div', 'so-row so-detail-top')
     topRow.append(
       button(t("sprite.manager.content.export.json", "导出 JSON"), async () => {
-        // 本地/预设图片自动内嵌 base64（别人导入才能看到图）；图床 URL 保持轻量
-        const file = await exportPack(pack)
-        downloadJson(file, `${pack.name}.sprite-pack.json`)
-        toast(body, t("sprite.manager.content.export.saved", "已导出「{{p0}}」", { p0: pack.name }))
+        try {
+          const file = await exportPack(pack)
+          downloadJson(file, `${pack.name}.sprite-pack.json`)
+          const unembedded = file.sprites.filter(item => !item.data && item.url?.startsWith('/user/images/')).length
+          if (unembedded > 0) {
+            toast(body, `已导出「${pack.name}」，但有 ${unembedded} 张本地图片未能内嵌，跨设备导入可能无法显示`)
+          } else {
+            toast(body, t("sprite.manager.content.export.saved", "已导出「{{p0}}」", { p0: pack.name }))
+          }
+        } catch (err) {
+          console.error('[sprite-overlay] 导出图包 JSON 失败', err)
+          toast(body, err instanceof Error ? err.message : t("common.error", "错误"))
+        }
       }),
       button(t("sprite.manager.content.share.copy", "复制分享串"), async () => {
         const result = encodeShareStringV2(pack)

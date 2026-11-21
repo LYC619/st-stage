@@ -1,18 +1,6 @@
 import type { EmojiItem, PhotoItem } from './types'
 export { DEFAULT_PLAYER_AVATAR, DEFAULT_CONTACT_AVATAR } from './avatars-data'
 
-export const SISTER_LOCATIONS: Record<string, string> = {
-  TOILET: '厕所，妹妹正在上厕所',
-  SCHOOL: '妹妹正在学校上课',
-  LIVING_ROOM: '客厅，妹妹正在和玩家待在一起，会吐槽为什么还用微信发消息',
-  SISTER_ROOM: '妹妹正在自己的卧室',
-}
-
-export const PLAYER_LOCATIONS: Record<string, string> = {
-  LIVING_ROOM: '玩家此时在客厅',
-  COMPANY: '玩家此时在公司',
-}
-
 export const PLAYER_EMOJIS: Record<string, EmojiItem> = {
   simper: { id: 'simper', name: '傻笑', description: '傻笑的熊猫头表情包，代表搞怪，沙雕的傻笑。', file: 'emojies/player/simper.png' },
   angry: { id: 'angry', name: '生气', description: '熊猫头愤怒表情，代表有点搞怪的生气含义。', file: 'emojies/player/angry.png' },
@@ -63,17 +51,4 @@ export const CONTACT_PHOTOS: Record<string, PhotoItem> = {
   bedroom7: { id: 'bedroom7', name: '卧室自拍7', description: '妹妹在卧室的自拍：脱掉长裤和内裤，主动分开小穴', file: 'photos/bedroom7.png' },
   pee1: { id: 'pee1', name: '上厕所自拍1', description: '尿尿时的俯视自拍', file: 'photos/pee1.png' },
   pee2: { id: 'pee2', name: '上厕所自拍2', description: '尿尿时正对小穴的自拍', file: 'photos/pee2.png' },
-}
-
-export const FALLBACK_DIALOGUES = {
-  keywords: [
-    { pattern: '爱你|喜欢', branches: [ { min_mood: 50, reply: '我也爱你，哥哥~' }, { min_mood: 20, reply: '哥哥真好~' }, { min_mood: 0, reply: '嗯...' } ] },
-    { pattern: '吃', branches: [ { min_mood: 30, reply: '我想吃你做的菜~' }, { min_mood: 0, reply: '我还没想好呢，要不你给我带点？' } ] },
-    { pattern: '在吗', reply: '有事说事' },
-    { pattern: '回来带杯可乐|可乐', reply: '打钱' },
-    { pattern: '想你', branches: [ { min_mood: 40, reply: '我也想你...♡' }, { min_mood: 0, reply: '嗯，我也是。' } ] },
-    { pattern: '照片|涩图|看', reply: 'photo:bedroom1' },
-  ],
-  default_text: '嗯嗯，知道了。',
-  red_packet_reply: '谢谢老板，老板大气！',
 }

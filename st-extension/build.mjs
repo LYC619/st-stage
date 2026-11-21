@@ -150,6 +150,20 @@ export function buildLoaderStub() {
 `)
 }
 
+export function collectExtensionCss(sourceRoot = defaultSourceRoot) {
+  const extensionDir = path.join(sourceRoot, 'st-extension')
+  const stylesDir = path.join(extensionDir, 'styles')
+  const baseCss = readFileSync(path.join(extensionDir, 'style.css'), 'utf8')
+  const partials = existsSync(stylesDir)
+    ? readdirSync(stylesDir)
+      .filter(name => name.endsWith('.css'))
+      .sort()
+      .map(name => readFileSync(path.join(stylesDir, name), 'utf8'))
+    : []
+  const phoneCss = readFileSync(path.join(sourceRoot, 'core/phone-shell.css'), 'utf8')
+  return normalizeArtifactNewlines([baseCss, ...partials, phoneCss].join('\n'))
+}
+
 export async function buildExtension({
   sourceRoot = defaultSourceRoot,
   outputRoot = sourceRoot,
@@ -204,12 +218,10 @@ export async function buildExtension({
   // 加载器 stub：内容与版本无关，字节稳定
   writeFileSync(path.join(outputRoot, 'index.js'), buildLoaderStub())
 
-  // style.css = 扩展基础样式 + 双端共用的手机框架样式
-  const baseCss = readFileSync(path.join(extensionDir, 'style.css'), 'utf8')
-  const phoneCss = readFileSync(path.join(sourceRoot, 'core/phone-shell.css'), 'utf8')
+  // style.css = 扩展基础样式 + 分模块样式 + 双端共用的手机框架样式
   writeFileSync(
     path.join(outputRoot, 'style.css'),
-    normalizeArtifactNewlines(`${baseCss}\n${phoneCss}`),
+    collectExtensionCss(sourceRoot),
   )
 
   // locale 文件：复制到产物目录，运行时动态加载

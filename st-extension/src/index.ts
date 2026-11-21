@@ -1,31 +1,24 @@
 /**
- * 百工（原「角色立绘悬浮窗」）— SillyTavern 扩展入口。酒馆里的事，百工都做。
- * 链路：加载设置 → 注入 prompt → 监听 AI 消息 → 提取标签 → 悬浮窗切换。
- * 消息后处理：隐藏 [立绘:xxx] 标签、渲染消息内插图（message-postprocess）。
- * 手机框架：悬浮 📱 图标 → Home 屏 → 内置 App（立绘/图库/设置）；见 docs/APP-SPEC.md。
+ * 百工（st-stage）— SillyTavern 扩展入口。酒馆里的事，百工都做。
+ * 职责：生命周期编排、宿主能力桥接、内置/独立 App 注册、立绘/HUD/渲染器接线。
  */
 
-import { t } from '../../core/i18n'
 import { getPackCover, type PluginSettings } from '../../core/types'
-import { buildActiveSpritePrompt } from '../../core/active-prompt'
-import { extractTags } from '../../core/tag-parser'
-import {
-  getActivePacks,
-  resolveSprite,
-  resolveSprites,
-} from '../../core/sprite-store'
-import { buildApproxCandidates, resolveWithApprox } from '../../core/approx-match'
-import { createVariableHud, type HudSectionSnapshot } from './variable-hud'
+import { getActivePacks, resolveSprite } from '../../core/sprite-store'
 import { getLastMessageId, readVariables, subscribeVarEvents } from './apps/mvu/bridge'
-
-/** 变量速查悬浮窗的位置/展开态存放键（App 私有存储命名空间，不是核心设置） */
-const VARHUD_STATE_KEY = 'varhud'
-import { preloadMatchedSprites, preloadOnActivate } from '../../core/sprite-preload'
-import { PhoneAppRegistry, createPhoneAppContext, installRegisterQueue, runAppSetup, type AppHostDeps, type PhoneApp, type ToastKind } from '../../core/phone-registry'
+import {
+  PhoneAppRegistry,
+  createPhoneAppContext,
+  installRegisterQueue,
+  runAppSetup,
+  type AppHostDeps,
+  type PhoneApp,
+  type ToastKind,
+} from '../../core/phone-registry'
 import { createCapabilityTracker, createEventHub, type CapabilityTracker } from '../../core/capabilities'
 import { openTrackedAppModal } from '../../core/app-modal'
 import { createPhoneShell } from '../../core/phone-shell'
-import { STAdapter } from './st-adapter'
+import { STAdapter, initI18n } from './st-adapter'
 import { createOverlay, type OverlayController } from './overlay-dom'
 import { createSpriteManager } from './sprite-manager'
 import { mountSettingsPanel } from './settings-panel'
@@ -48,15 +41,17 @@ import { createApiManager } from './apps/api/manager'
 import { API_APP_ID, sanitizeAppData } from './apps/api/core'
 import { CARD_CHOICES_APP_ID, createChoicePersistence } from './apps/renderer/choices'
 import { beginExtensionLifecycle, runWhenDomReady } from './lifecycle'
-import { initI18n } from './st-adapter'
 import { buildRoleSummary, type ExternalVariableStatus } from './role-summary'
 import { registerPhoneCommand } from './slash-commands'
+import { createHudController } from './hud-controller'
+import { createSpriteRuntime } from './sprite-runtime'
+import { onOpenAppRequest, onStoryEvent } from './apps/shared/story-events'
 
 declare global {
   interface Window {
     /** 独立 App 注册入口（docs/APP-SPEC.md）：不抛错，注册失败打控制台 */
     stStage?: { registerApp: (app: PhoneApp) => void }
-    /** 独立 App 注册队列：st-stage 就绪前是普通数组（第三方 `||= []` 后 push），就绪后换成即时注册的 shim */
+    /** 独立 App 注册队列：st-stage 就绪前是普通数组，就绪后换成即时注册的 shim */
     stStageQueue?: { push(app: PhoneApp): void }
     /** 内部：上一次 bundle 执行留下的常驻清理（防同页重复执行时事件双重处理/双手机壳） */
     __stStageDispose?: () => void
@@ -64,7 +59,6 @@ declare global {
 }
 
 async function init(lifecycle: CapabilityTracker): Promise<void> {
-  // i18n 初始化：加载翻译文件，失败不阻塞后续流程
   await initI18n().catch((err) => {
     console.warn('[sprite-overlay] i18n 初始化失败', err)
   })
@@ -72,6 +66,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   const adapter = new STAdapter()
   let settings: PluginSettings
   let phoneVisible = false
+  let transientPhoneOpen = false
   try {
     settings = await adapter.loadSettings()
   } catch (err) {
@@ -79,6 +74,13 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     return
   }
   if (lifecycle.disposed) return
+
+  const settingsListeners = new Set<() => void>()
+  const notifySettingsListeners = () => {
+    for (const fn of settingsListeners) fn()
+  }
+
+  let onSettingsApplied: (() => void) | null = null
 
   function updateSettings(next: PluginSettings): void {
     const displayChanged =
@@ -92,28 +94,22 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     const autoChanged =
       next.autoSwitch !== settings.autoSwitch ||
       next.autoSwitchSeconds !== settings.autoSwitchSeconds
+    if (next.showPhone !== settings.showPhone) {
+      transientPhoneOpen = false
+    }
     settings = next
     adapter.saveSettings(settings)
     overlay.setLayout(settings.overlay)
     overlay.setOpacity(settings.spriteOpacity)
-    phone.setVisible(settings.showPhone)
-    phoneVisible = settings.showPhone
+    phoneVisible = settings.showPhone || transientPhoneOpen
+    phone.setVisible(phoneVisible)
     if (autoChanged) overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds)
-    refresh()
-    // 显示相关设置变更：先恢复原始 DOM 再按新规则补渲染（总开关关闭时只恢复）
+    spriteRuntime.refresh()
     if (displayChanged) reprocessAllMessages(settings)
-    // 变量速查悬浮窗的开关：挂载/卸载在下方定义后才可用，故用可变钩子
     onSettingsApplied?.()
+    notifySettingsListeners()
   }
 
-  /** updateSettings 尾部的额外同步钩子（在下方 HUD 初始化处赋值） */
-  let onSettingsApplied: (() => void) | null = null
-
-  /**
-   * 仅持久化设置（阶段7）：不触发立绘 refresh / Prompt 重注入 / 楼层重渲染 / 悬浮窗布局刷新。
-   * 供 App 私有数据（setAppData）与手机壳状态保存使用——这些变更与立绘渲染无关，
-   * 不应连累立绘。改核心设置仍走 updateSettings 触发正常 refresh。
-   */
   function saveSettingsOnly(next: PluginSettings): void {
     const previousNewvar = normalizeNewvarData(settings.apps[NEWVAR_APP_ID])
     const nextNewvar = normalizeNewvarData(next.apps[NEWVAR_APP_ID])
@@ -125,14 +121,11 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     if (previousHidesUpdates !== nextHidesUpdates) {
       reprocessAllMessages(settings)
     }
+    notifySettingsListeners()
   }
 
-  /* ---- ctx 能力层（阶段五·5a，docs/superpowers/specs/2026-07-28-ctx-capability-layer-design.md） ---- */
-  // 事件扇出：平台对 ST 只保持一份订阅（下方 adapter.onMessageReceived/onCharacterChanged
-  // 处 emit），经 hub 分发给各 App；单个 handler 抛错由 hub 兜住，不拖垮别人
   const appMessageHub = createEventHub<string>()
   const appCharacterHub = createEventHub<null>()
-  // 平台级追踪器：host 订阅、setup 清理、App 注入通道清空、残留弹窗——同页重复执行时统一回收
   const hostTracker = createCapabilityTracker()
   lifecycle.track(() => hostTracker.dispose())
   lifecycle.track(() => adapter.injectPrompt(''))
@@ -145,15 +138,13 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
       const channel = `app:${appId}`
       if (!usedAppChannels.has(channel)) {
         usedAppChannels.add(channel)
-        // 首次使用即登记清空动作：平台销毁时不留残余注入
         hostTracker.track(() => adapter.injectChannel(channel, ''))
       }
       adapter.injectChannel(channel, text, depth)
     },
     toast: (kind: ToastKind, message: string) => {
-      // toastr 是 ST 全局通知库；异常环境缺失时降级 console
-      const t = (window as { toastr?: Record<string, (msg: string) => void> }).toastr
-      if (t?.[kind]) t[kind](message)
+      const toastr = (window as { toastr?: Record<string, (msg: string) => void> }).toastr
+      if (toastr?.[kind]) toastr[kind](message)
       else console.info(`[sprite-overlay][${kind}] ${message}`)
     },
   }
@@ -171,7 +162,9 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
           if (id !== undefined && id !== null && String(id) !== '') {
             return ctx?.characters?.[Number(id)]
           }
-        } catch { /* 忽略异常 */ }
+        } catch (err) {
+          console.warn('[st-stage] 读取当前角色卡信息失败', err)
+        }
         return undefined
       },
       getChatContext: () => {
@@ -183,32 +176,36 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
             characterName: adapter.getCurrentCharacterName(),
             chat: ctx?.chat,
           }
-        } catch { /* 忽略异常 */ }
+        } catch (err) {
+          console.warn('[st-stage] 读取聊天上下文失败', err)
+        }
         return undefined
       },
       getVariables: async () => {
         try {
           const res = await readVariables({ type: 'message', message_id: 'latest' }, getLastMessageId())
           if (res.status === 'ready') return res.data
-        } catch { /* 忽略异常 */ }
+        } catch (err) {
+          console.warn('[st-stage] 读取外部状态变量失败', err)
+        }
         return undefined
       },
       ...platformCaps,
     }
   }
 
+  let openPhoneApp = (_appId: string) => {}
+
   const manager = createSpriteManager({
     adapter,
     getSettings: () => settings,
     updateSettings,
-    // 从手机打开的弹窗关闭后：重新展开手机并回到「图库」页；悬浮窗齿轮来源则正常关闭
     onClosed: (source) => {
-      if (source === 'phone') phone.openApp('gallery')
+      if (source === 'phone') openPhoneApp('gallery')
     },
   })
   lifecycle.track(() => manager.destroy())
 
-  let openSpritesApp = () => {}
   const overlay: OverlayController = createOverlay(
     settings.overlay,
     (layout) => {
@@ -216,31 +213,37 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
       adapter.saveSettings(settings)
     },
     () => manager.open(),
-    // 悬浮窗 ✕：只隐藏窗体并记住状态，立绘功能（含楼层立绘）不受影响
     () => updateSettings({ ...settings, overlayHidden: true }),
-    () => openSpritesApp(),
+    () => openPhoneApp('sprites'),
   )
   lifecycle.track(() => overlay.destroy())
   overlay.setAutoSwitch(settings.autoSwitch, settings.autoSwitchSeconds)
   overlay.setOpacity(settings.spriteOpacity)
 
-  /* ---- 手机框架 ---- */
+  const spriteRuntime = createSpriteRuntime({
+    adapter,
+    overlay,
+    getSettings: () => settings,
+  })
+
   const registry = new PhoneAppRegistry()
 
   function createAppContext(appId: string, goHome: () => void) {
     return createPhoneAppContext({
       ...createHostDeps(appId),
-      // 只有提交设置的 App 自己重绘；悬浮窗、设置面板等外部改动不再重挂载打开中的 App
       updateSettings: (next) => {
         updateSettings(next)
-        phone.refreshApp(appId)
+        phone.refreshApp?.(appId)
       },
       goHome,
       openModal: (id, build) => {
-        // 三原则标准动作：收手机 → 全屏弹窗 → 关闭回本 App；平台销毁时兜底关闭
+        const restoreTransient = transientPhoneOpen
         openTrackedAppModal(build, {
           onOpen: collapsePhone,
-          onClose: () => phone.openApp(id),
+          onClose: () => {
+            if (restoreTransient) transientPhoneOpen = true
+            openPhoneApp(id)
+          },
         }, (cleanup) => hostTracker.track(cleanup))
       },
     })
@@ -251,6 +254,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     const hasCharacter = ctx?.characterId !== undefined && ctx.characterId !== null && String(ctx.characterId) !== ''
     return buildRoleSummary(settings, hasCharacter ? adapter.getCurrentCharacterName() : '', hasCharacter ? adapter.getStoryContext().title : '', external)
   }
+
   const phone = createPhoneShell(settings.phone, {
     registry,
     createAppContext,
@@ -262,23 +266,55 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
       return homeSummary(status)
     },
     onStateChange: (state) => {
-      // 手机壳位置/展开态与立绘无关，走仅保存路径
+      if (!state.open && transientPhoneOpen) {
+        transientPhoneOpen = false
+        phoneVisible = settings.showPhone
+        phone.setVisible(phoneVisible)
+      }
       saveSettingsOnly({ ...settings, phone: state })
     },
   })
   lifecycle.track(() => phone.destroy())
   phone.setAppearance(readAppearance(settings.apps.appearance))
   lifecycle.track(subscribeVarEvents(() => phone.refreshHome()))
-  openSpritesApp = () => phone.openApp('sprites')
 
-  /** 收起手机壳并持久化（打开全屏弹窗前用，避免手机挡在弹窗上） */
+  openPhoneApp = (appId: string) => {
+    if (!settings.showPhone) {
+      transientPhoneOpen = true
+      phoneVisible = true
+      phone.setVisible(true)
+    }
+    phone.openApp(appId)
+  }
+
+  lifecycle.track(onOpenAppRequest((link) => {
+    if (link.appId === 'gallery-manager') {
+      collapsePhone()
+      manager.open('phone')
+      return
+    }
+    if (registry.get(link.appId)) {
+      openPhoneApp(link.appId)
+    }
+  }))
+
+  lifecycle.track(onStoryEvent((event) => {
+    if (event.type === 'story-date-changed' || event.type === 'story-state-updated' || event.type === 'calendar-updated' || event.type === 'chronicle-updated') {
+      phone.refreshHome()
+    }
+  }))
+
   function collapsePhone(): void {
+    transientPhoneOpen = false
     settings = { ...settings, phone: { ...settings.phone, open: false } }
     adapter.saveSettings(settings)
+    phoneVisible = settings.showPhone
+    phone.setVisible(phoneVisible)
     phone.setState(settings.phone)
   }
 
   function expandPhone(): void {
+    if (!settings.showPhone) transientPhoneOpen = true
     settings = { ...settings, phone: { ...settings.phone, open: true } }
     adapter.saveSettings(settings)
     phoneVisible = true
@@ -291,10 +327,9 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     expand: expandPhone,
     collapse: collapsePhone,
     hasApp: id => !!registry.get(id),
-    openApp: id => phone.openApp(id),
+    openApp: id => openPhoneApp(id),
   })
 
-  // 「新变量」运行时：注入走独立命名通道（与立绘 injectPrompt 互不覆盖），解析/存储常驻
   const newvarRuntime = createNewvarRuntime({
     getSettings: () => settings,
     inject: (prompt, depth) => adapter.injectChannel(NEWVAR_CHANNEL, prompt, depth),
@@ -302,7 +337,6 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   lifecycle.track(() => newvarRuntime.dispose())
   lifecycle.track(() => adapter.injectChannel(NEWVAR_CHANNEL, ''))
 
-  // Renderer runtime 复用统一消息后处理事件；模式工厂在各模式批次中逐项注册。
   const getRendererSettings = () => normalizeRendererSettings(settings.apps[RENDERER_APP_ID])
   const composerBridge = createComposerBridge()
   lifecycle.track(() => composerBridge.dispose())
@@ -332,70 +366,18 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   })
   lifecycle.track(() => rendererRuntime.dispose())
 
-  // 变量速查悬浮窗（Finding 7）：只读，两个变量来源各占一段。
-  // 默认关闭，开关在「立绘」App 的 Prompt 区之外——见 sprite-app 的设置项。
-  let variableHud: ReturnType<typeof createVariableHud> | null = null
-  function syncVariableHud(): void {
-    if (settings.variableHud && !variableHud) {
-      variableHud = createVariableHud({
-        readSections: async () => {
-          const sections: HudSectionSnapshot[] = []
-          // MVU / 酒馆助手：bridge 自己处理三级降级，不可用时给出原因
-          const messageId = getLastMessageId()
-          const read = await readVariables({ type: 'message', message_id: 'latest' }, messageId)
-          sections.push({
-            source: 'MVU',
-            root: read.status === 'ready' || read.status === 'empty' ? read.data : null,
-            notice: read.status === 'unavailable' ? t('variableHud.mvu_unavailable', '未检测到 MVU / 酒馆助手') : read.error ?? '',
-          })
-          // 「新变量」：本扩展自己的快照，始终可读
-          const newvarState = newvarRuntime.getCurrentState()
-          sections.push({
-            source: t('apps.newvar.name', '新变量'),
-            root: newvarState,
-            notice: '',
-          })
-          return sections
-        },
-        subscribe: (handler) => {
-          const offVar = subscribeVarEvents(handler)
-          const offNewvar = newvarRuntime.subscribe(handler)
-          return () => {
-            offVar()
-            offNewvar()
-          }
-        },
-        readState: () => {
-          const stored = settings.apps[VARHUD_STATE_KEY]
-          const s = stored && typeof stored === 'object' ? stored as Record<string, unknown> : {}
-          return {
-            x: typeof s.x === 'number' ? s.x : 12,
-            y: typeof s.y === 'number' ? s.y : 120,
-            open: typeof s.open === 'boolean' ? s.open : false,
-          }
-        },
-        // 位置/展开态是纯 UI 状态：走 saveSettingsOnly，不触发立绘重渲染
-        writeState: (state) => {
-          saveSettingsOnly({
-            ...settings,
-            apps: { ...settings.apps, [VARHUD_STATE_KEY]: state },
-          })
-        },
-      })
-    } else if (!settings.variableHud && variableHud) {
-      variableHud.dispose()
-      variableHud = null
-    }
-  }
-  syncVariableHud()
-  onSettingsApplied = syncVariableHud
+  const hudController = createHudController({
+    getSettings: () => settings,
+    saveSettingsOnly,
+    newvarRuntime,
+  })
+  hudController.sync()
+  onSettingsApplied = () => hudController.sync()
   lifecycle.track(() => {
     onSettingsApplied = null
-    variableHud?.dispose()
-    variableHud = null
+    hudController.dispose()
   })
 
-  // 「变量设计」弹窗：配置写 App 私有存储（saveSettingsOnly，不触发立绘刷新）后通知运行时重注入
   const newvarDesigner = createNewvarDesigner({
     getData: () => newvarRuntime.getData(),
     setData: (next) => {
@@ -404,17 +386,16 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     },
     buildPreview: () => newvarRuntime.buildPreview(),
     getLastParse: () => newvarRuntime.getLastParse(),
-    onClosed: () => phone.openApp('newvar'),
+    onClosed: () => openPhoneApp('newvar'),
   })
   lifecycle.track(() => newvarDesigner.close())
 
-  // 「API 站点管理」弹窗：站点档案存 App 私有存储（saveSettingsOnly，不触发立绘刷新）
   const apiManager = createApiManager({
     getData: () => sanitizeAppData(settings.apps[API_APP_ID]),
     setData: (next) => {
       saveSettingsOnly({ ...settings, apps: { ...settings.apps, [API_APP_ID]: next } })
     },
-    onClosed: () => phone.openApp('api'),
+    onClosed: () => openPhoneApp('api'),
   })
   lifecycle.track(() => apiManager.close())
 
@@ -423,18 +404,23 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     saveImage: dataUri => adapter.saveDataUri(dataUri),
     listApps: () => registry.list(),
     previewSpriteOpacity: (percent) => overlay.setOpacity(percent),
-    // 从手机开图库弹窗：先收起手机（避免挡在弹窗上），来源标记=手机（关闭后回图库页）
     openGalleryManager: () => {
+      const restoreTransient = transientPhoneOpen
       collapsePhone()
+      if (restoreTransient) transientPhoneOpen = true
       manager.open('phone')
     },
     newvarRuntime,
     openNewvarDesigner: () => {
+      const restoreTransient = transientPhoneOpen
       collapsePhone()
+      if (restoreTransient) transientPhoneOpen = true
       newvarDesigner.open()
     },
     openApiManager: () => {
+      const restoreTransient = transientPhoneOpen
       collapsePhone()
+      if (restoreTransient) transientPhoneOpen = true
       apiManager.open()
     },
     rendererRuntime,
@@ -443,9 +429,6 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     runAppSetup(app, createHostDeps(app.id), hostTracker)
   }
 
-  // 独立 App 注册（docs/APP-SPEC.md）：先吃掉 st-stage 就绪前排队的积压，再接管后续 push 即时注册。
-  // registerApp 走同一 shim——注册失败（形状非法/id 重复）只打控制台，不拖垮第三方扩展也不拖垮框架；
-  // 注册成功后调用 setup（常驻层，host 订阅经 hostTracker 在平台销毁时统一回收）
   const registerQueue = installRegisterQueue(window.stStageQueue, (app) => {
     registry.register(app)
     runAppSetup(app, createHostDeps(app.id), hostTracker)
@@ -459,102 +442,13 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     delete window.stStageQueue
   })
 
-  /** 悬浮窗是否允许显示：总开关开 + 非仅楼层模式 + 未被用户手动关闭 */
-  function overlayAllowed(): boolean {
-    return settings.enabled && settings.spriteDisplayMode !== 'inline' && !settings.overlayHidden
-  }
+  lifecycle.track(adapter.onStreamText((text) => spriteRuntime.handleStreamText(text)))
+  lifecycle.track(adapter.onGenerationEnded(() => spriteRuntime.resetStreamState()))
 
-  /** 上次悬浮窗内容 key：角色+包不变时不重置当前立绘（无关设置变更不打断展示） */
-  let lastOverlayContentKey = ''
-
-  /** 根据当前角色刷新：注入 prompt + 更新悬浮窗 */
-  function refresh(): void {
-    if (!settings.enabled) {
-      // 总开关关闭：清空注入、隐藏悬浮窗；手机与其他内置工具不受影响
-      adapter.injectPrompt('')
-      overlay.setVisible(false)
-      lastOverlayContentKey = ''
-      return
-    }
-
-    const characterName = adapter.getCurrentCharacterName()
-    const packs = getActivePacks(settings, characterName)
-    const pack = packs[0] ?? null
-    const prompt = buildActiveSpritePrompt(settings, characterName)
-    adapter.injectPrompt(prompt, settings.injectionDepth)
-
-    const contentKey = `${characterName}|${packs.map((p) => p.id).join(',')}|${pack ? pack.sprites.length > 0 : false}`
-    if (contentKey !== lastOverlayContentKey) {
-      lastOverlayContentKey = contentKey
-      if (pack && pack.sprites.length > 0) {
-        preloadOnActivate(packs)
-        overlay.setImage(pack.sprites[0].url, pack.sprites[0].tag)
-      } else if (characterName) {
-        // 未绑定：显示占位提示，保留 ⚙ 管理入口
-        overlay.setPlaceholder(t('sprite.overlay.placeholder_no_pack', '未绑定立绘包\n点击 ⚙ 进行绑定'))
-      } else {
-        overlay.setPlaceholder(t('sprite.overlay.placeholder_no_character', '打开角色聊天后\n点击 ⚙ 绑定立绘包'))
-      }
-    }
-    // 仅楼层模式 / 用户手动关闭：悬浮窗一律不显示
-    overlay.setVisible(overlayAllowed())
-  }
-
-  /** 逐条解析并近似兜底；去重规则与 resolveSprites 一致（不连续重复同一张） */
-  function resolveSequenceWithApprox(
-    packs: ReturnType<typeof getActivePacks>,
-    addresses: string[],
-  ): ReturnType<typeof resolveSprites> {
-    const cache = { current: null as ReturnType<typeof buildApproxCandidates> | null }
-    const out: ReturnType<typeof resolveSprites> = []
-    for (const address of addresses) {
-      const sprite = resolveWithApprox(packs, address, resolveSprite, true, cache)
-      if (sprite && out[out.length - 1] !== sprite) out.push(sprite)
-    }
-    return out
-  }
-
-  function displaySprites(addresses: ReturnType<typeof extractTags>): void {
-    if (!settings.enabled || addresses.length === 0) return
-    const characterName = adapter.getCurrentCharacterName()
-    const packs = getActivePacks(settings, characterName)
-    if (packs.length === 0) return
-    // 关闭近似匹配时走原来的批量解析，保持逐字相同的行为
-    const seq = settings.approxMatch
-      ? resolveSequenceWithApprox(packs, addresses)
-      : resolveSprites(packs, addresses)
-    preloadMatchedSprites(seq)
-    if (seq.length > 0 && overlayAllowed()) {
-      overlay.setSprites(seq)
-      overlay.setVisible(true)
-    }
-  }
-
-  let streamedText = ''
-  let streamedTagCount = 0
-  function resetStreamState(): void {
-    streamedText = ''
-    streamedTagCount = 0
-  }
-
-  const unsubscribeStream = adapter.onStreamText((text) => {
-    if (!text.startsWith(streamedText)) streamedTagCount = 0
-    streamedText = text
-    const addresses = extractTags(text)
-    const added = addresses.slice(streamedTagCount)
-    streamedTagCount = addresses.length
-    displaySprites(added)
-  })
-  lifecycle.track(unsubscribeStream)
-  lifecycle.track(adapter.onGenerationEnded(resetStreamState))
-
-  // 收到最终 AI 消息：先扇出给 App，再以最终文本覆盖流式阶段的展示结果。
-  const unsubscribeMessage = adapter.onMessageReceived((text) => {
+  lifecycle.track(adapter.onMessageReceived((text) => {
     appMessageHub.emit(text)
-    displaySprites(extractTags(text))
-    resetStreamState()
-  })
-  lifecycle.track(unsubscribeMessage)
+    spriteRuntime.handleFinalMessage(text)
+  }))
 
   const storyCapture = createStoryImageCapture({
     getSettings: () => settings,
@@ -566,7 +460,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
       saveImage: (file, name) => adapter.saveImageFile(file, name, story.characterName),
     }),
   })
-  // 消息渲染后处理：隐藏标签 / 渲染插图 / 外部图片归档操作
+
   lifecycle.track(mountMessagePostprocess({
     getSettings: () => settings,
     getRawMessage: (messageId) => adapter.getRawMessage(messageId),
@@ -577,20 +471,18 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     cleanupMessages: rendererRuntime.dispose,
   }))
 
-  // 切换聊天/角色时：重新注入 + 刷新悬浮窗和管理弹窗；延迟补渲染窗口内历史楼层
-  // （渲染事件逐条触发时窗口守卫已限流，这里兜底渲染事件缺失的旧版 ST / 迟到的 DOM）
   let cancelPendingNavigation = () => {}
   const handleChatNavigation = () => {
     composerBridge.dispose()
     phone.refreshHome()
     appCharacterHub.emit(null)
-    refresh()
+    spriteRuntime.refresh()
     manager.refreshIfOpen()
-    resetStreamState()
+    spriteRuntime.resetStreamState()
     cancelPendingNavigation()
     const timer = setTimeout(() => {
       cancelPendingNavigation()
-      refresh()
+      spriteRuntime.refresh()
       reprocessAllMessages(settings)
     }, 200)
     cancelPendingNavigation = lifecycle.track(() => clearTimeout(timer))
@@ -603,13 +495,18 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     unsubscribeChatCreated()
   })
 
-  // 设置面板：基础设定（开关/图床前缀）
   lifecycle.track(mountSettingsPanel({
     getSettings: () => settings,
     updateSettings,
+    subscribe: (fn) => {
+      settingsListeners.add(fn)
+      return () => settingsListeners.delete(fn)
+    },
+    openGalleryManager: () => manager.open('overlay'),
+    expandPhoneTemporarily: expandPhone,
   }))
 
-  refresh()
+  spriteRuntime.refresh()
   newvarRuntime.start()
   phone.setState(settings.phone)
   phone.setVisible(settings.showPhone)
@@ -619,6 +516,5 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   console.log(`[sprite-overlay] 百工（st-stage）已加载（含手机框架）${version}`)
 }
 
-// ST 扩展脚本在 app ready 后加载，直接初始化即可；保险起见等 DOM ready
 const extensionLifecycle = beginExtensionLifecycle(window, document)
 runWhenDomReady(document, extensionLifecycle, () => init(extensionLifecycle))

@@ -1,0 +1,910 @@
+/* 立绘包管理弹窗 */
+.so-manager-backdrop {
+  position: fixed;
+  /* 不用 inset 简写：Chromium 87 之前的老内核（不少国产壳浏览器）不认识，
+     会导致遮罩没有四边锚点、整个弹窗塌成一条 */
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.so-manager {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  /* 管理立绘时不需要同时用 ST 其他功能，窗口尽量大（用户实测反馈） */
+  width: min(1200px, 96vw);
+  max-height: 92vh;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+  /* 主题色叠在实底之上：不少 ST 主题的 BlurTint 很透（靠 blur 配合），
+     直接当背景会看穿到聊天页，弹窗像不存在一样 */
+  background:
+    linear-gradient(
+      var(--SmartThemeBlurTintColor, transparent),
+      var(--SmartThemeBlurTintColor, transparent)
+    ),
+    rgba(22, 22, 28, 0.94);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+/* 头部固定、仅内容区滚动：弹窗放大或移动端全屏时，关闭按钮始终可点 */
+.so-manager-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 移动端（<768px）：撑满 backdrop 全屏。不用 vh/dvh —— 手机浏览器地址栏/底部工具栏
+   （叠加 ST 的 UI 缩放）会让视口单位大于 fixed 可视区，居中布局把弹窗顶部顶出屏幕；
+   backdrop 的四边锚点（top/right/bottom/left:0）始终等于真实可视区，stretch 直接继承它的高度。 */
+@media (max-width: 767.98px) {
+  .so-manager-backdrop {
+    align-items: stretch;
+  }
+
+  .so-manager {
+    width: 100%;
+    max-width: none;
+    height: auto;
+    max-height: none;
+    border-radius: 0;
+    padding: calc(12px + env(safe-area-inset-top, 0px)) 12px
+      calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* 手机上封面卡片墙更密（约 3 列），单卡不霸屏 */
+  .so-manager .so-pack-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 8px;
+  }
+
+  .so-manager .so-header-select {
+    flex: 1 1 auto;
+  }
+}
+
+.so-manager-header {
+  position: relative; /* 新建/导入下拉浮层的锚点 */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.12));
+}
+
+/* 头部操作区（列表页）：启用选择 + 新建/导入下拉按钮；详情页为空时隐藏 */
+.so-manager .so-manager-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.so-manager .so-manager-actions:empty {
+  display: none;
+}
+
+.so-manager .so-header-select {
+  width: auto;
+  flex: 0 1 210px;
+  min-width: 100px;
+}
+
+/* 下拉浮层：锚在头部下方靠右；实底防看穿到图墙 */
+.so-manager .so-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(320px, 100%);
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.16));
+  background: rgba(18, 18, 24, 0.98);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+}
+
+.so-manager .so-popover-title {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+/* 浮层内第二段（JSON 导入）与分享串导入分隔 */
+.so-manager .so-popover .so-popover-title:not(:first-child) {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.so-manager .so-popover .text_pole {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.so-manager .so-popover textarea.text_pole {
+  resize: vertical;
+  min-height: 64px;
+}
+
+.so-manager .so-popover .menu_button {
+  width: auto;
+  text-align: center;
+}
+
+.so-manager-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+}
+
+/* 触屏可点：返回/关闭按钮保证 36px 命中区 */
+.so-manager-back,
+.so-manager-close {
+  flex-shrink: 0;
+  min-width: 36px;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Keep mobile overrides after the base rules: title/close on row one, wrapping actions below. */
+@media (max-width: 767.98px) {
+  .so-manager-header {
+    flex-wrap: wrap;
+  }
+
+  .so-manager .so-manager-actions {
+    order: 1;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+.so-manager-back {
+  font-size: 22px;
+  line-height: 1;
+  padding-bottom: 3px; /* ‹ 字形偏下，视觉居中 */
+}
+
+.so-manager .so-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  flex-wrap: wrap;
+}
+
+/* 包封面图墙：自适应列数的卡片网格（桌面约 4 列、手机 2 列） */
+.so-manager .so-pack-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+
+/* 分区卡片：把相关操作组合在一起（绑定 / 新建导入 / 包信息 / 添加立绘） */
+.so-manager .so-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.12));
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.so-manager .so-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.7;
+  letter-spacing: 0.02em;
+}
+
+/* 折叠面板：次要功能区默认收起只露标题，图墙占主位（details/summary 原生可达性） */
+.so-manager .so-collapse > summary {
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  padding: 2px 0;
+}
+.so-manager .so-collapse > summary::-webkit-details-marker {
+  display: none;
+}
+.so-manager .so-collapse > summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+}
+.so-manager .so-collapse[open] > summary::before {
+  transform: rotate(90deg);
+}
+.so-manager .so-collapse > summary:hover {
+  opacity: 1;
+}
+.so-manager .so-collapse-body {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 行内输入控件占满剩余宽度，与按钮同行 */
+.so-manager .text_pole.so-grow {
+  width: auto;
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+/* 当前角色启用条：横向 chips（可排序/停用）+ 整体启停 */
+.so-manager .so-bind-strip {
+  align-items: center;
+  margin: 8px 0 2px;
+}
+
+.so-manager .so-bind-label {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.so-manager .so-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 3px 6px 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.16));
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+}
+
+.so-manager .so-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.so-manager .so-chip-btn {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.65;
+  touch-action: manipulation;
+}
+
+.so-manager .so-chip-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* 修复按钮文字竖排：强制不换行、宽度自适应。
+ *
+ * 作用域挂在 backdrop 而不是 .so-manager：标签管理和批量上传预览两个弹窗
+ * 是 append 到 backdrop 的，也就是 .so-manager 的兄弟节点而非后代，
+ * 用 `.so-manager 后代` 选择器够不到它们。CJK 的 min-content 宽度是「一个字」
+ * （中文可在任意字符间断行），所以 grid 的 auto 轨道会把「重命名」压成三行竖排。
+ * 光有 nowrap 不够：还要 flex-shrink:0 挡住 flex 容器的收缩，
+ * 以及下面的 min-width:auto 挡住 grid 轨道的收缩。 */
+.so-manager-backdrop .menu_button.so-btn,
+.so-manager-backdrop .menu_button {
+  white-space: nowrap;
+  width: max-content;
+  flex-shrink: 0;
+}
+
+/* grid 的 auto/1fr 轨道默认可缩到 min-content 以下；按钮所在轨道必须拒绝收缩，
+ * 否则 nowrap 只会让文字溢出按钮而不是把轨道撑开。 */
+.so-manager-backdrop .so-tag-manager-row > .menu_button,
+.so-manager-backdrop .so-tag-manager-add > .menu_button,
+.so-manager-backdrop .so-tag-manager-heading > .menu_button {
+  min-width: max-content;
+}
+
+.so-manager .so-status {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 4px;
+}
+
+/* 操作反馈：浮在弹窗底部的提示条，不随内容滚走 */
+.so-manager .so-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 5;
+  max-width: calc(100% - 32px);
+  margin: 0;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(12, 12, 16, 0.92);
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  opacity: 1;
+  pointer-events: none;
+}
+
+.so-manager .so-toast:empty {
+  display: none;
+}
+
+/* ---- 管理弹窗 v3：封面图墙卡片 + 详情网格 ---- */
+
+.so-manager .so-pack-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.so-manager .so-pack-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+}
+
+.so-manager .so-pack-card:focus-visible {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25);
+}
+
+.so-manager .so-pack-card:active {
+  transform: scale(0.98);
+}
+
+/* 使用中的包卡片：绿色描边呼应「使用中」角标 */
+.so-manager .so-pack-card.so-card-active {
+  border-color: rgba(74, 189, 126, 0.75);
+  box-shadow: 0 0 0 1px rgba(74, 189, 126, 0.35);
+}
+
+.so-manager .so-role-pack-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.so-manager .so-pack-list-folded {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  align-items: start;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.so-manager .so-pack-list-folded > .so-role-pack-group-expanded {
+  grid-column: 1 / -1;
+}
+
+.so-manager .so-role-pack-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 20px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.so-manager .so-role-pack-row span {
+  font-size: 12px;
+  opacity: 0.72;
+}
+
+.so-manager .so-role-pack-arrow {
+  text-align: center;
+  font-size: 18px;
+}
+
+.so-manager .so-role-pack-grid {
+  margin: 0 0 4px;
+}
+
+.so-manager .so-role-pack-stack {
+  position: relative;
+  width: 100%;
+  margin: 0 14px 14px 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  isolation: isolate;
+}
+
+.so-manager .so-role-stack-count {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 6px;
+  background: rgba(18, 18, 22, 0.9);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.so-manager .so-role-stack-layer,
+.so-manager .so-role-stack-face {
+  display: block;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+  border-radius: 8px;
+  background: rgba(26, 26, 30, 0.96);
+}
+
+.so-manager .so-role-stack-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.so-manager .so-role-stack-layer-1 {
+  transform: translate(7px, 7px);
+  z-index: -1;
+  opacity: 0.82;
+}
+
+.so-manager .so-role-stack-layer-2 {
+  transform: translate(14px, 14px);
+  z-index: -2;
+  opacity: 0.55;
+}
+
+.so-manager .so-role-stack-face {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.so-manager .so-role-pack-stack:hover .so-role-stack-face,
+.so-manager .so-role-pack-stack:focus-visible .so-role-stack-face {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.42);
+}
+
+.so-manager .so-role-pack-stack:focus-visible {
+  outline: none;
+}
+
+.so-manager .so-role-stack-cover {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.22);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.so-manager .so-role-stack-cover img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.so-manager .so-role-pack-strip {
+  display: flex;
+  gap: 12px;
+  margin: 0 0 8px;
+  padding: 4px 4px 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-inline: contain;
+}
+
+.so-manager .so-role-pack-strip .so-pack-card {
+  flex: 0 0 clamp(140px, 22vw, 220px);
+  scroll-snap-align: start;
+}
+
+.so-manager .so-role-pack-standalone {
+  grid-template-columns: minmax(104px, 220px);
+}
+
+.so-manager .so-gallery-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+.so-manager .so-gallery-search {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.so-manager .so-gallery-label-select {
+  flex: 0 1 180px;
+  min-width: 120px;
+}
+
+.so-manager .so-gallery-filter-chips {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.so-manager .so-gallery-filter-chip {
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  cursor: pointer;
+}
+
+.so-manager .so-gallery-paging {
+  display: flex;
+  justify-content: center;
+}
+
+.so-story-save-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  margin: 6px 0 8px 6px;
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 6px;
+  background: rgba(24, 24, 28, 0.9);
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.so-story-save-action:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+/* 老内核不支持 aspect-ratio 时给封面兜底高度，避免卡片塌成一行字 */
+@supports not (aspect-ratio: 3 / 4) {
+  .so-manager .so-card-cover {
+    height: 160px;
+  }
+}
+
+/* 封面：3:4 竖版，适配立绘长图 */
+.so-manager .so-card-cover {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.so-manager .so-card-cover img {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* 图床不可达：同尺寸占位，替代浏览器破图标与原始 alt 文本 */
+.so-manager .so-img-failed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 48px;
+  aspect-ratio: 1;
+  padding: 6px;
+  box-sizing: border-box;
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.62);
+  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0 8px, rgba(255, 255, 255, 0.07) 8px 16px);
+}
+
+.so-manager .so-card-cover .so-img-failed,
+.so-manager .so-role-stack-cover .so-img-failed {
+  position: absolute;
+  inset: 0;
+  aspect-ratio: auto;
+}
+
+.so-manager .so-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+
+.so-manager .so-card-info b {
+  font-size: 13px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.so-manager .so-card-info small {
+  font-size: 11px;
+  opacity: 0.65;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.so-manager .so-pack-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 18px;
+  margin-top: 3px;
+}
+
+.so-manager .so-pack-labels span {
+  max-width: 100%;
+  padding: 2px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 10px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 封面角标：使用中（左下）/ 预设（右上）；实底保证压在图上仍可读 */
+.so-manager .so-card-badge {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  z-index: 1;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(34, 139, 84, 0.92);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  box-sizing: border-box;
+  max-width: calc(50% - 10px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.so-manager .so-card-resource-status {
+  position: absolute;
+  left: 50%;
+  right: 6px;
+  bottom: 6px;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: calc(50% - 6px);
+  pointer-events: none;
+}
+
+.so-manager .so-card-resource-chip {
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #fff;
+  background: rgba(18, 18, 22, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.so-manager .so-card-resource-local {
+  border-color: rgba(74, 189, 126, 0.72);
+}
+
+.so-manager .so-card-resource-cloud {
+  border-color: rgba(105, 166, 255, 0.72);
+}
+
+.so-manager .so-card-badge-off {
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(40, 40, 46, 0.88);
+}
+
+.so-manager .so-card-chip {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(4px);
+}
+
+.so-manager .so-spacer {
+  flex: 1;
+}
+
+.so-manager .so-btn-danger {
+  color: #ff7676;
+}
+
+/* 主操作按钮（保存包信息等）：绿色强调，与输入框区隔开 */
+.so-manager .so-btn-primary {
+  background: rgba(74, 189, 126, 0.22);
+  border: 1px solid rgba(74, 189, 126, 0.6);
+  font-weight: 600;
+}
+
+.so-manager .so-meta-save-row {
+  justify-content: flex-end;
+}
+
+.so-manager .so-meta-save {
+  min-width: 140px;
+  justify-content: center;
+  text-align: center;
+}
+
+/* Tabs and save actions stay outside the form scroll area, leaving room for the gallery. */
+.so-manager .so-pack-meta .so-collapse-body { max-height: min(300px, 35vh); }
+.so-manager .so-meta-tabs { display: flex; gap: 6px; flex-shrink: 0; }
+.so-manager .so-meta-tabs button {
+  flex: 1; min-width: 0; min-height: 40px; padding: 6px 8px; font: inherit;
+  color: #eee; background: #282830; border: 1px solid #777; border-radius: 6px; cursor: pointer;
+}
+.so-manager .so-meta-tabs [aria-selected="true"] { background: #354c66; border-color: #a4caff; font-weight: 600; }
+.so-manager .so-meta-tabs button:focus-visible,
+.so-manager .so-meta-tabpanel:focus-visible { outline: 2px solid #87bfff; outline-offset: -2px; }
+.so-manager .so-meta-panels { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 2px; }
+.so-manager .so-meta-tabpanel { display: flex; flex-direction: column; gap: 8px; }
+.so-manager .so-meta-tabpanel[hidden] { display: none !important; }
+.so-manager .so-pack-meta .so-meta-save-row { flex-shrink: 0; margin: 0; }
+@media (max-width: 360px) {
+  .so-manager .so-pack-meta .so-collapse-body { max-height: 30vh; }
+}
+
+/* ---- 列表页批量管理（实测反馈批次）：勾选删除 + 拖拽/按钮排序 ---- */
+.so-manager .so-batch-tip {
+  margin-top: 8px;
+}
+
+.so-manager .so-batch-classification {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 8px 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.so-manager .so-batch-classification > .so-row {
+  align-items: end;
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .so-manager .so-batch-classification {
+    grid-template-columns: 1fr;
+  }
+}
+
+.so-manager .so-pack-card.so-card-selected {
+  border-color: rgba(120, 170, 255, 0.85);
+  box-shadow: 0 0 0 2px rgba(120, 170, 255, 0.35);
+}
+
+.so-manager .so-card-check {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1.5px solid rgba(255, 255, 255, 0.7);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.so-manager .so-pack-filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) repeat(3, minmax(110px, 1fr)) auto auto;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+.so-manager .so-pack-filters .text_pole {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.so-manager .so-pack-filter-count {
+  font-size: 12px;
+  opacity: 0.72;
+  white-space: nowrap;
+}

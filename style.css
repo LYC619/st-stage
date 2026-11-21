@@ -2762,6 +2762,898 @@
   opacity: 0.6;
 }
 
+/* —— 管家 2.0：可解释体检、事务恢复与扩展排障 —— */
+.so-butler-app {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.so-butler-hero {
+  border-left: 3px solid rgba(93, 197, 143, 0.72);
+}
+
+.so-butler-guide {
+  border-left: 3px solid rgba(105, 166, 255, 0.68);
+}
+
+.so-butler-guide-steps {
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1.7;
+}
+
+.so-butler-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.so-butler-summary-item {
+  display: flex;
+  flex-direction: column;
+  min-height: 46px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  box-sizing: border-box;
+}
+
+.so-butler-summary-item small {
+  color: #b8b8bf;
+  font-size: 10.5px;
+}
+
+.so-butler-summary-item strong {
+  margin-top: 2px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.so-butler-text,
+.so-butler-lead,
+.so-butler-muted,
+.so-butler-alert {
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.so-butler-lead {
+  padding: 8px 10px;
+  border-left: 2px solid rgba(105, 166, 255, 0.68);
+  background: rgba(105, 166, 255, 0.07);
+}
+
+.so-butler-muted {
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.so-butler-alert {
+  color: #ffc9c9;
+}
+
+.so-butler-section-title,
+.so-butler-modal-title {
+  color: rgba(255, 255, 255, 0.96);
+  font-weight: 700;
+}
+
+.so-butler-modal-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.so-butler-section-title {
+  margin: 10px 0 4px;
+  font-size: 13px;
+}
+
+.so-butler-finding {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.025);
+  overflow: hidden;
+}
+
+.so-butler-finding + .so-butler-finding {
+  margin-top: 6px;
+}
+
+.so-butler-finding > summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+  padding: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.45;
+  list-style: none;
+}
+
+.so-butler-finding > summary::-webkit-details-marker {
+  display: none;
+}
+
+.so-butler-finding > summary::after {
+  content: '›';
+  grid-column: 2;
+  justify-self: end;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.so-butler-finding[open] > summary::after {
+  transform: rotate(90deg);
+}
+
+.so-butler-layer {
+  padding: 2px 5px;
+  border: 1px solid rgba(105, 166, 255, 0.35);
+  border-radius: 4px;
+  color: #b9d7ff;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.so-butler-severity-risk {
+  border-left: 3px solid rgba(255, 112, 112, 0.75);
+}
+
+.so-butler-severity-suggestion {
+  border-left: 3px solid rgba(255, 194, 102, 0.72);
+}
+
+.so-butler-severity-info {
+  border-left: 3px solid rgba(105, 166, 255, 0.62);
+}
+
+.so-butler-finding-body {
+  padding: 0 8px 8px;
+}
+
+.so-butler-explanation-row {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.so-butler-explanation-row strong {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 11px;
+}
+
+/*
+ * 管家操作区：宁可掉成一列，也不要把两列压窄。
+ *
+ * 原来是 repeat(2, minmax(0, 1fr))，轨道下限为 0，配合下面按钮的
+ * `min-width: 0` + `white-space: normal`，窄屏上「记忆与服务器设置建议」这种长标签
+ * 会在列里逐字折行。中文可在任意字符间断行，所以轨道越窄它折得越碎，最终一列一个字。
+ * auto-fit + 9em 下限的意思是：塞不下两列可读宽度时自动变一列，而不是硬挤成两列。
+ */
+.so-butler-actions,
+.so-butler-modal-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9em, 1fr));
+  gap: 6px;
+}
+
+.so-butler-modal-actions {
+  grid-template-columns: 1fr;
+}
+
+/*
+ * 这里保留 white-space: normal 是故意的：两列布局下允许长标签折到第二行，
+ * 比强行 nowrap 溢出好。但不能再给 min-width: 0——那会让轨道的 9em 下限失效。
+ */
+.so-butler-actions .so-app-btn,
+.so-butler-modal-actions .so-app-btn {
+  margin: 0;
+  white-space: normal;
+}
+
+.so-butler-primary-action {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 10px;
+  border-color: rgba(74, 189, 126, 0.72);
+  background: rgba(74, 189, 126, 0.2);
+  color: #e8fff2;
+  font-weight: 700;
+}
+
+.so-butler-notice {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(20, 20, 25, 0.96);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.so-butler-notice-success {
+  border-color: rgba(74, 189, 126, 0.58);
+}
+
+.so-butler-notice-error {
+  border-color: rgba(255, 112, 112, 0.58);
+  color: #ffc9c9;
+}
+
+.so-butler-pending {
+  border-color: rgba(255, 194, 102, 0.5);
+}
+
+.so-butler-kv {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.45fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: 12px;
+}
+
+.so-butler-kv strong {
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.so-butler-comparison-table {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.so-butler-comparison-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.4fr) minmax(0, 1fr);
+  gap: 3px 10px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 12px;
+}
+
+.so-butler-comparison-values {
+  overflow-wrap: anywhere;
+}
+
+.so-butler-comparison-row small {
+  grid-column: 1 / -1;
+  line-height: 1.45;
+}
+
+.so-butler-metric-block pre {
+  max-height: 220px;
+  margin: 5px 0 10px;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  color: rgba(255, 255, 255, 0.76);
+  font: 11px/1.45 var(--monoFontFamily, ui-monospace, monospace);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.so-butler-system-advice-list {
+  display: grid;
+  gap: 6px;
+  margin: 7px 0 14px;
+}
+
+.so-butler-system-advice {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.so-butler-system-advice > summary {
+  padding: 8px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.so-butler-system-advice-body {
+  padding: 0 8px 8px;
+}
+
+.so-butler-extension-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.so-butler-extension-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.so-butler-extension-row input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.so-butler-extension-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.so-butler-extension-row small {
+  max-width: 120px;
+  text-align: right;
+}
+
+@media (max-width: 520px) {
+  .so-butler-explanation-row,
+  .so-butler-kv,
+  .so-butler-comparison-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .so-butler-comparison-row small {
+    grid-column: 1;
+  }
+
+  .so-butler-kv strong {
+    text-align: left;
+  }
+
+  .so-butler-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .so-butler-extension-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .so-butler-extension-row small {
+    grid-column: 2;
+    max-width: none;
+    text-align: left;
+  }
+}
+
+/* —— 变量 App（vm-*）：楼层变量树状卡片 —— */
+.vm-head {
+  gap: 6px;
+}
+.vm-statusrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.vm-status {
+  flex: 1;
+  min-width: 0;
+}
+.vm-refresh {
+  flex-shrink: 0;
+  padding: 3px 12px;
+  font-size: 12px;
+}
+
+.vm-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 分组：折叠标题 + 缩进子树 */
+.vm-group {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.vm-group-title {
+  font-size: 12.5px;
+  opacity: 0.9;
+}
+.vm-group-body {
+  gap: 5px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  margin-left: 2px;
+}
+
+/* 叶子卡片：左主体（键+值+描述）可点编辑，右侧删除 */
+.vm-leaf {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+.vm-leaf-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.vm-leaf-main:focus-visible {
+  outline: 1px solid rgba(255, 255, 255, 0.4);
+  outline-offset: 2px;
+}
+.vm-key {
+  font-size: 12.5px;
+  font-weight: 600;
+  opacity: 0.95;
+}
+.vm-val {
+  font-size: 12.5px;
+  opacity: 0.82;
+  word-break: break-word;
+  font-family: var(--monoFontFamily, ui-monospace, monospace);
+}
+.vm-desc {
+  flex-basis: 100%;
+  font-size: 11px;
+  opacity: 0.55;
+  line-height: 1.45;
+}
+.vm-del {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  line-height: 1;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 120, 120, 0.25);
+  background: rgba(255, 100, 100, 0.06);
+  color: rgba(255, 150, 150, 0.8);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.vm-del:hover,
+.vm-del:focus-visible {
+  color: #fff;
+  border-color: rgba(255, 120, 120, 0.6);
+  background: rgba(255, 100, 100, 0.2);
+  outline: none;
+}
+
+/* 变化高亮徽标：绿涨 / 红跌 / 改 / 新 */
+.vm-badge {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 17px;
+  font-family: var(--monoFontFamily, ui-monospace, monospace);
+}
+.vm-badge-inc {
+  color: #7ee2a8;
+  background: rgba(80, 220, 130, 0.15);
+  border: 1px solid rgba(80, 220, 130, 0.35);
+}
+.vm-badge-dec {
+  color: #ff9a9a;
+  background: rgba(255, 100, 100, 0.15);
+  border: 1px solid rgba(255, 100, 100, 0.35);
+}
+.vm-badge-changed,
+.vm-badge-added {
+  color: #ffd27a;
+  background: rgba(255, 190, 90, 0.14);
+  border: 1px solid rgba(255, 190, 90, 0.32);
+}
+
+/* 编辑态叶子 */
+.vm-editing {
+  flex-direction: column;
+  align-items: stretch;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.vm-edit-title {
+  font-size: 12.5px;
+}
+.vm-edit-input {
+  resize: vertical;
+  min-height: 44px;
+}
+.vm-actions {
+  display: flex;
+  gap: 8px;
+}
+.vm-act {
+  flex: 1;
+  padding: 4px 10px;
+  font-size: 12px;
+  text-align: center;
+}
+.vm-act-ghost {
+  opacity: 0.7;
+}
+.vm-add-err {
+  color: rgba(255, 150, 150, 0.9);
+}
+
+/* —— 新变量 App（nv-*） —— */
+.nv-box {
+  display: flex;
+  flex-direction: column;
+}
+.nv-pre {
+  font-family: var(--monoFontFamily, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px;
+  max-height: 240px;
+  overflow: auto;
+}
+.nv-log-line {
+  font-family: var(--monoFontFamily, ui-monospace, monospace);
+  opacity: 0.85;
+}
+/* —— 变量设计弹窗布局（响应式：PC 网格/双栏，窄屏自动单列堆叠） —— */
+
+/* 模板库：卡片网格，PC 一行多张 */
+.nv-tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+}
+.nv-tpl-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+.nv-tpl-desc {
+  flex: 1;
+  opacity: 0.8;
+}
+.nv-tpl-actions {
+  display: flex;
+  gap: 6px;
+}
+.nv-tpl-actions .vm-act {
+  flex: 1;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.nv-tpl-actions .nv-tpl-del {
+  flex: 0 0 auto;
+}
+/* 存为自定义模板：输入框 + 按钮一行 */
+.nv-tpl-save {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+.nv-tpl-save .so-app-input {
+  flex: 1;
+  width: auto;
+}
+.nv-tpl-save .vm-act {
+  flex: 0 0 auto;
+  padding: 4px 14px;
+  font-size: 12px;
+}
+
+/* 变量定义：PC 双栏（左列表右编辑）；编辑表单跟随点击项 */
+.nv-defs-layout {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.nv-defs-list {
+  flex: 1 1 55%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.nv-defs-editor {
+  flex: 1 1 45%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+}
+.nv-def-selected {
+  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* 窄屏（移动端）：双栏退化为上下堆叠（点击列表后 JS 会滚动到表单） */
+@media (max-width: 720px) {
+  .nv-defs-layout {
+    flex-direction: column;
+  }
+  .nv-defs-list,
+  .nv-defs-editor {
+    flex: none;
+    width: 100%;
+    position: static;
+  }
+}
+
+/* ============ 「API」App（stapi-）：站点快速切换行 / 状态点 / 模型选择覆盖层 ============ */
+
+/* 手机页站点行：整行可点即切换，使用中高亮 + ✓ */
+.stapi-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+}
+.stapi-row:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.stapi-row:focus-visible {
+  outline: 1px solid rgba(255, 255, 255, 0.4);
+  outline-offset: 2px;
+}
+.stapi-row-on {
+  border-color: rgba(130, 200, 255, 0.55);
+  background: rgba(130, 200, 255, 0.08);
+}
+/* 切换进行中：整列表降透明并锁点击（busy 守卫之外的视觉反馈） */
+.stapi-row-busy {
+  opacity: 0.55;
+  pointer-events: none;
+}
+/* 管理弹窗站点行的排序按钮：沿用 vm-del 的几何，中性配色区别于删除 */
+.stapi-move {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.65);
+}
+.stapi-move:hover,
+.stapi-move:focus-visible {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.14);
+}
+.stapi-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stapi-row-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stapi-row-sub {
+  font-size: 11.5px;
+  opacity: 0.65;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stapi-row-mark {
+  flex: none;
+  opacity: 0.8;
+}
+button.stapi-row .stapi-row-name,
+button.stapi-row .stapi-row-sub {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+button.stapi-row .stapi-row-mark { max-width: 6em; overflow-wrap: anywhere; }
+button.stapi-row:disabled { cursor: wait; opacity: 0.65; }
+[data-api-legacy] > summary { min-height: 44px; padding-block: 12px; cursor: pointer; }
+
+/* 连接状态点（当前连接卡） */
+.stapi-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #d05c5c;
+  vertical-align: middle;
+}
+.stapi-dot-on {
+  background: #57c98a;
+}
+
+/* 模型选择覆盖层：挂在管理弹窗 .so-manager（relative）内部 */
+.stapi-picker {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 12px;
+}
+.stapi-picker-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(480px, 92%);
+  max-height: 72%;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(22, 22, 28, 0.97);
+}
+.stapi-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.stapi-picker-list {
+  overflow: auto;
+  min-height: 80px;
+}
+.stapi-picker-item {
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: var(--monoFontFamily, ui-monospace, monospace);
+  font-size: 12.5px;
+}
+.stapi-picker-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.stapi-picker-item:focus-visible {
+  outline: 1px solid rgba(255, 255, 255, 0.4);
+  outline-offset: -1px;
+}
+
+/* ── 云导出（选择式备份） ─────────────────────────────────────────────── */
+
+/* Two columns leave room for translated labels within the narrow phone shell. */
+.cloud-export-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.cloud-export-tabs > .so-app-btn {
+  /* Native tabs intentionally do not use the host's .menu_button style/role hooks. */
+  appearance: none;
+  min-width: 0;
+  width: 100%;
+  min-height: 32px;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+/* 当前分类：此前这个类名只挂在 DOM 上，没有任何样式，选中态看不出来 */
+.cloud-export-tabs > .so-app-btn.cloud-export-active {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.4);
+  font-weight: 600;
+}
+
+/* 全选 / 反选 / 清空：一行三格，不再竖排占掉三分之一屏 */
+.cloud-export-bulk {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.cloud-export-bulk > .so-app-btn {
+  min-width: 0;
+  min-height: 32px;
+  margin: 0;
+  padding: 4px 6px;
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: normal;
+}
+
+/*
+ * 角色行的层级：角色卡是一个整体，它的聊天是下一级。
+ *
+ * 角色名与聊天名此前用的是同一个 .so-app-toggle，字号、缩进、字重全一样，
+ * 展开聊天后一眼看不出哪个是角色、哪些是它的聊天。分三层拉开：
+ * 卡片框（一个角色一张）→ 角色名（加粗）→ 聊天（缩进 + 左竖线 + 小字号）。
+ */
+.cloud-export-character {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.cloud-export-character-name {
+  font-weight: 600;
+}
+
+/* 与角色名的复选框文字左对齐（缩进量 = 复选框宽度 + 间距） */
+.cloud-export-bundle-note {
+  margin-left: 24px;
+  font-size: 11px;
+  opacity: 0.65;
+  line-height: 1.5;
+}
+
+/* 左竖线承担"这些属于上面那个角色"的视觉归属 */
+.cloud-export-chats {
+  margin-left: 10px;
+  padding-left: 10px;
+  border-left: 2px solid rgba(255, 255, 255, 0.12);
+}
+.cloud-export-chats > summary {
+  font-size: 12px;
+  opacity: 0.8;
+}
+.cloud-export-chat {
+  font-size: 12px;
+  padding-top: 2px;
+}
+
 /* 小剧场：独立作用域，隔离宿主主题。 */
 .th-root{color:#26222b;background:#f6f3f8;font:13px/1.6 -apple-system,BlinkMacSystemFont,'Microsoft YaHei',sans-serif;min-width:0;padding:10px;overflow-wrap:anywhere}
 .th-root *{box-sizing:border-box}
@@ -2873,6 +3765,159 @@
 .ap-icon-row{border-top:1px solid #d8e4de;padding:9px 0}
 .ap-icon-row summary{display:flex;align-items:center;gap:10px;cursor:pointer;min-height:44px}
 .ap-hint{margin-left:auto;font-size:12px;color:#596f66}
+
+/* 微信 App 独立作用域样式 */
+.wechat-root{--wt-green:#087b3e;display:flex;flex-direction:column;height:100%;width:100%;min-height:0;min-width:0;overflow:hidden;position:relative;background:#ededed;color:#181818;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;isolation:isolate}
+.wechat-root *{box-sizing:border-box}
+.wechat-root [hidden]{display:none!important}
+.wechat-root button,.wechat-root input,.wechat-root select,.wechat-root textarea{font:inherit;color:#222;border:1px solid #c8c8c8;border-radius:6px;background:#fff;min-width:0;max-width:100%;box-shadow:none;text-shadow:none}
+.wechat-root button{min-height:40px;padding:7px 11px;cursor:pointer;white-space:normal}
+.wechat-root button:disabled{opacity:.55;cursor:default}
+.wechat-root :is(button,input,select,textarea,summary,[tabindex]):focus-visible{outline:2px solid #155a96;outline-offset:2px}
+.wechat-root input,.wechat-root select,.wechat-root textarea{width:100%;padding:8px;min-height:40px}
+.wechat-root input::placeholder,.wechat-root textarea::placeholder{color:#686868;opacity:1}
+.wechat-root input[type=checkbox]{width:22px;height:22px;min-height:22px;accent-color:var(--wt-green)}
+.wechat-root textarea{resize:vertical}
+.wechat-root .wt-primary{background:var(--wt-green);color:white;border-color:var(--wt-green)}
+.wechat-nav{display:flex;align-items:center;gap:6px;min-height:54px;padding:6px 10px;border-bottom:1px solid #d8d8d8;flex-shrink:0}
+.wechat-nav button{border:0;background:transparent;flex-shrink:0}
+#wt-contact-name{font-size:16px;font-weight:600;flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#wt-conversations{overflow:auto;flex:1;min-height:0;background:#fff}
+.wechat-root .wt-conversation{display:flex;align-items:center;gap:11px;width:100%;border:0;border-bottom:1px solid #ededed;border-radius:0;padding:14px 12px;text-align:left;background:#fff}
+.wt-avatar{width:44px;height:44px;border-radius:7px;object-fit:cover;background:#e1e9e3;flex-shrink:0}
+.wt-conversation-copy{flex:1;min-width:0}
+.wt-conversation-title{display:block;font-size:15px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.wt-conversation-preview{display:block;color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.wt-conversation-meta{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0;align-self:flex-start;padding-top:2px}
+.wt-conversation-time{font-size:11px;color:#707070;white-space:nowrap;font-variant-numeric:tabular-nums}
+.wt-unread{border-radius:20px;background:#bc2c2c;color:#fff;padding:1px 6px;font-size:11px;line-height:16px}
+#wt-chat{flex:1;min-height:0;display:flex;flex-direction:column}
+#wt-state{background:#f7f7f7;border-bottom:1px solid #ddd;padding:7px 12px;font-size:12px;max-height:30%;overflow:auto;flex-shrink:0}
+#wt-state summary{cursor:pointer;min-height:26px;overflow-wrap:anywhere;color:#4a4a4a}
+#wt-state p{margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.wt-scroll-wrap{position:relative;flex:1;min-height:0;display:flex;flex-direction:column}
+#wt-scroll{flex:1;min-height:0;overflow:auto;padding:14px 10px;display:flex;flex-direction:column;gap:14px;overscroll-behavior:contain}
+.wt-chat-empty{margin:auto;padding:24px 12px;color:#595959;font-size:12px;text-align:center}
+.wechat-root .wt-jump-latest{position:absolute;right:12px;bottom:10px;z-index:3;min-height:32px;padding:4px 12px;border:0;border-radius:16px;background:#fff;color:#087b3e;font-size:12px;box-shadow:0 2px 10px #0003}
+.wt-message{display:flex;align-items:flex-start;gap:8px;flex-shrink:0}
+.wt-message-player{flex-direction:row-reverse}
+.wt-message .wt-avatar{width:34px;height:34px}
+.wt-bubble{background:#fff;border-radius:7px;padding:9px 11px;max-width:76%;white-space:pre-wrap;overflow-wrap:anywhere;color:#181818}
+.wt-message-player .wt-bubble{background:#95ec69}
+.wt-bubble img{max-width:100%;height:auto;max-height:220px;object-fit:contain;display:block;border-radius:5px}
+.wechat-root .wt-media{background:transparent;border:0;padding:0;max-width:min(72%,220px);min-width:120px}
+.wechat-root .wt-media.wt-emoji{width:110px;min-width:0;max-width:110px}
+.wt-emoji img{width:110px;height:110px;object-fit:contain}
+.wt-image-failure{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:100px;padding:12px;border:1px solid #c8c8c8;border-radius:7px;background:#f5f5f5;color:#595959;font-size:12px;white-space:normal;overflow-wrap:anywhere}
+.wechat-root .wt-gift{background:#f4ac58;color:#432100;min-width:140px}
+.wechat-root .wt-gift small{display:block;margin-top:7px;font-size:12px;color:#432100;opacity:1}
+.wechat-input-bar{display:flex;align-items:center;gap:5px;padding:8px;background:#f7f7f7;border-top:1px solid #ddd;flex-shrink:0}
+.wt-compose-field{flex:1;min-width:0;display:flex}
+.wt-compose-field input,.wt-compose-field button{flex:1;width:100%;min-width:0}
+.wechat-input-bar button{flex-shrink:0;padding:6px 9px}
+.wechat-input-bar #wt-voice-mode,.wechat-input-bar #wt-emoji-btn,.wechat-input-bar #wt-packet-btn{width:34px;padding:4px}
+#wt-voice-feedback{display:flex;gap:6px;align-items:center;padding:4px 8px;background:#f7f7f7;flex-shrink:0;font-size:12px}
+#wt-voice-status{flex:1;min-width:0;overflow-wrap:anywhere;color:#595959}
+#wt-voice-edit{font-size:12px;padding:3px 6px}
+#wt-record{font-size:12px;padding:4px;overflow-wrap:anywhere;touch-action:manipulation}
+.wt-chat-status{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;min-height:36px;padding:3px 10px;background:#f7f7f7;border-top:1px solid #e3e3e3;flex-shrink:0;font-size:12px}
+#wt-typing-badge{flex:1 1 auto;min-width:0;color:#087b3e;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.wechat-root .wt-chat-status button{min-height:30px;padding:3px 12px;font-size:12px;border-radius:15px}
+#wt-emoji-drawer{height:210px;max-height:38%;display:flex;flex-direction:column;flex-shrink:0;background:#f7f7f7;border-top:1px solid #ddd}
+.wt-tabs{display:flex;gap:4px;padding:4px;flex-shrink:0}
+.wt-tabs button{flex:1;padding:5px;font-size:12px}
+.wt-tabs [aria-pressed=true]{border-color:var(--wt-green);color:var(--wt-green)}
+#wt-emoji-grid,.wt-asset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(58px,1fr));gap:6px;overflow:auto;padding:6px}
+#wt-emoji-grid button,.wt-asset-grid button{padding:4px;font-size:10px;overflow-wrap:anywhere}
+#wt-emoji-grid img,.wt-asset-grid img{display:block;width:100%;height:46px;object-fit:contain;margin:0 auto 3px}
+.wt-asset-grid{max-height:240px}
+.wt-asset-grid [aria-pressed=true]{outline:2px solid var(--wt-green);outline-offset:-2px}
+.wt-asset-preview{width:100px;height:100px;object-fit:contain}
+.wt-modal{position:absolute;inset:0;z-index:30;display:flex;align-items:flex-end;background:#0007;padding-top:12px}
+.wt-modal-card{display:flex;flex-direction:column;gap:12px;width:100%;max-height:100%;padding:14px;background:#fff;border-radius:14px 14px 0 0;overflow:auto;min-height:0;color:#222}
+.wt-modal-header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0}
+.wt-modal-header h2{font-size:16px;margin:0}
+.wt-field{display:flex;flex-direction:column;gap:5px;margin:10px 0;min-width:0;color:#333;font-size:12px}
+.wt-hint{font-size:12px;color:#595959;line-height:1.6;overflow-wrap:anywhere;margin:6px 0}
+.wechat-root details{flex-shrink:0}
+.wt-modal-card details{border:1px solid #dedede;border-radius:8px;padding:10px;margin:8px 0}
+.wt-modal-card summary{cursor:pointer;font-weight:600;min-height:28px}
+.wt-modal-card details>button{margin:4px 4px 4px 0}
+#wt-settings-actions{position:sticky;bottom:-14px;padding:8px 0 10px;background:#fff;display:flex;flex-wrap:wrap;gap:8px;z-index:2;flex-shrink:0}
+#wt-settings-actions button{flex:1}
+#wt-settings-feedback{margin:0;padding:0;color:#16683d;font-size:12px;overflow-wrap:anywhere;flex:0 0 100%}
+#wt-settings-feedback:empty{display:none}
+#wt-settings-feedback[data-kind=error]{color:#a32323}
+.wt-notice-bar{display:flex;align-items:center;gap:8px;background:#f7f7f7;padding:3px 8px 3px 12px;flex-shrink:0;border-bottom:1px solid #e6e6e6}
+#wt-notice{flex:1;min-width:0;font-size:12px;color:#555;overflow-wrap:anywhere}
+.wechat-root #wt-connect-ai{flex-shrink:0;min-height:30px;padding:3px 10px;font-size:12px;border-radius:15px;border-color:var(--wt-green);color:var(--wt-green)}
+.wt-settings-heading{margin:4px 0 -2px;font-size:13px;font-weight:600;color:#333}
+.wt-modal-card p.wt-hint:empty,.wt-profile-settings>p:empty{display:none}
+.wt-empty{padding:30px 18px;text-align:center;color:#666}
+#wt-photo-lightbox{background:#000e;align-items:center}
+#wt-photo-lightbox .wt-modal-card{background:transparent;color:white;align-items:center}
+#wt-lightbox-img{max-width:100%;max-height:65vh;object-fit:contain}
+@media(max-width:360px){.wechat-nav{padding:5px 7px}.wechat-nav button{padding:5px 7px}.wt-modal-card{padding:12px}.wechat-input-bar{gap:4px;padding:6px}.wechat-input-bar button{padding:6px 7px}}
+.wt-social-nav{display:flex;gap:6px;padding:5px 10px;flex-shrink:0;flex-wrap:wrap;background:#f7f7f7}
+.wt-social-nav button{flex:1}
+.wt-recovery{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex:0 1 auto;min-width:0;margin-left:auto}
+.wt-recovery:has(#wt-reply-error:not(:empty)){flex:1 1 100%}
+#wt-reply-error{flex:1 1 auto;min-width:0;margin:0;color:#9b2222;overflow-wrap:anywhere}
+#wt-reply-error:empty{display:none}
+.wt-group-avatar{display:grid;grid-template-columns:repeat(3,13px);grid-auto-rows:13px;gap:1px;padding:1px;align-content:center;justify-content:center;overflow:hidden}
+.wt-group-avatar .wt-avatar{width:13px;height:13px;border-radius:2px}
+.wt-group-avatar[data-columns="2"]{grid-template-columns:repeat(2,18px);grid-auto-rows:18px;gap:2px;padding:3px}
+.wt-group-avatar[data-columns="2"] .wt-avatar{width:18px;height:18px}
+.wt-member-choice{display:flex;align-items:center;gap:10px;padding:8px;border-bottom:1px solid #ddd}
+.wt-message-author{font-size:11px;color:#555;display:block}.wt-message-content{min-width:0;max-width:76%}.wt-message-content .wt-bubble{max-width:100%}
+.wt-message-content:has(.wt-media:not(.wt-emoji)){width:min(72%,220px)}
+.wechat-root .wt-message-content .wt-media:not(.wt-emoji){max-width:100%}
+.wt-voice button{padding:5px;font-size:12px}.wechat-root .wt-voice small{display:block;color:#595959;opacity:1}.wt-voice p{margin:7px 0}
+#wt-chat-tools{display:flex;flex-shrink:0}#wt-chat-tools select{width:auto;max-width:100%;min-height:30px;padding:3px 8px;border-radius:15px;font-size:12px}
+.wt-moment{display:grid;grid-template-columns:40px minmax(0,1fr);column-gap:10px;padding:12px 0;border-bottom:1px solid #e6e6e6}
+.wt-moment>.wt-avatar{width:40px;height:40px;border-radius:5px}
+.wt-moment-body{min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:5px}
+.wt-moment-name{color:#576b95;font-size:14px;font-weight:600}
+.wt-moment p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.55}
+.wt-moment-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;align-self:stretch}
+.wt-moment time{color:#707070;font-size:11px}
+.wechat-root .wt-moment-like{min-height:32px;padding:3px 10px;border:0;border-radius:4px;background:#f3f3f5;color:#576b95;font-size:12px}
+.wechat-root .wt-moment-like[aria-pressed=true]{color:#c0392b}
+.wt-moment-image{display:block;max-width:100%;height:auto;max-height:220px;object-fit:contain}
+#wt-moments-page{display:flex;flex-direction:column;flex:1;min-height:0;background:#fff;overflow:hidden}
+.wt-moments-cover{display:flex;align-items:center;gap:10px;background:#e5eee6;padding:10px 14px;flex-shrink:0;border-bottom:1px solid #dce4dd}
+.wt-moments-cover>div{flex:1;min-width:0}
+.wt-moments-cover h2{font-size:17px;letter-spacing:1px;margin:0;font-weight:600;color:#244b35}
+.wt-moments-cover p{margin:2px 0 0;color:#4c6154;font-size:12px}
+.wechat-root .wt-moments-cover button{flex-shrink:0;min-height:32px;padding:3px 12px;border:0;border-radius:16px;background:#fff;color:#16663b;font-size:12px}
+#wt-address-book{flex:1;min-height:0;overflow:auto;background:#fff}
+.wt-directory-heading{margin:0;padding:7px 14px;font-size:12px;font-weight:500;color:#626962;background:#f1f3f1}
+#wt-bottom-nav{display:flex;flex-shrink:0;border-top:1px solid #d8d8d8;background:#f7f7f7;padding:4px 6px max(4px,env(safe-area-inset-bottom));gap:4px}
+.wechat-root #wt-bottom-nav button{flex:1;border:0;background:transparent;border-radius:5px;min-height:52px;font-size:11px;color:#606060;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:4px}
+.wechat-root #wt-bottom-nav button[aria-selected=true]{color:#087b3e;background:#e9f1e9;font-weight:600}
+.wt-nav-icon{font-size:21px;line-height:25px}
+#wt-plus-menu{position:absolute;right:10px;top:53px;z-index:25;width:150px;padding:6px;background:#fff;border:1px solid #ddd;border-radius:10px;box-shadow:0 6px 24px #0002}
+.wechat-root #wt-plus-menu button{display:block;width:100%;border:0;text-align:left;padding:10px;min-height:44px}
+.wechat-root #wt-plus{font-size:25px;min-width:44px;padding:0}
+.wt-moment-private{display:inline-block;color:#72522b;background:#fbf1df;border-radius:4px;padding:2px 6px;font-size:11px}
+#wt-moments-composer{margin:0;max-height:45%;overflow:auto;padding:6px 10px}
+#wt-moments-composer>summary{min-height:32px;display:list-item;align-content:center}
+#wt-moments-composer .wt-field{margin:6px 0}
+#wt-moments-feedback{margin:0;padding:6px 16px 0;font-size:12px;color:#4a4a4a;overflow-wrap:anywhere;flex-shrink:0}
+#wt-moments-feedback:empty{display:none}
+#wt-moments-feed{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;overflow-anchor:none;padding:0 16px 16px}
+.wt-moment-media{height:220px;display:flex;align-items:center;max-width:100%;align-self:stretch}
+.wt-moment-media .wt-image-failure{width:100%}
+@media(max-height:480px){
+  .wechat-nav{min-height:38px;padding:2px 7px}.wechat-root button{min-height:30px;padding:3px 7px}
+  .wechat-root input,.wechat-root select{min-height:30px;padding:3px 7px}
+  .wt-social-nav{padding:2px 7px}.wt-notice-bar{padding:1px 7px}#wt-notice{font-size:11px}
+  #wt-state{padding:2px 7px}.wt-chat-status{min-height:30px;padding:2px 7px}.wechat-root .wt-chat-status button{min-height:26px}.wechat-input-bar{padding:3px}
+  #wt-emoji-drawer{position:absolute;left:0;right:0;bottom:39px;height:min(190px,calc(100% - 45px));max-height:none;z-index:10}
+  #wt-emoji-grid{min-height:0;flex:1}.wt-tabs{padding:3px}
+  .wt-moments-cover{padding:6px 14px}.wt-moments-cover h2{font-size:15px}.wt-moments-cover p{display:none}
+  .wechat-root #wt-bottom-nav button{min-height:40px;flex-direction:row;gap:5px}.wt-nav-icon{font-size:18px}
+}
 
 /* 手机框架样式 — 双端共用（ST 由 build.mjs 拼进 style.css；Web 由 globals.css import） */
 
@@ -3344,385 +4389,6 @@
   border-left: 2px solid rgba(255, 255, 255, 0.28);
 }
 
-/* —— 管家 2.0：可解释体检、事务恢复与扩展排障 —— */
-.so-butler-app {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.so-butler-hero {
-  border-left: 3px solid rgba(93, 197, 143, 0.72);
-}
-
-.so-butler-guide {
-  border-left: 3px solid rgba(105, 166, 255, 0.68);
-}
-
-.so-butler-guide-steps {
-  color: rgba(255, 255, 255, 0.94);
-  font-size: 12.5px;
-  font-weight: 650;
-  line-height: 1.7;
-}
-
-.so-butler-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.so-butler-summary-item {
-  display: flex;
-  flex-direction: column;
-  min-height: 46px;
-  padding: 7px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
-  box-sizing: border-box;
-}
-
-.so-butler-summary-item small {
-  color: #b8b8bf;
-  font-size: 10.5px;
-}
-
-.so-butler-summary-item strong {
-  margin-top: 2px;
-  overflow: hidden;
-  color: rgba(255, 255, 255, 0.94);
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.so-butler-text,
-.so-butler-lead,
-.so-butler-muted,
-.so-butler-alert {
-  font-size: 12px;
-  line-height: 1.55;
-  overflow-wrap: anywhere;
-}
-
-.so-butler-lead {
-  padding: 8px 10px;
-  border-left: 2px solid rgba(105, 166, 255, 0.68);
-  background: rgba(105, 166, 255, 0.07);
-}
-
-.so-butler-muted {
-  color: rgba(255, 255, 255, 0.56);
-}
-
-.so-butler-alert {
-  color: #ffc9c9;
-}
-
-.so-butler-section-title,
-.so-butler-modal-title {
-  color: rgba(255, 255, 255, 0.96);
-  font-weight: 700;
-}
-
-.so-butler-modal-title {
-  margin: 0 0 8px;
-  font-size: 18px;
-}
-
-.so-butler-section-title {
-  margin: 10px 0 4px;
-  font-size: 13px;
-}
-
-.so-butler-finding {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.025);
-  overflow: hidden;
-}
-
-.so-butler-finding + .so-butler-finding {
-  margin-top: 6px;
-}
-
-.so-butler-finding > summary {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: 7px;
-  padding: 8px;
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1.45;
-  list-style: none;
-}
-
-.so-butler-finding > summary::-webkit-details-marker {
-  display: none;
-}
-
-.so-butler-finding > summary::after {
-  content: '›';
-  grid-column: 2;
-  justify-self: end;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.so-butler-finding[open] > summary::after {
-  transform: rotate(90deg);
-}
-
-.so-butler-layer {
-  padding: 2px 5px;
-  border: 1px solid rgba(105, 166, 255, 0.35);
-  border-radius: 4px;
-  color: #b9d7ff;
-  font-size: 10px;
-  white-space: nowrap;
-}
-
-.so-butler-severity-risk {
-  border-left: 3px solid rgba(255, 112, 112, 0.75);
-}
-
-.so-butler-severity-suggestion {
-  border-left: 3px solid rgba(255, 194, 102, 0.72);
-}
-
-.so-butler-severity-info {
-  border-left: 3px solid rgba(105, 166, 255, 0.62);
-}
-
-.so-butler-finding-body {
-  padding: 0 8px 8px;
-}
-
-.so-butler-explanation-row {
-  display: grid;
-  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
-  gap: 8px;
-  padding: 6px 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-  font-size: 11.5px;
-  line-height: 1.5;
-}
-
-.so-butler-explanation-row strong {
-  color: rgba(255, 255, 255, 0.68);
-  font-size: 11px;
-}
-
-/*
- * 管家操作区：宁可掉成一列，也不要把两列压窄。
- *
- * 原来是 repeat(2, minmax(0, 1fr))，轨道下限为 0，配合下面按钮的
- * `min-width: 0` + `white-space: normal`，窄屏上「记忆与服务器设置建议」这种长标签
- * 会在列里逐字折行。中文可在任意字符间断行，所以轨道越窄它折得越碎，最终一列一个字。
- * auto-fit + 9em 下限的意思是：塞不下两列可读宽度时自动变一列，而不是硬挤成两列。
- */
-.so-butler-actions,
-.so-butler-modal-actions {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9em, 1fr));
-  gap: 6px;
-}
-
-.so-butler-modal-actions {
-  grid-template-columns: 1fr;
-}
-
-/*
- * 这里保留 white-space: normal 是故意的：两列布局下允许长标签折到第二行，
- * 比强行 nowrap 溢出好。但不能再给 min-width: 0——那会让轨道的 9em 下限失效。
- */
-.so-butler-actions .so-app-btn,
-.so-butler-modal-actions .so-app-btn {
-  margin: 0;
-  white-space: normal;
-}
-
-.so-butler-primary-action {
-  width: 100%;
-  min-height: 42px;
-  margin-top: 10px;
-  border-color: rgba(74, 189, 126, 0.72);
-  background: rgba(74, 189, 126, 0.2);
-  color: #e8fff2;
-  font-weight: 700;
-}
-
-.so-butler-notice {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
-  padding: 8px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 6px;
-  background: rgba(20, 20, 25, 0.96);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.so-butler-notice-success {
-  border-color: rgba(74, 189, 126, 0.58);
-}
-
-.so-butler-notice-error {
-  border-color: rgba(255, 112, 112, 0.58);
-  color: #ffc9c9;
-}
-
-.so-butler-pending {
-  border-color: rgba(255, 194, 102, 0.5);
-}
-
-.so-butler-kv {
-  display: grid;
-  grid-template-columns: minmax(90px, 0.45fr) minmax(0, 1fr);
-  gap: 8px;
-  padding: 6px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-  font-size: 12px;
-}
-
-.so-butler-kv strong {
-  overflow-wrap: anywhere;
-  text-align: right;
-}
-
-.so-butler-comparison-table {
-  display: grid;
-  gap: 6px;
-  margin: 8px 0;
-}
-
-.so-butler-comparison-row {
-  display: grid;
-  grid-template-columns: minmax(96px, 0.4fr) minmax(0, 1fr);
-  gap: 3px 10px;
-  padding: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.025);
-  font-size: 12px;
-}
-
-.so-butler-comparison-values {
-  overflow-wrap: anywhere;
-}
-
-.so-butler-comparison-row small {
-  grid-column: 1 / -1;
-  line-height: 1.45;
-}
-
-.so-butler-metric-block pre {
-  max-height: 220px;
-  margin: 5px 0 10px;
-  padding: 8px;
-  overflow: auto;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.2);
-  color: rgba(255, 255, 255, 0.76);
-  font: 11px/1.45 var(--monoFontFamily, ui-monospace, monospace);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.so-butler-system-advice-list {
-  display: grid;
-  gap: 6px;
-  margin: 7px 0 14px;
-}
-
-.so-butler-system-advice {
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.025);
-}
-
-.so-butler-system-advice > summary {
-  padding: 8px;
-  cursor: pointer;
-  overflow-wrap: anywhere;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.so-butler-system-advice-body {
-  padding: 0 8px 8px;
-}
-
-.so-butler-extension-list {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  margin-bottom: 8px;
-}
-
-.so-butler-extension-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 6px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.so-butler-extension-row input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-}
-
-.so-butler-extension-name {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-size: 12px;
-}
-
-.so-butler-extension-row small {
-  max-width: 120px;
-  text-align: right;
-}
-
-@media (max-width: 520px) {
-  .so-butler-explanation-row,
-  .so-butler-kv,
-  .so-butler-comparison-row {
-    grid-template-columns: 1fr;
-    gap: 2px;
-  }
-
-  .so-butler-comparison-row small {
-    grid-column: 1;
-  }
-
-  .so-butler-kv strong {
-    text-align: left;
-  }
-
-  .so-butler-actions {
-    grid-template-columns: 1fr;
-  }
-
-  .so-butler-extension-row {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .so-butler-extension-row small {
-    grid-column: 2;
-    max-width: none;
-    text-align: left;
-  }
-}
-
 .so-app-sprite-strip {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -3749,424 +4415,6 @@
   .so-phone-shell {
     width: min(380px, calc(100vw - 16px));
   }
-}
-
-/* —— 变量 App（vm-*）：楼层变量树状卡片 —— */
-.vm-head {
-  gap: 6px;
-}
-.vm-statusrow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.vm-status {
-  flex: 1;
-  min-width: 0;
-}
-.vm-refresh {
-  flex-shrink: 0;
-  padding: 3px 12px;
-  font-size: 12px;
-}
-
-.vm-tree {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-/* 分组：折叠标题 + 缩进子树 */
-.vm-group {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.03);
-}
-.vm-group-title {
-  font-size: 12.5px;
-  opacity: 0.9;
-}
-.vm-group-body {
-  gap: 5px;
-  padding-left: 8px;
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
-  margin-left: 2px;
-}
-
-/* 叶子卡片：左主体（键+值+描述）可点编辑，右侧删除 */
-.vm-leaf {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 7px 9px;
-  border-radius: 9px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-}
-.vm-leaf-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 8px;
-  cursor: pointer;
-  border-radius: 6px;
-}
-.vm-leaf-main:focus-visible {
-  outline: 1px solid rgba(255, 255, 255, 0.4);
-  outline-offset: 2px;
-}
-.vm-key {
-  font-size: 12.5px;
-  font-weight: 600;
-  opacity: 0.95;
-}
-.vm-val {
-  font-size: 12.5px;
-  opacity: 0.82;
-  word-break: break-word;
-  font-family: var(--monoFontFamily, ui-monospace, monospace);
-}
-.vm-desc {
-  flex-basis: 100%;
-  font-size: 11px;
-  opacity: 0.55;
-  line-height: 1.45;
-}
-.vm-del {
-  flex-shrink: 0;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  line-height: 1;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 120, 120, 0.25);
-  background: rgba(255, 100, 100, 0.06);
-  color: rgba(255, 150, 150, 0.8);
-  font-size: 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
-}
-.vm-del:hover,
-.vm-del:focus-visible {
-  color: #fff;
-  border-color: rgba(255, 120, 120, 0.6);
-  background: rgba(255, 100, 100, 0.2);
-  outline: none;
-}
-
-/* 变化高亮徽标：绿涨 / 红跌 / 改 / 新 */
-.vm-badge {
-  flex-shrink: 0;
-  padding: 0 6px;
-  border-radius: 999px;
-  font-size: 10.5px;
-  font-weight: 700;
-  line-height: 17px;
-  font-family: var(--monoFontFamily, ui-monospace, monospace);
-}
-.vm-badge-inc {
-  color: #7ee2a8;
-  background: rgba(80, 220, 130, 0.15);
-  border: 1px solid rgba(80, 220, 130, 0.35);
-}
-.vm-badge-dec {
-  color: #ff9a9a;
-  background: rgba(255, 100, 100, 0.15);
-  border: 1px solid rgba(255, 100, 100, 0.35);
-}
-.vm-badge-changed,
-.vm-badge-added {
-  color: #ffd27a;
-  background: rgba(255, 190, 90, 0.14);
-  border: 1px solid rgba(255, 190, 90, 0.32);
-}
-
-/* 编辑态叶子 */
-.vm-editing {
-  flex-direction: column;
-  align-items: stretch;
-  border-color: rgba(255, 255, 255, 0.25);
-}
-.vm-edit-title {
-  font-size: 12.5px;
-}
-.vm-edit-input {
-  resize: vertical;
-  min-height: 44px;
-}
-.vm-actions {
-  display: flex;
-  gap: 8px;
-}
-.vm-act {
-  flex: 1;
-  padding: 4px 10px;
-  font-size: 12px;
-  text-align: center;
-}
-.vm-act-ghost {
-  opacity: 0.7;
-}
-.vm-add-err {
-  color: rgba(255, 150, 150, 0.9);
-}
-
-/* —— 新变量 App（nv-*） —— */
-.nv-box {
-  display: flex;
-  flex-direction: column;
-}
-.nv-pre {
-  font-family: var(--monoFontFamily, ui-monospace, monospace);
-  font-size: 11px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-all;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  padding: 8px;
-  max-height: 240px;
-  overflow: auto;
-}
-.nv-log-line {
-  font-family: var(--monoFontFamily, ui-monospace, monospace);
-  opacity: 0.85;
-}
-/* —— 变量设计弹窗布局（响应式：PC 网格/双栏，窄屏自动单列堆叠） —— */
-
-/* 模板库：卡片网格，PC 一行多张 */
-.nv-tpl-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 8px;
-}
-.nv-tpl-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
-}
-.nv-tpl-desc {
-  flex: 1;
-  opacity: 0.8;
-}
-.nv-tpl-actions {
-  display: flex;
-  gap: 6px;
-}
-.nv-tpl-actions .vm-act {
-  flex: 1;
-  padding: 3px 10px;
-  font-size: 12px;
-}
-.nv-tpl-actions .nv-tpl-del {
-  flex: 0 0 auto;
-}
-/* 存为自定义模板：输入框 + 按钮一行 */
-.nv-tpl-save {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-top: 8px;
-}
-.nv-tpl-save .so-app-input {
-  flex: 1;
-  width: auto;
-}
-.nv-tpl-save .vm-act {
-  flex: 0 0 auto;
-  padding: 4px 14px;
-  font-size: 12px;
-}
-
-/* 变量定义：PC 双栏（左列表右编辑）；编辑表单跟随点击项 */
-.nv-defs-layout {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-}
-.nv-defs-list {
-  flex: 1 1 55%;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.nv-defs-editor {
-  flex: 1 1 45%;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  position: sticky;
-  top: 0;
-}
-.nv-def-selected {
-  border-color: rgba(255, 255, 255, 0.45);
-  background: rgba(255, 255, 255, 0.08);
-}
-
-/* 窄屏（移动端）：双栏退化为上下堆叠（点击列表后 JS 会滚动到表单） */
-@media (max-width: 720px) {
-  .nv-defs-layout {
-    flex-direction: column;
-  }
-  .nv-defs-list,
-  .nv-defs-editor {
-    flex: none;
-    width: 100%;
-    position: static;
-  }
-}
-
-/* ============ 「API」App（stapi-）：站点快速切换行 / 状态点 / 模型选择覆盖层 ============ */
-
-/* 手机页站点行：整行可点即切换，使用中高亮 + ✓ */
-.stapi-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-  cursor: pointer;
-}
-.stapi-row:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-.stapi-row:focus-visible {
-  outline: 1px solid rgba(255, 255, 255, 0.4);
-  outline-offset: 2px;
-}
-.stapi-row-on {
-  border-color: rgba(130, 200, 255, 0.55);
-  background: rgba(130, 200, 255, 0.08);
-}
-/* 切换进行中：整列表降透明并锁点击（busy 守卫之外的视觉反馈） */
-.stapi-row-busy {
-  opacity: 0.55;
-  pointer-events: none;
-}
-/* 管理弹窗站点行的排序按钮：沿用 vm-del 的几何，中性配色区别于删除 */
-.stapi-move {
-  border-color: rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.65);
-}
-.stapi-move:hover,
-.stapi-move:focus-visible {
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.45);
-  background: rgba(255, 255, 255, 0.14);
-}
-.stapi-row-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.stapi-row-name {
-  font-size: 13px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.stapi-row-sub {
-  font-size: 11.5px;
-  opacity: 0.65;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.stapi-row-mark {
-  flex: none;
-  opacity: 0.8;
-}
-button.stapi-row .stapi-row-name,
-button.stapi-row .stapi-row-sub {
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-button.stapi-row .stapi-row-mark { max-width: 6em; overflow-wrap: anywhere; }
-button.stapi-row:disabled { cursor: wait; opacity: 0.65; }
-[data-api-legacy] > summary { min-height: 44px; padding-block: 12px; cursor: pointer; }
-
-/* 连接状态点（当前连接卡） */
-.stapi-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 6px;
-  border-radius: 50%;
-  background: #d05c5c;
-  vertical-align: middle;
-}
-.stapi-dot-on {
-  background: #57c98a;
-}
-
-/* 模型选择覆盖层：挂在管理弹窗 .so-manager（relative）内部 */
-.stapi-picker {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
-  border-radius: 12px;
-}
-.stapi-picker-box {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: min(480px, 92%);
-  max-height: 72%;
-  padding: 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(22, 22, 28, 0.97);
-}
-.stapi-picker-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.stapi-picker-list {
-  overflow: auto;
-  min-height: 80px;
-}
-.stapi-picker-item {
-  padding: 8px 10px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-family: var(--monoFontFamily, ui-monospace, monospace);
-  font-size: 12.5px;
-}
-.stapi-picker-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-.stapi-picker-item:focus-visible {
-  outline: 1px solid rgba(255, 255, 255, 0.4);
-  outline-offset: -1px;
 }
 
 /* ==================== App 全屏弹窗（ctx.openModal，阶段五能力层） ==================== */
@@ -4274,102 +4522,6 @@ button.stapi-row:disabled { cursor: wait; opacity: 0.65; }
   }
 }
 
-/* ── 云导出（选择式备份） ─────────────────────────────────────────────── */
-
-/* Two columns leave room for translated labels within the narrow phone shell. */
-.cloud-export-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-}
-.cloud-export-tabs > .so-app-btn {
-  /* Native tabs intentionally do not use the host's .menu_button style/role hooks. */
-  appearance: none;
-  min-width: 0;
-  width: 100%;
-  min-height: 32px;
-  margin: 0;
-  padding: 6px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.2);
-  color: inherit;
-  font: inherit;
-  font-size: 13px;
-  line-height: 1.3;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  cursor: pointer;
-}
-
-/* 当前分类：此前这个类名只挂在 DOM 上，没有任何样式，选中态看不出来 */
-.cloud-export-tabs > .so-app-btn.cloud-export-active {
-  background: rgba(255, 255, 255, 0.16);
-  border-color: rgba(255, 255, 255, 0.4);
-  font-weight: 600;
-}
-
-/* 全选 / 反选 / 清空：一行三格，不再竖排占掉三分之一屏 */
-.cloud-export-bulk {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-}
-.cloud-export-bulk > .so-app-btn {
-  min-width: 0;
-  min-height: 32px;
-  margin: 0;
-  padding: 4px 6px;
-  font-size: 12px;
-  line-height: 1.3;
-  white-space: normal;
-}
-
-/*
- * 角色行的层级：角色卡是一个整体，它的聊天是下一级。
- *
- * 角色名与聊天名此前用的是同一个 .so-app-toggle，字号、缩进、字重全一样，
- * 展开聊天后一眼看不出哪个是角色、哪些是它的聊天。分三层拉开：
- * 卡片框（一个角色一张）→ 角色名（加粗）→ 聊天（缩进 + 左竖线 + 小字号）。
- */
-.cloud-export-character {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.cloud-export-character-name {
-  font-weight: 600;
-}
-
-/* 与角色名的复选框文字左对齐（缩进量 = 复选框宽度 + 间距） */
-.cloud-export-bundle-note {
-  margin-left: 24px;
-  font-size: 11px;
-  opacity: 0.65;
-  line-height: 1.5;
-}
-
-/* 左竖线承担"这些属于上面那个角色"的视觉归属 */
-.cloud-export-chats {
-  margin-left: 10px;
-  padding-left: 10px;
-  border-left: 2px solid rgba(255, 255, 255, 0.12);
-}
-.cloud-export-chats > summary {
-  font-size: 12px;
-  opacity: 0.8;
-}
-.cloud-export-chat {
-  font-size: 12px;
-  padding-top: 2px;
-}
-
-
 /* ==================== 全屏沉浸式 App 支持与界面微动效 ==================== */
 
 .so-phone-indicators {
@@ -4397,16 +4549,6 @@ button.stapi-row:disabled { cursor: wait; opacity: 0.65; }
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important;
-}
-
-@keyframes wtPulse {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
-}
-
-@keyframes wtSlideUp {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
 }
 
 .so-phone-shell {

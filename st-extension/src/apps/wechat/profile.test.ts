@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, afterEach, vi } from 'vitest'
-import { normalizeProfile, applyAssetOverrides, mappedValue, safeAssetUrl } from './profile'
+import { normalizeProfile, applyAssetProfile, mappedValue, safeAssetUrl } from './profile'
 import { createProfileEditor } from './profile-editor'
 import { extractFieldsFromObject, extractRecentSTMessages } from './bridge'
 import { getScopedConversation } from './wechat-app'
@@ -47,9 +47,9 @@ describe('WeChat configurable scene', () => {
   it('provides default emoji groups and respects explicit disabled groups', () => {
     const id = Object.keys(PLAYER_EMOJIS)[0]
     const profile = normalizeProfile({ profile: { preset: 'general', assetOverrides: { [`player.${id}`]: 'https://example.test/picture.png', 'player.bad': 'javascript:alert(1)' } } })
-    const assets = applyAssetOverrides(PLAYER_EMOJIS, 'player', profile)
+    const assets = applyAssetProfile(PLAYER_EMOJIS, 'player', profile)
     expect(Object.keys(assets)).toEqual(Object.keys(PLAYER_EMOJIS))
-    expect(applyAssetOverrides(PLAYER_EMOJIS, 'player', normalizeProfile({ profile: { useBuiltinAssets: false } }))).toEqual({})
+    expect(applyAssetProfile(PLAYER_EMOJIS, 'player', normalizeProfile({ profile: { useBuiltinAssets: false } }))).toEqual({})
     expect(profile.assetGroups.photo).toBe(false)
     expect(assets[id].file).toBe('https://example.test/picture.png')
     expect(profile.assetOverrides['player.bad']).toBeUndefined()

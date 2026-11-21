@@ -295,8 +295,7 @@ try {
     page.on('pageerror', error => entry.errors.push(error.message))
     try {
       await page.setContent('<!doctype html><html lang="en"><body><button id="opener">Open</button><button id="outside">Outside</button></body></html>')
-      await page.addStyleTag({ content: readFileSync(path.join(root, 'core/phone-shell.css'), 'utf8') })
-      await page.addStyleTag({ content: readFileSync(path.join(root, 'st-extension/style.css'), 'utf8') })
+      await page.addStyleTag({ content: readFileSync(path.join(root, 'style.css'), 'utf8') })
       await page.addScriptTag({ content: built.outputFiles[0].text })
       await run(page)
       assert.deepEqual(entry.errors, [])

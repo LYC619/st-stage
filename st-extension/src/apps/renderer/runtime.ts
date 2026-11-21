@@ -223,8 +223,8 @@ export function createRendererRuntime(deps: RendererRuntimeDeps): RendererRuntim
         const mount = factory(container, parsed.block, blockDeps)
         if (!mount || typeof mount.destroy !== 'function') continue
         prepared.push({ parsed, container, mount, isCurrent: blockDeps.choiceMemory?.isCurrent })
-      } catch {
-        // 单个模式工厂失败时只保留该块原文，继续处理合法兄弟块。
+      } catch (err) {
+        console.warn('[st-stage:renderer] 渲染块挂载失败，保留原文:', parsed.block.mode, err)
         continue
       }
     }

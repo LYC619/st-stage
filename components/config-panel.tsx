@@ -270,7 +270,8 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
           // 保留本地 url 显示与保底，仅补远程 remoteUrl + code（不覆盖本地图）
           target = upsertSprite(target, { ...local, code: up.code, remoteUrl: up.url })
           hosted++
-        } catch {
+        } catch (err) {
+          console.warn('[st-stage:config-panel] imgbb 上传失败', err)
           hostFailed++
         }
       }

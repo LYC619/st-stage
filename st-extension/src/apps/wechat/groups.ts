@@ -1,3 +1,4 @@
+import { safeRandomId } from '../shared/safe-runtime'
 import { stableCharacterKey } from '../../../../core/character-identity'
 import type { ConversationScope } from './bridge'
 import type { Contact, ContactState, Conversation, Group, WeChatAppData } from './types'
@@ -20,7 +21,7 @@ function checkedMembers(items: Contact[]): Contact[] {
 export function saveGroup(data: WeChatAppData, title: string, items: Contact[], existing?: Group): Group {
   const members = checkedMembers(items), name = title.trim().slice(0, 60)
   if (!name) throw new Error('请填写群名称')
-  const key = existing?.scopeKey ?? 'group:' + crypto.randomUUID()
+  const key = existing?.scopeKey ?? safeRandomId('group:')
   const group: Group = existing ?? { scopeKey: key, conversationType: 'group', memberIds: [], title: name,
     characterName: name, messages: [], state: defaultContactState(), memberStates: {}, currentDay: 1, unreadCount: 0 }
   data.contacts ??= {}; data.conversations ??= {}

@@ -3,9 +3,8 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: '角色立绘悬浮窗 · SillyTavern 插件测试环境',
-  description: '为任意纯文字角色卡添加立绘悬浮窗：prompt 注入、标签提取、表情切换的全链路模拟测试环境',
-  generator: 'v0.app',
+  title: '百工（st-stage）· 掌上小手机与角色立绘调试台',
+  description: 'SillyTavern「百工」扩展网页模拟器：立绘悬浮窗、掌上 Mini-OS 与内置剧情 App 联调环境',
   icons: {
     icon: [
       {
@@ -39,7 +38,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="zh-CN">
       <body className="antialiased">
         {children}
         {process.env.NODE_ENV === 'production' && <Analytics />}

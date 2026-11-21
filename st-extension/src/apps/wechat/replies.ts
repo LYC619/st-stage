@@ -1,3 +1,4 @@
+import { safeRandomId } from '../shared/safe-runtime'
 import { applyAssetProfile } from './profile'
 import { profileCharacterKey, resolveProfile } from './profile-library'
 import { PLAYER_EMOJIS, CONTACT_EMOJIS, CONTACT_PHOTOS } from './manifest-data'
@@ -94,7 +95,7 @@ export function createReplyController(data: WeChatAppData, options: {
         if (!valid()) return
         for (const item of reply.messages) {
           const asset = item.type === 'emoji' ? media.contact[item.emoji_id!] : item.type === 'image' ? media.photo[item.pic_id!] : undefined
-          messages.push({ id: crypto.randomUUID(), sender: 'contact', contactId: member?.id ?? conv.contactId,
+          messages.push({ id: safeRandomId(), sender: 'contact', contactId: member?.id ?? conv.contactId,
             authorName: member?.name ?? scope.characterName, type: item.type, content: item.content || item.emoji_id || item.pic_id || '',
             time: { day, hour: new Date().getHours(), minute: new Date().getMinutes() }, ...(asset ? { asset: { ...asset } } : {}) })
         }

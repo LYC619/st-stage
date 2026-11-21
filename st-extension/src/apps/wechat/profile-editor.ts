@@ -1,3 +1,4 @@
+import { safeRandomId } from '../shared/safe-runtime'
 import { normalizeProfile, safeAssetUrl, type WeChatProfile } from './profile'
 import { PLAYER_EMOJIS, CONTACT_EMOJIS, CONTACT_PHOTOS } from './manifest-data'
 import { resolveWeChatAssetUrl } from './assets'
@@ -117,7 +118,7 @@ export function createProfileEditor(parent: HTMLElement, packs: () => SpritePack
     if (!safeAssetUrl(item.file)) { feedback.textContent = '请先在图库将此图片保存到酒馆图片存储，或使用 HTTPS 图片地址。'; return }
     try { storeAsset() } catch (error) { feedback.textContent = (error as Error).message; return }
     if (Object.keys(custom).length >= 100) { feedback.textContent = '最多添加 100 张图库图片。'; return }
-    const key = `${destination.value}.custom-${globalThis.crypto.randomUUID()}`
+    const key = `${destination.value}.custom-${safeRandomId()}`
     custom[key] = { name: item.name.slice(0, 60), description: item.name.slice(0, 200), file: item.file }
     groups[destination.value as keyof typeof groups].checked = true; browseGroup.value = destination.value; selected = key; drawAssets(); feedback.textContent = '图片已加入，保存设置后可发送。'
   })
