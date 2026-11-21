@@ -11,7 +11,8 @@ import {
   buildVersion,
   resolveBuildTime,
 } from './build-time.mjs'
-import { buildExtension, buildExtensionPair, normalizeArtifactNewlines, normalizeBundleWhitespace } from './build.mjs'
+import { runInNewContext } from 'node:vm'
+import { buildExtension, buildExtensionPair, buildLoaderStub, normalizeArtifactNewlines, normalizeBundleWhitespace } from './build.mjs'
 
 const artifactNames = ['index.js', 'bundle.js', 'style.css', 'version.json'] as const
 const distributionNames = ['README.md', 'bundle.js', 'index.js', 'locales', 'manifest.json', 'style.css', 'version.json'] as const
@@ -266,5 +267,118 @@ describe('extension build integration', () => {
     })
 
     expect(readFileSync(join(outputRoot, 'assets', 'wechat', 'emoji.png'), 'utf8')).toBe('test-image-bytes')
+  })
+})
+
+function runLoaderStub(env: {
+  currentScriptSrc?: string
+  stack?: string
+  scripts?: string[]
+  links?: string[]
+  resources?: string[]
+}) {
+  const fetched: string[] = []
+  const errors: unknown[][] = []
+  const stub = buildLoaderStub().replace(/import\(/g, '__import(')
+  const makeNodes = (values: string[] = [], attr: 'src' | 'href') =>
+    values.map((value) => ({
+      [attr]: value,
+      getAttribute: (name: string) => (name === attr ? value : null),
+    }))
+  const FakeError = function FakeError(this: { stack?: string }) {
+    this.stack = env.stack ?? ''
+  }
+  runInNewContext(stub, {
+    Error: FakeError,
+    document: {
+      currentScript: env.currentScriptSrc ? { src: env.currentScriptSrc } : null,
+      querySelectorAll(selector: string) {
+        if (selector === 'script[src]') return makeNodes(env.scripts, 'src')
+        if (selector.startsWith('link[rel="stylesheet"]')) return makeNodes(env.links, 'href')
+        return []
+      },
+      createElement: () => ({ rel: '', href: '', setAttribute: () => {} }),
+      head: { appendChild: () => {} },
+    },
+    performance: {
+      getEntriesByType: (type: string) =>
+        type === 'resource' ? (env.resources ?? []).map((name) => ({ name })) : [],
+    },
+    fetch: (url: string) => {
+      fetched.push(url)
+      return Promise.resolve({ json: () => Promise.resolve({ v: '0.9.0+202611210000' }) })
+    },
+    __import: () => Promise.resolve(),
+    console: { error: (...args: unknown[]) => errors.push(args) },
+    encodeURIComponent,
+    Date,
+  })
+  return { fetched, errors }
+}
+
+describe('extension loader baseUrl resolution', () => {
+  it('does not hardcode a fallback to /scripts/extensions/third-party/st-stage', () => {
+    expect(buildLoaderStub()).not.toContain('/scripts/extensions/third-party/st-stage')
+  })
+
+  it('prefers document.currentScript when available even if Error.stack is empty', () => {
+    const result = runLoaderStub({
+      currentScriptSrc: 'https://st.local/scripts/extensions/third-party/custom-baigong/index.js?v=1',
+      stack: '',
+    })
+    expect(result.fetched).toEqual(['https://st.local/scripts/extensions/third-party/custom-baigong/version.json'])
+    expect(result.errors).toEqual([])
+  })
+
+  it('parses Error.stack for renamed directories including query strings', () => {
+    const result = runLoaderStub({
+      stack: 'Error\n    at baseUrl (https://st.local/scripts/extensions/third-party/my-stage/index.js?v=2:12:15)',
+    })
+    expect(result.fetched).toEqual(['https://st.local/scripts/extensions/third-party/my-stage/version.json'])
+  })
+
+  it('falls back to DOM script tag when stack parsing fails', () => {
+    const result = runLoaderStub({
+      stack: 'at <anonymous>:1:1',
+      scripts: ['/scripts/extensions/third-party/renamed-ext/index.js'],
+    })
+    expect(result.fetched).toEqual(['/scripts/extensions/third-party/renamed-ext/version.json'])
+  })
+
+  it('falls back to DOM stylesheet link when stack and script tags are unavailable', () => {
+    const result = runLoaderStub({
+      stack: '',
+      links: ['/scripts/extensions/third-party/renamed-ext/style.css?v=3'],
+    })
+    expect(result.fetched).toEqual(['/scripts/extensions/third-party/renamed-ext/version.json'])
+  })
+
+  it('selects st-stage-ext over unrelated extensions when multiple stylesheets exist', () => {
+    const result = runLoaderStub({
+      stack: '',
+      links: [
+        '/scripts/extensions/third-party/other-ext/style.css',
+        '/scripts/extensions/third-party/st-stage-ext/style.css',
+        '/scripts/extensions/third-party/another-ext/style.css',
+      ],
+    })
+    expect(result.fetched).toEqual(['/scripts/extensions/third-party/st-stage-ext/version.json'])
+  })
+
+  it('falls back to performance resource timing entries when stack and DOM yield no match', () => {
+    const result = runLoaderStub({
+      stack: '',
+      resources: [
+        'https://st.local/scripts/extensions/third-party/other-ext/index.js',
+        'https://st.local/scripts/extensions/third-party/custom-renamed/index.js',
+      ],
+    })
+    expect(result.fetched).toEqual(['https://st.local/scripts/extensions/third-party/custom-renamed/version.json'])
+  })
+
+  it('aborts with an error instead of falling back to hardcoded st-stage when all sources fail', () => {
+    const result = runLoaderStub({ stack: '' })
+    expect(result.fetched).toEqual([])
+    expect(result.errors.length).toBe(1)
   })
 })

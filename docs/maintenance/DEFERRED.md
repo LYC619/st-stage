@@ -11,10 +11,6 @@
 - 立绘透明素材清理、目录扩充与图床长期托管：`assets/`，需确定素材和托管来源。
 - 原生整包 ZIP 导入与完整账户恢复：`st-extension/src/apps/cloud-export/`，目前按类型恢复。
 
-## 已知小问题（不影响使用）
-
-- 加载器在堆栈解析失败时仍回退到 `st-stage` 目录：`st-extension/build.mjs`。
-
 ## 待真实环境验证
 
 见[外部环境验收记录](EXTERNAL-ACCEPTANCE.md)。

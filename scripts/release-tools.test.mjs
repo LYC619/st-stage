@@ -137,3 +137,38 @@ test('committed artifact verification rejects staged and unstaged artifact chang
   f.git('add', '.')
   assert.notEqual(f.verify().status, 0, 'staging regenerated files is not committing them')
 })
+
+test('verify-docs-apps accepts synced README app table and rejects missing or extra entries', t => {
+  const base = mkdtempSync(path.join(os.tmpdir(), 'st-docs-apps-'))
+  t.after(() => rmSync(base, { recursive: true, force: true }))
+  put(base, 'package.json', JSON.stringify({ name: 'st-stage', version: '0.9.0' }))
+  put(base, 'manifest.json', JSON.stringify({ version: '0.9.0' }))
+  put(base, 'st-extension/src/apps/index.ts', [
+    "import { alphaApp } from './alpha-app'",
+    "import { createBetaApp } from './beta/beta-app'",
+    'export function createBuiltinApps() { return [alphaApp(), createBetaApp()] }',
+  ].join('\n'))
+  put(base, 'st-extension/src/apps/alpha-app.ts', "export const alphaApp = () => ({ id: 'alpha', name: t('apps.alpha', '甲') })")
+  put(base, 'st-extension/src/apps/beta/beta-app.ts', "export const createBetaApp = () => ({ id: 'beta', name: '乙' })")
+  put(base, 'README.md', '当前内置 App：\n\n| App | 一句话 |\n| --- | --- |\n| 🅰 **甲** | 说明 |\n| 🅱 **乙** | 说明 |\n\n')
+
+  const ok = run('verify-docs-apps.mjs', ['--root', base])
+  assert.equal(ok.status, 0, ok.stderr)
+
+  put(base, 'README.md', '当前内置 App：\n\n| App | 一句话 |\n| --- | --- |\n| 🅰 **甲** | 说明 |\n\n')
+  const missing = run('verify-docs-apps.mjs', ['--root', base])
+  assert.notEqual(missing.status, 0)
+  assert.match(missing.stderr, /missing builtin apps/)
+
+  put(base, 'README.md', '当前内置 App：\n\n| App | 一句话 |\n| --- | --- |\n| 🅰 **甲** | 说明 |\n| 🅱 **乙** | 说明 |\n| 🅲 **丙** | 多余 |\n\n')
+  const extra = run('verify-docs-apps.mjs', ['--root', base])
+  assert.notEqual(extra.status, 0)
+  assert.match(extra.stderr, /non-builtin apps/)
+
+  put(base, 'README.md', '当前内置 App：\n\n| App | 一句话 |\n| --- | --- |\n| 🅰 **甲** | 说明 |\n| 🅱 **乙** | 说明 |\n\n')
+  put(base, 'package.json', JSON.stringify({ name: 'my-project', version: '0.1.0' }))
+  const badMeta = run('verify-docs-apps.mjs', ['--root', base])
+  assert.notEqual(badMeta.status, 0)
+  assert.match(badMeta.stderr, /my-project/)
+  assert.match(badMeta.stderr, /does not match manifest\.json/)
+})

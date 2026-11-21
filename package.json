@@ -1,6 +1,6 @@
 {
-  "name": "my-project",
-  "version": "0.1.0",
+  "name": "st-stage",
+  "version": "0.9.0",
   "private": true,
   "packageManager": "pnpm@10.32.1",
   "scripts": {

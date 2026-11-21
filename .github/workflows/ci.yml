@@ -31,6 +31,9 @@ jobs:
       - name: Verify translations and interpolation parameters
         run: node scripts/verify-i18n-completeness.mjs
 
+      - name: Verify README app table and package metadata
+        run: node scripts/verify-docs-apps.mjs
+
       - name: Unit tests
         run: pnpm test
 

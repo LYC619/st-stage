@@ -2,7 +2,7 @@
 
 > 酒馆里的事，百工都做。
 
-**维护者入口：**先读 [当前状态与成果位置](docs/maintenance/CURRENT.md)，再按 [维护指南](docs/maintenance/MAINTAINER.md)准备环境、定位模块和完成小修改。独立微信会话、角色模板、原生 API 整合、剧情分支与手机修复已随 `0.9.0+202611052119` 发布；提交、产物与验收边界见 [发布记录](docs/maintenance/history/2026-11-05-publication.md)。
+**维护者入口：**先读 [当前状态与成果位置](docs/maintenance/CURRENT.md)，再按 [维护指南](docs/maintenance/MAINTAINER.md)准备环境、定位模块和完成小修改。小剧场、剧情状态、纪要与七天公共日历、配角日记与外观定制已随 `0.9.0+202611141920` 发布；提交、产物与验收边界见 [发布记录](docs/maintenance/history/2026-11-14-round2-publication.md)。
 
 「百工」是一个 SillyTavern 扩展形态的**功能平台**（扩展列表里显示为「百工」，安装目录 `st-stage-ext`）：装好后聊天界面出现一个可拖动的 **📱 图标**，展开是一部带状态栏、返回键和 Home 键的小手机——所有功能都是手机里的 **App**。
 
@@ -26,6 +26,10 @@
 | 🎬 **渲染** | Galgame 分镜、卡片分支预览与选择恢复、本地战斗面板（[分支说明](docs/RENDERER.md)） |
 | 📦 **导出** | 按项下载角色卡、聊天、世界书、OpenAI 预设与全局正则的标准 ZIP（[范围与限制](st-extension/src/apps/cloud-export/README.md)） |
 | 💬 **微信** | 从会话列表联系独立角色，自定义场景、称呼、提示词、表情和红包内容；回复同步内心想法与当前状态（[使用说明](docs/WECHAT.md)）；真实 AI 质量仍待验收 |
+| 🎭 **小剧场** | 按当前主聊天剧情自动或手动生成广场动态、论坛讨论、直播弹幕与配角日记 |
+| 🎒 **剧情状态** | 查看时空、任务、背包与能力状态（支持读取 MVU 变量或后台 AI 整理），可一键将使用道具/发动技能填入输入框草稿 |
+| 📜 **纪要** | 自动/手动整理剧情纪要并支持注入主聊天，附带七天公共日历 |
+| 🎨 **外观** | 自定义手机壁纸、App 图标与网络字体，支持外观包 JSON 导入导出 |
 
 > 🔐 **密钥存储说明**：「图库」的 imgbb Key、微信连接 Key 和旧百工 API 档案的密钥仍以**明文**保存在 ST 扩展设置里。新接入的原生连接档案与角色推荐仅保存引用，不复制密钥；场景模板与图包分享串不含密钥。不要把 ST 的 `settings.json` 或完整备份直接发给别人。
 
@@ -226,7 +230,12 @@ st-extension/             ST 端（esbuild 打包为根目录产物）
    │  │                   直写 oai_settings/密钥槽位，在线状态走 ST 真事件)、manager(全屏管理弹窗)
    │  ├─ renderer-app.ts  「渲染」App（手机页：总开关+分模式开关）
    │  ├─ renderer/        「渲染」引擎：解析 <STStageRender> 块、Galgame/卡片/战斗三模式面板
-   │  └─ cloud-export/    「导出」App：manifest(清单)、bridge(打包下载)、export-loader(回读)
+   │  ├─ cloud-export/    「导出」App：manifest(清单)、bridge(打包下载)、export-loader(回读)
+   │  ├─ wechat/          「微信」App：独立角色会话、场景模板、朋友圈、红包与 AI 连接
+   │  ├─ theater/         「小剧场」App：广场、论坛、直播弹幕与配角日记
+   │  ├─ story-state/     「剧情状态」App：时空/任务/背包/能力面板与草稿填入
+   │  ├─ chronicle/       「纪要」App：剧情纪要整理、主聊天注入与七天公共日历
+   │  └─ appearance/      「外观」App：主屏壁纸、图标、网络字体与外观包导入导出
    ├─ sprite-manager.ts   图库管理弹窗（上传/导入导出/分享/绑定，图库 App 打开）
    ├─ overlay-dom.ts      立绘悬浮窗
    └─ message-postprocess.ts   楼层内标签→图片渲染
