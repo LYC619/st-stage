@@ -22,7 +22,7 @@ export function createChronicleController(host: AppHost, options: { timeoutMs?: 
   async function refresh() {
     const token = ++revision, key = storyIdentity(host)
     const settings = readChronicleSettings(host)
-    if (!settings.inject || (!readChronicleData().entries.length && !settings.injectCalendar)) {
+    if (!settings.inject && !settings.injectCalendar) {
       host.injectPrompt('', 999)
     }
     try {
@@ -30,9 +30,9 @@ export function createChronicleController(host: AppHost, options: { timeoutMs?: 
       if (!alive || revision !== token || key !== storyIdentity(host)) return
       status.today = today
       const latestSettings = readChronicleSettings(host)
-      const entries = readChronicleData().entries
+      const entries = latestSettings.inject ? readChronicleData().entries : []
       const calendarText = latestSettings.injectCalendar ? readTodayCalendarSummary(today) : ''
-      const injected = latestSettings.inject ? chronicleInjection(entries, today, calendarText) : ''
+      const injected = chronicleInjection(entries, today, calendarText)
       host.injectPrompt(injected, 999)
     } catch (error) {
       console.warn('[st-stage] 纪要刷新失败', error)

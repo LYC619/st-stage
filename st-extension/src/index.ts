@@ -46,7 +46,9 @@ import { buildRoleSummary, type ExternalVariableStatus } from './role-summary'
 import { registerPhoneCommand } from './slash-commands'
 import { createHudController } from './hud-controller'
 import { createSpriteRuntime } from './sprite-runtime'
-import { consumeAppDeepLink, onOpenAppRequest, onStoryEvent, resetStoryEvents } from './apps/shared/story-events'
+import { consumeAppDeepLink, getAppBadge, onOpenAppRequest, onStoryEvent, resetStoryEvents } from './apps/shared/story-events'
+import { readCalendar, weatherIcon } from './apps/chronicle/calendar'
+import { formatStoryDate, storyToday } from './apps/shared/story-date'
 
 declare global {
   interface Window {
@@ -266,6 +268,37 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
         ? result.meta.source === 'mvu' ? 'mvu' : 'helper' : result.status
       return homeSummary(status)
     },
+    readWorldWidget: async () => {
+      const charName = adapter.getCurrentCharacterName()
+      if (!charName) return null
+      const packs = getActivePacks(settings, charName)
+      const avatarUrl = packs[0] ? getPackCover(packs[0])?.url : undefined
+      try {
+        const hostLike = {
+          ...createHostDeps('story-state'),
+          apiVersion: 2,
+          getAppData: () => settings.apps['story-state'] as never,
+          setAppData: () => {},
+          injectPrompt: () => {},
+        }
+        const snap = await readStoryState(hostLike)
+        const today = await storyToday(hostLike)
+        const cal = readCalendar()
+        const todayEntry = today ? cal.days.find(d => d.date === formatStoryDate(today)) : undefined
+        const activeQuest = snap.state.任务.find(q => q.状态 === '进行中')
+        return {
+          characterName: charName,
+          avatarUrl,
+          dateText: formatTime(snap.state.时间) === '尚未记录' ? undefined : formatTime(snap.state.时间),
+          weatherText: todayEntry?.weather ? `${weatherIcon(todayEntry.weather)} ${todayEntry.weather}` : undefined,
+          locationText: [snap.state.位置.区域, snap.state.位置.地点].filter(Boolean).join(' · ') || undefined,
+          eventText: todayEntry?.event ? `今日风物：${todayEntry.event}` : undefined,
+          questText: activeQuest ? `当前委托：${activeQuest.标题}` : undefined,
+        }
+      } catch {
+        return { characterName: charName, avatarUrl }
+      }
+    },
     onStateChange: (state) => {
       if (!state.open && transientPhoneOpen) {
         transientPhoneOpen = false
@@ -306,9 +339,29 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     }
   }))
 
+  const syncPhoneBadges = () => {
+    const badges: Record<string, number> = {}
+    for (const app of registry.list()) {
+      const count = getAppBadge(app.id)
+      if (count > 0) badges[app.id] = count
+    }
+    phone.setBadges?.(badges)
+  }
+
   lifecycle.track(onStoryEvent((event) => {
-    if (event.type === 'story-date-changed' || event.type === 'story-state-updated' || event.type === 'calendar-updated' || event.type === 'chronicle-updated') {
-      phone.refreshHome()
+    if (event.type === 'badge-changed') {
+      syncPhoneBadges()
+      return
+    }
+    phone.refreshHome()
+    if (event.type === 'theater-updated') {
+      phone.notifyPill?.({ icon: '🎪', text: event.summary, appId: 'theater' })
+    } else if (event.type === 'story-state-updated' && event.summary) {
+      phone.notifyPill?.({ icon: '🎒', text: event.summary, appId: 'story-state' })
+    } else if (event.type === 'chronicle-updated' && event.summary) {
+      phone.notifyPill?.({ icon: '📜', text: `新纪要：${event.summary}`, appId: 'chronicle' })
+    } else if (event.type === 'calendar-updated' && event.summary) {
+      phone.notifyPill?.({ icon: '📅', text: event.summary, appId: 'chronicle' })
     }
   }))
 
@@ -337,15 +390,18 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     hasApp: id => !!registry.get(id),
     openApp: id => openPhoneApp(id),
     statusSummary: async () => {
+      let summaryText: string
       try {
         const snap = await readStoryState(createHostDeps('story-state') as unknown as Parameters<typeof readStoryState>[0])
         const timeStr = formatTime(snap.state.时间)
         const locStr = [snap.state.位置.区域, snap.state.位置.地点].filter(Boolean).join('·') || '未知地点'
         const quests = snap.state.任务.filter(q => q.状态 === '进行中').map(q => q.标题)
-        return `【剧情速览】${timeStr}｜${locStr}${quests.length ? '｜委托：' + quests.join('、') : ''}`
+        summaryText = `【剧情速览】${timeStr}｜${locStr}${quests.length ? '｜委托：' + quests.join('、') : ''}`
       } catch {
-        return `当前角色：${adapter.getCurrentCharacterName() || '未打开聊天'}`
+        summaryText = `当前角色：${adapter.getCurrentCharacterName() || '未打开聊天'}`
       }
+      platformCaps.toast('info', summaryText)
+      return summaryText
     },
   })
 
@@ -410,9 +466,13 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
         return []
       }
     },
-    subscribeExtra: (handler) => onStoryEvent((ev) => {
-      if (ev.type === 'story-state-updated' || ev.type === 'story-date-changed') handler()
-    }),
+    subscribeExtra: (handler) => {
+      const offStory = onStoryEvent((ev) => {
+        if (ev.type === 'story-state-updated' || ev.type === 'story-date-changed') handler()
+      })
+      const offChar = appCharacterHub.subscribe(() => handler())
+      return () => { offStory(); offChar() }
+    },
   })
   hudController.sync()
   onSettingsApplied = () => hudController.sync()

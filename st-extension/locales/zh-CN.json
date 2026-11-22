@@ -464,7 +464,9 @@
       "go_bind": "去图库绑定角色立绘",
       "stage_title": "试衣与神态速览",
       "all_outfits": "全部装束",
-      "copy_tag": "复制立绘标签"
+      "copy_tag": "复制立绘标签",
+      "expand_stage": "展开全部（{{count}}）",
+      "fold_stage": "收起神态列表"
     },
     "gallery": {
       "pack_count": "共 {{count}} 个立绘包",

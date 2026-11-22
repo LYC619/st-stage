@@ -32,10 +32,9 @@ describe('baigong slash command', () => {
     f.command.callback({})
     expect(f.phone.collapse).toHaveBeenCalledOnce()
   })
-  it('expands and opens a known app, including from hidden state', () => {
+  it('opens a known app directly without redundant double-mount', () => {
     const f = fixture()
     f.command.callback({ app: 'wechat-sister' })
-    expect(f.phone.expand).toHaveBeenCalledOnce()
     expect(f.phone.openApp).toHaveBeenCalledWith('wechat-sister')
   })
   it('supports action=status without toggling phone visibility', () => {

@@ -46,7 +46,6 @@ export function registerPhoneCommand(context: unknown, phone: PhoneCommandAction
       const app = typeof args.app === 'string' ? args.app.trim() : ''
       if (app) {
         if (!phone.hasApp(app)) return `未找到 App「${app}」，请检查 App id。`
-        phone.expand()
         phone.openApp(app)
       } else if (phone.isOpen()) {
         phone.collapse()

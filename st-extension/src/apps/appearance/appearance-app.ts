@@ -11,6 +11,7 @@ import {
   importAppearance,
   PHONE_THEMES,
   readAppearance,
+  resolveEffectiveAppearance,
   type AppearanceData,
 } from './pack'
 
@@ -118,9 +119,25 @@ export function createAppearanceApp(deps: AppearanceDeps): PhoneApp {
         if (window.confirm('导入会覆盖当前壁纸、主题、图标和字体，继续吗？')) save(pack)
       }
 
+      function withBoundSync(base: AppearanceData, charName: string, patch: { theme?: AppearanceData['theme']; wallpaper?: string }): AppearanceData {
+        if (!charName || !base.characterSkins?.[charName]) return base
+        return {
+          ...base,
+          characterSkins: {
+            ...base.characterSkins,
+            [charName]: {
+              ...base.characterSkins[charName],
+              ...(patch.theme !== undefined ? { theme: patch.theme || 'midnight' } : {}),
+              ...(patch.wallpaper !== undefined ? { wallpaper: patch.wallpaper } : {}),
+            },
+          },
+        }
+      }
+
       function render() {
-        const data = current()
+        const rawData = current()
         const charName = typeof ctx.getCharacterName === 'function' ? ctx.getCharacterName().trim() : ''
+        const data = resolveEffectiveAppearance(rawData, charName)
         content.replaceChildren()
 
         // 1. 主题气韵
@@ -133,7 +150,10 @@ export function createAppearanceApp(deps: AppearanceDeps): PhoneApp {
           chip.className = `ap-theme-chip${activeTheme === preset.id ? ' is-active' : ''}`
           chip.dataset.themeId = preset.id
           chip.append(text('strong', '', preset.label), text('small', '', preset.desc))
-          chip.onclick = () => save({ ...current(), theme: preset.id === 'midnight' ? undefined : preset.id }, `已切换至「${preset.label}」主题。`)
+          chip.onclick = () => {
+            const nextTheme = preset.id === 'midnight' ? undefined : preset.id
+            save(withBoundSync({ ...current(), theme: nextTheme }, charName, { theme: preset.id }), `已切换至「${preset.label}」主题。`)
+          }
           themeGrid.append(chip)
         }
         themeSec.append(themeGrid)
@@ -145,10 +165,13 @@ export function createAppearanceApp(deps: AppearanceDeps): PhoneApp {
         const wallpaperUrl = field('图片网址', data.wallpaper, 'url')
         wallpaper.append(
           wallpaperPreview,
-          upload('上传图片', 1280, w => save({ ...current(), wallpaper: w })),
+          upload('上传图片', 1280, w => save(withBoundSync({ ...current(), wallpaper: w }, charName, { wallpaper: w }))),
           wallpaperUrl.row,
-          button('应用壁纸网址', () => save({ ...current(), wallpaper: imageUrl(wallpaperUrl.input.value) })),
-          button('恢复默认壁纸', () => save({ ...current(), wallpaper: '' })),
+          button('应用壁纸网址', () => {
+            const w = imageUrl(wallpaperUrl.input.value)
+            save(withBoundSync({ ...current(), wallpaper: w }, charName, { wallpaper: w }))
+          }),
+          button('恢复默认壁纸', () => save(withBoundSync({ ...current(), wallpaper: '' }, charName, { wallpaper: '' }))),
         )
 
         if (typeof ctx.getSettings === 'function' && charName) {

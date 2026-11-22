@@ -41,6 +41,7 @@ export function spriteApp(deps: SpriteAppDeps = {}): PhoneApp {
     mount(container, ctx) {
       let selectedOutfit = ''
       let selectedSpriteId = ''
+      let stageExpanded = false
 
       const render = () => {
         container.replaceChildren()
@@ -81,19 +82,20 @@ export function spriteApp(deps: SpriteAppDeps = {}): PhoneApp {
 
         // 实时试衣与神态舞台（仅使用 div/button，不插入 select/textarea/range）
         if (pack && pack.sprites.length > 0) {
-          const allSprites = packs.flatMap(p =>
-            p.sprites.map((s, idx) => {
-              const outfit = s.outfit?.trim() || p.outfit?.trim() || p.name
-              return {
-                id: `${p.id}::${idx}::${s.tag}`,
-                label: s.tag,
-                url: s.url,
-                outfit,
-                address: (s.outfit?.trim() || p.outfit?.trim()) && packs.length > 1 ? `${outfit}/${s.tag}` : s.tag,
-              }
-            }),
+          const rawSprites = packs.flatMap(p =>
+            p.sprites.map((s, idx) => ({
+              id: `${p.id}::${idx}::${s.tag}`,
+              label: s.tag,
+              url: s.url,
+              explicitOutfit: s.outfit?.trim() || p.outfit?.trim() || '',
+              outfit: s.outfit?.trim() || p.outfit?.trim() || p.name,
+            })),
           )
-          const outfits = [...new Set(allSprites.map(s => s.outfit))]
+          const outfits = [...new Set(rawSprites.map(s => s.outfit))]
+          const allSprites = rawSprites.map(s => ({
+            ...s,
+            address: s.explicitOutfit && outfits.length > 1 ? `${s.explicitOutfit}/${s.label}` : s.label,
+          }))
           if (selectedOutfit && !outfits.includes(selectedOutfit)) selectedOutfit = ''
           const visibleSprites = selectedOutfit
             ? allSprites.filter(s => s.outfit === selectedOutfit)
@@ -141,7 +143,8 @@ export function spriteApp(deps: SpriteAppDeps = {}): PhoneApp {
           }
 
           const chipGrid = el('div', 'so-sprite-chips')
-          for (const item of visibleSprites.slice(0, 18)) {
+          const shownSprites = stageExpanded ? visibleSprites : visibleSprites.slice(0, 18)
+          for (const item of shownSprites) {
             const chip = document.createElement('button')
             chip.type = 'button'
             chip.className = `so-sprite-chip${item.id === currentSprite.id ? ' is-active' : ''}`
@@ -152,6 +155,16 @@ export function spriteApp(deps: SpriteAppDeps = {}): PhoneApp {
               render()
             }
             chipGrid.append(chip)
+          }
+          if (visibleSprites.length > 18) {
+            const moreChip = document.createElement('button')
+            moreChip.type = 'button'
+            moreChip.className = 'so-sprite-pill'
+            moreChip.textContent = stageExpanded
+              ? t('apps.sprites.fold_stage', '收起神态列表')
+              : t('apps.sprites.expand_stage', '展开全部（{{count}}）', { count: visibleSprites.length })
+            moreChip.onclick = () => { stageExpanded = !stageExpanded; render() }
+            chipGrid.append(moreChip)
           }
           controlsCol.append(chipGrid)
 

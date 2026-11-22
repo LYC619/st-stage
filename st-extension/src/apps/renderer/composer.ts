@@ -12,12 +12,19 @@ export interface ComposerBridge {
 }
 
 export interface ComposerBridgeDeps {
-  findInput?: () => HTMLTextAreaElement | null
+  findInput?: () => HTMLTextAreaElement | HTMLInputElement | null
 }
 
 interface OwnedDraft {
-  input: HTMLTextAreaElement
+  input: HTMLTextAreaElement | HTMLInputElement
   value: string
+}
+
+function setNativeInputValue(el: HTMLTextAreaElement | HTMLInputElement, next: string): void {
+  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
+  if (setter) setter.call(el, next)
+  else el.value = next
 }
 
 /** 创建只在百工仍拥有草稿时允许替换、同时支持无损追加的输入框桥接器。 */
@@ -36,7 +43,7 @@ export function createComposerBridge(deps: ComposerBridgeDeps = {}): ComposerBri
       owned = null
       if (input.value !== '') return { ok: false, error: '输入框已有草稿，未覆盖你的内容。' }
     }
-    input.value = text
+    setNativeInputValue(input, text)
     input.dispatchEvent(new Event('input', { bubbles: true }))
     input.focus()
     owned = { input, value: text }
@@ -53,7 +60,7 @@ export function createComposerBridge(deps: ComposerBridgeDeps = {}): ComposerBri
     const separator = !current || /[\s\n]$/.test(current) ? '' : '\n'
     const next = current ? `${current}${separator}${clean}` : clean
     const wasOwned = !current || (owned?.input === input && owned.value === current)
-    input.value = next
+    setNativeInputValue(input, next)
     input.dispatchEvent(new Event('input', { bubbles: true }))
     input.focus()
     owned = wasOwned ? { input, value: next } : null

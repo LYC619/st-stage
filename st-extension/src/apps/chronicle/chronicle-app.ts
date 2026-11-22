@@ -10,7 +10,7 @@ import { createChronicleController } from './controller'
 import { readChronicleData, readChronicleSettings } from './store'
 import { entryRelation } from './inject'
 import type { ChronicleSettings } from './types'
-import { calendarWindow, NO_STORY_DATE, readCalendar, saveCalendarNote, weatherIcon } from './calendar'
+import { calendarGap, calendarWindow, NO_STORY_DATE, readCalendar, saveCalendarNote, weatherIcon } from './calendar'
 
 function text(tag: string, className: string, value: string): HTMLElement {
   const node = document.createElement(tag); node.className = className; node.textContent = value; return node
@@ -44,6 +44,11 @@ export function createChronicleApp(): PhoneApp {
         } else if (controller.calendar.status().busy) {
           controller.calendar.cancel()
         } else {
+          const today = controller.status().today
+          if (today && !calendarGap(today, readCalendar()).missing.length) {
+            status.textContent = '这七天的风物已齐备；想换一批日程可点下方「↻ 重排七天风物」。'
+            return
+          }
           void controller.refresh()
           void controller.calendar.trigger(true)
         }
@@ -173,7 +178,7 @@ export function createChronicleApp(): PhoneApp {
 
           const toolbar = text('div', 'ch-cal-toolbar', '')
           toolbar.append(text('small', 'ch-meta', `剧情今天：${todayIso}`))
-          if (days.length >= 7 && connected) {
+          if (!calendarGap(today, calData).missing.length && connected) {
             const rerollBtn = document.createElement('button')
             rerollBtn.type = 'button'
             rerollBtn.className = 'ch-ghost-btn'

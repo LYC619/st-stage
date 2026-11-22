@@ -251,11 +251,18 @@ export function createStoryStateApp(): PhoneApp {
             saveBtn.onclick = () => {
               void mutateLocal(working => {
                 const tObj = (working.时间 && typeof working.时间 === 'object' ? working.时间 : {}) as Record<string, unknown>
-                if (/^\d{4}-\d{2}-\d{2}$/.test(dateF.input.value)) {
-                  const [y, m, d] = dateF.input.value.split('-').map(Number)
+                const prevIso = formatIsoDateFromTime(state.时间)
+                const nextIso = dateF.input.value.trim()
+                if (/^\d{4}-\d{2}-\d{2}$/.test(nextIso)) {
+                  const [y, m, d] = nextIso.split('-').map(Number)
                   tObj.年 = y; tObj.月 = m; tObj.日 = d
+                  tObj.星期 = '日一二三四五六'[new Date(y, m - 1, d).getDay()]
+                } else if (!nextIso) {
+                  tObj.年 = 0; tObj.月 = 0; tObj.日 = 0; tObj.星期 = ''
                 }
-                tObj.显示 = showF.input.value.trim()
+                const nextShow = showF.input.value.trim()
+                // 若修改了日期但未改旧的「时间展示」文本，自动清空旧文本让新年月日生效
+                tObj.显示 = nextIso !== prevIso && nextShow === state.时间.显示 ? '' : nextShow
                 working.时间 = tObj
                 working.位置 = {
                   ...(working.位置 && typeof working.位置 === 'object' ? working.位置 as Record<string, unknown> : {}),
@@ -287,7 +294,7 @@ export function createStoryStateApp(): PhoneApp {
               const cycleBtn = document.createElement('button')
               cycleBtn.type = 'button'
               cycleBtn.className = 'ss-ghost-btn'
-              const nextStatus = quest.状态 === '进行中' ? '完成' : quest.状态 === '完成' ? '搁置' : '进行中'
+              const nextStatus = quest.状态 === '进行中' ? '完成' : quest.状态 === '完成' ? '失败' : '进行中'
               cycleBtn.textContent = `标为${nextStatus}`
               cycleBtn.onclick = () => {
                 void mutateLocal(working => {
@@ -295,7 +302,18 @@ export function createStoryStateApp(): PhoneApp {
                   if (list[idx]) list[idx].状态 = nextStatus
                 }, `委托「${quest.标题}」已标为${nextStatus}`)
               }
-              actions.append(cycleBtn)
+              const delBtn = document.createElement('button')
+              delBtn.type = 'button'
+              delBtn.className = 'ss-ghost-btn'
+              delBtn.textContent = '移除'
+              delBtn.onclick = () => {
+                void mutateLocal(working => {
+                  const list = Array.isArray(working.任务) ? [...(working.任务 as unknown[])] : []
+                  list.splice(idx, 1)
+                  working.任务 = list
+                }, `已移除委托「${quest.标题}」`)
+              }
+              actions.append(cycleBtn, delBtn)
             }
             card.append(actions)
             panel.append(card)

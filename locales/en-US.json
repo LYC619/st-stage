@@ -464,7 +464,9 @@
       "go_bind": "Bind Sprite Pack in Gallery",
       "stage_title": "Live Outfit & Expression Stage",
       "all_outfits": "All Outfits",
-      "copy_tag": "Copy Sprite Tag"
+      "copy_tag": "Copy Sprite Tag",
+      "expand_stage": "Show all ({{count}})",
+      "fold_stage": "Collapse expressions"
     },
     "gallery": {
       "pack_count": "Sprite packs: {{count}}",

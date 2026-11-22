@@ -1,10 +1,10 @@
 /**
  * 手机壳（无框架原生 DOM，双端复用）：
- * - 收起态：可拖拽的圆形悬浮图标（📱），点击展开
- * - 展开态：手机外壳（状态栏 + 屏幕 + Home 键），屏幕内是 Home 屏 App 栅格或打开的 App
+ * - 收起态：可拖拽的圆形悬浮图标（📱 + 未读角标），点击展开
+ * - 展开态：掌上 Mini-OS 外壳（状态栏 + 灵动胶囊 + 屏幕 + 手势底栏），支持主题切换、左缘右滑返回与丝滑转场
  * - 位置持久化由调用方通过 onStateChange 落盘
  *
- * 样式类名前缀 so-phone-*，样式在 st-extension/style.css（Web 端 globals.css 引用同一段）。
+ * 样式类名前缀 so-phone-*，样式在 core/phone-shell.css（ST 与 Web 双端共享）。
  */
 
 import { t, getLocale } from './i18n'
@@ -17,6 +17,16 @@ export interface PhoneHomeSummary {
   title: string
   subtitle: string
   rows: Array<{ id: string; appId: string; label: string; value: string }>
+}
+
+export interface PhoneWorldWidget {
+  characterName: string
+  avatarUrl?: string
+  dateText?: string
+  weatherText?: string
+  eventText?: string
+  locationText?: string
+  questText?: string
 }
 
 export type PhoneThemeId = 'midnight' | 'tavern' | 'parchment' | 'aurora' | 'daylight'
@@ -32,6 +42,12 @@ export interface PhoneAppearance {
   characterSkins?: Record<string, { theme?: PhoneThemeId; wallpaper?: string }>
 }
 
+export interface PhonePillNotification {
+  icon?: string
+  text: string
+  appId?: string
+}
+
 export interface PhoneShellDeps {
   registry: PhoneAppRegistry
   /** 构造传给 App 的上下文（goHome 由壳注入）；壳在 leaveApp 时调用其 dispose 回收 ctx 资源 */
@@ -40,6 +56,8 @@ export interface PhoneShellDeps {
   onStateChange(state: PhoneState): void
   getHomeSummary?(): PhoneHomeSummary
   readHomeSummary?(): Promise<PhoneHomeSummary>
+  getWorldWidget?(): PhoneWorldWidget | null
+  readWorldWidget?(): Promise<PhoneWorldWidget | null>
 }
 
 export interface PhoneShellController {
@@ -51,18 +69,76 @@ export interface PhoneShellController {
   setVisible(visible: boolean): void
   /** App 自己提交核心设置后重绘它（保留滚动与焦点）；其他来源的设置变更不重挂载打开中的 App */
   refreshApp(appId: string): void
-  /** Refresh the current role card without remounting an open App. */
+  /** Refresh the current role card & world widget without remounting an open App. */
   refreshHome(): void
+  /** 在手机顶部弹出灵动通知胶囊（点击可直达对应 App）。 */
+  notifyPill(notification: PhonePillNotification): void
+  /** 更新各 App 与悬浮球的未读角标计数。 */
+  setBadges(badges: Record<string, number>): void
   destroy(): void
 }
 
 const DRAG_THRESHOLD = 6
+const DOCK_APP_IDS = ['wechat-sister', 'theater', 'story-state', 'chronicle'] as const
 
 /**
  * Home 屏状态栏标题：面向用户的产品名，不是仓库名/安装目录名。
- * 安装目录叫 st-stage-ext、开发仓库叫 st-stage，两者都不该出现在界面上。
  */
 const HOME_TITLE = '百工'
+
+function createStatusIndicatorsSvg(): HTMLElement {
+  const wrap = document.createElement('span')
+  wrap.className = 'so-phone-indicators'
+  wrap.setAttribute('aria-hidden', 'true')
+  const ns = 'http://www.w3.org/2000/svg'
+
+  const signal = document.createElementNS(ns, 'svg')
+  signal.setAttribute('viewBox', '0 0 16 11')
+  signal.setAttribute('width', '14')
+  signal.setAttribute('height', '10')
+  for (const [x, y, h] of [[1, 7, 3], [4.5, 5, 5], [8, 3, 7], [11.5, 1, 9]]) {
+    const bar = document.createElementNS(ns, 'rect')
+    bar.setAttribute('x', String(x))
+    bar.setAttribute('y', String(y))
+    bar.setAttribute('width', '2.2')
+    bar.setAttribute('height', String(h))
+    bar.setAttribute('rx', '0.8')
+    bar.setAttribute('fill', 'currentColor')
+    signal.append(bar)
+  }
+
+  const battery = document.createElementNS(ns, 'svg')
+  battery.setAttribute('viewBox', '0 0 22 11')
+  battery.setAttribute('width', '19')
+  battery.setAttribute('height', '10')
+  const body = document.createElementNS(ns, 'rect')
+  body.setAttribute('x', '0.75')
+  body.setAttribute('y', '1')
+  body.setAttribute('width', '17.5')
+  body.setAttribute('height', '9')
+  body.setAttribute('rx', '2.4')
+  body.setAttribute('fill', 'none')
+  body.setAttribute('stroke', 'currentColor')
+  body.setAttribute('stroke-width', '1.2')
+  const fill = document.createElementNS(ns, 'rect')
+  fill.setAttribute('x', '2.5')
+  fill.setAttribute('y', '2.7')
+  fill.setAttribute('width', '12.8')
+  fill.setAttribute('height', '5.6')
+  fill.setAttribute('rx', '1.2')
+  fill.setAttribute('fill', 'currentColor')
+  const cap = document.createElementNS(ns, 'rect')
+  cap.setAttribute('x', '19.4')
+  cap.setAttribute('y', '3.5')
+  cap.setAttribute('width', '1.6')
+  cap.setAttribute('height', '4')
+  cap.setAttribute('rx', '0.8')
+  cap.setAttribute('fill', 'currentColor')
+  battery.append(body, fill, cap)
+
+  wrap.append(signal, battery)
+  return wrap
+}
 
 export function createPhoneShell(
   initialState: PhoneState,
@@ -70,23 +146,30 @@ export function createPhoneShell(
 ): PhoneShellController {
   let state: PhoneState = { ...initialState }
   let activeApp: PhoneApp | null = null
-  /** 当次 mount 的 ctx 回收句柄（离开 App 时调用，自动退订经 ctx 建立的订阅/定时器） */
   let activeCtxDispose: (() => void) | null = null
-  /** 上一次 renderScreen 时的 App id：同 App 重挂载（设置变更）恢复滚动位置用 */
   let screenScrollAppId: string | null = null
-  // 手机总显隐（功能④）：隐藏时图标与壳都不显示，回退纯悬浮窗模式
   let hidden = false
   let destroyed = false
   let homeGeneration = 0
   let homeCard: HTMLDetailsElement | null = null
+  let worldBox: HTMLElement | null = null
+  let navMotion: 'none' | 'enter' | 'home' = 'none'
   let appearance: PhoneAppearance = { wallpaper: '', icons: {}, fonts: [], activeFont: '' }
+  let appBadges: Record<string, number> = {}
   let fontLink: HTMLLinkElement | undefined
+  let pillTimer: ReturnType<typeof setTimeout> | undefined
 
   /* ---- 悬浮图标 ---- */
   const fab = document.createElement('div')
   fab.className = 'so-phone-fab'
   fab.title = t('phone.open', '打开手机')
-  fab.textContent = '📱'
+  const fabGlyph = document.createElement('span')
+  fabGlyph.className = 'so-phone-fab-glyph'
+  fabGlyph.textContent = '📱'
+  const fabBadge = document.createElement('span')
+  fabBadge.className = 'so-phone-fab-badge'
+  fabBadge.hidden = true
+  fab.append(fabGlyph, fabBadge)
   fab.setAttribute('role', 'button')
   fab.setAttribute('aria-label', t('phone.open_panel', '打开手机面板'))
   fab.tabIndex = 0
@@ -102,6 +185,7 @@ export function createPhoneShell(
   /* ---- 手机壳 ---- */
   const shell = document.createElement('div')
   shell.className = 'so-phone-shell'
+  shell.dataset.theme = 'midnight'
   shell.setAttribute('role', 'region')
   shell.setAttribute('aria-label', HOME_TITLE)
   shell.style.display = 'none'
@@ -110,7 +194,6 @@ export function createPhoneShell(
     shell.addEventListener(type, stopShellEvent)
   }
   shell.addEventListener('keydown', (event) => {
-    // Keep native input/selection defaults while isolating ST's global shortcuts.
     event.stopPropagation()
     if (event.key === 'Escape' && !event.defaultPrevented && !event.isComposing) {
       event.preventDefault()
@@ -121,7 +204,6 @@ export function createPhoneShell(
 
   const statusBar = document.createElement('div')
   statusBar.className = 'so-phone-status'
-  // App 内左上角返回键：固定在顶部，滚到哪都能返回；先让 App 内部后退一级，到顶层再回主屏
   const backBtn = document.createElement('div')
   backBtn.className = 'so-phone-back'
   backBtn.textContent = '‹'
@@ -141,7 +223,6 @@ export function createPhoneShell(
   statusTitle.textContent = HOME_TITLE
   const clock = document.createElement('span')
   clock.className = 'so-phone-clock'
-  // 右上角固定关闭键：收起手机壳，恢复为可拖动图标（App 会先 unmount）
   const closeBtn = document.createElement('div')
   closeBtn.className = 'so-phone-close'
   closeBtn.textContent = '✕'
@@ -161,15 +242,62 @@ export function createPhoneShell(
       collapse()
     }
   })
-  const indicators = document.createElement('span')
-  indicators.className = 'so-phone-indicators'
-  indicators.textContent = '5G 🔋'
+  const indicators = createStatusIndicatorsSvg()
   statusBar.append(backBtn, statusTitle, indicators, clock, closeBtn)
+
+  /* ---- 灵动通知胶囊 ---- */
+  const island = document.createElement('button')
+  island.type = 'button'
+  island.className = 'so-phone-island'
+  island.hidden = true
+  let islandTargetApp = ''
+  island.addEventListener('click', () => {
+    island.hidden = true
+    clearTimeout(pillTimer)
+    if (islandTargetApp && deps.registry.get(islandTargetApp)) {
+      navMotion = 'enter'
+      leaveApp()
+      activeApp = deps.registry.get(islandTargetApp)!
+      renderScreen()
+      focusApp()
+    }
+  })
 
   const screen = document.createElement('div')
   screen.className = 'so-phone-screen'
 
-  // 底部圆形 Home 键（≥44×44 命中区）：只负责返回主屏，收起手机用右上角 ✕
+  /* ---- 左缘右滑返回手势（App 内生效，避开原生滑块/文本框） ---- */
+  screen.addEventListener('pointerdown', (startEv) => {
+    if (!activeApp || startEv.button !== 0) return
+    const target = startEv.target as HTMLElement | null
+    if (target?.closest('input, textarea, select, [data-no-swipe]')) return
+    const rect = screen.getBoundingClientRect()
+    if (startEv.clientX - rect.left > 22) return
+    const startX = startEv.clientX
+    const startY = startEv.clientY
+    let triggered = false
+    const onMove = (ev: PointerEvent) => {
+      if (triggered) return
+      const dx = ev.clientX - startX
+      const dy = ev.clientY - startY
+      if (Math.abs(dy) > 42) { cleanupSwipe(); return }
+      if (dx >= 58) {
+        triggered = true
+        cleanupSwipe()
+        goBack()
+      }
+    }
+    const cleanupSwipe = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', cleanupSwipe)
+      window.removeEventListener('pointercancel', cleanupSwipe)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', cleanupSwipe)
+    window.addEventListener('pointercancel', cleanupSwipe)
+  })
+
+  // 底部手势 Home 键（≥44×44 命中区）：只负责返回主屏，收起手机用右上角 ✕
   const homeBar = document.createElement('div')
   homeBar.className = 'so-phone-homebar'
   const homeBtn = document.createElement('div')
@@ -180,7 +308,7 @@ export function createPhoneShell(
   homeBtn.tabIndex = 0
   homeBar.append(homeBtn)
 
-  shell.append(statusBar, screen, homeBar)
+  shell.append(statusBar, island, screen, homeBar)
   document.body.append(fab, shell)
 
   const clockTimer = setInterval(updateClock, 30_000)
@@ -192,8 +320,35 @@ export function createPhoneShell(
     })
   }
 
+  function syncBadgeDom(): void {
+    let total = 0
+    for (const val of Object.values(appBadges)) if (val > 0) total += val
+    fabBadge.hidden = total <= 0
+    fabBadge.textContent = total > 99 ? '99+' : String(total)
+
+    for (const node of screen.querySelectorAll<HTMLElement>('.so-phone-app-icon[data-app-id]')) {
+      const id = node.dataset.appId || ''
+      const count = appBadges[id] ?? 0
+      let badge = node.querySelector<HTMLElement>('.so-phone-icon-badge')
+      if (count > 0) {
+        if (!badge) {
+          badge = document.createElement('span')
+          badge.className = 'so-phone-icon-badge'
+          node.querySelector('.so-phone-app-glyph')?.append(badge)
+        }
+        badge.textContent = count > 99 ? '99+' : String(count)
+      } else {
+        badge?.remove()
+      }
+    }
+    for (const node of screen.querySelectorAll<HTMLElement>('.so-phone-dock-btn[data-dock-app]')) {
+      const id = node.dataset.dockApp || ''
+      const count = appBadges[id] ?? 0
+      node.classList.toggle('has-unread', count > 0)
+    }
+  }
+
   /* ---- 布局 ---- */
-  /** 可视视口尺寸：优先 visualViewport（移动端地址栏伸缩/软键盘时更准） */
   function viewportSize(): { w: number; h: number; left: number; top: number } {
     const vv = fixedViewport()
     return {
@@ -218,8 +373,6 @@ export function createPhoneShell(
     fab.style.display = state.open ? 'none' : 'flex'
     shell.style.display = state.open ? 'flex' : 'none'
     if (state.open) {
-      // 手机按真实尺寸完整钳入视口：窄屏收窄、矮屏压高，保证四边都在可视区内。
-      // 高度跟随宽度取接近真机的 2:1（下限沿用 580），高屏不再把聊天类 App 压成矮条。
       const targetMaxW = vw >= 768 ? 380 : 320
       const shellW = Math.min(targetMaxW, vw - 16)
       const shellH = Math.min(Math.max(580, shellW * 2), vh - 16)
@@ -230,7 +383,6 @@ export function createPhoneShell(
     }
   }
   applyLayout()
-  // 旋转屏幕 / 移动端地址栏伸缩 / 软键盘弹出时重新钳位
   const stopViewport = observeFixedViewport(applyLayout)
 
   function commitState(next: PhoneState): void {
@@ -260,9 +412,6 @@ export function createPhoneShell(
       if (moved) {
         commitState(state)
       } else {
-        // 触屏 tap（桌面鼠标同理）在 pointerup 后还会在同一坐标补发一个合成 click；
-        // 此时图标已隐藏、壳已渲染，这发 click 会"幽灵点击"落点下的 App 图标。
-        // 展开前挂一个一次性捕获监听吞掉它（未补发则 400ms 后自清）。
         const swallowGhostClick = (e: MouseEvent) => {
           e.stopPropagation()
           e.preventDefault()
@@ -276,7 +425,6 @@ export function createPhoneShell(
         renderScreen()
       }
     }
-    // 触屏上浏览器可能中途接管指针（边缘滑动/系统手势）：保留已拖到的位置，不当作点击展开
     const onCancel = () => {
       cleanup()
       if (moved) commitState(state)
@@ -291,7 +439,6 @@ export function createPhoneShell(
     window.addEventListener('pointercancel', onCancel)
   })
 
-  // 圆形 Home 键：只返回主屏（在主屏时无动作）；收起手机走右上角 ✕
   const onHomePress = () => {
     if (activeApp) goHome()
   }
@@ -308,7 +455,6 @@ export function createPhoneShell(
   })
 
   /* ---- 屏幕渲染 ---- */
-  /** 已执行 mount、尚未 unmount 的 App：同一 App 重挂载前必须先完整卸载，否则订阅/定时器泄漏 */
   let mountedApp: PhoneApp | null = null
 
   function unmountActive(): void {
@@ -320,12 +466,17 @@ export function createPhoneShell(
     } catch (err) {
       console.error(`[sprite-overlay] App「${app.id}」unmount 失败`, err)
     }
-    // ctx 资源回收在 unmount 之后：unmount 里仍可正常使用 ctx（如保存状态）
     activeCtxDispose?.()
     activeCtxDispose = null
   }
 
+  function dismissIsland(): void {
+    island.hidden = true
+    clearTimeout(pillTimer)
+  }
+
   function leaveApp(): void {
+    dismissIsland()
     if (activeApp) {
       screen.classList.remove('so-phone-screen-fullbleed')
       unmountActive()
@@ -333,17 +484,94 @@ export function createPhoneShell(
     }
   }
 
+  function renderWorldWidget(widget: PhoneWorldWidget | null): void {
+    if (!worldBox) return
+    if (!widget || (!widget.characterName && !widget.dateText && !widget.locationText)) {
+      worldBox.hidden = true
+      worldBox.replaceChildren()
+      return
+    }
+    worldBox.hidden = false
+    worldBox.replaceChildren()
+
+    const top = document.createElement('div')
+    top.className = 'so-phone-world-top'
+
+    if (widget.avatarUrl) {
+      const img = document.createElement('img')
+      img.className = 'so-phone-world-avatar'
+      img.src = widget.avatarUrl
+      img.alt = widget.characterName
+      img.onerror = () => { img.remove() }
+      top.append(img)
+    }
+
+    const meta = document.createElement('div')
+    meta.className = 'so-phone-world-meta'
+    const nameRow = document.createElement('div')
+    nameRow.className = 'so-phone-world-title'
+    const strong = document.createElement('strong')
+    strong.textContent = widget.characterName || HOME_TITLE
+    nameRow.append(strong)
+    if (widget.weatherText) {
+      const wx = document.createElement('span')
+      wx.className = 'so-phone-world-pill'
+      wx.textContent = widget.weatherText
+      nameRow.append(wx)
+    }
+    meta.append(nameRow)
+
+    const sub = document.createElement('div')
+    sub.className = 'so-phone-world-sub'
+    sub.textContent = [widget.dateText, widget.locationText].filter(Boolean).join(' · ') || '打开故事聊天，随剧情记录时空与风物'
+    meta.append(sub)
+    top.append(meta)
+    worldBox.append(top)
+
+    const extraLine = widget.eventText || widget.questText
+    if (extraLine) {
+      const note = document.createElement('div')
+      note.className = 'so-phone-world-note'
+      note.textContent = extraLine
+      worldBox.append(note)
+    }
+
+    const quickRow = document.createElement('div')
+    quickRow.className = 'so-phone-world-Quick'
+    for (const [appId, label] of [['story-state', '🎒 状态手账'], ['chronicle', '📅 风物日历'], ['theater', '🎪 小剧场']] as const) {
+      const target = deps.registry.get(appId)
+      if (!target) continue
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'so-phone-world-chip'
+      btn.textContent = label
+      btn.onclick = () => {
+        navMotion = 'enter'
+        activeApp = target
+        renderScreen()
+        focusApp()
+      }
+      quickRow.append(btn)
+    }
+    if (quickRow.childElementCount) worldBox.append(quickRow)
+  }
+
   function renderScreen(): void {
     ++homeGeneration
     homeCard = null
-    // 同一 App 因设置变更整体重挂载时保持滚动位置：拨一个开关整页跳回顶部的体验极差
+    worldBox = null
     const prevScrollAppId = screenScrollAppId
     const prevScrollTop = screen.scrollTop
     const restore = prevScrollAppId === activeApp?.id ? captureScreenFocus(screen, focusApp) : null
+    const motion = navMotion
+    navMotion = 'none'
+
     unmountActive()
     screen.innerHTML = ''
     screen.classList.toggle('so-phone-screen-wallpaper', !activeApp && !!appearance.wallpaper)
+    shell.classList.toggle('so-phone-in-app', Boolean(activeApp))
     backBtn.style.display = activeApp ? 'flex' : 'none'
+
     if (activeApp) {
       statusTitle.textContent = activeApp.name
       if (activeApp.fullbleed) {
@@ -353,6 +581,9 @@ export function createPhoneShell(
       }
       const container = document.createElement('div')
       container.className = 'so-phone-app-container'
+      if (motion === 'enter' && prevScrollAppId !== activeApp.id) {
+        container.classList.add('so-anim-enter')
+      }
       if (activeApp.fullbleed) {
         container.classList.add('so-phone-app-fullbleed')
       }
@@ -368,7 +599,6 @@ export function createPhoneShell(
       } catch (err) {
         console.error(`[sprite-overlay] App「${activeApp.id}」mount 失败`, err)
         unmountActive()
-        // 强清容器：mount 半途抛错可能留下半渲染 DOM，错误占位页不与残骸混排
         container.replaceChildren()
         const errBox = document.createElement('div')
         errBox.className = 'so-phone-app-error'
@@ -384,25 +614,79 @@ export function createPhoneShell(
     screenScrollAppId = null
     screen.classList.remove('so-phone-screen-fullbleed')
     statusTitle.textContent = HOME_TITLE
+
+    if (deps.getWorldWidget || deps.readWorldWidget) {
+      worldBox = document.createElement('section')
+      worldBox.className = 'so-phone-world'
+      worldBox.hidden = true
+      screen.append(worldBox)
+    }
+
     if (deps.getHomeSummary) {
       homeCard = document.createElement('details')
       homeCard.className = 'so-phone-role'
       homeCard.setAttribute('aria-label', t('phone.role.heading', '当前角色'))
       try { homeCard.open = localStorage.getItem('baigong:phone:role-expanded') === 'true' } catch { /* Storage can be unavailable. */ }
       const roleDetails = homeCard
-      homeCard.ontoggle = () => { if (roleDetails.isConnected) { try { localStorage.setItem('baigong:phone:role-expanded', String(roleDetails.open)) } catch { /* Keep session usable. */ } } }
+      homeCard.ontoggle = () => {
+        if (roleDetails.isConnected) {
+          try { localStorage.setItem('baigong:phone:role-expanded', String(roleDetails.open)) } catch { /* Keep session usable. */ }
+        }
+      }
     }
+
     const grid = document.createElement('div')
-    grid.className = 'so-phone-home-grid'
+    grid.className = `so-phone-home-grid${motion === 'home' ? ' so-anim-home' : ''}`
     for (const app of deps.registry.list()) {
       grid.append(renderAppIcon(app))
     }
     screen.append(grid)
-    // 角色概览是辅助入口，放在 App 网格之后；默认折叠，避免占据主屏首屏。
+
+    // 保持 .so-phone-role 紧随 .so-phone-home-grid 之后（锁住辅助卡片与单测 DOM 邻接约定）
     if (homeCard) {
       screen.append(homeCard)
-      refreshHome()
     }
+
+    // 底部磨砂常用叙事 Dock（使用独立类名与属性，不重复 [data-app-id]）
+    const dockApps = DOCK_APP_IDS.map(id => deps.registry.get(id)).filter((a): a is PhoneApp => Boolean(a))
+    if (dockApps.length >= 2) {
+      const dock = document.createElement('nav')
+      dock.className = 'so-phone-dock'
+      dock.setAttribute('aria-label', '常用叙事快捷栏')
+      for (const app of dockApps) {
+        const btn = document.createElement('button')
+        btn.type = 'button'
+        btn.className = 'so-phone-dock-btn'
+        btn.dataset.dockApp = app.id
+        btn.title = app.name
+        const glyph = document.createElement('span')
+        glyph.className = 'so-phone-dock-glyph'
+        const custom = appearance.icons[app.id]
+        if (custom?.image) {
+          const img = document.createElement('img')
+          img.alt = app.name
+          img.src = custom.image
+          img.onerror = () => { glyph.textContent = app.icon }
+          glyph.append(img)
+        } else {
+          glyph.textContent = custom?.emoji || app.icon
+        }
+        const lbl = document.createElement('small')
+        lbl.textContent = app.name
+        btn.append(glyph, lbl)
+        btn.onclick = () => {
+          navMotion = 'enter'
+          activeApp = app
+          renderScreen()
+          focusApp()
+        }
+        dock.append(btn)
+      }
+      screen.append(dock)
+    }
+
+    syncBadgeDom()
+    refreshHome()
   }
 
   function renderSummary(summary: PhoneHomeSummary): void {
@@ -438,23 +722,34 @@ export function createPhoneShell(
       action.addEventListener('click', () => {
         const app = deps.registry.get(row.appId)
         if (!app) return
+        navMotion = 'enter'
         leaveApp(); activeApp = app; renderScreen(); focusApp()
       })
       actions.append(action)
-
     }
     homeCard.append(actions)
     if (focused) [...actions.querySelectorAll<HTMLButtonElement>('button')].find(button => button.dataset.roleAction === focused)?.focus({ preventScroll: true })
   }
 
   function refreshHome(): void {
-    // 收起或隐藏时不读宿主变量：主屏下次展开会重新渲染并读取，避免后台反复轮询
-    if (destroyed || hidden || !state.open || activeApp || !homeCard || !deps.getHomeSummary) return
+    if (destroyed || hidden || !state.open || activeApp) return
     const generation = ++homeGeneration
-    renderSummary(deps.getHomeSummary())
-    if (deps.readHomeSummary) void deps.readHomeSummary().then(summary => {
-      if (!destroyed && !activeApp && generation === homeGeneration && homeCard?.isConnected) renderSummary(summary)
-    }).catch((err) => { console.warn('[st-stage:phone-shell] 读取主屏概览变量状态失败', err) })
+    if (homeCard && deps.getHomeSummary) {
+      renderSummary(deps.getHomeSummary())
+      if (deps.readHomeSummary) {
+        void deps.readHomeSummary().then(summary => {
+          if (!destroyed && !activeApp && generation === homeGeneration && homeCard?.isConnected) renderSummary(summary)
+        }).catch((err) => { console.warn('[st-stage:phone-shell] 读取主屏概览变量状态失败', err) })
+      }
+    }
+    if (worldBox) {
+      if (deps.getWorldWidget) renderWorldWidget(deps.getWorldWidget())
+      if (deps.readWorldWidget) {
+        void deps.readWorldWidget().then(widget => {
+          if (!destroyed && !activeApp && generation === homeGeneration && worldBox?.isConnected) renderWorldWidget(widget)
+        }).catch((err) => { console.warn('[st-stage:phone-shell] 读取主屏风物卡片失败', err) })
+      }
+    }
   }
 
   function renderAppIcon(app: PhoneApp): HTMLElement {
@@ -474,12 +769,21 @@ export function createPhoneShell(
       icon.append(image)
     } else icon.textContent = custom?.emoji || app.icon
 
+    const count = appBadges[app.id] ?? 0
+    if (count > 0) {
+      const badge = document.createElement('span')
+      badge.className = 'so-phone-icon-badge'
+      badge.textContent = count > 99 ? '99+' : String(count)
+      icon.append(badge)
+    }
+
     const label = document.createElement('div')
     label.className = 'so-phone-app-label'
     label.textContent = app.name
 
     cell.append(icon, label)
     const openThis = () => {
+      navMotion = 'enter'
       activeApp = app
       renderScreen()
       focusApp()
@@ -496,12 +800,12 @@ export function createPhoneShell(
 
   function goHome(): void {
     const appId = activeApp?.id
+    navMotion = 'home'
     leaveApp()
     renderScreen()
     focusHome(appId)
   }
 
-  /** 后退一级：App 有内部页面时先交给它（如聊天 → 列表），否则回主屏。 */
   function goBack(): void {
     try {
       if (activeApp?.back?.()) return
@@ -520,12 +824,48 @@ export function createPhoneShell(
     screen.querySelector<HTMLElement>('.so-phone-app-container')?.focus({ preventScroll: true })
   }
 
-
   return {
     refreshHome,
+    notifyPill(notification: PhonePillNotification) {
+      if (destroyed || hidden) return
+      if (notification.appId && activeApp?.id === notification.appId) return
+      clearTimeout(pillTimer)
+      islandTargetApp = notification.appId || ''
+      island.replaceChildren()
+      if (notification.icon) {
+        const ic = document.createElement('span')
+        ic.className = 'so-phone-island-icon'
+        ic.textContent = notification.icon
+        island.append(ic)
+      }
+      const txt = document.createElement('span')
+      txt.className = 'so-phone-island-text'
+      txt.textContent = notification.text
+      island.append(txt)
+      island.hidden = false
+      pillTimer = setTimeout(() => {
+        island.hidden = true
+      }, 3800)
+    },
+    setBadges(badges: Record<string, number>) {
+      if (destroyed) return
+      appBadges = { ...badges }
+      syncBadgeDom()
+    },
     setAppearance(next: PhoneAppearance) {
       if (destroyed) return
       appearance = next
+      shell.dataset.theme = next.theme || 'midnight'
+      if (next.wallpaperDim && next.wallpaperDim > 0) {
+        shell.style.setProperty('--so-wall-dim', `${Math.min(0.85, next.wallpaperDim / 100)}`)
+      } else {
+        shell.style.removeProperty('--so-wall-dim')
+      }
+      if (next.wallpaperBlur && next.wallpaperBlur > 0) {
+        shell.style.setProperty('--so-wall-blur', `${next.wallpaperBlur}px`)
+      } else {
+        shell.style.removeProperty('--so-wall-blur')
+      }
       if (next.wallpaper) screen.style.setProperty('--so-wallpaper', `url(${JSON.stringify(next.wallpaper)})`)
       else screen.style.removeProperty('--so-wallpaper')
       const font = next.fonts.find(font => font.name === next.activeFont)
@@ -542,7 +882,6 @@ export function createPhoneShell(
       if (destroyed) return
       const wasOpen = state.open
       state = { ...next }
-      // 收起（外部调用如 collapsePhone）也走完整生命周期：先卸载 App 清理定时器/监听
       if (wasOpen && !state.open) leaveApp()
       applyLayout()
       if (state.open) renderScreen()
@@ -551,6 +890,7 @@ export function createPhoneShell(
       if (destroyed) return
       const app = deps.registry.get(appId)
       if (!app) return
+      navMotion = 'enter'
       leaveApp()
       activeApp = app
       if (!state.open) commitState({ ...state, open: true })
@@ -559,10 +899,8 @@ export function createPhoneShell(
     },
     setVisible(visible: boolean) {
       if (destroyed) return
-      // 平台每次改核心设置都会同步一次显隐；未变化时不重绘，打开中的 App（草稿、在途请求、勾选）不受外部设置打扰
       if (hidden === !visible) return
       hidden = !visible
-      // 整机隐藏时同样卸载 App（不可见的 App 不允许残留定时器）
       if (hidden) leaveApp()
       applyLayout()
       if (!hidden && state.open) renderScreen()
@@ -575,15 +913,16 @@ export function createPhoneShell(
       if (destroyed) return
       destroyed = true
       clearInterval(clockTimer)
+      clearTimeout(pillTimer)
       stopViewport()
       unsubscribe()
       leaveApp()
       for (const type of ['pointerdown', 'touchstart', 'click']) {
         shell.removeEventListener(type, stopShellEvent)
       }
+      fontLink?.remove()
       fab.remove()
       shell.remove()
-      fontLink?.remove()
     },
   }
 }

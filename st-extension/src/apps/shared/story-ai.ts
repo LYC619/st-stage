@@ -38,10 +38,23 @@ const OPENAI_COMPAT_ENDPOINTS: Record<string, { url: string; defaultModel: strin
   mistralai: { url: 'https://api.mistral.ai/v1/chat/completions', defaultModel: 'mistral-small-latest' },
 }
 
-function toCompletionsEndpoint(rawUrl: string): string {
+export function toCompletionsEndpoint(rawUrl: string): string {
   const trimmed = rawUrl.trim().replace(/\/+$/, '')
   if (!trimmed) return ''
-  return trimmed.endsWith('/chat/completions') ? trimmed : `${trimmed}/chat/completions`
+  if (trimmed.endsWith('/chat/completions')) return trimmed
+  return `${trimmed}/chat/completions`
+}
+
+function unwrapJsonReply(text: string): string {
+  const trimmed = text.trim()
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
+  if (fenced) return fenced[1].trim()
+  const firstBrace = trimmed.indexOf('{')
+  const lastBrace = trimmed.lastIndexOf('}')
+  if (firstBrace >= 0 && lastBrace > firstBrace && !trimmed.startsWith('{')) {
+    return trimmed.slice(firstBrace, lastBrace + 1)
+  }
+  return trimmed
 }
 
 function normalizeDirectConfig(raw: unknown, sourceLabel: string): StoryAiConfig | null {
@@ -133,7 +146,7 @@ export function saveStoryAiConfig(ctx: PhoneAppContext, next: StoryAiConfig | nu
     }
     apps[STORY_AI_APP_ID] = {
       apiKey: next.apiKey.trim(),
-      apiUrl: apiUrl || 'https://api.deepseek.com/chat/completions',
+      apiUrl: apiUrl ? toCompletionsEndpoint(apiUrl) : 'https://api.deepseek.com/chat/completions',
       model: (next.model ?? '').trim() || 'deepseek-chat',
     }
   }
@@ -201,6 +214,7 @@ export function renderStoryAiSetupCard(ctx: PhoneAppContext, onChanged: () => vo
         model: modelField.input.value.trim(),
       })
       feedback.textContent = '已保存幕后 AI 连接。'
+      ctx.toast?.('success', '幕后 AI 连接已保存')
       onChanged()
     } catch (err) {
       feedback.textContent = (err as Error).message
@@ -245,23 +259,30 @@ export async function requestChat(
     return await window.__stStageMockStoryAi(messages, jsonMode, signal)
   }
   try {
-    const resp = await fetch(config.apiUrl || 'https://api.deepseek.com/chat/completions', {
-      signal,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + config.apiKey },
-      body: JSON.stringify({
-        model: config.model || 'deepseek-chat',
-        messages,
-        temperature: 0.5,
-        stream: false,
-        ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
-      }),
-    })
+    const endpoint = config.apiUrl ? toCompletionsEndpoint(config.apiUrl) : 'https://api.deepseek.com/chat/completions'
+    const doPost = (withResponseFormat: boolean) =>
+      fetch(endpoint, {
+        signal,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + config.apiKey },
+        body: JSON.stringify({
+          model: config.model || 'deepseek-chat',
+          messages,
+          temperature: 0.5,
+          stream: false,
+          ...(withResponseFormat ? { response_format: { type: 'json_object' } } : {}),
+        }),
+      })
+    let resp = await doPost(jsonMode)
+    // 部分反代（Claude / Gemini / R1）遇到 json_object 返回 400，自动降级重试一次
+    if (jsonMode && resp.status === 400) {
+      resp = await doPost(false)
+    }
     if (!resp.ok) throw new Error('AI 连接失败（' + resp.status + '），请检查连接后重试。')
     const data = await resp.json()
     const content = data?.choices?.[0]?.message?.content
     if (typeof content !== 'string' || !content.trim()) throw new Error('AI 返回了空回复，请重试。')
-    return content
+    return jsonMode ? unwrapJsonReply(content) : content
   } catch (error) {
     if (signal?.aborted) throw error
     if (error instanceof Error && error.message.startsWith('AI ')) throw error

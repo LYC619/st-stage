@@ -7,7 +7,7 @@ import { generateTheater, mergeFeeds, readTheaterData, saveTheaterStory } from '
 import type { TheaterChannel } from './types'
 
 export function createTheaterController(host: AppHost, options: { cooldownMs?: number; timeoutMs?: number } = {}) {
-  let alive = true, job: AbortController | undefined
+  let alive = true, job: AbortController | undefined, queuedAuto = false
   let cooldownTimer: ReturnType<typeof setTimeout> | undefined
   let status = { busy: false, error: '', channel: 'all' as TheaterChannel }
   const listeners = new Set<() => void>(), attempted = new Map<string, number>()
@@ -21,6 +21,7 @@ export function createTheaterController(host: AppHost, options: { cooldownMs?: n
   }
 
   function cancel() {
+    queuedAuto = false
     clearCooldownTimer()
     job?.abort()
     job = undefined
@@ -30,7 +31,8 @@ export function createTheaterController(host: AppHost, options: { cooldownMs?: n
 
   async function trigger(manual = false, channel: TheaterChannel = 'all') {
     const data = readTheaterData(host)
-    if (!alive || job || (!manual && !data.autoGenerate) || !getStoryAiConfig(host)) return
+    if (!alive || (!manual && !data.autoGenerate) || !getStoryAiConfig(host)) return
+    if (job) { if (!manual) queuedAuto = true; return }
     const story = captureStory(host), mark = fingerprint(story), previous = data.stories[story.key]
     if (!manual) {
       if (previous?.fingerprint === mark) return
@@ -81,6 +83,7 @@ export function createTheaterController(host: AppHost, options: { cooldownMs?: n
         job = undefined
         status = { ...status, busy: false }
         notify()
+        if (queuedAuto) { queuedAuto = false; void trigger(false) }
       }
     }
   }

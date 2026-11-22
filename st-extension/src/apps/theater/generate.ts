@@ -201,7 +201,7 @@ export async function generateTheater(
         { role: 'system', content: buildPromptForChannel(channel) },
         {
           role: 'user',
-          content: `${formatStoryMemory(scope)}\n主角：${story.name}；玩家：${profile.playerName || '用户'}\n剧情日期：${date || '未知'}\n最近内容：${JSON.stringify(recent)}\n上一批日记：${JSON.stringify(previous.diary.slice(-5))}`,
+          content: `${formatStoryMemory(scope)}\n主角：${story.name}；玩家：${profile.playerName || '用户'}\n剧情日期：${date || '未知'}\n最近内容：${JSON.stringify(recent)}${channel === 'all' || channel === 'diary' ? `\n上一批日记：${JSON.stringify(previous.diary.slice(-5))}` : ''}`,
         },
       ],
       signal,

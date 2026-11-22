@@ -82,7 +82,9 @@ export function createTheaterApp(): PhoneApp {
       refreshTab.className = 'th-ghost-btn'
       refreshTab.title = '只重刷当前频道'
       refreshTab.onclick = () => {
-        if (!controller.status().busy) void controller.trigger(true, TAB_CHANNELS[selected])
+        if (controller.status().busy) return
+        if (selected === 3) diaryDateFilter = ''
+        void controller.trigger(true, TAB_CHANNELS[selected])
       }
 
       headerActions.append(refreshTab, refresh)
@@ -351,7 +353,7 @@ export function createTheaterApp(): PhoneApp {
             if (!val) return
             dmInput.value = ''
             updateCurrentStory(s => {
-              if (s.live) s.live.danmaku.push({ fan: '前排观众', text: val })
+              if (s.live) s.live.danmaku.unshift({ fan: '我', text: val })
             })
           }
           dmBtn.onclick = submitDanmaku
@@ -371,8 +373,11 @@ export function createTheaterApp(): PhoneApp {
       }
 
       const off = controller.subscribe(render)
+      const offChar = typeof ctx.onCharacterChanged === 'function'
+        ? ctx.onCharacterChanged(() => { diaryRoleFilter = ''; diaryDateFilter = ''; render() })
+        : () => {}
       render()
-      cleanup = () => { off(); composer.dispose(); root.remove() }
+      cleanup = () => { off(); offChar(); composer.dispose(); root.remove() }
     },
     unmount() { cleanup?.(); cleanup = undefined },
   }

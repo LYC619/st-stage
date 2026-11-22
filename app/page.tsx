@@ -160,6 +160,7 @@ export default function Page() {
         settings={settings}
         characterName={characterName}
         onSettingsChange={updateSettings}
+        onPreviewSprite={(url, tag) => setSprites([{ url, tag }])}
       />
     </main>
   )

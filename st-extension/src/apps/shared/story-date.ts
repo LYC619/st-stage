@@ -1,6 +1,7 @@
 // Relative-date rules from 玉子手机 modules/phone-core/derived-fields/chronicle-today-relation-sql.js.
 import type { AppHost } from '../../../../core/phone-registry'
-import { readStoryState } from '../story-state/store'
+import { readChatMetadata } from './chat-metadata'
+import { META_KEY, normalize, readStoryState } from '../story-state/store'
 import { readChronicleData } from '../chronicle/store'
 
 export function formatStoryDate(date: Date): string {
@@ -15,11 +16,20 @@ export function parseSpanEnd(timeSpan: string): Date | null {
   return formatStoryDate(date) === value ? date : null
 }
 
+function dateFromTime(time: { 年: number; 月: number; 日: number }): Date | null {
+  if (!time.年 || !time.月 || !time.日) return null
+  return parseSpanEnd(`${String(time.年).padStart(4, '0')}-${String(time.月).padStart(2, '0')}-${String(time.日).padStart(2, '0')}`)
+}
+
 export async function storyToday(host: AppHost): Promise<Date | null> {
-  const { state } = await readStoryState(host), time = state.时间
-  if (time.年 && time.月 && time.日) {
-    const date = parseSpanEnd(`${String(time.年).padStart(4, '0')}-${String(time.月).padStart(2, '0')}-${String(time.日).padStart(2, '0')}`)
-    if (date) return date
+  const snapshot = await readStoryState(host)
+  const primary = dateFromTime(snapshot.state.时间)
+  if (primary) return primary
+  // MVU 卡若未维护「时间.年/月/日」，允许回退读取玩家在日历里手动设定的起始日
+  if (snapshot.backend === 'mvu') {
+    const localMeta = readChatMetadata(META_KEY) as { stat_data?: unknown } | undefined
+    const fallbackDate = dateFromTime(normalize(localMeta?.stat_data).时间)
+    if (fallbackDate) return fallbackDate
   }
   const latest = readChronicleData().entries.at(-1)
   return latest ? parseSpanEnd(latest.timeSpan) : null
