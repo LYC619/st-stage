@@ -60,7 +60,12 @@ export function createApiManager(deps: ApiManagerDeps): ApiManager {
     void readConnection({ withSecret: false }).then((connection) => {
       if (!connection || !body) return
       const active = findActiveProfile(data.profiles, connection)
-      body.querySelector(`[data-profile-id="${active?.id ?? ''}"]`)?.classList.add('stapi-row-on')
+      if (!active?.id) return
+      Array.from(body.querySelectorAll<HTMLElement>('[data-profile-id]'))
+        .find((node) => node.dataset.profileId === active.id)
+        ?.classList.add('stapi-row-on')
+    }).catch((err) => {
+      console.warn('[st-stage:api] 读取当前连接状态失败', err)
     })
     for (const profile of data.profiles) {
       const row = el('div', 'vm-leaf'); row.dataset.profileId = profile.id
@@ -96,9 +101,9 @@ export function createApiManager(deps: ApiManagerDeps): ApiManager {
     if (descriptor.supportsModels) box.append(appButton('从接口获取模型', () => void loadModels(d)))
     const extra = foldSection('附加参数（自定义接口）', Object.values(d.settings).some(Boolean))
     extra.body.append(
-      textareaRow('包括主体参数', String(d.settings.custom_include_body ?? ''), 'YAML 对象', (value) => { d.settings.custom_include_body = value }),
-      textareaRow('排除主体参数', String(d.settings.custom_exclude_body ?? ''), '每行一个参数名', (value) => { d.settings.custom_exclude_body = value }),
-      textareaRow('包含请求标头', String(d.settings.custom_include_headers ?? ''), 'YAML 对象', (value) => { d.settings.custom_include_headers = value }),
+      textareaRow('附加请求参数（Include Body）', String(d.settings.custom_include_body ?? ''), 'YAML 对象', (value) => { d.settings.custom_include_body = value }),
+      textareaRow('剔除请求参数（Exclude Body）', String(d.settings.custom_exclude_body ?? ''), '每行一个参数名', (value) => { d.settings.custom_exclude_body = value }),
+      textareaRow('自定义请求头（Headers）', String(d.settings.custom_include_headers ?? ''), 'YAML 对象', (value) => { d.settings.custom_include_headers = value }),
     )
     if (d.source === 'custom') box.append(extra.box)
     const actions = el('div', 'vm-actions')

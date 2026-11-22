@@ -1,15 +1,17 @@
 /**
  * ST 扩展设置面板（原生 DOM，挂载到 #extensions_settings）。
- * 只保留两项：启用立绘功能（总开关）、显示手机——只有「要不要启用」级别的开关配留在这。
- * 其余设置全部在手机 App 内：「立绘」App 管显示/轮播/Prompt，「图库」App 管图包与图床。
+ * 保留核心总开关，并为「不显示手机」的纯聊天玩家提供紧凑的快捷入口（重显立绘窗/图包/HUD/临时唤起）。
  */
 
 import { t } from '../../core/i18n'
 import type { PluginSettings } from '../../core/types'
 
-interface PanelDeps {
+export interface PanelDeps {
   getSettings: () => PluginSettings
   updateSettings: (next: PluginSettings) => void
+  subscribe?: (listener: () => void) => () => void
+  openGalleryManager?: () => void
+  expandPhoneTemporarily?: () => void
 }
 
 export function mountSettingsPanel(deps: PanelDeps): () => void {
@@ -35,37 +37,97 @@ export function mountSettingsPanel(deps: PanelDeps): () => void {
   const content = wrapper.querySelector('#so-panel-content') as HTMLElement
   const settings = deps.getSettings()
 
-  content.append(
-    checkboxRow(
-      t('settings.enable_sprites', '启用立绘功能'),
-      settings.enabled,
-      (v) => deps.updateSettings({ ...deps.getSettings(), enabled: v }),
-      t('settings.sprites_help', '总开关：注入立绘清单给 AI 并展示回复中的立绘。关闭后清空注入、停止解析、隐藏悬浮窗并把楼层恢复原文；手机与其他工具不受影响。'),
-    ),
-    checkboxRow(
-      t('settings.show_phone', '显示手机'),
-      settings.showPhone,
-      (v) => deps.updateSettings({ ...deps.getSettings(), showPhone: v }),
-      t('settings.phone_help', '屏幕上显示可拖动的 📱 图标，点击展开小手机——所有功能 App 的统一入口。'),
-    ),
+  const enableRow = checkboxRow(
+    t('settings.enable_sprites', '启用立绘功能'),
+    settings.enabled,
+    (v) => deps.updateSettings({ ...deps.getSettings(), enabled: v }),
+    t('settings.sprites_help', '总开关：让 AI 在回复里配上角色立绘。关闭后停止发送立绘清单、隐藏立绘浮窗并把消息恢复原文；小手机与其他工具照常可用。'),
   )
+  const phoneRow = checkboxRow(
+    t('settings.show_phone', '显示手机'),
+    settings.showPhone,
+    (v) => deps.updateSettings({ ...deps.getSettings(), showPhone: v }),
+    t('settings.phone_help', '屏幕上显示可拖动的 📱 图标，点击展开小手机——所有功能 App 的统一入口。'),
+  )
+
+  content.append(enableRow.row, phoneRow.row)
+
+  // 无手机/纯聊天快捷条：仅在提供扩展回调时附加，兼容精简测试夹具
+  let hudInput: HTMLInputElement | null = null
+  let restoreOverlayBtn: HTMLButtonElement | null = null
+  if (deps.openGalleryManager || deps.expandPhoneTemporarily) {
+    const hudRow = checkboxRow(
+      t('settings.variable_hud', '变量与状态速查浮窗'),
+      settings.variableHud,
+      (v) => deps.updateSettings({ ...deps.getSettings(), variableHud: v }),
+      t('settings.variable_hud_help', '在聊天界面放一枚轻量速查胶囊，不用展开小手机也能随时看 MVU、新变量与剧情状态。'),
+    )
+    hudInput = hudRow.input
+    content.append(hudRow.row)
+
+    const quickRow = document.createElement('div')
+    quickRow.className = 'so-row so-settings-quick'
+    quickRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin:6px 0;'
+
+    if (deps.openGalleryManager) {
+      const galleryBtn = document.createElement('button')
+      galleryBtn.type = 'button'
+      galleryBtn.className = 'menu_button'
+      galleryBtn.textContent = t('settings.manage_packs', '管理图包')
+      galleryBtn.addEventListener('click', () => deps.openGalleryManager?.())
+      quickRow.append(galleryBtn)
+    }
+
+    restoreOverlayBtn = document.createElement('button')
+    restoreOverlayBtn.type = 'button'
+    restoreOverlayBtn.className = 'menu_button'
+    restoreOverlayBtn.textContent = t('settings.restore_overlay', '重显立绘悬浮窗')
+    restoreOverlayBtn.hidden = !settings.overlayHidden
+    restoreOverlayBtn.addEventListener('click', () => {
+      const cur = deps.getSettings()
+      deps.updateSettings({
+        ...cur,
+        enabled: true,
+        overlayHidden: false,
+        overlay: { ...cur.overlay, x: 24, y: 80 },
+      })
+    })
+    quickRow.append(restoreOverlayBtn)
+
+    if (deps.expandPhoneTemporarily) {
+      const openBtn = document.createElement('button')
+      openBtn.type = 'button'
+      openBtn.className = 'menu_button'
+      openBtn.textContent = t('settings.open_phone_once', '临时打开小手机')
+      openBtn.addEventListener('click', () => deps.expandPhoneTemporarily?.())
+      quickRow.append(openBtn)
+    }
+
+    content.append(quickRow)
+  }
 
   const hint = document.createElement('div')
   hint.className = 'so-status'
-  // 面板只显示产品版本号。构建时间不在这里露出——排查"更新后没生效"仍可用：
-  // 控制台加载日志（index.ts）打印 版本·构建时间，管家报告也带完整戳，
-  // 另有 version.json 与 bundle.js?v= 参数。
   const version = typeof __EXT_VERSION__ === 'undefined' ? '' : ` v${__EXT_VERSION__}`
   hint.textContent =
-    t('settings.hint', '酒馆里的事，百工都做。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。') + version
+    t('settings.hint', '酒馆里的事，百工都做。立绘显示、轮播与提示词在手机「立绘」App 设置；图包管理与图床在「图库」App 设置。') + version
   content.append(hint)
-  return () => wrapper.remove()
+
+  const sync = () => {
+    const latest = deps.getSettings()
+    enableRow.input.checked = latest.enabled
+    phoneRow.input.checked = latest.showPhone
+    if (hudInput) hudInput.checked = latest.variableHud
+    if (restoreOverlayBtn) restoreOverlayBtn.hidden = !latest.overlayHidden
+  }
+  const unsubscribe = deps.subscribe?.(sync)
+
+  return () => {
+    unsubscribe?.()
+    wrapper.remove()
+  }
 }
 
-/**
- * 悬浮说明图标：hover / 键盘聚焦 / 触屏点按（tabindex 聚焦）时经 CSS 显示 data-tip 气泡。
- * 放在 <label> 内时点击会触发 checkbox，preventDefault 拦掉。
- */
 function helpIcon(tip: string): HTMLElement {
   const icon = document.createElement('span')
   icon.className = 'so-help'
@@ -85,7 +147,7 @@ function checkboxRow(
   checked: boolean,
   onChange: (v: boolean) => void,
   help?: string,
-): HTMLElement {
+): { row: HTMLElement; input: HTMLInputElement } {
   const row = document.createElement('label')
   row.className = 'so-row checkbox_label'
   const input = document.createElement('input')
@@ -96,5 +158,5 @@ function checkboxRow(
   span.textContent = label
   if (help) span.append(helpIcon(help))
   row.append(input, span)
-  return row
+  return { row, input }
 }

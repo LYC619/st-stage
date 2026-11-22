@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   BUILTIN_TEMPLATE,
   LEGACY_BUILTIN_TEMPLATES,
-  buildInjectionPrompt,
-  buildMultiRolePrompt,
   buildPrompt,
   buildPromptSceneInventories,
   buildPromptSceneNotes,
@@ -311,29 +309,6 @@ describe('buildPrompt — 同角色服装级压缩', () => {
     expect(buildPrompt(addresses, 'repeat', 3, BUILTIN_TEMPLATE, 0, notes)).toBe(
       buildPrompt(addresses, 'repeat', 3, '', 0, notes),
     )
-  })
-})
-
-describe('向后兼容旧签名', () => {
-  it('buildInjectionPrompt 空/列表', () => {
-    expect(buildInjectionPrompt([])).toBe('')
-    expect(buildInjectionPrompt(['微笑', '害羞'])).toContain('微笑、害羞')
-  })
-
-  it('buildMultiRolePrompt full 枚举地址', () => {
-    const p = buildMultiRolePrompt(
-      [
-        { group: '鸣人', tag: '微笑' },
-        { group: '佐助', tag: '微笑' },
-      ],
-      'full',
-    )
-    expect(p).toContain('- 鸣人：微笑')
-    expect(p).toContain('- 佐助：微笑')
-  })
-
-  it('buildMultiRolePrompt 空不注入', () => {
-    expect(buildMultiRolePrompt([], 'full')).toBe('')
   })
 })
 

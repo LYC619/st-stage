@@ -144,7 +144,7 @@ export function renderMeasurementComparison(
 export function buildReportModal(controller: ButlerModalController) {
   return (body: HTMLElement) => {
     title(body, '详细检查结果')
-    text(body, '这里只展示可观测证据和能力缺失原因，不生成综合性能分数。', 'so-butler-lead')
+    text(body, '这里分开展示实测数据、页面现象与部分指标无法读取的原因，不生成虚构综合评分。', 'so-butler-lead')
     const measurement = controller.getMeasurement()
     if (!measurement) {
       text(body, '尚无检查结果。关闭后运行一次基础检查或 6 秒检查。')
@@ -428,6 +428,12 @@ export function buildExtensionModal(
     void services.readExtensions().then((value) => {
       if (disposed) return
       inventory = value
+      render()
+    }).catch((err) => {
+      if (disposed) return
+      const reason = err instanceof Error ? err.message : '扩展清单读取失败'
+      console.warn('[st-stage:butler] 读取扩展清单失败', err)
+      inventory = { status: 'unavailable', reason, governance: { writable: false, reason }, disabledExtensions: [], extensions: [] }
       render()
     })
     return () => { disposed = true }

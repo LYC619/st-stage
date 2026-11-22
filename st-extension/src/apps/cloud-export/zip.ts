@@ -88,7 +88,7 @@ export async function downloadSTBackup(
   schedulers: DownloadSchedulers = {},
 ): Promise<void> {
   schedulers.signal?.throwIfAborted()
-  if (!files.length) throw new Error(t('cloudExport.no_assets', '没有选择任何可导出的资产'))
+  if (!files.length) throw new Error(t('cloudExport.no_assets', '还没有勾选要导出的内容'))
   assertUniqueArchivePaths(files)
   const { default: JSZip } = await loadJSZip(schedulers.signal)
   schedulers.signal?.throwIfAborted()

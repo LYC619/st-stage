@@ -10,9 +10,10 @@ function nextControlId(): string {
   return `so-app-control-${++controlId}`
 }
 
-export function el(tag: string, className: string): HTMLElement {
+export function el(tag: string, className: string, textContent?: string): HTMLElement {
   const node = document.createElement(tag)
   node.className = className
+  if (textContent !== undefined) node.textContent = textContent
   return node
 }
 

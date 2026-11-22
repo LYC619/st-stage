@@ -1,5 +1,4 @@
 import type {
-  ExtensionInventoryItem,
   ExtensionInventoryResult,
   ExtensionWriteResult,
 } from './bridge'
@@ -22,7 +21,7 @@ export interface ExtensionExperimentDependencies {
   now(): number
   createId(): string
   backupStorage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
-  warnRecovery(command: string): void
+  warnRecovery?(command: string): void
 }
 
 export interface ExtensionBatchResult {
@@ -32,16 +31,6 @@ export interface ExtensionBatchResult {
   reloadRequired: boolean
 }
 
-export interface ExperimentStartResult {
-  experiment: ButlerExperiment
-  batch: ExtensionBatchResult
-}
-
-export interface DependencyWarning {
-  dependency: string
-  dependent: string
-}
-
 function uniqueSorted(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))].sort()
 }
@@ -49,39 +38,6 @@ function uniqueSorted(values: string[]): string[] {
 // 目录名在运行时算，不写死：改过名或换名分发后仍然认得自己。见 self-identity.ts
 function isSelf(name: string): boolean {
   return isSelfExtensionName(name)
-}
-
-function isSystem(item: ExtensionInventoryItem): boolean {
-  return item.type.toLowerCase() === 'system'
-}
-
-function trialForCandidates(kind: ButlerExperiment['kind'], candidates: string[]): string[] {
-  if (kind === 'selectedExtensions') return [...candidates]
-  return candidates.slice(0, Math.max(1, Math.ceil(candidates.length / 2)))
-}
-
-export function defaultExperimentCandidates(
-  inventory: Extract<ExtensionInventoryResult, { status: 'ready' }>,
-): string[] {
-  return inventory.extensions
-    .filter((item) => item.configuredEnabled && !item.isSelf && !isSelf(item.name) && !isSystem(item))
-    .map((item) => item.name)
-}
-
-export function dependencyWarnings(
-  inventory: Extract<ExtensionInventoryResult, { status: 'ready' }>,
-  selectedNames: string[],
-): DependencyWarning[] {
-  const selected = new Set(selectedNames)
-  const warnings: DependencyWarning[] = []
-  for (const dependent of inventory.extensions) {
-    if (!dependent.configuredEnabled || selected.has(dependent.name)) continue
-    if (dependent.manifest?.dependencies.status !== 'valid') continue
-    for (const dependency of dependent.manifest.dependencies.names) {
-      if (selected.has(dependency)) warnings.push({ dependency, dependent: dependent.name })
-    }
-  }
-  return warnings
 }
 
 function recoveryCommand(backup: EmergencyExtensionBackup): string {
@@ -124,32 +80,6 @@ export function readEmergencyBackup(
     return buildEmergencyBackup(record.disabledExtensions as string[], record.createdAt)
   } catch {
     return null
-  }
-}
-
-export function prepareExtensionExperiment(
-  kind: ButlerExperiment['kind'],
-  candidateNames: string[],
-  inventory: Extract<ExtensionInventoryResult, { status: 'ready' }>,
-  baselineMeasurementId: string,
-  deps: Pick<ExtensionExperimentDependencies, 'now' | 'createId'>,
-): ButlerExperiment {
-  const known = new Set(inventory.extensions.map((item) => item.name))
-  const candidates = uniqueSorted(candidateNames)
-  if (candidates.some(isSelf)) throw new Error(`${SELF_DIRECTORY_NAME} 自身不能进入扩展实验`)
-  const unknown = candidates.filter((name) => !known.has(name))
-  if (unknown.length > 0) throw new Error(`未找到扩展：${unknown.join('、')}`)
-  if (candidates.length === 0) throw new Error('至少选择一个扩展')
-  return {
-    id: deps.createId(),
-    kind,
-    status: 'prepared',
-    startedAt: deps.now(),
-    originalDisabledExtensions: uniqueSorted(inventory.disabledExtensions),
-    candidateExtensions: candidates,
-    trialDisabledExtensions: trialForCandidates(kind, candidates),
-    currentRound: 1,
-    baselineMeasurementId,
   }
 }
 
@@ -202,28 +132,16 @@ export function applyDesiredDisabledExtensions(
 }
 
 /** 用户主动从独立备份恢复；失败时保留备份，成功后才清理并按需刷新。 */
-export async function restoreEmergencyExtensionBackup(
+export function restoreEmergencyExtensionBackup(
   backup: EmergencyExtensionBackup,
   deps: ExtensionExperimentDependencies,
 ): Promise<ExtensionBatchResult> {
-  const batch = await applyDisabledSet(backup.disabledExtensions, deps, false)
-  if (!batch.ok) return batch
-  deps.backupStorage.removeItem(BACKUP_STORAGE_KEY)
-  if (batch.reloadRequired) await deps.reloadPage()
-  return batch
-}
-
-function desiredForTrial(experiment: ButlerExperiment): string[] {
-  return uniqueSorted([
-    ...experiment.originalDisabledExtensions,
-    ...(experiment.trialDisabledExtensions ?? experiment.candidateExtensions),
-  ])
-}
-
-function storeEmergencyBackup(experiment: ButlerExperiment, deps: ExtensionExperimentDependencies): void {
-  const backup = buildEmergencyBackup(experiment.originalDisabledExtensions, deps.now())
-  deps.backupStorage.setItem(BACKUP_STORAGE_KEY, JSON.stringify(backup))
-  deps.warnRecovery(buildEmergencyBackup.recoveryCommand(backup))
+  return applyDisabledSet(backup.disabledExtensions, deps, false).then(async (batch) => {
+    if (!batch.ok) return batch
+    deps.backupStorage.removeItem(BACKUP_STORAGE_KEY)
+    if (batch.reloadRequired) await deps.reloadPage()
+    return batch
+  })
 }
 
 function partialFailureNote(prefix: string, batch: ExtensionBatchResult): string {
@@ -232,43 +150,9 @@ function partialFailureNote(prefix: string, batch: ExtensionBatchResult): string
   return `${prefix}；已修改：${applied}；失败：${failed}。页面未刷新，可保留当前状态或恢复原清单。`
 }
 
-export async function startExtensionExperiment(
-  source: ButlerExperiment,
-  deps: ExtensionExperimentDependencies,
-): Promise<ExperimentStartResult> {
-  if (source.status !== 'prepared') throw new Error('实验尚未处于准备状态')
-  const experiment = structuredClone(source)
-  await deps.persistExperiment(experiment)
-  storeEmergencyBackup(experiment, deps)
-  const batch = await applyDisabledSet(desiredForTrial(experiment), deps, false)
-  if (!batch.ok) {
-    experiment.status = 'awaitingDecision'
-    experiment.reloadRequiredAfterDecision = batch.reloadRequired
-    experiment.notes = partialFailureNote('扩展变更未全部成功', batch)
-    await deps.persistExperiment(experiment)
-    return { experiment, batch }
-  }
-  experiment.status = batch.reloadRequired ? 'awaitingReload' : 'sampling'
-  await deps.persistExperiment(experiment)
-  if (batch.reloadRequired) await deps.reloadPage()
-  return { experiment, batch }
-}
-
 export function resumeExtensionExperiment(source: ButlerExperiment): ButlerExperiment {
   if (source.status !== 'awaitingReload') return structuredClone(source)
   return { ...structuredClone(source), status: 'sampling' }
-}
-
-export function recordExperimentComparison(
-  source: ButlerExperiment,
-  comparisonMeasurementId: string,
-): ButlerExperiment {
-  if (source.status !== 'sampling') throw new Error('实验未处于复测阶段')
-  return {
-    ...structuredClone(source),
-    status: 'awaitingDecision',
-    comparisonMeasurementId,
-  }
 }
 
 export async function finishExtensionExperiment(
@@ -308,51 +192,4 @@ export async function finishExtensionExperiment(
   deps.backupStorage.removeItem(BACKUP_STORAGE_KEY)
   if (completed.reloadRequiredAfterDecision) await deps.reloadPage()
   return completed
-}
-
-export async function advanceBinaryIsolation(
-  source: ButlerExperiment,
-  symptomImproved: boolean,
-  deps: ExtensionExperimentDependencies,
-): Promise<ButlerExperiment> {
-  if (source.kind !== 'binaryIsolation' || source.status !== 'awaitingDecision') {
-    throw new Error('二分实验尚未等待本轮判断')
-  }
-  const tested = new Set(source.trialDisabledExtensions ?? [])
-  const candidates = symptomImproved
-    ? source.candidateExtensions.filter((name) => tested.has(name))
-    : source.candidateExtensions.filter((name) => !tested.has(name))
-  if (candidates.length === 0 || source.candidateExtensions.length <= 1) {
-    const stopped: ButlerExperiment = {
-      ...structuredClone(source),
-      candidateExtensions: candidates,
-      notes: candidates.length === 0
-        ? '没有可继续排查的候选，已停止二分。可以恢复最初扩展清单，或保留当前状态。'
-        : `已缩小到 ${candidates[0]}，不再重复同一轮。可以恢复最初扩展清单，或保留当前状态。`,
-    }
-    await deps.persistExperiment(stopped)
-    return stopped
-  }
-  const next: ButlerExperiment = {
-    ...structuredClone(source),
-    status: 'prepared',
-    candidateExtensions: candidates,
-    trialDisabledExtensions: trialForCandidates('binaryIsolation', candidates),
-    currentRound: source.currentRound + 1,
-    comparisonMeasurementId: undefined,
-    reloadRequiredAfterDecision: undefined,
-  }
-  await deps.persistExperiment(next)
-  const batch = await applyDisabledSet(desiredForTrial(next), deps, false)
-  if (!batch.ok) {
-    next.status = 'awaitingDecision'
-    next.reloadRequiredAfterDecision = batch.reloadRequired
-    next.notes = partialFailureNote('本轮扩展变更未全部成功', batch)
-    await deps.persistExperiment(next)
-    return next
-  }
-  next.status = batch.reloadRequired ? 'awaitingReload' : 'sampling'
-  await deps.persistExperiment(next)
-  if (batch.reloadRequired) await deps.reloadPage()
-  return next
 }

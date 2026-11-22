@@ -44,8 +44,8 @@ export async function exportPack(pack: SpritePack, embedHosted = false): Promise
       try {
         const data = await recompressDataUri(await urlToDataUri(sprite.url))
         sprites.push({ tag: sprite.tag, data, ...extra })
-      } catch {
-        // 转换失败则回退为 URL
+      } catch (err) {
+        console.warn('[st-stage:pack-io] 本地立绘转内嵌数据失败，回退保留原路径:', sprite.tag, err)
         sprites.push({ tag: sprite.tag, url: sprite.url, ...codeField(sprite.url, sprite.code), ...extra })
       }
     } else {

@@ -13,8 +13,14 @@ export function chronicleOverview(entries: ChronicleEntry[], today: Date | null)
   return rows.join('\n')
 }
 
-export function chronicleInjection(entries: ChronicleEntry[], today: Date | null): string {
-  if (!entries.length) return ''
-  const recent = entries.slice(-3).map(entry => [entry.code, entry.timeSpan, entry.text, ...entry.keyDialogue].filter(Boolean).join('\n')).join('\n\n')
-  return `<已发生的事件概览>\n${chronicleOverview(entries, today)}\n</已发生的事件概览>\n<记忆回溯>\n${recent}\n</记忆回溯>`
+export function chronicleInjection(entries: ChronicleEntry[], today: Date | null, todayCalendarText = ''): string {
+  const blocks: string[] = []
+  if (entries.length) {
+    const recent = entries.slice(-3).map(entry => [entry.code, entry.timeSpan, entry.text, ...entry.keyDialogue].filter(Boolean).join('\n')).join('\n\n')
+    blocks.push(`<已发生的事件概览>\n${chronicleOverview(entries, today)}\n</已发生的事件概览>\n<记忆回溯>\n${recent}\n</记忆回溯>`)
+  }
+  if (todayCalendarText.trim()) {
+    blocks.push(`<今日风物>\n${todayCalendarText.trim()}\n</今日风物>`)
+  }
+  return blocks.join('\n')
 }

@@ -3,16 +3,17 @@ import { abortable } from '../wechat/memory'
 import { storyIdentity, writeChatMetadata } from '../shared/chat-metadata'
 import { formatStoryDate, storyToday } from '../shared/story-date'
 import { getStoryAiConfig } from '../shared/story-ai'
+import { emitStoryEvent } from '../shared/story-events'
 import { readChronicleSettings } from './store'
-import { CALENDAR_KEY, NO_STORY_DATE, calendarGap, generateCalendar, readCalendar } from './calendar'
+import { CALENDAR_KEY, NO_STORY_DATE, calendarGap, calendarWindow, generateCalendar, readCalendar } from './calendar'
 
 /** The chronicle controller owns lifecycle and calls this after organizing; no separate host subscription. */
 export function createCalendarController(host: AppHost, notify: () => void, timeoutMs = 60000) {
   let job: AbortController | undefined, lastCheck = ''
   const status = { busy: false, error: '', today: null as Date | null }
   function cancel() { job?.abort(); job = undefined; status.busy = false; status.error = ''; status.today = null; notify() }
-  async function trigger(manual = false) {
-    if (job || !manual && !readChronicleSettings(host).autoCalendar) return
+  async function trigger(manual = false, forceRewrite = false) {
+    if (job || (!manual && !readChronicleSettings(host).autoCalendar)) return
     const key = storyIdentity(host), current = new AbortController(); job = current; status.busy = true; status.error = ''; notify()
     const timeout = setTimeout(() => current.abort(new Error('日历生成超时，请重试。')), timeoutMs)
     try {
@@ -23,14 +24,27 @@ export function createCalendarController(host: AppHost, notify: () => void, time
       const mark = `${key}::${formatStoryDate(today)}`
       if (!manual && lastCheck === mark) return
       lastCheck = mark
-      const { retained, missing } = calendarGap(today, readCalendar())
+      const existing = readCalendar()
+      const { retained, missing } = forceRewrite
+        ? { retained: [], missing: calendarWindow(today) }
+        : calendarGap(today, existing)
       if (!missing.length) return
-      if (!getStoryAiConfig(host)) { status.error = '请先在微信设置里连接 AI。'; return }
+      if (!getStoryAiConfig(host)) { status.error = '请先在下方设置或微信里连上幕后 AI。'; return }
       const incoming = await abortable(generateCalendar(host, today, missing, retained, current.signal), current.signal)
       if (job !== current || current.signal.aborted) return
-      await writeChatMetadata(host, key, CALENDAR_KEY, { v: 1, days: [...retained, ...incoming].sort((a, b) => a.date.localeCompare(b.date)) })
-    } catch (error) { if (job === current) status.error = (error as Error).message }
-    finally { clearTimeout(timeout); if (job === current) { job = undefined; status.busy = false; notify() } }
+      const saved = await writeChatMetadata(host, key, CALENDAR_KEY, {
+        v: 1,
+        days: [...retained, ...incoming].sort((a, b) => a.date.localeCompare(b.date)),
+        ...(existing.notes && Object.keys(existing.notes).length ? { notes: existing.notes } : {}),
+      })
+      if (saved) emitStoryEvent({ type: 'calendar-updated', summary: '七天风物日历已更新' })
+    } catch (error) {
+      if (!current.signal.aborted) console.warn('[st-stage] 日历生成失败', error)
+      if (job === current) status.error = (error as Error).message
+    } finally {
+      clearTimeout(timeout)
+      if (job === current) { job = undefined; status.busy = false; notify() }
+    }
   }
   return { trigger, cancel, status: () => status }
 }

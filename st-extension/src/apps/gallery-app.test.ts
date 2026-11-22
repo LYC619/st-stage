@@ -41,7 +41,7 @@ describe('Gallery App translations', () => {
     expect(auto.checked).toBe(false)
     expect(container.querySelector('[role="status"]')?.textContent).toBe('Enter an imgbb API key first (free: https://api.imgbb.com/).')
     const key = container.querySelector<HTMLInputElement>('input[type="password"]')!
-    expect(key.labels?.[0].textContent).toBe('imgbb API key (stored as plain text in ST settings)')
+    expect(key.labels?.[0].textContent).toBe('imgbb API key (saved in SillyTavern settings)')
     key.value = ' private-key '; key.dispatchEvent(new Event('change'))
     expect(updateSettings).toHaveBeenLastCalledWith({...settings, imgbbApiKey: 'private-key'})
     const prefix = container.querySelector<HTMLInputElement>('input[type="text"]')!

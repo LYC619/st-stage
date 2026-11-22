@@ -6,6 +6,7 @@ import { storyIdentity } from '../shared/chat-metadata'
 import { storyToday } from '../shared/story-date'
 import { readChronicleData } from '../chronicle/store'
 import { chronicleOverview } from '../chronicle/inject'
+import { readCalendar, readTodayCalendarSummary } from '../chronicle/calendar'
 export { storyIdentity } from '../shared/chat-metadata'
 
 type RecordValue = Record<string, unknown>
@@ -95,7 +96,22 @@ export async function readStoryMemory(host: AppHost, scope: ConversationScope, p
   const memory: ConversationScope = { ...scope, storySource: snapshot.name,
     stRecentMessages: profile.contextMessageCount > 0 ? snapshot.messages.slice(-profile.contextMessageCount) : [], loreText: '', memoryWarnings: [] }
   const chronicles = readChronicleData().entries
-  memory.chronicleText = chronicles.length ? chronicleOverview(chronicles, await abortable(storyToday(host), signal)) : ''
+  const cal = readCalendar()
+  const hasCalendar = cal.days.length > 0 || Boolean(cal.notes && Object.keys(cal.notes).length > 0)
+  if (chronicles.length || hasCalendar) {
+    let today: Date | null
+    try {
+      today = await abortable(storyToday(host), signal)
+    } catch (err) {
+      check()
+      throw err
+    }
+    memory.chronicleText = chronicles.length ? chronicleOverview(chronicles, today) : ''
+    const todayCalendar = readTodayCalendarSummary(today)
+    if (todayCalendar) memory.calendarText = todayCalendar
+  } else {
+    memory.chronicleText = ''
+  }
   check()
   if (!profile.includeWorldbook) return memory
   const native = record(getWeChatHostContext())
@@ -167,7 +183,10 @@ export async function readStoryMemory(host: AppHost, scope: ConversationScope, p
 
 export function formatStoryMemory(scope: ConversationScope): string {
   const history = scope.stRecentMessages?.map(msg => `${'name' in msg ? msg.name : msg.sender}: ${msg.text}`).join('\n').slice(-16000)
-  return [scope.chronicleText ? `【过去的剧情纪要】\n${scope.chronicleText}` : '',
+  return [
+    scope.calendarText ? `【今日风物与日程】\n${scope.calendarText}` : '',
+    scope.chronicleText ? `【过去的剧情纪要】\n${scope.chronicleText}` : '',
     history ? `【酒馆主线背景 · ${scope.storySource || '当前主聊天'}】\n${history}\n以上是故事背景，区分人物身份与亲历；不要把其他角色的行为当成自己的经历。` : '',
-    scope.loreText ? `【世界书设定】\n${scope.loreText}` : ''].filter(Boolean).join('\n\n')
+    scope.loreText ? `【世界书设定】\n${scope.loreText}` : '',
+  ].filter(Boolean).join('\n\n')
 }

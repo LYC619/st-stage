@@ -116,4 +116,16 @@ describe('cloud export ST bridge', () => {
     expect(characters[2].linkedWorldName).toBeUndefined()
     expect(characters[3].linkedWorldName).toBeUndefined()
   })
+
+  it('skips and warns on corrupt OpenAI preset JSON instead of writing empty objects', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      openai_setting_names: ['good', 'corrupt'],
+      openai_settings: [JSON.stringify({ temperature: 0.8 }), '{not-json'],
+    }), { status: 200 })))
+
+    const assets = await createSTCloudExportBridge().loadSettingsAssets()
+    expect(assets.presets.map(p => p.name)).toEqual(['good'])
+    expect(warn).toHaveBeenCalled()
+  })
 })

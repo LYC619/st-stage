@@ -56,10 +56,10 @@ function render(container: HTMLElement, ctx: PhoneAppContext, deps: ApiAppDeps, 
   const status = el('div', 'so-app-section'); const title = el('div', 'so-app-title'); title.textContent = t('nativeApi.status', '当前连接'); status.append(title)
   const line = el('div', 'so-app-desc')
   if (!state.connectionLoaded) line.textContent = t('nativeApi.loading', '正在读取当前连接…')
-  else if (!connection) line.textContent = t('nativeApi.noHost', '未检测到 SillyTavern 运行时。')
+  else if (!connection) line.textContent = t('nativeApi.noHost', '当前不在酒馆页面内，无法读取连接状态。')
   else {
     const source = getSource(connection.mainApi, connection.source)
-    line.textContent = `${connection.online ? t('nativeApi.online', '酒馆允许发送') : t('nativeApi.offline', '未连接')} · ${source.label}${active ? ` · ${active.name}` : ''}`
+    line.textContent = `${connection.online ? t('nativeApi.online', '已连接（可发消息）') : t('nativeApi.offline', '未连接')} · ${source.label}${active ? ` · ${active.name}` : ''}`
     const detail = el('div', 'so-app-desc'); detail.textContent = [connection.url, connection.model].filter(Boolean).join(' · ') || '该来源没有地址或模型字段'; status.append(detail)
     if (connection.statusText) { const nativeStatus = el('div', 'so-app-desc'); nativeStatus.textContent = `${t('nativeApi.hostStatus', '酒馆状态')}：${connection.statusText}`; status.append(nativeStatus) }
   }
@@ -69,8 +69,8 @@ function render(container: HTMLElement, ctx: PhoneAppContext, deps: ApiAppDeps, 
   const nativeBox = el('div', 'so-app-section'); nativeBox.dataset.nativeProfiles = ''
   const nativeTitle = el('div', 'so-app-title'); nativeTitle.textContent = t('nativeApi.title', 'SillyTavern 连接档案')
   const nativeHint = el('p', 'so-app-desc'); nativeHint.textContent = native.available
-    ? t('nativeApi.hint', '直接使用酒馆原生档案，连接与密钥在原生 API 面板管理。选择档案后仍需检查实际连接状态。')
-    : t('nativeApi.unavailable', '原生 Connection Manager 未就绪或已禁用。请在酒馆启用它；旧百工档案仍可在下方使用。')
+    ? t('nativeApi.hint', '直接调用酒馆自带的连接档案（地址与密钥仍在酒馆顶部插头面板维护）。切档后留意上方是否显示已连接。')
+    : t('nativeApi.unavailable', '未检测到酒馆自带的「连接配置（Connection Manager）」（可能未加载或已停用）。可在酒馆扩展里开启它，或展开下方的百工独立档案。')
   nativeBox.append(nativeTitle, nativeHint)
   if (!native.profiles.length && native.available) {
     const empty = el('p', 'so-app-desc'); empty.textContent = t('nativeApi.empty', '还没有原生连接档案。请先在酒馆 API 面板创建。'); nativeBox.append(empty)
@@ -93,7 +93,7 @@ function render(container: HTMLElement, ctx: PhoneAppContext, deps: ApiAppDeps, 
     ctx.setAppData({ ...latest, nativeCharacterProfiles: refs }); render(container, ctx, deps, state)
   }
   recommendation.append(select); nativeBox.append(recommendation)
-  if (!key) { const note = el('div', 'so-app-desc'); note.textContent = t('nativeApi.noCharacter', '打开可稳定识别的角色卡后，可保存角色推荐。'); nativeBox.append(note) }
+  if (!key) { const note = el('div', 'so-app-desc'); note.textContent = t('nativeApi.noCharacter', '先打开一张单人角色卡，就能为 TA 记住常用的连接档案。'); nativeBox.append(note) }
   for (const profile of [...native.profiles].sort((a, b) => Number(b.id === recommendedId) - Number(a.id === recommendedId))) {
     const row = document.createElement('button'); row.type = 'button'; row.className = `stapi-row${native.selectedId === profile.id ? ' stapi-row-on' : ''}`
     row.style.cssText = 'width:100%;min-height:52px;text-align:start;font:inherit;color:inherit;'
@@ -129,11 +129,11 @@ function render(container: HTMLElement, ctx: PhoneAppContext, deps: ApiAppDeps, 
       const actual = await readConnection({ withSecret: false })
       if (!state.alive) return
       state.connection = actual; state.connectionLoaded = true
-      state.message = actual?.online ? t('nativeApi.appliedOnline', '原生档案已应用；酒馆当前允许发送。真实模型请求尚未验证。') : t('nativeApi.appliedOffline', '原生档案已应用，当前仍未连接。请检查原生 API 面板中的地址、模型与凭据。')
+      state.message = actual?.online ? t('nativeApi.appliedOnline', '已切到该连接档案，酒馆已就绪（首次发消息时才会真正请求模型）。') : t('nativeApi.appliedOffline', '已切到该档案，但当前仍未连接。请去酒馆顶部 API 面板核对接口地址、模型名与密钥。')
     } catch (error) {
       if (!state.alive) return
       state.message = error instanceof NativeProfileError ? ({
-        unavailable: t('nativeApi.unavailable', '原生 Connection Manager 未就绪或已禁用。请在酒馆启用它；旧百工档案仍可在下方使用。'), missing: t('nativeApi.gone', '档案已不存在，请重新选择。'), busy: t('nativeApi.busy', '已有档案正在切换。'),
+        unavailable: t('nativeApi.unavailable', '未检测到酒馆自带的「连接配置（Connection Manager）」（可能未加载或已停用）。可在酒馆扩展里开启它，或展开下方的百工独立档案。'), missing: t('nativeApi.gone', '档案已不存在，请重新选择。'), busy: t('nativeApi.busy', '已有档案正在切换。'),
         timeout: t('nativeApi.timeout', '等待档案应用超时。酒馆可能仍在处理，请检查原生面板的实际状态。'), interrupted: t('nativeApi.interrupted', '原生面板的选择已改变，请检查当前连接。'),
       })[error.code] : t('nativeApi.failed', '应用档案失败，请检查原生连接面板。')
     } finally { state.busy = false; if (state.alive) { render(container, ctx, deps, state); void refreshConnection(container, ctx, deps, state) } }
@@ -149,7 +149,7 @@ function render(container: HTMLElement, ctx: PhoneAppContext, deps: ApiAppDeps, 
       })
       if (!state.alive) return
       state.connection = connected; state.connectionLoaded = true
-      state.message = `「${profile.name}」已应用；酒馆当前允许发送${connected.model ? `，当前模型：${connected.model}` : ''}。真实模型请求尚未验证。`; toast('success', state.message)
+      state.message = `已切到「${profile.name}」${connected.model ? `（模型：${connected.model}）` : ''}，酒馆已就绪，发条消息试试吧。`; toast('success', state.message)
     } catch (error) {
       if (!state.alive) return
       state.message = `切换失败：${error instanceof Error ? error.message : String(error)}`; toast('error', state.message); console.error('[st-stage] API 切换失败', error)

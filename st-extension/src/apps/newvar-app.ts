@@ -85,7 +85,7 @@ export function newvarApp(deps: NewvarAppDeps): PhoneApp {
             emptyText: t('apps.newvar.empty', "暂无变量。点上方「打开变量设计」定义或导入模板，启用后 AI 回复会逐楼更新这里。"),
             noticeText: st
               ? undefined
-              : t('apps.newvar.unavailable', "未检测到 SillyTavern：模拟器中可打开变量设计编辑定义与预览注入，状态快照在 ST 内才会产生。"),
+              : t('apps.newvar.unavailable', "当前为网页预览模式：可先在「变量设计」里编辑变量和预览提示词；接入酒馆聊天后会自动逐楼记录变化。"),
             canWrite: st,
             allowAdd: false,
             addHint: t('apps.newvar.add_hint', "这里只能修改变量设计中已有的路径；新增变量请先在「变量设计」中添加定义。"),

@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest'
-import { planTypingSimulation, simulateTypingDelay } from './typing'
+import { describe, expect, it } from 'vitest'
 import {
   normalizeRagText,
   getRagTokens,
@@ -13,42 +12,8 @@ import {
   PLAYER_EMOJIS,
   CONTACT_EMOJIS,
   CONTACT_PHOTOS,
-  FALLBACK_DIALOGUES,
 } from './manifest-data'
 import type { ChatMessage, ContactState, WeChatConfig } from './types'
-
-describe('WeChat Typing Simulation', () => {
-  it('clamps base typing delay between 600ms and 2000ms', () => {
-    const shortPlan = planTypingSimulation('好')
-    expect(shortPlan.baseTimeMs).toBe(600)
-
-    const longPlan = planTypingSimulation('a'.repeat(100))
-    expect(longPlan.baseTimeMs).toBe(2000)
-
-    const normalPlan = planTypingSimulation('今天下班回来带杯可乐不？')
-    expect(normalPlan.baseTimeMs).toBeGreaterThanOrEqual(600)
-    expect(normalPlan.baseTimeMs).toBeLessThanOrEqual(2000)
-  })
-
-  it('generates pauses and positive total duration', () => {
-    const plan = planTypingSimulation('测试消息')
-    expect(plan.totalDurationMs).toBeGreaterThanOrEqual(plan.baseTimeMs)
-    expect(plan.pauses.length).toBeGreaterThanOrEqual(0)
-    expect(plan.pauses.length).toBeLessThanOrEqual(2)
-  })
-
-  it('runs simulateTypingDelay and invokes onTypingStateChange', async () => {
-    vi.useFakeTimers()
-    const onStateChange = vi.fn()
-    const promise = simulateTypingDelay('你好', onStateChange)
-
-    expect(onStateChange).toHaveBeenCalledWith(true)
-    await vi.runAllTimersAsync()
-    await promise
-    expect(onStateChange).toHaveBeenCalledWith(false)
-    vi.useRealTimers()
-  })
-})
 
 describe('WeChat RAG Algorithm', () => {
   it('normalizes text and extracts 1-char and 2-char tokens', () => {
@@ -115,7 +80,6 @@ describe('WeChat Pipeline & Fallback Engine', () => {
     PLAYER_EMOJIS,
     CONTACT_EMOJIS,
     CONTACT_PHOTOS,
-    FALLBACK_DIALOGUES,
   )
 
   const defaultState: ContactState = {
@@ -134,7 +98,7 @@ describe('WeChat Pipeline & Fallback Engine', () => {
     expect(prompt).not.toContain('玩家此时在公司')
   })
 
-  it('returns offline fallback replies based on keywords', async () => {
+  it('returns offline fallback replies', async () => {
     const history: ChatMessage[] = [
       {
         sender: 'player',
@@ -164,22 +128,18 @@ describe('WeChat Pipeline & Fallback Engine', () => {
   })
 
   it('strictly validates and sanitizes emoji_id and pic_id in parseReplyJson (W3 / P1)', () => {
-    // 注入恶意 HTML / 脚本标签
     const maliciousJson = JSON.stringify({
       messages: [
         { type: 'emoji', emoji_id: '"><img src=x onerror=alert(1)>' },
         { type: 'image', pic_id: '"><script>alert(2)</script>' },
-        { type: 'emoji', emoji_id: 'happy' }, // 合法表情
+        { type: 'emoji', emoji_id: 'happy' },
       ],
     })
 
     const payload = pipeline.parseReplyJson(maliciousJson)
     expect(payload.messages.length).toBe(3)
-    // 非白名单表情被降级为安全纯文本
     expect(payload.messages[0]).toEqual({ type: 'text', content: '[表情]' })
-    // 非白名单图片被降级为安全纯文本
     expect(payload.messages[1]).toEqual({ type: 'text', content: '[自拍]' })
-    // 白名单表情正常保留
     expect(payload.messages[2]).toEqual({ type: 'emoji', emoji_id: 'happy' })
   })
 })

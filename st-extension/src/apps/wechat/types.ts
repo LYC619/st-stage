@@ -67,11 +67,6 @@ export interface ContactState {
   currentStatus?: string
 }
 
-export interface StatImpact {
-  mood: number      // 范围 [-0.4, +0.4]
-  interest: number  // 范围 [-0.4, +0.4]
-}
-
 export interface LLMMessageItem {
   type: 'text' | 'emoji' | 'image' | 'voice'
   content?: string

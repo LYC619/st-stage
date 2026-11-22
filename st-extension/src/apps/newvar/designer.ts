@@ -55,8 +55,8 @@ function typeLabels(): Record<VarType, string> {
   return {
     number: t('variableDesigner.number', '数字'),
     string: t('variableDesigner.string', '文本'),
-    boolean: t('variableDesigner.boolean', '布尔'),
-    enum: t('variableDesigner.enum', '枚举'),
+    boolean: t('variableDesigner.boolean', '开关（是/否）'),
+    enum: t('variableDesigner.enum', '固定选项'),
   }
 }
 
@@ -151,7 +151,7 @@ function draftToDef(draft: DefDraft): { def?: VariableDefinition; error?: string
       .split(/[,，]/)
       .map((s) => s.trim())
       .filter((s) => s !== '')
-    if (options.length === 0) return { error: t('variableDesigner.enum_required', "枚举类型至少需要一个选项（逗号分隔）。") }
+    if (options.length === 0) return { error: t('variableDesigner.enum_required', "固定选项类型至少要填一个可选项（用逗号分隔）。") }
     def.enum = options
     def.default = options.includes(draft.defaultText.trim()) ? draft.defaultText.trim() : options[0]
   } else {
@@ -404,7 +404,7 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
       const cur = deps.getData()
       if (
         cur.schema.variables.length > 0 &&
-        !window.confirm(t('variableDesigner.replace_confirm', "用「{{name}}」替换现有 {{count}} 条定义？（楼层快照不受影响）", { name: templateDisplay(tpl, customId).name, count: cur.schema.variables.length }))
+        !window.confirm(t('variableDesigner.replace_confirm', "用「{{name}}」替换现有的 {{count}} 条变量定义？（以前楼层记下的旧数值不会丢）", { name: templateDisplay(tpl, customId).name, count: cur.schema.variables.length }))
       ) {
         return
       }
@@ -490,7 +490,7 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
     const meta = el('span', 'vm-val')
     const parts = [typeLabels()[def.type], t('variableDesigner.default_summary', "默认 {{value}}", { value: formatValue(def.default) })]
     if (def.range) parts.push(t('variableDesigner.range_summary', "范围 {{min}}~{{max}}", { min: def.range[0], max: def.range[1] }))
-    if (def.enum) parts.push(t('variableDesigner.enum_summary', "枚举 {{options}}", { options: def.enum.join('/') }))
+    if (def.enum) parts.push(t('variableDesigner.enum_summary', "可选 {{options}}", { options: def.enum.join('/') }))
     if (def.hidden) parts.push(t('variableDesigner.hidden', "对 AI 隐藏"))
     meta.textContent = parts.join(' · ')
     main.append(keyEl, meta)
@@ -527,7 +527,7 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
     del.textContent = '✕'
     del.addEventListener('click', (e) => {
       e.stopPropagation()
-      if (!window.confirm(t('variableDesigner.delete_definition_confirm', "删除变量定义「{{path}}」？（已保存的楼层快照不受影响）", { path: def.key }))) return
+      if (!window.confirm(t('variableDesigner.delete_definition_confirm', "删除变量定义「{{path}}」？（以前楼层记下的旧数值不会丢）", { path: def.key }))) return
       const cur = deps.getData()
       if (editingIndex === index) {
         formDraft = null
@@ -569,7 +569,7 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
       wrap.append(textRow(t('variableDesigner.range', "范围（可空）"), draft.rangeText, t('variableDesigner.range_example', "如 0~100，越界自动修正"), (v) => (draft.rangeText = v)))
     }
     if (draft.type === 'enum') {
-      wrap.append(textRow(t('variableDesigner.enum_options', "枚举选项（逗号分隔）"), draft.enumText, t('variableDesigner.enum_example', "如 开心, 平静, 烦躁"), (v) => (draft.enumText = v)))
+      wrap.append(textRow(t('variableDesigner.enum_options', "可选值列表（逗号分隔）"), draft.enumText, t('variableDesigner.enum_example', "如 开心, 平静, 烦躁"), (v) => (draft.enumText = v)))
     }
     wrap.append(
       textareaRow(
@@ -630,11 +630,11 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
         data.format,
         [
           { value: 'json_patch', label: t('variableDesigner.json_patch', "JSON Patch（推荐）") },
-          { value: 'lodash_set', label: t('variableDesigner.lodash_set', "_.set（老版 MVU 兼容）") },
+          { value: 'lodash_set', label: t('variableDesigner.lodash_set', "_.set 指令（兼容旧版 MVU 角色卡）") },
         ],
         (v) => save({ ...deps.getData(), format: v === 'lodash_set' ? 'lodash_set' : 'json_patch' }),
       ),
-      numberRow(t('variableDesigner.depth', "注入深度（距末尾楼层数）"), data.injectionDepth, 0, 20, (v) =>
+      numberRow(t('variableDesigner.depth', "提示词插入位置（距最新消息条数）"), data.injectionDepth, 0, 20, (v) =>
         save({ ...deps.getData(), injectionDepth: v }),
       ),
     )

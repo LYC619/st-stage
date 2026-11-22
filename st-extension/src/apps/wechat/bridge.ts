@@ -57,6 +57,7 @@ export interface ConversationScope {
   storySource?: string
   loreText?: string
   chronicleText?: string
+  calendarText?: string
   memoryWarnings?: string[]
   externalState: ExternalCharacterState
 }

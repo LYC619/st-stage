@@ -270,7 +270,8 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
           // 保留本地 url 显示与保底，仅补远程 remoteUrl + code（不覆盖本地图）
           target = upsertSprite(target, { ...local, code: up.code, remoteUrl: up.url })
           hosted++
-        } catch {
+        } catch (err) {
+          console.warn('[st-stage:config-panel] imgbb 上传失败', err)
           hostFailed++
         }
       }
@@ -368,7 +369,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
           />
         </label>
         <label className="flex items-center justify-between text-sm text-foreground">
-          显示手机框（关闭则回退纯悬浮窗）
+          显示小手机（关闭后只保留立绘浮窗）
           <input
             type="checkbox"
             checked={settings.showPhone}
@@ -443,7 +444,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
           />
         </label>
         <label className="flex items-center justify-between gap-2 text-sm text-foreground">
-          分组 prompt 模式
+          多服装清单写法
           <select
             value={settings.multiRolePromptMode}
             onChange={(e) =>
@@ -455,12 +456,12 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
             className="rounded-lg border border-input bg-background px-2 py-1 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
             aria-label="分组 prompt 模式"
           >
-            <option value="repeat">自动精简（默认：重合图名列一次）</option>
-            <option value="full">全量（枚举全部组合）</option>
+            <option value="repeat">自动精简（推荐：同名表情只列一次）</option>
+            <option value="full">完整展开（列出全部服装与表情组合）</option>
           </select>
         </label>
         <p className="text-xs text-muted-foreground">
-          自动精简会把多套服装重合的图名只列一次；适合相对地址时优先使用角色级格式（只要比全量短），否则在旧场景压缩和全量格式中取更短者。
+          自动精简会把多套衣服共用的表情合并展示；若合并后反而更长，会自动改用更短的写法。
         </p>
         <label className="flex items-center justify-between text-sm text-foreground">
           Prompt 预算（字符，0=不限）
@@ -577,7 +578,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
           }}
           className="self-start rounded-md border border-destructive/40 px-2 py-1 text-xs text-destructive transition-colors hover:bg-destructive/10"
         >
-          清空本地数据并刷新（更新后界面不对时用这个，硬刷新清不掉 localStorage）
+          重置演示数据并刷新（界面状态异常时点此恢复初始预设）
         </button>
       </section>
 

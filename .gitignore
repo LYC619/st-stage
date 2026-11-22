@@ -15,6 +15,7 @@ node_modules
 # Playwright 运行产物
 test-results/
 playwright-report/
+.tmp-test/
 .DS_Store
 *.tsbuildinfo
 # 本地工作区/会话产物（不随仓库分发；reference 含私人聊天记录，严禁入库）

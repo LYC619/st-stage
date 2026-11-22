@@ -12,7 +12,7 @@ st-stage 在 SillyTavern 聊天界面提供一个「手机」悬浮框架：一�
 
 1. **新建模块**：`st-extension/src/apps/<你的功能>-app.ts`，导出一个返回 `PhoneApp` 对象的工厂函数（结构见下方外部注册示例，`mount`/`ctx` 完全相同；UI 小部件直接复用 `./widgets` 里的 `appButton/toggleRow/selectRow/numberRow/textRow/textareaRow`）。
 2. **加入装配清单**：在 `st-extension/src/apps/index.ts` 的 `createBuiltinApps` 返回数组里加一行。需要访问框架能力（如打开弹窗）就照 `galleryApp` 的样子通过 `BuiltinAppDeps` 传入。
-3. **构建发布**：`pnpm build:ext` 并提交根目录兼容产物。需要为未来独立 ST 仓库生成干净发布目录时运行 `pnpm build:st`，产物在 `st-distribution/`；不要手动复制源码、`public/` 或 `reference/`。热更新（v0.6 加载器）会让已安装用户在 git pull 后自动拿到新代码，无需清缓存。
+3. **构建与产物同步**：日常联调运行 `pnpm build:ext`；提交前运行 `pnpm build:all` 以同一时间戳同步生成根目录、`st-distribution/` 与网页模拟器 `public/` 产物（不要手动复制源码或 `reference/`），提交前跑 `node scripts/verify-runtime-parity.mjs --root . --distribution st-distribution --preview public`，提交后跑 `node scripts/verify-runtime-parity.mjs --committed --root . --distribution st-distribution --preview public` 核验。内置 App 新增或改名时需同步更新 `README.md` 与本规范表格，并通过 `node scripts/verify-docs-apps.mjs`。
 
 App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发立绘刷新）；只有确实要改核心设置才用 `ctx.updateSettings`。
 
@@ -25,7 +25,7 @@ App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发
   id: 'dice-roller',        // 唯一 ID：小写字母开头，字母/数字/连字符，2–32 字符
   name: '骰子',              // Home 屏名称，建议 ≤ 4 个汉字
   icon: '🎲',               // 单个 emoji
-  order: 50,                // 排序权重，小的在前（内置 App 占 1–20）
+  order: 50,                // 排序权重，小的在前（内置 App 占 1–90）
 
   // 常驻层（可选，st-stage ≥ 0.9）：注册后调用一次，手机没打开也在工作；
   // host 上的订阅由平台在销毁时自动回收，不用手工退订
@@ -118,6 +118,9 @@ App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发
 | `onCharacterChanged(fn)` | 切换聊天/角色。返回退订函数；框架自动回收 |
 | `injectPrompt(text, depth?)` | 注入提示词：你的专属通道（`st-stage::app:<你的id>`），与立绘/其他 App 互不覆盖。last-write-wins，`''`=清除，超 20000 字符截断告警。**不随 unmount 清**，平台销毁时统一清空 |
 | `toast(kind, message)` | 通知（`info/success/warning/error`）：真 ST 走 toastr，模拟器降级 console |
+| `getCharacterCard?()` | 当前角色卡详情（`name`/`description`/`personality`/`scenario`/`avatar` 等，无则 `undefined`） |
+| `getChatContext?()` | 当前聊天会话上下文（`characterId`/`chatId`/`characterName`/`chat` 历史等，无则 `undefined`） |
+| `getVariables?()` | 读取外部状态变量（如 MVU / 酒馆助手 `stat_data`；支持同步或异步返回） |
 
 **PhoneAppContext 额外提供（仅 mount）：**
 
@@ -156,19 +159,21 @@ App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发
 
 | id | 名称 | 说明 | 源码 |
 | --- | --- | --- | --- |
-| `sprites` | 立绘 | 当前绑定概览、显示/轮播/Prompt 设置 | `st-extension/src/apps/sprite-app.ts` |
+| `sprites` | 立绘 | 当前绑定概览、实时多装束试衣舞台、显示/轮播/立绘提示词设置 | `st-extension/src/apps/sprite-app.ts` |
 | `gallery` | 图库 | 打开立绘包管理弹窗、图包概览、图床设置（前缀/imgbb Key/自动上传） | `st-extension/src/apps/gallery-app.ts` |
 | `butler` | 管家 | ST 性能管家：一键性能模式 + 改动前快照还原、power_user 手动微调、体检与优化指南（仅 ST 内生效，Web 模拟器降级为只读指南）。ST 耦合收敛在 `butler/bridge.ts` | `st-extension/src/apps/butler-app.ts` + `butler/` |
 | `mvu` | MVU | MVU 楼层变量可视化/编辑：树状卡片 + 类型感知编辑 + delta 高亮 + 精准事件刷新（MVU/酒馆助手双通道，模拟器只读）。数据耦合收敛在 `mvu/bridge.ts` | `st-extension/src/apps/mvu-app.ts` + `mvu/` |
 | `newvar` | 新变量 | 内置轻量变量追踪：GUI 定义 schema → 注入状态+规则 → 解析 `<UpdateVariable>` → 逐楼快照。手机页仅开关+状态树，设计走全屏弹窗 | `st-extension/src/apps/newvar-app.ts` + `newvar/` |
-| `theater` | 小剧场 | 广场、论坛、直播与配角日记共用一次请求；复用微信 AI 和主线记忆，按聊天保存 | `st-extension/src/apps/theater/` |
-| `story-state` | 剧情状态 | 时空、任务、背包、能力；MVU 只读或本聊天后台整理 | `st-extension/src/apps/story-state/` |
-| `chronicle` | 纪要 | 按聊天保存纪要与七天公共日历；纪要注入主聊天，微信和小剧场读取概览 | `st-extension/src/apps/chronicle/` |
-| `appearance` | 外观 | 主屏壁纸、App 图标、网络字体与外观包；图片压缩后保存为酒馆图片网址 | `st-extension/src/apps/appearance/` |
-| `api` | API | 版本化连接档案快切：新建 Chat 档案提供 OpenAI、Claude、OpenRouter、Google AI Studio 与自定义 OpenAI 兼容入口，历史冷门渠道仍可编辑；Key 在扩展档案中明文保存并同步写入 ST 密钥库。ST 交互收敛在 `api/bridge.ts`（模拟器降级只读） | `st-extension/src/apps/api-app.ts` + `api/` |
-| `renderer` | 渲染 | 结构化回复渲染：Galgame、卡片选择和本地确定性战斗；手机页含首次使用引导与配置状态 | `st-extension/src/apps/renderer-app.ts` |
+| `theater` | 小剧场 | 广场、论坛、直播弹幕发送与跨天配角日记归档（支持单栏重刷、划痕心声显影、私聊与输入框递话头） | `st-extension/src/apps/theater/` |
+| `story-state` | 剧情状态 | 时空、任务、背包、能力；支持 MVU 只读联动或普通卡随身手账编辑/后台整理，联动无手机速查浮窗 | `st-extension/src/apps/story-state/` |
+| `chronicle` | 纪要 | 按聊天整理与行内修订纪要、管理七天风物日历与私人约定备忘；支持独立控制纪要与今日风物注入 | `st-extension/src/apps/chronicle/` |
+| `appearance` | 外观 | 五套 Mini-OS 主题、主屏壁纸（含立绘一键作壁纸、压暗与柔焦）、角色专属换装、图标、网络字体与外观包 | `st-extension/src/apps/appearance/` |
+| `api` | API | 原生连接档案快切与角色推荐绑定；旧百工连接档案保留兼容管理入口。ST 交互收敛在 `api/bridge.ts` | `st-extension/src/apps/api-app.ts` + `api/` |
+| `renderer` | 渲染 | 结构化回复渲染：Galgame、卡片选择和页内即时回合战斗；手机页含首次使用引导与配置状态 | `st-extension/src/apps/renderer-app.ts` + `renderer/` |
+| `cloud-export` | 导出 | 选择角色卡、聊天、世界书、预设与正则打包下载标准 ZIP 备份 | `st-extension/src/apps/cloud-export/` |
+| `wechat-sister` | 微信 | 独立角色单聊与群聊、朋友圈、角色状态与场景模板管理 | `st-extension/src/apps/wechat/` |
 
 装配清单：`st-extension/src/apps/index.ts`。
 
 两个变量 App 复用共享视图 `apps/variable-tree.ts`（折叠分组/类型感知编辑/delta 徽标，「模型+回调」契约）。「新变量」的注入走**命名注入通道** `adapter.injectChannel(channel, prompt, depth)`（ST 端每通道一个独立 `setExtensionPrompt` 槽位，key=`st-stage::<channel>`）——v0.9 起 App 不用自己碰通道：`ctx.injectPrompt` 已按 appId 自动分配（`app:<你的id>`），互不覆盖，也不会碰立绘的注入。
-框架源码：注册表与能力层 `core/phone-registry.ts` + `core/capabilities.ts`、全屏弹窗 `core/app-modal.ts`、手机壳 `core/phone-shell.ts`、样式 `core/phone-shell.css`。
+框架源码：注册表与能力层 `core/phone-registry.ts` + `core/capabilities.ts`、全屏弹窗 `core/app-modal.ts`、手机壳 `core/phone-shell.ts`、壳层公共样式 `core/phone-shell.css`、各域样式 `st-extension/styles/*.css`。

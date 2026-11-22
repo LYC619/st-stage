@@ -13,7 +13,8 @@ export interface StoryState {
   任务: Quest[]; 背包: Item[]; 技能: Skill[]
 }
 export interface StoryStateSnapshot { key: string; backend: 'mvu' | 'local'; raw: Record<string, unknown>; state: StoryState }
-export interface StoryStateSettings { autoSync: boolean; contextMessages: number }
+export interface StoryStateSettings { autoSync: boolean; contextMessages: number; injectToChat: boolean }
+
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const text = (value: unknown, fallback = '') => typeof value === 'string' ? value : fallback
 const number = (value: unknown, fallback = 0) => typeof value === 'number' && Number.isFinite(value) ? value : fallback
@@ -33,7 +34,11 @@ export function normalize(value: unknown): StoryState {
 
 export function readSyncSettings(host: AppHost): StoryStateSettings {
   const raw = record(host.getAppData())
-  return { autoSync: raw.autoSync === true, contextMessages: Math.max(1, Math.min(60, Math.round(number(raw.contextMessages, 12)))) }
+  return {
+    autoSync: raw.autoSync === true,
+    contextMessages: Math.max(1, Math.min(60, Math.round(number(raw.contextMessages, 12)))),
+    injectToChat: raw.injectToChat === true,
+  }
 }
 
 export async function readStoryState(host: AppHost): Promise<StoryStateSnapshot> {
@@ -54,4 +59,39 @@ export function formatTime(time: StoryState['时间']): string {
   if (time.显示) return time.显示
   if (!time.年 && !time.月 && !time.日) return '尚未记录'
   return `${time.年}年${time.月}月${time.日}日 ${String(time.时).padStart(2, '0')}:${String(time.分).padStart(2, '0')}${time.星期 ? ' 周' + time.星期 : ''}`
+}
+
+export function formatIsoDateFromTime(time: StoryState['时间']): string {
+  if (!time.年 || !time.月 || !time.日) return ''
+  return `${String(time.年).padStart(4, '0')}-${String(time.月).padStart(2, '0')}-${String(time.日).padStart(2, '0')}`
+}
+
+export function formatStoryStateInjection(state: StoryState): string {
+  const timeText = formatTime(state.时间)
+  const locText = [state.位置.区域, state.位置.地点, state.位置.细节].filter(Boolean).join(' · ')
+  const activeQuests = state.任务.filter(q => q.状态 === '进行中').slice(0, 4).map(q => q.标题)
+  const items = state.背包.filter(i => i.数量 > 0).slice(0, 6).map(i => `${i.名称}×${i.数量}`)
+  const lines: string[] = []
+  if (timeText !== '尚未记录') lines.push(`时间：${timeText}`)
+  if (locText) lines.push(`地点：${locText}`)
+  if (activeQuests.length) lines.push(`进行中事项：${activeQuests.join('、')}`)
+  if (items.length) lines.push(`随身行囊：${items.join('、')}`)
+  if (!lines.length) return ''
+  return `<当前剧情状态>\n${lines.join('\n')}\n</当前剧情状态>`
+}
+
+export function summarizeStoryStateForHud(snapshot: StoryStateSnapshot): Record<string, unknown> | null {
+  if (snapshot.backend !== 'local') return null
+  const { state } = snapshot
+  const timeText = formatTime(state.时间)
+  const locText = [state.位置.区域, state.位置.地点].filter(Boolean).join(' · ')
+  const activeQuests = state.任务.filter(q => q.状态 === '进行中').map(q => q.标题)
+  const bag = Object.fromEntries(state.背包.filter(i => i.数量 > 0).map(i => [i.名称, i.数量]))
+  if (timeText === '尚未记录' && !locText && !activeQuests.length && !Object.keys(bag).length) return null
+  return {
+    ...(timeText !== '尚未记录' ? { 时空: timeText } : {}),
+    ...(locText ? { 地点: locText } : {}),
+    ...(activeQuests.length ? { 委托: activeQuests.join(' / ') } : {}),
+    ...(Object.keys(bag).length ? { 行囊: bag } : {}),
+  }
 }

@@ -106,7 +106,7 @@ export function createSocialUI(container: HTMLElement, data: WeChatAppData, host
   function renderMoments() {
     const feed = el('wt-moments-feed')
     const present = new Set([...feed.querySelectorAll<HTMLElement>('[data-moment]')].map(node => node.dataset.moment))
-    if (!data.moments?.length && !feed.childElementCount) { const empty = document.createElement('p'); empty.className = 'wt-empty'; empty.dataset.momentsEmpty = ''; empty.textContent = data.config.apiKey ? '朋友们的近况会在这里出现。' : '连接 AI 后，朋友们会随剧情分享近况。'; feed.append(empty) }
+    if (!data.moments?.length && !feed.childElementCount) { const empty = document.createElement('p'); empty.className = 'wt-empty'; empty.dataset.momentsEmpty = ''; empty.textContent = data.config.apiKey ? '朋友圈还静悄悄的，点右上角「刷新近况」看看大家都在忙什么吧。' : '在设置里连上 AI 后，朋友们就会随着故事推进在这里晒日常啦。'; feed.append(empty) }
     for (const moment of [...(data.moments ?? [])].reverse()) if (!present.has(moment.id)) prependMoment(moment)
   }
   function prependMoment(moment: Moment) {

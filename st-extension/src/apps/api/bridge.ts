@@ -134,7 +134,7 @@ async function waitForConnection(profile: ApiProfile, timeout = 8000): Promise<C
     await sleep(120)
   }
   if (profile.model && (!latest?.model || latest.model.toLowerCase() === 'none')) throw new Error(`模型「${profile.model}」尚未加载，未将 NONE 视为切换成功`)
-  throw new Error(`连接回验超时${latest?.model ? `（当前模型：${latest.model}）` : ''}`)
+  throw new Error(`等待酒馆连接响应超时${latest?.model ? `（当前模型：${latest.model}）` : ''}`)
 }
 
 async function writeSecret(st: BridgeContext, profile: ApiProfile): Promise<void> {
@@ -175,7 +175,7 @@ export async function applyProfile(profile: ApiProfile, onProgress: ApplyProfile
     dispatchValue(input, profile.url)
   }
   st.saveSettingsDebounced?.()
-  if (descriptor.urlField && readString(settings, descriptor.urlField) !== profile.url) throw new Error('URL 写入后回验失败，已停止连接')
+  if (descriptor.urlField && readString(settings, descriptor.urlField) !== profile.url) throw new Error('接口地址未能写入酒馆设置，已停止切换')
   const button = await waitFor<HTMLElement>(descriptor.connectSelector)
   if (!button) throw new Error(`找不到 ${descriptor.label} 的连接按钮`)
 
@@ -210,9 +210,29 @@ async function fetchModelsTransaction(profile: Pick<ApiProfile, 'mainApi' | 'sou
   const st = getST(); if (!st) throw new Error('未检测到 SillyTavern 运行时')
   const descriptor = getSource(profile.mainApi, profile.source)
   if (!descriptor.supportsModels) throw new Error('该来源不支持自动获取模型，请手动填写')
-  const current = await readConnection()
-  const temporary: ApiProfile = { version: 2, id: 'temporary', name: 'temporary', model: '', settings: {}, secretMode: 'stored', ...profile }
-  await writeSecret(st, temporary)
+  const hasNewKey = Boolean(profile.key.trim())
+  const targetSettings = settingsFor(st, profile.mainApi)
+  const targetSecretId = profile.secretId || readString(targetSettings, `${descriptor.secretKey}_id`) || readString(targetSettings, 'secret_id')
+  const targetSecret = hasNewKey
+    ? await readSecret(st, descriptor.secretKey, targetSecretId)
+    : { key: '', mode: 'unavailable' as SecretMode }
+  const canSafelyRestoreTarget = targetSecret.mode === 'read' && Boolean(targetSecret.key)
+  // 若目标密钥槽无法回读或原本为空，绝不向 ST 密钥库写入未保存草稿；优先直连兼容 /models
+  if (hasNewKey && !canSafelyRestoreTarget) {
+    if (profile.url.trim()) {
+      const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 15000)
+      try {
+        const modelsUrl = `${profile.url.trim().replace(/\/+$/, '')}/models`
+        const response = await fetch(modelsUrl, { headers: { Authorization: `Bearer ${profile.key.trim()}` }, signal: controller.signal })
+        if (response.ok) return parseModelList(await response.json())
+      } catch (err) {
+        console.warn('[st-stage:api] 直连 /models 探测未通过', err)
+      } finally { clearTimeout(timer) }
+    }
+    throw new Error('为避免覆盖未保存前的酒馆密钥槽，请先保存并启用该档案后再获取模型')
+  }
+  const temporary: ApiProfile = { version: 2, id: 'temporary', name: 'temporary', model: '', settings: {}, secretMode: 'stored', ...profile, secretId: targetSecretId }
+  if (hasNewKey) await writeSecret(st, temporary)
   try {
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 20000)
     try {
@@ -221,6 +241,8 @@ async function fetchModelsTransaction(profile: Pick<ApiProfile, 'mainApi' | 'sou
       return parseModelList(await response.json())
     } finally { clearTimeout(timer) }
   } finally {
-    if (current?.key) await writeSecret(st, { ...temporary, mainApi: current.mainApi as ApiProfile['mainApi'], source: current.source, url: current.url, key: current.key, secretId: current.secretId })
+    if (hasNewKey && canSafelyRestoreTarget) {
+      await writeSecret(st, { ...temporary, key: targetSecret.key })
+    }
   }
 }

@@ -50,7 +50,7 @@ try {
   // Open the home screen first because icons are rendered lazily.
   if (!ids.length) await page.locator('.so-phone-fab').tap()
   const appIds = await page.locator('.so-phone-app-icon').evaluateAll(nodes => nodes.map(node => node.dataset.appId))
-  assert.equal(appIds.length, 9)
+  assert.equal(appIds.length, 13)
   for (const viewport of [{ width: 320, height: 667 }, { width: 360, height: 740 }, { width: 390, height: 844 }, { width: 412, height: 915 }, { width: 740, height: 360 }, { width: 320, height: 360 }]) {
     await page.setViewportSize(viewport)
     for (const id of appIds) {
@@ -59,7 +59,7 @@ try {
       await bounds(`${id}/app`, '.so-phone-app-container', viewport, true, false)
       if (id === 'wechat-sister') {
         await bounds('wechat/send', '#wt-send-btn', viewport)
-        await page.locator('#wt-status-pill').tap()
+        await page.locator('#wt-settings-btn').tap()
         await bounds('wechat/settings', '#wt-settings-modal > div', viewport)
         await page.locator('.wt-profile-settings').scrollIntoViewIfNeeded()
         const select = page.locator('[data-profile-scope]'); await select.selectOption('global')

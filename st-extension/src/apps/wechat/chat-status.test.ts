@@ -48,7 +48,7 @@ describe('chat status row', () => {
     const saved = f.data().conversations![group.scopeKey!]
     expect(saved.messages.map(m => m.content)).toEqual(['everyone', 'from A', 'from B'])
     expect(saved.replyAttempt).toBeUndefined()
-    expect(f.el('#wt-state-summary').textContent).toMatch(/^成员状态 · (A|B)：from (A|B) status$/)
+    expect(f.el('#wt-state-summary').textContent).toMatch(/^群内近况 · (A|B)：from (A|B) status$/)
   })
 
   it('keeps @ beside the status in groups and hides the whole row for an idle direct chat', () => {

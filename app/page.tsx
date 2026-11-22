@@ -112,13 +112,13 @@ export default function Page() {
     <main className="mx-auto flex min-h-dvh max-w-6xl flex-col gap-4 px-4 py-4">
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-lg font-bold text-foreground">角色立绘悬浮窗 · 测试环境</h1>
+          <h1 className="text-lg font-bold text-foreground">百工 · 掌上小手机与角色立绘体验台</h1>
           <p className="text-xs text-muted-foreground">
-            SillyTavern 插件的网页模拟器 — 注入 → 回复 → 提取 → 悬浮窗切换
+            免装酒馆即可实机体验小手机五款主题、微信、小剧场、配角日记、随身手账、七日风物历与立绘舞台
           </p>
         </div>
         <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
-          ST 扩展产物见 st-extension/ 目录
+          点击右下角 📱 展开百工小手机
         </span>
       </header>
 
@@ -160,6 +160,7 @@ export default function Page() {
         settings={settings}
         characterName={characterName}
         onSettingsChange={updateSettings}
+        onPreviewSprite={(url, tag) => setSprites([{ url, tag }])}
       />
     </main>
   )

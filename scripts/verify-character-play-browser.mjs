@@ -74,7 +74,7 @@ try {
       if (scenario.touch) await icon.tap(); else await icon.press('Enter')
     }
     async function settings(scope) {
-      await page.locator('#wt-status-pill').click()
+      await page.locator('#wt-settings-btn').click()
       if (scope) await page.locator('[data-profile-scope]').selectOption(scope)
       const summary = page.locator('.wt-profile-settings details > summary')
       if (!await summary.evaluate(node => node.parentElement.open)) await summary.click()

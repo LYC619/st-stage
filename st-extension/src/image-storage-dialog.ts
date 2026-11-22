@@ -147,7 +147,7 @@ export function openImageStorageDialog(deps: ImageStorageDialogDeps): ImageStora
       backupDownloaded = true
       status.textContent = scan.ambiguous.length > 0 || backup.unmappedEmbedded.length > 0
         ? t('storage.backup_unmapped', '备份已下载，但存在未能唯一映射的内嵌图片，不能自动迁移。请先整理为明确的自定义图包后重新下载备份。')
-        : t('storage.backup_downloaded', '备份下载请求已完成，请确认文件已保存后开始迁移。')
+        : t('storage.backup_downloaded', '备份文件已开始下载，确认存好后再点「开始迁移内嵌图片」。')
     } catch (error) {
       invalidateBackup()
       status.textContent = error instanceof Error ? error.message : t('storage.backup_failed', '备份失败')
@@ -167,7 +167,7 @@ export function openImageStorageDialog(deps: ImageStorageDialogDeps): ImageStora
     try {
       download('sprite-overlay-image-migration-receipt-' + receipt.backupId + '.json', receipt)
       receiptDownloaded = true
-      status.textContent = t('storage.receipt_downloaded', '回执下载请求已完成，请确认文件已保存后应用成功项。')
+      status.textContent = t('storage.receipt_downloaded', '迁移回执已开始下载，确认存好后再点「确认应用成功项」。')
     } catch (error) {
       status.textContent = error instanceof Error ? error.message : t('storage.receipt_failed', '回执下载失败')
     }
@@ -178,13 +178,13 @@ export function openImageStorageDialog(deps: ImageStorageDialogDeps): ImageStora
     const result = applyImageChanges(deps.getSettings(), staged)
     finishApply(result, t('storage.applied_action', '应用'))
   })
-  const cancelButton = actionButton(t('storage.cancel', '取消暂存'), () => {
+  const cancelButton = actionButton(t('storage.cancel', '取消迁移'), () => {
     if (phase !== 'staging') return
     ++runToken
     controller?.abort()
     controller = null
     reset()
-    status.textContent = t('storage.cancelled', '暂存已取消，原设置未改变；已上传的新文件未自动删除。')
+    status.textContent = t('storage.cancelled', '已取消迁移，原有设置未改动（刚转存出的本地图片文件会保留在目录中）。')
   })
   const retryButton = actionButton(t('storage.recheck', '重新检查'), () => reset())
   const restorePanel = document.createElement('details')
@@ -193,7 +193,7 @@ export function openImageStorageDialog(deps: ImageStorageDialogDeps): ImageStora
   restoreHeading.textContent = t('storage.restore_title', '恢复迁移前图片')
   const restoreWarning = document.createElement('p')
   restoreWarning.className = 'so-storage-warning'
-  restoreWarning.textContent = t('storage.restore_warning', '恢复会重新写入内嵌图片，增大 settings。仅回退仍与回执匹配的图片，其他设置和后续编辑不变。')
+  restoreWarning.textContent = t('storage.restore_warning', '恢复会把图片重新塞回设置文件（体积会变大）；只还原仍与回执一致的图片，其他设置和后续改动不受影响。')
   function fileInput(label: string): HTMLInputElement {
     const input = document.createElement('input')
     input.type = 'file'
@@ -229,7 +229,7 @@ export function openImageStorageDialog(deps: ImageStorageDialogDeps): ImageStora
     phase = 'applied'
     try {
       if (result.applied.length > 0) deps.updateSettings(result.settings)
-      status.textContent = t('storage.finished', '已{{action}} {{count}} 项，冲突 {{conflicts}} 项未修改。{{notice}}', { action, count: result.applied.length, conflicts: result.conflicts.length, notice: result.applied.length ? t('storage.save_requested', '宿主已请求保存，请重载后复查。') : t('storage.unchanged', '原设置未改变。') })
+      status.textContent = t('storage.finished', '已{{action}} {{count}} 项，冲突 {{conflicts}} 项未修改。{{notice}}', { action, count: result.applied.length, conflicts: result.conflicts.length, notice: result.applied.length ? t('storage.save_requested', '已通知酒馆保存设置，建议刷新页面确认效果。') : t('storage.unchanged', '原设置未改变。') })
     } catch (error) {
       status.textContent = t('storage.update_failed', '设置更新或界面刷新失败，请保留备份和回执，重载后复查：{{error}}', { error: error instanceof Error ? error.message : t('storage.unknown_error', '未知错误') })
     }
@@ -365,7 +365,7 @@ export function openImageStorageDialog(deps: ImageStorageDialogDeps): ImageStora
         item.textContent = t('storage.item_error', '{{tag}}：{{message}}', { tag: failure.candidate.ref.tag, message: failure.message })
         errors.append(item)
       }
-      status.textContent = t('storage.stage_result', '{{status}}：成功 {{ready}} 项，失败 {{failed}} 项，未处理 {{unprocessed}} 项，未支持 {{unsupported}} 项。原设置未改变。', { status: staged.length ? t('storage.staged', '暂存完成') : t('storage.not_migrated', '迁移未完成'), ready: staged.length, failed: result.failed.length, unprocessed: result.unprocessed.length, unsupported: sourceBackup.unmappedEmbedded.length })
+      status.textContent = t('storage.stage_result', '{{status}}：成功 {{ready}} 项，失败 {{failed}} 项，未处理 {{unprocessed}} 项，未支持 {{unsupported}} 项。原设置未改变。', { status: staged.length ? t('storage.staged', '图片转存就绪') : t('storage.not_migrated', '迁移未完成'), ready: staged.length, failed: result.failed.length, unprocessed: result.unprocessed.length, unsupported: sourceBackup.unmappedEmbedded.length })
     } catch (error) {
       if (token === runToken && !runController.signal.aborted) {
         status.textContent = error instanceof Error ? error.message : t('storage.migration_failed', '迁移失败，原设置未改变')

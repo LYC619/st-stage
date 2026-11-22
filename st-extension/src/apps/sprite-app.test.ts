@@ -83,7 +83,7 @@ describe('spriteApp', () => {
     spriteApp().mount(container, ctx)
 
     const injected = buildActiveSpritePrompt(settings, characterName)
-    expect(container.textContent).toContain(`预计注入 ${injected.length} 字符`)
+    expect(container.textContent).toContain(`当前提示词约 ${injected.length} 字`)
   })
 
   it('悬浮窗不透明度使用滑块，拖动只预览读数、松手后提交设置', () => {

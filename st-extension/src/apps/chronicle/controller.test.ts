@@ -82,4 +82,21 @@ describe('chronicle lifecycle', () => {
     expect(f.data().lastMessageIndex).toBe(-1)
     await f.controller.trigger(true); expect(spy).toHaveBeenCalledOnce()
   })
+
+  it('rolls back lastMessageIndex on deleting a newly generated entry and supports inline editing', async () => {
+    const spy = vi.spyOn(generate, 'generateChronicle').mockResolvedValue(content)
+    const f = fixture()
+    f.receive(); f.receive()
+    await f.controller.trigger(true)
+    expect(f.data().lastMessageIndex).toBe(1)
+    expect(f.data().entries[0].startIndex).toBe(-1)
+
+    await f.controller.updateEntry('AM0001', { summary: '修订概览', timeSpan: '2026-01-02', text: '修订正文' })
+    expect(f.data().entries[0].summary).toBe('修订概览')
+
+    await f.controller.deleteLatest()
+    expect(f.data().entries).toHaveLength(0)
+    expect(f.data().lastMessageIndex).toBe(-1)
+    expect(spy).toHaveBeenCalledOnce()
+  })
 })

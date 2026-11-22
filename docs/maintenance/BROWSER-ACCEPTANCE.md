@@ -18,11 +18,9 @@ node scripts/<script>.mjs --url http://127.0.0.1:<测试端口> --isolated-data 
 
 资料设置脚本的 `--measure-only` 用于同一场景的旧／新候选性能对比，只采样，不代表功能验收通过。报告保留首次及五次后续打开耗时、隐藏素材节点数和候选哈希；耗时受机器负载影响。
 
-## MVU 旧契约退役
+## 外部变量与旧契约边界
 
-`verify-wechat-mvu-browser.mjs` 现明确退出码 2 并说明替代入口。它原来验证微信钱包、数值评估和主聊天变量同步，已不属于当前微信功能，安装 MVU/TavernHelper 也不能使旧断言适用于新产品。
-
-原脚本保存在 `scripts/archive/verify-wechat-mvu-legacy.mjs`，仅供使用匹配历史构建及真实依赖的环境复现，必须显式传入 `--legacy-contract`。历史真实 MVU 验收记录保留。
+微信现为独立联系人会话，不再包含旧钱包与主聊天数值评估契约；历史真实 MVU 验收记录保留在 `history/2026-11-04-real-mvu-acceptance.md`。
 
 当前微信不读写外部变量的检查由 profile 套件负责；Variables App 继续使用 `verify-variables-browser.mjs`，参数见该脚本。没有真实 MVU/TavernHelper 时的不可用状态或受控计数器，不代表真实供应商集成已验收。
 

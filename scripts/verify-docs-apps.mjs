@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -68,6 +68,28 @@ export function verifyDocsApps(root = defaultRoot) {
   const errors = []
   if (missingInDocs.length) errors.push(`README.md missing builtin apps: ${missingInDocs.join(', ')}`)
   if (extraInDocs.length) errors.push(`README.md lists non-builtin apps: ${extraInDocs.join(', ')}`)
+
+  const specPath = path.join(root, 'docs', 'APP-SPEC.md')
+  if (existsSync(specPath)) {
+    const specSource = readFileSync(specPath, 'utf8')
+    const specMatch = specSource.match(/## 内置 App 一览[\s\S]*?\n(\|[\s\S]*?)(?:\n\s*\n|$)/)
+    if (!specMatch) {
+      errors.push('Cannot locate "## 内置 App 一览" table in docs/APP-SPEC.md')
+    } else {
+      const specNames = []
+      for (const line of specMatch[1].split(/\r?\n/)) {
+        const trimmed = line.trim()
+        if (!trimmed.startsWith('|') || /^\|\s*-+/.test(trimmed) || /^\|\s*id\s*\|/.test(trimmed)) continue
+        const cells = trimmed.split('|').map((cell) => cell.trim())
+        if (cells[2]) specNames.push(cells[2])
+      }
+      const specSet = new Set(specNames)
+      const missingInSpec = codeApps.filter((item) => !specSet.has(item.name)).map((item) => `${item.name} (${item.file})`)
+      const extraInSpec = specNames.filter((name) => !codeSet.has(name))
+      if (missingInSpec.length) errors.push(`docs/APP-SPEC.md missing builtin apps: ${missingInSpec.join(', ')}`)
+      if (extraInSpec.length) errors.push(`docs/APP-SPEC.md lists non-builtin apps: ${extraInSpec.join(', ')}`)
+    }
+  }
 
   const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
   const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'))

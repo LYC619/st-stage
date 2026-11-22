@@ -4,7 +4,6 @@ import english from '../st-extension/locales/en-US.json'
 import type { PluginSettings, SpritePack } from './types'
 import { createDefaultSettings, formatAddress, getPackCover, getSpriteSource } from './types'
 import {
-  bindCharacter,
   bindPack,
   addPackCustomTag,
   deletePackCustomTag,
@@ -14,8 +13,6 @@ import {
   getActivePacks,
   getGroups,
   matchAddress,
-  matchSprite,
-  matchSprites,
   movePack,
   movePackBefore,
   moveSprite,
@@ -26,6 +23,7 @@ import {
   renamePackCustomTag,
   renameSprite,
   resolveSprite,
+  resolveSprites,
   setBinding,
   setPackKind,
   setSpriteGroup,
@@ -158,27 +156,27 @@ describe('getSpriteSource / getPackCover', () => {
   })
 })
 
-describe('matchSprite 模糊回退', () => {
+describe('matchAddress 模糊回退', () => {
   it('精确 → 子串 → null', () => {
-    expect(matchSprite(pack(), '微笑')!.url).toBe('u1')
-    expect(matchSprite(pack(), '有点害羞')!.url).toBe('u2')
-    expect(matchSprite(pack(), '开心')).toBeNull()
+    expect(matchAddress(pack(), '微笑')!.url).toBe('u1')
+    expect(matchAddress(pack(), '有点害羞')!.url).toBe('u2')
+    expect(matchAddress(pack(), '开心')).toBeNull()
   })
 })
 
-describe('matchSprites 序列（功能③）', () => {
+describe('resolveSprites 序列（功能③）', () => {
   it('多标签保序映射，跳过未命中', () => {
-    expect(matchSprites(pack(), ['微笑', '恼怒', '开心']).map((s) => s.tag)).toEqual(['微笑', '恼怒'])
+    expect(resolveSprites([pack()], ['微笑', '恼怒', '开心']).map((s) => s.tag)).toEqual(['微笑', '恼怒'])
   })
   it('折叠相邻重复，但保留往返 A→B→A', () => {
-    expect(matchSprites(pack(), ['微笑', '微笑', '害羞', '微笑']).map((s) => s.tag)).toEqual([
+    expect(resolveSprites([pack()], ['微笑', '微笑', '害羞', '微笑']).map((s) => s.tag)).toEqual([
       '微笑',
       '害羞',
       '微笑',
     ])
   })
   it('全部未命中返回空数组', () => {
-    expect(matchSprites(pack(), ['开心', '生气'])).toEqual([])
+    expect(resolveSprites([pack()], ['开心', '生气'])).toEqual([])
   })
 })
 
@@ -604,9 +602,9 @@ describe('冲突检查的原子设置变更契约', () => {
     if (enabled.ok) expect(enabled.settings.bindings[0]).toMatchObject({ packIds: ['a'], enabled: true })
   })
 
-  it('bindCharacter 使用相同判别联合契约', () => {
+  it('setBinding 单包绑定使用判别联合契约', () => {
     const settings: PluginSettings = { ...createDefaultSettings(), packs: conflictPacks() }
-    const result = bindCharacter(settings, '阿珍', 'a')
+    const result = setBinding(settings, '阿珍', ['a'])
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.settings.bindings[0].packIds).toEqual(['a'])
   })

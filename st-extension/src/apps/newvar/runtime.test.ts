@@ -61,8 +61,8 @@ describe('newvar runtime manual edits', () => {
   it('拒绝枚举外值、非布尔值和未定义路径', () => {
     const app = runtime()
 
-    expect(app.setManualValue('心情', '暴怒')).toEqual({ ok: false, error: expect.stringContaining('枚举') })
-    expect(app.setManualValue('在场', 'true')).toEqual({ ok: false, error: expect.stringContaining('布尔') })
+    expect(app.setManualValue('心情', '暴怒')).toEqual({ ok: false, error: expect.stringContaining('可选范围') })
+    expect(app.setManualValue('在场', 'true')).toEqual({ ok: false, error: expect.stringContaining('开关值') })
     expect(app.setManualValue('未知', 1)).toEqual({ ok: false, error: expect.stringContaining('未定义') })
     expect(app.getCurrentState()).toEqual({ 体力: 50, 心情: '平静', 在场: false, 场景: '教室' })
     expect(chat[0].extra).toBeUndefined()

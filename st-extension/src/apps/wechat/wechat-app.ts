@@ -1,3 +1,5 @@
+import { safeRandomId } from '../shared/safe-runtime'
+import { clearAppBadge, consumeAppDeepLink } from '../shared/story-events'
 import type { PhoneApp, PhoneAppContext, AppHost } from '../../../../core/phone-registry'
 import { manageDialogFocus } from '../../../../core/dialog-focus'
 import { resolveCharacterAvatarUrl, resolveConversationScopeSync } from './bridge'
@@ -149,7 +151,7 @@ export function createWeChatApp(): PhoneApp {
       function notice(message?: string) {
         // Demo mode is a state, not an error: say what it means and offer the fix in place.
         const demo = !message && !data.config.apiKey
-        el('wt-notice').textContent = message ?? (demo ? '本地演示模式 · 回复为示例文字' : '')
+        el('wt-notice').textContent = message ?? (demo ? '离线体验模式 · 连上 AI 就能收到 TA 的真实回信啦' : '')
         el('wt-connect-ai').hidden = !demo
         el('wt-notice-bar').hidden = !el('wt-notice').textContent
       }
@@ -164,7 +166,7 @@ export function createWeChatApp(): PhoneApp {
         pruneVoices()
         list.replaceChildren()
         const entries = Object.entries(conversations).sort(([, a], [, b]) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
-        if (!entries.length) { const empty = document.createElement('p'); empty.className = 'wt-empty'; empty.textContent = '还没有会话。点击右上角 + 添加好友。'; list.append(empty) }
+        if (!entries.length) { const empty = document.createElement('p'); empty.className = 'wt-empty'; empty.textContent = '消息列表还空着呢。点右上角「+」把酒馆里的 TA 加进通讯录，随时私聊叙旧吧。'; list.append(empty) }
         for (const [key, conv] of entries) {
           const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'wt-conversation'; btn.dataset.conversation = key
           const copy = document.createElement('span'); copy.className = 'wt-conversation-copy'
@@ -186,13 +188,13 @@ export function createWeChatApp(): PhoneApp {
         el('wt-contact-name').textContent = titleFor(conv)
         const members = isGroup(conv) ? groupContacts(data, conv) : []
         const states = members.map(member => ({ name: member.name, state: conv.memberStates?.[member.id] }))
-        el('wt-inner-thought').textContent = states.length ? states.map(item => item.name + '：' + (item.state?.innerThought || '等待回复')).join('\n') : conv.state.innerThought || '等待角色回复'
-        el('wt-current-status').textContent = states.length ? states.map(item => item.name + '：' + (item.state?.currentStatus || '等待回复')).join('\n') : conv.state.currentStatus || '等待角色回复'
+        el('wt-inner-thought').textContent = states.length ? states.map(item => item.name + '：' + (item.state?.innerThought || '待感知')).join('\n') : conv.state.innerThought || '聊上两句后，就能悄悄看见 TA 此刻的心思啦'
+        el('wt-current-status').textContent = states.length ? states.map(item => item.name + '：' + (item.state?.currentStatus || '待感知')).join('\n') : conv.state.currentStatus || '聊上两句后，就能看见 TA 眼下正在忙什么'
         // A group has no single state; summarize the member who updated most recently.
         const latest = states.filter(item => item.state?.currentStatus).sort((a, b) => (b.state!.updatedAt ?? 0) - (a.state!.updatedAt ?? 0))[0]
         el('wt-state-summary').textContent = states.length
-          ? `成员状态 · ${latest ? latest.name + '：' + latest.state!.currentStatus : '等待更新'}`
-          : `角色状态 · ${conv.state.currentStatus || '等待更新'}`
+          ? `群内近况 · ${latest ? latest.name + '：' + latest.state!.currentStatus : '聊两句看看大家在忙什么'}`
+          : `TA 的此刻 · ${conv.state.currentStatus || '待感知'}`
         const busy = pending.has(activeKey!), progress = pending.progress(activeKey!)
         el('wt-typing-badge').hidden = !busy
         el('wt-typing-badge').textContent = progress ? `${progress.name} 正在输入…（${progress.index + 1}/${progress.total}）` : '对方正在输入…'
@@ -379,7 +381,7 @@ export function createWeChatApp(): PhoneApp {
         if (pending.has(key)) { notice('此会话正在回复，可先切换到其他会话。'); return }
         const time = new Date(), media = mediaFor(target)
         const snapshot = type === 'emoji' ? (emojiSource === 'player' ? media.player : media.contact)[content] : undefined
-        const player: ChatMessage = { id: crypto.randomUUID(), sender: 'player', type, content: content.trim().slice(0, type === 'red_packet' ? 120 : 8000),
+        const player: ChatMessage = { id: safeRandomId(), sender: 'player', type, content: content.trim().slice(0, type === 'red_packet' ? 120 : 8000),
           time: { day: target.currentDay, hour: time.getHours(), minute: time.getMinutes() }, ...(type === 'emoji' ? { emojiSource, asset: snapshot } : {}), ...(note ? { note: note.slice(0, 300) } : {}) }
         const prior = { draft: target.draft, updatedAt: target.updatedAt, replyAttempt: target.replyAttempt }
         target.messages.push(player); target.updatedAt = Date.now(); delete target.replyAttempt
@@ -478,7 +480,49 @@ export function createWeChatApp(): PhoneApp {
         for (const conv of Object.values(conversations)) if (pending.has(conv.scopeKey!)) pending.cancel(conv)
         if (currentDialog?.id === 'wt-contacts-modal') renderContacts()
       })
+      clearAppBadge('wechat-sister')
       navigation.show('chats'); renderList(); renderAddressBook(); notice(); syncMoments(); void background?.trigger()
+      const deepLink = consumeAppDeepLink('wechat-sister')
+      if (deepLink?.openSettings) {
+        openSettings(false, true)
+      } else if (deepLink?.contactName) {
+        const wanted = deepLink.contactName.trim()
+        const existingConv = Object.entries(conversations).find(([, conv]) => !isGroup(conv) && titleFor(conv) === wanted)
+        if (existingConv) {
+          openConversation(existingConv[0])
+        } else {
+          const contact = Object.values(data.contacts ?? {}).find(c => c.name.trim() === wanted)
+          if (contact) {
+            const conv = addContactConversation(data, contact); persist(); openConversation(conv.scopeKey!)
+          } else {
+            const hostCard = listContacts(ctx).find(c => c.name.trim() === wanted)
+            if (hostCard) {
+              void loadContact(ctx, hostCard.id).then((loaded) => {
+                if (!alive) return
+                const conv = addContactConversation(data, loaded); persist(); openConversation(conv.scopeKey!)
+              }).catch((err) => {
+                console.warn('[st-stage] 读取角色卡联系人失败，已回退为故事内临时联系人', err)
+                if (!alive) return
+                const npcConv = addContactConversation(data, {
+                  id: `npc:${wanted}`,
+                  name: wanted,
+                  card: { name: wanted, description: '当前主线故事中的登场人物，言行与记忆遵循当前主聊天与世界书。' },
+                  kind: 'character',
+                })
+                persist(); openConversation(npcConv.scopeKey!)
+              })
+            } else if (wanted) {
+              const npcConv = addContactConversation(data, {
+                id: `npc:${wanted}`,
+                name: wanted,
+                card: { name: wanted, description: '当前主线故事中的登场人物，言行与记忆遵循当前主聊天与世界书。' },
+                kind: 'character',
+              })
+              persist(); openConversation(npcConv.scopeKey!)
+            }
+          }
+        }
+      }
       // The shell's ‹ and Escape step back like a phone: close the open layer first, then leave the chat.
       stepBack = () => {
         if (!el('wt-plus-menu').hidden) { navigation.closeMenu(true); return true }

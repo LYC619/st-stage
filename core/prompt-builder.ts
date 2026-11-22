@@ -733,29 +733,3 @@ export function buildPrompt(
     return roleCompact && roleCompact.length < grouped.length ? roleCompact : shared
   })
 }
-
-/* ---------- 向后兼容旧签名（Web 模拟器仍在用；阶段6统一迁移） ---------- */
-
-/** 生成注入 prompt（纯图名列表）。tags 为空时返回空字符串。 */
-export function buildInjectionPrompt(tags: string[]): string {
-  return buildPrompt(
-    tags.map((tag) => ({ role: '', outfit: '', tag })),
-    'full',
-    1,
-  )
-}
-
-/** 分组/图名 地址项（功能②，旧签名） */
-export interface AddressEntry {
-  group: string
-  tag: string
-}
-
-/** 多角色/分组模式的注入 prompt（旧签名，映射到 buildPrompt） */
-export function buildMultiRolePrompt(entries: AddressEntry[], mode: 'full' | 'repeat'): string {
-  return buildPrompt(
-    entries.map((e) => ({ role: e.group, outfit: '', tag: e.tag })),
-    mode,
-    1,
-  )
-}

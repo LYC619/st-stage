@@ -96,7 +96,7 @@ export async function applyTransaction(
         action.status = 'applied'
       } else {
         action.status = 'failed'
-        action.error = 'SillyTavern 实际值与请求值不一致'
+        action.error = '酒馆未能写入该项设置（回读值与目标值不一致）'
       }
     } catch (error) {
       action.status = 'failed'

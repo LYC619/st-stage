@@ -98,10 +98,6 @@ export function applyAssetProfile<T extends EmojiItem | PhotoItem>(items: Record
     }))
 }
 
-export function applyAssetOverrides<T extends EmojiItem | PhotoItem>(items: Record<string, T>, prefix: string, profile: WeChatProfile): Record<string, T> {
-  return applyAssetProfile(items, prefix, profile)
-}
-
 /** Explicit paths are relative to stat_data and never fall back to an unrelated alias. */
 export function mappedValue(raw: Record<string, unknown>, field: string): unknown {
   if (!isSafePath(field)) return undefined

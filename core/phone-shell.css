@@ -1,35 +1,60 @@
 /* 手机框架样式 — 双端共用（ST 由 build.mjs 拼进 style.css；Web 由 globals.css import） */
 
-/* ==================== 手机框架 ==================== */
+/* ==================== 掌上 Mini-OS 主题令牌与悬浮入口 ==================== */
 
-/* 悬浮图标 */
 .so-phone-fab {
   position: fixed;
   z-index: 9998;
-  width: 48px;
-  height: 48px;
+  width: 50px;
+  height: 50px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(20, 20, 26, 0.85);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: linear-gradient(145deg, rgba(30, 32, 44, 0.92), rgba(16, 17, 24, 0.92));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18);
   font-size: 22px;
   cursor: grab;
   user-select: none;
   touch-action: none;
-  backdrop-filter: blur(6px);
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  backdrop-filter: blur(12px) saturate(140%);
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.18s ease;
 }
 
 .so-phone-fab:hover {
-  transform: scale(1.06);
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55);
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
 .so-phone-fab:active {
   cursor: grabbing;
+  transform: scale(0.95);
+}
+
+.so-phone-fab-glyph {
+  line-height: 1;
+}
+
+.so-phone-fab-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #e5484d;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(229, 72, 77, 0.55);
+}
+
+.so-phone-fab-badge[hidden] {
+  display: none !important;
 }
 
 .so-phone-fab:focus-visible,
@@ -38,95 +63,240 @@
   outline-offset: 3px;
 }
 
-/* 手机外壳 */
+/* 手机外壳与五套内置气韵主题 */
 .so-phone-shell {
+  --so-shell-bg: #14151e;
+  --so-shell-grad: radial-gradient(120% 80% at 50% 0%, rgba(92, 124, 250, 0.14), transparent 62%), #14151e;
+  --so-surface: rgba(255, 255, 255, 0.055);
+  --so-surface-strong: rgba(255, 255, 255, 0.095);
+  --so-border: rgba(255, 255, 255, 0.12);
+  --so-bezel: rgba(255, 255, 255, 0.22);
+  --so-text: rgba(248, 250, 255, 0.95);
+  --so-text-muted: rgba(205, 212, 228, 0.72);
+  --so-accent: #7cb4ff;
+  --so-accent-bg: rgba(124, 180, 255, 0.18);
+  --so-status-bg: rgba(18, 19, 28, 0.74);
+  --so-dock-bg: rgba(28, 30, 42, 0.68);
+  --so-wall-dim: 0.36;
+  --so-wall-blur: 0px;
+
   position: fixed;
   z-index: 9999;
   width: min(320px, calc(100vw - 16px));
   display: flex;
   flex-direction: column;
-  border-radius: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: #181820;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), inset 0 0 0 2px rgba(0, 0, 0, 0.5);
-  /* The screen clips its own content. Let transparent status targets extend above the rounded shell. */
+  border-radius: 32px;
+  border: 1px solid var(--so-bezel);
+  background: var(--so-shell-grad);
+  color: var(--so-text);
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.62),
+    0 6px 20px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 0 0 2px rgba(0, 0, 0, 0.38);
   overflow: visible;
   user-select: none;
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+  transition:
+    opacity 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.25s ease;
 }
 
-/* 状态栏 */
+@starting-style {
+  .so-phone-shell {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.95);
+  }
+}
+
+.so-phone-shell[data-theme='tavern'] {
+  --so-shell-bg: #201712;
+  --so-shell-grad: radial-gradient(120% 85% at 50% 0%, rgba(235, 162, 76, 0.2), transparent 64%), #201712;
+  --so-surface: rgba(255, 236, 210, 0.065);
+  --so-surface-strong: rgba(255, 236, 210, 0.12);
+  --so-border: rgba(255, 214, 165, 0.16);
+  --so-bezel: rgba(242, 191, 130, 0.28);
+  --so-text: #fdf6ec;
+  --so-text-muted: rgba(238, 218, 194, 0.76);
+  --so-accent: #efb05c;
+  --so-accent-bg: rgba(239, 176, 92, 0.22);
+  --so-status-bg: rgba(28, 20, 15, 0.78);
+  --so-dock-bg: rgba(44, 31, 23, 0.72);
+}
+
+.so-phone-shell[data-theme='aurora'] {
+  --so-shell-bg: #101c22;
+  --so-shell-grad: radial-gradient(125% 85% at 30% 0%, rgba(76, 224, 198, 0.18), rgba(74, 144, 226, 0.08) 55%, transparent 75%), #101c22;
+  --so-surface: rgba(220, 250, 248, 0.06);
+  --so-surface-strong: rgba(220, 250, 248, 0.11);
+  --so-border: rgba(146, 236, 224, 0.16);
+  --so-bezel: rgba(146, 236, 224, 0.26);
+  --so-text: #effcfa;
+  --so-text-muted: rgba(190, 225, 222, 0.74);
+  --so-accent: #5fe0c8;
+  --so-accent-bg: rgba(95, 224, 200, 0.2);
+  --so-status-bg: rgba(14, 25, 31, 0.78);
+  --so-dock-bg: rgba(22, 38, 46, 0.72);
+}
+
+.so-phone-shell[data-theme='parchment'] {
+  --so-shell-bg: #f3ece0;
+  --so-shell-grad: radial-gradient(120% 80% at 50% 0%, rgba(201, 156, 94, 0.18), transparent 65%), #f3ece0;
+  --so-surface: rgba(88, 64, 36, 0.055);
+  --so-surface-strong: rgba(88, 64, 36, 0.1);
+  --so-border: rgba(102, 76, 44, 0.16);
+  --so-bezel: rgba(120, 90, 52, 0.3);
+  --so-text: #2c2218;
+  --so-text-muted: rgba(84, 65, 45, 0.76);
+  --so-accent: #8f5d26;
+  --so-accent-bg: rgba(143, 93, 38, 0.16);
+  --so-status-bg: rgba(243, 236, 224, 0.84);
+  --so-dock-bg: rgba(255, 250, 240, 0.78);
+}
+
+.so-phone-shell[data-theme='daylight'] {
+  --so-shell-bg: #f1f5fb;
+  --so-shell-grad: radial-gradient(120% 80% at 50% 0%, rgba(79, 134, 247, 0.16), transparent 64%), #f1f5fb;
+  --so-surface: rgba(15, 23, 42, 0.045);
+  --so-surface-strong: rgba(15, 23, 42, 0.085);
+  --so-border: rgba(15, 23, 42, 0.12);
+  --so-bezel: rgba(100, 116, 139, 0.32);
+  --so-text: #162032;
+  --so-text-muted: rgba(51, 65, 85, 0.75);
+  --so-accent: #2b6be6;
+  --so-accent-bg: rgba(43, 107, 230, 0.15);
+  --so-status-bg: rgba(241, 245, 251, 0.84);
+  --so-dock-bg: rgba(255, 255, 255, 0.8);
+}
+
+/* ==================== 顶部状态栏与灵动通知胶囊 ==================== */
+
+.so-phone-wallpaper-clip {
+  position: absolute;
+  inset: 0;
+  border-radius: 31px;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.so-phone-wallpaper-clip[hidden] {
+  display: none !important;
+}
+
+.so-phone-wallpaper-bg {
+  position: absolute;
+  inset: 0;
+  background-image: var(--so-wallpaper);
+  background-size: cover;
+  background-position: center;
+  filter: blur(var(--so-wall-blur, 0px));
+  transform: scale(1.08);
+}
+
+.so-phone-wallpaper-clip::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, var(--so-wall-dim, 0.34)),
+    rgba(0, 0, 0, calc(var(--so-wall-dim, 0.34) + 0.28))
+  );
+}
+
 .so-phone-status {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px 6px 10px;
+  padding: 9px 15px 7px 11px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--so-text);
+  background: var(--so-status-bg);
+  backdrop-filter: blur(16px) saturate(140%);
+  border-radius: 31px 31px 0 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
 }
 
-/* App 内返回键（Home 屏隐藏，由 JS 切换 display） */
 .so-phone-back {
   display: none;
   align-items: center;
   justify-content: center;
   min-width: 30px;
   height: 26px;
-  border-radius: 8px;
-  font-size: 20px;
+  border-radius: 9px;
+  font-size: 21px;
+  font-weight: 500;
   line-height: 1;
   padding-bottom: 2px;
   cursor: pointer;
-  opacity: 0.85;
+  opacity: 0.88;
   touch-action: manipulation;
-  transition: background 0.12s ease, opacity 0.12s ease;
+  transition: background 0.14s ease, opacity 0.14s ease, transform 0.12s ease;
 }
 
 .so-phone-back:hover,
 .so-phone-back:focus-visible {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--so-surface-strong);
   opacity: 1;
   outline: none;
+}
+
+.so-phone-back:active {
+  transform: translateX(-1px) scale(0.94);
 }
 
 .so-phone-status-title {
   flex: 1;
   min-width: 0;
-  font-weight: 600;
+  font-weight: 650;
+  letter-spacing: 0.01em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.so-phone-clock {
-  font-variant-numeric: tabular-nums;
-  opacity: 0.75;
+.so-phone-indicators {
+  opacity: 0.78;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
-/* 右上角固定关闭键：收起手机壳（App 会先 unmount） */
+.so-phone-clock {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  opacity: 0.82;
+}
+
 .so-phone-close {
   display: flex;
   align-items: center;
   justify-content: center;
   min-width: 30px;
   height: 26px;
-  border-radius: 8px;
+  border-radius: 9px;
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
-  opacity: 0.85;
+  opacity: 0.82;
   touch-action: manipulation;
-  transition: background 0.12s ease, opacity 0.12s ease;
+  transition: background 0.14s ease, opacity 0.14s ease;
 }
 
 .so-phone-close:hover,
 .so-phone-close:focus-visible {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--so-surface-strong);
   opacity: 1;
   outline: none;
 }
 
-/* Keep visual layout unchanged; the targets end at the status bar bottom, above app controls. */
+/* 保持 44×44 无障碍触控热区且不向下侵入 App 内容区 */
 .so-phone-back,
 .so-phone-close { position: relative; z-index: 1; }
 .so-phone-back::after,
@@ -140,68 +310,404 @@
 .so-phone-back::after { left: -7px; }
 .so-phone-close::after { right: -7px; }
 
-/* 屏幕 */
-.so-phone-screen {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 10px 14px;
-  color: rgba(255, 255, 255, 0.92);
-}
-
-/* 底部 Home 栏：容纳圆形 Home 键 */
-.so-phone-homebar {
+/* 灵动通知胶囊 */
+.so-phone-island {
+  position: absolute;
+  top: 40px;
+  left: 16px;
+  right: 16px;
+  z-index: 40;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 5px 0 7px;
+  gap: 8px;
+  min-height: 36px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(14, 15, 22, 0.92);
+  color: #f8fafc;
+  font-size: 12px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(16px);
+  cursor: pointer;
+  animation: soIslandDrop 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.so-phone-island[hidden] {
+  display: none !important;
+}
+
+.so-phone-island-icon {
+  font-size: 14px;
   flex-shrink: 0;
 }
 
-/* 圆形 Home 键：44×44 命中区（触屏最低可点标准），只负责返回主屏 */
+.so-phone-island-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+@keyframes soIslandDrop {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+/* ==================== 屏幕与现代滚动条 ==================== */
+
+.so-phone-screen {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 10px 14px 12px;
+  color: var(--so-text);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(160, 174, 192, 0.35) transparent;
+}
+
+@supports not (scrollbar-width: thin) {
+  .so-phone-screen::-webkit-scrollbar {
+    width: 5px;
+  }
+  .so-phone-screen::-webkit-scrollbar-thumb {
+    background: rgba(160, 174, 192, 0.35);
+    border-radius: 999px;
+  }
+}
+
+/* 方向性页面切换动效（仅合成层属性 transform/opacity） */
+.so-anim-enter {
+  animation: soAppEnter 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.so-anim-home {
+  animation: soHomeSettle 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes soAppEnter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes soHomeSettle {
+  from {
+    opacity: 0.7;
+    transform: scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ==================== 底部手势 Home 指示条 ==================== */
+
+.so-phone-homebar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 0 4px;
+  background: var(--so-status-bg);
+  backdrop-filter: blur(16px) saturate(140%);
+  border-radius: 0 0 31px 31px;
+  flex-shrink: 0;
+}
+
+/* 保持 ≥44px 触控热区，视觉呈现为灵动的现代手势横条 */
 .so-phone-homebtn {
-  width: 44px;
+  position: relative;
+  width: 124px;
   height: 44px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.45);
-  background: rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
   box-sizing: border-box;
   cursor: pointer;
   touch-action: manipulation;
-  transition: background 0.12s ease, border-color 0.12s ease, transform 0.1s ease;
 }
 
-.so-phone-homebtn:hover,
+.so-phone-homebtn::before {
+  content: '';
+  width: 96px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.38;
+  transition: width 0.16s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.16s ease, transform 0.12s ease;
+}
+
+.so-phone-homebtn:hover::before,
+.so-phone-homebtn:focus-visible::before {
+  width: 112px;
+  opacity: 0.82;
+}
+
 .so-phone-homebtn:focus-visible {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.75);
+  outline: 2px solid var(--so-accent);
+  outline-offset: -4px;
+}
+
+.so-phone-homebtn:active::before {
+  transform: scaleX(0.92) scaleY(1.15);
+  opacity: 0.95;
+}
+
+/* ==================== 主屏「今日风物」世界卡片 ==================== */
+
+.so-phone-world {
+  margin: 2px 0 10px;
+  padding: 11px 12px;
+  border-radius: 18px;
+  border: 1px solid var(--so-border);
+  background: var(--so-surface);
+  backdrop-filter: blur(14px) saturate(135%);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+}
+
+.so-phone-world[hidden] {
+  display: none !important;
+}
+
+.so-phone-world-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.so-phone-world-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid var(--so-border);
+  flex-shrink: 0;
+}
+
+.so-phone-world-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.so-phone-world-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.so-phone-world-title strong {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.so-phone-world-pill {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--so-accent-bg);
+  color: var(--so-accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.so-phone-world-sub {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--so-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.so-phone-world-note {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--so-border);
+  font-size: 11.5px;
+  color: var(--so-text);
+  opacity: 0.9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.so-phone-world-Quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.so-phone-world-chip {
+  appearance: none;
+  padding: 4px 9px;
+  min-height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--so-border);
+  background: var(--so-surface-strong);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.14s ease, transform 0.1s ease;
+}
+
+.so-phone-world-chip:hover {
+  background: var(--so-accent-bg);
+}
+
+.so-phone-world-chip:active {
+  transform: scale(0.95);
+}
+
+/* ==================== Home 屏 App 栅格与专属琉璃图标 ==================== */
+
+.so-phone-home-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 13px 8px;
+  padding: 6px 2px;
+}
+
+.so-phone-screen-wallpaper {
+  background: transparent;
+}
+
+.so-phone-screen-wallpaper .so-phone-app-label {
+  color: #fff;
+  opacity: 0.96;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
+}
+
+.so-phone-app-glyph img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+.so-phone-app-icon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  border-radius: 14px;
+  padding: 4px 2px;
+  transition: background 0.14s ease, transform 0.14s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.so-phone-app-icon:hover,
+.so-phone-app-icon:focus-visible {
+  background: var(--so-surface-strong);
   outline: none;
 }
 
-.so-phone-homebtn:active {
+.so-phone-app-icon:active {
   transform: scale(0.92);
 }
 
-/* Home 屏 App 栅格 */
+.so-phone-app-glyph {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 25px;
+  border-radius: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05));
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
+/* 13 款内置 App 专属微渐变底色，一眼可辨 */
+.so-phone-app-icon[data-app-id='sprites'] .so-phone-app-glyph { background: linear-gradient(145deg, #9d5be0, #61359c); }
+.so-phone-app-icon[data-app-id='gallery'] .so-phone-app-glyph { background: linear-gradient(145deg, #3ea79d, #236863); }
+.so-phone-app-icon[data-app-id='butler'] .so-phone-app-glyph { background: linear-gradient(145deg, #c98f3f, #82561c); }
+.so-phone-app-icon[data-app-id='mvu'] .so-phone-app-glyph { background: linear-gradient(145deg, #4b82d6, #294e8a); }
+.so-phone-app-icon[data-app-id='newvar'] .so-phone-app-glyph { background: linear-gradient(145deg, #5d6ce2, #36419c); }
+.so-phone-app-icon[data-app-id='api'] .so-phone-app-glyph { background: linear-gradient(145deg, #3a9cd8, #1f608d); }
+.so-phone-app-icon[data-app-id='renderer'] .so-phone-app-glyph { background: linear-gradient(145deg, #d65b88, #8e2e53); }
+.so-phone-app-icon[data-app-id='cloud-export'] .so-phone-app-glyph { background: linear-gradient(145deg, #5a9e6f, #336643); }
+.so-phone-app-icon[data-app-id='wechat-sister'] .so-phone-app-glyph { background: linear-gradient(145deg, #2ec26a, #12803e); }
+.so-phone-app-icon[data-app-id='theater'] .so-phone-app-glyph { background: linear-gradient(145deg, #b856b0, #732c73); }
+.so-phone-app-icon[data-app-id='story-state'] .so-phone-app-glyph { background: linear-gradient(145deg, #3290a6, #1d5768); }
+.so-phone-app-icon[data-app-id='chronicle'] .so-phone-app-glyph { background: linear-gradient(145deg, #c28642, #7d5020); }
+.so-phone-app-icon[data-app-id='appearance'] .so-phone-app-glyph { background: linear-gradient(145deg, #e06d53, #963c2c); }
+
+.so-phone-icon-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #e5484d;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.so-phone-app-label {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.9;
+  max-width: 66px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 当前角色折叠概览卡 */
 .so-phone-role {
-  margin: 14px 0 0;
+  margin: 10px 0 0;
   padding: 10px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--so-border);
+  border-radius: 16px;
+  background: var(--so-surface);
+  backdrop-filter: blur(12px);
   overflow-wrap: anywhere;
 }
 .so-phone-role > summary { cursor: pointer; list-style: none; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 24px; }
 .so-phone-role > summary::-webkit-details-marker { display: none; }
-.so-phone-role > summary::after { content: '⌄'; font-size: 16px; }
+.so-phone-role > summary::after { content: '⌄'; font-size: 16px; opacity: 0.75; }
 .so-phone-role[open] > summary::after { content: '⌃'; }
 .so-phone-role > summary .so-phone-role-eyebrow { margin: 0; letter-spacing: normal; }
 .so-phone-role > summary .so-phone-role-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .so-phone-role > summary .so-phone-role-subtitle { display: none; }
 .so-phone-role-actions { margin-top: 8px; }
-.so-phone-role-eyebrow { font-size: 10px; letter-spacing: 0.12em; color: #a9cbbd; margin-bottom: 5px; }
-.so-phone-role-title { display: block; font-size: 18px; line-height: 1.3; }
-.so-phone-role-subtitle { font-size: 11px; color: #c2c6cc; margin: 4px 0 8px; }
+.so-phone-role-eyebrow { font-size: 10.5px; font-weight: 600; color: var(--so-accent); margin-bottom: 5px; }
+.so-phone-role-title { display: block; font-size: 17px; line-height: 1.3; }
+.so-phone-role-subtitle { font-size: 11px; color: var(--so-text-muted); margin: 4px 0 8px; }
 .so-phone-role-action {
   display: flex;
   align-items: center;
@@ -212,7 +718,7 @@
   padding: 7px 0;
   background: transparent;
   border: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  border-top: 1px solid var(--so-border);
   color: inherit;
   font: inherit;
   font-size: 12px;
@@ -220,69 +726,95 @@
   cursor: pointer;
 }
 .so-phone-role-action > span:first-child { flex: 0 0 auto; }
-.so-phone-role-action > span:last-child { text-align: right; color: #c2c6cc; font-size: 11px; }
-.so-phone-role-action:hover { background: rgba(255, 255, 255, 0.05); }
-.so-phone-role-action:focus-visible { outline: 2px solid #a9cbbd; outline-offset: 2px; border-radius: 3px; }
+.so-phone-role-action > span:last-child { text-align: right; color: var(--so-text-muted); font-size: 11px; }
+.so-phone-role-action:hover { background: var(--so-surface-strong); }
+.so-phone-role-action:focus-visible { outline: 2px solid var(--so-accent); outline-offset: 2px; border-radius: 4px; }
 
-.so-phone-home-grid {
+/* 底部磨砂常用叙事 Dock（margin-top: auto 沉底贴近手势横条） */
+.so-phone-role {
+  margin-bottom: 12px;
+}
+.so-phone-dock {
+  margin-top: auto;
+  padding: 8px 8px 6px;
+  margin-inline: 2px;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px 8px;
-  padding: 8px 2px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  border-radius: 22px;
+  border: 1px solid var(--so-border);
+  background: var(--so-dock-bg);
+  backdrop-filter: blur(18px) saturate(150%);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.22);
 }
 
-.so-phone-screen-wallpaper {
-  background-image: linear-gradient(180deg, rgba(0,0,0,.3), rgba(0,0,0,.7)), var(--so-wallpaper);
-  background-size: cover;
-  background-position: center;
-}
-.so-phone-screen-wallpaper .so-phone-app-label { opacity: 1; text-shadow: 0 1px 3px #000; }
-.so-phone-app-glyph img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
-
-.so-phone-app-icon {
+.so-phone-dock-btn {
+  position: relative;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
-  cursor: pointer;
-  border-radius: 12px;
+  gap: 3px;
   padding: 4px 2px;
-  transition: background 0.12s ease, transform 0.1s ease;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: transform 0.14s cubic-bezier(0.22, 1, 0.36, 1), background 0.14s ease;
 }
 
-.so-phone-app-icon:hover,
-.so-phone-app-icon:focus-visible {
-  background: rgba(255, 255, 255, 0.08);
+.so-phone-dock-btn:hover,
+.so-phone-dock-btn:focus-visible {
+  background: var(--so-surface-strong);
   outline: none;
 }
 
-.so-phone-app-icon:active {
-  transform: scale(0.94);
+.so-phone-dock-btn:active {
+  transform: scale(0.91);
 }
 
-.so-phone-app-glyph {
-  width: 52px;
-  height: 52px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 26px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: linear-gradient(150deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+.so-phone-dock-btn.has-unread::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 12px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e5484d;
 }
 
-.so-phone-app-label {
-  font-size: 11px;
-  opacity: 0.85;
-  max-width: 64px;
+.so-phone-dock-glyph {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  background: var(--so-surface-strong);
+  border: 1px solid var(--so-border);
+  overflow: hidden;
+}
+
+.so-phone-dock-glyph img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.so-phone-dock-btn small {
+  font-size: 10px;
+  opacity: 0.88;
+  max-width: 58px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* App 页面 */
+/* ==================== App 页面通用控件与胶囊开关 ==================== */
+
 .so-phone-app-container {
   display: flex;
   flex-direction: column;
@@ -291,7 +823,7 @@
 
 .so-phone-app-error {
   padding: 14px;
-  border-radius: 10px;
+  border-radius: 12px;
   background: rgba(255, 100, 100, 0.15);
   border: 1px solid rgba(255, 100, 100, 0.35);
   font-size: 13px;
@@ -301,13 +833,12 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
+  padding: 11px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--so-border);
+  background: var(--so-surface);
 }
 
-/* 折叠分区：details 不吃 flex 布局，标题（summary）常显、内容默认收起 */
 .so-app-fold {
   display: block;
 }
@@ -343,7 +874,7 @@
 
 .so-app-desc {
   font-size: 12px;
-  opacity: 0.75;
+  opacity: 0.78;
   line-height: 1.55;
 }
 
@@ -352,9 +883,9 @@
   width: 100%;
   text-align: center;
   box-sizing: border-box;
+  border-radius: 10px;
 }
 
-/* The host's .menu_button display rule otherwise overrides native [hidden]. */
 .so-app-btn[hidden] {
   display: none;
 }
@@ -362,12 +893,51 @@
 .so-app-toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   font-size: 13px;
   margin: 2px 0;
+  cursor: pointer;
 }
 
-/* 数字输入行：标签左、输入框右靠 */
+/* 现代 Mini-OS 拨动胶囊开关（保持原生 checkbox 可访问性与测试兼容） */
+.so-app-toggle input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 36px;
+  height: 20px;
+  min-height: 20px;
+  margin: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(120, 130, 150, 0.28);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.so-app-toggle input[type='checkbox']::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.so-app-toggle input[type='checkbox']:checked {
+  background: var(--so-accent, #5b9cff);
+  border-color: transparent;
+}
+
+.so-app-toggle input[type='checkbox']:checked::after {
+  transform: translateX(16px);
+}
+
 .so-app-toggle .so-app-num {
   margin-left: auto;
   max-width: 84px;
@@ -411,14 +981,12 @@
   box-sizing: border-box;
 }
 
-/* 文本/密码输入行（标题在上，输入框在下） */
 .so-app-field {
   display: flex;
   flex-direction: column;
   gap: 5px;
 }
 
-/* ⓘ 说明行：左侧原控件占满，右侧 ⓘ 徽标；点开后下方展示行内说明块 */
 .so-app-hintwrap {
   display: flex;
   flex-direction: column;
@@ -441,876 +1009,211 @@
   padding: 0;
   line-height: 1;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--so-border);
+  background: var(--so-surface);
+  color: inherit;
+  opacity: 0.78;
   font-size: 11px;
   cursor: help;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.12s ease, border-color 0.12s ease;
+  transition: opacity 0.12s ease, border-color 0.12s ease;
 }
 .so-app-hint-badge:hover,
 .so-app-hint-badge:focus-visible,
 .so-app-hint-badge-on {
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.6);
+  opacity: 1;
+  border-color: var(--so-accent);
   outline: none;
 }
 .so-app-hint {
   font-size: 12px;
-  opacity: 0.78;
+  opacity: 0.82;
   line-height: 1.5;
   padding: 6px 8px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  border-left: 2px solid rgba(255, 255, 255, 0.28);
+  background: var(--so-surface);
+  border-left: 2px solid var(--so-accent);
 }
 
-/* —— 管家 2.0：可解释体检、事务恢复与扩展排障 —— */
-.so-butler-app {
+/* ==================== 立绘 App 实时试衣舞台 ==================== */
+
+.so-sprite-stage {
+  margin-top: 4px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--so-border);
+  background: rgba(0, 0, 0, 0.16);
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.so-butler-hero {
-  border-left: 3px solid rgba(93, 197, 143, 0.72);
-}
-
-.so-butler-guide {
-  border-left: 3px solid rgba(105, 166, 255, 0.68);
-}
-
-.so-butler-guide-steps {
-  color: rgba(255, 255, 255, 0.94);
-  font-size: 12.5px;
-  font-weight: 650;
-  line-height: 1.7;
-}
-
-.so-butler-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.so-butler-summary-item {
+.so-sprite-stage-head {
   display: flex;
-  flex-direction: column;
-  min-height: 46px;
-  padding: 7px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
-  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11.5px;
 }
 
-.so-butler-summary-item small {
-  color: #b8b8bf;
-  font-size: 10.5px;
+.so-sprite-stage-title {
+  font-weight: 600;
 }
 
-.so-butler-summary-item strong {
-  margin-top: 2px;
+.so-sprite-stage-sub {
+  opacity: 0.72;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.94);
-  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.so-butler-text,
-.so-butler-lead,
-.so-butler-muted,
-.so-butler-alert {
-  font-size: 12px;
-  line-height: 1.55;
-  overflow-wrap: anywhere;
-}
-
-.so-butler-lead {
-  padding: 8px 10px;
-  border-left: 2px solid rgba(105, 166, 255, 0.68);
-  background: rgba(105, 166, 255, 0.07);
-}
-
-.so-butler-muted {
-  color: rgba(255, 255, 255, 0.56);
-}
-
-.so-butler-alert {
-  color: #ffc9c9;
-}
-
-.so-butler-section-title,
-.so-butler-modal-title {
-  color: rgba(255, 255, 255, 0.96);
-  font-weight: 700;
-}
-
-.so-butler-modal-title {
-  margin: 0 0 8px;
-  font-size: 18px;
-}
-
-.so-butler-section-title {
-  margin: 10px 0 4px;
-  font-size: 13px;
-}
-
-.so-butler-finding {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.025);
-  overflow: hidden;
-}
-
-.so-butler-finding + .so-butler-finding {
-  margin-top: 6px;
-}
-
-.so-butler-finding > summary {
+.so-sprite-stage-main {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 10px;
   align-items: start;
-  gap: 7px;
-  padding: 8px;
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1.45;
-  list-style: none;
 }
 
-.so-butler-finding > summary::-webkit-details-marker {
-  display: none;
+.so-sprite-stage-preview {
+  width: 84px;
+  height: 116px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--so-border);
+  background: rgba(0, 0, 0, 0.25);
 }
 
-.so-butler-finding > summary::after {
-  content: '›';
-  grid-column: 2;
-  justify-self: end;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.so-butler-finding[open] > summary::after {
-  transform: rotate(90deg);
-}
-
-.so-butler-layer {
-  padding: 2px 5px;
-  border: 1px solid rgba(105, 166, 255, 0.35);
-  border-radius: 4px;
-  color: #b9d7ff;
-  font-size: 10px;
-  white-space: nowrap;
-}
-
-.so-butler-severity-risk {
-  border-left: 3px solid rgba(255, 112, 112, 0.75);
-}
-
-.so-butler-severity-suggestion {
-  border-left: 3px solid rgba(255, 194, 102, 0.72);
-}
-
-.so-butler-severity-info {
-  border-left: 3px solid rgba(105, 166, 255, 0.62);
-}
-
-.so-butler-finding-body {
-  padding: 0 8px 8px;
-}
-
-.so-butler-explanation-row {
-  display: grid;
-  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
-  gap: 8px;
-  padding: 6px 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-  font-size: 11.5px;
-  line-height: 1.5;
-}
-
-.so-butler-explanation-row strong {
-  color: rgba(255, 255, 255, 0.68);
-  font-size: 11px;
-}
-
-/*
- * 管家操作区：宁可掉成一列，也不要把两列压窄。
- *
- * 原来是 repeat(2, minmax(0, 1fr))，轨道下限为 0，配合下面按钮的
- * `min-width: 0` + `white-space: normal`，窄屏上「记忆与服务器设置建议」这种长标签
- * 会在列里逐字折行。中文可在任意字符间断行，所以轨道越窄它折得越碎，最终一列一个字。
- * auto-fit + 9em 下限的意思是：塞不下两列可读宽度时自动变一列，而不是硬挤成两列。
- */
-.so-butler-actions,
-.so-butler-modal-actions {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9em, 1fr));
-  gap: 6px;
-}
-
-.so-butler-modal-actions {
-  grid-template-columns: 1fr;
-}
-
-/*
- * 这里保留 white-space: normal 是故意的：两列布局下允许长标签折到第二行，
- * 比强行 nowrap 溢出好。但不能再给 min-width: 0——那会让轨道的 9em 下限失效。
- */
-.so-butler-actions .so-app-btn,
-.so-butler-modal-actions .so-app-btn {
-  margin: 0;
-  white-space: normal;
-}
-
-.so-butler-primary-action {
+.so-sprite-stage-preview img {
   width: 100%;
-  min-height: 42px;
-  margin-top: 10px;
-  border-color: rgba(74, 189, 126, 0.72);
-  background: rgba(74, 189, 126, 0.2);
-  color: #e8fff2;
-  font-weight: 700;
+  height: 100%;
+  object-fit: cover;
 }
 
-.so-butler-notice {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
-  padding: 8px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 6px;
-  background: rgba(20, 20, 25, 0.96);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.so-butler-notice-success {
-  border-color: rgba(74, 189, 126, 0.58);
-}
-
-.so-butler-notice-error {
-  border-color: rgba(255, 112, 112, 0.58);
-  color: #ffc9c9;
-}
-
-.so-butler-pending {
-  border-color: rgba(255, 194, 102, 0.5);
-}
-
-.so-butler-kv {
-  display: grid;
-  grid-template-columns: minmax(90px, 0.45fr) minmax(0, 1fr);
-  gap: 8px;
-  padding: 6px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-  font-size: 12px;
-}
-
-.so-butler-kv strong {
-  overflow-wrap: anywhere;
-  text-align: right;
-}
-
-.so-butler-comparison-table {
-  display: grid;
+.so-sprite-stage-controls {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
-  margin: 8px 0;
+  min-width: 0;
 }
 
-.so-butler-comparison-row {
-  display: grid;
-  grid-template-columns: minmax(96px, 0.4fr) minmax(0, 1fr);
-  gap: 3px 10px;
-  padding: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.025);
-  font-size: 12px;
+.so-sprite-pills,
+.so-sprite-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
 }
 
-.so-butler-comparison-values {
-  overflow-wrap: anywhere;
-}
-
-.so-butler-comparison-row small {
-  grid-column: 1 / -1;
-  line-height: 1.45;
-}
-
-.so-butler-metric-block pre {
-  max-height: 220px;
-  margin: 5px 0 10px;
-  padding: 8px;
-  overflow: auto;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.2);
-  color: rgba(255, 255, 255, 0.76);
-  font: 11px/1.45 var(--monoFontFamily, ui-monospace, monospace);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.so-butler-system-advice-list {
-  display: grid;
-  gap: 6px;
-  margin: 7px 0 14px;
-}
-
-.so-butler-system-advice {
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.025);
-}
-
-.so-butler-system-advice > summary {
-  padding: 8px;
+.so-sprite-pill,
+.so-sprite-chip,
+.so-sprite-copy-btn {
+  appearance: none;
+  padding: 3px 8px;
+  min-height: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--so-border);
+  background: var(--so-surface);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
   cursor: pointer;
-  overflow-wrap: anywhere;
-  font-size: 12px;
+}
+
+.so-sprite-pill.is-active,
+.so-sprite-chip.is-active {
+  background: var(--so-accent-bg);
+  border-color: var(--so-accent);
   font-weight: 600;
 }
 
-.so-butler-system-advice-body {
-  padding: 0 8px 8px;
-}
+/* ==================== 内嵌式「幕后 AI 中枢」卡片 ==================== */
 
-.so-butler-extension-list {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  margin-bottom: 8px;
-}
-
-.so-butler-extension-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 6px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.so-butler-extension-row input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-}
-
-.so-butler-extension-name {
-  min-width: 0;
-  overflow-wrap: anywhere;
+.so-ai-hub {
+  margin-top: 8px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px dashed rgba(130, 145, 165, 0.45);
+  background: rgba(255, 255, 255, 0.55);
+  color: #24303c;
   font-size: 12px;
 }
 
-.so-butler-extension-row small {
-  max-width: 120px;
-  text-align: right;
-}
-
-@media (max-width: 520px) {
-  .so-butler-explanation-row,
-  .so-butler-kv,
-  .so-butler-comparison-row {
-    grid-template-columns: 1fr;
-    gap: 2px;
-  }
-
-  .so-butler-comparison-row small {
-    grid-column: 1;
-  }
-
-  .so-butler-kv strong {
-    text-align: left;
-  }
-
-  .so-butler-actions {
-    grid-template-columns: 1fr;
-  }
-
-  .so-butler-extension-row {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .so-butler-extension-row small {
-    grid-column: 2;
-    max-width: none;
-    text-align: left;
-  }
-}
-
-.so-app-sprite-strip {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-}
-
-.so-app-sprite-strip img {
-  width: 100%;
-  aspect-ratio: 1;
-  object-fit: cover;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+.so-ai-hub-summary {
   cursor: pointer;
-  transition: transform 0.1s ease, border-color 0.12s ease;
+  font-weight: 600;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
 }
 
-.so-app-sprite-strip img:hover {
-  transform: scale(1.04);
-  border-color: rgba(255, 255, 255, 0.4);
+.so-ai-hub-badge.is-ready {
+  color: #1c6b45;
 }
 
-/* Match the JS fallback; inline layout also follows visual viewport zoom/panning. */
+.so-ai-hub-body {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.so-ai-hub-hint {
+  margin: 0;
+  font-size: 11.5px;
+  opacity: 0.8;
+}
+
+.so-ai-hub-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11.5px;
+}
+
+.so-ai-hub-field input {
+  width: 100%;
+  padding: 6px 8px;
+  min-height: 36px;
+  border-radius: 7px;
+  border: 1px solid rgba(120, 135, 150, 0.45);
+  background: #fff;
+  color: #1e293b;
+}
+
+.so-ai-hub-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.so-ai-hub-feedback {
+  margin: 0;
+  font-size: 11.5px;
+  color: #1c6b45;
+}
+
+.so-ai-hub-feedback:empty {
+  display: none;
+}
+
 @media (min-width: 768px) {
   .so-phone-shell {
     width: min(380px, calc(100vw - 16px));
   }
 }
 
-/* —— 变量 App（vm-*）：楼层变量树状卡片 —— */
-.vm-head {
-  gap: 6px;
-}
-.vm-statusrow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.vm-status {
-  flex: 1;
-  min-width: 0;
-}
-.vm-refresh {
-  flex-shrink: 0;
-  padding: 3px 12px;
-  font-size: 12px;
-}
-
-.vm-tree {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-/* 分组：折叠标题 + 缩进子树 */
-.vm-group {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.03);
-}
-.vm-group-title {
-  font-size: 12.5px;
-  opacity: 0.9;
-}
-.vm-group-body {
-  gap: 5px;
-  padding-left: 8px;
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
-  margin-left: 2px;
-}
-
-/* 叶子卡片：左主体（键+值+描述）可点编辑，右侧删除 */
-.vm-leaf {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 7px 9px;
-  border-radius: 9px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-}
-.vm-leaf-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 8px;
-  cursor: pointer;
-  border-radius: 6px;
-}
-.vm-leaf-main:focus-visible {
-  outline: 1px solid rgba(255, 255, 255, 0.4);
-  outline-offset: 2px;
-}
-.vm-key {
-  font-size: 12.5px;
-  font-weight: 600;
-  opacity: 0.95;
-}
-.vm-val {
-  font-size: 12.5px;
-  opacity: 0.82;
-  word-break: break-word;
-  font-family: var(--monoFontFamily, ui-monospace, monospace);
-}
-.vm-desc {
-  flex-basis: 100%;
-  font-size: 11px;
-  opacity: 0.55;
-  line-height: 1.45;
-}
-.vm-del {
-  flex-shrink: 0;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  line-height: 1;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 120, 120, 0.25);
-  background: rgba(255, 100, 100, 0.06);
-  color: rgba(255, 150, 150, 0.8);
-  font-size: 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
-}
-.vm-del:hover,
-.vm-del:focus-visible {
-  color: #fff;
-  border-color: rgba(255, 120, 120, 0.6);
-  background: rgba(255, 100, 100, 0.2);
-  outline: none;
-}
-
-/* 变化高亮徽标：绿涨 / 红跌 / 改 / 新 */
-.vm-badge {
-  flex-shrink: 0;
-  padding: 0 6px;
-  border-radius: 999px;
-  font-size: 10.5px;
-  font-weight: 700;
-  line-height: 17px;
-  font-family: var(--monoFontFamily, ui-monospace, monospace);
-}
-.vm-badge-inc {
-  color: #7ee2a8;
-  background: rgba(80, 220, 130, 0.15);
-  border: 1px solid rgba(80, 220, 130, 0.35);
-}
-.vm-badge-dec {
-  color: #ff9a9a;
-  background: rgba(255, 100, 100, 0.15);
-  border: 1px solid rgba(255, 100, 100, 0.35);
-}
-.vm-badge-changed,
-.vm-badge-added {
-  color: #ffd27a;
-  background: rgba(255, 190, 90, 0.14);
-  border: 1px solid rgba(255, 190, 90, 0.32);
-}
-
-/* 编辑态叶子 */
-.vm-editing {
-  flex-direction: column;
-  align-items: stretch;
-  border-color: rgba(255, 255, 255, 0.25);
-}
-.vm-edit-title {
-  font-size: 12.5px;
-}
-.vm-edit-input {
-  resize: vertical;
-  min-height: 44px;
-}
-.vm-actions {
-  display: flex;
-  gap: 8px;
-}
-.vm-act {
-  flex: 1;
-  padding: 4px 10px;
-  font-size: 12px;
-  text-align: center;
-}
-.vm-act-ghost {
-  opacity: 0.7;
-}
-.vm-add-err {
-  color: rgba(255, 150, 150, 0.9);
-}
-
-/* —— 新变量 App（nv-*） —— */
-.nv-box {
-  display: flex;
-  flex-direction: column;
-}
-.nv-pre {
-  font-family: var(--monoFontFamily, ui-monospace, monospace);
-  font-size: 11px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-all;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  padding: 8px;
-  max-height: 240px;
-  overflow: auto;
-}
-.nv-log-line {
-  font-family: var(--monoFontFamily, ui-monospace, monospace);
-  opacity: 0.85;
-}
-/* —— 变量设计弹窗布局（响应式：PC 网格/双栏，窄屏自动单列堆叠） —— */
-
-/* 模板库：卡片网格，PC 一行多张 */
-.nv-tpl-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 8px;
-}
-.nv-tpl-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
-}
-.nv-tpl-desc {
-  flex: 1;
-  opacity: 0.8;
-}
-.nv-tpl-actions {
-  display: flex;
-  gap: 6px;
-}
-.nv-tpl-actions .vm-act {
-  flex: 1;
-  padding: 3px 10px;
-  font-size: 12px;
-}
-.nv-tpl-actions .nv-tpl-del {
-  flex: 0 0 auto;
-}
-/* 存为自定义模板：输入框 + 按钮一行 */
-.nv-tpl-save {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-top: 8px;
-}
-.nv-tpl-save .so-app-input {
-  flex: 1;
-  width: auto;
-}
-.nv-tpl-save .vm-act {
-  flex: 0 0 auto;
-  padding: 4px 14px;
-  font-size: 12px;
-}
-
-/* 变量定义：PC 双栏（左列表右编辑）；编辑表单跟随点击项 */
-.nv-defs-layout {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-}
-.nv-defs-list {
-  flex: 1 1 55%;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.nv-defs-editor {
-  flex: 1 1 45%;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  position: sticky;
-  top: 0;
-}
-.nv-def-selected {
-  border-color: rgba(255, 255, 255, 0.45);
-  background: rgba(255, 255, 255, 0.08);
-}
-
-/* 窄屏（移动端）：双栏退化为上下堆叠（点击列表后 JS 会滚动到表单） */
-@media (max-width: 720px) {
-  .nv-defs-layout {
-    flex-direction: column;
-  }
-  .nv-defs-list,
-  .nv-defs-editor {
-    flex: none;
-    width: 100%;
-    position: static;
-  }
-}
-
-/* ============ 「API」App（stapi-）：站点快速切换行 / 状态点 / 模型选择覆盖层 ============ */
-
-/* 手机页站点行：整行可点即切换，使用中高亮 + ✓ */
-.stapi-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-  cursor: pointer;
-}
-.stapi-row:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-.stapi-row:focus-visible {
-  outline: 1px solid rgba(255, 255, 255, 0.4);
-  outline-offset: 2px;
-}
-.stapi-row-on {
-  border-color: rgba(130, 200, 255, 0.55);
-  background: rgba(130, 200, 255, 0.08);
-}
-/* 切换进行中：整列表降透明并锁点击（busy 守卫之外的视觉反馈） */
-.stapi-row-busy {
-  opacity: 0.55;
-  pointer-events: none;
-}
-/* 管理弹窗站点行的排序按钮：沿用 vm-del 的几何，中性配色区别于删除 */
-.stapi-move {
-  border-color: rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.65);
-}
-.stapi-move:hover,
-.stapi-move:focus-visible {
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.45);
-  background: rgba(255, 255, 255, 0.14);
-}
-.stapi-row-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.stapi-row-name {
-  font-size: 13px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.stapi-row-sub {
-  font-size: 11.5px;
-  opacity: 0.65;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.stapi-row-mark {
-  flex: none;
-  opacity: 0.8;
-}
-button.stapi-row .stapi-row-name,
-button.stapi-row .stapi-row-sub {
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-button.stapi-row .stapi-row-mark { max-width: 6em; overflow-wrap: anywhere; }
-button.stapi-row:disabled { cursor: wait; opacity: 0.65; }
-[data-api-legacy] > summary { min-height: 44px; padding-block: 12px; cursor: pointer; }
-
-/* 连接状态点（当前连接卡） */
-.stapi-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 6px;
-  border-radius: 50%;
-  background: #d05c5c;
-  vertical-align: middle;
-}
-.stapi-dot-on {
-  background: #57c98a;
-}
-
-/* 模型选择覆盖层：挂在管理弹窗 .so-manager（relative）内部 */
-.stapi-picker {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
-  border-radius: 12px;
-}
-.stapi-picker-box {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: min(480px, 92%);
-  max-height: 72%;
-  padding: 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(22, 22, 28, 0.97);
-}
-.stapi-picker-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.stapi-picker-list {
-  overflow: auto;
-  min-height: 80px;
-}
-.stapi-picker-item {
-  padding: 8px 10px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-family: var(--monoFontFamily, ui-monospace, monospace);
-  font-size: 12.5px;
-}
-.stapi-picker-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-.stapi-picker-item:focus-visible {
-  outline: 1px solid rgba(255, 255, 255, 0.4);
-  outline-offset: -1px;
-}
-
-/* ==================== App 全屏弹窗（ctx.openModal，阶段五能力层） ==================== */
+/* ==================== App 全屏弹窗（ctx.openModal） ==================== */
 
 .so-app-modal-backdrop {
   position: fixed;
   inset: 0;
-  /*
-   * 移动端必须用 dvh，inset: 0 不够。
-   *
-   * position: fixed 的包含块是「布局视口」，等于工具栏收起时的那个大视口；100vh 也是同一个
-   * 大值。真正可见的是「视觉视口」（window.innerHeight），地址栏露出时更小。所以 inset: 0
-   * 和 100vh 都会让遮罩比可见区域高一截，里面 align-items: center 居中的盒子随之上下溢出，
-   * 头部的 ✕ 被顶到可见区域上方——遮罩是 fixed，用户滚不动，只能刷新。
-   *
-   * dvh 跟随工具栏显隐变化，取的就是当前可见高度。100vh 留作老内核兜底。
-   */
   height: 100vh;
   height: 100dvh;
-  z-index: 10000; /* 压过手机壳（9999）与悬浮图标（9998） */
+  z-index: 10000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1321,16 +1224,10 @@ button.stapi-row:disabled { cursor: wait; opacity: 0.65; }
   display: flex;
   flex-direction: column;
   width: min(680px, calc(100vw - 16px));
-  /*
-   * 高度上限用 100% 而不是 100vh：backdrop 是 position: fixed; inset: 0，它的高度
-   * 就是真实可见区域。移动端 100vh 含地址栏占的那条，比可见区域高——盒子一旦比
-   * backdrop 高，align-items: center 会让它上下同时溢出，头部（✕ 所在）被顶到可见
-   * 区域上方，用户只能刷新。dvh 作为渐进增强留给不以 backdrop 为父的场景。
-   */
   max-height: 100%;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 12px;
+  border-radius: 14px;
   background: rgba(22, 22, 28, 0.97);
   color: #ddd;
 }
@@ -1339,7 +1236,6 @@ button.stapi-row:disabled { cursor: wait; opacity: 0.65; }
   display: flex;
   justify-content: flex-end;
   padding: 6px;
-  /* 永不压缩：这里是唯一的关闭入口，被挤掉等于把用户关在弹窗里 */
   flex: 0 0 auto;
 }
 
@@ -1369,28 +1265,13 @@ button.stapi-row:disabled { cursor: wait; opacity: 0.65; }
   padding: 0 14px 14px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  /*
-   * flex 项默认 min-height: auto，不会收缩到内容以下——overflow-y: auto 因此不生效，
-   * 长报告会把盒子顶高、连带把头部挤出可见区域。min-height: 0 才让它真的滚动。
-   */
-  /*
-   * flex 项默认 min-height: auto，不会收缩到内容以下。盒子高度是定死的（移动端 100%、
-   * 桌面 max-height），所以缺了这条不是把盒子顶高，而是 overflow-y: auto 根本不生效——
-   * 超出的内容被 .so-app-modal 的 overflow: hidden 裁掉且滚不到。
-   */
   flex: 1 1 auto;
   min-height: 0;
-  /* 滚到边界不要把手机后面的聊天一起带着滚 */
   overscroll-behavior: contain;
 }
 
-/* 手机端全屏（三原则：复杂编辑占满屏） */
 @media (max-width: 600px) {
   .so-app-modal {
-    /*
-     * 100% 撑满 backdrop（fixed; inset: 0），不用 100vw/100vh：
-     * 视口单位在移动端含浏览器工具栏，会让盒子比可见区域大一圈。
-     */
     width: 100%;
     height: 100%;
     border: none;
@@ -1398,112 +1279,7 @@ button.stapi-row:disabled { cursor: wait; opacity: 0.65; }
   }
 }
 
-/* ── 云导出（选择式备份） ─────────────────────────────────────────────── */
-
-/* Two columns leave room for translated labels within the narrow phone shell. */
-.cloud-export-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-}
-.cloud-export-tabs > .so-app-btn {
-  /* Native tabs intentionally do not use the host's .menu_button style/role hooks. */
-  appearance: none;
-  min-width: 0;
-  width: 100%;
-  min-height: 32px;
-  margin: 0;
-  padding: 6px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.2);
-  color: inherit;
-  font: inherit;
-  font-size: 13px;
-  line-height: 1.3;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  cursor: pointer;
-}
-
-/* 当前分类：此前这个类名只挂在 DOM 上，没有任何样式，选中态看不出来 */
-.cloud-export-tabs > .so-app-btn.cloud-export-active {
-  background: rgba(255, 255, 255, 0.16);
-  border-color: rgba(255, 255, 255, 0.4);
-  font-weight: 600;
-}
-
-/* 全选 / 反选 / 清空：一行三格，不再竖排占掉三分之一屏 */
-.cloud-export-bulk {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-}
-.cloud-export-bulk > .so-app-btn {
-  min-width: 0;
-  min-height: 32px;
-  margin: 0;
-  padding: 4px 6px;
-  font-size: 12px;
-  line-height: 1.3;
-  white-space: normal;
-}
-
-/*
- * 角色行的层级：角色卡是一个整体，它的聊天是下一级。
- *
- * 角色名与聊天名此前用的是同一个 .so-app-toggle，字号、缩进、字重全一样，
- * 展开聊天后一眼看不出哪个是角色、哪些是它的聊天。分三层拉开：
- * 卡片框（一个角色一张）→ 角色名（加粗）→ 聊天（缩进 + 左竖线 + 小字号）。
- */
-.cloud-export-character {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.cloud-export-character-name {
-  font-weight: 600;
-}
-
-/* 与角色名的复选框文字左对齐（缩进量 = 复选框宽度 + 间距） */
-.cloud-export-bundle-note {
-  margin-left: 24px;
-  font-size: 11px;
-  opacity: 0.65;
-  line-height: 1.5;
-}
-
-/* 左竖线承担"这些属于上面那个角色"的视觉归属 */
-.cloud-export-chats {
-  margin-left: 10px;
-  padding-left: 10px;
-  border-left: 2px solid rgba(255, 255, 255, 0.12);
-}
-.cloud-export-chats > summary {
-  font-size: 12px;
-  opacity: 0.8;
-}
-.cloud-export-chat {
-  font-size: 12px;
-  padding-top: 2px;
-}
-
-
-/* ==================== 全屏沉浸式 App 支持与界面微动效 ==================== */
-
-.so-phone-indicators {
-  font-size: 10px;
-  opacity: 0.75;
-  letter-spacing: 0.5px;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
+/* ==================== 全屏沉浸式 App 容器支持 ==================== */
 
 .so-phone-screen.so-phone-screen-fullbleed,
 .so-phone-screen:has(.so-phone-app-fullbleed) {
@@ -1523,27 +1299,14 @@ button.stapi-row:disabled { cursor: wait; opacity: 0.65; }
   overflow: hidden !important;
 }
 
-@keyframes wtPulse {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
-}
-
-@keyframes wtSlideUp {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
-}
-
-.so-phone-shell {
-  animation: soPhonePop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes soPhonePop {
-  0% {
-    opacity: 0;
-    transform: scale(0.94);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
+@media (prefers-reduced-motion: reduce) {
+  .so-phone-shell,
+  .so-phone-fab,
+  .so-phone-island,
+  .so-anim-enter,
+  .so-anim-home,
+  .so-app-toggle input[type='checkbox']::after {
+    animation: none !important;
+    transition: none !important;
   }
 }

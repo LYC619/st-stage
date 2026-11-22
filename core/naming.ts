@@ -58,25 +58,6 @@ export interface ParsedFileName {
 }
 
 /**
- * 上传文件名 → { 分组, 图名 }（功能②，旧签名保留给 Web 端）。
- * 按**首个**分隔符（_ - – — 空白）拆「分组/图名」，其余全部保留为图名；
- * 拆不出两段时退回 fallbackGroup + 整名为图名。
- */
-export function parseUploadName(
-  fileName: string,
-  fallbackGroup = '',
-): { group: string; tag: string } {
-  const base = stripExt(fileName)
-  const m = base.match(NAME_SEPARATOR)
-  if (m && m.index !== undefined && m.index > 0) {
-    const group = normalizeTag(base.slice(0, m.index))
-    const tag = normalizeTag(base.slice(m.index + m[0].length))
-    if (group && tag) return { group, tag }
-  }
-  return { group: normalizeTag(fallbackGroup), tag: fileNameToTag(fileName) }
-}
-
-/**
  * 三级文件名解析（八期）：按 _ - – — 空白 分隔，最多拆前两个分隔位置，其余全部保留为图名。
  * - "鸣人-居家服-开心-闭眼.png" → role=鸣人, outfit=居家服, tag=「开心-闭眼」
  * - "鸣人_微笑.png" → role=鸣人, outfit='', tag=微笑
