@@ -43,15 +43,15 @@ export function pendingStory(host: AppHost, lastMessageIndex: number): PendingSt
 
 export function parseChronicle(text: string): ChronicleContent {
   let raw: unknown
-  try { raw = JSON.parse(text) } catch { throw new Error('纪要返回的 JSON 无法解析，请重试。') }
+  try { raw = JSON.parse(text) } catch { throw new Error('幕后 AI 这次整理的纪要格式乱了（JSON 无法解析），再点一次试试。') }
   const content = normalizeContent(raw)
-  if (!content) throw new Error('纪要返回的内容格式不对，请重试。')
+  if (!content) throw new Error('幕后 AI 这次返回的纪要格式不对，再点一次试试。')
   return content
 }
 
 export async function generateChronicle(host: AppHost, pending: PendingStory, previous: ChronicleEntry[], signal: AbortSignal): Promise<ChronicleContent> {
   const config = getStoryAiConfig(host)
-  if (!config) throw new Error('请先在微信设置里连接 AI。')
+  if (!config) throw new Error('请先在下方设置或微信里连上幕后 AI。')
   const today = await storyToday(host)
   signal.throwIfAborted()
   return parseChronicle(await requestChat(config, [{ role: 'system', content: SYSTEM }, { role: 'user', content:

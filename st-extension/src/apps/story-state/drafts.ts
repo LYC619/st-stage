@@ -4,7 +4,7 @@ import { metadataContext, type Item, type Quest, type Skill } from './store'
 function username(): string { const name = metadataContext().name1; return typeof name === 'string' && name ? name : '我' }
 
 export function itemDraft(item: Item): string {
-  return `${username()}使用了"${item.名称}"${item.数量 > 1 ? `（剩余 ×${item.数量}）` : ''}。${item.描述 ? `（道具效果：${item.描述}）` : ''}`
+  return `${username()}使用了"${item.名称}"${item.数量 > 1 ? `（剩余 ×${item.数量 - 1}）` : ''}。${item.描述 ? `（道具效果：${item.描述}）` : ''}`
 }
 
 export function skillDraft(skill: Skill): string {

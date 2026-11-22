@@ -92,7 +92,7 @@ export function createChronicleApp(): PhoneApp {
       remove.onclick = () => {
         const latestEntry = readChronicleData().entries.at(-1)
         const rollbackHint = typeof latestEntry?.startIndex === 'number'
-          ? '删除后会自动回退整理游标，对应楼层可重新整理。'
+          ? '删掉后会自动退回整理进度，那几层对话随时可以重新整理。'
           : '已整理的消息位置保持不变。'
         if (window.confirm(`删除最后一条纪要？${rollbackHint}`)) void controller.deleteLatest()
       }
@@ -117,7 +117,7 @@ export function createChronicleApp(): PhoneApp {
         organize.disabled = !busy && !connected
         status.textContent = connected
           ? (selected === 0 ? state.error : calendar.error)
-          : '请先在微信设置里连接 AI，或在下方设置中直接连接。'
+          : '展开下方「设置」连上幕后 AI（也可沿用微信连接），就能把走过的故事编成纪要与七日风物历啦。'
         remove.disabled = state.busy || !data.entries.length
         aiHubSlot.replaceChildren(renderStoryAiSetupCard(ctx, render))
 
@@ -236,7 +236,7 @@ export function createChronicleApp(): PhoneApp {
             const summary = document.createElement('summary')
             summary.append(
               text('small', 'ch-meta', `${date} · 星期${'日一二三四五六'[parsed.getDay()]} · ${relationToToday(parsed, today)}`),
-              text('strong', '', day ? `${weatherIcon(day.weather)} ${day.event}` : '尚未生成'),
+              text('strong', '', day ? `${weatherIcon(day.weather)} ${day.event}` : '风物待书（点右上角刷新日历）'),
             )
             card.append(summary)
 
@@ -262,7 +262,12 @@ export function createChronicleApp(): PhoneApp {
                 if (ok) {
                   status.textContent = noteInput.value.trim() ? '已记下当日约定。' : '已清除当日约定。'
                   render()
+                } else {
+                  status.textContent = '请先打开一个角色聊天，再记下当日约定。'
                 }
+              }).catch(err => {
+                console.warn('[st-stage] 保存日历约定失败', err)
+                status.textContent = (err as Error).message || '保存约定失败，请稍后重试。'
               })
             }
             noteBox.append(noteInput, saveNoteBtn)
@@ -297,7 +302,7 @@ export function createChronicleApp(): PhoneApp {
         }
 
         if (!data.entries.length) {
-          list.append(text('p', 'ch-empty', '还没有纪要。点击右上角「整理」记录已经发生的故事脉络。'))
+          list.append(text('p', 'ch-empty', '故事卷册还是空白的。聊过几轮后点右上角「整理」，把你们走过的故事记成脉络吧。'))
         }
         for (const entry of [...data.entries].reverse()) {
           const card = document.createElement('details')

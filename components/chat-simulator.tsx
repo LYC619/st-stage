@@ -170,7 +170,7 @@ export function ChatSimulator({
           </div>
           <div>
             <h2 className="text-sm font-semibold text-foreground">{characterName}</h2>
-            <p className="text-xs text-muted-foreground">模拟聊天 · 测试立绘链路</p>
+            <p className="text-xs text-muted-foreground">酒馆初雪夜话 · 实时联动立绘与掌上小手机</p>
           </div>
         </div>
         <button
@@ -196,8 +196,8 @@ export function ChatSimulator({
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
         {messages.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <p className="text-sm text-muted-foreground">发送一条消息，AI 将模拟带 [立绘:xxx] 标签的回复</p>
-            <p className="text-xs text-muted-foreground">也可以点击下方表情按钮直接触发指定立绘</p>
+            <p className="text-sm text-muted-foreground">发一句话聊聊看，角色会带着表情立绘回应你，同时联动右下角小手机</p>
+            <p className="text-xs text-muted-foreground">也可以点下方表情按钮，直接试试立绘切换与多图轮播</p>
           </div>
         )}
         {messages.map((msg) => (

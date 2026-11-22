@@ -82,12 +82,12 @@ export function galleryApp(deps: GalleryAppDeps): PhoneApp {
       hosting.body.append(
         hostIntro,
         hintField(textRow(
-          t('apps.gallery.api_key', 'imgbb API Key（存 ST 设置，明文）'),
+          t('apps.gallery.api_key', 'imgbb API Key（保存在酒馆设置中）'),
           settings.imgbbApiKey,
           t('apps.gallery.key_placeholder', '免费申请：api.imgbb.com'),
           (raw) => ctx.updateSettings({ ...ctx.getSettings(), imgbbApiKey: raw.trim() }),
           'password',
-        ), t('apps.gallery.key_storage_hint', 'Key 明文保存在 ST 扩展设置里（随 ST 服务端 settings.json 落盘），不会写入分享串或导出文件；上传失败时图片仍保留本地，可稍后补传。')),
+        ), t('apps.gallery.key_storage_hint', 'Key 明文保存在你的酒馆设置文件（settings.json）里，不会混进分享串或导出的图包；上传失败时本地图片仍会保留，之后可随时补传。')),
         hintField(autoUploadRow, [
           t('apps.gallery.auto_description', '① 自动直传（imgbb，需要 Key）：上传/替换图片时自动传到 imgbb 并绑定编号，本地图保留作显示保底，直链用于分享串。别人才能看到你分享的图，靠的是这条。'),
           t('apps.gallery.auto_why', '为什么是 imgbb 而不是 catbox：浏览器里只能传 imgbb。catbox 的接口不返回 CORS 头，网页无法直接上传，所以它只能用在下面那条「按编号还原地址」的通道上。'),

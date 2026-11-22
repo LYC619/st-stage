@@ -134,7 +134,7 @@ async function waitForConnection(profile: ApiProfile, timeout = 8000): Promise<C
     await sleep(120)
   }
   if (profile.model && (!latest?.model || latest.model.toLowerCase() === 'none')) throw new Error(`模型「${profile.model}」尚未加载，未将 NONE 视为切换成功`)
-  throw new Error(`连接回验超时${latest?.model ? `（当前模型：${latest.model}）` : ''}`)
+  throw new Error(`等待酒馆连接响应超时${latest?.model ? `（当前模型：${latest.model}）` : ''}`)
 }
 
 async function writeSecret(st: BridgeContext, profile: ApiProfile): Promise<void> {
@@ -175,7 +175,7 @@ export async function applyProfile(profile: ApiProfile, onProgress: ApplyProfile
     dispatchValue(input, profile.url)
   }
   st.saveSettingsDebounced?.()
-  if (descriptor.urlField && readString(settings, descriptor.urlField) !== profile.url) throw new Error('URL 写入后回验失败，已停止连接')
+  if (descriptor.urlField && readString(settings, descriptor.urlField) !== profile.url) throw new Error('接口地址未能写入酒馆设置，已停止切换')
   const button = await waitFor<HTMLElement>(descriptor.connectSelector)
   if (!button) throw new Error(`找不到 ${descriptor.label} 的连接按钮`)
 

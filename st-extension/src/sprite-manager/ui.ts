@@ -155,12 +155,17 @@ export function addCardNavigation(card: HTMLElement, selector: string): void {
 
 
 export function toast(scope: HTMLElement | null, msg: string): void {
-  const bar = scope?.querySelector('.so-toast') as HTMLElement | null
-  if (!bar) return
-  bar.textContent = msg
-  setTimeout(() => {
-    if (bar.textContent === msg) bar.textContent = ''
-  }, 4000)
+  const targets: HTMLElement[] = []
+  const bar = scope?.querySelector<HTMLElement>('.so-toast')
+  if (bar) targets.push(bar)
+  const lightboxBar = document.querySelector<HTMLElement>('.so-lightbox .so-lightbox-toast')
+  if (lightboxBar && !targets.includes(lightboxBar)) targets.push(lightboxBar)
+  for (const node of targets) {
+    node.textContent = msg
+    setTimeout(() => {
+      if (node.textContent === msg) node.textContent = ''
+    }, 4000)
+  }
 }
 
 

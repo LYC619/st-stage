@@ -126,8 +126,8 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
       disposeMount = () => { disposed = true; exportController?.abort() }
       // 输入节点和其祖先只挂载一次，避免输入法、焦点和选区在 render 时丢失。
       const prefix = `cloud-export-${++mountId}`
-      const title = el('div', 'so-app-title'); title.textContent = t('cloudExport.title', 'SillyTavern 选择式备份')
-      const desc = el('div', 'so-app-desc'); desc.textContent = t('cloudExport.description', '选择需要的数据，统一导出为 SillyTavern 标准 default-user ZIP。')
+      const title = el('div', 'so-app-title'); title.textContent = t('cloudExport.title', '酒馆按需打包备份')
+      const desc = el('div', 'so-app-desc'); desc.textContent = t('cloudExport.description', '勾选想带走的角色卡、聊天记录、世界书或预设，一键打成酒馆标准备份包（default-user.zip）。')
       const tabs = el('div', 'so-app-section cloud-export-tabs')
       tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', t('cloudExport.categories', '备份分类'))
       const search = document.createElement('input')
@@ -204,7 +204,7 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
               const books = await ensureWorldbooks()
               const linked = findLinkedWorldbook(character, books)
               if (linked) selection.worldbookIds.add(linked.id)
-              else missing.push(t('cloudExport.linked_missing', '关联世界书「{{name}}」未找到或名称有歧义', { name: character.linkedWorldName }))
+              else missing.push(t('cloudExport.linked_missing', '没找到关联世界书「{{name}}」（或有重名无法区分）', { name: character.linkedWorldName }))
             } catch { missing.push(t('cloudExport.worldbook_list', '世界书清单')) }
           }
         } finally {
@@ -402,7 +402,7 @@ export function cloudExportApp(bridge: CloudExportBridge = createSTCloudExportBr
                 ? t('cloudExport.linked_current', '关联世界书「{{name}}」按酒馆里的当前内容导出', { name: character.linkedWorldName })
                 : findLinkedWorldbook(character, worldbooks.data)
                   ? t('cloudExport.linked_current', '关联世界书「{{name}}」按酒馆里的当前内容导出', { name: character.linkedWorldName })
-                  : t('cloudExport.linked_unavailable', '关联世界书「{{name}}」未找到或名称有歧义', { name: character.linkedWorldName })
+                  : t('cloudExport.linked_unavailable', '没找到关联世界书「{{name}}」（或有重名无法区分）', { name: character.linkedWorldName })
             bundleNote.textContent = t('cloudExport.bundle_note', '勾选即整体导出：角色卡 + 全部聊天 + {{linked}}', { linked: linkedLabel })
             row.append(bundleNote)
             const details = document.createElement('details'); details.className = 'so-app-fold cloud-export-chats'; details.open = expandedCharacters.has(character.id)

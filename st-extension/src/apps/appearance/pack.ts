@@ -40,7 +40,7 @@ export function fontUrl(value: string): string {
 /** Read persisted settings permissively; omit default optional keys so legacy 4-key exports stay compact. */
 function normalize(value: unknown, strict: boolean, appIds?: string[]): AppearanceData {
   const raw = record(value), wallpaper = str(raw.wallpaper), validWallpaper = imageAddress(wallpaper)
-  if (strict && !validWallpaper) throw new Error('外观包的图片必须是网址，请先上传图片。')
+  if (strict && !validWallpaper) throw new Error('外观包里的图片必须是网址或已上传的酒馆图片路径。')
   const icons: AppearanceData['icons'] = Object.fromEntries(Object.entries(record(raw.icons)).flatMap(([id, value]) => {
     if (appIds && !appIds.includes(id)) return []
     const row = record(value), emoji = str(row.emoji), image = str(row.image)
@@ -106,7 +106,7 @@ export function exportAppearance(data: AppearanceData): string { return JSON.str
 
 export function importAppearance(text: string, appIds: string[]): AppearanceData {
   let raw: unknown
-  try { raw = JSON.parse(text) } catch { throw new Error('外观包不是有效的 JSON。') }
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('外观包格式不对。')
+  try { raw = JSON.parse(text) } catch { throw new Error('粘贴的外观包内容不完整或格式有误，检查一下是否复制完整吧。') }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('这份内容不是百工支持的外观包格式。')
   return normalize(raw, true, appIds)
 }

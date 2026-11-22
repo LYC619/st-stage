@@ -97,7 +97,7 @@ export function diaryCard(entry: DiaryEntry, actions: DiaryCardActions = {}): HT
   const titleWrap = document.createElement('div')
   const date = document.createElement('small')
   date.className = 'th-muted'
-  date.textContent = entry.date || '未记日期'
+  date.textContent = entry.date || '某日夜里'
   const title = document.createElement('h3')
   title.textContent = entry.role
   titleWrap.append(date, title)

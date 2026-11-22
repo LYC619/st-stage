@@ -78,10 +78,10 @@ export function normalizeFeeds(value: unknown): TheaterFeeds {
 
 export function parseFeeds(text: string): TheaterFeeds {
   let raw: unknown
-  try { raw = JSON.parse(text) } catch { throw new Error('小剧场返回的 JSON 无法解析，请重试。') }
+  try { raw = JSON.parse(text) } catch { throw new Error('幕后 AI 这次递来的稿子格式乱了（JSON 无法解析），再点一次刷新试试。') }
   const feeds = normalizeFeeds(raw)
   if (!feeds.square.length && !feeds.forum.length && !feeds.live && !feeds.diary.length) {
-    throw new Error('小剧场返回的内容格式不对，请重试。')
+    throw new Error('幕后 AI 这次返回的内容格式不对，再点一次刷新试试。')
   }
   return feeds
 }
@@ -177,7 +177,7 @@ export async function generateTheater(
   channel: TheaterChannel = 'all',
 ): Promise<TheaterFeeds> {
   const config = getStoryAiConfig(host)
-  if (!config) throw new Error('请先在设置或微信设置里连接 AI')
+  if (!config) throw new Error('请先在下方设置或微信里连上幕后 AI')
   const wechat = record(host.getSettings().apps['wechat-sister'])
   const profile = resolveProfile(record(wechat.config) as WeChatConfig, stableCharacterKey(story.card))
   const scope = await readStoryMemory(

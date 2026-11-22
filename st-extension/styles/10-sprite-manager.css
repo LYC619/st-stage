@@ -343,7 +343,7 @@
 
 /* 操作反馈：浮在弹窗底部的提示条，不随内容滚走 */
 .so-manager .so-toast,
-.so-lightbox .so-toast {
+.so-lightbox .so-lightbox-toast {
   position: absolute;
   left: 50%;
   bottom: 14px;
@@ -361,13 +361,13 @@
   pointer-events: none;
 }
 
-.so-lightbox .so-toast {
+.so-lightbox .so-lightbox-toast {
   bottom: 58px;
   z-index: 10;
 }
 
 .so-manager .so-toast:empty,
-.so-lightbox .so-toast:empty {
+.so-lightbox .so-lightbox-toast:empty {
   display: none;
 }
 

@@ -1,4 +1,4 @@
-﻿/** Scoped styles keep the phone usable under host themes and narrow viewports. */
+/** Scoped styles keep the phone usable under host themes and narrow viewports. */
 export const WECHAT_VIEW = `
 <div class="wechat-root">
   <header class="wechat-nav">
@@ -18,7 +18,7 @@ export const WECHAT_VIEW = `
     <div id="wt-moments-feed" role="region" aria-label="朋友圈动态" tabindex="0"></div>
   </section>
   <section id="wt-chat" aria-label="微信聊天" hidden>
-    <details id="wt-state"><summary id="wt-state-summary">角色状态 · 等待更新</summary><p><strong>内心想法</strong><br><span id="wt-inner-thought">等待角色回复</span></p><p><strong>当前状态</strong><br><span id="wt-current-status">等待角色回复</span></p></details>
+    <details id="wt-state"><summary id="wt-state-summary">TA 的此刻 · 待感知</summary><p><strong>内心想法</strong><br><span id="wt-inner-thought">聊上两句后，就能悄悄看见 TA 此刻的心思啦</span></p><p><strong>当前状态</strong><br><span id="wt-current-status">聊上两句后，就能看见 TA 眼下正在忙什么</span></p></details>
     <div class="wt-scroll-wrap"><div id="wt-scroll" role="log" aria-label="聊天消息" tabindex="0"></div><button id="wt-jump-latest" class="wt-jump-latest" hidden>↓ 新消息</button></div>
     <div id="wt-chat-status" class="wt-chat-status" hidden>
       <div id="wt-chat-tools" hidden><select id="wt-mention" aria-label="提及群成员" hidden></select></div>
@@ -71,7 +71,7 @@ export const WECHAT_VIEW = `
     <p id="wt-packet-target" class="wt-hint"></p>
     <label class="wt-field">发送什么<input id="wt-custom-amt" placeholder="例如：一杯奶茶、520 元、一张船票" maxlength="120"></label>
     <label class="wt-field">附言（可选）<textarea id="wt-packet-note" rows="2" maxlength="300" placeholder="想对 TA 说的话…"></textarea></label>
-    <p class="wt-hint">用于角色互动的虚构礼物。</p><p id="wt-packet-feedback" role="status"></p><button id="wt-confirm-packet" class="wt-primary">发送红包</button>
+    <p class="wt-hint">给 TA 捎一份小礼物或红包心意，看看对方会怎么收下吧。</p><p id="wt-packet-feedback" role="status"></p><button id="wt-confirm-packet" class="wt-primary">发送红包</button>
   </div></div>
   <div id="wt-group-modal" class="wt-modal" role="dialog" aria-modal="true" aria-labelledby="wt-group-heading" hidden><div class="wt-modal-card">
     <div class="wt-modal-header"><h2 id="wt-group-heading">群聊成员</h2><button id="wt-close-group" aria-label="关闭群成员">关闭</button></div>

@@ -12,7 +12,9 @@ export function buildRoleSummary(settings: PluginSettings, characterName: string
   const newvar = normalizeNewvarData(settings.apps.newvar)
   const renderer = normalizeRendererSettings(settings.apps.renderer)
   const rawWechat = settings.apps['wechat-sister'] as { config?: { apiKey?: unknown } } | undefined
-  const hasKey = typeof rawWechat?.config?.apiKey === 'string' && !!rawWechat.config.apiKey.trim()
+  const rawStoryAi = settings.apps['story-ai'] as { apiKey?: unknown } | undefined
+  const hasKey = (typeof rawWechat?.config?.apiKey === 'string' && !!rawWechat.config.apiKey.trim())
+    || (typeof rawStoryAi?.apiKey === 'string' && !!rawStoryAi.apiKey.trim())
   const enabled = t('phone.role.enabled', '已启用'), disabled = t('phone.role.disabled', '已关闭')
   const externalText: Record<ExternalVariableStatus, string> = {
     checking: t('phone.role.checking', '正在检查'),
@@ -24,8 +26,8 @@ export function buildRoleSummary(settings: PluginSettings, characterName: string
     preview: t('phone.role.preview', '模拟器不读取外部变量'),
   }
   return {
-    title: characterName || t('phone.role.no_character', '尚未选择角色'),
-    subtitle: characterName ? chatTitle : t('phone.role.select_hint', '先在酒馆打开角色聊天，再配置体验'),
+    title: characterName || t('phone.role.no_character', '酒馆里还没落座呢'),
+    subtitle: characterName ? chatTitle : t('phone.role.select_hint', '翻开一段角色聊天后，这里会汇总 TA 的立绘、变量与联络近况'),
     rows: characterName ? [
       { id: 'gallery', appId: 'gallery', label: t('phone.role.packs', '图包'), value: packs.length
         ? t('phone.role.pack_count', '{{count}} 个图包 · {{state}}', { count: packs.length, state: binding?.enabled ? enabled : disabled })

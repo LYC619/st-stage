@@ -87,7 +87,7 @@ export function valueTypeLabel(v: unknown, tuple: boolean): string {
   return typeof inner === 'number'
     ? t('variableTree.number', '数字')
     : typeof inner === 'boolean'
-      ? t('variableTree.boolean', '布尔')
+      ? t('variableTree.boolean', '开关（是/否）')
       : t('variableTree.text', '文本')
 }
 

@@ -308,7 +308,15 @@ export function createPhoneShell(
   homeBtn.tabIndex = 0
   homeBar.append(homeBtn)
 
-  shell.append(statusBar, island, screen, homeBar)
+  const wallpaperClip = document.createElement('div')
+  wallpaperClip.className = 'so-phone-wallpaper-clip'
+  wallpaperClip.setAttribute('aria-hidden', 'true')
+  wallpaperClip.hidden = true
+  const wallpaperBg = document.createElement('div')
+  wallpaperBg.className = 'so-phone-wallpaper-bg'
+  wallpaperClip.append(wallpaperBg)
+
+  shell.append(wallpaperClip, statusBar, island, screen, homeBar)
   document.body.append(fab, shell)
 
   const clockTimer = setInterval(updateClock, 30_000)
@@ -568,7 +576,9 @@ export function createPhoneShell(
 
     unmountActive()
     screen.innerHTML = ''
-    screen.classList.toggle('so-phone-screen-wallpaper', !activeApp && !!appearance.wallpaper)
+    const showWall = !activeApp && !!appearance.wallpaper
+    screen.classList.toggle('so-phone-screen-wallpaper', showWall)
+    wallpaperClip.hidden = !showWall
     shell.classList.toggle('so-phone-in-app', Boolean(activeApp))
     backBtn.style.display = activeApp ? 'flex' : 'none'
 
@@ -652,7 +662,7 @@ export function createPhoneShell(
     if (dockApps.length >= 2) {
       const dock = document.createElement('nav')
       dock.className = 'so-phone-dock'
-      dock.setAttribute('aria-label', '常用叙事快捷栏')
+      dock.setAttribute('aria-label', '随身快捷栏')
       for (const app of dockApps) {
         const btn = document.createElement('button')
         btn.type = 'button'
@@ -866,8 +876,14 @@ export function createPhoneShell(
       } else {
         shell.style.removeProperty('--so-wall-blur')
       }
-      if (next.wallpaper) screen.style.setProperty('--so-wallpaper', `url(${JSON.stringify(next.wallpaper)})`)
-      else screen.style.removeProperty('--so-wallpaper')
+      if (next.wallpaper) {
+        const wallValue = `url(${JSON.stringify(next.wallpaper)})`
+        shell.style.setProperty('--so-wallpaper', wallValue)
+        screen.style.setProperty('--so-wallpaper', wallValue)
+      } else {
+        shell.style.removeProperty('--so-wallpaper')
+        screen.style.removeProperty('--so-wallpaper')
+      }
       const font = next.fonts.find(font => font.name === next.activeFont)
       if (font) {
         if (!fontLink) {

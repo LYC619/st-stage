@@ -95,7 +95,7 @@ export async function prepareImportedPack(
   const applied = applyImageChanges(staging, staged.ready)
   const prepared = applied.settings.packs[0]
   if (!prepared || applied.conflicts.length > 0 || prepared.sprites.some((sprite) => /^data:/i.test(sprite.url))) {
-    throw new Error(t('storage.errors.pack_unsaved', '图包仍有未落盘图片，未安装'))
+    throw new Error(t('storage.errors.pack_unsaved', '图包里还有未保存成功的图片，暂未安装'))
   }
   return prepared
 }

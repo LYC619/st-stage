@@ -46,7 +46,7 @@ describe('chronicle app', () => {
   })
   it('shows connection guidance and disables organize without AI', () => {
     const f = mount(false)
-    expect(f.container.textContent).toContain('请先在微信设置里连接 AI')
+    expect(f.container.textContent).toContain('连上幕后 AI')
     expect(f.container.querySelector<HTMLButtonElement>('.ch-header button')!.disabled).toBe(true)
   })
   it('renders seven calendar days, today highlighting and keyboard navigation', async () => {
@@ -68,7 +68,7 @@ describe('chronicle app', () => {
     f.container.querySelectorAll<HTMLInputElement>('input[type=checkbox]')[1].click()
     await Promise.resolve(); await Promise.resolve()
     f.container.querySelectorAll<HTMLButtonElement>('[role=tab]')[1].click()
-    expect(f.container.textContent).toContain('剧情里还没有日期。在剧情状态里打开后台整理')
+    expect(f.container.textContent).toContain('剧情里还没有日期。可在下方直接挑一天定为')
     expect(f.container.querySelector('.ch-day')).toBeNull()
   })
 })

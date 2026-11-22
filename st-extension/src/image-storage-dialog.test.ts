@@ -328,7 +328,7 @@ describe('image storage migration dialog', () => {
     findButton('下载当前插件状态备份').click()
     confirmBackup()
     findButton('开始迁移内嵌图片').click()
-    findButton('取消暂存').click()
+    findButton('取消迁移').click()
     expect(findButton('下载当前插件状态备份').disabled).toBe(false)
     resolve('/user/images/late.png')
     await Promise.resolve()

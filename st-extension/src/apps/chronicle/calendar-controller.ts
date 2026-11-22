@@ -29,7 +29,7 @@ export function createCalendarController(host: AppHost, notify: () => void, time
         ? { retained: [], missing: calendarWindow(today) }
         : calendarGap(today, existing)
       if (!missing.length) return
-      if (!getStoryAiConfig(host)) { status.error = '请先在微信设置里连接 AI。'; return }
+      if (!getStoryAiConfig(host)) { status.error = '请先在下方设置或微信里连上幕后 AI。'; return }
       const incoming = await abortable(generateCalendar(host, today, missing, retained, current.signal), current.signal)
       if (job !== current || current.signal.aborted) return
       const saved = await writeChatMetadata(host, key, CALENDAR_KEY, {

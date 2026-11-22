@@ -129,7 +129,7 @@ describe('variable UI translations and keyboard focus', () => {
     select.value = 'enum'
     select.dispatchEvent(new Event('change', { bubbles: true }))
     expect(document.activeElement).toBe(document.querySelector('.nv-defs-editor select'))
-    expect(document.querySelector('.nv-defs-editor')?.textContent).toContain('Enum options')
+    expect(document.querySelector('.nv-defs-editor')?.textContent).toContain('Allowed choices')
   })
 
   it('gives parse log outcomes readable translated labels', () => {

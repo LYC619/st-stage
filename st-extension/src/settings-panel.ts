@@ -41,7 +41,7 @@ export function mountSettingsPanel(deps: PanelDeps): () => void {
     t('settings.enable_sprites', '启用立绘功能'),
     settings.enabled,
     (v) => deps.updateSettings({ ...deps.getSettings(), enabled: v }),
-    t('settings.sprites_help', '总开关：注入立绘清单给 AI 并展示回复中的立绘。关闭后清空注入、停止解析、隐藏悬浮窗并把楼层恢复原文；手机与其他工具不受影响。'),
+    t('settings.sprites_help', '总开关：让 AI 在回复里配上角色立绘。关闭后停止发送立绘清单、隐藏立绘浮窗并把消息恢复原文；小手机与其他工具照常可用。'),
   )
   const phoneRow = checkboxRow(
     t('settings.show_phone', '显示手机'),
@@ -110,7 +110,7 @@ export function mountSettingsPanel(deps: PanelDeps): () => void {
   hint.className = 'so-status'
   const version = typeof __EXT_VERSION__ === 'undefined' ? '' : ` v${__EXT_VERSION__}`
   hint.textContent =
-    t('settings.hint', '酒馆里的事，百工都做。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。') + version
+    t('settings.hint', '酒馆里的事，百工都做。立绘显示、轮播与提示词在手机「立绘」App 设置；图包管理与图床在「图库」App 设置。') + version
   content.append(hint)
 
   const sync = () => {

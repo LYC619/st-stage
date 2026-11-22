@@ -87,7 +87,7 @@ function modeGuide(): HTMLElement {
   const modes: Array<[string, string]> = [
     ['Galgame', '连续对话和分镜节拍；适合让 AI 控制角色、场景和立绘切换。'],
     ['卡片选择', '2-8 个明确选项，可预览分支并记住选择；填入草稿后自行确认发送。'],
-    ['战斗', '本地确定性战斗；选择攻击、技能、物品或逃跑后立即更新面板。'],
+    ['战斗', '页内即时回合过招（本地结算，不额外消耗 AI 次数）；选择攻击、技能、物品或逃跑后立即更新面板。'],
   ]
   for (const [title, description] of modes) {
     const row = el('div', 'renderer-mode-row')

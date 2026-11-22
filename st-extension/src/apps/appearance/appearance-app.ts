@@ -179,7 +179,11 @@ export function createAppearanceApp(deps: AppearanceDeps): PhoneApp {
           const coverUrl = activePacks[0] ? getPackCover(activePacks[0])?.url : undefined
           if (coverUrl && imageUrlSafe(coverUrl)) {
             wallpaper.append(
-              button(`用「${charName}」立绘作壁纸`, () => save({ ...current(), wallpaper: coverUrl, wallpaperDim: current().wallpaperDim ?? 28 }, `已将「${charName}」立绘设为主屏壁纸。`), 'ap-accent-btn'),
+              button(
+                `用「${charName}」立绘作壁纸`,
+                () => save(withBoundSync({ ...current(), wallpaper: coverUrl, wallpaperDim: current().wallpaperDim ?? 28 }, charName, { wallpaper: coverUrl }), `已将「${charName}」立绘设为主屏壁纸。`),
+                'ap-accent-btn',
+              ),
             )
           }
           const boundSkin = data.characterSkins?.[charName]
@@ -188,10 +192,11 @@ export function createAppearanceApp(deps: AppearanceDeps): PhoneApp {
               boundSkin ? `更新「${charName}」专属外观` : `绑定为「${charName}」专属外观`,
               () => {
                 const latest = current()
+                const effective = resolveEffectiveAppearance(latest, charName)
                 const skins = { ...(latest.characterSkins ?? {}) }
                 skins[charName] = {
-                  theme: latest.theme || 'midnight',
-                  ...(latest.wallpaper ? { wallpaper: latest.wallpaper } : {}),
+                  theme: effective.theme || 'midnight',
+                  ...(effective.wallpaper ? { wallpaper: effective.wallpaper } : {}),
                 }
                 save({ ...latest, characterSkins: skins }, `已为「${charName}」记住当前主题与壁纸，切到 TA 时自动换装。`)
               },

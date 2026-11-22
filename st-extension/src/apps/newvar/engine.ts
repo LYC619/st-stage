@@ -69,7 +69,7 @@ export function validateValue(def: VariableDefinition, raw: unknown): ValidateOu
   switch (def.type) {
     case 'number': {
       if (typeof raw !== 'number' || !Number.isFinite(raw)) {
-        return { ok: false, error: t('apps.newvar.errors.expected_number', "期望数字，得到 {{value}}", { value: describe(raw) }) }
+        return { ok: false, error: t('apps.newvar.errors.expected_number', "这里需要填数字，但收到了 {{value}}", { value: describe(raw) }) }
       }
       if (def.range) {
         const [min, max] = def.range
@@ -81,15 +81,15 @@ export function validateValue(def: VariableDefinition, raw: unknown): ValidateOu
       return { ok: true, value: raw }
     }
     case 'string':
-      if (typeof raw !== 'string') return { ok: false, error: t('apps.newvar.errors.expected_string', "期望文本，得到 {{value}}", { value: describe(raw) }) }
+      if (typeof raw !== 'string') return { ok: false, error: t('apps.newvar.errors.expected_string', "这里需要填文本，但收到了 {{value}}", { value: describe(raw) }) }
       return { ok: true, value: raw }
     case 'boolean':
-      if (typeof raw !== 'boolean') return { ok: false, error: t('apps.newvar.errors.expected_boolean', "期望布尔，得到 {{value}}", { value: describe(raw) }) }
+      if (typeof raw !== 'boolean') return { ok: false, error: t('apps.newvar.errors.expected_boolean', "这里需要填开关值（true/false），但收到了 {{value}}", { value: describe(raw) }) }
       return { ok: true, value: raw }
     case 'enum': {
       const options = def.enum ?? []
       if (typeof raw !== 'string' || !options.includes(raw)) {
-        return { ok: false, error: t('apps.newvar.errors.invalid_enum', "值 {{value}} 不在枚举 [{{options}}] 中", { value: describe(raw), options: options.join(', ') }) }
+        return { ok: false, error: t('apps.newvar.errors.invalid_enum', "{{value}} 不在可选范围 [{{options}}] 里", { value: describe(raw), options: options.join(', ') }) }
       }
       return { ok: true, value: raw }
     }

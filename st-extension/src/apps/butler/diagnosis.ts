@@ -278,7 +278,7 @@ export function diagnose(
     severity: 'info',
     confidence: 'measurement',
     explanation: {
-      detected: '已记录当前聊天消息数、已渲染楼层和 DOM 节点摘要。',
+      detected: '已记录当前聊天消息数、已渲染楼层和页面元素数量。',
       change: '仅作为环境证据，不因数量本身自动修改设置。',
       reason: '相同数量在不同设备和内容结构上的开销差异很大。',
       impact: '无自动变更。',
@@ -294,7 +294,7 @@ export function diagnose(
     severity: 'info',
     confidence: 'measurement',
     explanation: {
-      detected: '已记录页面媒体元素及可见/离屏摘要。',
+      detected: '已记录页面图片视频及屏幕内外分布情况。',
       change: '仅作为环境证据，不自动暂停媒体或控制 GIF。',
       reason: '元素数量不能直接代表解码、显存或播放成本。',
       impact: '无自动变更。',

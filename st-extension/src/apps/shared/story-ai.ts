@@ -45,6 +45,14 @@ export function toCompletionsEndpoint(rawUrl: string): string {
   return `${trimmed}/chat/completions`
 }
 
+export function resolveChatEndpoint(rawUrl?: string): string {
+  const trimmed = (rawUrl ?? '').trim().replace(/\/+$/, '')
+  if (!trimmed) return 'https://api.deepseek.com/chat/completions'
+  if (trimmed.endsWith('/chat/completions')) return trimmed
+  if (/\/v\d+$/i.test(trimmed)) return `${trimmed}/chat/completions`
+  return trimmed
+}
+
 function unwrapJsonReply(text: string): string {
   const trimmed = text.trim()
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
@@ -146,7 +154,7 @@ export function saveStoryAiConfig(ctx: PhoneAppContext, next: StoryAiConfig | nu
     }
     apps[STORY_AI_APP_ID] = {
       apiKey: next.apiKey.trim(),
-      apiUrl: apiUrl ? toCompletionsEndpoint(apiUrl) : 'https://api.deepseek.com/chat/completions',
+      apiUrl: resolveChatEndpoint(apiUrl),
       model: (next.model ?? '').trim() || 'deepseek-chat',
     }
   }
@@ -167,7 +175,7 @@ export function renderStoryAiSetupCard(ctx: PhoneAppContext, onChanged: () => vo
   badge.className = `so-ai-hub-badge${active ? ' is-ready' : ''}`
   badge.textContent = active
     ? `幕后 AI 已就绪 · ${active.sourceLabel || active.model || '微信共用'}`
-    : '幕后 AI 未连接 · 点此直连或去微信共用'
+    : '幕后 AI 未连接 · 点此接通（也可沿用微信或酒馆 API）'
   summary.append(badge)
 
   const body = document.createElement('div')
@@ -175,7 +183,7 @@ export function renderStoryAiSetupCard(ctx: PhoneAppContext, onChanged: () => vo
 
   const hint = document.createElement('p')
   hint.className = 'so-ai-hub-hint'
-  hint.textContent = '小剧场、剧情状态与纪要共用同一套幕后 AI。可在此直接填写接口，也可直接复用微信或「API」里的兼容档案。'
+  hint.textContent = '小剧场、剧情状态与纪要共用同一套幕后 AI。可在此单独填写轻量模型，也可直接沿用微信或「API」里的兼容档案。'
 
   const makeField = (labelText: string, placeholder: string, value: string, type = 'text') => {
     const label = document.createElement('label')
@@ -190,9 +198,10 @@ export function renderStoryAiSetupCard(ctx: PhoneAppContext, onChanged: () => vo
     return { label, input }
   }
 
-  const urlField = makeField('接口地址', 'https://api.deepseek.com/chat/completions', storedDirect?.apiUrl || active?.apiUrl || 'https://api.deepseek.com/chat/completions', 'url')
+  const realActive = active?.apiKey === '__simulator_mock__' ? null : active
+  const urlField = makeField('接口地址', 'https://api.deepseek.com/chat/completions', storedDirect?.apiUrl || realActive?.apiUrl || 'https://api.deepseek.com/chat/completions', 'url')
   const keyField = makeField('API 密钥', 'sk-...', storedDirect?.apiKey || '', 'password')
-  const modelField = makeField('模型名称', 'deepseek-chat', storedDirect?.model || active?.model || 'deepseek-chat')
+  const modelField = makeField('模型名称', 'deepseek-chat', storedDirect?.model || realActive?.model || 'deepseek-chat')
 
   const feedback = document.createElement('p')
   feedback.className = 'so-ai-hub-feedback'
@@ -259,7 +268,7 @@ export async function requestChat(
     return await window.__stStageMockStoryAi(messages, jsonMode, signal)
   }
   try {
-    const endpoint = config.apiUrl ? toCompletionsEndpoint(config.apiUrl) : 'https://api.deepseek.com/chat/completions'
+    const endpoint = resolveChatEndpoint(config.apiUrl)
     const doPost = (withResponseFormat: boolean) =>
       fetch(endpoint, {
         signal,

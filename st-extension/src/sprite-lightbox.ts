@@ -42,7 +42,7 @@ export function openSpriteLightbox(options: {
   const actionRail = element('div', 'so-lightbox-actions')
   actionRail.setAttribute('role', 'group')
   actionRail.setAttribute('aria-label', t('lightbox.actions', '立绘操作'))
-  const toastBar = element('div', 'so-status so-toast')
+  const toastBar = element('div', 'so-status so-lightbox-toast')
   toastBar.setAttribute('role', 'status')
   stage.append(image)
   layer.append(stage, caption, previous, next, closeButton, actionRail, toastBar)

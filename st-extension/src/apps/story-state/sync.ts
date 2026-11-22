@@ -1,7 +1,7 @@
 import type { AppHost } from '../../../../core/phone-registry'
 import { abortable, captureStory, storyIdentity } from '../wechat/memory'
 import { getStoryAiConfig, requestChat } from '../shared/story-ai'
-import { emitStoryEvent } from '../shared/story-events'
+import { emitStoryEvent, onStoryEvent } from '../shared/story-events'
 import { applyCommands, extractCommands, isNoUpdate } from './commands'
 import {
   formatIsoDateFromTime,
@@ -82,7 +82,7 @@ export function createStorySync(host: AppHost) {
     if (!manual && !settings.autoSync) return
     if (!config) {
       if (manual) {
-        status = { busy: false, error: '请先在微信设置或下方直连 AI。' }
+        status = { busy: false, error: '请先在下方设置或微信里连上幕后 AI。' }
         notify()
       }
       return
@@ -161,6 +161,9 @@ export function createStorySync(host: AppHost) {
     cancel()
     void refreshInjection()
   })
+  const offStoryEvent = onStoryEvent((event) => {
+    if (alive && event.type === 'story-date-changed') void refreshInjection()
+  })
   void refreshInjection()
 
   return {
@@ -174,6 +177,7 @@ export function createStorySync(host: AppHost) {
       cancel()
       offMessage()
       offChange()
+      offStoryEvent()
       if (typeof host.injectPrompt === 'function') host.injectPrompt('')
       listeners.clear()
     },

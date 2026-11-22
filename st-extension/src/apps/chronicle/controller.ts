@@ -7,7 +7,7 @@ import { emitStoryEvent, onStoryEvent } from '../shared/story-events'
 import { CHRONICLE_KEY, nextCode, readChronicleData, readChronicleSettings } from './store'
 import { generateChronicle, pendingStory } from './generate'
 import { chronicleInjection } from './inject'
-import { readTodayCalendarSummary } from './calendar'
+import { readCalendar, readTodayCalendarSummary } from './calendar'
 import { createCalendarController } from './calendar-controller'
 
 export function createChronicleController(host: AppHost, options: { timeoutMs?: number } = {}) {
@@ -22,7 +22,10 @@ export function createChronicleController(host: AppHost, options: { timeoutMs?: 
   async function refresh() {
     const token = ++revision, key = storyIdentity(host)
     const settings = readChronicleSettings(host)
-    if (!settings.inject && !settings.injectCalendar) {
+    const hasEntries = settings.inject && readChronicleData().entries.length > 0
+    const cal = readCalendar()
+    const hasCal = settings.injectCalendar && (cal.days.length > 0 || Boolean(cal.notes && Object.keys(cal.notes).length > 0))
+    if (!hasEntries && !hasCal) {
       host.injectPrompt('', 999)
     }
     try {
@@ -48,7 +51,7 @@ export function createChronicleController(host: AppHost, options: { timeoutMs?: 
     const pending = pendingStory(host, data.lastMessageIndex)
     const generate = !!getStoryAiConfig(host) && pending.messages.length > 0 && (manual || settings.autoGenerate && pending.aiCount >= settings.interval)
     if (!generate && pending.lastMessageIndex === data.lastMessageIndex) {
-      if (manual) { status.error = pending.messages.length ? '请先在微信设置里连接 AI。' : '没有待整理的消息。'; notify() }
+      if (manual) { status.error = pending.messages.length ? '请先在下方设置或微信里连上幕后 AI。' : '眼下还没有新的对话需要收进纪要。'; notify() }
       return
     }
     const current = new AbortController(); job = current; status.busy = true; status.error = ''; notify()
@@ -110,7 +113,12 @@ export function createChronicleController(host: AppHost, options: { timeoutMs?: 
     target.text = body
     try {
       const saved = await writeChatMetadata(host, key, CHRONICLE_KEY, data)
-      if (saved) await refresh()
+      if (saved) {
+        await refresh()
+      } else {
+        status.error = '无法保存纪要修订，请确认已打开角色聊天。'
+        notify()
+      }
       return saved
     } catch (error) {
       status.error = (error as Error).message

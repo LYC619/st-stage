@@ -125,7 +125,7 @@ export function createTheaterApp(): PhoneApp {
       retry.onclick = () => { void controller.trigger(true, 'all') }
 
       const settings = foldSection('设置', false, 'theater-settings')
-      const autoToggle = toggleRow('后台自动生成（每 5 分钟最多一次）', readTheaterData(ctx).autoGenerate, enabled => {
+      const autoToggle = toggleRow('随聊天自动刷新场外动静（每 5 分钟最多一次）', readTheaterData(ctx).autoGenerate, enabled => {
         ctx.setAppData({ ...readTheaterData(ctx), autoGenerate: enabled })
         if (!enabled) controller.cancel()
       })
@@ -149,8 +149,8 @@ export function createTheaterApp(): PhoneApp {
       function sendRpHook(draftText: string) {
         const res = composer.appendDraft(draftText)
         if (res.ok) {
-          status.textContent = '已将话题记入聊天输入框，随时可发送。'
-          ctx.toast?.('info', '已写入聊天输入框')
+          status.textContent = '已把话头放进聊天输入框，润色两句就能发出去啦。'
+          ctx.toast?.('info', '已把话头放进输入框')
         } else {
           status.textContent = res.error
         }
@@ -165,7 +165,7 @@ export function createTheaterApp(): PhoneApp {
         refreshTab.hidden = !connected || state.busy
         status.textContent = connected
           ? state.error
-          : '请先在微信设置里连接 AI，或在下方「设置」中直接填写接口。'
+          : '展开下方「设置」连上幕后 AI（也可直接沿用微信连接），酒馆外的热闹就能开场啦。'
         retry.hidden = !connected || !state.error || state.busy
 
         aiHubSlot.replaceChildren(renderStoryAiSetupCard(ctx, render))
@@ -179,7 +179,13 @@ export function createTheaterApp(): PhoneApp {
 
         const story = readTheaterData(ctx).stories[storyIdentity(ctx)]
         if (!story || (selected === 0 ? !story.square.length : selected === 1 ? !story.forum.length : selected === 2 ? !story.live : !story.diary.length)) {
-          panel.append(text('p', 'th-empty', '这里还没有内容。点右上角「刷新」看看酒馆外大家都在聊什么。'))
+          const emptyByTab = [
+            '街角广场还静悄悄的。点右上角「刷新」，听听酒馆外大家都在聊什么新鲜事。',
+            '版面上还没有新帖。点右上角「刷新」，看看好事者们正在围观什么八卦。',
+            '直播间还没开播呢。点右上角「刷新」，去前排蹲一场热闹弹幕吧。',
+            '夜深灯下还没有人动笔。点右上角「刷新」，悄悄翻看配角们藏起来的私密手记。',
+          ]
+          panel.append(text('p', 'th-empty', emptyByTab[selected]))
           return
         }
 

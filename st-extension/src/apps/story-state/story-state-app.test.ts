@@ -14,7 +14,7 @@ async function mount(raw: Record<string, unknown>) {
   const app = createStoryStateApp(), dispose = app.setup!(ctx), container = document.createElement('div')
   const input = document.createElement('textarea'); input.id = 'send_textarea'; document.body.append(container, input)
   app.mount(container, ctx); cleanup = () => { app.unmount!(); if (dispose) dispose() }
-  await vi.waitFor(() => expect(container.textContent).toContain('本聊天的状态'))
+  await vi.waitFor(() => expect(container.textContent).toContain('随身旅途手账'))
   return { container, input, tabs: Array.from(container.querySelectorAll<HTMLButtonElement>('[role=tab]')) }
 }
 describe('story-state app', () => {
@@ -24,7 +24,7 @@ describe('story-state app', () => {
     expect(f.container.textContent).toContain('傍晚'); expect(f.container.textContent).toContain('月港')
     f.tabs[1].click(); expect(f.container.textContent).toContain('找猫'); expect(f.container.textContent).toContain('🎁 银币')
     f.tabs[2].click(); f.container.querySelector<HTMLButtonElement>('.ss-item button')!.click()
-    expect(f.input.value).toBe('玩家使用了"药水"（剩余 ×3）。（道具效果：恢复生命）'); expect(f.container.textContent).toContain('已填入')
+    expect(f.input.value).toBe('玩家使用了"药水"（剩余 ×2）。（道具效果：恢复生命）'); expect(f.container.textContent).toContain('已填入')
     f.tabs[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })); expect(document.activeElement).toBe(f.tabs[3])
     expect(f.container.querySelector('progress')!.value).toBe(35)
     f.container.querySelector<HTMLButtonElement>('.ss-card button')!.click()
@@ -34,8 +34,8 @@ describe('story-state app', () => {
     f.tabs[2].click(); expect(f.container.textContent).toContain('×3')
   })
   it('shows empty state and connection guidance', async () => {
-    const f = await mount({}); expect(f.container.textContent).toContain('后台自动整理'); expect(f.container.textContent).toContain('请先在微信设置里连接 AI')
-    f.tabs[1].click(); expect(f.container.textContent).toContain('还没有这类状态')
+    const f = await mount({}); expect(f.container.textContent).toContain('后台自动整理'); expect(f.container.textContent).toContain('连上幕后 AI')
+    f.tabs[1].click(); expect(f.container.textContent).toContain('行囊手账还是空白的')
   })
   it('omits the remaining count when using the last item', async () => {
     const f = await mount({ 背包: [{ 名称: '药水', 数量: 1, 描述: '恢复生命', 稀有度: '普通' }] })

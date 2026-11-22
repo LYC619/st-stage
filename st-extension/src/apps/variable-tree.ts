@@ -303,7 +303,7 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
       input.type = 'checkbox'
       input.checked = inner === true
       const label = document.createElement('span')
-      label.textContent = t('variableTree.true', "启用（true）")
+      label.textContent = t('variableTree.true', "开启（true）")
       row.append(input, label)
       wrap.append(row)
       readValue = () => ({ ok: true, value: input.checked })

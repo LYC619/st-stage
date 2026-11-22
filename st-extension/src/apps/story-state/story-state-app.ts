@@ -111,11 +111,11 @@ export function createStoryStateApp(): PhoneApp {
           ctx.setAppData({ ...readSyncSettings(ctx), autoSync: value })
           if (!value) sync.cancel()
         }),
-        toggleRow('将当前状态速览注入主聊天（普通卡）', config.injectToChat, value => {
+        toggleRow('把当前时辰、地点与行囊悄悄提醒给主聊天 AI（普通卡适用）', config.injectToChat, value => {
           ctx.setAppData({ ...readSyncSettings(ctx), injectToChat: value })
           void sync.refreshInjection()
         }),
-        numberRow('读取最近消息条数', config.contextMessages, 1, 60, value => {
+        numberRow('整理时参考最近几条对话', config.contextMessages, 1, 60, value => {
           ctx.setAppData({ ...readSyncSettings(ctx), contextMessages: value })
         }),
         aiHint,
@@ -169,7 +169,14 @@ export function createStoryStateApp(): PhoneApp {
       }
 
       function empty() {
-        panel.append(text('p', 'ss-empty', '还没有这类状态。MVU 卡可让 AI 在 stat_data 中记录「时间」「位置」「任务」「背包」「技能」。普通卡可在设置里打开「后台自动整理」，或直接在下方随手记一笔。'))
+        const isMvu = snapshot?.backend === 'mvu'
+        panel.append(text(
+          'p',
+          'ss-empty',
+          isMvu
+            ? '这张角色卡的变量里暂时还没有记录时辰、地点或行囊（这里只做随身速览，不会改写原卡数据）。'
+            : '行囊手账还是空白的。可在设置里打开「后台自动整理」，或直接在下方随手记下一笔。',
+        ))
       }
 
       function makeInputField(labelText: string, value = '', type = 'text', placeholder = '') {
@@ -189,7 +196,7 @@ export function createStoryStateApp(): PhoneApp {
         syncBtn.textContent = current.busy ? '整理中… · 取消' : '立即整理'
         syncBtn.disabled = !current.busy && (!connected || snapshot?.backend === 'mvu')
         syncBtn.hidden = snapshot?.backend === 'mvu'
-        aiHint.textContent = connected ? '' : '请先在微信设置里连接 AI，或在下方直接配置接口'
+        aiHint.textContent = connected ? '' : '在下方「设置」连上幕后 AI 后，就能随对话帮你打理旅途时辰与随身行囊啦'
         aiHint.hidden = connected
         aiHubSlot.replaceChildren(renderStoryAiSetupCard(ctx, () => { render(); void sync.refreshInjection() }))
 
@@ -208,15 +215,16 @@ export function createStoryStateApp(): PhoneApp {
         panel.classList.toggle('ss-inventory', selected === 2)
 
         if (!snapshot) { source.textContent = ''; return }
-        source.textContent = snapshot.backend === 'mvu' ? '来自 MVU 变量' : '本聊天的状态'
+        source.textContent = snapshot.backend === 'mvu' ? '联动角色卡变量' : '随身旅途手账'
         const state = snapshot.state
         const isLocal = snapshot.backend === 'local'
 
         if (selected === 0) {
           const hero = text('div', 'ss-spacetime-hero', '')
+          const rawTimeText = formatTime(state.时间)
           hero.append(
-            text('div', 'ss-time', formatTime(state.时间)),
-            text('p', 'ss-location', [state.位置.区域, state.位置.地点].filter(Boolean).join(' · ') || '尚未记录地点'),
+            text('div', 'ss-time', rawTimeText === '尚未记录' ? '时辰未定' : rawTimeText),
+            text('p', 'ss-location', [state.位置.区域, state.位置.地点].filter(Boolean).join(' · ') || '落脚处未记'),
           )
           const calBtn = document.createElement('button')
           calBtn.type = 'button'
@@ -228,7 +236,7 @@ export function createStoryStateApp(): PhoneApp {
 
           for (const label of ['区域', '地点', '细节'] as const) {
             const card = text('article', 'ss-card', '')
-            card.append(text('small', 'ss-muted', label), text('p', '', state.位置[label] || '尚未记录'))
+            card.append(text('small', 'ss-muted', label), text('p', '', state.位置[label] || '暂未留笔'))
             panel.append(card)
           }
           if (!Object.keys(snapshot.raw).length) empty()
@@ -425,19 +433,68 @@ export function createStoryStateApp(): PhoneApp {
 
         if (selected === 3) {
           if (!state.技能.length) empty()
-          for (const skill of state.技能) {
+          state.技能.forEach((skill, idx) => {
             const card = text('article', 'ss-card', ''), progress = document.createElement('progress')
             progress.max = 100
             progress.value = skill.熟练度
             progress.setAttribute('aria-label', `${skill.名称}熟练度`)
+            const actions = text('div', 'ss-card-actions', '')
+            actions.append(draftButton('发动', skillDraft(skill)))
+            if (isLocal) {
+              const delBtn = document.createElement('button')
+              delBtn.type = 'button'
+              delBtn.className = 'ss-ghost-btn'
+              delBtn.textContent = '移除'
+              delBtn.onclick = () => {
+                void mutateLocal(working => {
+                  const list = Array.isArray(working.技能)
+                    ? [...(working.技能 as unknown[])]
+                    : Object.values(working.技能 as Record<string, unknown> ?? {})
+                  list.splice(idx, 1)
+                  working.技能 = list
+                }, `已移除能力「${skill.名称}」`)
+              }
+              actions.append(delBtn)
+            }
             card.append(
               text('h3', '', `${skill.名称} · Lv.${skill.等级}`),
               text('small', 'ss-muted', `${skill.类型} · 熟练度 ${skill.熟练度}%`),
               progress,
               text('p', '', skill.描述),
-              draftButton('发动', skillDraft(skill)),
+              actions,
             )
             panel.append(card)
+          })
+
+          if (isLocal) {
+            const adder = document.createElement('details')
+            adder.className = 'ss-quick-edit'
+            const sum = document.createElement('summary')
+            sum.textContent = '➕ 记下一项新能力'
+            const nameF = makeInputField('能力名称', '', 'text', '如：察言观色 / 冰霜法印')
+            const typeF = makeInputField('类别', '特长', 'text', '如：法术 / 武技 / 社交')
+            const lvlF = makeInputField('等级', '1', 'number')
+            const profF = makeInputField('熟练度 (%)', '20', 'number')
+            const descF = makeInputField('效果说明', '', 'text', '如：更容易听出对方话里的弦外之音')
+            const addBtn = document.createElement('button')
+            addBtn.type = 'button'
+            addBtn.className = 'ss-primary-btn'
+            addBtn.textContent = '记入能力栏'
+            addBtn.onclick = () => {
+              const nameVal = nameF.input.value.trim()
+              if (!nameVal) { status.textContent = '请先填写能力名称。'; return }
+              const lvlVal = Math.max(1, Math.round(Number(lvlF.input.value) || 1))
+              const profVal = Math.max(0, Math.min(100, Math.round(Number(profF.input.value) || 0)))
+              void mutateLocal(working => {
+                const list = Array.isArray(working.技能)
+                  ? [...(working.技能 as unknown[])]
+                  : Object.values(working.技能 as Record<string, unknown> ?? {})
+                list.push({ id: safeRandomId(), 名称: nameVal, 类型: typeF.input.value.trim() || '特长', 等级: lvlVal, 熟练度: profVal, 描述: descF.input.value.trim() })
+                working.技能 = list
+              }, `记下新能力：${nameVal}`)
+            }
+            adder.append(sum, nameF.wrap, typeF.wrap, lvlF.wrap, profF.wrap, descF.wrap, addBtn)
+            panel.append(adder)
           }
         }
       }

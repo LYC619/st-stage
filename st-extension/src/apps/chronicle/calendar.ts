@@ -10,7 +10,7 @@ import { resolveProfile } from '../wechat/profile-library'
 import type { WeChatConfig } from '../wechat/types'
 
 export const CALENDAR_KEY = 'st_stage_calendar'
-export const NO_STORY_DATE = '剧情里还没有日期。在剧情状态里打开后台整理，或让 AI 在回复中写明日期'
+export const NO_STORY_DATE = '剧情里还没有日期。可在下方直接挑一天定为「剧情今天」，或让 AI 在回复里写明日期'
 export interface CalendarDay { date: string; festival: string; event: string; status: string; weather: string; content: string }
 export interface CalendarData { v: 1; days: CalendarDay[]; notes?: Record<string, string> }
 
@@ -133,12 +133,12 @@ const PROMPT = `为当前剧情补齐公共日历，只输出 JSON：{"days":[{"
 
 export async function generateCalendar(host: AppHost, today: Date, missing: string[], retained: CalendarDay[], signal: AbortSignal): Promise<CalendarDay[]> {
   const config = getStoryAiConfig(host)
-  if (!config) throw new Error('请先在微信设置里连接 AI。')
+  if (!config) throw new Error('请先在下方设置或微信里连上幕后 AI。')
   const story = captureStory(host), profile = resolveProfile(record(record(host.getSettings().apps['wechat-sister']).config) as WeChatConfig, stableCharacterKey(story.card))
   const scope = await readStoryMemory(host, { scopeKey: 'calendar', characterName: story.name, card: story.card, externalState: { source: 'none' } }, profile, signal, story)
   const reply = await requestChat(config, [{ role: 'system', content: PROMPT }, { role: 'user', content:
     `${formatStoryMemory(scope)}\n剧情今天：${formatStoryDate(today)}\n只补这些日期：${JSON.stringify(missing)}\n保留的日历：${JSON.stringify(retained)}` }], signal)
   let raw: unknown
-  try { raw = JSON.parse(reply) } catch { throw new Error('日历返回的 JSON 无法解析，请重试。') }
+  try { raw = JSON.parse(reply) } catch { throw new Error('幕后 AI 这次排出的日历格式有误，再点一次刷新试试。') }
   return normalizeCalendar(raw).days.filter(day => missing.includes(day.date))
 }

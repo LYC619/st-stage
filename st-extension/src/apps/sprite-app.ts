@@ -62,7 +62,7 @@ export function spriteApp(deps: SpriteAppDeps = {}): PhoneApp {
               ? t('apps.sprites.active_packs', '立绘功能运行中 — 已启用 {{packs}} 个包（{{images}} 张）', { packs: packs.length, images: packs.reduce((n, p) => n + p.sprites.length, 0) })
               : t('apps.sprites.active_pack', '立绘功能运行中 — 已绑定「{{name}}」（{{images}} 张）', { name: pack.name, images: pack.sprites.length })
             : t('apps.sprites.unbound', '立绘功能已开启，但当前角色未绑定立绘包（到「图库」绑定）')
-          : t('apps.sprites.disabled', '立绘功能已关闭：不注入 Prompt、不解析标签，旧楼层已恢复原文')
+          : t('apps.sprites.disabled', '立绘功能已关闭：不再发送立绘提示词，聊天消息已恢复原文')
 
         stateSection.append(
           title,
@@ -176,7 +176,7 @@ export function spriteApp(deps: SpriteAppDeps = {}): PhoneApp {
           copyBtn.onclick = () => {
             const tag = `[立绘:${currentSprite.address || currentSprite.label}]`
             void safeCopyText(tag).then(ok => {
-              ctx.toast?.(ok ? 'success' : 'info', ok ? `${tag}` : tag)
+              ctx.toast?.(ok ? 'success' : 'info', ok ? `已复制 ${tag}` : `请手动复制：${tag}`)
             })
           }
           stageFoot.append(copyBtn)
@@ -206,7 +206,7 @@ export function spriteApp(deps: SpriteAppDeps = {}): PhoneApp {
           toggleRow(t('apps.sprites.show_overlay', '显示悬浮窗'), !settings.overlayHidden, (v) =>
             ctx.updateSettings({ ...ctx.getSettings(), overlayHidden: !v }),
           ),
-          appButton(t('apps.sprites.reset_overlay', '把悬浮窗拉回视口'), () => {
+          appButton(t('apps.sprites.reset_overlay', '把立绘浮窗拉回屏幕内'), () => {
             const cur = ctx.getSettings()
             if (cur.spriteDisplayMode === 'inline') return
             ctx.updateSettings({
@@ -255,24 +255,24 @@ export function spriteApp(deps: SpriteAppDeps = {}): PhoneApp {
           ),
         )
 
-        const promptSection = foldSection(t('apps.sprites.prompt', 'Prompt'), false, 'sprites:prompt')
+        const promptSection = foldSection(t('apps.sprites.prompt', '立绘提示词'), false, 'sprites:prompt')
         promptSection.body.append(
           numberRow(t('apps.sprites.sprite_count', '每次回复立绘数量'), settings.spriteCount, SPRITE_COUNT_MIN, SPRITE_COUNT_MAX, (v) =>
             ctx.updateSettings({ ...ctx.getSettings(), spriteCount: v }),
           ),
           numberRow(
-            t('apps.sprites.injection_depth', '注入深度（距末尾楼层数）'),
+            t('apps.sprites.injection_depth', '提示词插入位置（距最新消息条数）'),
             settings.injectionDepth,
             INJECTION_DEPTH_MIN,
             INJECTION_DEPTH_MAX,
             (v) => ctx.updateSettings({ ...ctx.getSettings(), injectionDepth: v }),
           ),
           selectRow(
-            t('apps.sprites.prompt_mode', 'Prompt 模式'),
+            t('apps.sprites.prompt_mode', '多服装清单写法'),
             settings.multiRolePromptMode,
             [
-              { value: 'repeat', label: t('apps.sprites.compact_mode', '自动精简（默认：重合图名列一次）') },
-              { value: 'full', label: t('apps.sprites.full_mode', '全量（枚举全部地址）') },
+              { value: 'repeat', label: t('apps.sprites.compact_mode', '自动精简（推荐：同名表情只列一次）') },
+              { value: 'full', label: t('apps.sprites.full_mode', '完整展开（列出全部服装与表情组合）') },
             ],
             (v) =>
               ctx.updateSettings({
@@ -281,7 +281,7 @@ export function spriteApp(deps: SpriteAppDeps = {}): PhoneApp {
               }),
           ),
           numberRow(
-            t('apps.sprites.prompt_budget', 'Prompt 预算（字符，0=不限）'),
+            t('apps.sprites.prompt_budget', '清单字数上限（字符，0=不限）'),
             settings.promptBudget,
             PROMPT_BUDGET_MIN,
             PROMPT_BUDGET_MAX,
@@ -302,15 +302,15 @@ export function spriteApp(deps: SpriteAppDeps = {}): PhoneApp {
             : budgeted
         const budgetHint = el('div', 'so-app-desc')
         budgetHint.textContent = budgeted
-          ? t('apps.sprites.budget_count', '预计注入 {{count}} 字符', { count: budgeted.length }) +
+          ? t('apps.sprites.budget_count', '当前提示词约 {{count}} 字', { count: budgeted.length }) +
             (budgeted.length < unlimited.length
-              ? t('apps.sprites.budget_trimmed', '（超预算，已从 {{count}} 字符每场景均衡截取，保留排前的图名）', { count: unlimited.length })
+              ? t('apps.sprites.budget_trimmed', '（超出上限，已从 {{count}} 字中按各服装均匀截取靠前的表情）', { count: unlimited.length })
               : '')
-          : t('apps.sprites.budget_empty', '预计注入：无（当前角色没有可用立绘地址）')
+          : t('apps.sprites.budget_empty', '当前无需发送提示词（该角色还没有可用立绘）')
         promptSection.body.append(budgetHint)
 
         const promptHint = el('div', 'so-app-desc')
-        promptHint.textContent = t('apps.sprites.prompt_hint', '同角色多服装时，默认服装可写 [立绘:图名]，其他服装写 [立绘:服装/图名]；完整三级地址仍兼容。自动精简会抽取基础图名池和服装增量；适合相对地址时优先使用角色级格式（只要比全量短），否则在旧场景压缩和全量格式中取更短者。')
+        promptHint.textContent = t('apps.sprites.prompt_hint', '同角色有多套衣服时，默认服装可直接写 [立绘:图名]，换装写 [立绘:服装/图名]（完整三级写法同样兼容）。自动精简会把多套衣服共用的表情合并展示；若合并后反而更长，会自动改用更短的写法。')
         promptSection.body.append(promptHint)
 
         const tplRow = textareaRow(

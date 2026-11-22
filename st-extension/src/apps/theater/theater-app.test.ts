@@ -69,8 +69,8 @@ describe('theater app', () => {
 
   it('shows empty content and connection guidance', () => {
     mount(false, false)
-    expect(document.body.textContent).toContain('这里还没有内容')
-    expect(document.body.textContent).toContain('请先在微信设置里连接 AI')
+    expect(document.body.textContent).toContain('街角广场还静悄悄的')
+    expect(document.body.textContent).toContain('连上幕后 AI')
     expect(document.querySelector<HTMLButtonElement>('.th-primary-btn')!.disabled).toBe(true)
   })
 })

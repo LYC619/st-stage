@@ -75,9 +75,8 @@ export function PhoneMount({ settings, characterName, onSettingsChange, onPrevie
       onCharacterChanged: (h: () => void) => webAppEvents.character.subscribe(() => h()),
       injectPrompt: () => {},
       toast: (kind: ToastKind, message: string) => {
-        if (kind === 'error' || kind === 'warning') {
-          shellRef.current?.notifyPill({ icon: '⚠️', text: message })
-        }
+        const icon = kind === 'error' || kind === 'warning' ? '⚠️' : kind === 'success' ? '✓' : '💬'
+        shellRef.current?.notifyPill({ icon, text: message })
         console.info(`[toast:${kind}] ${message}`)
       },
     }
