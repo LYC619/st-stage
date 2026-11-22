@@ -1,8 +1,6 @@
 /**
  * 内置手机 App 装配清单（十期·内部模块组织）：
  * 未来新增内置工具时，在此列表加一个模块即可，与 st-stage 一起构建发布。
- * 旧「设置」App 已移除：立绘设置迁入「立绘」App，图床设置迁入「图库」App；
- * 本期没有独立的手机平台设置，故主页不再显示设置图标。
  */
 
 import type { PhoneApp } from '../../../core/phone-registry'
@@ -25,6 +23,8 @@ import type { RendererRuntime } from './renderer/runtime'
 export interface BuiltinAppDeps extends AppearanceDeps {
   /** 不持久化地预览悬浮立绘透明度。 */
   previewSpriteOpacity: (percent: number) => void
+  /** 在悬浮窗中实时预览指定立绘表情。 */
+  previewSprite?: (url: string, label: string) => void
   /** 从手机打开图库管理弹窗（收起手机 + 记录来源，关闭后回手机图库页） */
   openGalleryManager: () => void
   /** 「新变量」运行时：入口创建并 start（注入/解析/存储常驻），App 只是它的控制台 */
@@ -39,7 +39,7 @@ export interface BuiltinAppDeps extends AppearanceDeps {
 
 export function createBuiltinApps(deps: BuiltinAppDeps): PhoneApp[] {
   return [
-    spriteApp({ previewOpacity: deps.previewSpriteOpacity }),
+    spriteApp({ previewOpacity: deps.previewSpriteOpacity, previewSprite: deps.previewSprite }),
     galleryApp({ openManager: deps.openGalleryManager }),
     butlerApp(),
     mvuApp(),

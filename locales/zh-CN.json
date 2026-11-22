@@ -298,7 +298,8 @@
         },
         "export": {
           "json": "导出 JSON",
-          "saved": "已导出「{{p0}}」"
+          "saved": "已导出「{{p0}}」",
+          "unembedded_warn": "已导出「{{p0}}」，但有 {{p1}} 张本地图片未能内嵌，跨设备导入可能无法显示"
         },
         "info": {
           "title": "包信息",
@@ -404,7 +405,12 @@
     "show_phone": "显示手机",
     "sprites_help": "总开关：注入立绘清单给 AI 并展示回复中的立绘。关闭后清空注入、停止解析、隐藏悬浮窗并把楼层恢复原文；手机与其他工具不受影响。",
     "phone_help": "屏幕上显示可拖动的 📱 图标，点击展开小手机——所有功能 App 的统一入口。",
-    "hint": "酒馆里的事，百工都做。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。"
+    "hint": "酒馆里的事，百工都做。立绘显示/轮播/Prompt 设置在手机「立绘」App；图包管理与图床设置在手机「图库」App。",
+    "variable_hud": "变量与状态速查浮窗",
+    "variable_hud_help": "在聊天界面放一枚轻量速查胶囊，不用展开小手机也能随时看 MVU、新变量与剧情状态。",
+    "manage_packs": "管理图包",
+    "restore_overlay": "重显立绘悬浮窗",
+    "open_phone_once": "临时打开小手机"
   },
   "modal": {
     "title": "App 弹窗",
@@ -454,7 +460,11 @@
       "custom_prompt": "自定义提示词（留空=用内置）",
       "template_placeholder": "整体替换内置提示词。占位符：{清单}=按场景分组的立绘清单，{数量}=每次回复立绘数",
       "fill_builtin": "填入内置底稿（未修改时仍自动精简）",
-      "overwrite_confirm": "用内置底稿覆盖当前已填写的自定义提示词？"
+      "overwrite_confirm": "用内置底稿覆盖当前已填写的自定义提示词？",
+      "go_bind": "去图库绑定角色立绘",
+      "stage_title": "试衣与神态速览",
+      "all_outfits": "全部装束",
+      "copy_tag": "复制立绘标签"
     },
     "gallery": {
       "pack_count": "共 {{count}} 个立绘包",

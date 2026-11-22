@@ -161,7 +161,7 @@ export function collectExtensionCss(sourceRoot = defaultSourceRoot) {
       .map(name => readFileSync(path.join(stylesDir, name), 'utf8'))
     : []
   const phoneCss = readFileSync(path.join(sourceRoot, 'core/phone-shell.css'), 'utf8')
-  return normalizeArtifactNewlines([baseCss, ...partials, phoneCss].join('\n'))
+  return normalizeArtifactNewlines([baseCss, phoneCss, ...partials].join('\n'))
 }
 
 export async function buildExtension({

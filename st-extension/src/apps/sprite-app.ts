@@ -1,12 +1,13 @@
 /**
- * 「立绘」App — 立绘功能设置中心。
- * 订阅角色切换事件，在切换聊天/角色时实时同步当前角色绑定与预算统计。
+ * 「立绘」App — 实时角色立绘舞台与显示/提示词设置中心。
+ * 订阅角色切换事件，在切换聊天/角色时实时同步当前角色绑定、试衣舞台与预算统计。
  */
 
 import type { PhoneApp } from '../../../core/phone-registry'
 import { t } from '../../../core/i18n'
 import { buildActiveSpritePrompt } from '../../../core/active-prompt'
 import {
+  getPackCover,
   INJECTION_DEPTH_MAX,
   INJECTION_DEPTH_MIN,
   PROMPT_BUDGET_MAX,
@@ -19,8 +20,10 @@ import {
   SPRITE_OPACITY_MIN,
 } from '../../../core/types'
 import { getActivePacks } from '../../../core/sprite-store'
-import { el, appButton, foldSection, hintField, numberRow, rangeRow, selectRow, textareaRow, toggleRow } from './widgets'
 import { BUILTIN_TEMPLATE } from '../../../core/prompt-builder'
+import { safeCopyText } from './shared/safe-runtime'
+import { requestOpenApp } from './shared/story-events'
+import { el, appButton, foldSection, hintField, numberRow, rangeRow, selectRow, textareaRow, toggleRow } from './widgets'
 
 export interface SpriteAppDeps {
   /** 拖动滑块时仅预览悬浮窗透明度；松手后仍由 updateSettings 持久化。 */
@@ -36,6 +39,9 @@ export function spriteApp(deps: SpriteAppDeps = {}): PhoneApp {
     icon: '🎭',
     order: 1,
     mount(container, ctx) {
+      let selectedOutfit = ''
+      let selectedSpriteId = ''
+
       const render = () => {
         container.replaceChildren()
         const settings = ctx.getSettings()
@@ -56,6 +62,7 @@ export function spriteApp(deps: SpriteAppDeps = {}): PhoneApp {
               : t('apps.sprites.active_pack', '立绘功能运行中 — 已绑定「{{name}}」（{{images}} 张）', { name: pack.name, images: pack.sprites.length })
             : t('apps.sprites.unbound', '立绘功能已开启，但当前角色未绑定立绘包（到「图库」绑定）')
           : t('apps.sprites.disabled', '立绘功能已关闭：不注入 Prompt、不解析标签，旧楼层已恢复原文')
+
         stateSection.append(
           title,
           toggleRow(t('apps.sprites.enable', '启用立绘功能'), settings.enabled, (v) =>
@@ -63,6 +70,109 @@ export function spriteApp(deps: SpriteAppDeps = {}): PhoneApp {
           ),
           detail,
         )
+
+        if (settings.enabled && !pack) {
+          stateSection.append(
+            appButton(t('apps.sprites.go_bind', '去图库绑定角色立绘'), () => {
+              requestOpenApp({ appId: 'gallery-manager' })
+            }),
+          )
+        }
+
+        // 实时试衣与神态舞台（仅使用 div/button，不插入 select/textarea/range）
+        if (pack && pack.sprites.length > 0) {
+          const allSprites = packs.flatMap(p =>
+            p.sprites.map((s, idx) => {
+              const outfit = s.outfit?.trim() || p.outfit?.trim() || p.name
+              return {
+                id: `${p.id}::${idx}::${s.tag}`,
+                label: s.tag,
+                url: s.url,
+                outfit,
+                address: (s.outfit?.trim() || p.outfit?.trim()) && packs.length > 1 ? `${outfit}/${s.tag}` : s.tag,
+              }
+            }),
+          )
+          const outfits = [...new Set(allSprites.map(s => s.outfit))]
+          if (selectedOutfit && !outfits.includes(selectedOutfit)) selectedOutfit = ''
+          const visibleSprites = selectedOutfit
+            ? allSprites.filter(s => s.outfit === selectedOutfit)
+            : allSprites
+          const currentSprite =
+            visibleSprites.find(s => s.id === selectedSpriteId) ??
+            visibleSprites[0] ??
+            { id: '', label: pack.name, url: getPackCover(pack)?.url || '', outfit: pack.name, address: '' }
+
+          const stage = el('div', 'so-sprite-stage')
+          const stageHead = el('div', 'so-sprite-stage-head')
+          stageHead.append(
+            el('span', 'so-sprite-stage-title', t('apps.sprites.stage_title', '试衣与神态速览')),
+            el('span', 'so-sprite-stage-sub', currentSprite.address ? `[立绘:${currentSprite.address}]` : ''),
+          )
+
+          const stageMain = el('div', 'so-sprite-stage-main')
+          const previewBox = el('div', 'so-sprite-stage-preview')
+          if (currentSprite.url) {
+            const img = document.createElement('img')
+            img.src = currentSprite.url
+            img.alt = currentSprite.label
+            img.loading = 'lazy'
+            previewBox.append(img)
+          }
+
+          const controlsCol = el('div', 'so-sprite-stage-controls')
+          if (outfits.length > 1) {
+            const outfitRow = el('div', 'so-sprite-pills')
+            const allBtn = document.createElement('button')
+            allBtn.type = 'button'
+            allBtn.className = `so-sprite-pill${!selectedOutfit ? ' is-active' : ''}`
+            allBtn.textContent = t('apps.sprites.all_outfits', '全部装束')
+            allBtn.onclick = () => { selectedOutfit = ''; render() }
+            outfitRow.append(allBtn)
+            for (const outfit of outfits) {
+              const btn = document.createElement('button')
+              btn.type = 'button'
+              btn.className = `so-sprite-pill${selectedOutfit === outfit ? ' is-active' : ''}`
+              btn.textContent = outfit
+              btn.onclick = () => { selectedOutfit = outfit; render() }
+              outfitRow.append(btn)
+            }
+            controlsCol.append(outfitRow)
+          }
+
+          const chipGrid = el('div', 'so-sprite-chips')
+          for (const item of visibleSprites.slice(0, 18)) {
+            const chip = document.createElement('button')
+            chip.type = 'button'
+            chip.className = `so-sprite-chip${item.id === currentSprite.id ? ' is-active' : ''}`
+            chip.textContent = item.label
+            chip.onclick = () => {
+              selectedSpriteId = item.id
+              deps.previewSprite?.(item.url, item.label)
+              render()
+            }
+            chipGrid.append(chip)
+          }
+          controlsCol.append(chipGrid)
+
+          const stageFoot = el('div', 'so-sprite-stage-actions')
+          const copyBtn = document.createElement('button')
+          copyBtn.type = 'button'
+          copyBtn.className = 'so-sprite-copy-btn'
+          copyBtn.textContent = t('apps.sprites.copy_tag', '复制立绘标签')
+          copyBtn.onclick = () => {
+            const tag = `[立绘:${currentSprite.address || currentSprite.label}]`
+            void safeCopyText(tag).then(ok => {
+              ctx.toast?.(ok ? 'success' : 'info', ok ? `${tag}` : tag)
+            })
+          }
+          stageFoot.append(copyBtn)
+          controlsCol.append(stageFoot)
+
+          stageMain.append(previewBox, controlsCol)
+          stage.append(stageHead, stageMain)
+          stateSection.append(stage)
+        }
 
         const displaySection = foldSection(t('apps.sprites.display', '显示'), false, 'sprites:display')
         displaySection.body.append(

@@ -1,4 +1,5 @@
 import { safeRandomId } from '../shared/safe-runtime'
+import { clearAppBadge, consumeAppDeepLink } from '../shared/story-events'
 import type { PhoneApp, PhoneAppContext, AppHost } from '../../../../core/phone-registry'
 import { manageDialogFocus } from '../../../../core/dialog-focus'
 import { resolveCharacterAvatarUrl, resolveConversationScopeSync } from './bridge'
@@ -479,7 +480,28 @@ export function createWeChatApp(): PhoneApp {
         for (const conv of Object.values(conversations)) if (pending.has(conv.scopeKey!)) pending.cancel(conv)
         if (currentDialog?.id === 'wt-contacts-modal') renderContacts()
       })
+      clearAppBadge('wechat-sister')
       navigation.show('chats'); renderList(); renderAddressBook(); notice(); syncMoments(); void background?.trigger()
+      const deepLink = consumeAppDeepLink('wechat-sister')
+      if (deepLink?.openSettings) {
+        openSettings(false, true)
+      } else if (deepLink?.contactName) {
+        const wanted = deepLink.contactName.trim()
+        const existingConv = Object.entries(conversations).find(([, conv]) => !isGroup(conv) && titleFor(conv) === wanted)
+        if (existingConv) {
+          openConversation(existingConv[0])
+        } else {
+          const contact = Object.values(data.contacts ?? {}).find(c => c.name.trim() === wanted)
+          if (contact) {
+            const conv = addContactConversation(data, contact); persist(); openConversation(conv.scopeKey!)
+          } else {
+            el<HTMLInputElement>('wt-contact-search').value = wanted
+            el('wt-contact-feedback').textContent = ''
+            showDialog('wt-contacts-modal', el('wt-plus'))
+            renderContacts()
+          }
+        }
+      }
       // The shell's ‹ and Escape step back like a phone: close the open layer first, then leave the chat.
       stepBack = () => {
         if (!el('wt-plus-menu').hidden) { navigation.closeMenu(true); return true }

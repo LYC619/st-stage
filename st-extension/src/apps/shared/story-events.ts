@@ -93,3 +93,8 @@ export function consumeAppDeepLink(appId: string): AppDeepLink | null {
   pendingDeepLink = null
   return link
 }
+
+export function resetStoryEvents(): void {
+  pendingDeepLink = null
+  badgeCounts.clear()
+}

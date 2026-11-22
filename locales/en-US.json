@@ -298,7 +298,8 @@
         },
         "export": {
           "json": "Export JSON",
-          "saved": "Exported “{{p0}}”"
+          "saved": "Exported “{{p0}}”",
+          "unembedded_warn": "Exported “{{p0}}”, but {{p1}} local image(s) could not be embedded and may not appear on other devices"
         },
         "info": {
           "title": "Pack information",
@@ -404,7 +405,12 @@
     "show_phone": "Show phone",
     "sprites_help": "Send sprite lists to the AI and display sprites from replies. Turning this off clears the prompt, stops parsing, hides the overlay and restores original messages. The phone and other tools remain available.",
     "phone_help": "Show a draggable 📱 icon. Open it to access all Apps.",
-    "hint": "Baigong tools for SillyTavern. Configure sprite display, playback and prompts in the Sprites App; manage packs and image hosting in the Gallery App."
+    "hint": "Baigong tools for SillyTavern. Configure sprite display, playback and prompts in the Sprites App; manage packs and image hosting in the Gallery App.",
+    "variable_hud": "Floating Variable & Story HUD",
+    "variable_hud_help": "Show a compact floating pill on the chat screen to check MVU, New Variables, and Story State without opening the phone.",
+    "manage_packs": "Manage Packs",
+    "restore_overlay": "Show Sprite Overlay",
+    "open_phone_once": "Open Phone Temporarily"
   },
   "modal": {
     "title": "App dialog",
@@ -454,7 +460,11 @@
       "custom_prompt": "Custom prompt (blank = built-in)",
       "template_placeholder": "Replaces the entire built-in prompt. Placeholders: {清单} = sprites grouped by scene; {数量} = sprites per reply.",
       "fill_builtin": "Use built-in draft (auto-compact until edited)",
-      "overwrite_confirm": "Replace the current custom prompt with the built-in draft?"
+      "overwrite_confirm": "Replace the current custom prompt with the built-in draft?",
+      "go_bind": "Bind Sprite Pack in Gallery",
+      "stage_title": "Live Outfit & Expression Stage",
+      "all_outfits": "All Outfits",
+      "copy_tag": "Copy Sprite Tag"
     },
     "gallery": {
       "pack_count": "Sprite packs: {{count}}",

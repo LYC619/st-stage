@@ -57,10 +57,10 @@ export function mountSettingsPanel(deps: PanelDeps): () => void {
   let restoreOverlayBtn: HTMLButtonElement | null = null
   if (deps.openGalleryManager || deps.expandPhoneTemporarily) {
     const hudRow = checkboxRow(
-      '变量与状态速查浮窗',
+      t('settings.variable_hud', '变量与状态速查浮窗'),
       settings.variableHud,
       (v) => deps.updateSettings({ ...deps.getSettings(), variableHud: v }),
-      '在聊天界面放一枚轻量速查胶囊，不用展开小手机也能随时看 MVU、新变量与剧情状态。',
+      t('settings.variable_hud_help', '在聊天界面放一枚轻量速查胶囊，不用展开小手机也能随时看 MVU、新变量与剧情状态。'),
     )
     hudInput = hudRow.input
     content.append(hudRow.row)
@@ -73,7 +73,7 @@ export function mountSettingsPanel(deps: PanelDeps): () => void {
       const galleryBtn = document.createElement('button')
       galleryBtn.type = 'button'
       galleryBtn.className = 'menu_button'
-      galleryBtn.textContent = '管理图包'
+      galleryBtn.textContent = t('settings.manage_packs', '管理图包')
       galleryBtn.addEventListener('click', () => deps.openGalleryManager?.())
       quickRow.append(galleryBtn)
     }
@@ -81,7 +81,7 @@ export function mountSettingsPanel(deps: PanelDeps): () => void {
     restoreOverlayBtn = document.createElement('button')
     restoreOverlayBtn.type = 'button'
     restoreOverlayBtn.className = 'menu_button'
-    restoreOverlayBtn.textContent = '重显立绘悬浮窗'
+    restoreOverlayBtn.textContent = t('settings.restore_overlay', '重显立绘悬浮窗')
     restoreOverlayBtn.hidden = !settings.overlayHidden
     restoreOverlayBtn.addEventListener('click', () => {
       const cur = deps.getSettings()
@@ -98,7 +98,7 @@ export function mountSettingsPanel(deps: PanelDeps): () => void {
       const openBtn = document.createElement('button')
       openBtn.type = 'button'
       openBtn.className = 'menu_button'
-      openBtn.textContent = '临时打开小手机'
+      openBtn.textContent = t('settings.open_phone_once', '临时打开小手机')
       openBtn.addEventListener('click', () => deps.expandPhoneTemporarily?.())
       quickRow.append(openBtn)
     }

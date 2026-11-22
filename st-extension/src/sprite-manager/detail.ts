@@ -95,9 +95,9 @@ export function createDetail(ctx: ManagerContext) {
         try {
           const file = await exportPack(pack)
           downloadJson(file, `${pack.name}.sprite-pack.json`)
-          const unembedded = file.sprites.filter(item => !item.data && item.url?.startsWith('/user/images/')).length
+          const unembedded = file.sprites.filter(item => !item.data && Boolean(item.url && !/^https?:\/\//i.test(item.url))).length
           if (unembedded > 0) {
-            toast(body, `已导出「${pack.name}」，但有 ${unembedded} 张本地图片未能内嵌，跨设备导入可能无法显示`)
+            toast(body, t("sprite.manager.content.export.unembedded_warn", "已导出「{{p0}}」，但有 {{p1}} 张本地图片未能内嵌，跨设备导入可能无法显示", { p0: pack.name, p1: unembedded }))
           } else {
             toast(body, t("sprite.manager.content.export.saved", "已导出「{{p0}}」", { p0: pack.name }))
           }

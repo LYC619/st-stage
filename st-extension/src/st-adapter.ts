@@ -141,9 +141,9 @@ function getContext(): STContext {
   return st.getContext()
 }
 
-/** 查找 SillyTavern 主消息输入框；DOM 选择器只在适配层维护。 */
+/** 查找 SillyTavern 主消息输入框（Web 模拟器自动回退到聊天输入框）；DOM 选择器只在适配层维护。 */
 export function findComposerTextarea(root: ParentNode = document): HTMLTextAreaElement | null {
-  const input = root.querySelector('#send_textarea')
+  const input = root.querySelector('#send_textarea, textarea[aria-label="聊天输入框"]')
   return input instanceof HTMLTextAreaElement ? input : null
 }
 

@@ -1,9 +1,10 @@
 // Rules copied from 玉子手机 tables/sources/小剧场2.1/05-小日历表.md; dates are supplied by shared/story-date.
 import type { AppHost } from '../../../../core/phone-registry'
 import { stableCharacterKey } from '../../../../core/character-identity'
-import { readChatMetadata } from '../shared/chat-metadata'
+import { readChatMetadata, storyIdentity, writeChatMetadata } from '../shared/chat-metadata'
 import { formatStoryDate, parseSpanEnd } from '../shared/story-date'
 import { getStoryAiConfig, requestChat } from '../shared/story-ai'
+import { emitStoryEvent } from '../shared/story-events'
 import { captureStory, formatStoryMemory, readStoryMemory } from '../wechat/memory'
 import { resolveProfile } from '../wechat/profile-library'
 import type { WeChatConfig } from '../wechat/types'
@@ -11,26 +12,111 @@ import type { WeChatConfig } from '../wechat/types'
 export const CALENDAR_KEY = 'st_stage_calendar'
 export const NO_STORY_DATE = '剧情里还没有日期。在剧情状态里打开后台整理，或让 AI 在回复中写明日期'
 export interface CalendarDay { date: string; festival: string; event: string; status: string; weather: string; content: string }
-export interface CalendarData { v: 1; days: CalendarDay[] }
+export interface CalendarData { v: 1; days: CalendarDay[]; notes?: Record<string, string> }
+
 const WEATHER = ['晴', '阴', '多云', '小雨', '大雨', '雷雨', '小雪', '大雪', '雾', '风', '沙尘', '极端天气']
+const WEATHER_EMOJI: Record<string, string> = {
+  晴: '☀️',
+  多云: '⛅',
+  阴: '☁️',
+  小雨: '🌦️',
+  大雨: '🌧️',
+  雷雨: '⛈️',
+  小雪: '🌨️',
+  大雪: '❄️',
+  雾: '🌫️',
+  风: '💨',
+  沙尘: '🏜️',
+  极端天气: '🌪️',
+}
+
+export function weatherIcon(weather: string): string {
+  return WEATHER_EMOJI[weather] || '📅'
+}
+
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const str = (value: unknown) => typeof value === 'string' ? value.trim() : ''
 
 export function calendarWindow(today: Date): string[] {
-  return Array.from({ length: 7 }, (_, i) => { const date = new Date(today); date.setDate(date.getDate() + i - 3); return formatStoryDate(date) })
+  return Array.from({ length: 7 }, (_, i) => {
+    const date = new Date(today)
+    date.setDate(date.getDate() + i - 3)
+    return formatStoryDate(date)
+  })
 }
+
 export function normalizeCalendar(value: unknown): CalendarData {
   const raw = record(value), days = new Map<string, CalendarDay>()
   for (const value of Array.isArray(raw.days) ? raw.days : []) {
     const row = record(value), date = str(row.date), event = str(row.event)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !parseSpanEnd(date) || !event) continue
     const status = str(row.status), weather = str(row.weather)
-    days.set(date, { date, event, festival: str(row.festival), content: str(row.content),
-      status: ['上班/上学', '放假'].includes(status) ? status : '', weather: WEATHER.includes(weather) ? weather : '' })
+    days.set(date, {
+      date,
+      event,
+      festival: str(row.festival),
+      content: str(row.content),
+      status: ['上班/上学', '放假'].includes(status) ? status : '',
+      weather: WEATHER.includes(weather) ? weather : '',
+    })
   }
-  return { v: 1, days: [...days.values()] }
+  const rawNotes = record(raw.notes)
+  const notes: Record<string, string> = {}
+  for (const [k, v] of Object.entries(rawNotes)) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(k) && typeof v === 'string' && v.trim()) {
+      notes[k] = v.trim().slice(0, 200)
+    }
+  }
+  return {
+    v: 1,
+    days: [...days.values()],
+    ...(Object.keys(notes).length ? { notes } : {}),
+  }
 }
+
 export function readCalendar(): CalendarData { return normalizeCalendar(readChatMetadata(CALENDAR_KEY)) }
+
+export function readTodayCalendarSummary(today: Date | null): string {
+  if (!today) return ''
+  const date = formatStoryDate(today)
+  const cal = readCalendar()
+  const day = cal.days.find(item => item.date === date)
+  const note = cal.notes?.[date]
+  if (!day && !note) return ''
+  const parts: string[] = []
+  if (day) {
+    parts.push(`${date} · ${[day.festival, day.weather, day.status, day.event].filter(Boolean).join(' · ')}`)
+    if (day.content) parts.push(day.content.slice(0, 120))
+  } else {
+    parts.push(date)
+  }
+  if (note) parts.push(`当日约定：${note}`)
+  return parts.join('\n')
+}
+
+export async function saveCalendarNote(host: AppHost, date: string, note: string): Promise<boolean> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false
+  const key = storyIdentity(host)
+  const current = readCalendar()
+  const notes = { ...(current.notes ?? {}) }
+  const clean = note.trim().slice(0, 200)
+  if (clean) notes[date] = clean
+  else delete notes[date]
+  const payload: CalendarData = {
+    v: 1,
+    days: current.days,
+    ...(Object.keys(notes).length ? { notes } : {}),
+  }
+  const ok = await writeChatMetadata(host, key, CALENDAR_KEY, payload)
+  if (ok) {
+    emitStoryEvent({
+      type: 'calendar-updated',
+      summary: clean ? `已记下 ${date} 约定：${clean}` : `已清除 ${date} 约定`,
+    })
+  }
+  return ok
+}
+
 export function calendarGap(today: Date, data: CalendarData) {
   const window = calendarWindow(today), retained = data.days.filter(day => window.includes(day.date))
   return { retained, missing: window.filter(date => !retained.some(day => day.date === date)) }

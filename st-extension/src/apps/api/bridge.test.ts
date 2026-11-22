@@ -146,4 +146,36 @@ describe('SillyTavern bridge', () => {
     await expect(fetchModels(profile({ key: 'preview-only-key' }))).resolves.toEqual(['direct-model'])
     expect(writes).toEqual([])
   })
+
+  it('restores the target provider slot even when ST is currently connected to another provider, and skips write when target slot is empty', async () => {
+    installST({ chat_completion_source: 'openrouter' })
+    const writes: Array<{ key?: string; value?: string }> = []
+    let targetValue = 'existing-custom-secret'
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/find')) {
+        const req = JSON.parse(String(init?.body)) as { key?: string }
+        expect(req.key).toBe('api_key_custom')
+        return response(true, { value: targetValue })
+      }
+      if (url.endsWith('/write')) {
+        writes.push(JSON.parse(String(init?.body)) as { key?: string; value?: string })
+        return response(true)
+      }
+      if (url.endsWith('/status')) return response(true, { data: [{ id: 'custom-m1' }] })
+      if (url === 'https://example.com/v1/models') return response(true, { data: [{ id: 'empty-slot-m2' }] })
+      return response(false)
+    }))
+
+    await expect(fetchModels(profile({ source: 'custom', key: 'draft-custom' }))).resolves.toEqual(['custom-m1'])
+    expect(writes).toEqual([
+      { key: 'api_key_custom', value: 'draft-custom', id: 'sid' },
+      { key: 'api_key_custom', value: 'existing-custom-secret', id: 'sid' },
+    ])
+
+    writes.length = 0
+    targetValue = ''
+    await expect(fetchModels(profile({ source: 'custom', key: 'draft-on-empty' }))).resolves.toEqual(['empty-slot-m2'])
+    expect(writes).toEqual([])
+  })
 })

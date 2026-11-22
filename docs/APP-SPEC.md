@@ -12,7 +12,7 @@ st-stage 在 SillyTavern 聊天界面提供一个「手机」悬浮框架：一�
 
 1. **新建模块**：`st-extension/src/apps/<你的功能>-app.ts`，导出一个返回 `PhoneApp` 对象的工厂函数（结构见下方外部注册示例，`mount`/`ctx` 完全相同；UI 小部件直接复用 `./widgets` 里的 `appButton/toggleRow/selectRow/numberRow/textRow/textareaRow`）。
 2. **加入装配清单**：在 `st-extension/src/apps/index.ts` 的 `createBuiltinApps` 返回数组里加一行。需要访问框架能力（如打开弹窗）就照 `galleryApp` 的样子通过 `BuiltinAppDeps` 传入。
-3. **构建与产物同步**：日常联调运行 `pnpm build:ext`；提交前运行 `pnpm build:all` 以同一时间戳同步生成根目录、`st-distribution/` 与网页模拟器 `public/` 产物（不要手动复制源码或 `reference/`），并通过 `node scripts/verify-runtime-parity.mjs --root . --distribution st-distribution --preview public` 核验。内置 App 新增或改名时需同步更新 `README.md` 并通过 `node scripts/verify-docs-apps.mjs`。
+3. **构建与产物同步**：日常联调运行 `pnpm build:ext`；提交前运行 `pnpm build:all` 以同一时间戳同步生成根目录、`st-distribution/` 与网页模拟器 `public/` 产物（不要手动复制源码或 `reference/`），提交前跑 `node scripts/verify-runtime-parity.mjs --root . --distribution st-distribution --preview public`，提交后跑 `node scripts/verify-runtime-parity.mjs --committed --root . --distribution st-distribution --preview public` 核验。内置 App 新增或改名时需同步更新 `README.md` 与本规范表格，并通过 `node scripts/verify-docs-apps.mjs`。
 
 App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发立绘刷新）；只有确实要改核心设置才用 `ctx.updateSettings`。
 
@@ -25,7 +25,7 @@ App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发
   id: 'dice-roller',        // 唯一 ID：小写字母开头，字母/数字/连字符，2–32 字符
   name: '骰子',              // Home 屏名称，建议 ≤ 4 个汉字
   icon: '🎲',               // 单个 emoji
-  order: 50,                // 排序权重，小的在前（内置 App 占 1–20）
+  order: 50,                // 排序权重，小的在前（内置 App 占 1–90）
 
   // 常驻层（可选，st-stage ≥ 0.9）：注册后调用一次，手机没打开也在工作；
   // host 上的订阅由平台在销毁时自动回收，不用手工退订
@@ -176,4 +176,4 @@ App 私有状态用 `ctx.getAppData/setAppData`（命名空间隔离、不触发
 装配清单：`st-extension/src/apps/index.ts`。
 
 两个变量 App 复用共享视图 `apps/variable-tree.ts`（折叠分组/类型感知编辑/delta 徽标，「模型+回调」契约）。「新变量」的注入走**命名注入通道** `adapter.injectChannel(channel, prompt, depth)`（ST 端每通道一个独立 `setExtensionPrompt` 槽位，key=`st-stage::<channel>`）——v0.9 起 App 不用自己碰通道：`ctx.injectPrompt` 已按 appId 自动分配（`app:<你的id>`），互不覆盖，也不会碰立绘的注入。
-框架源码：注册表与能力层 `core/phone-registry.ts` + `core/capabilities.ts`、全屏弹窗 `core/app-modal.ts`、手机壳 `core/phone-shell.ts`、样式 `core/phone-shell.css`。
+框架源码：注册表与能力层 `core/phone-registry.ts` + `core/capabilities.ts`、全屏弹窗 `core/app-modal.ts`、手机壳 `core/phone-shell.ts`、壳层公共样式 `core/phone-shell.css`、各域样式 `st-extension/styles/*.css`。

@@ -19,11 +19,17 @@ export interface PhoneHomeSummary {
   rows: Array<{ id: string; appId: string; label: string; value: string }>
 }
 
+export type PhoneThemeId = 'midnight' | 'tavern' | 'parchment' | 'aurora' | 'daylight'
+
 export interface PhoneAppearance {
   wallpaper: string
   icons: Record<string, { emoji?: string; image?: string }>
   fonts: Array<{ name: string; cssUrl: string; family: string }>
   activeFont: string
+  theme?: PhoneThemeId
+  wallpaperDim?: number
+  wallpaperBlur?: number
+  characterSkins?: Record<string, { theme?: PhoneThemeId; wallpaper?: string }>
 }
 
 export interface PhoneShellDeps {

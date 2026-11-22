@@ -9,8 +9,12 @@ const record = (value: unknown): Record<string, unknown> => value && typeof valu
 export function normalizeContent(value: unknown): ChronicleContent | null {
   const raw = record(value)
   if (typeof raw.summary !== 'string' || !raw.summary.trim() || typeof raw.text !== 'string' || !raw.text.trim()) return null
-  return { summary: raw.summary.trim(), text: raw.text.trim(), timeSpan: typeof raw.timeSpan === 'string' ? raw.timeSpan.trim() : '',
-    keyDialogue: Array.isArray(raw.keyDialogue) && raw.keyDialogue.every(item => typeof item === 'string') ? raw.keyDialogue : [] }
+  return {
+    summary: raw.summary.trim(),
+    text: raw.text.trim(),
+    timeSpan: typeof raw.timeSpan === 'string' ? raw.timeSpan.trim() : '',
+    keyDialogue: Array.isArray(raw.keyDialogue) && raw.keyDialogue.every(item => typeof item === 'string') ? raw.keyDialogue : [],
+  }
 }
 
 export function readChronicleData(): ChronicleData {
@@ -18,9 +22,18 @@ export function readChronicleData(): ChronicleData {
   const entries = (Array.isArray(raw.entries) ? raw.entries : []).flatMap(value => {
     const row = record(value), content = normalizeContent(row)
     if (!content || typeof row.code !== 'string' || !/^AM\d+$/.test(row.code)) return []
-    return [{ ...content, code: row.code, createdAt: typeof row.createdAt === 'number' && Number.isFinite(row.createdAt) ? row.createdAt : 0 }]
+    return [{
+      ...content,
+      code: row.code,
+      createdAt: typeof row.createdAt === 'number' && Number.isFinite(row.createdAt) ? row.createdAt : 0,
+      ...(typeof row.startIndex === 'number' && Number.isInteger(row.startIndex) ? { startIndex: row.startIndex } : {}),
+    }]
   })
-  return { v: 1, entries, lastMessageIndex: typeof raw.lastMessageIndex === 'number' && Number.isInteger(raw.lastMessageIndex) ? Math.max(-1, raw.lastMessageIndex) : -1 }
+  return {
+    v: 1,
+    entries,
+    lastMessageIndex: typeof raw.lastMessageIndex === 'number' && Number.isInteger(raw.lastMessageIndex) ? Math.max(-1, raw.lastMessageIndex) : -1,
+  }
 }
 
 export function nextCode(data: ChronicleData): string {
@@ -29,6 +42,11 @@ export function nextCode(data: ChronicleData): string {
 
 export function readChronicleSettings(host: AppHost): ChronicleSettings {
   const raw = record(host.getAppData())
-  return { autoGenerate: raw.autoGenerate !== false, inject: raw.inject !== false, autoCalendar: raw.autoCalendar !== false,
-    interval: typeof raw.interval === 'number' && Number.isFinite(raw.interval) ? Math.max(2, Math.min(20, Math.round(raw.interval))) : 4 }
+  return {
+    autoGenerate: raw.autoGenerate !== false,
+    inject: raw.inject !== false,
+    autoCalendar: raw.autoCalendar !== false,
+    injectCalendar: raw.injectCalendar !== false,
+    interval: typeof raw.interval === 'number' && Number.isFinite(raw.interval) ? Math.max(2, Math.min(20, Math.round(raw.interval))) : 4,
+  }
 }

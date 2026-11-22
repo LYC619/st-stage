@@ -244,6 +244,653 @@
   opacity: 1;
 }
 
+/* 手机框架样式 — 双端共用（ST 由 build.mjs 拼进 style.css；Web 由 globals.css import） */
+
+/* ==================== 手机框架 ==================== */
+
+/* 悬浮图标 */
+.so-phone-fab {
+  position: fixed;
+  z-index: 9998;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(20, 20, 26, 0.85);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  font-size: 22px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  backdrop-filter: blur(6px);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.so-phone-fab:hover {
+  transform: scale(1.06);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55);
+}
+
+.so-phone-fab:active {
+  cursor: grabbing;
+}
+
+.so-phone-fab:focus-visible,
+.so-app-btn:focus-visible {
+  outline: 2px solid #87bfff;
+  outline-offset: 3px;
+}
+
+/* 手机外壳 */
+.so-phone-shell {
+  position: fixed;
+  z-index: 9999;
+  width: min(320px, calc(100vw - 16px));
+  display: flex;
+  flex-direction: column;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: #181820;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), inset 0 0 0 2px rgba(0, 0, 0, 0.5);
+  /* The screen clips its own content. Let transparent status targets extend above the rounded shell. */
+  overflow: visible;
+  user-select: none;
+}
+
+/* 状态栏 */
+.so-phone-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px 6px 10px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.85);
+  flex-shrink: 0;
+}
+
+/* App 内返回键（Home 屏隐藏，由 JS 切换 display） */
+.so-phone-back {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 26px;
+  border-radius: 8px;
+  font-size: 20px;
+  line-height: 1;
+  padding-bottom: 2px;
+  cursor: pointer;
+  opacity: 0.85;
+  touch-action: manipulation;
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+
+.so-phone-back:hover,
+.so-phone-back:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  opacity: 1;
+  outline: none;
+}
+
+.so-phone-status-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.so-phone-clock {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+/* 右上角固定关闭键：收起手机壳（App 会先 unmount） */
+.so-phone-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 26px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.85;
+  touch-action: manipulation;
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+
+.so-phone-close:hover,
+.so-phone-close:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  opacity: 1;
+  outline: none;
+}
+
+/* Keep visual layout unchanged; the targets end at the status bar bottom, above app controls. */
+.so-phone-back,
+.so-phone-close { position: relative; z-index: 1; }
+.so-phone-back::after,
+.so-phone-close::after {
+  content: '';
+  position: absolute;
+  top: -12px;
+  width: 44px;
+  height: 44px;
+}
+.so-phone-back::after { left: -7px; }
+.so-phone-close::after { right: -7px; }
+
+/* 屏幕 */
+.so-phone-screen {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 14px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+/* 底部 Home 栏：容纳圆形 Home 键 */
+.so-phone-homebar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 0 7px;
+  flex-shrink: 0;
+}
+
+/* 圆形 Home 键：44×44 命中区（触屏最低可点标准），只负责返回主屏 */
+.so-phone-homebtn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.06);
+  box-sizing: border-box;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.1s ease;
+}
+
+.so-phone-homebtn:hover,
+.so-phone-homebtn:focus-visible {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.75);
+  outline: none;
+}
+
+.so-phone-homebtn:active {
+  transform: scale(0.92);
+}
+
+/* Home 屏 App 栅格 */
+.so-phone-role {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.045);
+  overflow-wrap: anywhere;
+}
+.so-phone-role > summary { cursor: pointer; list-style: none; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 24px; }
+.so-phone-role > summary::-webkit-details-marker { display: none; }
+.so-phone-role > summary::after { content: '⌄'; font-size: 16px; }
+.so-phone-role[open] > summary::after { content: '⌃'; }
+.so-phone-role > summary .so-phone-role-eyebrow { margin: 0; letter-spacing: normal; }
+.so-phone-role > summary .so-phone-role-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.so-phone-role > summary .so-phone-role-subtitle { display: none; }
+.so-phone-role-actions { margin-top: 8px; }
+.so-phone-role-eyebrow { font-size: 10px; letter-spacing: 0.12em; color: #a9cbbd; margin-bottom: 5px; }
+.so-phone-role-title { display: block; font-size: 18px; line-height: 1.3; }
+.so-phone-role-subtitle { font-size: 11px; color: #c2c6cc; margin: 4px 0 8px; }
+.so-phone-role-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 7px 0;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.so-phone-role-action > span:first-child { flex: 0 0 auto; }
+.so-phone-role-action > span:last-child { text-align: right; color: #c2c6cc; font-size: 11px; }
+.so-phone-role-action:hover { background: rgba(255, 255, 255, 0.05); }
+.so-phone-role-action:focus-visible { outline: 2px solid #a9cbbd; outline-offset: 2px; border-radius: 3px; }
+
+.so-phone-home-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px 8px;
+  padding: 8px 2px;
+}
+
+.so-phone-screen-wallpaper {
+  background-image: linear-gradient(180deg, rgba(0,0,0,.3), rgba(0,0,0,.7)), var(--so-wallpaper);
+  background-size: cover;
+  background-position: center;
+}
+.so-phone-screen-wallpaper .so-phone-app-label { opacity: 1; text-shadow: 0 1px 3px #000; }
+.so-phone-app-glyph img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+
+.so-phone-app-icon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  border-radius: 12px;
+  padding: 4px 2px;
+  transition: background 0.12s ease, transform 0.1s ease;
+}
+
+.so-phone-app-icon:hover,
+.so-phone-app-icon:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  outline: none;
+}
+
+.so-phone-app-icon:active {
+  transform: scale(0.94);
+}
+
+.so-phone-app-glyph {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+}
+
+.so-phone-app-label {
+  font-size: 11px;
+  opacity: 0.85;
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* App 页面 */
+.so-phone-app-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.so-phone-app-error {
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(255, 100, 100, 0.15);
+  border: 1px solid rgba(255, 100, 100, 0.35);
+  font-size: 13px;
+}
+
+.so-app-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* 折叠分区：details 不吃 flex 布局，标题（summary）常显、内容默认收起 */
+.so-app-fold {
+  display: block;
+}
+.so-app-fold > summary {
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  padding: 2px 0;
+}
+.so-app-fold > summary::-webkit-details-marker {
+  display: none;
+}
+.so-app-fold > summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+}
+.so-app-fold[open] > summary::before {
+  transform: rotate(90deg);
+}
+.so-app-fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.so-app-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.so-app-desc {
+  font-size: 12px;
+  opacity: 0.75;
+  line-height: 1.55;
+}
+
+.so-app-btn {
+  white-space: nowrap;
+  width: 100%;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+/* The host's .menu_button display rule otherwise overrides native [hidden]. */
+.so-app-btn[hidden] {
+  display: none;
+}
+
+.so-app-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin: 2px 0;
+}
+
+/* 数字输入行：标签左、输入框右靠 */
+.so-app-toggle .so-app-num {
+  margin-left: auto;
+  max-width: 84px;
+  box-sizing: border-box;
+}
+
+.so-app-range {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.so-app-range > span:first-child {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.so-app-range-controls {
+  display: grid;
+  grid-template-columns: minmax(96px, 1fr) 44px;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 150px;
+  min-width: 0;
+}
+
+.so-app-range-controls input[type='range'] {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+
+.so-app-range-controls output {
+  width: 44px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.so-app-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* 文本/密码输入行（标题在上，输入框在下） */
+.so-app-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* ⓘ 说明行：左侧原控件占满，右侧 ⓘ 徽标；点开后下方展示行内说明块 */
+.so-app-hintwrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.so-app-hintrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.so-app-hintrow > .so-app-hintrow-main {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.so-app-hint-badge {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  line-height: 1;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  cursor: help;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.so-app-hint-badge:hover,
+.so-app-hint-badge:focus-visible,
+.so-app-hint-badge-on {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.6);
+  outline: none;
+}
+.so-app-hint {
+  font-size: 12px;
+  opacity: 0.78;
+  line-height: 1.5;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 2px solid rgba(255, 255, 255, 0.28);
+}
+
+.so-app-sprite-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.so-app-sprite-strip img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+  transition: transform 0.1s ease, border-color 0.12s ease;
+}
+
+.so-app-sprite-strip img:hover {
+  transform: scale(1.04);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* Match the JS fallback; inline layout also follows visual viewport zoom/panning. */
+@media (min-width: 768px) {
+  .so-phone-shell {
+    width: min(380px, calc(100vw - 16px));
+  }
+}
+
+/* ==================== App 全屏弹窗（ctx.openModal，阶段五能力层） ==================== */
+
+.so-app-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  /*
+   * 移动端必须用 dvh，inset: 0 不够。
+   *
+   * position: fixed 的包含块是「布局视口」，等于工具栏收起时的那个大视口；100vh 也是同一个
+   * 大值。真正可见的是「视觉视口」（window.innerHeight），地址栏露出时更小。所以 inset: 0
+   * 和 100vh 都会让遮罩比可见区域高一截，里面 align-items: center 居中的盒子随之上下溢出，
+   * 头部的 ✕ 被顶到可见区域上方——遮罩是 fixed，用户滚不动，只能刷新。
+   *
+   * dvh 跟随工具栏显隐变化，取的就是当前可见高度。100vh 留作老内核兜底。
+   */
+  height: 100vh;
+  height: 100dvh;
+  z-index: 10000; /* 压过手机壳（9999）与悬浮图标（9998） */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.so-app-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(680px, calc(100vw - 16px));
+  /*
+   * 高度上限用 100% 而不是 100vh：backdrop 是 position: fixed; inset: 0，它的高度
+   * 就是真实可见区域。移动端 100vh 含地址栏占的那条，比可见区域高——盒子一旦比
+   * backdrop 高，align-items: center 会让它上下同时溢出，头部（✕ 所在）被顶到可见
+   * 区域上方，用户只能刷新。dvh 作为渐进增强留给不以 backdrop 为父的场景。
+   */
+  max-height: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  background: rgba(22, 22, 28, 0.97);
+  color: #ddd;
+}
+
+.so-app-modal-head {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px;
+  /* 永不压缩：这里是唯一的关闭入口，被挤掉等于把用户关在弹窗里 */
+  flex: 0 0 auto;
+}
+
+.so-app-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 15px;
+  color: #bbb;
+}
+
+.so-app-modal-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.so-app-modal-close:focus-visible {
+  outline: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.so-app-modal-body {
+  padding: 0 14px 14px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  /*
+   * flex 项默认 min-height: auto，不会收缩到内容以下——overflow-y: auto 因此不生效，
+   * 长报告会把盒子顶高、连带把头部挤出可见区域。min-height: 0 才让它真的滚动。
+   */
+  /*
+   * flex 项默认 min-height: auto，不会收缩到内容以下。盒子高度是定死的（移动端 100%、
+   * 桌面 max-height），所以缺了这条不是把盒子顶高，而是 overflow-y: auto 根本不生效——
+   * 超出的内容被 .so-app-modal 的 overflow: hidden 裁掉且滚不到。
+   */
+  flex: 1 1 auto;
+  min-height: 0;
+  /* 滚到边界不要把手机后面的聊天一起带着滚 */
+  overscroll-behavior: contain;
+}
+
+/* 手机端全屏（三原则：复杂编辑占满屏） */
+@media (max-width: 600px) {
+  .so-app-modal {
+    /*
+     * 100% 撑满 backdrop（fixed; inset: 0），不用 100vw/100vh：
+     * 视口单位在移动端含浏览器工具栏，会让盒子比可见区域大一圈。
+     */
+    width: 100%;
+    height: 100%;
+    border: none;
+    border-radius: 0;
+  }
+}
+
+/* ==================== 全屏沉浸式 App 支持与界面微动效 ==================== */
+
+.so-phone-indicators {
+  font-size: 10px;
+  opacity: 0.75;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.so-phone-screen.so-phone-screen-fullbleed,
+.so-phone-screen:has(.so-phone-app-fullbleed) {
+  padding: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.so-phone-app-container.so-phone-app-fullbleed {
+  flex: 1 !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  gap: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.so-phone-shell {
+  animation: soPhonePop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes soPhonePop {
+  0% {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 /* 立绘包管理弹窗 */
 .so-manager-backdrop {
   position: fixed;
@@ -588,7 +1235,8 @@
 }
 
 /* 操作反馈：浮在弹窗底部的提示条，不随内容滚走 */
-.so-manager .so-toast {
+.so-manager .so-toast,
+.so-lightbox .so-toast {
   position: absolute;
   left: 50%;
   bottom: 14px;
@@ -606,7 +1254,13 @@
   pointer-events: none;
 }
 
-.so-manager .so-toast:empty {
+.so-lightbox .so-toast {
+  bottom: 58px;
+  z-index: 10;
+}
+
+.so-manager .so-toast:empty,
+.so-lightbox .so-toast:empty {
   display: none;
 }
 
@@ -3917,651 +4571,4 @@ button.stapi-row:disabled { cursor: wait; opacity: 0.65; }
   #wt-emoji-grid{min-height:0;flex:1}.wt-tabs{padding:3px}
   .wt-moments-cover{padding:6px 14px}.wt-moments-cover h2{font-size:15px}.wt-moments-cover p{display:none}
   .wechat-root #wt-bottom-nav button{min-height:40px;flex-direction:row;gap:5px}.wt-nav-icon{font-size:18px}
-}
-
-/* 手机框架样式 — 双端共用（ST 由 build.mjs 拼进 style.css；Web 由 globals.css import） */
-
-/* ==================== 手机框架 ==================== */
-
-/* 悬浮图标 */
-.so-phone-fab {
-  position: fixed;
-  z-index: 9998;
-  width: 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(20, 20, 26, 0.85);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
-  font-size: 22px;
-  cursor: grab;
-  user-select: none;
-  touch-action: none;
-  backdrop-filter: blur(6px);
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
-}
-
-.so-phone-fab:hover {
-  transform: scale(1.06);
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55);
-}
-
-.so-phone-fab:active {
-  cursor: grabbing;
-}
-
-.so-phone-fab:focus-visible,
-.so-app-btn:focus-visible {
-  outline: 2px solid #87bfff;
-  outline-offset: 3px;
-}
-
-/* 手机外壳 */
-.so-phone-shell {
-  position: fixed;
-  z-index: 9999;
-  width: min(320px, calc(100vw - 16px));
-  display: flex;
-  flex-direction: column;
-  border-radius: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: #181820;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), inset 0 0 0 2px rgba(0, 0, 0, 0.5);
-  /* The screen clips its own content. Let transparent status targets extend above the rounded shell. */
-  overflow: visible;
-  user-select: none;
-}
-
-/* 状态栏 */
-.so-phone-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px 6px 10px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.85);
-  flex-shrink: 0;
-}
-
-/* App 内返回键（Home 屏隐藏，由 JS 切换 display） */
-.so-phone-back {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  min-width: 30px;
-  height: 26px;
-  border-radius: 8px;
-  font-size: 20px;
-  line-height: 1;
-  padding-bottom: 2px;
-  cursor: pointer;
-  opacity: 0.85;
-  touch-action: manipulation;
-  transition: background 0.12s ease, opacity 0.12s ease;
-}
-
-.so-phone-back:hover,
-.so-phone-back:focus-visible {
-  background: rgba(255, 255, 255, 0.1);
-  opacity: 1;
-  outline: none;
-}
-
-.so-phone-status-title {
-  flex: 1;
-  min-width: 0;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.so-phone-clock {
-  font-variant-numeric: tabular-nums;
-  opacity: 0.75;
-}
-
-/* 右上角固定关闭键：收起手机壳（App 会先 unmount） */
-.so-phone-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 30px;
-  height: 26px;
-  border-radius: 8px;
-  font-size: 13px;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0.85;
-  touch-action: manipulation;
-  transition: background 0.12s ease, opacity 0.12s ease;
-}
-
-.so-phone-close:hover,
-.so-phone-close:focus-visible {
-  background: rgba(255, 255, 255, 0.1);
-  opacity: 1;
-  outline: none;
-}
-
-/* Keep visual layout unchanged; the targets end at the status bar bottom, above app controls. */
-.so-phone-back,
-.so-phone-close { position: relative; z-index: 1; }
-.so-phone-back::after,
-.so-phone-close::after {
-  content: '';
-  position: absolute;
-  top: -12px;
-  width: 44px;
-  height: 44px;
-}
-.so-phone-back::after { left: -7px; }
-.so-phone-close::after { right: -7px; }
-
-/* 屏幕 */
-.so-phone-screen {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 10px 14px;
-  color: rgba(255, 255, 255, 0.92);
-}
-
-/* 底部 Home 栏：容纳圆形 Home 键 */
-.so-phone-homebar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 5px 0 7px;
-  flex-shrink: 0;
-}
-
-/* 圆形 Home 键：44×44 命中区（触屏最低可点标准），只负责返回主屏 */
-.so-phone-homebtn {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.45);
-  background: rgba(255, 255, 255, 0.06);
-  box-sizing: border-box;
-  cursor: pointer;
-  touch-action: manipulation;
-  transition: background 0.12s ease, border-color 0.12s ease, transform 0.1s ease;
-}
-
-.so-phone-homebtn:hover,
-.so-phone-homebtn:focus-visible {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.75);
-  outline: none;
-}
-
-.so-phone-homebtn:active {
-  transform: scale(0.92);
-}
-
-/* Home 屏 App 栅格 */
-.so-phone-role {
-  margin: 14px 0 0;
-  padding: 10px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.045);
-  overflow-wrap: anywhere;
-}
-.so-phone-role > summary { cursor: pointer; list-style: none; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 24px; }
-.so-phone-role > summary::-webkit-details-marker { display: none; }
-.so-phone-role > summary::after { content: '⌄'; font-size: 16px; }
-.so-phone-role[open] > summary::after { content: '⌃'; }
-.so-phone-role > summary .so-phone-role-eyebrow { margin: 0; letter-spacing: normal; }
-.so-phone-role > summary .so-phone-role-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.so-phone-role > summary .so-phone-role-subtitle { display: none; }
-.so-phone-role-actions { margin-top: 8px; }
-.so-phone-role-eyebrow { font-size: 10px; letter-spacing: 0.12em; color: #a9cbbd; margin-bottom: 5px; }
-.so-phone-role-title { display: block; font-size: 18px; line-height: 1.3; }
-.so-phone-role-subtitle { font-size: 11px; color: #c2c6cc; margin: 4px 0 8px; }
-.so-phone-role-action {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  width: 100%;
-  min-height: 44px;
-  padding: 7px 0;
-  background: transparent;
-  border: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.09);
-  color: inherit;
-  font: inherit;
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-.so-phone-role-action > span:first-child { flex: 0 0 auto; }
-.so-phone-role-action > span:last-child { text-align: right; color: #c2c6cc; font-size: 11px; }
-.so-phone-role-action:hover { background: rgba(255, 255, 255, 0.05); }
-.so-phone-role-action:focus-visible { outline: 2px solid #a9cbbd; outline-offset: 2px; border-radius: 3px; }
-
-.so-phone-home-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px 8px;
-  padding: 8px 2px;
-}
-
-.so-phone-screen-wallpaper {
-  background-image: linear-gradient(180deg, rgba(0,0,0,.3), rgba(0,0,0,.7)), var(--so-wallpaper);
-  background-size: cover;
-  background-position: center;
-}
-.so-phone-screen-wallpaper .so-phone-app-label { opacity: 1; text-shadow: 0 1px 3px #000; }
-.so-phone-app-glyph img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
-
-.so-phone-app-icon {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  cursor: pointer;
-  border-radius: 12px;
-  padding: 4px 2px;
-  transition: background 0.12s ease, transform 0.1s ease;
-}
-
-.so-phone-app-icon:hover,
-.so-phone-app-icon:focus-visible {
-  background: rgba(255, 255, 255, 0.08);
-  outline: none;
-}
-
-.so-phone-app-icon:active {
-  transform: scale(0.94);
-}
-
-.so-phone-app-glyph {
-  width: 52px;
-  height: 52px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 26px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: linear-gradient(150deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
-}
-
-.so-phone-app-label {
-  font-size: 11px;
-  opacity: 0.85;
-  max-width: 64px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* App 页面 */
-.so-phone-app-container {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.so-phone-app-error {
-  padding: 14px;
-  border-radius: 10px;
-  background: rgba(255, 100, 100, 0.15);
-  border: 1px solid rgba(255, 100, 100, 0.35);
-  font-size: 13px;
-}
-
-.so-app-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-/* 折叠分区：details 不吃 flex 布局，标题（summary）常显、内容默认收起 */
-.so-app-fold {
-  display: block;
-}
-.so-app-fold > summary {
-  cursor: pointer;
-  user-select: none;
-  list-style: none;
-  padding: 2px 0;
-}
-.so-app-fold > summary::-webkit-details-marker {
-  display: none;
-}
-.so-app-fold > summary::before {
-  content: '▸';
-  display: inline-block;
-  margin-right: 6px;
-  transition: transform 0.15s ease;
-}
-.so-app-fold[open] > summary::before {
-  transform: rotate(90deg);
-}
-.so-app-fold-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.so-app-title {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.so-app-desc {
-  font-size: 12px;
-  opacity: 0.75;
-  line-height: 1.55;
-}
-
-.so-app-btn {
-  white-space: nowrap;
-  width: 100%;
-  text-align: center;
-  box-sizing: border-box;
-}
-
-/* The host's .menu_button display rule otherwise overrides native [hidden]. */
-.so-app-btn[hidden] {
-  display: none;
-}
-
-.so-app-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  margin: 2px 0;
-}
-
-/* 数字输入行：标签左、输入框右靠 */
-.so-app-toggle .so-app-num {
-  margin-left: auto;
-  max-width: 84px;
-  box-sizing: border-box;
-}
-
-.so-app-range {
-  align-items: flex-start;
-  flex-wrap: wrap;
-}
-
-.so-app-range > span:first-child {
-  flex: 1 1 120px;
-  min-width: 0;
-}
-
-.so-app-range-controls {
-  display: grid;
-  grid-template-columns: minmax(96px, 1fr) 44px;
-  align-items: center;
-  gap: 8px;
-  flex: 1 1 150px;
-  min-width: 0;
-}
-
-.so-app-range-controls input[type='range'] {
-  width: 100%;
-  min-width: 0;
-  margin: 0;
-}
-
-.so-app-range-controls output {
-  width: 44px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.so-app-input {
-  width: 100%;
-  box-sizing: border-box;
-}
-
-/* 文本/密码输入行（标题在上，输入框在下） */
-.so-app-field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-/* ⓘ 说明行：左侧原控件占满，右侧 ⓘ 徽标；点开后下方展示行内说明块 */
-.so-app-hintwrap {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.so-app-hintrow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.so-app-hintrow > .so-app-hintrow-main {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-}
-.so-app-hint-badge {
-  flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  line-height: 1;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 11px;
-  cursor: help;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.12s ease, border-color 0.12s ease;
-}
-.so-app-hint-badge:hover,
-.so-app-hint-badge:focus-visible,
-.so-app-hint-badge-on {
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.6);
-  outline: none;
-}
-.so-app-hint {
-  font-size: 12px;
-  opacity: 0.78;
-  line-height: 1.5;
-  padding: 6px 8px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  border-left: 2px solid rgba(255, 255, 255, 0.28);
-}
-
-.so-app-sprite-strip {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-}
-
-.so-app-sprite-strip img {
-  width: 100%;
-  aspect-ratio: 1;
-  object-fit: cover;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  cursor: pointer;
-  transition: transform 0.1s ease, border-color 0.12s ease;
-}
-
-.so-app-sprite-strip img:hover {
-  transform: scale(1.04);
-  border-color: rgba(255, 255, 255, 0.4);
-}
-
-/* Match the JS fallback; inline layout also follows visual viewport zoom/panning. */
-@media (min-width: 768px) {
-  .so-phone-shell {
-    width: min(380px, calc(100vw - 16px));
-  }
-}
-
-/* ==================== App 全屏弹窗（ctx.openModal，阶段五能力层） ==================== */
-
-.so-app-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  /*
-   * 移动端必须用 dvh，inset: 0 不够。
-   *
-   * position: fixed 的包含块是「布局视口」，等于工具栏收起时的那个大视口；100vh 也是同一个
-   * 大值。真正可见的是「视觉视口」（window.innerHeight），地址栏露出时更小。所以 inset: 0
-   * 和 100vh 都会让遮罩比可见区域高一截，里面 align-items: center 居中的盒子随之上下溢出，
-   * 头部的 ✕ 被顶到可见区域上方——遮罩是 fixed，用户滚不动，只能刷新。
-   *
-   * dvh 跟随工具栏显隐变化，取的就是当前可见高度。100vh 留作老内核兜底。
-   */
-  height: 100vh;
-  height: 100dvh;
-  z-index: 10000; /* 压过手机壳（9999）与悬浮图标（9998） */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.6);
-}
-
-.so-app-modal {
-  display: flex;
-  flex-direction: column;
-  width: min(680px, calc(100vw - 16px));
-  /*
-   * 高度上限用 100% 而不是 100vh：backdrop 是 position: fixed; inset: 0，它的高度
-   * 就是真实可见区域。移动端 100vh 含地址栏占的那条，比可见区域高——盒子一旦比
-   * backdrop 高，align-items: center 会让它上下同时溢出，头部（✕ 所在）被顶到可见
-   * 区域上方，用户只能刷新。dvh 作为渐进增强留给不以 backdrop 为父的场景。
-   */
-  max-height: 100%;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 12px;
-  background: rgba(22, 22, 28, 0.97);
-  color: #ddd;
-}
-
-.so-app-modal-head {
-  display: flex;
-  justify-content: flex-end;
-  padding: 6px;
-  /* 永不压缩：这里是唯一的关闭入口，被挤掉等于把用户关在弹窗里 */
-  flex: 0 0 auto;
-}
-
-.so-app-modal-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  cursor: pointer;
-  user-select: none;
-  font-size: 15px;
-  color: #bbb;
-}
-
-.so-app-modal-close:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-}
-
-.so-app-modal-close:focus-visible {
-  outline: 1px solid rgba(255, 255, 255, 0.4);
-}
-
-.so-app-modal-body {
-  padding: 0 14px 14px;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  /*
-   * flex 项默认 min-height: auto，不会收缩到内容以下——overflow-y: auto 因此不生效，
-   * 长报告会把盒子顶高、连带把头部挤出可见区域。min-height: 0 才让它真的滚动。
-   */
-  /*
-   * flex 项默认 min-height: auto，不会收缩到内容以下。盒子高度是定死的（移动端 100%、
-   * 桌面 max-height），所以缺了这条不是把盒子顶高，而是 overflow-y: auto 根本不生效——
-   * 超出的内容被 .so-app-modal 的 overflow: hidden 裁掉且滚不到。
-   */
-  flex: 1 1 auto;
-  min-height: 0;
-  /* 滚到边界不要把手机后面的聊天一起带着滚 */
-  overscroll-behavior: contain;
-}
-
-/* 手机端全屏（三原则：复杂编辑占满屏） */
-@media (max-width: 600px) {
-  .so-app-modal {
-    /*
-     * 100% 撑满 backdrop（fixed; inset: 0），不用 100vw/100vh：
-     * 视口单位在移动端含浏览器工具栏，会让盒子比可见区域大一圈。
-     */
-    width: 100%;
-    height: 100%;
-    border: none;
-    border-radius: 0;
-  }
-}
-
-/* ==================== 全屏沉浸式 App 支持与界面微动效 ==================== */
-
-.so-phone-indicators {
-  font-size: 10px;
-  opacity: 0.75;
-  letter-spacing: 0.5px;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-
-.so-phone-screen.so-phone-screen-fullbleed,
-.so-phone-screen:has(.so-phone-app-fullbleed) {
-  padding: 0 !important;
-  overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-
-.so-phone-app-container.so-phone-app-fullbleed {
-  flex: 1 !important;
-  height: 100% !important;
-  min-height: 0 !important;
-  gap: 0 !important;
-  display: flex !important;
-  flex-direction: column !important;
-  overflow: hidden !important;
-}
-
-.so-phone-shell {
-  animation: soPhonePop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes soPhonePop {
-  0% {
-    opacity: 0;
-    transform: scale(0.94);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
 }

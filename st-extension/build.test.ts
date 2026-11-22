@@ -136,6 +136,34 @@ describe('extension artifact newlines', () => {
       expect(bytes.includes(Buffer.from('\r\n')), `${name} must not contain CRLF`).toBe(false)
     }
   })
+
+  it('concatenates base style.css, phone-shell.css and sorted styles/*.css in cascade order', async () => {
+    const { mkdirSync } = await import('node:fs')
+    const root = createBuildFixture()
+    writeFileSync(join(root, 'st-extension', 'style.css'), '/* BASE_FIRST */\n')
+    writeFileSync(join(root, 'core', 'phone-shell.css'), '/* SHELL_SECOND */\n')
+    mkdirSync(join(root, 'st-extension', 'styles'), { recursive: true })
+    writeFileSync(join(root, 'st-extension', 'styles', '20-b.css'), '/* PARTIAL_20 */\r\n')
+    writeFileSync(join(root, 'st-extension', 'styles', '10-a.css'), '/* PARTIAL_10 */\r\n')
+
+    await buildExtension({
+      sourceRoot: root,
+      env: { ...process.env, ST_STAGE_BUILD_TIME: '2026-01-02 03:04' },
+      logLevel: 'silent',
+      log: () => {},
+    })
+
+    const out = readFileSync(join(root, 'style.css'), 'utf8')
+    expect(out.includes('\r\n')).toBe(false)
+    const iBase = out.indexOf('BASE_FIRST')
+    const iShell = out.indexOf('SHELL_SECOND')
+    const i10 = out.indexOf('PARTIAL_10')
+    const i20 = out.indexOf('PARTIAL_20')
+    expect(iBase).toBeGreaterThanOrEqual(0)
+    expect(iShell).toBeGreaterThan(iBase)
+    expect(i10).toBeGreaterThan(iShell)
+    expect(i20).toBeGreaterThan(i10)
+  })
 })
 
 describe('extension bundle formatting', () => {

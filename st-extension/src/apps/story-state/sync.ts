@@ -1,8 +1,17 @@
 import type { AppHost } from '../../../../core/phone-registry'
 import { abortable, captureStory, storyIdentity } from '../wechat/memory'
 import { getStoryAiConfig, requestChat } from '../shared/story-ai'
+import { emitStoryEvent } from '../shared/story-events'
 import { applyCommands, extractCommands, isNoUpdate } from './commands'
-import { normalize, readStoryState, readSyncSettings, writeLocalState } from './store'
+import {
+  formatIsoDateFromTime,
+  formatStoryStateInjection,
+  normalize,
+  readStoryState,
+  readSyncSettings,
+  writeLocalState,
+  type StoryState,
+} from './store'
 
 // Based on WeiMeng variable-updater.js (MIT); license preserved in commands.ts.
 const PROMPT = `你是幕后剧情状态整理助手。根据已经发生的对话和现有 stat_data 更新记录，不推进剧情。
@@ -15,44 +24,158 @@ _.set('位置.地点', '港口');
 _.insert('背包', {"id":"ticket","名称":"船票","数量":1,"描述":"登船凭证","稀有度":"普通"});
 </UpdateVariable>`
 
+function computeHighlights(before: StoryState, after: StoryState): string[] {
+  const highlights: string[] = []
+  if (after.位置.地点 && after.位置.地点 !== before.位置.地点) {
+    highlights.push(`抵达「${after.位置.地点}」`)
+  }
+  const oldQuests = new Map(before.任务.map(q => [q.标题, q.状态]))
+  for (const q of after.任务) {
+    if (!q.标题) continue
+    if (!oldQuests.has(q.标题)) highlights.push(`新委托：${q.标题}`)
+    else if (oldQuests.get(q.标题) !== q.状态) highlights.push(`委托「${q.标题}」${q.状态}`)
+  }
+  const oldBag = new Map(before.背包.map(i => [i.名称, i.数量]))
+  for (const item of after.背包) {
+    const prevQty = oldBag.get(item.名称) ?? 0
+    if (item.数量 > prevQty) highlights.push(`获得 ${item.名称} ×${item.数量 - prevQty}`)
+  }
+  return highlights
+}
+
 export function createStorySync(host: AppHost) {
   let alive = true, job: AbortController | undefined, queued = false
   let status = { busy: false, error: '' }
   const listeners = new Set<() => void>()
   const notify = () => { for (const fn of listeners) fn() }
-  function cancel() { job?.abort(); job = undefined; queued = false; status = { busy: false, error: '' }; notify() }
-  async function trigger() {
+
+  async function refreshInjection() {
+    if (typeof host.injectPrompt !== 'function') return
+    try {
+      const settings = readSyncSettings(host)
+      if (!settings.injectToChat) {
+        host.injectPrompt('')
+        return
+      }
+      const snapshot = await readStoryState(host)
+      if (!alive || snapshot.backend === 'mvu') {
+        host.injectPrompt('')
+        return
+      }
+      host.injectPrompt(formatStoryStateInjection(snapshot.state), 4)
+    } catch {
+      host.injectPrompt('')
+    }
+  }
+
+  function cancel() {
+    job?.abort()
+    job = undefined
+    queued = false
+    status = { busy: false, error: '' }
+    notify()
+  }
+
+  async function trigger(manual = false) {
     const settings = readSyncSettings(host), config = getStoryAiConfig(host)
-    if (!alive || !settings.autoSync || !config) return
-    if (job) { queued = true; return }
-    const current = new AbortController(); job = current
+    if (!alive) return
+    if (!manual && !settings.autoSync) return
+    if (!config) {
+      if (manual) {
+        status = { busy: false, error: '请先在微信设置或下方直连 AI。' }
+        notify()
+      }
+      return
+    }
+    if (job) {
+      if (!manual) queued = true
+      return
+    }
+    const current = new AbortController()
+    job = current
     const story = captureStory(host)
-    const valid = () => alive && job === current && !current.signal.aborted && storyIdentity(host) === story.key && readSyncSettings(host).autoSync
-    status = { busy: true, error: '' }; notify()
-    const timeout = setTimeout(() => current.abort(new Error('后台整理超时，请在下一次回复后重试。')), 120000)
+    const valid = () => alive && job === current && !current.signal.aborted && storyIdentity(host) === story.key && (manual || readSyncSettings(host).autoSync)
+    status = { busy: true, error: '' }
+    notify()
+    const timeout = setTimeout(() => current.abort(new Error('后台整理超时，请稍后重试。')), 120000)
     try {
       const snapshot = await readStoryState(host)
       if (!valid() || snapshot.backend === 'mvu') return
-      const reply = await abortable(requestChat(config, [{ role: 'system', content: PROMPT }, { role: 'user', content:
-        `当前 stat_data：${JSON.stringify(snapshot.raw)}\n最近对话：\n${story.messages.slice(-settings.contextMessages).map(m => `${m.name}：${m.text}`).join('\n')}` }], current.signal, false), current.signal)
+      const reply = await abortable(
+        requestChat(
+          config,
+          [
+            { role: 'system', content: PROMPT },
+            {
+              role: 'user',
+              content: `当前 stat_data：${JSON.stringify(snapshot.raw)}\n最近对话：\n${story.messages.slice(-settings.contextMessages).map(m => `${m.name}：${m.text}`).join('\n')}`,
+            },
+          ],
+          current.signal,
+          false,
+        ),
+        current.signal,
+      )
       if (!valid() || isNoUpdate(reply)) return
       const commands = extractCommands(reply)
       if (!commands.length) throw new Error('后台整理未返回有效指令。')
       // Re-read before writing so a newly available MVU backend remains read-only.
       const latest = await readStoryState(host)
       if (!valid() || latest.backend === 'mvu') return
+      const beforeState = latest.state
       const working = { ...normalize({}), ...latest.raw }
-      if (applyCommands(working, commands)) await writeLocalState(host, latest, working)
+      if (applyCommands(working, commands)) {
+        const saved = await writeLocalState(host, latest, working)
+        if (saved) {
+          const afterState = normalize(working)
+          const highlights = computeHighlights(beforeState, afterState)
+          const oldDate = formatIsoDateFromTime(beforeState.时间)
+          const newDate = formatIsoDateFromTime(afterState.时间)
+          await refreshInjection()
+          if (newDate && newDate !== oldDate) {
+            emitStoryEvent({ type: 'story-date-changed', date: newDate })
+          }
+          emitStoryEvent({
+            type: 'story-state-updated',
+            summary: highlights[0] || '剧情状态已更新',
+            highlights,
+          })
+        }
+      }
     } catch (error) {
+      if (!current.signal.aborted) console.warn('[st-stage] 剧情状态后台整理失败', error)
       if (alive && job === current) status.error = (error as Error).message
     } finally {
       clearTimeout(timeout)
-      if (job === current) { job = undefined; status.busy = false; notify(); if (queued) { queued = false; void trigger() } }
+      if (job === current) {
+        job = undefined
+        status.busy = false
+        notify()
+        if (queued) { queued = false; void trigger(false) }
+      }
     }
   }
-  const offMessage = host.onMessageReceived(() => { void trigger() }), offChange = host.onCharacterChanged(cancel)
-  return { trigger, cancel, status: () => status,
+
+  const offMessage = host.onMessageReceived(() => { void trigger(false) })
+  const offChange = host.onCharacterChanged(() => {
+    cancel()
+    void refreshInjection()
+  })
+  void refreshInjection()
+
+  return {
+    trigger,
+    cancel,
+    refreshInjection,
+    status: () => status,
     subscribe(fn: () => void) { listeners.add(fn); return () => { listeners.delete(fn) } },
-    destroy() { alive = false; cancel(); offMessage(); offChange(); listeners.clear() },
+    destroy() {
+      alive = false
+      cancel()
+      offMessage()
+      offChange()
+      if (typeof host.injectPrompt === 'function') host.injectPrompt('')
+      listeners.clear()
+    },
   }
 }

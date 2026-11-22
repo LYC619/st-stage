@@ -27,7 +27,8 @@ import { createStoryImageCapture } from './story-image-capture'
 import { localizeSprite } from './sprite-localize'
 import { compressImage } from '../../core/image-compress'
 import { createBuiltinApps } from './apps'
-import { readAppearance } from './apps/appearance/pack'
+import { readAppearance, resolveEffectiveAppearance } from './apps/appearance/pack'
+import { formatTime, readStoryState, summarizeStoryStateForHud } from './apps/story-state/store'
 import { createNewvarRuntime } from './apps/newvar/runtime'
 import { createNewvarDesigner } from './apps/newvar/designer'
 import { NEWVAR_CHANNEL, NEWVAR_APP_ID, normalizeNewvarData } from './apps/newvar/config'
@@ -45,7 +46,7 @@ import { buildRoleSummary, type ExternalVariableStatus } from './role-summary'
 import { registerPhoneCommand } from './slash-commands'
 import { createHudController } from './hud-controller'
 import { createSpriteRuntime } from './sprite-runtime'
-import { onOpenAppRequest, onStoryEvent } from './apps/shared/story-events'
+import { consumeAppDeepLink, onOpenAppRequest, onStoryEvent, resetStoryEvents } from './apps/shared/story-events'
 
 declare global {
   interface Window {
@@ -275,7 +276,10 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     },
   })
   lifecycle.track(() => phone.destroy())
-  phone.setAppearance(readAppearance(settings.apps.appearance))
+  const syncPhoneAppearance = () => {
+    phone.setAppearance(resolveEffectiveAppearance(readAppearance(settings.apps.appearance), adapter.getCurrentCharacterName()))
+  }
+  syncPhoneAppearance()
   lifecycle.track(subscribeVarEvents(() => phone.refreshHome()))
 
   openPhoneApp = (appId: string) => {
@@ -287,14 +291,18 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     phone.openApp(appId)
   }
 
+  lifecycle.track(() => resetStoryEvents())
   lifecycle.track(onOpenAppRequest((link) => {
     if (link.appId === 'gallery-manager') {
+      consumeAppDeepLink('gallery-manager')
       collapsePhone()
       manager.open('phone')
       return
     }
     if (registry.get(link.appId)) {
       openPhoneApp(link.appId)
+    } else {
+      consumeAppDeepLink(link.appId)
     }
   }))
 
@@ -328,6 +336,17 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     collapse: collapsePhone,
     hasApp: id => !!registry.get(id),
     openApp: id => openPhoneApp(id),
+    statusSummary: async () => {
+      try {
+        const snap = await readStoryState(createHostDeps('story-state') as unknown as Parameters<typeof readStoryState>[0])
+        const timeStr = formatTime(snap.state.时间)
+        const locStr = [snap.state.位置.区域, snap.state.位置.地点].filter(Boolean).join('·') || '未知地点'
+        const quests = snap.state.任务.filter(q => q.状态 === '进行中').map(q => q.标题)
+        return `【剧情速览】${timeStr}｜${locStr}${quests.length ? '｜委托：' + quests.join('、') : ''}`
+      } catch {
+        return `当前角色：${adapter.getCurrentCharacterName() || '未打开聊天'}`
+      }
+    },
   })
 
   const newvarRuntime = createNewvarRuntime({
@@ -366,10 +385,34 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   })
   lifecycle.track(() => rendererRuntime.dispose())
 
+  const storyStateHostForHud = createHostDeps('story-state')
   const hudController = createHudController({
     getSettings: () => settings,
     saveSettingsOnly,
     newvarRuntime,
+    readExtraSections: async () => {
+      try {
+        const snap = await readStoryState({
+          apiVersion: 2,
+          getSettings: () => settings,
+          getCharacterName: () => adapter.getCurrentCharacterName(),
+          getAppData: () => settings.apps['story-state'] as never,
+          setAppData: () => {},
+          onMessageReceived: () => () => {},
+          onCharacterChanged: () => () => {},
+          injectPrompt: () => {},
+          toast: () => {},
+          getChatContext: storyStateHostForHud.getChatContext,
+        })
+        const root = summarizeStoryStateForHud(snap)
+        return root ? [{ source: '剧情状态', root, notice: '' }] : []
+      } catch {
+        return []
+      }
+    },
+    subscribeExtra: (handler) => onStoryEvent((ev) => {
+      if (ev.type === 'story-state-updated' || ev.type === 'story-date-changed') handler()
+    }),
   })
   hudController.sync()
   onSettingsApplied = () => hudController.sync()
@@ -400,27 +443,27 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   lifecycle.track(() => apiManager.close())
 
   for (const app of createBuiltinApps({
-    applyAppearance: data => phone.setAppearance(data),
+    applyAppearance: data => phone.setAppearance(resolveEffectiveAppearance(data, adapter.getCurrentCharacterName())),
     saveImage: dataUri => adapter.saveDataUri(dataUri),
     listApps: () => registry.list(),
     previewSpriteOpacity: (percent) => overlay.setOpacity(percent),
+    previewSprite: (url, label) => {
+      if (!settings.overlayHidden && settings.spriteDisplayMode !== 'inline') {
+        overlay.setVisible(true)
+        overlay.setImage(url, label)
+      }
+    },
     openGalleryManager: () => {
-      const restoreTransient = transientPhoneOpen
       collapsePhone()
-      if (restoreTransient) transientPhoneOpen = true
       manager.open('phone')
     },
     newvarRuntime,
     openNewvarDesigner: () => {
-      const restoreTransient = transientPhoneOpen
       collapsePhone()
-      if (restoreTransient) transientPhoneOpen = true
       newvarDesigner.open()
     },
     openApiManager: () => {
-      const restoreTransient = transientPhoneOpen
       collapsePhone()
-      if (restoreTransient) transientPhoneOpen = true
       apiManager.open()
     },
     rendererRuntime,
@@ -474,6 +517,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   let cancelPendingNavigation = () => {}
   const handleChatNavigation = () => {
     composerBridge.dispose()
+    syncPhoneAppearance()
     phone.refreshHome()
     appCharacterHub.emit(null)
     spriteRuntime.refresh()

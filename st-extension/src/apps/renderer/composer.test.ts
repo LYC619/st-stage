@@ -61,6 +61,14 @@ describe('createComposerBridge', () => {
     expect(input.value).toBe('用户自己的草稿')
   })
 
+  it('appendDraft 在用户已有草稿后无损追加且保留全部原文', () => {
+    const input = mountComposer('先喝一口麦酒。')
+    const bridge = createComposerBridge()
+
+    expect(bridge.appendDraft('顺手把旧船票递过去。')).toEqual({ ok: true })
+    expect(input.value).toBe('先喝一口麦酒。\n顺手把旧船票递过去。')
+  })
+
   it('renderer 草稿发送或清空后允许写入下一次选择', () => {
     const input = mountComposer()
     const bridge = createComposerBridge()

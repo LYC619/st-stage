@@ -26,7 +26,7 @@ Git is the primary source of truth. Agent-private memory, old chat summaries, an
 - **日常迭代必跑**：相关单测、`pnpm typecheck`、`pnpm lint`。
 - **文案与内置 App 变动必跑**：`node scripts/verify-i18n-completeness.mjs`（保持源码 `t(key, fallback)`、`zh-CN.json`、`en-US.json` 三端一致）与 `node scripts/verify-docs-apps.mjs`（保持内置 App 清单与 `README.md` 同步）。
 - **改了手机壳、共享样式或触摸交互加跑**：`pnpm test:mobile`。
-- **提交扩展源码或样式改动前**：运行 `pnpm build:all` 同时间戳更新根目录、`st-distribution/` 与 `public/`（注意一并暂存新增或移除的 `chunk-*.js`），并用 `node scripts/verify-runtime-parity.mjs --root . --distribution st-distribution --preview public` 校验一致。发布前再跑 `pnpm test:release` 与 `pnpm release:prepare`。
+- **提交扩展源码或样式改动前后**：运行 `pnpm build:all` 同时间戳更新根目录、`st-distribution/` 与 `public/`（注意一并暂存新增或移除的 `chunk-*.js`），提交前跑 `node scripts/verify-runtime-parity.mjs --root . --distribution st-distribution --preview public`，提交后跑 `node scripts/verify-runtime-parity.mjs --committed --root . --distribution st-distribution --preview public` 校验暂存无漏。发布前再跑 `pnpm test:release` 与 `pnpm release:prepare`。
 
 ## 维护文档与文案风格
 

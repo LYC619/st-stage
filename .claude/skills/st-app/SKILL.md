@@ -43,5 +43,7 @@ node scripts/verify-i18n-completeness.mjs
 node scripts/verify-docs-apps.mjs
 pnpm build:all
 node scripts/verify-runtime-parity.mjs --root . --distribution st-distribution --preview public
+# git commit 之后再加跑 --committed，确保新增/删除的 chunk-*.js 无遗漏入库：
+node scripts/verify-runtime-parity.mjs --committed --root . --distribution st-distribution --preview public
 pnpm test:mobile       # 改了手机壳、共享样式或移动端布局时加跑
 ```

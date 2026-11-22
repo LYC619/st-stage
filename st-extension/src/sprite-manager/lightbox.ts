@@ -62,8 +62,11 @@ export function createLightbox(ctx: ManagerContext) {
 
 
   function currentManagerBody(): HTMLElement | null {
-    return (ctx.state.backdrop?.querySelector('.so-lightbox') as HTMLElement | null)
-      ?? (ctx.state.backdrop?.querySelector('.so-manager-body') as HTMLElement | null)
+    if (ctx.state.activeLightbox) {
+      const activeLayer = document.querySelector<HTMLElement>('.so-lightbox')
+      if (activeLayer) return activeLayer
+    }
+    return (ctx.state.backdrop?.querySelector('.so-manager-body') as HTMLElement | null)
   }
 
 
