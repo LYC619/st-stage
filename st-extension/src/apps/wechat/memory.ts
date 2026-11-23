@@ -91,6 +91,7 @@ export async function readStoryMemory(host: AppHost, scope: ConversationScope, p
   const check = () => {
     signal.throwIfAborted()
     if (storyIdentity(host) !== snapshot.key) throw new Error('主聊天已切换，请在当前剧情中重试。')
+    if (scope.storyKey && scope.storyKey !== snapshot.key) throw new Error('这位联系人属于另一个故事，请先切回对应的主聊天。')
   }
   check()
   const memory: ConversationScope = { ...scope, storySource: snapshot.name,

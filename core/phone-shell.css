@@ -373,6 +373,8 @@
   flex-direction: column;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* Keep descendant horizontal scrolling native; phone-swipe owns only a qualifying edge drag. */
+  touch-action: pan-x pan-y pinch-zoom;
   padding: 10px 14px 12px;
   color: var(--so-text);
   scrollbar-width: thin;

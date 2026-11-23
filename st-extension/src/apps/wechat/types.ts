@@ -90,7 +90,9 @@ export interface Contact {
   avatar?: string
   characterId?: string
   card?: import('./bridge').STCharacterCard
-  kind?: 'character' | 'manual'
+  kind?: 'character' | 'manual' | 'story'
+  /** Present only for a cardless NPC belonging to one main-chat story. */
+  storyKey?: string
   conversationKey?: string
 }
 

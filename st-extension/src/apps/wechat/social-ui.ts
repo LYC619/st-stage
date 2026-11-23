@@ -22,7 +22,7 @@ export function createSocialUI(container: HTMLElement, data: WeChatAppData, host
   const el = <T extends HTMLElement = HTMLElement>(id: string) => container.querySelector<T>('#' + id)!
   let alive = true, generation = 0, editing: Group | undefined, momentController: AbortController | undefined
   const selected = new Set<string>()
-  const catalogue = () => [...new Map([...Object.values(data.contacts ?? {}), ...listContacts(host)].map(item => [item.id, item])).values()]
+  const catalogue = () => [...new Map([...Object.values(data.contacts ?? {}).filter(item => item.kind !== 'story'), ...listContacts(host)].map(item => [item.id, item])).values()]
   function members() {
     const list = el('wt-group-options'); list.replaceChildren()
     for (const item of catalogue()) {

@@ -2,17 +2,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PhoneApp, PhoneAppContext } from '../../../../core/phone-registry'
 import { createAppearanceApp } from './appearance-app'
-import { readAppearance, type AppearanceData } from './pack'
+import { readAppearance, resolveEffectiveAppearance, type AppearanceData } from './pack'
+import { createDefaultSettings } from '../../../../core/types'
 import * as images from '../../../../core/image-compress'
 
 let cleanup = () => {}
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.replaceChildren() })
-function mount(initial?: AppearanceData) {
+function mount(initial?: AppearanceData, characterName = '') {
   let data = initial || readAppearance(undefined)
   const apply = vi.fn(), saveImage = vi.fn(async () => '/user/images/upload.webp')
   const apps: PhoneApp[] = [{ id: 'alpha', name: '甲', icon: '🍵', mount() {} }, { id: 'beta', name: '乙', icon: '🎈', mount() {} }]
   const app = createAppearanceApp({ applyAppearance: apply, saveImage, listApps: () => apps })
-  const ctx = { getAppData: () => data, setAppData: (value: AppearanceData) => { data = value } } as unknown as PhoneAppContext
+  const ctx = { getAppData: () => data, setAppData: (value: AppearanceData) => { data = value },
+    getCharacterName: () => characterName, getSettings: () => createDefaultSettings(),
+  } as unknown as PhoneAppContext
   app.mount(document.body, ctx); cleanup = () => app.unmount!()
   const input = (label: string) => Array.from(document.querySelectorAll('label')).find(row => row.firstChild?.textContent === label)!.querySelector<HTMLInputElement>('input,textarea,select')!
   const click = (label: string, scope: ParentNode = document) => Array.from(scope.querySelectorAll('button')).find(button => button.textContent === label)!.click()
@@ -20,6 +23,22 @@ function mount(initial?: AppearanceData) {
 }
 
 describe('appearance app', () => {
+  it('binds default wallpaper explicitly so later global wallpaper changes do not affect the character', () => {
+    const f = mount(undefined, 'Alice')
+    f.click('绑定为「Alice」专属外观')
+    expect(f.data().characterSkins?.Alice.wallpaper).toBe('')
+    const reloaded = readAppearance({ ...JSON.parse(JSON.stringify(f.data())), wallpaper: '/bob.webp' })
+    expect(resolveEffectiveAppearance(reloaded, 'Alice').wallpaper).toBe('')
+  })
+  it('displays the default 36% dim and persists an explicit 0% on change', () => {
+    const f = mount()
+    const slider = document.querySelector<HTMLInputElement>('.ap-slider-row input')!
+    expect(slider.value).toBe('36')
+    slider.value = '0'; slider.dispatchEvent(new Event('change'))
+    expect(f.data().wallpaperDim).toBe(0)
+    expect(document.querySelector<HTMLInputElement>('.ap-slider-row input')!.value).toBe('0')
+    expect(f.apply).toHaveBeenLastCalledWith(expect.objectContaining({ wallpaperDim: 0 }))
+  })
   it('applies URL wallpaper, all registered app icons, network fonts and resets immediately', async () => {
     const f = mount()
     expect(document.querySelectorAll('.ap-icon-row')).toHaveLength(2)

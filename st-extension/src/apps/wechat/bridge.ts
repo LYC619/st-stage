@@ -47,6 +47,7 @@ export interface ExternalCharacterState {
 
 export interface ConversationScope {
   contactId?: string
+  storyKey?: string
   group?: { title: string; members: Array<{ id: string; name: string }> }
   scopeKey: string
   characterName: string

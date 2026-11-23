@@ -1,7 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { exportAppearance, fontUrl, imageUrl, importAppearance, readAppearance, type AppearanceData } from './pack'
+import { exportAppearance, fontUrl, imageUrl, importAppearance, readAppearance, resolveEffectiveAppearance, type AppearanceData } from './pack'
 
 describe('appearance packs', () => {
+  it('preserves explicit default character wallpaper across reload and import while missing wallpaper inherits', () => {
+    const stored = { wallpaper: '/global.webp', characterSkins: { Alice: { wallpaper: '' }, Bob: { theme: 'tavern' } } }
+    const normalized = readAppearance(stored)
+    const reloaded = importAppearance(exportAppearance(normalized), [])
+    expect(reloaded.characterSkins?.Alice).toEqual({ wallpaper: '' })
+    expect(resolveEffectiveAppearance(reloaded, 'Alice').wallpaper).toBe('')
+    expect(resolveEffectiveAppearance(reloaded, 'Bob').wallpaper).toBe('/global.webp')
+  })
+  it('round-trips explicit zero dim separately from an absent dim setting', () => {
+    expect(readAppearance({}).wallpaperDim).toBeUndefined()
+    expect(readAppearance({ wallpaperDim: NaN }).wallpaperDim).toBeUndefined()
+    expect(importAppearance(exportAppearance(readAppearance({ wallpaperDim: 0 })), []).wallpaperDim).toBe(0)
+  })
   const data: AppearanceData = { wallpaper: '/user/images/wall.webp', icons: { chronicle: { emoji: '📘' }, theater: { image: 'https://example.test/icon.png' } },
     fonts: [{ name: '手写', family: 'Handwriting', cssUrl: 'https://example.test/font.css' }], activeFont: '手写' }
   it('round-trips wallpaper, icons and fonts and ignores unknown app IDs', () => {

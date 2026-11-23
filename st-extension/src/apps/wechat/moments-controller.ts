@@ -54,7 +54,7 @@ export function createMomentsController(host: AppHost, options: { cooldownMs?: n
     const active = stableCharacterKey(story.card)
     const candidates = [active ? known.get(active) ?? listContacts(host).find(item => item.id === active) : undefined,
       ...Object.values(data.conversations ?? {}).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)).flatMap(conv => (conv.memberIds ?? (conv.contactId ? [conv.contactId] : [])).map(id => known.get(id)))]
-    const contacts = [...new Map(candidates.filter((item): item is Contact => !!item).map(item => [item.id, item])).values()].slice(0, 2)
+    const contacts = [...new Map(candidates.filter((item): item is Contact => !!item && item.kind !== 'story').map(item => [item.id, item])).values()].slice(0, 2)
     if (!contacts.length) return
     const job = new AbortController(); controller = job; status = { busy: true, error: '' }; notify()
     const timeout = setTimeout(() => job.abort(new Error('动态生成超时，请重试。')), options.timeoutMs ?? 60000)

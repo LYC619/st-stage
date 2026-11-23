@@ -11,6 +11,7 @@ import { t, getLocale } from './i18n'
 import { fixedViewport, observeFixedViewport } from './fixed-viewport'
 import type { PhoneState } from './types'
 import { captureScreenFocus } from './phone-focus'
+import { installPhoneSwipe } from './phone-swipe'
 import type { MountedAppContext, PhoneApp, PhoneAppRegistry } from './phone-registry'
 
 export interface PhoneHomeSummary {
@@ -266,36 +267,7 @@ export function createPhoneShell(
   const screen = document.createElement('div')
   screen.className = 'so-phone-screen'
 
-  /* ---- 左缘右滑返回手势（App 内生效，避开原生滑块/文本框） ---- */
-  screen.addEventListener('pointerdown', (startEv) => {
-    if (!activeApp || startEv.button !== 0) return
-    const target = startEv.target as HTMLElement | null
-    if (target?.closest('input, textarea, select, [data-no-swipe]')) return
-    const rect = screen.getBoundingClientRect()
-    if (startEv.clientX - rect.left > 22) return
-    const startX = startEv.clientX
-    const startY = startEv.clientY
-    let triggered = false
-    const onMove = (ev: PointerEvent) => {
-      if (triggered) return
-      const dx = ev.clientX - startX
-      const dy = ev.clientY - startY
-      if (Math.abs(dy) > 42) { cleanupSwipe(); return }
-      if (dx >= 58) {
-        triggered = true
-        cleanupSwipe()
-        goBack()
-      }
-    }
-    const cleanupSwipe = () => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', cleanupSwipe)
-      window.removeEventListener('pointercancel', cleanupSwipe)
-    }
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', cleanupSwipe)
-    window.addEventListener('pointercancel', cleanupSwipe)
-  })
+  const swipe = installPhoneSwipe(screen, () => !destroyed && !hidden && state.open && Boolean(activeApp), goBack)
 
   // 底部手势 Home 键（≥44×44 命中区）：只负责返回主屏，收起手机用右上角 ✕
   const homeBar = document.createElement('div')
@@ -484,6 +456,7 @@ export function createPhoneShell(
   }
 
   function leaveApp(): void {
+    swipe.cancel()
     dismissIsland()
     if (activeApp) {
       screen.classList.remove('so-phone-screen-fullbleed')
@@ -565,6 +538,7 @@ export function createPhoneShell(
   }
 
   function renderScreen(): void {
+    swipe.cancel()
     ++homeGeneration
     homeCard = null
     worldBox = null
@@ -866,7 +840,7 @@ export function createPhoneShell(
       if (destroyed) return
       appearance = next
       shell.dataset.theme = next.theme || 'midnight'
-      if (next.wallpaperDim && next.wallpaperDim > 0) {
+      if (next.wallpaperDim !== undefined) {
         shell.style.setProperty('--so-wall-dim', `${Math.min(0.85, next.wallpaperDim / 100)}`)
       } else {
         shell.style.removeProperty('--so-wall-dim')
@@ -928,6 +902,7 @@ export function createPhoneShell(
     destroy() {
       if (destroyed) return
       destroyed = true
+      swipe.dispose()
       clearInterval(clockTimer)
       clearTimeout(pillTimer)
       stopViewport()

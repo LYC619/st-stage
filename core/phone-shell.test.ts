@@ -60,6 +60,18 @@ beforeEach(() => {
 })
 
 describe('phone appearance', () => {
+  it('applies explicit zero wallpaper dim and restores the CSS default only for an absent setting', () => {
+    const { shell } = setup([], { open: true })
+    try {
+      const phone = document.querySelector<HTMLElement>('.so-phone-shell')!
+      const appearance = { wallpaper: '/wall.png', icons: {}, fonts: [], activeFont: '' }
+      shell.setAppearance({ ...appearance, wallpaperDim: 1 })
+      shell.setAppearance({ ...appearance, wallpaperDim: 0 })
+      expect(phone.style.getPropertyValue('--so-wall-dim')).toBe('0')
+      shell.setAppearance(appearance)
+      expect(phone.style.getPropertyValue('--so-wall-dim')).toBe('')
+    } finally { shell.destroy() }
+  })
   const look: PhoneAppearance = { wallpaper: 'https://example.test/wall"paper.png', icons: { alpha: { emoji: '🍵' } },
     fonts: [{ name: 'hand', family: 'Handwriting', cssUrl: 'https://example.test/font.css' }], activeFont: 'hand' }
   it('applies the home wallpaper and emoji, keeps an open App mounted, and restores defaults', () => {

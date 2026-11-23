@@ -7,6 +7,7 @@ import { profileCharacterKey, resolveProfile } from './profile-library'
 import { applyAssetProfile } from './profile'
 import { createProfileSettings } from './profile-settings'
 import { addContactConversation, conversationScope, listContacts, loadContact } from './conversations'
+import { contactBelongsToStory, createStoryContact, hasContactIdentity } from './contact-identity'
 import { getScopedConversation } from './legacy-conversation'
 import { DEFAULT_PLAYER_AVATAR, DEFAULT_CONTACT_AVATAR, PLAYER_EMOJIS, CONTACT_EMOJIS, CONTACT_PHOTOS } from './manifest-data'
 import { resolveWeChatAssetUrl } from './assets'
@@ -20,7 +21,7 @@ import { createImageMedia } from './image-media'
 import { createVoiceInput } from './voice-input'
 import { createWeChatNavigation, type WeChatPage } from './navigation'
 import { createMomentsController } from './moments-controller'
-import { readStoryMemory } from './memory'
+import { readStoryMemory, storyIdentity } from './memory'
 import { conversationPreview, listTime } from './list-format'
 import { latestContactState } from './moments'
 import { WECHAT_VIEW } from './view'
@@ -165,7 +166,8 @@ export function createWeChatApp(): PhoneApp {
       function renderList() {
         pruneVoices()
         list.replaceChildren()
-        const entries = Object.entries(conversations).sort(([, a], [, b]) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+        const entries = Object.entries(conversations).filter(([, conv]) => !scopeFor(conv).storyKey || scopeFor(conv).storyKey === storyIdentity(ctx))
+          .sort(([, a], [, b]) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
         if (!entries.length) { const empty = document.createElement('p'); empty.className = 'wt-empty'; empty.textContent = '消息列表还空着呢。点右上角「+」把酒馆里的 TA 加进通讯录，随时私聊叙旧吧。'; list.append(empty) }
         for (const [key, conv] of entries) {
           const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'wt-conversation'; btn.dataset.conversation = key
@@ -209,6 +211,8 @@ export function createWeChatApp(): PhoneApp {
       }
       function openConversation(key: string) {
         if (!conversations[key]) return
+        const storyKey = scopeFor(conversations[key]).storyKey
+        if (storyKey && storyKey !== storyIdentity(ctx)) { notice('这位联系人属于另一个故事，请先切回对应的主聊天。'); return }
         voiceInput.textMode(); saveDraft(); closeDialog(false); closeDrawer(false)
         activeKey = key; data.activeScopeKey = key; conversations[key].unreadCount = 0; renderedKey = null
         navigation.showChat()
@@ -239,7 +243,7 @@ export function createWeChatApp(): PhoneApp {
         for (const group of groups) row(group.title, `${group.memberIds.length} 位成员`, conversationAvatar(group), () => openConversation(group.scopeKey!))
         if (!groups.length) { const hint = document.createElement('p'); hint.className = 'wt-hint'; hint.style.padding = '0 14px'; hint.textContent = '点击右上角 + 发起群聊'; directory.append(hint) }
         heading('好友')
-        for (const contact of Object.values(data.contacts ?? {}).sort((a, b) => a.name.localeCompare(b.name))) {
+        for (const contact of Object.values(data.contacts ?? {}).filter(item => contactBelongsToStory(item, storyIdentity(ctx))).sort((a, b) => a.name.localeCompare(b.name))) {
           // Like a WeChat signature line: the character's latest known status, when there is one.
           const button = row(contact.name, latestContactState(data, contact.id).currentStatus ?? '', avatar(contact.avatar ?? contact.card?.avatar), () => { const conv = addContactConversation(data, contact); persist(); openConversation(conv.scopeKey!) })
           button.dataset.friend = contact.id
@@ -478,6 +482,8 @@ export function createWeChatApp(): PhoneApp {
         if (!alive) return
         social.cancelMoment()
         for (const conv of Object.values(conversations)) if (pending.has(conv.scopeKey!)) pending.cancel(conv)
+        if (active() && scopeFor(active()!).storyKey && scopeFor(active()!).storyKey !== storyIdentity(ctx)) showList()
+        else { renderList(); renderAddressBook() }
         if (currentDialog?.id === 'wt-contacts-modal') renderContacts()
       })
       clearAppBadge('wechat-sister')
@@ -486,42 +492,43 @@ export function createWeChatApp(): PhoneApp {
       if (deepLink?.openSettings) {
         openSettings(false, true)
       } else if (deepLink?.contactName) {
-        const wanted = deepLink.contactName.trim()
-        const existingConv = Object.entries(conversations).find(([, conv]) => !isGroup(conv) && titleFor(conv) === wanted)
-        if (existingConv) {
-          openConversation(existingConv[0])
-        } else {
-          const contact = Object.values(data.contacts ?? {}).find(c => c.name.trim() === wanted)
-          if (contact) {
-            const conv = addContactConversation(data, contact); persist(); openConversation(conv.scopeKey!)
-          } else {
-            const hostCard = listContacts(ctx).find(c => c.name.trim() === wanted)
-            if (hostCard) {
-              void loadContact(ctx, hostCard.id).then((loaded) => {
-                if (!alive) return
-                const conv = addContactConversation(data, loaded); persist(); openConversation(conv.scopeKey!)
-              }).catch((err) => {
-                console.warn('[st-stage] 读取角色卡联系人失败，已回退为故事内临时联系人', err)
-                if (!alive) return
-                const npcConv = addContactConversation(data, {
-                  id: `npc:${wanted}`,
-                  name: wanted,
-                  card: { name: wanted, description: '当前主线故事中的登场人物，言行与记忆遵循当前主聊天与世界书。' },
-                  kind: 'character',
-                })
-                persist(); openConversation(npcConv.scopeKey!)
-              })
-            } else if (wanted) {
-              const npcConv = addContactConversation(data, {
-                id: `npc:${wanted}`,
-                name: wanted,
-                card: { name: wanted, description: '当前主线故事中的登场人物，言行与记忆遵循当前主聊天与世界书。' },
-                kind: 'character',
-              })
-              persist(); openConversation(npcConv.scopeKey!)
-            }
+        const wanted = deepLink.contactName.trim().slice(0, 100), sourceStory = storyIdentity(ctx)
+        const valid = () => alive && sourceStory === storyIdentity(ctx)
+        const openLinkedContact = async () => {
+          if (!wanted) return
+          const npc = createStoryContact(sourceStory, wanted)
+          let contact = data.contacts?.[npc.id]
+          if (!contact || !hasContactIdentity(contact)) {
+            const matches = [...new Map([
+              ...Object.values(data.contacts ?? {}).filter(item => item.kind !== 'story' && hasContactIdentity(item)),
+              ...listContacts(ctx),
+            ].filter(item => item.name.trim() === wanted).map(item => [item.id, item])).values()]
+            if (matches.length === 1) {
+              contact = matches[0]
+              if (listContacts(ctx).some(item => item.id === contact!.id)) {
+                try { contact = await loadContact(ctx, contact.id) }
+                catch (error) { console.warn('[st-stage] 读取角色卡联系人失败，已回退为故事内联系人', error); contact = npc }
+              }
+            } else contact = npc
           }
+          if (!valid()) return
+          const key = `direct:${contact.id}`, existing = conversations[key]
+          if (existing) { openConversation(key); return }
+          const oldContact = data.contacts?.[contact.id]
+          const conv = addContactConversation(data, contact)
+          try { persist() }
+          catch (error) {
+            delete conversations[key]
+            if (oldContact) data.contacts![contact.id] = oldContact
+            else delete data.contacts![contact.id]
+            throw error
+          }
+          openConversation(conv.scopeKey!)
         }
+        void openLinkedContact().catch(error => {
+          console.warn('[st-stage] 打开故事私聊失败', error)
+          if (valid()) notice(error instanceof Error ? error.message : '打开私聊失败，请重试。')
+        })
       }
       // The shell's ‹ and Escape step back like a phone: close the open layer first, then leave the chat.
       stepBack = () => {

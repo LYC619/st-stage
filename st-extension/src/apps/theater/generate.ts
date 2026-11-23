@@ -112,12 +112,38 @@ function capFeed<T extends { pinned?: boolean }>(items: T[], limit = MAX_FEED_IT
   return items.filter((_, idx) => keepIndices.has(idx))
 }
 
-export function mergeFeeds(previous: TheaterFeeds, incoming: TheaterFeeds): TheaterFeeds {
+function mergePosts<T extends { pinned?: boolean; liked?: boolean }>(previous: T[], incoming: T[], key: (post: T) => string): T[] {
+  const prior = new Map(previous.map(post => [key(post), post]))
+  const added = new Map(incoming.map(post => {
+    const id = key(post), old = prior.get(id)
+    return [id, old ? { ...post, pinned: old.pinned, liked: old.liked } : post]
+  }))
+  return capFeed([...added.values(), ...previous.filter(post => !added.has(key(post)))])
+}
+
+export function mergeFeeds(previous: TheaterFeeds, incoming: TheaterFeeds, channel: TheaterChannel = 'all', started?: TheaterFeeds): TheaterFeeds {
+  const include = (name: TheaterChannel) => channel === 'all' || channel === name
+  let live = include('live') ? incoming.live ?? previous.live : previous.live
+  if (live && live !== previous.live && previous.live) {
+    const sameShow = previous.live.room === live.room && previous.live.title === live.title
+    const oldComments = new Map<string, number>()
+    for (const item of started?.live?.danmaku ?? []) {
+      if (item.fan === '我') oldComments.set(item.text, (oldComments.get(item.text) ?? 0) + 1)
+    }
+    const own = previous.live.danmaku.filter(item => {
+      if (item.fan !== '我') return false
+      if (sameShow) return true
+      const count = oldComments.get(item.text) ?? 0
+      if (count) oldComments.set(item.text, count - 1)
+      return count === 0
+    })
+    live = { ...live, danmaku: [...own, ...live.danmaku.filter(item => !own.some(saved => saved.fan === item.fan && saved.text === item.text))] }
+  }
   return {
-    square: capFeed([...incoming.square, ...previous.square]),
-    forum: capFeed([...incoming.forum, ...previous.forum]),
-    live: incoming.live ?? previous.live,
-    diary: mergeDiary(previous.diary, incoming.diary),
+    square: include('square') ? mergePosts(previous.square, incoming.square, post => JSON.stringify([post.author, post.text])) : previous.square,
+    forum: include('forum') ? mergePosts(previous.forum, incoming.forum, post => JSON.stringify([post.board, post.user, post.title])) : previous.forum,
+    live,
+    diary: include('diary') ? mergeDiary(previous.diary, incoming.diary) : previous.diary,
   }
 }
 

@@ -196,7 +196,7 @@ export function createAppearanceApp(deps: AppearanceDeps): PhoneApp {
                 const skins = { ...(latest.characterSkins ?? {}) }
                 skins[charName] = {
                   theme: effective.theme || 'midnight',
-                  ...(effective.wallpaper ? { wallpaper: effective.wallpaper } : {}),
+                  wallpaper: effective.wallpaper,
                 }
                 save({ ...latest, characterSkins: skins }, `已为「${charName}」记住当前主题与壁纸，切到 TA 时自动换装。`)
               },
@@ -215,7 +215,7 @@ export function createAppearanceApp(deps: AppearanceDeps): PhoneApp {
         }
 
         wallpaper.append(
-          sliderField('壁纸压暗', data.wallpaperDim ?? 0, 0, 75, '%', val => save({ ...current(), wallpaperDim: val || undefined })),
+          sliderField('壁纸压暗', data.wallpaperDim ?? 36, 0, 75, '%', val => save({ ...current(), wallpaperDim: val })),
           sliderField('背景柔焦', data.wallpaperBlur ?? 0, 0, 20, 'px', val => save({ ...current(), wallpaperBlur: val || undefined })),
         )
 

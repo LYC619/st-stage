@@ -7,7 +7,8 @@ import { defaultContactState, isGroup, memberScope, replyMembers } from './group
 import { WeChatPipeline } from './pipeline'
 import type { Contact, Conversation, ChatMessage, ContactState, WeChatAppData } from './types'
 import type { AppHost } from '../../../../core/phone-registry'
-import { captureStory, readStoryMemory } from './memory'
+import { captureStory, readStoryMemory, storyIdentity } from './memory'
+import { contactBelongsToStory } from './contact-identity'
 
 export function contactPipeline(data: WeChatAppData, contact?: Contact, conv?: Conversation) {
   const card = contact?.card ?? (conv ? conversationScope(data, conv).card : undefined)
@@ -49,7 +50,12 @@ export function createReplyController(data: WeChatAppData, options: {
     const key = keyOf(conv)
     if (!alive || pending.has(key)) return
     let members: Array<Contact | undefined>
-    try { members = isGroup(conv) ? replyMembers(data, conv, player.content) : [conv.contactId ? data.contacts?.[conv.contactId] : undefined] }
+    try {
+      members = isGroup(conv) ? replyMembers(data, conv, player.content) : [conv.contactId ? data.contacts?.[conv.contactId] : undefined]
+      if (members.some(item => item?.kind === 'story' && (!options.host || !contactBelongsToStory(item, storyIdentity(options.host))))) {
+        throw new Error('这位联系人属于另一个故事，请先切回对应的主聊天。')
+      }
+    }
     catch (error) {
       conv.replyAttempt = { messageId: player.id!, status: 'failed', error: (error as Error).message }
       options.persist(); options.changed(key); return

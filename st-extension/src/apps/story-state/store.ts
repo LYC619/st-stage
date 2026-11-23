@@ -1,5 +1,5 @@
 import type { AppHost } from '../../../../core/phone-registry'
-import { readChatMetadata, writeChatMetadata, storyIdentity } from '../shared/chat-metadata'
+import { metadataContext, readChatMetadata, writeChatMetadata, storyIdentity } from '../shared/chat-metadata'
 export { metadataContext } from '../shared/chat-metadata'
 import { getLastMessageId, readVariables } from '../mvu/bridge'
 
@@ -52,7 +52,18 @@ export async function readStoryState(host: AppHost): Promise<StoryStateSnapshot>
 
 export async function writeLocalState(host: AppHost, snapshot: StoryStateSnapshot, stat: Record<string, unknown>): Promise<boolean> {
   if (snapshot.backend !== 'local') return false
-  return writeChatMetadata(host, snapshot.key, META_KEY, { stat_data: stat, v: 1 })
+  const metadata = metadataContext().chatMetadata, previous = metadata?.[META_KEY]
+  const payload = { stat_data: stat, v: 1 }
+  try {
+    return await writeChatMetadata(host, snapshot.key, META_KEY, payload)
+  } catch (error) {
+    // Restore only our own optimistic mutation; never overwrite a later writer.
+    if (metadata?.[META_KEY] === payload) {
+      if (previous === undefined) delete metadata[META_KEY]
+      else metadata[META_KEY] = previous
+    }
+    throw error
+  }
 }
 
 export function formatTime(time: StoryState['时间']): string {

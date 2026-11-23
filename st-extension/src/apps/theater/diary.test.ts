@@ -10,6 +10,12 @@ const entry = (role: string, date = '2026-01-01', content = '我在等人。') =
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.replaceChildren() })
 
 describe('NPC diary', () => {
+  it('keeps the hard limit when every retained diary is pinned', () => {
+    const pinned = Array.from({ length: 30 }, (_, i) => ({ ...entry(String(i)), pinned: true }))
+    expect(mergeDiary(pinned, [entry('new')])).toEqual(pinned)
+    expect(mergeDiary([...pinned, entry('overflow')], [])).toEqual(pinned)
+  })
+
   it('archives entries across multiple dates and never wipes previous diaries on empty incoming', () => {
     const day1 = [entry('甲', '2026-01-01')]
     const day2 = [entry('乙', '2026-01-02')]

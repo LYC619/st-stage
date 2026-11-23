@@ -59,8 +59,9 @@ export function createTheaterController(host: AppHost, options: { cooldownMs?: n
     try {
       const incoming = await abortable(generateTheater(host, feeds, current.signal, story, channel), current.signal)
       if (!alive || job !== current || current.signal.aborted || storyIdentity(host) !== story.key) return
-      const merged = mergeFeeds(feeds, incoming)
-      host.setAppData(saveTheaterStory(readTheaterData(host), story.key, { ...merged, fingerprint: mark, updatedAt: Date.now() }))
+      const latest = readTheaterData(host)
+      const merged = mergeFeeds(latest.stories[story.key] ?? feeds, incoming, channel, feeds)
+      host.setAppData(saveTheaterStory(latest, story.key, { ...merged, fingerprint: mark, updatedAt: Date.now() }))
       const summary = incoming.diary[0]?.role
         ? `${incoming.diary[0].role} 写下了私密日记`
         : incoming.square[0]?.author

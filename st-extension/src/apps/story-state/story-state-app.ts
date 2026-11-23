@@ -9,13 +9,12 @@ import { storyIdentity } from '../wechat/memory'
 import {
   formatIsoDateFromTime,
   formatTime,
-  normalize,
   readStoryState,
   readSyncSettings,
-  writeLocalState,
   type StoryStateSnapshot,
 } from './store'
 import { createStorySync } from './sync'
+import { createLocalEdits, localRowIndex } from './local-edits'
 import { itemDraft, questDraft, skillDraft } from './drafts'
 
 function text(tag: string, className: string, value: string): HTMLElement {
@@ -125,24 +124,17 @@ export function createStoryStateApp(): PhoneApp {
       root.append(header, tabs, statusWrap, panel, settings.box)
       container.append(root)
 
-      async function mutateLocal(mutator: (working: Record<string, unknown>) => void, eventSummary?: string) {
-        if (!snapshot || snapshot.backend !== 'local') return
-        const beforeDate = formatIsoDateFromTime(snapshot.state.时间)
-        const working = structuredClone({ ...normalize({}), ...snapshot.raw }) as Record<string, unknown>
-        mutator(working)
-        const ok = await writeLocalState(ctx, snapshot, working)
-        if (!ok) {
-          status.textContent = '无法写入当前聊天记录，请确认已打开角色聊天。'
-          return
-        }
-        await sync.refreshInjection()
-        await load()
-        const afterDate = snapshot ? formatIsoDateFromTime(snapshot.state.时间) : ''
-        if (afterDate && afterDate !== beforeDate) {
-          emitStoryEvent({ type: 'story-date-changed', date: afterDate })
-        }
-        emitStoryEvent({ type: 'story-state-updated', summary: eventSummary || '手账已更新' })
-      }
+      const edits = createLocalEdits(ctx, {
+        async saved(before, after, eventSummary) {
+          const beforeDate = formatIsoDateFromTime(before.时间), afterDate = formatIsoDateFromTime(after.时间)
+          if (afterDate && afterDate !== beforeDate) emitStoryEvent({ type: 'story-date-changed', date: afterDate })
+          emitStoryEvent({ type: 'story-state-updated', summary: eventSummary || '手账已更新' })
+          await sync.refreshInjection()
+          if (alive) await load()
+        },
+        failed(error) { status.textContent = error instanceof Error ? error.message : '保存手账失败，请重试。' },
+      })
+      const mutateLocal = edits.enqueue
 
       function draftButton(label: string, draft: string): HTMLButtonElement {
         const button = document.createElement('button')
@@ -257,10 +249,11 @@ export function createStoryStateApp(): PhoneApp {
             saveBtn.className = 'ss-primary-btn'
             saveBtn.textContent = '保存时空记录'
             saveBtn.onclick = () => {
+              const nextIso = dateF.input.value.trim(), nextShow = showF.input.value.trim()
+              const location = { 区域: regionF.input.value.trim(), 地点: placeF.input.value.trim(), 细节: detailF.input.value.trim() }
               void mutateLocal(working => {
                 const tObj = (working.时间 && typeof working.时间 === 'object' ? working.时间 : {}) as Record<string, unknown>
                 const prevIso = formatIsoDateFromTime(state.时间)
-                const nextIso = dateF.input.value.trim()
                 if (/^\d{4}-\d{2}-\d{2}$/.test(nextIso)) {
                   const [y, m, d] = nextIso.split('-').map(Number)
                   tObj.年 = y; tObj.月 = m; tObj.日 = d
@@ -268,15 +261,12 @@ export function createStoryStateApp(): PhoneApp {
                 } else if (!nextIso) {
                   tObj.年 = 0; tObj.月 = 0; tObj.日 = 0; tObj.星期 = ''
                 }
-                const nextShow = showF.input.value.trim()
                 // 若修改了日期但未改旧的「时间展示」文本，自动清空旧文本让新年月日生效
                 tObj.显示 = nextIso !== prevIso && nextShow === state.时间.显示 ? '' : nextShow
                 working.时间 = tObj
                 working.位置 = {
                   ...(working.位置 && typeof working.位置 === 'object' ? working.位置 as Record<string, unknown> : {}),
-                  区域: regionF.input.value.trim(),
-                  地点: placeF.input.value.trim(),
-                  细节: detailF.input.value.trim(),
+                  ...location,
                 }
               }, '时空坐标已校准')
             }
@@ -287,7 +277,7 @@ export function createStoryStateApp(): PhoneApp {
 
         if (selected === 1) {
           if (!state.任务.length) empty()
-          state.任务.map((quest, idx) => ({ quest, idx })).reverse().forEach(({ quest, idx }) => {
+          state.任务.slice().reverse().forEach(quest => {
             const card = text('article', 'ss-card ss-quest', '')
             card.dataset.status = quest.状态
             card.append(
@@ -307,6 +297,7 @@ export function createStoryStateApp(): PhoneApp {
               cycleBtn.onclick = () => {
                 void mutateLocal(working => {
                   const list = Array.isArray(working.任务) ? working.任务 as Array<Record<string, unknown>> : []
+                  const idx = localRowIndex(list, quest.id, '标题', quest.标题)
                   if (list[idx]) list[idx].状态 = nextStatus
                 }, `委托「${quest.标题}」已标为${nextStatus}`)
               }
@@ -316,7 +307,8 @@ export function createStoryStateApp(): PhoneApp {
               delBtn.textContent = '移除'
               delBtn.onclick = () => {
                 void mutateLocal(working => {
-                  const list = Array.isArray(working.任务) ? [...(working.任务 as unknown[])] : []
+                  const list = Array.isArray(working.任务) ? [...(working.任务 as Array<Record<string, unknown>>)] : []
+                  const idx = localRowIndex(list, quest.id, '标题', quest.标题)
                   list.splice(idx, 1)
                   working.任务 = list
                 }, `已移除委托「${quest.标题}」`)
@@ -342,9 +334,10 @@ export function createStoryStateApp(): PhoneApp {
             addBtn.onclick = () => {
               const titleVal = titleF.input.value.trim()
               if (!titleVal) { status.textContent = '请先填写委托标题。'; return }
+              const description = descF.input.value.trim(), reward = rewardF.input.value.trim()
               void mutateLocal(working => {
                 const list = Array.isArray(working.任务) ? [...(working.任务 as unknown[])] : []
-                list.push({ id: safeRandomId(), 标题: titleVal, 描述: descF.input.value.trim(), 状态: '进行中', 时间: formatTime(state.时间) === '尚未记录' ? '' : formatTime(state.时间), 奖励: rewardF.input.value.trim() })
+                list.push({ id: safeRandomId(), 标题: titleVal, 描述: description, 状态: '进行中', 时间: formatTime(state.时间) === '尚未记录' ? '' : formatTime(state.时间), 奖励: reward })
                 working.任务 = list
               }, `记下新委托：${titleVal}`)
             }
@@ -355,7 +348,7 @@ export function createStoryStateApp(): PhoneApp {
 
         if (selected === 2) {
           if (!state.背包.length) empty()
-          state.背包.forEach((item, idx) => {
+          state.背包.forEach(item => {
             const card = text('article', 'ss-card ss-item', '')
             card.dataset.rarity = item.稀有度
             card.append(text('h3', '', item.名称), text('small', 'ss-muted', `×${item.数量} · ${item.稀有度}`), text('p', '', item.描述))
@@ -372,7 +365,7 @@ export function createStoryStateApp(): PhoneApp {
                   const list = Array.isArray(working.背包)
                     ? [...(working.背包 as Array<Record<string, unknown>>)]
                     : Object.values(working.背包 as Record<string, Record<string, unknown>> ?? {})
-                  if (!list[idx]) return
+                  const idx = localRowIndex(list, item.id, '名称', item.名称)
                   const nextQty = Math.max(0, (Number(list[idx].数量) || 1) - 1)
                   if (nextQty === 0) list.splice(idx, 1)
                   else list[idx] = { ...list[idx], 数量: nextQty }
@@ -389,7 +382,7 @@ export function createStoryStateApp(): PhoneApp {
                   const list = Array.isArray(working.背包)
                     ? [...(working.背包 as Array<Record<string, unknown>>)]
                     : Object.values(working.背包 as Record<string, Record<string, unknown>> ?? {})
-                  if (!list[idx]) return
+                  const idx = localRowIndex(list, item.id, '名称', item.名称)
                   list[idx] = { ...list[idx], 数量: (Number(list[idx].数量) || 0) + 1 }
                   working.背包 = list
                 }, `${item.名称} +1`)
@@ -418,11 +411,12 @@ export function createStoryStateApp(): PhoneApp {
               const nameVal = nameF.input.value.trim()
               if (!nameVal) { status.textContent = '请先填写物品名称。'; return }
               const qtyVal = Math.max(1, Math.round(Number(qtyF.input.value) || 1))
+              const description = descF.input.value.trim(), rarity = rarityF.input.value.trim() || '普通'
               void mutateLocal(working => {
                 const list = Array.isArray(working.背包)
                   ? [...(working.背包 as unknown[])]
                   : Object.values(working.背包 as Record<string, unknown> ?? {})
-                list.push({ id: safeRandomId(), 名称: nameVal, 数量: qtyVal, 描述: descF.input.value.trim(), 稀有度: rarityF.input.value.trim() || '普通' })
+                list.push({ id: safeRandomId(), 名称: nameVal, 数量: qtyVal, 描述: description, 稀有度: rarity })
                 working.背包 = list
               }, `收纳了 ${nameVal} ×${qtyVal}`)
             }
@@ -433,7 +427,7 @@ export function createStoryStateApp(): PhoneApp {
 
         if (selected === 3) {
           if (!state.技能.length) empty()
-          state.技能.forEach((skill, idx) => {
+          state.技能.forEach(skill => {
             const card = text('article', 'ss-card', ''), progress = document.createElement('progress')
             progress.max = 100
             progress.value = skill.熟练度
@@ -448,8 +442,9 @@ export function createStoryStateApp(): PhoneApp {
               delBtn.onclick = () => {
                 void mutateLocal(working => {
                   const list = Array.isArray(working.技能)
-                    ? [...(working.技能 as unknown[])]
-                    : Object.values(working.技能 as Record<string, unknown> ?? {})
+                    ? [...(working.技能 as Array<Record<string, unknown>>)]
+                    : Object.values(working.技能 as Record<string, Record<string, unknown>> ?? {})
+                  const idx = localRowIndex(list, skill.id, '名称', skill.名称)
                   list.splice(idx, 1)
                   working.技能 = list
                 }, `已移除能力「${skill.名称}」`)
@@ -485,11 +480,12 @@ export function createStoryStateApp(): PhoneApp {
               if (!nameVal) { status.textContent = '请先填写能力名称。'; return }
               const lvlVal = Math.max(1, Math.round(Number(lvlF.input.value) || 1))
               const profVal = Math.max(0, Math.min(100, Math.round(Number(profF.input.value) || 0)))
+              const type = typeF.input.value.trim() || '特长', description = descF.input.value.trim()
               void mutateLocal(working => {
                 const list = Array.isArray(working.技能)
                   ? [...(working.技能 as unknown[])]
                   : Object.values(working.技能 as Record<string, unknown> ?? {})
-                list.push({ id: safeRandomId(), 名称: nameVal, 类型: typeF.input.value.trim() || '特长', 等级: lvlVal, 熟练度: profVal, 描述: descF.input.value.trim() })
+                list.push({ id: safeRandomId(), 名称: nameVal, 类型: type, 等级: lvlVal, 熟练度: profVal, 描述: description })
                 working.技能 = list
               }, `记下新能力：${nameVal}`)
             }
@@ -516,11 +512,12 @@ export function createStoryStateApp(): PhoneApp {
 
       const offSync = sync.subscribe(() => { render(); if (!sync.status().busy) void load() })
       const offVars = subscribeVarEvents(() => { void load() })
-      const offChange = ctx.onCharacterChanged(() => { void load() })
+      const offChange = ctx.onCharacterChanged(() => { edits.invalidate(); void load() })
       render()
       void load()
       cleanup = () => {
         alive = false
+        edits.dispose()
         offSync()
         offVars()
         offChange()

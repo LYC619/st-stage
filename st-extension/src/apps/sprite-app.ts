@@ -6,8 +6,10 @@
 import type { PhoneApp } from '../../../core/phone-registry'
 import { t } from '../../../core/i18n'
 import { buildActiveSpritePrompt } from '../../../core/active-prompt'
+import { effectiveSpriteAddress } from '../../../core/address-policy'
 import {
   getPackCover,
+  formatAddress,
   INJECTION_DEPTH_MAX,
   INJECTION_DEPTH_MIN,
   PROMPT_BUDGET_MAX,
@@ -87,15 +89,12 @@ export function spriteApp(deps: SpriteAppDeps = {}): PhoneApp {
               id: `${p.id}::${idx}::${s.tag}`,
               label: s.tag,
               url: s.url,
-              explicitOutfit: s.outfit?.trim() || p.outfit?.trim() || '',
               outfit: s.outfit?.trim() || p.outfit?.trim() || p.name,
+              address: formatAddress(effectiveSpriteAddress(p, s, packs.length > 1)),
             })),
           )
           const outfits = [...new Set(rawSprites.map(s => s.outfit))]
-          const allSprites = rawSprites.map(s => ({
-            ...s,
-            address: s.explicitOutfit && outfits.length > 1 ? `${s.explicitOutfit}/${s.label}` : s.label,
-          }))
+          const allSprites = rawSprites
           if (selectedOutfit && !outfits.includes(selectedOutfit)) selectedOutfit = ''
           const visibleSprites = selectedOutfit
             ? allSprites.filter(s => s.outfit === selectedOutfit)

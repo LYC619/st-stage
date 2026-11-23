@@ -45,12 +45,15 @@ function computeHighlights(before: StoryState, after: StoryState): string[] {
 
 export function createStorySync(host: AppHost) {
   let alive = true, job: AbortController | undefined, queued = false
+  let injectionRevision = 0
   let status = { busy: false, error: '' }
   const listeners = new Set<() => void>()
   const notify = () => { for (const fn of listeners) fn() }
 
   async function refreshInjection() {
-    if (typeof host.injectPrompt !== 'function') return
+    if (!alive || typeof host.injectPrompt !== 'function') return
+    const revision = ++injectionRevision, key = storyIdentity(host)
+    const current = () => alive && revision === injectionRevision && key === storyIdentity(host)
     try {
       const settings = readSyncSettings(host)
       if (!settings.injectToChat) {
@@ -58,12 +61,15 @@ export function createStorySync(host: AppHost) {
         return
       }
       const snapshot = await readStoryState(host)
-      if (!alive || snapshot.backend === 'mvu') {
+      if (!current() || snapshot.key !== key) return
+      if (!readSyncSettings(host).injectToChat || snapshot.backend === 'mvu') {
         host.injectPrompt('')
         return
       }
       host.injectPrompt(formatStoryStateInjection(snapshot.state), 4)
-    } catch {
+    } catch (error) {
+      if (!current()) return
+      console.warn('[st-stage] 剧情状态注入刷新失败', error)
       host.injectPrompt('')
     }
   }
@@ -159,6 +165,7 @@ export function createStorySync(host: AppHost) {
   const offMessage = host.onMessageReceived(() => { void trigger(false) })
   const offChange = host.onCharacterChanged(() => {
     cancel()
+    if (typeof host.injectPrompt === 'function') host.injectPrompt('')
     void refreshInjection()
   })
   const offStoryEvent = onStoryEvent((event) => {
@@ -174,6 +181,7 @@ export function createStorySync(host: AppHost) {
     subscribe(fn: () => void) { listeners.add(fn); return () => { listeners.delete(fn) } },
     destroy() {
       alive = false
+      injectionRevision++
       cancel()
       offMessage()
       offChange()

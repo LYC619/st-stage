@@ -25,21 +25,20 @@ function diaryKey(entry: DiaryEntry): string {
  * - 最多保留 30 篇，优先保护已珍藏（pinned）的篇目
  */
 export function mergeDiary(previous: DiaryEntry[], incoming: DiaryEntry[], limit = MAX_DIARY_ENTRIES): DiaryEntry[] {
-  if (!incoming.length) return [...previous]
   const rows = new Map<string, DiaryEntry>()
   for (const entry of previous) rows.set(diaryKey(entry), entry)
   for (const entry of incoming) {
     const key = diaryKey(entry)
     const prior = rows.get(key)
     rows.delete(key)
-    rows.set(key, prior?.pinned ? { ...entry, pinned: true } : entry)
+    rows.set(key, prior ? { ...entry, pinned: prior.pinned } : entry)
   }
   const all = [...rows.values()]
   if (all.length <= limit) return all
   const pinned = all.filter(item => item.pinned)
   const unpinned = all.filter(item => !item.pinned)
   const keepUnpinned = Math.max(0, limit - pinned.length)
-  const keptSet = new Set([...pinned.slice(-limit), ...unpinned.slice(-keepUnpinned)])
+  const keptSet = new Set([...pinned.slice(-limit), ...(keepUnpinned ? unpinned.slice(-keepUnpinned) : [])])
   return all.filter(item => keptSet.has(item))
 }
 

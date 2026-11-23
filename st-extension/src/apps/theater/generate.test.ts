@@ -36,7 +36,7 @@ describe('theater generation data', () => {
     expect(result.square.at(-1)?.text).toBe(String(MAX_FEED_ITEMS - 1))
     expect(result.live?.title).toBe('新直播')
     expect(mergeFeeds(feeds, { ...feeds, live: null }).live?.title).toBe('雨中月港')
-    expect(mergeFeeds({ ...feeds, forum: Array(MAX_FEED_ITEMS).fill(feeds.forum[0]) }, feeds).forum).toHaveLength(MAX_FEED_ITEMS)
+    expect(mergeFeeds({ ...feeds, forum: Array.from({ length: MAX_FEED_ITEMS }, (_, i) => ({ ...feeds.forum[0], title: String(i) })) }, feeds).forum).toHaveLength(MAX_FEED_ITEMS)
   })
   it('evicts the oldest chat after twenty stored stories', () => {
     const stories = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [String(i), { ...feeds, fingerprint: '', updatedAt: i }]))

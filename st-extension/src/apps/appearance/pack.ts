@@ -56,7 +56,8 @@ function normalize(value: unknown, strict: boolean, appIds?: string[]): Appearan
   })
   const rawTheme = str(raw.theme)
   const theme = THEME_IDS.has(rawTheme) && rawTheme !== 'midnight' ? (rawTheme as PhoneThemeId) : undefined
-  const wallpaperDim = clampNum(raw.wallpaperDim, 0, 75)
+  const wallpaperDim = typeof raw.wallpaperDim === 'number' && Number.isFinite(raw.wallpaperDim)
+    ? clampNum(raw.wallpaperDim, 0, 75) : undefined
   const wallpaperBlur = clampNum(raw.wallpaperBlur, 0, 20)
 
   const characterSkins: NonNullable<AppearanceData['characterSkins']> = {}
@@ -68,11 +69,12 @@ function normalize(value: unknown, strict: boolean, appIds?: string[]): Appearan
     const sTheme = THEME_IDS.has(sThemeRaw) ? (sThemeRaw as PhoneThemeId) : undefined
     const sWall = str(sRow.wallpaper)
     const sValidWall = imageAddress(sWall)
+    const hasWallpaper = typeof sRow.wallpaper === 'string' && sValidWall
     if (strict && !sValidWall) throw new Error('外观包的图片必须是网址，请先上传图片。')
-    if (sTheme || (sWall && sValidWall)) {
+    if (sTheme || hasWallpaper) {
       characterSkins[cleanName] = {
         ...(sTheme ? { theme: sTheme } : {}),
-        ...(sWall && sValidWall ? { wallpaper: sWall } : {}),
+        ...(hasWallpaper ? { wallpaper: sWall } : {}),
       }
     }
   }
@@ -83,7 +85,7 @@ function normalize(value: unknown, strict: boolean, appIds?: string[]): Appearan
     fonts,
     activeFont: fonts.some(font => font.name === raw.activeFont) ? str(raw.activeFont) : '',
     ...(theme ? { theme } : {}),
-    ...(wallpaperDim > 0 ? { wallpaperDim } : {}),
+    ...(wallpaperDim !== undefined ? { wallpaperDim } : {}),
     ...(wallpaperBlur > 0 ? { wallpaperBlur } : {}),
     ...(Object.keys(characterSkins).length ? { characterSkins } : {}),
   }

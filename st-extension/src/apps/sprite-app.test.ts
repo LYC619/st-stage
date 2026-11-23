@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildActiveSpritePrompt } from '../../../core/active-prompt'
 import type { PhoneAppContext } from '../../../core/phone-registry'
 import { getPresetPacks } from '../../../core/presets'
-import { createDefaultSettings } from '../../../core/types'
+import { createDefaultSettings, type SpritePack } from '../../../core/types'
+import { resolveSprite } from '../../../core/sprite-store'
+import * as safeRuntime from './shared/safe-runtime'
 import { spriteApp } from './sprite-app'
 import { loadTranslations, resetI18n, setLocale } from '../../../core/i18n'
 import { BUILTIN_TEMPLATE } from '../../../core/prompt-builder'
@@ -17,6 +19,27 @@ beforeEach(() => {
 })
 
 describe('spriteApp', () => {
+  it.each([
+    [
+      { id: 'a', name: 'Alice pack', roleName: 'Alice', outfit: 'Casual', sprites: [{ tag: 'Smile', url: '/alice.png' }] },
+      { id: 'b', name: 'Bob pack', roleName: 'Bob', outfit: 'Casual', sprites: [{ tag: 'Smile', url: '/bob.png' }] },
+    ],
+    [
+      { id: 'a', name: 'Pack A', sprites: [{ tag: 'Smile', url: '/a.png' }] },
+      { id: 'b', name: 'Pack B', sprites: [{ tag: 'Smile', url: '/b.png', group: 'Bob', outfit: 'Raincoat' }] },
+    ],
+  ] as SpritePack[][])('copies a tag that resolves back to the selected sprite across role and outfit collisions', (...packs) => {
+    const settings = { ...createDefaultSettings(), packs, bindings: [{ characterName: 'Story', packIds: packs.map(p => p.id), enabled: true }] }
+    const copy = vi.spyOn(safeRuntime, 'safeCopyText').mockResolvedValue(true)
+    const container = document.createElement('div')
+    spriteApp().mount(container, { getSettings: () => settings, getCharacterName: () => 'Story', updateSettings: vi.fn() } as unknown as PhoneAppContext)
+    container.querySelectorAll<HTMLButtonElement>('.so-sprite-chip')[1].click()
+    container.querySelector<HTMLButtonElement>('.so-sprite-copy-btn')!.click()
+    const tag = copy.mock.calls[0][0]
+    expect(tag).toMatch(/^\[立绘:.+\]$/)
+    expect(resolveSprite(packs, tag.slice(4, -1))?.url).toBe(packs[1].sprites[0].url)
+    expect(container.querySelector<HTMLImageElement>('.so-sprite-stage-preview img')!.getAttribute('src')).toBe(packs[1].sprites[0].url)
+  })
   it('renders English settings while preserving user content, stored values and prompt syntax', () => {
     loadTranslations('en-US', en); setLocale('en-US')
     const settings = { ...createDefaultSettings(), promptTemplate: '私人 Prompt {清单} {数量} [立绘:图名]', apps: { custom: { message: '原样' } } }

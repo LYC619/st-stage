@@ -5,6 +5,7 @@ import { createStorySync } from './sync'
 import { META_KEY } from './store'
 import * as ai from '../shared/story-ai'
 import * as mvu from '../mvu/bridge'
+import * as store from './store'
 
 let cleanup = () => {}
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
@@ -22,6 +23,45 @@ function fixture() {
   return { sync, save, settings, metadata, receive: () => receive(), switch: () => { chatId = 'B'; change() } }
 }
 describe('background story sync', () => {
+  it.each(['disable', 'switch', 'destroy'] as const)('rechecks lifecycle/settings after a pending injection read: %s', async action => {
+    let chatId = 'A', finish!: (snapshot: store.StoryStateSnapshot) => void
+    const settings = { injectToChat: true }
+    const raw = { 位置: { 地点: 'Old place' } }
+    const snapshot = { key: 'Role::A', backend: 'local' as const, raw, state: store.normalize(raw) }
+    vi.spyOn(store, 'readStoryState').mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+      .mockResolvedValue({ ...snapshot, key: 'Role::B', state: store.normalize({ 位置: { 地点: 'New place' } }) })
+    const injectPrompt = vi.fn()
+    const host = { getAppData: () => settings, getCharacterName: () => 'Role', getChatContext: () => ({ chatId }), injectPrompt,
+      onMessageReceived: () => vi.fn(), onCharacterChanged: () => vi.fn() } as unknown as AppHost
+    const sync = createStorySync(host); cleanup = sync.destroy
+    if (action === 'switch') chatId = 'B'
+    else if (action === 'disable') settings.injectToChat = false
+    else sync.destroy()
+    const calls = injectPrompt.mock.calls.slice()
+    finish(snapshot); await Promise.resolve(); await Promise.resolve()
+    if (action === 'disable') expect(injectPrompt).toHaveBeenLastCalledWith('')
+    else expect(injectPrompt.mock.calls).toEqual(calls)
+  })
+
+  it.each(['resolve', 'reject'] as const)('ignores a stale injection read that will %s after a newer refresh', async action => {
+    let finish!: (value: store.StoryStateSnapshot) => void, fail!: (error: Error) => void
+    const pending = new Promise<store.StoryStateSnapshot>((resolve, reject) => { finish = resolve; fail = reject })
+    const raw = { 位置: { 地点: 'New place' } }
+    const snapshot = { key: 'Role::A', backend: 'local' as const, raw, state: store.normalize(raw) }
+    vi.spyOn(store, 'readStoryState').mockReturnValueOnce(pending).mockResolvedValue(snapshot)
+    const settings = { injectToChat: true }, injectPrompt = vi.fn()
+    const host = { getAppData: () => settings, getCharacterName: () => 'Role', getChatContext: () => ({ chatId: 'A' }), injectPrompt,
+      onMessageReceived: () => vi.fn(), onCharacterChanged: () => vi.fn() } as unknown as AppHost
+    const sync = createStorySync(host); cleanup = sync.destroy
+    if (action === 'resolve') settings.injectToChat = false
+    await sync.refreshInjection()
+    const lastCall = injectPrompt.mock.calls.at(-1)
+    if (action === 'resolve') finish(snapshot)
+    else fail(new Error('stale failure'))
+    await Promise.resolve(); await Promise.resolve()
+    expect(injectPrompt.mock.calls.at(-1)).toEqual(lastCall)
+  })
+
   it('coalesces concurrent replies and accumulates instructions without JSON mode', async () => {
     let finish!: (reply: string) => void
     const request = vi.spyOn(ai, 'requestChat').mockImplementationOnce(() => new Promise(resolve => { finish = resolve })).mockResolvedValue("_.add('计数', 1);")

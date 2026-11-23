@@ -3,6 +3,7 @@ import { stableCharacterKey } from '../../../../core/character-identity'
 import type { ConversationScope, STCharacterCard } from './bridge'
 import type { Conversation, WeChatAppData, Contact } from './types'
 import { resolveProfile } from './profile-library'
+import { hasContactIdentity } from './contact-identity'
 
 import { getWeChatHostContext, type HostCharacterCard } from './bridge'
 type HostCard = HostCharacterCard
@@ -42,7 +43,7 @@ export async function loadContact(host: AppHost, id: string): Promise<Contact> {
   return item
 }
 export function addContactConversation(data: WeChatAppData, item: Contact): Conversation {
-  if (!stableCharacterKey(item.card) || stableCharacterKey(item.card) !== item.id) throw new Error('联系人缺少稳定的角色卡身份')
+  if (!hasContactIdentity(item)) throw new Error('联系人缺少稳定的角色卡身份')
   data.contacts ??= {}; data.conversations ??= {}
   data.contacts[item.id] = { ...item, card: snapshot(item.card!) }
   const key = `direct:${item.id}`
@@ -62,5 +63,6 @@ export function conversationScope(data: WeChatAppData, conv: Conversation): Conv
   const avatarKey = conv.scopeKey?.match(/^(avatar:[^:]+)(?:::|$)/)?.[1]
   const stored = item ?? (avatarKey ? data.contacts?.[avatarKey] : undefined)
   return { scopeKey: conv.scopeKey!, characterName: stored?.name ?? conv.characterName, card: stored?.card ?? conv.card,
+    ...(stored?.kind === 'story' ? { contactId: stored.id, storyKey: stored.storyKey } : {}),
     characterId: conv.characterId, chatId: conv.chatId, externalState: { source: 'none' } }
 }

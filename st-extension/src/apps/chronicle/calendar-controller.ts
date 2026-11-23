@@ -32,10 +32,11 @@ export function createCalendarController(host: AppHost, notify: () => void, time
       if (!getStoryAiConfig(host)) { status.error = '请先在下方设置或微信里连上幕后 AI。'; return }
       const incoming = await abortable(generateCalendar(host, today, missing, retained, current.signal), current.signal)
       if (job !== current || current.signal.aborted) return
+      const notes = readCalendar().notes
       const saved = await writeChatMetadata(host, key, CALENDAR_KEY, {
         v: 1,
         days: [...retained, ...incoming].sort((a, b) => a.date.localeCompare(b.date)),
-        ...(existing.notes && Object.keys(existing.notes).length ? { notes: existing.notes } : {}),
+        ...(notes && Object.keys(notes).length ? { notes } : {}),
       })
       if (saved) emitStoryEvent({ type: 'calendar-updated', summary: '七天风物日历已更新' })
     } catch (error) {
