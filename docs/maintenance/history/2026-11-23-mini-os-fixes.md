@@ -4,9 +4,9 @@
 
 ## 基线与交付边界
 
-- 分支 `main`，产品与产物提交 `abfa4ee667fc63a6d84a7e23bfdca9653b8362ae`（基于 `2a2ee44`），已推送至 `origin/main`；其余本地历史分支均已合并入 `main`。
-- 候选 **0.9.0+202611231945**；根目录、`st-distribution/`、`public/` 同时间戳构建，提交后已通过 `verify-runtime-parity.mjs --committed` 60 文件一致性校验。主包 **758714 bytes**，SHA-256 `d6ba615e37ac70c4aa3a170bed02414db060c0af15089cdbca6700b14265e544`。
-- 安装仓 `../st-stage-ext` 尚未获发布授权，保持干净未修改，正式版仍是 **0.9.0+202611220955**（`aefa86b8a6d6ee666ae09f1a50fab6625d4225da`）。没有改动既有持久化顶层键名或用户日常 ST 数据。
+- 分支 `main`，产品修复提交 `abfa4ee667fc63a6d84a7e23bfdca9653b8362ae`（基于 `2a2ee44`），正式发布构建提交 `28e05afe89680a7849b305a4f4b74ac4949df1fd`，已推送至 `origin/main`；其余本地历史分支均已合并入 `main`。
+- 正式版 **0.9.0+202611232112**；通过 `release-full.mjs --publish` 同步至 `../st-stage-ext` 并推送（提交 `fd7dc527fee7343d466a47bb32fdaa9997cfbbf8`，更新 `bundle.js`、`style.css`、`version.json` 共 3 个文件，其余 57 个文件不变）。
+- 四处（根目录、`st-distribution/`、`public/`、`../st-stage-ext`）已通过 `verify-runtime-parity.mjs --committed` **60 文件 SHA-256** 一致性校验；主包 **758714 bytes**，SHA-256 `936660130dec1f281dd5fea120bbcf39a79c33a106a09650d7d7959e3ab615df`。发布回执与原文件备份留存于 `test-results/mini-os-fixes-publication-2026-11-23/release-full/`。没有改动既有持久化顶层键名或用户日常 ST 数据。
 
 ## 逐项修复与正式回归
 
@@ -30,6 +30,6 @@
 - `pnpm test`：**151 文件／1660 项全通过**；首次全量有 1 项新增断言漏计夹具中既有物品，修正测试后定向 8/8 与再次完整 1660/1660 通过。
 - `pnpm typecheck`、`pnpm lint --max-warnings 0`：通过，0 类型错误、0 lint 错误／警告；i18n **874 键／956 引用**、App 文档 **13 项**校验通过。
 - `pnpm test:release`：**26/26**；`pnpm test:mobile --workers=2`：**33/33**；真实 Chromium 触摸覆盖 **320×667、390×844、667×375、1365×900** 无横向溢出与焦点恢复。
-- `pnpm build`、`pnpm build:all`：通过；提交 `abfa4ee` 后实跑 `verify-runtime-parity.mjs --committed --root . --distribution st-distribution --preview public`，三处 **60 文件 SHA-256** 与已提交清单全部对齐。未运行会写安装仓的发布流程。
-- 证据：`test-results/mini-os-fixes-2026-11-23/` 的 `unit-final.log`、`typecheck.log`、`lint.log`、`release-tests.log`、`mobile.log`、`next-build.log`、`build-all.log`；前置定向证据另见 `mini-os-audit-2026-11-23/`。保留测试日志／截图，删除预检临时构建；3101 测试服务已退出，`next-env.d.ts` 恢复原状。
-- 已从 `DEFERRED.md` 移除 R1–R10，并完成源码仓 `main` 提交与推送；[真实宿主／实体设备等外部验收](../EXTERNAL-ACCEPTANCE.md)继续保留，安装仓 `../st-stage-ext` 发布同步待用户另行授权。
+- `pnpm build`、`pnpm build:all` 与 `release-full.mjs --publish` 全流程通过；发布后实跑 `verify-runtime-parity.mjs --committed --root . --distribution st-distribution --preview public --release ../st-stage-ext`，四处 **60 文件 SHA-256** 与已提交清单全部对齐。
+- 证据：`test-results/mini-os-fixes-2026-11-23/` 与 `test-results/mini-os-fixes-publication-2026-11-23/release-full/release-full.json`；前置定向证据另见 `mini-os-audit-2026-11-23/`。3101 测试服务已退出，`next-env.d.ts` 恢复原状。
+- 已从 `DEFERRED.md` 移除 R1–R10，并完成源码仓与安装仓双仓提交和推送；[真实宿主／实体设备等外部验收](../EXTERNAL-ACCEPTANCE.md)继续保留。
