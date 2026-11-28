@@ -9,7 +9,7 @@ export default defineConfig({
     alias: { '@': root },
   },
   test: {
-    include: ['core/**/*.test.ts', 'st-extension/**/*.test.ts'],
+    include: ['core/**/*.test.ts', 'st-extension/**/*.test.ts', 'components/**/*.test.{ts,tsx}'],
     environment: 'node',
     // forks 池的子进程在 Windows + Node 22 上退出期原生崩溃（uv_poll_stop），threads 池无此问题
     pool: 'threads',

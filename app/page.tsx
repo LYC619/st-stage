@@ -29,18 +29,34 @@ export default function Page() {
   // 功能③：当前展示的立绘序列（单张即一个元素）
   const [sprites, setSprites] = useState<{ url: string; tag: string }[]>([])
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const settingsRef = useRef<PluginSettings | null>(null)
+  settingsRef.current = settings
 
   // 初始化：加载设置
   useEffect(() => {
-    webAdapter.loadSettings().then(setSettings)
+    webAdapter.loadSettings().then((loaded) => {
+      settingsRef.current = loaded
+      setSettings(loaded)
+    })
   }, [])
 
-  // 设置变更：防抖持久化
-  const updateSettings = useCallback((next: PluginSettings) => {
-    setSettings(next)
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => webAdapter.saveSettings(next), 400)
-  }, [])
+  // 设置变更：支持函数式更新以防异步任务覆盖新状态，并防抖持久化
+  const updateSettings = useCallback(
+    (action: PluginSettings | ((prev: PluginSettings) => PluginSettings)) => {
+      setSettings((prev) => {
+        const current = prev ?? settingsRef.current
+        if (!current) return prev
+        const next = typeof action === 'function' ? action(current) : action
+        settingsRef.current = next
+        return next
+      })
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+      saveTimer.current = setTimeout(() => {
+        if (settingsRef.current) webAdapter.saveSettings(settingsRef.current)
+      }, 400)
+    },
+    [],
+  )
 
   const activePacks = useMemo(
     () => (settings ? getActivePacks(settings, characterName) : []),
@@ -153,7 +169,7 @@ export default function Page() {
         visible={settings.enabled && !!activePack && settings.spriteDisplayMode !== 'inline'}
         autoSwitch={settings.autoSwitch}
         autoSwitchSeconds={settings.autoSwitchSeconds}
-        onLayoutChange={(overlay) => updateSettings({ ...settings, overlay })}
+        onLayoutChange={(overlay) => updateSettings((prev) => ({ ...prev, overlay }))}
       />
 
       <PhoneMount

@@ -5,12 +5,13 @@
  */
 
 import { useRef, useState } from 'react'
-import type { PluginSettings, SpritePack } from '@/core/types'
+import type { PluginSettings, Sprite, SpritePack } from '@/core/types'
 import { DEFAULT_IMAGE_HOST, PROMPT_BUDGET_MAX, formatAddress } from '@/core/types'
 import {
   type BindingConflict,
   type ConflictCheckedSettingsResult,
   bindPack,
+  findSameSprite,
   genId,
   getActivePacks,
   previewBindingAddressChanges,
@@ -36,7 +37,7 @@ import { normalizeTag, parseSpriteFileName, sanitizePackName } from '@/core/nami
 import { compressImage } from '@/core/image-compress'
 import { BUILTIN_TEMPLATE } from '@/core/prompt-builder'
 import { webAdapter } from '@/lib/web-adapter'
-import { uploadToImgbb } from '@/core/imgbb'
+import { isValidImgbbResult, uploadToImgbb } from '@/core/imgbb'
 
 interface ConfigPanelProps {
   settings: PluginSettings
@@ -53,6 +54,21 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
   const uploadRef = useRef<HTMLInputElement>(null)
   const importRef = useRef<HTMLInputElement>(null)
   const [uploadTargetPack, setUploadTargetPack] = useState<string | null>(null)
+  const uploadTargetPackRef = useRef<string | null>(null)
+
+  const settingsRef = useRef(settings)
+  const lastPropSettingsRef = useRef(settings)
+  if (lastPropSettingsRef.current !== settings) {
+    lastPropSettingsRef.current = settings
+    settingsRef.current = settings
+  }
+  const onSettingsChangeRef = useRef(onSettingsChange)
+  onSettingsChangeRef.current = onSettingsChange
+
+  const emitSettings = (next: PluginSettings) => {
+    settingsRef.current = next
+    onSettingsChangeRef.current(next)
+  }
 
   const binding = settings.bindings.find((b) => b.characterName === characterName)
   const boundIds = binding?.packIds ?? []
@@ -76,7 +92,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
       flash(`操作未生效，存在地址冲突：${describeConflicts(result.conflicts)}`)
       return false
     }
-    onSettingsChange(result.settings)
+    emitSettings(result.settings)
     return true
   }
 
@@ -124,12 +140,13 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
   }
 
   const installImportedPack = (pack: SpritePack): boolean => {
-    const related = settings.packs.filter((existing) => {
+    const current = settingsRef.current
+    const related = current.packs.filter((existing) => {
       const inspection = inspectPackImport(existing, pack)
       return inspection.sameName || inspection.conflicts.length > 0
     })
     if (related.length === 0) {
-      if (!commitChecked(upsertPack(settings, pack))) return false
+      if (!commitChecked(upsertPack(current, pack))) return false
       flash(`已导入立绘包「${pack.name}」（${pack.sprites.length} 张）`)
       return true
     }
@@ -149,7 +166,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
       if (mode === '1') {
         const merged = mergeWithPrompts([...related, pack], target.name)
         if (!merged) return false
-        let next = settings
+        let next = settingsRef.current
         for (const other of related.slice(1)) next = removePack(next, other.id)
         if (!commitChecked(upsertPack(next, { ...merged, id: target.id }))) return false
         flash(`已合并进「${merged.name}」（${merged.sprites.length} 张）`)
@@ -157,7 +174,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
       }
       if (mode === '2') {
         const merged = mergeWithPrompts([...related, pack], `${target.name} 合并`)
-        if (!merged || !commitChecked(upsertPack(settings, merged))) return false
+        if (!merged || !commitChecked(upsertPack(settingsRef.current, merged))) return false
         flash(`已生成合并包「${merged.name}」（${merged.sprites.length} 张），源包仍保留`)
         return true
       }
@@ -167,17 +184,18 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
       const rawName = window.prompt('请输入新的包名：', `${pack.name} 新`)
       if (rawName === null) return false
       const name = sanitizePackName(rawName)
-      if (!name || settings.packs.some((existing) => existing.name === name)) {
+      const latest = settingsRef.current
+      if (!name || latest.packs.some((existing) => existing.name === name)) {
         flash('未安装：新包名为空或仍与现有包同名')
         return false
       }
       const renamed = { ...pack, name }
-      if (!commitChecked(upsertPack(settings, renamed))) return false
+      if (!commitChecked(upsertPack(latest, renamed))) return false
       flash(`已重命名并安装「${name}」（未启用）`)
       return true
     }
     if (answer === '3') {
-      if (!commitChecked(upsertPack(settings, pack))) return false
+      if (!commitChecked(upsertPack(settingsRef.current, pack))) return false
       flash(`已安装「${pack.name}」，未加入当前角色`)
       return true
     }
@@ -185,9 +203,10 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
   }
 
   const bindPackWithChoices = (packId: string): void => {
-    const result = bindPack(settings, characterName, packId)
+    const current = settingsRef.current
+    const result = bindPack(current, characterName, packId)
     if (result.ok) {
-      const changes = previewBindingAddressChanges(settings, result.settings, characterName)
+      const changes = previewBindingAddressChanges(current, result.settings, characterName)
       if (
         changes.removed.length > 0 &&
         !window.confirm(
@@ -195,7 +214,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
             `新地址示例：${changes.added.slice(0, 6).join('、')}\n仍要继续吗？`,
         )
       ) return
-      onSettingsChange(result.settings)
+      emitSettings(result.settings)
       return
     }
     const answer = window.prompt(
@@ -203,91 +222,184 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
         '输入 1 替换当前冲突包，2 合并为新包后启用；其他输入取消。',
       '1',
     )
+    const latest = settingsRef.current
+    const currentBoundIds = latest.bindings.find((b) => b.characterName === characterName)?.packIds ?? []
     const sourceIds = new Set(result.conflicts.flatMap((conflict) => conflict.owners.map((owner) => owner.packId)))
     sourceIds.add(packId)
     if (answer === '1') {
       sourceIds.delete(packId)
-      const nextIds = boundIds.filter((id) => !sourceIds.has(id))
+      const nextIds = currentBoundIds.filter((id) => !sourceIds.has(id))
       if (!nextIds.includes(packId)) nextIds.push(packId)
-      commitChecked(setBinding(settings, characterName, nextIds))
+      commitChecked(setBinding(latest, characterName, nextIds))
       return
     }
     if (answer === '2') {
-      const sources = settings.packs.filter((candidate) => sourceIds.has(candidate.id))
-      const incoming = settings.packs.find((candidate) => candidate.id === packId)
+      const sources = latest.packs.filter((candidate) => sourceIds.has(candidate.id))
+      const incoming = latest.packs.find((candidate) => candidate.id === packId)
       const merged = mergeWithPrompts(sources, incoming ? `${incoming.name} 合并` : '合并立绘包')
       if (!merged) return
-      const installed = upsertPack(settings, merged)
+      const afterPromptSettings = settingsRef.current
+      const installed = upsertPack(afterPromptSettings, merged)
       if (!installed.ok) {
         flash(`合并结果未安装：${describeConflicts(installed.conflicts)}`)
         return
       }
-      const nextIds = boundIds.filter((id) => !sourceIds.has(id))
-      nextIds.push(merged.id)
-      const rebound = setBinding(installed.settings, characterName, nextIds)
+      const nextBoundIds = (afterPromptSettings.bindings.find((b) => b.characterName === characterName)?.packIds ?? [])
+        .filter((id) => !sourceIds.has(id))
+      nextBoundIds.push(merged.id)
+      const rebound = setBinding(installed.settings, characterName, nextBoundIds)
       if (!rebound.ok) {
         flash(`合并结果未启用：${describeConflicts(rebound.conflicts)}`)
         return
       }
-      onSettingsChange(rebound.settings)
+      emitSettings(rebound.settings)
       flash(`已生成并启用合并包「${merged.name}」；源包仍保留`)
     }
   }
 
   /**
    * 上传图片到指定包（三级寻址）：文件名按 parseSpriteFileName 拆「人名/服装/图名」，
-   * 未拆出人名时用「本批分组」兜底；压缩后先写本地 data URI 保底，开了自动上传再传 imgbb，
-   * 成功仅补 remoteUrl+code（保留本地 url 显示），失败仅计数、本地图不动。
+   * 未拆出人名时用「本批分组」兜底；压缩后基于最新配置状态重新定位目标包并按立绘身份增量合并，
+   * 开了自动上传再传 imgbb，成功仅补 remoteUrl+code（保留本地 url 显示），不覆盖期间的其他修改。
    */
   const handleUpload = async (files: FileList | null) => {
-    if (!files || !uploadTargetPack) return
-    const pack = settings.packs.find((p) => p.id === uploadTargetPack)
-    if (!pack) return
-    const useImgbb = settings.autoUpload && settings.imgbbApiKey.trim() !== ''
+    const targetPackId = uploadTargetPackRef.current ?? uploadTargetPack
+    if (!files || !targetPackId) return
+    const fileList = Array.from(files)
+    if (fileList.length === 0) return
+
+    const initialSettings = settingsRef.current
+    const initialPack = initialSettings.packs.find((p) => p.id === targetPackId)
+    if (!initialPack) return
+    const apiKey = initialSettings.imgbbApiKey.trim()
+    const useImgbb = initialSettings.autoUpload && apiKey !== ''
     const fallbackGroup = normalizeTag(uploadGroup)
-    let target = pack
+
+    let finalPackName = initialPack.name
     let added = 0
+    let conflicts = 0
     let hosted = 0
     let hostFailed = 0
-    for (const file of Array.from(files)) {
+    let packDeleted = false
+    let addressConflict = false
+
+    for (const file of fileList) {
       const parsed = parseSpriteFileName(file.name)
       const tag = parsed.tag
       if (!tag) continue
       const group = parsed.role || fallbackGroup
-      const { dataUri } = await compressImage(file)
-      // 本地 data URI 先保底；三级身份 group+outfit+tag 唯一
-      const local = {
+      const probe: Pick<Sprite, 'tag' | 'group' | 'outfit'> = {
+        tag,
+        ...(group ? { group } : {}),
+        ...(parsed.outfit ? { outfit: parsed.outfit } : {}),
+      }
+
+      const beforePack = settingsRef.current.packs.find((p) => p.id === targetPackId)
+      if (!beforePack) {
+        packDeleted = true
+        break
+      }
+      const beforeRole = beforePack.roleName ?? ''
+      const beforeOutfit = beforePack.outfit ?? ''
+      const beforeUrl = findSameSprite(beforePack, probe)?.url
+
+      let dataUri: string
+      try {
+        ;({ dataUri } = await compressImage(file))
+      } catch (err) {
+        console.warn('[st-stage:config-panel] 图片压缩失败', err)
+        continue
+      }
+
+      const latestSettings = settingsRef.current
+      const latestPack = latestSettings.packs.find((p) => p.id === targetPackId)
+      if (!latestPack) {
+        packDeleted = true
+        break
+      }
+      if ((latestPack.roleName ?? '') !== beforeRole || (latestPack.outfit ?? '') !== beforeOutfit) {
+        conflicts++
+        continue
+      }
+      const latestSprite = findSameSprite(latestPack, probe)
+      if (latestSprite?.url !== beforeUrl) {
+        conflicts++
+        continue
+      }
+
+      // 本地 data URI 先保底；三级身份 group+outfit+tag 唯一，仅增量合并当前立绘
+      const local: Sprite = {
+        ...latestSprite,
         tag,
         url: dataUri,
         ...(group ? { group } : {}),
         ...(parsed.outfit ? { outfit: parsed.outfit } : {}),
       }
-      target = upsertSprite(target, local)
+      if (!group) delete local.group
+      if (!parsed.outfit) delete local.outfit
+      delete local.code
+      delete local.remoteUrl
+
+      const checked = upsertPack(latestSettings, upsertSprite(latestPack, local))
+      if (!commitChecked(checked)) {
+        addressConflict = true
+        break
+      }
+      finalPackName = latestPack.name
       added++
+
       if (useImgbb) {
         try {
-          const up = await uploadToImgbb(settings.imgbbApiKey, dataUri)
-          // 保留本地 url 显示与保底，仅补远程 remoteUrl + code（不覆盖本地图）
-          target = upsertSprite(target, { ...local, code: up.code, remoteUrl: up.url })
-          hosted++
+          const up = await uploadToImgbb(apiKey, dataUri)
+          if (isValidImgbbResult(up)) {
+            const afterHostSettings = settingsRef.current
+            const afterHostPack = afterHostSettings.packs.find((p) => p.id === targetPackId)
+            const afterHostSprite = afterHostPack ? findSameSprite(afterHostPack, local) : null
+            if (afterHostPack && afterHostSprite?.url === dataUri) {
+              // 保留本地 url 显示与保底，仅补远程 remoteUrl + code（不覆盖本地图与期间其他修改）
+              const hostedSprite: Sprite = { ...afterHostSprite, code: up.code, remoteUrl: up.url }
+              const hostChecked = upsertPack(afterHostSettings, upsertSprite(afterHostPack, hostedSprite))
+              if (commitChecked(hostChecked)) {
+                finalPackName = afterHostPack.name
+                hosted++
+              } else {
+                hostFailed++
+              }
+            } else {
+              hostFailed++
+            }
+          } else {
+            hostFailed++
+          }
         } catch (err) {
           console.warn('[st-stage:config-panel] imgbb 上传失败', err)
           hostFailed++
         }
       }
     }
-    if (!commitChecked(upsertPack(settings, target))) return
+
+    if (addressConflict && added === 0) return
+    if (packDeleted && added === 0) {
+      flash(`上传未生效：立绘包「${finalPackName}」已被删除`)
+      return
+    }
+    if (added === 0 && conflicts > 0) {
+      flash(`上传未生效：目标立绘在上传期间已被修改（冲突 ${conflicts} 张）`)
+      return
+    }
     const hostNote = useImgbb
       ? `，imgbb 成功 ${hosted} 张${hostFailed > 0 ? `、失败 ${hostFailed} 张（保留本地）` : ''}`
       : ''
-    flash(`已添加 ${added} 张立绘到「${pack.name}」（自动压缩为 WebP）${hostNote}`)
+    const conflictNote = conflicts > 0 ? `，跳过冲突 ${conflicts} 张` : ''
+    const deletedNote = packDeleted ? '（目标包随后被删除，剩余未写入）' : ''
+    flash(`已添加 ${added} 张立绘到「${finalPackName}」（自动压缩为 WebP）${hostNote}${conflictNote}${deletedNote}`)
   }
 
   const handleCreatePack = () => {
     const name = sanitizePackName(newPackName)
     if (!name) return
     const pack: SpritePack = { id: genId(), name, author: '我', sprites: [] }
-    if (!commitChecked(upsertPack(settings, pack))) return
+    if (!commitChecked(upsertPack(settingsRef.current, pack))) return
     setNewPackName('')
     flash(`已创建立绘包「${name}」，请上传图片（文件名即标签）`)
   }
@@ -364,7 +476,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
           <input
             type="checkbox"
             checked={settings.enabled}
-            onChange={(e) => onSettingsChange({ ...settings, enabled: e.target.checked })}
+            onChange={(e) => emitSettings({ ...settingsRef.current, enabled: e.target.checked })}
             className="h-4 w-4 accent-primary"
           />
         </label>
@@ -373,7 +485,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
           <input
             type="checkbox"
             checked={settings.showPhone}
-            onChange={(e) => onSettingsChange({ ...settings, showPhone: e.target.checked })}
+            onChange={(e) => emitSettings({ ...settingsRef.current, showPhone: e.target.checked })}
             className="h-4 w-4 accent-primary"
           />
         </label>
@@ -382,7 +494,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
           <input
             type="checkbox"
             checked={settings.hideTagInMessage}
-            onChange={(e) => onSettingsChange({ ...settings, hideTagInMessage: e.target.checked })}
+            onChange={(e) => emitSettings({ ...settingsRef.current, hideTagInMessage: e.target.checked })}
             className="h-4 w-4 accent-primary"
           />
         </label>
@@ -391,8 +503,8 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
           <select
             value={settings.spriteDisplayMode}
             onChange={(e) =>
-              onSettingsChange({
-                ...settings,
+              emitSettings({
+                ...settingsRef.current,
                 spriteDisplayMode:
                   e.target.value === 'inline' || e.target.value === 'both'
                     ? e.target.value
@@ -412,7 +524,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
           <input
             type="checkbox"
             checked={settings.renderInlineImages}
-            onChange={(e) => onSettingsChange({ ...settings, renderInlineImages: e.target.checked })}
+            onChange={(e) => emitSettings({ ...settingsRef.current, renderInlineImages: e.target.checked })}
             className="h-4 w-4 accent-primary"
           />
         </label>
@@ -421,7 +533,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
           <input
             type="checkbox"
             checked={settings.autoSwitch}
-            onChange={(e) => onSettingsChange({ ...settings, autoSwitch: e.target.checked })}
+            onChange={(e) => emitSettings({ ...settingsRef.current, autoSwitch: e.target.checked })}
             className="h-4 w-4 accent-primary"
           />
         </label>
@@ -437,7 +549,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
               const n = Math.round(Number(e.target.value))
               const v = Number.isFinite(n) ? Math.min(60, Math.max(1, n)) : 3
               e.target.value = String(v)
-              onSettingsChange({ ...settings, autoSwitchSeconds: v })
+              emitSettings({ ...settingsRef.current, autoSwitchSeconds: v })
             }}
             className="w-20 rounded-lg border border-input bg-background px-2 py-1 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
             aria-label="轮播间隔秒数"
@@ -448,8 +560,8 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
           <select
             value={settings.multiRolePromptMode}
             onChange={(e) =>
-              onSettingsChange({
-                ...settings,
+              emitSettings({
+                ...settingsRef.current,
                 multiRolePromptMode: e.target.value === 'repeat' ? 'repeat' : 'full',
               })
             }
@@ -475,7 +587,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
               const n = Math.round(Number(e.target.value))
               const v = Number.isFinite(n) ? Math.min(PROMPT_BUDGET_MAX, Math.max(0, n)) : 0
               e.target.value = String(v)
-              onSettingsChange({ ...settings, promptBudget: v })
+              emitSettings({ ...settingsRef.current, promptBudget: v })
             }}
             className="w-24 rounded-lg border border-input bg-background px-2 py-1 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
             aria-label="Prompt 字符预算"
@@ -493,7 +605,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
             rows={5}
             defaultValue={settings.promptTemplate}
             placeholder="整体替换内置提示词，例：你可以使用以下立绘：&#10;{清单}&#10;每次回复插入 {数量} 个 [立绘:...] 标签。"
-            onBlur={(e) => onSettingsChange({ ...settings, promptTemplate: e.target.value })}
+            onBlur={(e) => emitSettings({ ...settingsRef.current, promptTemplate: e.target.value })}
             className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
             aria-label="自定义提示词模板"
           />
@@ -501,11 +613,11 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
             type="button"
             onClick={() => {
               if (
-                settings.promptTemplate.trim() &&
+                settingsRef.current.promptTemplate.trim() &&
                 !window.confirm('用内置底稿覆盖当前已填写的自定义提示词？')
               )
                 return
-              onSettingsChange({ ...settings, promptTemplate: BUILTIN_TEMPLATE })
+              emitSettings({ ...settingsRef.current, promptTemplate: BUILTIN_TEMPLATE })
             }}
             className="self-start rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
@@ -519,7 +631,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
               type={showKey ? 'text' : 'password'}
               defaultValue={settings.imgbbApiKey}
               autoComplete="off"
-              onBlur={(e) => onSettingsChange({ ...settings, imgbbApiKey: e.target.value.trim() })}
+              onBlur={(e) => emitSettings({ ...settingsRef.current, imgbbApiKey: e.target.value.trim() })}
               className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
               aria-label="imgbb API Key"
             />
@@ -539,14 +651,14 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
             type="checkbox"
             checked={settings.autoUpload}
             onChange={(e) => {
-              if (e.target.checked && !settings.imgbbApiKey.trim()) {
+              if (e.target.checked && !settingsRef.current.imgbbApiKey.trim()) {
                 flash('请先填写 imgbb API Key（免费申请：https://api.imgbb.com/）')
                 return
               }
               if (e.target.checked) {
                 flash('API Key 仅存储在本地浏览器中，不会上传到任何服务器')
               }
-              onSettingsChange({ ...settings, autoUpload: e.target.checked })
+              emitSettings({ ...settingsRef.current, autoUpload: e.target.checked })
             }}
             className="h-4 w-4 accent-primary"
           />
@@ -563,7 +675,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
               const raw = e.target.value.trim() || DEFAULT_IMAGE_HOST
               const value = /^https?:\/\/.+/.test(raw) ? (raw.endsWith('/') ? raw : `${raw}/`) : DEFAULT_IMAGE_HOST
               e.target.value = value
-              onSettingsChange({ ...settings, imageHost: value })
+              emitSettings({ ...settingsRef.current, imageHost: value })
             }}
             className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
             aria-label="图床前缀"
@@ -605,7 +717,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
                   <input
                     type="checkbox"
                     checked={binding.enabled}
-                    onChange={(e) => commitChecked(toggleBinding(settings, characterName, e.target.checked))}
+                    onChange={(e) => commitChecked(toggleBinding(settingsRef.current, characterName, e.target.checked))}
                     className="h-4 w-4 accent-primary"
                   />
                   全部启用
@@ -625,7 +737,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
                     </span>
                     <button
                       type="button"
-                      onClick={() => onSettingsChange(unbindPack(settings, characterName, id))}
+                      onClick={() => emitSettings(unbindPack(settingsRef.current, characterName, id))}
                       className="shrink-0 rounded border border-border px-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                       aria-label={`停用包 ${p?.name ?? id}`}
                     >
@@ -692,6 +804,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
                   <button
                     type="button"
                     onClick={() => {
+                      uploadTargetPackRef.current = pack.id
                       setUploadTargetPack(pack.id)
                       uploadRef.current?.click()
                     }}
@@ -716,7 +829,7 @@ export function ConfigPanel({ settings, characterName, onCharacterNameChange, on
                   {!isPresetPack(pack.id) && (
                     <button
                       type="button"
-                      onClick={() => onSettingsChange(removePack(settings, pack.id))}
+                      onClick={() => emitSettings(removePack(settingsRef.current, pack.id))}
                       className="rounded-md border border-destructive/40 px-2 py-1 text-xs text-destructive transition-colors hover:bg-destructive/10"
                     >
                       删除

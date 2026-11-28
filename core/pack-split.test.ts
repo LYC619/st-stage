@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { SpritePack } from './types'
+import { TAG_MAX_LENGTH, normalizeTag } from './naming'
+import { exportPack, importPack } from './pack-io'
+import { upsertSprite } from './sprite-store'
 import {
   autoRenameTag,
   planUploads,
@@ -70,6 +73,30 @@ describe('autoRenameTag', () => {
   it('占用则依次加序号', () => {
     expect(autoRenameTag(new Set(['微笑']), '微笑')).toBe('微笑_2')
     expect(autoRenameTag(new Set(['微笑', '微笑_2']), '微笑')).toBe('微笑_3')
+  })
+  it('20 字符上限标签冲突时预留后缀长度截短基础名，且兜底分支同样满足 ≤20 与唯一性', () => {
+    const fullTag = 'a'.repeat(TAG_MAX_LENGTH)
+    const renamed = autoRenameTag(new Set([fullTag]), fullTag)
+    expect(renamed).toBe(`${'a'.repeat(18)}_2`)
+    expect(renamed.length).toBeLessThanOrEqual(TAG_MAX_LENGTH)
+    expect(normalizeTag(renamed)).toBe(renamed)
+
+    // 占满 _2.._999 以及首个时间戳兜底，验证最终兜底仍严格 ≤20 且不冲突
+    const crowded = new Set<string>([fullTag])
+    for (let i = 2; i < 1000; i++) {
+      const suffix = `_${i}`
+      crowded.add(`${fullTag.slice(0, TAG_MAX_LENGTH - suffix.length)}${suffix}`)
+    }
+    const fallback1 = autoRenameTag(crowded, fullTag)
+    expect(fallback1.length).toBeLessThanOrEqual(TAG_MAX_LENGTH)
+    expect(normalizeTag(fallback1)).toBe(fallback1)
+    expect(crowded.has(fallback1)).toBe(false)
+
+    crowded.add(fallback1)
+    const fallback2 = autoRenameTag(crowded, fullTag)
+    expect(fallback2.length).toBeLessThanOrEqual(TAG_MAX_LENGTH)
+    expect(normalizeTag(fallback2)).toBe(fallback2)
+    expect(crowded.has(fallback2)).toBe(false)
   })
 })
 
@@ -152,5 +179,33 @@ describe('planUploads', () => {
     expect(plans[1].targetPackName).toBe('雏田')
     // 第二张与第一张在同一新包内重名 → 改名
     expect(plans[1].finalTag).toBe('微笑_2')
+  })
+
+  it('20 字符标签重名选择 rename 后，导出并回导仍完整保留新旧两张立绘', async () => {
+    const tag = 'a'.repeat(TAG_MAX_LENGTH)
+    const original: SpritePack = {
+      id: 'review-pack',
+      name: 'Synthetic review',
+      sprites: [{ tag, url: 'https://example.test/old.png' }],
+    }
+    const [plan] = planUploads(
+      [{ fileName: `${tag}.png`, role: '', outfit: '', tag }],
+      [original],
+      'rename',
+      'batch',
+      original,
+    )
+    expect(plan.finalTag.length).toBeLessThanOrEqual(TAG_MAX_LENGTH)
+    expect(plan.finalTag).not.toBe(tag)
+
+    const uploaded = upsertSprite(original, { tag: plan.finalTag, url: 'https://example.test/new.png' })
+    expect(uploaded.sprites).toHaveLength(2)
+
+    const roundtrip = importPack(JSON.stringify(await exportPack(uploaded)))
+    expect(roundtrip.sprites).toHaveLength(2)
+    expect(roundtrip.sprites.map((s) => ({ tag: s.tag, url: s.url }))).toEqual([
+      { tag, url: 'https://example.test/old.png' },
+      { tag: plan.finalTag, url: 'https://example.test/new.png' },
+    ])
   })
 })

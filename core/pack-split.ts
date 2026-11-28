@@ -10,7 +10,7 @@
 
 import type { SpritePack, Sprite } from './types'
 import { genId } from './sprite-store'
-import { normalizeTag, sanitizePackName } from './naming'
+import { TAG_MAX_LENGTH, normalizeTag, sanitizePackName } from './naming'
 
 /* ---------------- 旧分组拆包 ---------------- */
 
@@ -118,14 +118,50 @@ function findPackFor(packs: SpritePack[], role: string, outfit: string): SpriteP
   )
 }
 
-/** 自动改名：desired 已占用时依次加「_2」「_3」…直到不冲突 */
-export function autoRenameTag(taken: Set<string>, desired: string): string {
-  if (!taken.has(desired)) return desired
-  for (let i = 2; i < 1000; i++) {
-    const candidate = `${desired}_${i}`.slice(0, 20)
-    if (!taken.has(candidate)) return candidate
+function truncateTagBase(base: string, maxLength: number): string {
+  if (maxLength <= 0 || !base) return ''
+  let head = base.slice(0, maxLength)
+  if (head.length > 0) {
+    const last = head.charCodeAt(head.length - 1)
+    if (last >= 0xd800 && last <= 0xdbff) head = head.slice(0, -1)
   }
-  return `${desired}_${Date.now().toString(36)}`
+  return head.trimEnd()
+}
+
+function buildRenamedCandidate(base: string, suffix: string): string {
+  const maxBaseLength = Math.max(0, TAG_MAX_LENGTH - suffix.length)
+  const head = truncateTagBase(base, maxBaseLength)
+  return normalizeTag(head ? `${head}${suffix}` : suffix)
+}
+
+/** 自动改名：desired 已占用时先为后缀预留长度截短基础名，确保规范化后长度 ≤ 20 且唯一 */
+export function autoRenameTag(taken: Set<string>, desired: string): string {
+  const normalizedTaken = new Set<string>()
+  for (const item of taken) {
+    normalizedTaken.add(item)
+    const norm = normalizeTag(item)
+    if (norm) normalizedTaken.add(norm)
+  }
+
+  const base = normalizeTag(desired)
+  if (base && !normalizedTaken.has(base)) return base
+  if (!base && !normalizedTaken.has('')) return ''
+
+  for (let i = 2; i < 1000; i++) {
+    const candidate = buildRenamedCandidate(base, `_${i}`)
+    if (candidate && !normalizedTaken.has(candidate)) return candidate
+  }
+
+  const stamp = Date.now().toString(36).slice(-8)
+  const firstFallback = buildRenamedCandidate(base, `_${stamp}`)
+  if (firstFallback && !normalizedTaken.has(firstFallback)) return firstFallback
+
+  for (let extra = 2; ; extra++) {
+    const token = extra.toString(36)
+    const suffix = `_${stamp.slice(0, Math.max(1, TAG_MAX_LENGTH - 2 - token.length))}_${token}`
+    const candidate = buildRenamedCandidate(base, suffix)
+    if (candidate && !normalizedTaken.has(candidate)) return candidate
+  }
 }
 
 /**
@@ -151,7 +187,14 @@ export function planUploads(
   const keyTaken = (key: string, pack: SpritePack | null): Set<string> => {
     let set = takenByPack.get(key)
     if (!set) {
-      set = new Set(pack ? pack.sprites.map((s) => s.tag) : [])
+      set = new Set<string>()
+      if (pack) {
+        for (const s of pack.sprites) {
+          if (s.tag) set.add(s.tag)
+          const normalized = normalizeTag(s.tag)
+          if (normalized) set.add(normalized)
+        }
+      }
       takenByPack.set(key, set)
     }
     return set
@@ -169,7 +212,7 @@ export function planUploads(
     const key = existing ? `pack:${existing.id}` : newPackKey(role, outfit, packName)
     const taken = keyTaken(key, existing)
 
-    const conflict = taken.has(tag)
+    const conflict = Boolean(tag) && taken.has(tag)
     let finalTag = tag
     let action: PlannedUpload['action'] = 'add'
     if (conflict) {
@@ -183,7 +226,7 @@ export function planUploads(
       }
     }
     // 占用：add/overwrite 都会让该 tag 存在（overwrite 覆盖原有、finalTag 不变）
-    if (action !== 'skip') taken.add(finalTag)
+    if (action !== 'skip' && finalTag) taken.add(finalTag)
 
     plans.push({
       entry: { fileName: entry.fileName, role, outfit, tag },

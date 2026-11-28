@@ -182,9 +182,31 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
   let body: HTMLElement | null = null
   let focus: ReturnType<typeof manageDialogFocus> | null = null
   let formDraft: DefDraft | null = null
+  let editingKey: string | null = null
   let editingIndex: number | null = null
   /** 本次渲染后把编辑表单滚进视野（窄屏堆叠布局下点列表要能看到表单） */
   let scrollToEditor = false
+
+  function clearEditor(): void {
+    formDraft = null
+    editingKey = null
+    editingIndex = null
+  }
+
+  /** 按稳定路径身份定位当前正在编辑的定义；前序增删后自动跟随新位置。 */
+  function resolveEditingIndex(variables: VariableDefinition[]): number | null {
+    if (editingKey === null) return null
+    if (
+      editingIndex !== null &&
+      editingIndex >= 0 &&
+      editingIndex < variables.length &&
+      variables[editingIndex].key === editingKey
+    ) {
+      return editingIndex
+    }
+    const found = variables.findIndex((v) => v.key === editingKey)
+    return found >= 0 ? found : null
+  }
 
   let stopViewport: (() => void) | null = null
   function applyBackdropSize(): void {
@@ -201,8 +223,7 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
       render()
       return
     }
-    formDraft = null
-    editingIndex = null
+    clearEditor()
     backdrop = el('div', 'so-manager-backdrop')
     stopViewport = observeFixedViewport(applyBackdropSize)
     applyBackdropSize()
@@ -249,8 +270,7 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
     backdrop.remove()
     backdrop = null
     body = null
-    formDraft = null
-    editingIndex = null
+    clearEditor()
     deps.onClosed?.()
     closingFocus?.restoreFocus()
   }
@@ -408,8 +428,7 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
       ) {
         return
       }
-      formDraft = null
-      editingIndex = null
+      clearEditor()
       save({ ...cur, schema: { ...cur.schema, name: tpl.name, variables: cloneDefs(variables) } })
     })
     const appendBtn = variableButton('menu_button vm-act vm-act-ghost')
@@ -452,11 +471,12 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
     const list = el('div', 'nv-defs-list')
     const editor = el('div', 'nv-defs-editor')
 
+    const activeEditingIndex = resolveEditingIndex(data.schema.variables)
     if (data.schema.variables.length === 0) {
       descLine(list, t('variableDesigner.no_definitions', "还没有变量。从上方模板一键导入，或点右侧「添加变量」逐条定义。"))
     }
     for (let i = 0; i < data.schema.variables.length; i++) {
-      list.append(buildDefRow(data.schema.variables[i], i))
+      list.append(buildDefRow(data.schema.variables[i], i, activeEditingIndex === i))
     }
 
     if (formDraft) {
@@ -468,6 +488,7 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
         hint,
         appButton(t('variableDesigner.add', "＋ 添加变量"), () => {
           formDraft = emptyDraft()
+          editingKey = null
           editingIndex = null
           scrollToEditor = true
           render()
@@ -480,8 +501,7 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
     return box
   }
 
-  function buildDefRow(def: VariableDefinition, index: number): HTMLElement {
-    const selected = editingIndex === index
+  function buildDefRow(def: VariableDefinition, index: number, selected: boolean): HTMLElement {
     const card = el('div', `vm-leaf${selected ? ' nv-def-selected' : ''}`)
     const main = el('div', 'vm-leaf-main')
     main.dataset.variableFocus = `definition:${def.key}`
@@ -508,6 +528,7 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
     main.tabIndex = 0
     const edit = () => {
       formDraft = draftFromDef(def)
+      editingKey = def.key
       editingIndex = index
       scrollToEditor = true
       render()
@@ -529,11 +550,21 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
       e.stopPropagation()
       if (!window.confirm(t('variableDesigner.delete_definition_confirm', "删除变量定义「{{path}}」？（以前楼层记下的旧数值不会丢）", { path: def.key }))) return
       const cur = deps.getData()
-      if (editingIndex === index) {
-        formDraft = null
-        editingIndex = null
+      const deleteIndex =
+        cur.schema.variables[index]?.key === def.key
+          ? index
+          : cur.schema.variables.findIndex((v) => v.key === def.key)
+      if (deleteIndex < 0) {
+        render()
+        return
       }
-      save({ ...cur, schema: { ...cur.schema, variables: cur.schema.variables.filter((_, i) => i !== index) } })
+      const currentEditing = resolveEditingIndex(cur.schema.variables)
+      if (currentEditing === deleteIndex) {
+        clearEditor()
+      } else if (currentEditing !== null) {
+        editingIndex = deleteIndex < currentEditing ? currentEditing - 1 : currentEditing
+      }
+      save({ ...cur, schema: { ...cur.schema, variables: cur.schema.variables.filter((_, i) => i !== deleteIndex) } })
     })
 
     card.append(main, del)
@@ -544,7 +575,7 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
     const draft = formDraft!
     const wrap = el('div', 'vm-leaf vm-editing')
     const title = el('div', 'so-app-title vm-edit-title')
-    title.textContent = editingIndex === null ? t('variableDesigner.new_definition', "新变量定义") : t('variableDesigner.edit', "编辑：{{path}}", { path: draft.key || t('variableDesigner.unnamed', '（未命名）') })
+    title.textContent = editingKey === null ? t('variableDesigner.new_definition', "新变量定义") : t('variableDesigner.edit', "编辑：{{path}}", { path: draft.key || t('variableDesigner.unnamed', '（未命名）') })
     wrap.append(title)
 
     const err = el('div', 'so-app-desc vm-add-err')
@@ -593,25 +624,24 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
         return
       }
       const cur = deps.getData()
-      const dup = cur.schema.variables.findIndex((v, i) => v.key === r.def!.key && i !== editingIndex)
+      const targetIndex = resolveEditingIndex(cur.schema.variables)
+      const dup = cur.schema.variables.findIndex((v, i) => v.key === r.def!.key && i !== targetIndex)
       if (dup >= 0) {
         err.textContent = t('variableDesigner.duplicate_path', "路径「{{path}}」已有定义。", { path: r.def.key })
         err.hidden = false
         return
       }
       const variables = [...cur.schema.variables]
-      if (editingIndex !== null && editingIndex < variables.length) variables[editingIndex] = r.def
+      if (targetIndex !== null) variables[targetIndex] = r.def
       else variables.push(r.def)
-      formDraft = null
-      editingIndex = null
+      clearEditor()
       save({ ...cur, schema: { ...cur.schema, variables } })
     })
     const cancel = variableButton('menu_button vm-act vm-act-ghost')
     cancel.dataset.variableFocus = 'cancel-definition'
     cancel.textContent = t('variableDesigner.cancel', "取消")
     cancel.addEventListener('click', () => {
-      formDraft = null
-      editingIndex = null
+      clearEditor()
       render()
     })
     saveBtn.dataset.variableFocus = 'save-definition'
@@ -683,5 +713,9 @@ export function createNewvarDesigner(deps: NewvarDesignerDeps): NewvarDesigner {
     return wrap
   }
 
-  return { open, close, isOpen: () => backdrop !== null }
+  return {
+    open,
+    close,
+    isOpen: () => backdrop !== null,
+  }
 }

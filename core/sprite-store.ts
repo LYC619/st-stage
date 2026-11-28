@@ -449,6 +449,18 @@ function touchPack(pack: SpritePack, sprites: Sprite[]): SpritePack {
   return { ...pack, sprites, updatedAt: new Date().toISOString() }
 }
 
+/** 按有效地址（group + outfit + tag，含包级继承）查找包内同身份立绘。 */
+export function findSameSprite(
+  pack: SpritePack,
+  sprite: Pick<Sprite, 'tag' | 'group' | 'outfit'>,
+): Sprite | null {
+  return (
+    pack.sprites.find((s) =>
+      sameIdentity(pack, s, sprite.tag, sprite.group ?? '', sprite.outfit ?? ''),
+    ) ?? null
+  )
+}
+
 /** 在包内新增或替换立绘（同「有效地址」group+outfit+tag 覆盖 url/code/remoteUrl） */
 export function upsertSprite(pack: SpritePack, sprite: Sprite): SpritePack {
   const stored = normalizeIdentityFields(pack, sprite)

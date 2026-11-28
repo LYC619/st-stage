@@ -155,4 +155,53 @@ describe('newvar designer focus, host Enter guard & AI prompt locale invariance'
     setLocale('en-US')
     expect(buildInjection({}, schema, 'json_patch')).toBe(zhInjection)
   })
+
+  it('updates the intended variable definition after deleting an earlier row while editing (STAGE-003)', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let data = defaultNewvarData()
+    data.schema.variables = ['A', 'B', 'C'].map((key, index) => ({
+      key,
+      type: 'number',
+      default: index + 1,
+      description: key,
+    }))
+    const designer = createNewvarDesigner({
+      getData: () => data,
+      setData: (next) => { data = next },
+      buildPreview: () => '',
+      getLastParse: () => null,
+    })
+    cleanup.push(() => designer.close())
+    designer.open()
+
+    // 打开 B 编辑为 B-renamed，不关闭表单删除前序行 A，再保存
+    document.querySelector<HTMLElement>('[data-variable-focus="definition:B"]')!.click()
+    const keyInput = document.querySelector<HTMLInputElement>('.nv-defs-editor input')!
+    keyInput.value = 'B-renamed'
+    keyInput.dispatchEvent(new Event('input', { bubbles: true }))
+    keyInput.dispatchEvent(new Event('change', { bubbles: true }))
+
+    document.querySelector<HTMLButtonElement>('[aria-label="删除定义 A"]')!.click()
+    expect(data.schema.variables.map((v) => v.key)).toEqual(['B', 'C'])
+
+    document.querySelector<HTMLButtonElement>('[data-variable-focus="save-definition"]')!.click()
+    expect(data.schema.variables.map((v) => v.key)).toEqual(['B-renamed', 'C'])
+    expect(data.schema.variables[1]).toMatchObject({ key: 'C', default: 3 })
+
+    // 不改名仅改默认值时，删除前序行后保存也不应误报重名或写错行
+    document.querySelector<HTMLElement>('[data-variable-focus="definition:C"]')!.click()
+    const inputs = document.querySelectorAll<HTMLInputElement>('.nv-defs-editor input')
+    const defaultInput = inputs[1]!
+    defaultInput.value = '30'
+    defaultInput.dispatchEvent(new Event('input', { bubbles: true }))
+    defaultInput.dispatchEvent(new Event('change', { bubbles: true }))
+
+    document.querySelector<HTMLButtonElement>('[aria-label="删除定义 B-renamed"]')!.click()
+    expect(data.schema.variables.map((v) => v.key)).toEqual(['C'])
+
+    document.querySelector<HTMLButtonElement>('[data-variable-focus="save-definition"]')!.click()
+    expect(data.schema.variables).toEqual([
+      { key: 'C', type: 'number', default: 30, description: 'C' },
+    ])
+  })
 })
