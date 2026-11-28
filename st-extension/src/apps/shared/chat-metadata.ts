@@ -2,6 +2,17 @@ import type { AppHost } from '../../../../core/phone-registry'
 import { stableCharacterKey } from '../../../../core/character-identity'
 import { getWeChatHostContext } from '../wechat/bridge'
 
+export class StorySwitchedError extends Error {
+  constructor(message = '聊天已切换。') {
+    super(message)
+    this.name = 'StorySwitchedError'
+  }
+}
+
+export function isStorySwitchedError(error: unknown): boolean {
+  return error instanceof StorySwitchedError || (error instanceof Error && error.name === 'StorySwitchedError')
+}
+
 export interface MetadataContext {
   name1?: string; chatMetadata?: Record<string, unknown>; getCurrentChatId?: () => string | number | undefined
   chatId?: string | number

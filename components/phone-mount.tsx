@@ -35,7 +35,7 @@ import {
   consumeAppDeepLink,
   getAppBadge,
   onOpenAppRequest,
-  onStoryEvent,
+  onStoryEvent, requestOpenApp,
 } from '@/st-extension/src/apps/shared/story-events'
 import { buildRoleSummary } from '@/st-extension/src/role-summary'
 
@@ -153,7 +153,7 @@ export function PhoneMount({ settings, characterName, onSettingsChange, onPrevie
       registry,
       createAppContext,
       getHomeSummary: () => buildRoleSummary(latest.current.settings, latest.current.characterName, '白鸥港·初雪夜话', 'preview'),
-      readWorldWidget: readWidget,
+      readWorldWidget: readWidget, onOpenWorldAction: (action) => requestOpenApp(action),
       onStateChange: (state: PhoneState) =>
         latest.current.onSettingsChange({ ...latest.current.settings, phone: state }),
     })
@@ -174,7 +174,7 @@ export function PhoneMount({ settings, characterName, onSettingsChange, onPrevie
 
     const offOpenReq = onOpenAppRequest((link) => {
       if (registry.get(link.appId)) {
-        shell.openApp(link.appId)
+        try { shell.openApp(link.appId) } finally { consumeAppDeepLink(link.appId) }
       } else {
         consumeAppDeepLink(link.appId)
       }
@@ -196,13 +196,13 @@ export function PhoneMount({ settings, characterName, onSettingsChange, onPrevie
       }
       shell.refreshHome()
       if (ev.type === 'theater-updated') {
-        shell.notifyPill({ icon: '🎪', text: ev.summary, appId: 'theater' })
+        shell.notifyPill({ icon: '🎪', text: ev.summary, appId: 'theater', onActivate: () => requestOpenApp({ appId: 'theater', tab: ev.tab }) })
       } else if (ev.type === 'story-state-updated' && ev.summary) {
         shell.notifyPill({ icon: '🎒', text: ev.summary, appId: 'story-state' })
       } else if (ev.type === 'chronicle-updated' && ev.summary) {
         shell.notifyPill({ icon: '📜', text: `新纪要：${ev.summary}`, appId: 'chronicle' })
       } else if (ev.type === 'calendar-updated' && ev.summary) {
-        shell.notifyPill({ icon: '📅', text: ev.summary, appId: 'chronicle' })
+        shell.notifyPill({ icon: '📅', text: ev.summary, appId: 'chronicle', onActivate: () => requestOpenApp({ appId: 'chronicle', tab: 'calendar' }) })
       }
     })
 

@@ -1,5 +1,5 @@
 import type { ApiProfile, ConnectionIdentity, SecretMode } from './core'
-import { getSource, parseModelList } from './core'
+import { extractUpstreamError, getSource, parseModelList } from './core'
 
 interface BridgeContext {
   extensionSettings?: { disabledExtensions?: string[]; connectionManager?: { profiles?: unknown; selectedProfile?: unknown } }
@@ -46,7 +46,9 @@ export interface ConnectionInfo extends ConnectionIdentity {
   secretMode: SecretMode
 }
 
-async function secretRequest(path: 'find' | 'write', body: Record<string, string>, st: BridgeContext): Promise<Response> {
+type SecretEndpoint = 'find' | 'write' | 'read' | 'rotate' | 'delete'
+
+async function secretRequest(path: SecretEndpoint, body: Record<string, string>, st: BridgeContext): Promise<Response> {
   return fetch(`/api/secrets/${path}`, { method: 'POST', headers: st.getRequestHeaders?.() ?? { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 }
 
@@ -58,6 +60,28 @@ async function readSecret(st: BridgeContext, secretKey?: string, secretId = ''):
     const json = await response.json() as { value?: unknown }
     return { key: typeof json.value === 'string' ? json.value : '', mode: 'read' }
   } catch { return { key: '', mode: 'unavailable' } }
+}
+
+async function readSecretSlotState(st: BridgeContext, secretKey?: string): Promise<{ supported: boolean; activeId: string; empty: boolean }> {
+  if (!secretKey) return { supported: false, activeId: '', empty: false }
+  try {
+    const response = await secretRequest('read', {}, st)
+    if (!response.ok) return { supported: false, activeId: '', empty: false }
+    const json = await response.json() as Record<string, unknown>
+    if (!json || typeof json !== 'object' || !(secretKey in json)) {
+      return { supported: false, activeId: '', empty: false }
+    }
+    const list = json[secretKey]
+    if (!Array.isArray(list)) return { supported: false, activeId: '', empty: false }
+    const active = list.find((entry) => entry && typeof entry === 'object' && (entry as { active?: unknown }).active === true) as { id?: unknown } | undefined
+    return {
+      supported: true,
+      activeId: typeof active?.id === 'string' ? active.id : '',
+      empty: list.length === 0,
+    }
+  } catch {
+    return { supported: false, activeId: '', empty: false }
+  }
 }
 
 /**
@@ -137,16 +161,25 @@ async function waitForConnection(profile: ApiProfile, timeout = 8000): Promise<C
   throw new Error(`等待酒馆连接响应超时${latest?.model ? `（当前模型：${latest.model}）` : ''}`)
 }
 
-async function writeSecret(st: BridgeContext, profile: ApiProfile): Promise<void> {
+async function writeSecret(st: BridgeContext, profile: ApiProfile, options: { clearInput?: boolean } = {}): Promise<string> {
   const descriptor = getSource(profile.mainApi, profile.source)
-  if (!descriptor.secretKey || !profile.key) return
+  if (!descriptor.secretKey || !profile.key) return ''
   let response = await secretRequest('write', { key: descriptor.secretKey, value: profile.key, id: profile.secretId }, st)
   if (!response.ok && profile.secretId) response = await secretRequest('write', { key: descriptor.secretKey, value: profile.key }, st)
   if (!response.ok) throw new Error(`密钥写入 ST 失败（HTTP ${response.status}）`)
-  if (descriptor.keySelector) {
-    const input = await waitFor<HTMLInputElement>(descriptor.keySelector, 800)
-    if (input) dispatchValue(input, profile.key)
+  let writtenId: string
+  try {
+    const json = await response.json() as { id?: unknown } | string
+    writtenId = typeof json === 'string' ? json : typeof json?.id === 'string' ? json.id : ''
+  } catch {
+    writtenId = ''
   }
+  // 密钥已通过 /api/secrets/write 写入后端：必须清空而非填入 DOM 输入框，否则 ST 点击连接按钮时会二次重复追加同一把密钥并残留明文。
+  if (options.clearInput !== false && descriptor.keySelector) {
+    const input = document.querySelector<HTMLInputElement>(descriptor.keySelector)
+    if (input && input.value) dispatchValue(input, '')
+  }
+  return writtenId
 }
 
 export type ApplyProfileProgress = (message: string) => void
@@ -206,43 +239,88 @@ export function fetchModels(profile: Pick<ApiProfile, 'mainApi' | 'source' | 'ur
   return result
 }
 
+class AuthoritativeModelsError extends Error {}
+
+async function probeDirectModels(url: string, key: string): Promise<string[]> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 15000)
+  try {
+    const modelsUrl = `${url.replace(/\/+$/, '')}/models`
+    const response = await fetch(modelsUrl, { headers: { Authorization: `Bearer ${key}` }, signal: controller.signal })
+    if (response.ok) {
+      try {
+        return parseModelList(await response.json())
+      } catch (err) {
+        throw new AuthoritativeModelsError(err instanceof Error ? err.message : String(err), { cause: err })
+      }
+    }
+    if (response.status === 401 || response.status === 403) {
+      const detail = extractUpstreamError(await response.json().catch(() => null))
+      throw new AuthoritativeModelsError(detail || `模型获取被拒绝（HTTP ${response.status}），请检查 API Key 是否有效`)
+    }
+    throw new Error(`直连 /models 返回 HTTP ${response.status}`)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 async function fetchModelsTransaction(profile: Pick<ApiProfile, 'mainApi' | 'source' | 'url' | 'key' | 'secretId'>): Promise<string[]> {
   const st = getST(); if (!st) throw new Error('未检测到 SillyTavern 运行时')
   const descriptor = getSource(profile.mainApi, profile.source)
   if (!descriptor.supportsModels) throw new Error('该来源不支持自动获取模型，请手动填写')
-  const hasNewKey = Boolean(profile.key.trim())
+  const trimmedKey = profile.key.trim()
+  const trimmedUrl = profile.url.trim()
+  const hasNewKey = Boolean(trimmedKey)
+
+  // 只要带未保存/草稿 Key 且有 URL，一律优先直连 /models，避免向 ST secrets.json 写入未保存草稿。
+  if (hasNewKey && trimmedUrl) {
+    try {
+      return await probeDirectModels(trimmedUrl, trimmedKey)
+    } catch (err) {
+      if (err instanceof AuthoritativeModelsError) throw new Error(err.message, { cause: err })
+      console.warn('[st-stage:api] 直连 /models 探测未通过，尝试检查是否可安全走宿主代理', err)
+    }
+  }
+
   const targetSettings = settingsFor(st, profile.mainApi)
   const targetSecretId = profile.secretId || readString(targetSettings, `${descriptor.secretKey}_id`) || readString(targetSettings, 'secret_id')
-  const targetSecret = hasNewKey
+  const slotState = hasNewKey ? await readSecretSlotState(st, descriptor.secretKey) : { supported: false, activeId: '', empty: false }
+  const targetSecret = hasNewKey && !slotState.supported
     ? await readSecret(st, descriptor.secretKey, targetSecretId)
     : { key: '', mode: 'unavailable' as SecretMode }
-  const canSafelyRestoreTarget = targetSecret.mode === 'read' && Boolean(targetSecret.key)
-  // 若目标密钥槽无法回读或原本为空，绝不向 ST 密钥库写入未保存草稿；优先直连兼容 /models
+  const canRestoreBySlotId = slotState.supported && (Boolean(slotState.activeId) || slotState.empty)
+  const canSafelyRestoreTarget = canRestoreBySlotId || (targetSecret.mode === 'read' && Boolean(targetSecret.key))
+
   if (hasNewKey && !canSafelyRestoreTarget) {
-    if (profile.url.trim()) {
-      const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 15000)
-      try {
-        const modelsUrl = `${profile.url.trim().replace(/\/+$/, '')}/models`
-        const response = await fetch(modelsUrl, { headers: { Authorization: `Bearer ${profile.key.trim()}` }, signal: controller.signal })
-        if (response.ok) return parseModelList(await response.json())
-      } catch (err) {
-        console.warn('[st-stage:api] 直连 /models 探测未通过', err)
-      } finally { clearTimeout(timer) }
-    }
     throw new Error('为避免覆盖未保存前的酒馆密钥槽，请先保存并启用该档案后再获取模型')
   }
+
   const temporary: ApiProfile = { version: 2, id: 'temporary', name: 'temporary', model: '', settings: {}, secretMode: 'stored', ...profile, secretId: targetSecretId }
-  if (hasNewKey) await writeSecret(st, temporary)
+  const tempSecretId = hasNewKey ? await writeSecret(st, temporary, { clearInput: false }) : ''
   try {
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 20000)
     try {
       const response = await fetch('/api/backends/chat-completions/status', { method: 'POST', headers: st.getRequestHeaders?.() ?? { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_completion_source: profile.source, custom_url: profile.url }), signal: controller.signal })
-      if (!response.ok) throw new Error(`模型列表请求失败（HTTP ${response.status}）`)
+      if (!response.ok) {
+        const detail = extractUpstreamError(await response.json().catch(() => null))
+        throw new Error(detail ? `模型列表请求失败（HTTP ${response.status}：${detail}）` : `模型列表请求失败（HTTP ${response.status}）`)
+      }
       return parseModelList(await response.json())
     } finally { clearTimeout(timer) }
   } finally {
-    if (hasNewKey && canSafelyRestoreTarget) {
-      await writeSecret(st, { ...temporary, key: targetSecret.key })
+    if (hasNewKey) {
+      if (canRestoreBySlotId && descriptor.secretKey && tempSecretId) {
+        if (slotState.activeId) {
+          await secretRequest('rotate', { key: descriptor.secretKey, id: slotState.activeId }, st).catch((err) => {
+            console.warn('[st-stage:api] 恢复原密钥槽激活项失败', err)
+          })
+        }
+        await secretRequest('delete', { key: descriptor.secretKey, id: tempSecretId }, st).catch((err) => {
+          console.warn('[st-stage:api] 清理临时探测密钥失败', err)
+        })
+      } else if (targetSecret.mode === 'read' && targetSecret.key) {
+        await writeSecret(st, { ...temporary, key: targetSecret.key }, { clearInput: false })
+      }
     }
   }
 }

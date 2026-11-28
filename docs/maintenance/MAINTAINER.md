@@ -58,9 +58,9 @@ pnpm build
 
 定向测试证明受测逻辑，类型与 lint 检查静态约束；全套测试与 Next 构建仍不能证明真实 ST 的宿主行为。UI 变更另看 [设计走查](../DESIGN-WALKTHROUGH.md)；`pnpm test:mobile` 是 Playwright 的网页移动视口检查，首次需安装其 Chromium，不是物理手机或 OS 输入法验收。控制测试并发以免重型测试与构建争用资源。
 
-当前微信真实宿主回归入口为 `node scripts/verify-wechat-experience-browser.mjs --url http://127.0.0.1:18772/ --isolated-data`，须先启动独立自动测试 runtime/data。脚本会替换测试配置，明确拒绝使用保留用户实测数据的 18771；也不能指向日常账户。历史主聊天/MVU 数值契约已退役，记录见 [历史记录](history/2026-11-04-real-mvu-acceptance.md)。若隔离 runtime 通过 junction 复用依赖，用 `node --preserve-symlinks server.js ...` 保持 WASM 路径位于 runtime 内；不要关闭宿主文件路径或聊天完整性校验来绕过错误。
+真实 SillyTavern 宿主自动回归统一使用 `pnpm test:host`（见 [浏览器与宿主验收入口](BROWSER-ACCEPTANCE.md) 与 [host-e2e 说明](../../host-e2e/README.md)）：自动在系统临时目录构建全新隔离 runtime/data 并挂载本仓 `st-distribution/`，覆盖桌面与手机双视口、13 个内置 App、流式生成、MVU 隔离、日历/小剧场与微信草稿。`PLAYWRIGHT_CHANNEL=msedge` 可让网页移动回归（`pnpm test:mobile`）与宿主回归复用已安装 Edge；切勿将清理目录设成整个 `test-results/`。
 
-角色配置/原生档案/分支的整体验收使用 `node scripts/verify-character-play-browser.mjs --url http://127.0.0.1:18769 --isolated-data`；十三 App 六档手机检查使用 `verify-mobile-apps-browser.mjs`，参数相同。它们会替换测试配置，使用同一用户的宿主脚本须顺序执行。`PLAYWRIGHT_CHANNEL=msedge` 可让脚本和网页移动回归复用已安装 Edge。Playwright 输出固定到 `test-results/playwright/`，不要将其清理目录设成整个 `test-results/`，其中还有隔离数据与候选包。失败时的布局附件用于区分产品、宿主样式和夹具问题。
+历史主聊天/MVU 数值契约已退役，记录见 [历史记录](history/2026-11-04-real-mvu-acceptance.md)。若手工启动隔离 runtime 并通过 junction 复用依赖，用 `node --preserve-symlinks server.js ...` 保持 WASM 路径位于 runtime 内；不要关闭宿主文件路径或聊天完整性校验来绕过错误。
 
 打包脚本会覆盖跟踪产物并改变构建号。修改产品后，用统一入口以同一时间戳生成根目录与分发目录：
 

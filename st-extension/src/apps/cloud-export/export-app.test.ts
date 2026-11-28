@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PhoneAppContext } from '../../../../core/phone-registry'
 import type { CloudExportBridge } from './bridge'
 import { cloudExportApp, findLinkedWorldbook } from './export-app'
@@ -585,5 +585,87 @@ describe('stable search input', () => {
     expect(container.querySelectorAll('.cloud-export-character')).toHaveLength(0)
     app.unmount?.()
     container.remove()
+  })
+})
+
+
+describe('keyboard, focus and host a11y ownership', () => {
+  afterEach(() => {
+    document.body.replaceChildren()
+  })
+
+  it('supports roving tablist navigation and preserves tab role when ST a11y.js annotates .menu_button', async () => {
+    const annotate = (node: Element) => {
+      if (node.matches('.menu_button')) node.setAttribute('role', 'button')
+      node.querySelectorAll('.menu_button').forEach((btn) => btn.setAttribute('role', 'button'))
+    }
+    const observer = new MutationObserver((records) => records.forEach((rec) => rec.addedNodes.forEach((n) => {
+      if (n instanceof Element) annotate(n)
+    })))
+    observer.observe(document.body, { childList: true, subtree: true })
+    try {
+      const container = document.createElement('div')
+      document.body.append(container)
+      const app = cloudExportApp(fakeBridge(), vi.fn())
+      app.mount(container, context())
+      await settle()
+
+      expect(container.querySelectorAll('[role="tab"]')).toHaveLength(4)
+      const tabs = () => [...container.querySelectorAll<HTMLElement>('[role="tab"]')]
+      tabs()[0].focus()
+      tabs()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }))
+      await settle()
+      expect(document.activeElement).toBe(tabs()[1])
+      expect(tabs()[1].getAttribute('aria-selected')).toBe('true')
+      expect(tabs()[0].tabIndex).toBe(-1)
+
+      tabs()[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true }))
+      await settle()
+      expect(document.activeElement).toBe(tabs()[3])
+      app.unmount?.()
+    } finally {
+      observer.disconnect()
+    }
+  })
+
+  it('does not steal focus after moving away during async bundle load and prevents double Enter export activation', async () => {
+    const api = fakeBridge()
+    let resolveChats!: (value: Array<{ id: string; name: string; path: string }>) => void
+    vi.mocked(api.listChats).mockReturnValueOnce(new Promise((done) => { resolveChats = done }))
+    let finishDownload!: () => void
+    const download = vi.fn(async (_files: unknown, _name: unknown, progress: (p: { percent: number }) => void) => {
+      progress({ percent: 42 })
+      await new Promise<void>((done) => { finishDownload = done })
+    })
+    const container = document.createElement('div')
+    document.body.append(container)
+    const app = cloudExportApp(api, download as never)
+    app.mount(container, context())
+    await settle()
+
+    const box = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+    box.focus()
+    box.click()
+    const search = container.querySelector<HTMLInputElement>('input.so-app-input')!
+    search.focus()
+    resolveChats([{ id: 'Alice.png:first', name: 'first', path: 'first.jsonl' }])
+    await settle()
+    expect(document.activeElement).toBe(search)
+
+    const exportBtn = container.querySelector<HTMLElement>('[data-export-focus="export"]')!
+    exportBtn.focus()
+    const hostEnter = vi.fn((event: KeyboardEvent) => { if (event.key === 'Enter') (event.target as HTMLElement).click() })
+    document.addEventListener('keydown', hostEnter)
+    try {
+      exportBtn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+      await settle()
+      expect(download).toHaveBeenCalledOnce()
+      expect(hostEnter).not.toHaveBeenCalled()
+      finishDownload()
+      await settle()
+    } finally {
+      document.removeEventListener('keydown', hostEnter)
+      app.unmount?.()
+    }
   })
 })

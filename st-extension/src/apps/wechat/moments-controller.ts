@@ -1,5 +1,6 @@
 import type { AppHost } from '../../../../core/phone-registry'
 import { stableCharacterKey } from '../../../../core/character-identity'
+import { isStorySwitchedError, StorySwitchedError } from '../shared/chat-metadata'
 import { listContacts, loadContact } from './conversations'
 import { abortable, captureStory, readStoryMemory, storyIdentity, type StorySnapshot } from './memory'
 import { addMoment, latestContactState } from './moments'
@@ -18,7 +19,7 @@ export async function generateMoment(host: AppHost, data: WeChatAppData, source:
   const { pipe } = contactPipeline({ config }, contact)
   const result = await abortable(pipe.requestMoment(contact, state, signal, scope, recent), signal)
   signal.throwIfAborted()
-  if (storyIdentity(host) !== story.key) throw new Error('主聊天已切换，本次动态已取消。')
+  if (storyIdentity(host) !== story.key) throw new StorySwitchedError('主聊天已切换，本次动态已取消。')
   return { contact, state, result, storyKey: story.key, warnings: scope.memoryWarnings ?? [] }
 }
 
@@ -77,8 +78,9 @@ export function createMomentsController(host: AppHost, options: { cooldownMs?: n
       try { host.setAppData(latest) } catch (error) { latest.moments = oldMoments; latest.momentActivity = oldActivity; throw error }
       status.error = [...new Set(generated.flatMap(item => item.warnings))].join(' ')
     } catch (error) {
+      if (!alive || controller !== job || storyIdentity(host) !== story.key || isStorySwitchedError(error)) return
       if (!job.signal.aborted) console.warn('[st-stage] 朋友圈后台动态生成失败', error)
-      if (alive && controller === job) status.error = job.signal.aborted ? '动态生成超时或已取消，可重试。' : (error as Error).message || '动态未生成，请重试。'
+      status.error = job.signal.aborted ? '动态生成超时或已取消，可重试。' : (error as Error).message || '动态未生成，请重试。'
     } finally {
       clearTimeout(timeout)
       if (controller === job) { controller = undefined; status.busy = false; notify(); if (queued) { queued = false; void run() } }

@@ -30,7 +30,9 @@ export function createChronicleApp(): PhoneApp {
       const deepLink = consumeAppDeepLink('chronicle')
       let selected = deepLink?.tab === 'calendar' ? 1 : 0
       let editingCode = ''
+      let editDraft: { code: string; timeSpan: string; summary: string; text: string } | null = null
       let activeCalendarDate = deepLink?.date || ''
+      const noteDrafts = new Map<string, string>()
       const composer = createComposerBridge()
 
       const root = text('div', 'ch-root', ''), header = text('div', 'ch-header', ''), list = text('div', 'ch-list', '')
@@ -111,6 +113,32 @@ export function createChronicleApp(): PhoneApp {
       container.append(root)
 
       function render() {
+        const activeEl = document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement
+          ? (list.contains(document.activeElement) ? document.activeElement : null)
+          : null
+        const focusMeta = activeEl
+          ? {
+              noteDate: activeEl.dataset.noteDate || '',
+              editField: activeEl.dataset.editField || '',
+              start: activeEl.selectionStart,
+              end: activeEl.selectionEnd,
+            }
+          : null
+
+        const restoreFocus = () => {
+          if (!focusMeta) return
+          const target = focusMeta.noteDate
+            ? list.querySelector<HTMLInputElement>(`input[data-note-date="${CSS.escape(focusMeta.noteDate)}"]`)
+            : focusMeta.editField
+              ? list.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[data-edit-field="${CSS.escape(focusMeta.editField)}"]`)
+              : null
+          if (!target) return
+          target.focus({ preventScroll: true })
+          if (typeof focusMeta.start === 'number' && typeof focusMeta.end === 'number') {
+            try { target.setSelectionRange(focusMeta.start, focusMeta.end) } catch { /* Non-text inputs ignore selection range. */ }
+          }
+        }
+
         const state = controller.status(), connected = !!getStoryAiConfig(ctx), data = readChronicleData()
         const calendar = controller.calendar.status(), busy = selected === 0 ? state.busy : calendar.busy
         organize.textContent = selected === 0 ? (busy ? '整理中… · 取消' : '整理') : (busy ? '生成中… · 取消' : '刷新日历')
@@ -150,18 +178,33 @@ export function createChronicleApp(): PhoneApp {
             setBtn.onclick = async () => {
               if (!/^\d{4}-\d{2}-\d{2}$/.test(dateInput.value)) return
               const [y, m, d] = dateInput.value.split('-').map(Number)
-              const existingMeta = readChatMetadata(META_KEY) as { stat_data?: Record<string, unknown> } | undefined
-              const statData = structuredClone(existingMeta?.stat_data ?? {})
-              const prevTime = (statData.时间 && typeof statData.时间 === 'object' ? statData.时间 : {}) as Record<string, unknown>
-              statData.时间 = { ...prevTime, 年: y, 月: m, 日: d }
-              const saved = await writeChatMetadata(ctx, storyIdentity(ctx), META_KEY, { stat_data: statData, v: 1 })
-              if (!saved) {
-                status.textContent = '请先打开一个角色聊天，再设定故事日期。'
-                return
+              try {
+                const existingMeta = readChatMetadata(META_KEY) as { stat_data?: Record<string, unknown> } | undefined
+                const statData = structuredClone(existingMeta?.stat_data ?? {})
+                const prevTime = (statData.时间 && typeof statData.时间 === 'object' ? statData.时间 : {}) as Record<string, unknown>
+                const prevIso = typeof prevTime.年 === 'number' && typeof prevTime.月 === 'number' && typeof prevTime.日 === 'number' && prevTime.年 > 0
+                  ? `${String(prevTime.年).padStart(4, '0')}-${String(prevTime.月).padStart(2, '0')}-${String(prevTime.日).padStart(2, '0')}`
+                  : ''
+                statData.时间 = {
+                  ...prevTime,
+                  年: y,
+                  月: m,
+                  日: d,
+                  星期: '日一二三四五六'[new Date(y, m - 1, d).getDay()],
+                  ...(prevIso !== dateInput.value ? { 显示: '' } : {}),
+                }
+                const saved = await writeChatMetadata(ctx, storyIdentity(ctx), META_KEY, { stat_data: statData, v: 1 })
+                if (!saved) {
+                  status.textContent = '请先打开一个角色聊天，再设定故事日期。'
+                  return
+                }
+                await controller.refresh()
+                if (getStoryAiConfig(ctx)) void controller.calendar.trigger(true)
+                emitStoryEvent({ type: 'story-date-changed', date: dateInput.value })
+              } catch (err) {
+                console.warn('[st-stage] 设定故事起始日期失败', err)
+                status.textContent = (err as Error).message || '设定故事日期失败，请稍后重试。'
               }
-              emitStoryEvent({ type: 'story-date-changed', date: dateInput.value })
-              await controller.refresh()
-              if (getStoryAiConfig(ctx)) void controller.calendar.trigger(true)
             }
             row.append(dateInput, setBtn)
             quickSetup.append(row)
@@ -251,16 +294,23 @@ export function createChronicleApp(): PhoneApp {
             const noteInput = document.createElement('input')
             noteInput.type = 'text'
             noteInput.placeholder = '📌 记下这天的私人约定或备忘…'
-            noteInput.value = note
+            noteInput.value = noteDrafts.has(date) ? noteDrafts.get(date)! : note
+            noteInput.dataset.noteDate = date
             noteInput.setAttribute('aria-label', `${date} 当日约定`)
+            noteInput.oninput = () => {
+              if (noteInput.value === note) noteDrafts.delete(date)
+              else noteDrafts.set(date, noteInput.value)
+            }
             const saveNoteBtn = document.createElement('button')
             saveNoteBtn.type = 'button'
             saveNoteBtn.className = 'ch-ghost-btn'
             saveNoteBtn.textContent = note ? '更新约定' : '记下'
             saveNoteBtn.onclick = () => {
-              void saveCalendarNote(ctx, date, noteInput.value).then(ok => {
+              const valueToSave = noteInput.value
+              void saveCalendarNote(ctx, date, valueToSave).then(ok => {
                 if (ok) {
-                  status.textContent = noteInput.value.trim() ? '已记下当日约定。' : '已清除当日约定。'
+                  noteDrafts.delete(date)
+                  status.textContent = valueToSave.trim() ? '已记下当日约定。' : '已清除当日约定。'
                   render()
                 } else {
                   status.textContent = '请先打开一个角色聊天，再记下当日约定。'
@@ -298,6 +348,7 @@ export function createChronicleApp(): PhoneApp {
             card.append(actions)
             list.append(card)
           }
+          restoreFocus()
           return
         }
 
@@ -316,18 +367,27 @@ export function createChronicleApp(): PhoneApp {
           card.append(summary)
 
           if (editingCode === entry.code) {
+            const currentDraft = editDraft?.code === entry.code
+              ? editDraft
+              : (editDraft = { code: entry.code, timeSpan: entry.timeSpan, summary: entry.summary, text: entry.text })
             const form = text('div', 'ch-edit-form', '')
             const spanInput = document.createElement('input')
             spanInput.type = 'text'
-            spanInput.value = entry.timeSpan
+            spanInput.value = currentDraft.timeSpan
+            spanInput.dataset.editField = 'span'
             spanInput.placeholder = '时间跨度（如 2026-01-01）'
+            spanInput.oninput = () => { currentDraft.timeSpan = spanInput.value }
             const sumInput = document.createElement('input')
             sumInput.type = 'text'
-            sumInput.value = entry.summary
+            sumInput.value = currentDraft.summary
+            sumInput.dataset.editField = 'summary'
             sumInput.placeholder = '一句话概览'
+            sumInput.oninput = () => { currentDraft.summary = sumInput.value }
             const bodyInput = document.createElement('textarea')
             bodyInput.rows = 4
-            bodyInput.value = entry.text
+            bodyInput.value = currentDraft.text
+            bodyInput.dataset.editField = 'body'
+            bodyInput.oninput = () => { currentDraft.text = bodyInput.value }
             const bar = text('div', 'ch-card-actions', '')
             const saveBtn = document.createElement('button')
             saveBtn.type = 'button'
@@ -339,14 +399,14 @@ export function createChronicleApp(): PhoneApp {
                 summary: sumInput.value,
                 text: bodyInput.value,
               }).then(ok => {
-                if (ok) { editingCode = ''; render() }
+                if (ok) { editingCode = ''; editDraft = null; render() }
               })
             }
             const cancelBtn = document.createElement('button')
             cancelBtn.type = 'button'
             cancelBtn.className = 'ch-ghost-btn'
             cancelBtn.textContent = '取消'
-            cancelBtn.onclick = () => { editingCode = ''; render() }
+            cancelBtn.onclick = () => { editingCode = ''; editDraft = null; render() }
             bar.append(saveBtn, cancelBtn)
             form.append(spanInput, sumInput, bodyInput, bar)
             card.append(form)
@@ -358,19 +418,33 @@ export function createChronicleApp(): PhoneApp {
             editBtn.type = 'button'
             editBtn.className = 'ch-ghost-btn'
             editBtn.textContent = '✏️ 修订纪要'
-            editBtn.onclick = () => { editingCode = entry.code; render() }
+            editBtn.onclick = () => {
+              editingCode = entry.code
+              editDraft = { code: entry.code, timeSpan: entry.timeSpan, summary: entry.summary, text: entry.text }
+              render()
+            }
             bar.append(editBtn)
             card.append(bar)
           }
 
           list.append(card)
         }
+        restoreFocus()
       }
 
       const off = controller.subscribe(render)
+      const offChar = typeof ctx.onCharacterChanged === 'function'
+        ? ctx.onCharacterChanged(() => {
+            editingCode = ''
+            editDraft = null
+            activeCalendarDate = ''
+            noteDrafts.clear()
+            render()
+          })
+        : () => {}
       render()
       void controller.refresh()
-      cleanup = () => { off(); composer.dispose(); root.remove() }
+      cleanup = () => { off(); offChar(); composer.dispose(); root.remove() }
     },
     unmount() { cleanup?.(); cleanup = undefined },
   }

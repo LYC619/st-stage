@@ -159,3 +159,41 @@ describe('variable tree schema-aware editors', () => {
     expect([...container.querySelectorAll('summary')].some((node) => node.textContent?.includes('新增变量'))).toBe(false)
   })
 })
+
+
+describe('variable-tree add-variable path safety', () => {
+  it('blocks unsafe or malformed paths (such as __proto__ or consecutive dots) and preserves user input', () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const commitSet = vi.fn()
+    const view = createVariableTreeView(container, {
+      getModel: () => ({
+        data: {},
+        isMvu: true,
+        delta: new Map(),
+        status: 'ready',
+        statusText: '就绪',
+        emptyText: '空',
+        canWrite: true,
+        addHint: '',
+      }),
+      commitSet,
+      commitDelete: vi.fn(),
+      requestRefresh: vi.fn(),
+    })
+    view.render()
+
+    const pathInput = container.querySelector<HTMLInputElement>('[data-variable-focus="new-path"]')!
+    const valInput = container.querySelector<HTMLInputElement>('[data-variable-focus="new-value"]')!
+    pathInput.value = '__proto__.polluted'
+    valInput.value = '42'
+    const addBtn = container.querySelector<HTMLElement>('details .so-app-btn, details [role="button"], details button')!
+    addBtn.click()
+
+    expect(commitSet).not.toHaveBeenCalled()
+    expect(pathInput.value).toBe('__proto__.polluted')
+    expect(valInput.value).toBe('42')
+    expect(container.querySelector('.vm-add-err')?.getAttribute('hidden')).toBeNull()
+    container.remove()
+  })
+})

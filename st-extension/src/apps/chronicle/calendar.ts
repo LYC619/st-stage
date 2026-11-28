@@ -140,5 +140,9 @@ export async function generateCalendar(host: AppHost, today: Date, missing: stri
     `${formatStoryMemory(scope)}\n剧情今天：${formatStoryDate(today)}\n只补这些日期：${JSON.stringify(missing)}\n保留的日历：${JSON.stringify(retained)}` }], signal)
   let raw: unknown
   try { raw = JSON.parse(reply) } catch { throw new Error('幕后 AI 这次排出的日历格式有误，再点一次刷新试试。') }
-  return normalizeCalendar(raw).days.filter(day => missing.includes(day.date))
+  const days = normalizeCalendar(raw).days.filter(day => missing.includes(day.date))
+  if (missing.length > 0 && days.length === 0) {
+    throw new Error('幕后 AI 这次排出的日历为空或日期不匹配，再点一次刷新试试。')
+  }
+  return days
 }

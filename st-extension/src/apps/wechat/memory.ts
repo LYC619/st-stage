@@ -2,7 +2,7 @@ import type { AppHost } from '../../../../core/phone-registry'
 import { stableCharacterKey } from '../../../../core/character-identity'
 import { getWeChatHostContext, type ConversationScope } from './bridge'
 import type { WeChatProfile } from './profile'
-import { storyIdentity } from '../shared/chat-metadata'
+import { StorySwitchedError, storyIdentity } from '../shared/chat-metadata'
 import { storyToday } from '../shared/story-date'
 import { readChronicleData } from '../chronicle/store'
 import { chronicleOverview } from '../chronicle/inject'
@@ -90,7 +90,7 @@ export async function readStoryMemory(host: AppHost, scope: ConversationScope, p
   bookCache?: Map<string, Promise<unknown>>): Promise<ConversationScope> {
   const check = () => {
     signal.throwIfAborted()
-    if (storyIdentity(host) !== snapshot.key) throw new Error('主聊天已切换，请在当前剧情中重试。')
+    if (storyIdentity(host) !== snapshot.key) throw new StorySwitchedError('主聊天已切换，请在当前剧情中重试。')
     if (scope.storyKey && scope.storyKey !== snapshot.key) throw new Error('这位联系人属于另一个故事，请先切回对应的主聊天。')
   }
   check()

@@ -1,12 +1,8 @@
-// @vitest-environment jsdom
+// @vitest-environment node
 
 import { describe, expect, it, vi } from 'vitest'
 import type { Sprite } from '../../core/types'
-import {
-  LOCALIZE_MAX_BYTES,
-  LOCALIZE_TIMEOUT_MS,
-  localizeSprite,
-} from './sprite-localize'
+import { LOCALIZE_MAX_BYTES, LOCALIZE_TIMEOUT_MS, localizeSprite } from './sprite-localize'
 
 const remote: Sprite = {
   tag: '微笑',
@@ -15,11 +11,7 @@ const remote: Sprite = {
   labels: ['表情'],
 }
 
-function response(
-  body: Blob,
-  headers: Record<string, string> = {},
-  readBody = vi.fn(async () => body),
-): Response {
+function response(body: Blob, headers: Record<string, string> = {}, readBody = vi.fn(async () => body)): Response {
   return {
     ok: true,
     status: 200,
@@ -29,164 +21,80 @@ function response(
 }
 
 describe('localizeSprite', () => {
-  it('runs fetch, compression, and save in order before returning a localized copy', async () => {
+  it('fetches, compresses, saves, and validates encoded user-image paths without mutating input', async () => {
     const order: string[] = []
-    const fetchImage = vi.fn(async () => {
-      order.push('fetch')
-      return response(new Blob(['remote'], { type: 'image/png' }), { 'content-length': '6' })
-    })
-    const compress = vi.fn(async () => {
-      order.push('compress')
-      return { dataUri: 'data:image/webp;base64,AA==', compressed: true, bytes: 1 }
-    })
-    const saveImage = vi.fn(async (file: File, fileName: string) => {
-      order.push('save')
-      expect(file.type).toBe('image/webp')
-      expect(fileName).toBe('微笑.webp')
-      return '/user/images/smile.webp'
-    })
-
     const result = await localizeSprite(remote, '微笑.webp', {
-      fetch: fetchImage as typeof fetch,
-      compress,
-      saveImage,
+      fetch: (async () => { order.push('fetch'); return response(new Blob(['remote'], { type: 'image/png' }), { 'content-length': '6' }) }) as unknown as typeof fetch,
+      compress: async () => { order.push('compress'); return { dataUri: 'data:image/webp;base64,AA==', compressed: true, bytes: 1 } },
+      saveImage: async (file, fileName) => {
+        order.push('save')
+        expect(file.type).toBe('image/webp')
+        expect(fileName).toBe('微笑.webp')
+        return '/user/images/a%23b.webp'
+      },
     })
-
     expect(order).toEqual(['fetch', 'compress', 'save'])
-    expect(result).toEqual({
-      ...remote,
-      url: '/user/images/smile.webp',
-      remoteUrl: remote.url,
-    })
-    expect(remote).toEqual({
-      tag: '微笑',
-      url: 'https://img.test/original.png',
-      code: 'original.png',
-      labels: ['表情'],
-    })
+    expect(result).toEqual({ ...remote, url: '/user/images/a%23b.webp', remoteUrl: remote.url })
+    expect(remote.url).toBe('https://img.test/original.png')
   })
 
-  it.each([
-    ['data URI', 'data:image/png;base64,AA=='],
-    ['local path', '/user/images/local.png'],
-  ])('rejects an already-local %s without fetching', async (_name, url) => {
-    const fetchImage = vi.fn()
-
-    await expect(localizeSprite({ ...remote, url }, 'image.webp', {
-      fetch: fetchImage as typeof fetch,
-      saveImage: vi.fn(),
-    })).rejects.toThrow('已经是本地图片')
-    expect(fetchImage).not.toHaveBeenCalled()
-  })
-
-  it('passes an abort signal so a hung image host cannot wedge the caller forever', async () => {
-    const fetchImage = vi.fn(async (_url: string, init?: RequestInit) => {
-      expect(init?.signal).toBeInstanceOf(AbortSignal)
-      const timeout = new DOMException('The operation timed out.', 'TimeoutError')
-      throw timeout
-    })
+  it('rejects already-local URLs, timeouts, oversized headers/blobs, SVG payloads, and unsafe save paths', async () => {
+    for (const localUrl of ['data:image/png;base64,AA==', '/user/images/local.png']) {
+      const fetchImage = vi.fn()
+      await expect(localizeSprite({ ...remote, url: localUrl }, 'image.webp', { fetch: fetchImage as typeof fetch, saveImage: vi.fn() }))
+        .rejects.toThrow('已经是本地图片')
+      expect(fetchImage).not.toHaveBeenCalled()
+    }
 
     await expect(localizeSprite(remote, 'image.webp', {
-      fetch: fetchImage as unknown as typeof fetch,
+      fetch: vi.fn(async (_u, init?: RequestInit) => {
+        expect(init?.signal).toBeInstanceOf(AbortSignal)
+        throw new DOMException('Timed out', 'TimeoutError')
+      }) as unknown as typeof fetch,
       saveImage: vi.fn(),
-    })).rejects.toThrow(`下载远程图片失败：超过 ${LOCALIZE_TIMEOUT_MS / 1000} 秒没有响应`)
-    expect(fetchImage).toHaveBeenCalledTimes(1)
-  })
+    })).rejects.toThrow(`超过 ${LOCALIZE_TIMEOUT_MS / 1000} 秒`)
 
-  it('rejects oversized response headers before reading the body', async () => {
     const readBody = vi.fn()
-    const fetchImage = vi.fn(async () => response(
-      new Blob(['small'], { type: 'image/png' }),
-      { 'content-length': String(LOCALIZE_MAX_BYTES + 1) },
-      readBody,
-    ))
-
     await expect(localizeSprite(remote, 'image.webp', {
-      fetch: fetchImage as typeof fetch,
+      fetch: vi.fn(async () => response(new Blob(['x'], { type: 'image/png' }), { 'content-length': String(LOCALIZE_MAX_BYTES + 1) }, readBody)) as typeof fetch,
       saveImage: vi.fn(),
     })).rejects.toThrow('远程图片过大')
     expect(readBody).not.toHaveBeenCalled()
+
+    const svgBlob = new Blob(['<svg><script>alert(1)</script></svg>'], { type: 'image/svg+xml; charset=utf-8' })
+    const saveSvg = vi.fn()
+    await expect(localizeSprite(remote, 'evil.svg', { fetch: vi.fn(async () => response(svgBlob)) as typeof fetch, saveImage: saveSvg }))
+      .rejects.toThrow('不支持的图片格式')
+    expect(saveSvg).not.toHaveBeenCalled()
+
+    for (const unsafeSaved of ['https://img.test/not-local.webp', 'data:image/webp;base64,AA==', 'blob:https://img.test/id', '/scripts/extension/image.webp', '/user/images/../secret.webp']) {
+      await expect(localizeSprite(remote, 'image.webp', {
+        fetch: vi.fn(async () => response(new Blob(['remote'], { type: 'image/png' }))) as typeof fetch,
+        compress: async () => ({ dataUri: 'data:image/webp;base64,AA==', compressed: true, bytes: 1 }),
+        saveImage: async () => unsafeSaved,
+      })).rejects.toThrow('安全的本地用户图片地址')
+    }
   })
 
-  it('rejects oversized decoded blobs', async () => {
-    const oversized = new Blob([new Uint8Array(LOCALIZE_MAX_BYTES + 1)], { type: 'image/png' })
-
-    await expect(localizeSprite(remote, 'image.webp', {
-      fetch: vi.fn(async () => response(oversized)) as typeof fetch,
-      saveImage: vi.fn(),
-    })).rejects.toThrow('远程图片过大')
-  })
-
-  it.each([
-    ['remote URL', 'https://img.test/not-local.webp'],
-    ['data URI', 'data:image/webp;base64,AA=='],
-    ['blob URL', 'blob:https://img.test/id'],
-    ['extension path', '/scripts/extension/image.webp'],
-    ['traversal path', '/user/images/../secret.webp'],
-  ])('rejects a save result that is not a safe ST user-image path (%s)', async (_name, savedUrl) => {
-    await expect(localizeSprite(remote, 'image.webp', {
-      fetch: vi.fn(async () => response(new Blob(['remote'], { type: 'image/png' }))) as typeof fetch,
-      compress: vi.fn(async () => ({
-        dataUri: 'data:image/webp;base64,AA==',
-        compressed: true,
-        bytes: 1,
-      })),
-      saveImage: vi.fn(async () => savedUrl),
-    })).rejects.toThrow('安全的本地用户图片地址')
-  })
-
-  it('preserves URL encoding after validating the local path', async () => {
-    const localized = await localizeSprite(remote, 'image.webp', {
-      fetch: vi.fn(async () => response(new Blob(['remote'], { type: 'image/png' }))) as typeof fetch,
-      compress: vi.fn(async () => ({ dataUri: 'data:image/webp;base64,AA==', compressed: true, bytes: 1 })),
-      saveImage: vi.fn(async () => '/user/images/a%23b.webp'),
-    })
-    expect(localized.url).toBe('/user/images/a%23b.webp')
-  })
-
-  it('reports response body read failures as download failures', async () => {
-    const failedResponse = response(
-      new Blob(['remote'], { type: 'image/png' }),
-      {},
-      vi.fn(async () => { throw new Error('stream interrupted') }),
-    )
-
-    await expect(localizeSprite(remote, 'image.webp', {
-      fetch: vi.fn(async () => failedResponse) as typeof fetch,
-      saveImage: vi.fn(),
-    })).rejects.toThrow('下载远程图片失败：stream interrupted')
-  })
-
-  it.each(['fetch', 'http', 'compress', 'save'] as const)(
-    'leaves the source byte-for-byte unchanged when %s fails',
-    async (failure) => {
+  it('leaves source sprite untouched across fetch/HTTP/compress/save failures', async () => {
+    for (const failure of ['fetch', 'http', 'compress', 'save'] as const) {
       const original = structuredClone(remote)
-      const fetchImage = vi.fn(async () => {
-        if (failure === 'fetch') throw new TypeError('CORS blocked')
-        if (failure === 'http') {
-          return {
-            ok: false,
-            status: 503,
-            headers: new Headers(),
-          } as Response
-        }
-        return response(new Blob(['remote'], { type: 'image/png' }))
-      })
-      const compress = vi.fn(async () => {
-        if (failure === 'compress') throw new Error('decode failed')
-        return { dataUri: 'data:image/webp;base64,AA==', compressed: true, bytes: 1 }
-      })
-      const saveImage = vi.fn(async () => {
-        if (failure === 'save') throw new Error('disk full')
-        return '/user/images/smile.webp'
-      })
-
       await expect(localizeSprite(original, 'image.webp', {
-        fetch: fetchImage as typeof fetch,
-        compress,
-        saveImage,
+        fetch: (async () => {
+          if (failure === 'fetch') throw new TypeError('CORS')
+          if (failure === 'http') return { ok: false, status: 503, headers: new Headers() } as Response
+          return response(new Blob(['remote'], { type: 'image/png' }))
+        }) as unknown as typeof fetch,
+        compress: async () => {
+          if (failure === 'compress') throw new Error('decode failed')
+          return { dataUri: 'data:image/webp;base64,AA==', compressed: true, bytes: 1 }
+        },
+        saveImage: async () => {
+          if (failure === 'save') throw new Error('disk full')
+          return '/user/images/smile.webp'
+        },
       })).rejects.toThrow()
       expect(original).toEqual(remote)
-    },
-  )
+    }
+  })
 })

@@ -1,5 +1,5 @@
 import type { AppHost } from '../../../../core/phone-registry'
-import { storyIdentity } from '../shared/chat-metadata'
+import { isStorySwitchedError, storyIdentity } from '../shared/chat-metadata'
 import { normalize, readStoryState, writeLocalState, type StoryState } from './store'
 
 export function localRowIndex(rows: Array<Record<string, unknown>>, id: string, field: string, name: string): number {
@@ -30,8 +30,9 @@ export function createLocalEdits(host: AppHost, callbacks: {
           if (!saved) throw new Error('无法写入当前聊天记录，请确认已打开角色聊天。')
           await callbacks.saved(latest.state, normalize(working), summary)
         } catch (error) {
+          if (!valid() || isStorySwitchedError(error)) return
           console.warn('[st-stage] 保存剧情手账失败', error)
-          if (valid()) callbacks.failed(error)
+          callbacks.failed(error)
         }
       })
       return queue

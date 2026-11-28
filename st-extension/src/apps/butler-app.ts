@@ -156,7 +156,7 @@ export function butlerApp(serviceOverrides?: ButlerAppServices): PhoneApp {
     icon: '🧹',
     order: 3,
     mount(container, ctx) {
-      activeState?.controller?.abort()
+      if (activeState) { activeState.disposed = true; activeState.controller?.abort() }
       activeState = createState()
       mountButler(container, ctx, services, activeState)
     },
@@ -295,7 +295,7 @@ function mountButler(
     try {
       let baseline = baselineForTransaction()
       if (!baseline || baseline.probe === 'static' || baseline.invalidReason) {
-        baseline = await runProbe(state.selectedProbe)
+        baseline = await runProbe(state.selectedProbe); if (state.disposed) return
         const record = measurementHistory(
           baseline,
           '优化前基线',
@@ -325,7 +325,7 @@ function mountButler(
     if (state.sampling) return
     const baseline = baselineForTransaction()
     if (!baseline || baseline.probe === 'static') throw new Error('请先完成一次检查，再点“再测一次，比较优化前后”。')
-    const result = await runProbe(baseline.probe)
+    const result = await runProbe(baseline.probe); if (state.disposed) return
     const record = measurementHistory(result, '优化后再次检查', result.invalidReason ? 'cancelled' : 'completed')
     data = persistData(upsertHistory(data, record), record.id)
     state.comparison = compareMeasurements(baseline, result)
@@ -510,7 +510,7 @@ function mountButler(
     ))
     if (state.sampling) sampling.append(appButton('取消本次检查', () => state.controller?.abort()))
     else sampling.append(appButton('开始 6 秒体检', () => void safely(async () => {
-      const result = await runProbe(state.selectedProbe)
+      const result = await runProbe(state.selectedProbe); if (state.disposed) return
       const record = measurementHistory(result, result.probe === 'idle' ? '静置体检' : '受控滚动体检', result.invalidReason ? 'cancelled' : 'completed')
       data = persistData(upsertHistory(data, record), record.id)
     })))

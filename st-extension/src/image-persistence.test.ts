@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @vitest-environment node
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -57,109 +57,87 @@ afterEach(() => {
 })
 
 describe('persistSTImage', () => {
-  it.each([0, 1])('enforces the 20 MiB decoded limit (extra byte=%s)', async (extra) => {
+  it('enforces the decoded byte limit before POST', async () => {
+    expect(ST_IMAGE_MAX_BYTES).toBe(20 * 1024 * 1024)
     const fetchMock = vi.fn(async () => new Response('', { status: 413 }))
-    const dataUri = 'data:image/png;base64,' + Buffer.alloc(ST_IMAGE_MAX_BYTES + extra).toString('base64')
-    await expect(persistSTImage(dataUri, { fetch: fetchMock, getRequestHeaders: headers }))
-      .rejects.toThrow(extra ? '20 MiB' : 'HTTP 413')
-    expect(fetchMock).toHaveBeenCalledTimes(extra ? 0 : 1)
-  }, 20_000)
+    const exact = 'data:image/png;base64,' + Buffer.alloc(64).toString('base64')
+    const over = 'data:image/png;base64,' + Buffer.alloc(65).toString('base64')
 
-  it('fails closed when secure random naming is unavailable', async () => {
+    await expect(persistSTImage(exact, { fetch: fetchMock, getRequestHeaders: headers }, { maxBytes: 64 }))
+      .rejects.toThrow('HTTP 413')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    await expect(persistSTImage(over, { fetch: fetchMock, getRequestHeaders: headers }, { maxBytes: 64 }))
+      .rejects.toThrow('20 MiB')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails closed when secure random naming or CSRF headers are unavailable', async () => {
     const service = memoryService()
+    for (const getRequestHeaders of [undefined, () => ({})]) {
+      await expect(persistSTImage('data:image/png;base64,AA==', { fetch: service.fetchMock, getRequestHeaders }))
+        .rejects.toThrow('请求头能力')
+    }
     vi.stubGlobal('crypto', undefined)
     await expect(persistSTImage('data:image/png;base64,QQ==', { fetch: service.fetchMock, getRequestHeaders: headers }))
       .rejects.toThrow('安全随机')
     expect(service.fetchMock).not.toHaveBeenCalled()
   })
 
-  it('uses a unique physical path and verifies the exact uploaded bytes', async () => {
+  it('uses unique physical paths, maps raster MIME extensions, and verifies uploaded bytes', async () => {
     const service = memoryService()
-    const first = await persistSTImage('data:image/webp;base64,QUFB', {
-      fetch: service.fetchMock,
-      getRequestHeaders: headers,
-    })
-    const second = await persistSTImage('data:image/webp;base64,QkJC', {
-      fetch: service.fetchMock,
-      getRequestHeaders: headers,
-    })
-
+    const first = await persistSTImage('data:image/webp;base64,QUFB', { fetch: service.fetchMock, getRequestHeaders: headers })
+    const second = await persistSTImage('data:image/webp;base64,QkJC', { fetch: service.fetchMock, getRequestHeaders: headers })
     expect(second).not.toBe(first)
     expect(new TextDecoder().decode(service.disk.get(first))).toBe('AAA')
     expect(new TextDecoder().decode(service.disk.get(second))).toBe('BBB')
     expect(first).toMatch(/^\/user\/images\/sprite_overlay\/sprite_[0-9a-f]{32}\.webp$/)
+
+    for (const [ext, dataUri] of [['png', 'data:image/png;base64,AA=='], ['jpg', 'data:image/jpeg;base64,AA=='], ['gif', 'data:image/gif;base64,AA==']] as const) {
+      const saved = await persistSTImage(dataUri, { fetch: service.fetchMock, getRequestHeaders: headers })
+      expect(saved.endsWith(`.${ext}`)).toBe(true)
+    }
   })
 
-  it.each([
-    ['png', 'data:image/png;base64,AA=='],
-    ['jpeg', 'data:image/jpeg;base64,AA=='],
-    ['gif', 'data:image/gif;base64,AA=='],
-  ])('derives the extension from the %s MIME type', async (_name, dataUri) => {
-    const service = memoryService()
-    const path = await persistSTImage(dataUri, { fetch: service.fetchMock, getRequestHeaders: headers })
-    expect(path.endsWith(`.${_name === 'jpeg' ? 'jpg' : _name}`)).toBe(true)
+  it('rejects upload, path-traversal, readback, and format failures without falling back to the data URI', async () => {
+    const cases = [
+      { postStatus: 413 },
+      { postStatus: 500 },
+      { postError: new Error('offline') },
+      { responsePath: () => 'https://example.test/a.png' },
+      { responsePath: (name: string, format: string) => `/user/images/other/${name}.${format}` },
+      { responsePath: (name: string, format: string) => `/user/images/sprite_overlay/../${name}.${format}` },
+      { readStatus: 404 },
+      { readError: new Error('read offline') },
+      { readBytes: Uint8Array.from([9, 9]) },
+    ]
+    for (const options of cases) {
+      const service = memoryService(options)
+      await expect(persistSTImage('data:image/png;base64,QUJD', { fetch: service.fetchMock, getRequestHeaders: headers })).rejects.toBeTruthy()
+    }
+
+    const clean = memoryService()
+    await expect(persistSTImage('data:image/tiff;base64,QQ==', { fetch: clean.fetchMock, getRequestHeaders: headers })).rejects.toThrow('不支持的图片格式')
+    await expect(persistSTImage('data:image/svg+xml;base64,PHN2Zy8+', { fetch: clean.fetchMock, getRequestHeaders: headers })).rejects.toThrow('不支持的图片格式')
+    await expect(persistSTImage('data:image/png;base64,not-base64', { fetch: clean.fetchMock, getRequestHeaders: headers })).rejects.toThrow('图片数据格式不正确')
+    expect(clean.fetchMock).not.toHaveBeenCalled()
   })
 
-  it.each([
-    ['missing headers', { getRequestHeaders: undefined }],
-    ['empty headers', { getRequestHeaders: () => ({}) }],
-  ])('rejects before POST when %s', async (_name, deps) => {
-    const service = memoryService()
-    await expect(persistSTImage('data:image/png;base64,AA==', {
-      fetch: service.fetchMock,
-      getRequestHeaders: deps.getRequestHeaders,
-    })).rejects.toThrow('请求头能力')
-    expect(service.fetchMock).not.toHaveBeenCalled()
-  })
-
-  it.each([
-    ['413', { postStatus: 413 }],
-    ['500', { postStatus: 500 }],
-    ['network error', { postError: new Error('offline') }],
-    ['invalid response object', { responsePath: () => 'https://example.test/a.png' }],
-    ['wrong directory', { responsePath: (name: string, format: string) => `/user/images/other/${name}.${format}` }],
-    ['path traversal', { responsePath: (name: string, format: string) => `/user/images/sprite_overlay/../${name}.${format}` }],
-    ['read 404', { readStatus: 404 }],
-    ['read network error', { readError: new Error('read offline') }],
-    ['read mismatch', { readBytes: Uint8Array.from([9, 9]) }],
-  ] as const)('rejects %s and never returns the data URI', async (_name, options) => {
-    const service = memoryService(options)
-    const result = persistSTImage('data:image/png;base64,QUJD', { fetch: service.fetchMock, getRequestHeaders: headers })
-    await expect(result).rejects.toBeTruthy()
-  })
-
-  it('rejects malformed and unsupported image data without a fallback', async () => {
-    const service = memoryService()
-    await expect(persistSTImage('data:image/tiff;base64,QQ==', { fetch: service.fetchMock, getRequestHeaders: headers }))
-      .rejects.toThrow('不支持的图片格式')
-    await expect(persistSTImage('data:image/png;base64,not-base64', { fetch: service.fetchMock, getRequestHeaders: headers }))
-      .rejects.toThrow('图片数据格式不正确')
-    expect(service.fetchMock).not.toHaveBeenCalled()
-  })
-
-  it('aborts a hung POST and a hung read at the save timeout', async () => {
+  it('aborts hung requests at timeout and honors caller cancellation', async () => {
     vi.useFakeTimers()
-    const post = memoryService({ neverResolvePost: true })
-    const postPromise = persistSTImage('data:image/png;base64,AA==', { fetch: post.fetchMock, getRequestHeaders: headers })
-    const postRejected = expect(postPromise).rejects.toBeTruthy()
-    await vi.advanceTimersByTimeAsync(ST_IMAGE_SAVE_TIMEOUT_MS)
-    await postRejected
+    for (const hung of [{ neverResolvePost: true }, { neverResolveRead: true }]) {
+      const service = memoryService(hung)
+      const promise = persistSTImage('data:image/png;base64,AA==', { fetch: service.fetchMock, getRequestHeaders: headers })
+      const rejected = expect(promise).rejects.toBeTruthy()
+      await vi.advanceTimersByTimeAsync(ST_IMAGE_SAVE_TIMEOUT_MS)
+      await rejected
+    }
 
-    const read = memoryService({ neverResolveRead: true })
-    const readPromise = persistSTImage('data:image/png;base64,AA==', { fetch: read.fetchMock, getRequestHeaders: headers })
-    const readRejected = expect(readPromise).rejects.toBeTruthy()
-    await vi.advanceTimersByTimeAsync(ST_IMAGE_SAVE_TIMEOUT_MS)
-    await readRejected
-  })
-
-  it('honors caller cancellation', async () => {
+    vi.useRealTimers()
     const service = memoryService({ neverResolvePost: true })
     const controller = new AbortController()
-    const promise = persistSTImage('data:image/png;base64,AA==', {
-      fetch: service.fetchMock,
-      getRequestHeaders: headers,
-    }, { signal: controller.signal })
-    controller.abort()
+    const promise = persistSTImage('data:image/png;base64,AA==', { fetch: service.fetchMock, getRequestHeaders: headers }, { signal: controller.signal })
+    controller.abort(new DOMException('cancelled', 'AbortError'))
     await expect(promise).rejects.toBeTruthy()
   })
 })

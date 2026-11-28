@@ -51,8 +51,12 @@ export async function localizeSprite(
   if (blob.size > LOCALIZE_MAX_BYTES) {
     throw new Error(t('galleryErrors.size_limit', '远程图片过大，不能超过 {{limit}}', { limit: formatLimit() }))
   }
-  if (!blob.type.startsWith('image/')) {
+  const normalizedMime = blob.type.split(';', 1)[0].trim().toLowerCase()
+  if (!normalizedMime.startsWith('image/')) {
     throw new Error(t('galleryErrors.not_image', '远程地址没有返回图片'))
+  }
+  if (normalizedMime === 'image/svg+xml' || normalizedMime.startsWith('image/svg')) {
+    throw new Error(t('storage.errors.image_format', '不支持的图片格式，请转换为 PNG、WebP 或 GIF 后重试'))
   }
 
   let compressed: CompressResult

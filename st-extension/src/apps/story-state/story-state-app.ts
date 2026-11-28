@@ -5,7 +5,7 @@ import { createComposerBridge } from '../renderer/composer'
 import { getStoryAiConfig, renderStoryAiSetupCard } from '../shared/story-ai'
 import { safeRandomId } from '../shared/safe-runtime'
 import { clearAppBadge, consumeAppDeepLink, emitStoryEvent, requestOpenApp } from '../shared/story-events'
-import { storyIdentity } from '../wechat/memory'
+import { isStorySwitchedError, storyIdentity } from '../shared/chat-metadata'
 import {
   formatIsoDateFromTime,
   formatTime,
@@ -496,7 +496,7 @@ export function createStoryStateApp(): PhoneApp {
       }
 
       async function load() {
-        const request = ++loadId
+        const request = ++loadId, key = storyIdentity(ctx)
         if (snapshot?.key !== storyIdentity(ctx)) { snapshot = undefined; render() }
         try {
           const next = await readStoryState(ctx)
@@ -505,7 +505,7 @@ export function createStoryStateApp(): PhoneApp {
           loadError = ''
         } catch (error) {
           if (!alive || request !== loadId) return
-          loadError = (error as Error).message
+          if (key !== storyIdentity(ctx) || isStorySwitchedError(error)) { void load(); return }; loadError = (error as Error).message
         }
         render()
       }

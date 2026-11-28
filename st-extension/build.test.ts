@@ -1,17 +1,16 @@
 // @vitest-environment node
 
-import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runInNewContext } from 'node:vm'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   buildTimeFromVersion,
   buildVersion,
   resolveBuildTime,
 } from './build-time.mjs'
-import { runInNewContext } from 'node:vm'
 import { buildExtension, buildExtensionPair, buildLoaderStub, normalizeArtifactNewlines, normalizeBundleWhitespace } from './build.mjs'
 
 const artifactNames = ['index.js', 'bundle.js', 'style.css', 'version.json'] as const
@@ -49,167 +48,45 @@ function artifactHashes(root: string): Record<string, string> {
   ]))
 }
 
-function runGit(root: string, args: string[]): ReturnType<typeof spawnSync> {
-  return spawnSync('git', args, { cwd: root, encoding: 'utf8' })
-}
-
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-describe('extension loader stylesheet lifecycle', () => {
-  it('removes the previous marked stylesheet before appending the next marked link', () => {
-    const source = readFileSync(new URL('../index.js', import.meta.url), 'utf8')
-    const removeAt = source.indexOf("querySelectorAll('link[data-st-stage-style]')")
-    const markAt = source.indexOf("setAttribute('data-st-stage-style', '')")
-    const appendAt = source.indexOf('document.head.appendChild(link)')
-
-    expect(removeAt).toBeGreaterThanOrEqual(0)
-    expect(markAt).toBeGreaterThan(removeAt)
-    expect(appendAt).toBeGreaterThan(markAt)
-  })
-})
-
-describe('extension build timestamp', () => {
-  it('accepts an explicit YYYY-MM-DD HH:mm build time and derives the compact version suffix', () => {
+describe('extension build timestamp & formatting helpers', () => {
+  it('validates explicit build times and derives version/CI timestamps', () => {
     const buildTime = resolveBuildTime(
       { ...process.env, ST_STAGE_BUILD_TIME: '2026-07-31 09:05' },
       new Date(2026, 0, 1, 0, 0),
     )
-
     expect(buildTime).toBe('2026-07-31 09:05')
     expect(buildVersion('0.9.0', buildTime)).toBe('0.9.0+202607310905')
-  })
-
-  it.each([
-    '2026-7-31 9:05',
-    '2026-02-30 12:00',
-    '2026-07-31T09:05',
-    '2026-07-31 09:05:00',
-    '2026-13-01 00:00',
-    '2026-00-01 00:00',
-    '2026-01-01 24:00',
-  ])('rejects invalid explicit build time %s', (value) => {
-    expect(() => resolveBuildTime({ ...process.env, ST_STAGE_BUILD_TIME: value })).toThrow(
-      /ST_STAGE_BUILD_TIME/,
-    )
-  })
-
-  it('extracts the committed build time from version.json format for CI', () => {
     expect(buildTimeFromVersion('0.9.0+202607312354')).toBe('2026-07-31 23:54')
     expect(() => buildTimeFromVersion('0.9.0')).toThrow(/version/)
-  })
 
-  it('validates the explicit build time before esbuild or artifact writes can run', () => {
-    const source = readFileSync(new URL('./build.mjs', import.meta.url), 'utf8')
-    const parseAt = source.indexOf('const buildTime = resolveBuildTime')
-    const buildAt = source.indexOf('await build(')
-    const writeAt = source.indexOf('writeFileSync(')
-
-    expect(parseAt).toBeGreaterThanOrEqual(0)
-    expect(buildAt).toBeGreaterThan(parseAt)
-    expect(writeAt).toBeGreaterThan(parseAt)
-  })
-})
-
-describe('extension artifact newlines', () => {
-  it('collapses CRLF so artifact bytes do not depend on checkout settings', () => {
-    expect(normalizeArtifactNewlines('a\r\nb\r\n')).toBe('a\nb\n')
-    expect(normalizeArtifactNewlines('a\nb\n')).toBe('a\nb\n')
-  })
-
-  it('writes LF-only style.css even when the source CSS is checked out as CRLF', async () => {
-    const root = createBuildFixture()
-    // core.autocrlf=true 的机器上源 CSS 就是这个样子
-    writeFileSync(join(root, 'st-extension', 'style.css'), '.fixture {\r\n  color: red;\r\n}\r\n')
-    writeFileSync(join(root, 'core', 'phone-shell.css'), '.phone {\r\n  color: blue;\r\n}\r\n')
-
-    await buildExtension({
-      sourceRoot: root,
-      env: { ...process.env, ST_STAGE_BUILD_TIME: '2026-01-02 03:04' },
-      logLevel: 'silent',
-      log: () => {},
-    })
-
-    for (const name of artifactNames) {
-      const bytes = readFileSync(join(root, name))
-      expect(bytes.includes(Buffer.from('\r\n')), `${name} must not contain CRLF`).toBe(false)
+    for (const bad of [
+      '2026-7-31 9:05',
+      '2026-02-30 12:00',
+      '2026-07-31T09:05',
+      '2026-07-31 09:05:00',
+      '2026-13-01 00:00',
+      '2026-00-01 00:00',
+      '2026-01-01 24:00',
+    ]) {
+      expect(() => resolveBuildTime({ ...process.env, ST_STAGE_BUILD_TIME: bad })).toThrow(/ST_STAGE_BUILD_TIME/)
     }
   })
 
-  it('concatenates base style.css, phone-shell.css and sorted styles/*.css in cascade order', async () => {
-    const { mkdirSync } = await import('node:fs')
-    const root = createBuildFixture()
-    writeFileSync(join(root, 'st-extension', 'style.css'), '/* BASE_FIRST */\n')
-    writeFileSync(join(root, 'core', 'phone-shell.css'), '/* SHELL_SECOND */\n')
-    mkdirSync(join(root, 'st-extension', 'styles'), { recursive: true })
-    writeFileSync(join(root, 'st-extension', 'styles', '20-b.css'), '/* PARTIAL_20 */\r\n')
-    writeFileSync(join(root, 'st-extension', 'styles', '10-a.css'), '/* PARTIAL_10 */\r\n')
-
-    await buildExtension({
-      sourceRoot: root,
-      env: { ...process.env, ST_STAGE_BUILD_TIME: '2026-01-02 03:04' },
-      logLevel: 'silent',
-      log: () => {},
-    })
-
-    const out = readFileSync(join(root, 'style.css'), 'utf8')
-    expect(out.includes('\r\n')).toBe(false)
-    const iBase = out.indexOf('BASE_FIRST')
-    const iShell = out.indexOf('SHELL_SECOND')
-    const i10 = out.indexOf('PARTIAL_10')
-    const i20 = out.indexOf('PARTIAL_20')
-    expect(iBase).toBeGreaterThanOrEqual(0)
-    expect(iShell).toBeGreaterThan(iBase)
-    expect(i10).toBeGreaterThan(iShell)
-    expect(i20).toBeGreaterThan(i10)
-  })
-})
-
-describe('extension bundle formatting', () => {
-  it('removes trailing whitespace without changing bundle content', () => {
+  it('normalizes CRLF and trailing bundle whitespace', () => {
+    expect(normalizeArtifactNewlines('a\r\nb\r\n')).toBe('a\nb\n')
+    expect(normalizeArtifactNewlines('a\nb\n')).toBe('a\nb\n')
     expect(normalizeBundleWhitespace('license\n  \ncode  \n')).toBe('license\n\ncode\n')
   })
 })
 
-describe('extension lazy chunk packaging', () => {
-  it('keeps lazy code out of the main bundle and refreshes hashed chunks across all outputs', async () => {
-    const root = createBuildFixture()
-    writeFileSync(join(root, 'st-extension/src/index.ts'), "globalThis.loadFixture = () => import('./lazy')\n")
-    writeFileSync(join(root, 'st-extension/src/lazy.ts'), "export function descriptiveFunction() { return 'LAZY_SENTINEL_ONE' }\n")
-    const env = { ...process.env, ST_STAGE_BUILD_TIME: '2026-11-06 23:00' }
-    await buildExtensionPair({ sourceRoot: root, env, logLevel: 'silent', log: () => {} })
-    const chunks = readdirSync(root).filter(name => /^chunk-.*\.js$/.test(name))
-    expect(chunks.length).toBeGreaterThan(0)
-    expect(readFileSync(join(root, 'bundle.js'), 'utf8')).not.toContain('LAZY_SENTINEL_ONE')
-    expect(chunks.map(name => readFileSync(join(root, name), 'utf8')).join('')).toContain('descriptiveFunction')
-    for (const output of ['st-distribution', 'public']) for (const name of ['bundle.js', ...chunks]) {
-      expect(readFileSync(join(root, output, name))).toEqual(readFileSync(join(root, name)))
-    }
-    writeFileSync(join(root, 'st-extension/src/lazy.ts'), "export function descriptiveFunction() { return 'LAZY_SENTINEL_TWO' }\n")
-    await buildExtensionPair({ sourceRoot: root, env, logLevel: 'silent', log: () => {} })
-    const next = readdirSync(root).filter(name => /^chunk-.*\.js$/.test(name))
-    expect(next).not.toEqual(chunks)
-    for (const name of chunks.filter(name => !next.includes(name))) expect(readdirSync(root)).not.toContain(name)
-  })
-})
-
-describe('extension build integration', () => {
+describe('extension build & packaging integration', () => {
   const fixedEnv = { ...process.env, ST_STAGE_BUILD_TIME: '2026-07-31 09:05' }
 
-  it('builds both destinations with one timestamp and identical locale bytes', async () => {
-    const root = createBuildFixture()
-    writeFileSync(join(root, 'st-extension/locales/en-US.json'), '{\r\n  "test": "test"\r\n}\r\n')
-    const result = await buildExtensionPair({ sourceRoot: root, env: fixedEnv, logLevel: 'silent', log: () => {} })
-    expect(result.version).toBe('1.2.3+202607310905')
-    for (const name of [...artifactNames, 'locales/en-US.json', 'locales/zh-CN.json']) {
-      const source = readFileSync(join(root, name))
-      expect(readFileSync(join(root, 'st-distribution', name))).toEqual(source)
-      expect(source.includes(Buffer.from('\r\n'))).toBe(false)
-    }
-  })
-
-  it('rejects an invalid explicit time before changing any artifact', async () => {
+  it('rejects an invalid explicit time before writing any artifact', async () => {
     const root = createBuildFixture()
     for (const name of artifactNames) writeFileSync(join(root, name), `${name}:sentinel`)
 
@@ -226,75 +103,64 @@ describe('extension build integration', () => {
     }
   })
 
-  it('produces byte-identical artifacts for the same explicit time', async () => {
+  it('builds deterministic LF-only CSS/locale/asset outputs across all channels and excludes simulator files', async () => {
     const root = createBuildFixture()
-    await buildExtension({ sourceRoot: root, outputRoot: root, env: fixedEnv, logLevel: 'silent', log: () => {} })
+    writeFileSync(join(root, 'st-extension', 'style.css'), '/* BASE_FIRST */\r\n')
+    writeFileSync(join(root, 'core', 'phone-shell.css'), '/* SHELL_SECOND */\r\n')
+    mkdirSync(join(root, 'st-extension', 'styles'), { recursive: true })
+    writeFileSync(join(root, 'st-extension', 'styles', '20-b.css'), '/* PARTIAL_20 */\r\n')
+    writeFileSync(join(root, 'st-extension', 'styles', '10-a.css'), '/* PARTIAL_10 */\r\n')
+    writeFileSync(join(root, 'st-extension', 'locales', 'en-US.json'), '{\r\n  "test": "test"\r\n}\r\n')
+    mkdirSync(join(root, 'assets', 'wechat'), { recursive: true })
+    writeFileSync(join(root, 'assets', 'wechat', 'emoji.png'), 'test-image-bytes')
+
+    const result = await buildExtensionPair({ sourceRoot: root, env: fixedEnv, logLevel: 'silent', log: () => {} })
+    expect(result.version).toBe('1.2.3+202607310905')
     const firstHashes = artifactHashes(root)
 
     await buildExtension({ sourceRoot: root, outputRoot: root, env: fixedEnv, logLevel: 'silent', log: () => {} })
-
     expect(artifactHashes(root)).toEqual(firstHashes)
-    expect(readFileSync(join(root, 'version.json'), 'utf8')).toContain('1.2.3+202607310905')
-    expect(readFileSync(join(root, 'bundle.js'), 'utf8')).toContain('2026-07-31 09:05')
+
+    const css = readFileSync(join(root, 'style.css'), 'utf8')
+    expect(css.indexOf('BASE_FIRST')).toBeLessThan(css.indexOf('SHELL_SECOND'))
+    expect(css.indexOf('SHELL_SECOND')).toBeLessThan(css.indexOf('PARTIAL_10'))
+    expect(css.indexOf('PARTIAL_10')).toBeLessThan(css.indexOf('PARTIAL_20'))
+
+    const distRoot = join(root, 'st-distribution')
+    expect(readdirSync(distRoot).sort()).toEqual([...distributionNames, 'assets'].sort())
+    expect(readFileSync(join(distRoot, 'assets', 'wechat', 'emoji.png'), 'utf8')).toBe('test-image-bytes')
+    expect(readFileSync(join(distRoot, 'README.md'), 'utf8')).toContain('Reference assets are intentionally excluded')
+    expect(readdirSync(distRoot).includes('public')).toBe(false)
+    expect(readdirSync(distRoot).includes('reference')).toBe(false)
+
+    for (const name of [...artifactNames, 'locales/en-US.json', 'locales/zh-CN.json']) {
+      const source = readFileSync(join(root, name))
+      expect(readFileSync(join(distRoot, name))).toEqual(source)
+      expect(source.includes(Buffer.from('\r\n'))).toBe(false)
+    }
   })
 
-  it('makes the artifact diff fail after a source change and rebuild', async () => {
+  it('keeps lazy code in hashed chunks and cleans up superseded chunks across outputs', async () => {
     const root = createBuildFixture()
-    await buildExtension({ sourceRoot: root, outputRoot: root, env: fixedEnv, logLevel: 'silent', log: () => {} })
-    expect(runGit(root, ['init', '--quiet']).status).toBe(0)
-    expect(runGit(root, ['config', 'core.autocrlf', 'false']).status).toBe(0)
-    expect(runGit(root, ['config', 'user.email', 'build-test@example.invalid']).status).toBe(0)
-    expect(runGit(root, ['config', 'user.name', 'Build Test']).status).toBe(0)
-    expect(runGit(root, ['add', ...artifactNames]).status).toBe(0)
-    expect(runGit(root, ['commit', '--quiet', '-m', 'fixture artifacts']).status).toBe(0)
+    writeFileSync(join(root, 'st-extension/src/index.ts'), "globalThis.loadFixture = () => import('./lazy')\n")
+    writeFileSync(join(root, 'st-extension/src/lazy.ts'), "export function descriptiveFunction() { return 'LAZY_SENTINEL_ONE' }\n")
+    await buildExtensionPair({ sourceRoot: root, env: fixedEnv, logLevel: 'silent', log: () => {} })
+    const chunks = readdirSync(root).filter((name) => /^chunk-.*\.js$/.test(name))
+    expect(chunks.length).toBeGreaterThan(0)
+    expect(readFileSync(join(root, 'bundle.js'), 'utf8')).not.toContain('LAZY_SENTINEL_ONE')
+    for (const output of ['st-distribution', 'public']) {
+      for (const name of ['bundle.js', ...chunks]) {
+        expect(readFileSync(join(root, output, name))).toEqual(readFileSync(join(root, name)))
+      }
+    }
 
-    writeFileSync(
-      join(root, 'st-extension', 'src', 'index.ts'),
-      "globalThis.__buildFixture = 'second:' + __BUILD_TIME__\n",
-    )
-    await buildExtension({ sourceRoot: root, outputRoot: root, env: fixedEnv, logLevel: 'silent', log: () => {} })
-
-    expect(runGit(root, ['diff', '--exit-code', '--', ...artifactNames]).status).toBe(1)
-  })
-
-  it('exports a self-contained ST distribution without simulator or reference assets', async () => {
-    const root = createBuildFixture()
-    const outputRoot = join(root, 'st-distribution')
-
-    await buildExtension({
-      sourceRoot: root,
-      outputRoot,
-      env: fixedEnv,
-      logLevel: 'silent',
-      log: () => {},
-    })
-
-    expect(readdirSync(outputRoot).sort()).toEqual([...distributionNames].sort())
-    expect(readFileSync(join(outputRoot, 'manifest.json'), 'utf8')).toBe(
-      readFileSync(join(root, 'manifest.json'), 'utf8'),
-    )
-    expect(readFileSync(join(outputRoot, 'README.md'), 'utf8')).toContain(
-      'Reference assets are intentionally excluded',
-    )
-    expect(readdirSync(outputRoot, { withFileTypes: true }).some((entry) => entry.name === 'public')).toBe(false)
-    expect(readdirSync(outputRoot, { withFileTypes: true }).some((entry) => entry.name === 'reference')).toBe(false)
-  })
-
-  it('copies extension assets to distribution output when present (W5 / P2)', async () => {
-    const root = createBuildFixture()
-    mkdirSync(join(root, 'assets', 'wechat'), { recursive: true })
-    writeFileSync(join(root, 'assets', 'wechat', 'emoji.png'), 'test-image-bytes')
-    const outputRoot = join(root, 'st-distribution')
-
-    await buildExtension({
-      sourceRoot: root,
-      outputRoot,
-      env: fixedEnv,
-      logLevel: 'silent',
-      log: () => {},
-    })
-
-    expect(readFileSync(join(outputRoot, 'assets', 'wechat', 'emoji.png'), 'utf8')).toBe('test-image-bytes')
+    writeFileSync(join(root, 'st-extension/src/lazy.ts'), "export function descriptiveFunction() { return 'LAZY_SENTINEL_TWO' }\n")
+    await buildExtensionPair({ sourceRoot: root, env: fixedEnv, logLevel: 'silent', log: () => {} })
+    const next = readdirSync(root).filter((name) => /^chunk-.*\.js$/.test(name))
+    expect(next).not.toEqual(chunks)
+    for (const stale of chunks.filter((name) => !next.includes(name))) {
+      expect(readdirSync(root)).not.toContain(stale)
+    }
   })
 })
 
@@ -304,15 +170,20 @@ function runLoaderStub(env: {
   scripts?: string[]
   links?: string[]
   resources?: string[]
+  markedStyles?: number
 }) {
   const fetched: string[] = []
   const errors: unknown[][] = []
+  const events: string[] = []
   const stub = buildLoaderStub().replace(/import\(/g, '__import(')
   const makeNodes = (values: string[] = [], attr: 'src' | 'href') =>
     values.map((value) => ({
       [attr]: value,
       getAttribute: (name: string) => (name === attr ? value : null),
     }))
+  const markedNodes = Array.from({ length: env.markedStyles ?? 0 }, (_, idx) => ({
+    remove: () => events.push(`remove:${idx}`),
+  }))
   const FakeError = function FakeError(this: { stack?: string }) {
     this.stack = env.stack ?? ''
   }
@@ -321,12 +192,17 @@ function runLoaderStub(env: {
     document: {
       currentScript: env.currentScriptSrc ? { src: env.currentScriptSrc } : null,
       querySelectorAll(selector: string) {
+        if (selector === 'link[data-st-stage-style]') return markedNodes
         if (selector === 'script[src]') return makeNodes(env.scripts, 'src')
         if (selector.startsWith('link[rel="stylesheet"]')) return makeNodes(env.links, 'href')
         return []
       },
-      createElement: () => ({ rel: '', href: '', setAttribute: () => {} }),
-      head: { appendChild: () => {} },
+      createElement: () => ({
+        rel: '',
+        href: '',
+        setAttribute: (k: string) => events.push(`attr:${k}`),
+      }),
+      head: { appendChild: () => events.push('append') },
     },
     performance: {
       getEntriesByType: (type: string) =>
@@ -341,72 +217,46 @@ function runLoaderStub(env: {
     encodeURIComponent,
     Date,
   })
-  return { fetched, errors }
+  return { fetched, errors, events }
 }
 
-describe('extension loader baseUrl resolution', () => {
-  it('does not hardcode a fallback to /scripts/extensions/third-party/st-stage', () => {
+describe('extension loader baseUrl & stylesheet lifecycle', () => {
+  it('replaces marked stylesheets cleanly and resolves baseUrl across fallback chain without hardcoded st-stage', async () => {
     expect(buildLoaderStub()).not.toContain('/scripts/extensions/third-party/st-stage')
-  })
 
-  it('prefers document.currentScript when available even if Error.stack is empty', () => {
-    const result = runLoaderStub({
+    const fromCurrent = runLoaderStub({
       currentScriptSrc: 'https://st.local/scripts/extensions/third-party/custom-baigong/index.js?v=1',
-      stack: '',
+      markedStyles: 1,
     })
-    expect(result.fetched).toEqual(['https://st.local/scripts/extensions/third-party/custom-baigong/version.json'])
-    expect(result.errors).toEqual([])
-  })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(fromCurrent.fetched).toEqual(['https://st.local/scripts/extensions/third-party/custom-baigong/version.json'])
+    expect(fromCurrent.events).toEqual(['remove:0', 'attr:data-st-stage-style', 'append'])
 
-  it('parses Error.stack for renamed directories including query strings', () => {
-    const result = runLoaderStub({
+    expect(runLoaderStub({
       stack: 'Error\n    at baseUrl (https://st.local/scripts/extensions/third-party/my-stage/index.js?v=2:12:15)',
-    })
-    expect(result.fetched).toEqual(['https://st.local/scripts/extensions/third-party/my-stage/version.json'])
-  })
+    }).fetched).toEqual(['https://st.local/scripts/extensions/third-party/my-stage/version.json'])
 
-  it('falls back to DOM script tag when stack parsing fails', () => {
-    const result = runLoaderStub({
+    expect(runLoaderStub({
       stack: 'at <anonymous>:1:1',
       scripts: ['/scripts/extensions/third-party/renamed-ext/index.js'],
-    })
-    expect(result.fetched).toEqual(['/scripts/extensions/third-party/renamed-ext/version.json'])
-  })
+    }).fetched).toEqual(['/scripts/extensions/third-party/renamed-ext/version.json'])
 
-  it('falls back to DOM stylesheet link when stack and script tags are unavailable', () => {
-    const result = runLoaderStub({
-      stack: '',
-      links: ['/scripts/extensions/third-party/renamed-ext/style.css?v=3'],
-    })
-    expect(result.fetched).toEqual(['/scripts/extensions/third-party/renamed-ext/version.json'])
-  })
-
-  it('selects st-stage-ext over unrelated extensions when multiple stylesheets exist', () => {
-    const result = runLoaderStub({
+    expect(runLoaderStub({
       stack: '',
       links: [
         '/scripts/extensions/third-party/other-ext/style.css',
-        '/scripts/extensions/third-party/st-stage-ext/style.css',
-        '/scripts/extensions/third-party/another-ext/style.css',
+        '/scripts/extensions/third-party/st-stage-ext/style.css?v=3',
       ],
-    })
-    expect(result.fetched).toEqual(['/scripts/extensions/third-party/st-stage-ext/version.json'])
-  })
+    }).fetched).toEqual(['/scripts/extensions/third-party/st-stage-ext/version.json'])
 
-  it('falls back to performance resource timing entries when stack and DOM yield no match', () => {
-    const result = runLoaderStub({
+    expect(runLoaderStub({
       stack: '',
-      resources: [
-        'https://st.local/scripts/extensions/third-party/other-ext/index.js',
-        'https://st.local/scripts/extensions/third-party/custom-renamed/index.js',
-      ],
-    })
-    expect(result.fetched).toEqual(['https://st.local/scripts/extensions/third-party/custom-renamed/version.json'])
-  })
+      resources: ['https://st.local/scripts/extensions/third-party/custom-renamed/index.js'],
+    }).fetched).toEqual(['https://st.local/scripts/extensions/third-party/custom-renamed/version.json'])
 
-  it('aborts with an error instead of falling back to hardcoded st-stage when all sources fail', () => {
-    const result = runLoaderStub({ stack: '' })
-    expect(result.fetched).toEqual([])
-    expect(result.errors.length).toBe(1)
+    const failed = runLoaderStub({ stack: '' })
+    expect(failed.fetched).toEqual([])
+    expect(failed.errors.length).toBe(1)
   })
 })

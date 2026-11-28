@@ -4,7 +4,7 @@ import { applyProfile, fetchModels, getApiHostContext, readConnection } from './
 import type { ApiProfile } from './core'
 
 const profile = (over: Partial<ApiProfile> = {}): ApiProfile => ({ version: 2, id: 'p', name: '自定义', mainApi: 'openai', source: 'custom', url: 'https://example.com/v1', key: 'secret', secretId: 'sid', secretMode: 'stored', model: 'model-a', settings: { custom_include_body: 'top_k: 20' }, ...over })
-const response = (ok: boolean, body: unknown = {}): Response => ({ ok, status: ok ? 200 : 401, json: async () => body }) as Response
+const response = (ok: boolean, body: unknown = {}, status = ok ? 200 : 401): Response => ({ ok, status, json: async () => body }) as Response
 
 function installST(settings: Record<string, unknown> = {}): Record<string, unknown> {
   const context = { mainApi: 'openai', onlineStatus: 'connected', chatCompletionSettings: { chat_completion_source: 'custom', custom_url: 'https://old/v1', custom_model: 'old', ...settings }, getRequestHeaders: () => ({ 'Content-Type': 'application/json' }), saveSettingsDebounced: vi.fn() }
@@ -46,15 +46,17 @@ describe('SillyTavern bridge', () => {
     expect(calls.filter((url) => url.includes('/api/secrets/write'))).toHaveLength(1)
   })
 
-  it('writes key, URL, model and settings before connecting', async () => {
+  it('writes key, URL, model and settings before connecting without leaving plaintext in #api_key_*', async () => {
     const settings = installST(); const clicked = vi.fn(); document.querySelector('#api_button_openai')?.addEventListener('click', clicked)
+    ;(document.querySelector('#api_key_custom') as HTMLInputElement).value = 'stale-dom-key'
     const calls: string[] = []
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => { calls.push(`${input}:${String(init?.body)}`); return response(true) }))
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => { calls.push(`${input}:${String(init?.body)}`); return response(true, { id: 'new-id' }) }))
     await applyProfile(profile())
     expect(calls[0]).toContain('/api/secrets/write')
     expect(calls[0]).toContain('"id":"sid"')
     expect(settings).toMatchObject({ custom_url: 'https://example.com/v1', custom_model: 'model-a', custom_include_body: 'top_k: 20' })
     expect((document.querySelector('#custom_api_url_text') as HTMLInputElement).value).toBe('https://example.com/v1')
+    expect((document.querySelector('#api_key_custom') as HTMLInputElement).value).toBe('')
     expect(clicked).toHaveBeenCalledOnce()
     await expect(readConnection()).resolves.toMatchObject({ model: 'model-a', online: true })
   })
@@ -64,19 +66,24 @@ describe('SillyTavern bridge', () => {
     ['claude', 'claude_model', 'model_claude_select', 'api_key_claude'],
     ['openrouter', 'openrouter_model', 'model_openrouter_select', 'api_key_openrouter'],
     ['makersuite', 'google_model', 'model_google_select', 'api_key_makersuite'],
-  ])('writes the %s key and model through its native ST fields', async (source, modelField, modelSelector, secretKey) => {
+    ['deepseek', 'deepseek_model', 'model_deepseek_select', 'api_key_deepseek'],
+    ['groq', 'groq_model', 'model_groq_select', 'api_key_groq'],
+    ['mistralai', 'mistralai_model', 'model_mistralai_select', 'api_key_mistralai'],
+    ['cohere', 'cohere_model', 'model_cohere_select', 'api_key_cohere'],
+    ['xai', 'xai_model', 'model_xai_select', 'api_key_xai'],
+  ])('writes the %s key to backend secrets and clears DOM input so ST connect never double-writes', async (source, modelField, modelSelector, secretKey) => {
     const settings = installST({ chat_completion_source: source, [modelField]: 'old' })
     document.body.innerHTML = [
       '<select id="main_api"><option value="openai">openai</option></select>',
       `<select id="chat_completion_source"><option value="${source}">${source}</option></select>`,
       `<select id="${modelSelector}"><option value="model-next">model-next</option></select>`,
-      `<input id="${secretKey}">`,
+      `<input id="${secretKey}" value="dirty">`,
       '<button id="api_button_openai"></button>',
     ].join('')
     const writes: string[] = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input).endsWith('/write')) writes.push(String(init?.body))
-      return response(true)
+      return response(true, { id: 'written-id' })
     }))
 
     await applyProfile(profile({ source, url: '', model: 'model-next', secretId: '' }))
@@ -84,7 +91,7 @@ describe('SillyTavern bridge', () => {
     expect(settings).toMatchObject({ chat_completion_source: source, [modelField]: 'model-next' })
     expect(writes[0]).toContain(`"key":"${secretKey}"`)
     expect(writes[0]).toContain('"value":"secret"')
-    expect((document.querySelector(`#${secretKey}`) as HTMLInputElement).value).toBe('secret')
+    expect((document.querySelector(`#${secretKey}`) as HTMLInputElement).value).toBe('')
   })
 
   it('connects once to load a delayed model option, then selects it and reconnects', async () => {
@@ -116,66 +123,84 @@ describe('SillyTavern bridge', () => {
     expect(bodies[1]).not.toContain('"id":"sid"')
   })
 
-  it('serializes custom model discovery and restores the current readable key', async () => {
-    installST(); const events: string[] = []
+  it('probes /models directly first even when ST secret slot is readable, keeping unsaved draft keys out of secrets.json', async () => {
+    installST()
+    const secretCalls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/secrets/')) { secretCalls.push(url); return response(true, { value: 'original' }) }
+      if (url === 'https://example.com/v1/models') return response(true, { data: [{ id: 'direct-first' }] })
+      return response(false, {}, 404)
+    }))
+    await expect(fetchModels(profile({ key: 'unsaved-draft-key' }))).resolves.toEqual(['direct-first'])
+    expect(secretCalls).toEqual([])
+  })
+
+  it('surfaces direct /models 401 and empty model errors immediately instead of masking them as key-slot warnings', async () => {
+    installST()
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === 'https://example.com/v1/models') {
+        return response(false, { error: { message: 'Invalid API key provided' } }, 401)
+      }
+      return response(false)
+    }))
+    await expect(fetchModels(profile({ key: 'bad-key' }))).rejects.toThrow('Invalid API key provided')
+  })
+
+  it('rotates back to active secret ID and deletes temporary secret ID when CORS forces fallback to /status', async () => {
+    installST()
+    const events: string[] = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).endsWith('/find')) return response(true, { value: 'original' })
-      const body = JSON.parse(String(init?.body)) as { value?: string; custom_url?: string }
-      if (String(input).endsWith('/write')) { events.push(`key:${body.value}`); return response(true) }
-      events.push(`status:${body.custom_url}`); return response(true, { data: [{ id: 'model-z' }] })
+      const url = String(input)
+      if (url === 'https://example.com/v1/models') throw new TypeError('CORS blocked')
+      if (url.endsWith('/api/secrets/read')) {
+        return response(true, { api_key_custom: [{ id: 'orig-uuid', active: true }] })
+      }
+      const body = init?.body ? JSON.parse(String(init.body)) as Record<string, string> : {}
+      if (url.endsWith('/api/secrets/write')) {
+        events.push(`write:${body.value}`)
+        return response(true, { id: 'temp-uuid' })
+      }
+      if (url.endsWith('/api/secrets/rotate')) {
+        events.push(`rotate:${body.id}`)
+        return response(true)
+      }
+      if (url.endsWith('/api/secrets/delete')) {
+        events.push(`delete:${body.id}`)
+        return response(true)
+      }
+      if (url.endsWith('/status')) {
+        events.push(`status:${body.custom_url}`)
+        return response(true, { data: [{ id: 'model-z' }] })
+      }
+      return response(false, {}, 404)
     }))
     await expect(fetchModels(profile({ key: 'temporary' }))).resolves.toEqual(['model-z'])
+    expect(events).toEqual([
+      'write:temporary',
+      'status:https://example.com/v1',
+      'rotate:orig-uuid',
+      'delete:temp-uuid',
+    ])
+  })
+
+  it('falls back to legacy /find + /write restoration when /api/secrets/read is unavailable', async () => {
+    installST(); const events: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === 'https://example.com/v1/models') throw new TypeError('CORS blocked')
+      if (url.endsWith('/read')) return response(false, {}, 404)
+      if (url.endsWith('/find')) return response(true, { value: 'original' })
+      const body = JSON.parse(String(init?.body)) as { value?: string; custom_url?: string }
+      if (url.endsWith('/write')) { events.push(`key:${body.value}`); return response(true, {}) }
+      events.push(`status:${body.custom_url}`); return response(true, { data: [{ id: 'model-legacy' }] })
+    }))
+    await expect(fetchModels(profile({ key: 'temporary' }))).resolves.toEqual(['model-legacy'])
     expect(events).toEqual(['key:temporary', 'status:https://example.com/v1', 'key:original'])
   })
 
   it('rejects model discovery for providers without model enumeration', async () => {
     installST()
     await expect(fetchModels(profile({ source: 'openai', url: '' }))).rejects.toThrow('不支持自动获取模型')
-  })
-
-  it('never overwrites live ST secret when /api/secrets/find is unavailable, probing /models directly instead', async () => {
-    installST()
-    const writes: string[] = []
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.endsWith('/find')) return response(false)
-      if (url.endsWith('/write')) { writes.push(String(init?.body)); return response(true) }
-      if (url === 'https://example.com/v1/models') return response(true, { data: [{ id: 'direct-model' }] })
-      return response(false)
-    }))
-    await expect(fetchModels(profile({ key: 'preview-only-key' }))).resolves.toEqual(['direct-model'])
-    expect(writes).toEqual([])
-  })
-
-  it('restores the target provider slot even when ST is currently connected to another provider, and skips write when target slot is empty', async () => {
-    installST({ chat_completion_source: 'openrouter' })
-    const writes: Array<{ key?: string; value?: string }> = []
-    let targetValue = 'existing-custom-secret'
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.endsWith('/find')) {
-        const req = JSON.parse(String(init?.body)) as { key?: string }
-        expect(req.key).toBe('api_key_custom')
-        return response(true, { value: targetValue })
-      }
-      if (url.endsWith('/write')) {
-        writes.push(JSON.parse(String(init?.body)) as { key?: string; value?: string })
-        return response(true)
-      }
-      if (url.endsWith('/status')) return response(true, { data: [{ id: 'custom-m1' }] })
-      if (url === 'https://example.com/v1/models') return response(true, { data: [{ id: 'empty-slot-m2' }] })
-      return response(false)
-    }))
-
-    await expect(fetchModels(profile({ source: 'custom', key: 'draft-custom' }))).resolves.toEqual(['custom-m1'])
-    expect(writes).toEqual([
-      { key: 'api_key_custom', value: 'draft-custom', id: 'sid' },
-      { key: 'api_key_custom', value: 'existing-custom-secret', id: 'sid' },
-    ])
-
-    writes.length = 0
-    targetValue = ''
-    await expect(fetchModels(profile({ source: 'custom', key: 'draft-on-empty' }))).resolves.toEqual(['empty-slot-m2'])
-    expect(writes).toEqual([])
   })
 })

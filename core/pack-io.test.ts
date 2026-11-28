@@ -261,3 +261,47 @@ describe('inventoryPrompt JSON roundtrip', () => {
     expect(importPack(JSON.stringify(exported)).inventoryPrompt).toBe(expected)
   })
 })
+
+
+describe('pack-io security boundaries', () => {
+  it('filters out SVG data URIs, dangerous protocols, protocol-relative URLs, and arbitrary non-image paths on import', () => {
+    const pack = importPack(JSON.stringify({
+      format: 'sprite-pack@3',
+      name: '安全边界包',
+      sprites: [
+        { tag: 'svgData', data: 'data:image/svg+xml;base64,PHN2Zy8+' },
+        { tag: 'jsUrl', url: 'javascript:alert(1)' },
+        { tag: 'protoRel', url: '//evil.example/a.png' },
+        { tag: 'nonImageRoute', url: '/user/files/secrets.json' },
+        { tag: 'traversal', url: '/user/images/../secrets.json' },
+        { tag: 'credUrl', url: 'https://user:pass@evil.example/a.png' },
+        { tag: 'validLocal', url: '/user/images/sprite_overlay/ok.webp', remoteUrl: 'https://user:pass@evil.example/a.png' },
+      ],
+    }))
+    expect(pack.sprites).toEqual([
+      { tag: 'validLocal', url: '/user/images/sprite_overlay/ok.webp' },
+    ])
+  })
+
+  it('rejects non-raster fetch responses in urlToDataUri during local pack export', async () => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async () => new Response('{"secret":true}', {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })) as typeof fetch
+    try {
+      const exported = await exportPack({
+        id: 'p_sec',
+        name: '导出校验包',
+        sprites: [{ tag: '微笑', url: '/user/images/sprite_overlay/fake.png' }],
+      })
+      expect(exported.sprites[0]).toEqual({
+        tag: '微笑',
+        url: '/user/images/sprite_overlay/fake.png',
+      })
+      expect(exported.sprites[0].data).toBeUndefined()
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+})

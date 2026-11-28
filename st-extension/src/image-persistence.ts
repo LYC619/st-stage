@@ -3,6 +3,7 @@ import { localUserImagePath } from '../../core/sprite-store'
 
 export interface ImageSaveOptions {
   signal?: AbortSignal
+  maxBytes?: number
 }
 
 export interface STImagePersistenceDeps {
@@ -19,7 +20,6 @@ const IMAGE_FORMATS: Record<string, string> = {
   'image/jpg': 'jpg',
   'image/webp': 'webp',
   'image/gif': 'gif',
-  'image/svg+xml': 'svg',
   'image/avif': 'avif',
   'image/bmp': 'bmp',
 }
@@ -40,13 +40,13 @@ function uniqueImageName(): string {
   return `sprite_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`
 }
 
-function parseImageData(dataUri: string): ParsedImageData {
+function parseImageData(dataUri: string, maxBytes = ST_IMAGE_MAX_BYTES): ParsedImageData {
   const match = /^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/]+={0,2})$/i.exec(dataUri)
   if (!match || match[2].length % 4 !== 0) throw new Error(t('storage.errors.image_data', '图片数据格式不正确'))
   const format = IMAGE_FORMATS[match[1].toLowerCase()]
   if (!format) throw new Error(t('storage.errors.image_format', '不支持的图片格式，请转换为 PNG、WebP 或 GIF 后重试'))
   const binarySize = match[2].length * 3 / 4 - (match[2].endsWith('==') ? 2 : match[2].endsWith('=') ? 1 : 0)
-  if (binarySize > ST_IMAGE_MAX_BYTES) throw new Error(t('storage.errors.image_size', '单张图片不能超过 20 MiB'))
+  if (binarySize > maxBytes) throw new Error(t('storage.errors.image_size', '单张图片不能超过 20 MiB'))
   let binary: string
   try {
     binary = atob(match[2])
@@ -82,7 +82,7 @@ export async function persistSTImage(
   if (!headers || typeof headers !== 'object' || Object.keys(headers).length === 0) {
     throw new Error(t('storage.errors.headers_missing', '当前酒馆未提供图片保存所需的请求头能力'))
   }
-  const data = parseImageData(dataUri)
+  const data = parseImageData(dataUri, options.maxBytes)
   const filename = uniqueImageName()
   const expectedPath = `/user/images/sprite_overlay/${filename}.${data.format}`
   const controller = new AbortController()

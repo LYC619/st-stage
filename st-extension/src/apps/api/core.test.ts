@@ -81,3 +81,22 @@ describe('shared parsing', () => {
     expect(() => parseModelList({ error: true, message: '密钥无效' })).toThrow('密钥无效')
   })
 })
+
+describe('historical source selectors and nested errors', () => {
+  it('maps historical chat completion channels to SillyTavern #model_<id>_select elements', () => {
+    expect(
+      ['mistralai', 'cohere', 'groq', 'deepseek', 'xai'].map((id) => [id, getSource('openai', id).modelSelector]),
+    ).toEqual([
+      ['mistralai', '#model_mistralai_select'],
+      ['cohere', '#model_cohere_select'],
+      ['groq', '#model_groq_select'],
+      ['deepseek', '#model_deepseek_select'],
+      ['xai', '#model_xai_select'],
+    ])
+  })
+
+  it('extracts nested OpenAI-compatible error objects in parseModelList', () => {
+    expect(() => parseModelList({ error: { message: 'Quota exceeded' } })).toThrow('Quota exceeded')
+    expect(() => parseModelList({ error: 'Invalid token' })).toThrow('Invalid token')
+  })
+})

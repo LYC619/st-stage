@@ -14,6 +14,7 @@
     "release:sync": "node scripts/sync-release.mjs",
     "release:prepare": "node scripts/prepare-release.mjs --root . --distribution st-distribution --preview public",
     "test:mobile": "playwright test",
+    "test:host": "node scripts/test-st-host.mjs",
     "typecheck": "tsc --noEmit",
     "build:ext": "node st-extension/build.mjs",
     "build:all": "node st-extension/build.mjs --all",

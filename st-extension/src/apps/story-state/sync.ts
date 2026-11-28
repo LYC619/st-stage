@@ -1,5 +1,6 @@
 import type { AppHost } from '../../../../core/phone-registry'
 import { abortable, captureStory, storyIdentity } from '../wechat/memory'
+import { isStorySwitchedError } from '../shared/chat-metadata'
 import { getStoryAiConfig, requestChat } from '../shared/story-ai'
 import { emitStoryEvent, onStoryEvent } from '../shared/story-events'
 import { applyCommands, extractCommands, isNoUpdate } from './commands'
@@ -68,7 +69,7 @@ export function createStorySync(host: AppHost) {
       }
       host.injectPrompt(formatStoryStateInjection(snapshot.state), 4)
     } catch (error) {
-      if (!current()) return
+      if (!current() || isStorySwitchedError(error)) return
       console.warn('[st-stage] 剧情状态注入刷新失败', error)
       host.injectPrompt('')
     }
@@ -149,8 +150,9 @@ export function createStorySync(host: AppHost) {
         }
       }
     } catch (error) {
+      if (!alive || job !== current || storyIdentity(host) !== story.key || isStorySwitchedError(error)) return
       if (!current.signal.aborted) console.warn('[st-stage] 剧情状态后台整理失败', error)
-      if (alive && job === current) status.error = (error as Error).message
+      status.error = (error as Error).message
     } finally {
       clearTimeout(timeout)
       if (job === current) {

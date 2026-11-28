@@ -20,6 +20,52 @@ import {
   normalizePackKind,
 } from './sprite-metadata'
 
+const RASTER_DATA_URI_REGEX = /^data:image\/(?:png|jpe?g|webp|gif|avif|bmp);base64,[A-Za-z0-9+/]+={0,2}$/i
+const RASTER_IMAGE_MIME_REGEX = /^image\/(?:png|jpe?g|webp|gif|avif|bmp)$/i
+const SAFE_LOCAL_SPRITE_PREFIX = /^(?:\/user\/images\/|\.\/|assets\/|\/assets\/|\/scripts\/extensions\/third-party\/)/i
+
+/** 仅允许栅格位图 Data URI（禁止 image/svg+xml 等可执行矢量脚本）。 */
+export function isSafeRasterDataUri(value: string): boolean {
+  return RASTER_DATA_URI_REGEX.test(value)
+}
+
+/** 校验立绘地址：仅接受栅格 Data URI、无凭据 http(s) URL、或受控无穿越的本地图片路径。 */
+export function isSafeSpriteUrl(value: string): boolean {
+  if (isSafeRasterDataUri(value)) return true
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const parsed = new URL(value)
+      return (
+        (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+        parsed.hostname.length > 0 &&
+        !parsed.username &&
+        !parsed.password
+      )
+    } catch {
+      return false
+    }
+  }
+  if (value.startsWith('//') || value.includes('\\') || value.includes('\0') || /[\s<>]/.test(value)) {
+    return false
+  }
+  if (!SAFE_LOCAL_SPRITE_PREFIX.test(value)) return false
+  const rawPath = value.split(/[?#]/, 1)[0].replace(/^\.\//, '')
+  try {
+    return !rawPath.split('/').some((segment) => {
+      let decoded = segment
+      for (let depth = 0; depth < 2; depth += 1) {
+        decoded = decodeURIComponent(decoded)
+        if (decoded === '.' || decoded === '..' || decoded.includes('\0') || /[\\/]/.test(decoded)) {
+          return true
+        }
+      }
+      return false
+    })
+  } catch {
+    return false
+  }
+}
+
 /**
  * 将 SpritePack 序列化为导出文件对象。
  * - data: 图源 → 始终内嵌
@@ -88,7 +134,7 @@ function codeField(url: string, code?: string): { code?: string } {
 /** 导出时的远程直链字段：仅保留合法的 HTTPS remoteUrl（分享用），本地 url/data 另行保留 */
 function remoteField(sprite: SpritePack['sprites'][number]): { remoteUrl?: string } {
   const r = sprite.remoteUrl
-  return r && /^https:\/\/.+/i.test(r) ? { remoteUrl: r } : {}
+  return r && /^https:\/\/.+/i.test(r) && isSafeSpriteUrl(r) ? { remoteUrl: r } : {}
 }
 
 /** 解析导入的 JSON 文本为 SpritePack（@3 / @2 / @1 均可）。格式非法时抛出带说明的 Error。 */
@@ -133,9 +179,9 @@ export function importPack(jsonText: string): SpritePack {
   for (const item of file.sprites as Array<Record<string, unknown>>) {
     if (!item || typeof item.tag !== 'string') continue
     const url =
-      typeof item.data === 'string' && item.data
+      typeof item.data === 'string' && isSafeRasterDataUri(item.data)
         ? item.data
-        : typeof item.url === 'string'
+        : typeof item.url === 'string' && isSafeSpriteUrl(item.url)
           ? item.url
           : ''
     if (!url) continue
@@ -149,9 +195,9 @@ export function importPack(jsonText: string): SpritePack {
     seen.add(key)
     const code =
       typeof item.code === 'string' && item.code ? item.code : (extractImageCode(url) ?? undefined)
-    // remoteUrl 只接受 http/https，非法值直接丢弃；本地 url/data 与 remoteUrl 并存
+    // remoteUrl 只接受合法无凭据 http/https，非法值直接丢弃；本地 url/data 与 remoteUrl 并存
     const remoteUrl =
-      typeof item.remoteUrl === 'string' && /^https?:\/\/.+/i.test(item.remoteUrl)
+      typeof item.remoteUrl === 'string' && /^https?:\/\/.+/i.test(item.remoteUrl) && isSafeSpriteUrl(item.remoteUrl)
         ? item.remoteUrl
         : ''
     const labels = normalizeLabels(item.labels)
@@ -208,9 +254,16 @@ export function importPack(jsonText: string): SpritePack {
 
 /** 把远程/本地 URL 图片转为 data URI（补传图床、离线内嵌导出等复用） */
 export async function urlToDataUri(url: string): Promise<string> {
+  if (!isSafeSpriteUrl(url)) {
+    throw new Error(t('storage.errors.image_format', '不支持的图片格式，请转换为 PNG、WebP 或 GIF 后重试'))
+  }
   const res = await fetch(url)
   if (!res.ok) throw new Error(t('sprite.manager.content.error.image_fetch', '读取图片失败：{{url}}（HTTP {{status}}）', { url, status: res.status }))
   const blob = await res.blob()
+  const mime = blob.type.split(';', 1)[0].trim().toLowerCase()
+  if (!RASTER_IMAGE_MIME_REGEX.test(mime)) {
+    throw new Error(t('storage.errors.image_format', '不支持的图片格式，请转换为 PNG、WebP 或 GIF 后重试'))
+  }
   return await new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(reader.result as string)

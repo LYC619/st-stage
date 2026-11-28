@@ -41,10 +41,17 @@ interface Instance {
 function createInstance(container: HTMLElement, ctx: PhoneAppContext): Instance {
   let disposed = false
   let seq = 0
+  let loadedChatKey = ''
   let lastResult: ReadResult | null = null
   let delta: Map<string, DeltaInfo> = new Map()
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
   let offEvents: (() => void) | null = null
+  let offCharacter: (() => void) | null = null
+
+  function currentChatKey(): string {
+    const chatCtx = ctx.getChatContext?.()
+    return `${String(chatCtx?.characterId ?? ctx.getCharacterName?.() ?? '')}::${String(chatCtx?.chatId ?? '')}`
+  }
 
   // 树视图每次渲染都会清空自己的容器，所以设置行必须待在它外面的兄弟节点里
   const settingsBox = el('div', 'so-app-section')
@@ -124,40 +131,74 @@ function createInstance(container: HTMLElement, ctx: PhoneAppContext): Instance 
     }
   }
 
-  function isStale(token: number): boolean {
-    return disposed || token !== seq || !container.isConnected
+  function isStale(token: number, expectedChatKey: string): boolean {
+    return disposed || token !== seq || !container.isConnected || currentChatKey() !== expectedChatKey
+  }
+
+  function resetForChatSwitch(): void {
+    if (refreshTimer) {
+      clearTimeout(refreshTimer)
+      refreshTimer = null
+    }
+    loadedChatKey = ''
+    lastResult = null
+    delta = new Map()
+    view.resetEditing()
   }
 
   async function load(): Promise<void> {
     const token = ++seq
+    const targetChatKey = currentChatKey()
+    if (loadedChatKey && loadedChatKey !== targetChatKey) {
+      lastResult = null
+      delta = new Map()
+    }
     view.resetEditing()
-    if (!lastResult) view.render() // 首次显示「正在读取」
+    if (!lastResult) view.render() // 首次或切会话后立即显示「正在读取」，绝不残留旧会话变量
     const messageId = getLastMessageId()
     const result = await readVariables({ type: 'message', message_id: messageId }, messageId)
-    if (isStale(token)) return
+    if (isStale(token, targetChatKey)) return
     // 变化高亮：向前回溯最近一个有变量的楼层做 deep-diff（best-effort）
     let nextDelta = new Map<string, DeltaInfo>()
     if (result.status === 'ready' && messageId > 0) {
       const prev = await findPrevStatRoot(messageId - 1)
-      if (isStale(token)) return
+      if (isStale(token, targetChatKey)) return
       nextDelta = computeDelta(result.data, prev, result.isMvu)
     }
+    loadedChatKey = targetChatKey
     lastResult = result
     delta = nextDelta
     view.render()
   }
 
   function scheduleRefresh(): void {
-    if (disposed || view.isEditing()) return // 编辑期间不打断用户输入
+    if (disposed) return
+    if (loadedChatKey && loadedChatKey !== currentChatKey()) {
+      resetForChatSwitch()
+      void load()
+      return
+    }
+    if (view.isEditing()) return // 同会话内编辑期间不打断用户输入
     if (refreshTimer) clearTimeout(refreshTimer)
     refreshTimer = setTimeout(() => {
       refreshTimer = null
-      if (!disposed && !view.isEditing()) void load()
+      if (disposed) return
+      if (loadedChatKey && loadedChatKey !== currentChatKey()) {
+        resetForChatSwitch()
+        void load()
+        return
+      }
+      if (!view.isEditing()) void load()
     }, 300)
   }
 
-  /** 统一写入包装：写完必重读刷新；失败弹提示不炸页面 */
+  /** 统一写入包装：写入前复核会话身份未切换；写完必重读刷新；失败弹提示不炸页面 */
   async function runWrite(op: () => Promise<void>): Promise<void> {
+    if (!lastResult || (loadedChatKey && loadedChatKey !== currentChatKey())) {
+      resetForChatSwitch()
+      await load()
+      return
+    }
     try {
       await op()
     } catch (err) {
@@ -170,6 +211,12 @@ function createInstance(container: HTMLElement, ctx: PhoneAppContext): Instance 
   return {
     start() {
       offEvents = subscribeVarEvents(() => scheduleRefresh())
+      offCharacter = typeof ctx.onCharacterChanged === 'function'
+        ? ctx.onCharacterChanged(() => {
+            resetForChatSwitch()
+            void load()
+          })
+        : null
       void load()
     },
     dispose() {
@@ -178,6 +225,8 @@ function createInstance(container: HTMLElement, ctx: PhoneAppContext): Instance 
       refreshTimer = null
       offEvents?.()
       offEvents = null
+      offCharacter?.()
+      offCharacter = null
     },
   }
 }

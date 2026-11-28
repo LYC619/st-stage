@@ -31,6 +31,12 @@ export function newvarApp(deps: NewvarAppDeps): PhoneApp {
       unsub?.()
       const { runtime, openDesigner } = deps
 
+      function currentChatKey(): string {
+        const chatCtx = ctx.getChatContext?.()
+        return `${String(chatCtx?.characterId ?? ctx.getCharacterName?.() ?? '')}::${String(chatCtx?.chatId ?? '')}`
+      }
+      let activeChatKey = currentChatKey()
+
       const cfgBox = el('div', 'nv-box')
       const stateBox = el('div', 'nv-box')
       container.append(cfgBox, stateBox)
@@ -91,8 +97,26 @@ export function newvarApp(deps: NewvarAppDeps): PhoneApp {
             addHint: t('apps.newvar.add_hint', "这里只能修改变量设计中已有的路径；新增变量请先在「变量设计」中添加定义。"),
           }
         },
-        commitSet: (path, value) => runtime.setManualValue(path, value),
-        commitDelete: (path) => runtime.deleteVariable(path),
+        commitSet: (path, value) => {
+          if (activeChatKey !== currentChatKey()) {
+            activeChatKey = currentChatKey()
+            tree.resetEditing()
+            renderCfg()
+            tree.render()
+            return { ok: false, error: '聊天已切换，已刷新为当前会话变量。' }
+          }
+          return runtime.setManualValue(path, value)
+        },
+        commitDelete: (path) => {
+          if (activeChatKey !== currentChatKey()) {
+            activeChatKey = currentChatKey()
+            tree.resetEditing()
+            renderCfg()
+            tree.render()
+            return
+          }
+          runtime.deleteVariable(path)
+        },
         requestRefresh: () => tree.render(),
       })
 
@@ -100,9 +124,24 @@ export function newvarApp(deps: NewvarAppDeps): PhoneApp {
       tree.render()
 
       const offRuntime = runtime.subscribe(() => {
+        if (activeChatKey !== currentChatKey()) {
+          activeChatKey = currentChatKey()
+          tree.resetEditing()
+          renderCfg()
+          tree.render()
+          return
+        }
         if (!tree.isEditing()) tree.render()
       })
-      unsub = () => offRuntime()
+      const offChar = typeof ctx.onCharacterChanged === 'function'
+        ? ctx.onCharacterChanged(() => {
+            activeChatKey = currentChatKey()
+            tree.resetEditing()
+            renderCfg()
+            tree.render()
+          })
+        : () => {}
+      unsub = () => { offRuntime(); offChar() }
     },
     unmount() {
       unsub?.()

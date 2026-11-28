@@ -266,7 +266,7 @@ export function createNewvarRuntime(deps: NewvarRuntimeDeps): NewvarRuntime {
       reinject()
       notify()
     }
-    bind(et.CHAT_CHANGED, 'chat_id_changed', onNav)
+    bind(et.CHAT_CHANGED, 'chat_id_changed', () => { lastParse = null; onNav() })
     bind(et.MESSAGE_SWIPED, 'message_swiped', onNav)
     bind(et.MESSAGE_DELETED, 'message_deleted', onNav)
   }

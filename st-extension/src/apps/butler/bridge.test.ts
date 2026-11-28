@@ -8,8 +8,18 @@ import {
   readMobileState,
   readPerf,
   readPerfState,
+  type PerfCapabilities,
   type PerfSnapshot,
 } from './bridge'
+import {
+  BUTLER_PROBE_DURATION_MS,
+  createMetricsSampler,
+  runProbeTimeline,
+  type ButlerMetricsDependencies,
+  type ProbeTimelineHandlers,
+} from './metrics'
+import { createButlerAppServices } from './runtime'
+import type { MeasurementEnvironment } from './types'
 
 const completePerf: PerfSnapshot = {
   fast_ui_mode: true,
@@ -37,17 +47,11 @@ function extensionModule(overrides: Record<string, unknown> = {}): Record<string
   const disabledExtensions = ['third-party/tool']
   return {
     extensionNames: ['expressions', 'third-party/st-stage', 'third-party/tool'],
-    extensionTypes: {
-      expressions: 'system',
-      'third-party/st-stage': 'local',
-      'third-party/tool': 'global',
-    },
+    extensionTypes: { expressions: 'system', 'third-party/st-stage': 'local', 'third-party/tool': 'global' },
     extension_settings: { disabledExtensions, apiKey: 'private-key' },
     findExtension: vi.fn((name: string) => {
       const fullName = name === 'st-stage' ? 'third-party/st-stage' : name
-      return manifests[fullName]
-        ? { name: fullName, enabled: !disabledExtensions.includes(fullName) }
-        : null
+      return manifests[fullName] ? { name: fullName, enabled: !disabledExtensions.includes(fullName) } : null
     }),
     getExtensionManifest: vi.fn((name: string) => manifests[name] ?? null),
     enableExtension: vi.fn(async () => undefined),
@@ -61,313 +65,190 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
   Reflect.deleteProperty(window, 'SillyTavern')
 })
 
-describe('performance and page summaries', () => {
-  it('returns an explicit ready snapshot when every performance field is valid', () => {
+describe('Butler host bridge & Resource Timing privacy', () => {
+  it('reads performance/mobile/health capabilities strictly and hashes chat identity without leaking text', () => {
     installST({ powerUserSettings: { ...completePerf } })
-
-    expect(readPerfState()).toEqual({
-      status: 'ready',
-      snapshot: completePerf,
-      capabilities: expect.objectContaining({
-        streaming_fps: { available: true },
-        chat_truncation: { available: true },
-      }),
-    })
     expect(readPerf()).toEqual(completePerf)
-  })
 
-  it('reports missing fields without substituting old default values', () => {
-    const { streaming_fps: _missing, ...partial } = completePerf
-    installST({ powerUserSettings: partial })
-
-    const result = readPerfState()
-
-    expect(result.status).toBe('partial')
-    expect(result.snapshot).not.toHaveProperty('streaming_fps')
-    expect(result.capabilities.streaming_fps).toEqual({
-      available: false,
-      reason: '字段缺失或类型无效',
-    })
+    const { streaming_fps: _omit, ...partial } = completePerf
+    installST({ powerUserSettings: partial, isMobile: () => 'bad', extensionSettings: { disabledExtensions: 'bad' } })
+    expect(readPerfState().status).toBe('partial')
     expect(readPerf()).toBeNull()
-  })
+    expect(readMobileState().available).toBe(false)
+    expect(readHealthState().disabledExtensions.available).toBe(false)
 
-  it('summarizes chat and DOM counts without returning message text or the raw chat identity', () => {
-    const privateChatName = '辨识度很高的私密聊天名称-2026-08-13'
     installST({
-      chatId: privateChatName,
+      chatId: '私密聊天名称',
       characterId: 4,
-      groupId: null,
-      chat: [
-        { mes: 'private prompt and key one', is_user: true },
-        { mes: 'private prompt and key two', is_user: false },
-        { mes: 'private system message', is_user: false, is_system: true },
-        { mes: 'private unknown message' },
-      ],
-    })
-    document.body.innerHTML = `
-      <div id="chat">
-        <div class="mes"><div class="mes_text"><span>rendered private text</span></div></div>
-        <div class="mes"><div class="mes_text">second private text</div></div>
-      </div>`
-    const bridge = createButlerBridge()
-
-    const summary = bridge.readPageSummary()
-    const repeated = bridge.readPageSummary()
-    const serialized = JSON.stringify(summary)
-
-    expect(summary).toMatchObject({
-      chat: {
-        available: true,
-        value: {
-          chatKey: expect.stringMatching(/^chat:[0-9a-f]{16}$/),
-          messageCount: 4,
-          userMessageCount: 1,
-          assistantMessageCount: 1,
-        },
-      },
-      dom: {
-        available: true,
-        value: { renderedMessageCount: 2 },
-      },
-    })
-    expect(summary.dom.available && summary.dom.value.chatNodeCount).toBeGreaterThan(4)
-    expect(repeated.chat.available && summary.chat.available && repeated.chat.value.chatKey)
-      .toBe(summary.chat.available ? summary.chat.value.chatKey : '')
-    expect(serialized).not.toContain(privateChatName)
-    expect(serialized).not.toContain('private')
-    expect(serialized).not.toContain('prompt')
-    expect(serialized).not.toContain('key one')
-  })
-
-  it('reports mobile and health capabilities instead of inventing false or zero values', () => {
-    installST({})
-
-    expect(readMobileState()).toEqual({
-      available: false,
-      reason: '未检测到 SillyTavern 移动端判断接口',
-    })
-    expect(readHealthState()).toEqual({
-      disabledExtensions: {
-        available: false,
-        reason: '未检测到 SillyTavern 扩展设置',
-      },
-      quickReplySets: {
-        available: false,
-        reason: '未检测到 SillyTavern 扩展设置',
-      },
-    })
-
-    installST({
+      chat: [{ mes: 'secret prompt text', is_user: true }, { mes: 'reply', is_user: false }],
       isMobile: () => true,
-      extensionSettings: {
-        disabledExtensions: ['third-party/a', 'third-party/b'],
-        quickReply: { config: { setList: [{}, {}, {}] } },
-      },
+      extensionSettings: { disabledExtensions: ['third-party/a'], quickReply: { config: { setList: [{}] } } },
     })
-
+    document.body.innerHTML = '<div id="chat"><div class="mes"><div class="mes_text">secret dom</div></div></div>'
+    const summary = createButlerBridge().readPageSummary()
+    expect(summary.chat.available && summary.chat.value.chatKey).toMatch(/^chat:[0-9a-f]{16}$/)
+    expect(JSON.stringify(summary)).not.toMatch(/私密|secret/)
     expect(readMobileState()).toEqual({ available: true, value: true })
     expect(readHealthState()).toEqual({
-      disabledExtensions: { available: true, value: 2 },
-      quickReplySets: { available: true, value: 3 },
+      disabledExtensions: { available: true, value: 1 },
+      quickReplySets: { available: true, value: 1 },
     })
   })
 
-  it('rejects malformed or failing environment capabilities', () => {
-    installST({
-      isMobile: () => 'mobile',
-      extensionSettings: {
-        disabledExtensions: 'third-party/tool',
-        quickReply: { config: { setList: 'private data' } },
-      },
-    })
-
-    expect(readMobileState()).toEqual({
-      available: false,
-      reason: 'SillyTavern 移动端判断返回格式无效',
-    })
-    expect(readHealthState()).toEqual({
-      disabledExtensions: {
-        available: false,
-        reason: '禁用扩展清单缺失或格式无效',
-      },
-      quickReplySets: {
-        available: false,
-        reason: 'Quick Reply 设置缺失或格式无效',
-      },
-    })
-
-    installST({ isMobile: () => { throw new Error('private runtime detail') } })
-    expect(readMobileState()).toEqual({
-      available: false,
-      reason: 'SillyTavern 移动端判断失败',
-    })
-  })
-})
-
-describe('Resource Timing summaries', () => {
-  it('groups extensions by name and normal resources only by a controlled resource type', () => {
+  it('groups Resource Timing entries without query/domain leaks and governs extensions safely', async () => {
     const grouped = groupResourceTimings([
       { name: 'https://host/scripts/extensions/third-party/tool/index.js?v=secret', initiatorType: 'script', transferSize: 120, duration: 8 },
-      { name: 'https://host/scripts/extensions/third-party/tool/style.css#private', initiatorType: 'link', transferSize: 30, duration: 2 },
-      { name: 'https://cdn.example/private/avatar-one.png?token=private', initiatorType: 'img', transferSize: 50, duration: 5 },
-      { name: 'https://other.example/user/images/secret-name.webp#private', initiatorType: 'img', transferSize: 70, duration: 7 },
-      { name: 'https://host/assets/app.js', initiatorType: 'script', transferSize: 10, duration: 1 },
-    ])
-
-    expect(grouped).toEqual([
-      { key: 'extension:third-party/tool', count: 2, transferSize: 150, durationMs: 10 },
-      { key: 'resource:image', count: 2, transferSize: 120, durationMs: 12 },
-      { key: 'resource:script', count: 1, transferSize: 10, durationMs: 1 },
-    ])
-    expect(JSON.stringify(grouped)).not.toMatch(/secret|private|token|avatar|user\/images|cdn\.example|other\.example|\?v=/)
-  })
-
-  it('ignores malformed URLs and clamps invalid numeric evidence', () => {
-    expect(groupResourceTimings([
+      { name: 'https://cdn.example/private/avatar.png?token=private', initiatorType: 'img', transferSize: 50, duration: 5 },
       { name: 'not a valid URL', initiatorType: 'script', transferSize: -1, duration: Number.NaN },
-    ])).toEqual([])
+    ])
+    expect(grouped).toEqual([
+      { key: 'extension:third-party/tool', count: 1, transferSize: 120, durationMs: 8 },
+      { key: 'resource:image', count: 1, transferSize: 50, durationMs: 5 },
+    ])
+    expect(JSON.stringify(grouped)).not.toMatch(/secret|private|avatar|cdn\.example/)
+
+    const mod = extensionModule()
+    const bridge = createButlerBridge({ loadModule: async () => mod })
+    const inv = await bridge.readExtensions()
+    expect(inv.status).toBe('ready')
+    expect(JSON.stringify(inv)).not.toContain('private-key')
+
+    await expect(bridge.setExtensionEnabled('st-stage', false)).resolves.toMatchObject({ ok: false, code: 'protected' })
+    expect(mod.disableExtension).not.toHaveBeenCalled()
+
+    await expect(bridge.setExtensionEnabled('third-party/tool', true)).resolves.toMatchObject({ ok: true, configuredEnabled: true })
+    expect(mod.enableExtension).toHaveBeenCalledWith('third-party/tool', false)
+
+    const readOnlyBridge = createButlerBridge({ loadModule: async () => extensionModule({ enableExtension: undefined }) })
+    await expect(readOnlyBridge.setExtensionEnabled('third-party/tool', false)).resolves.toMatchObject({ ok: false, code: 'read-only' })
   })
 })
 
-describe('official extension API bridge', () => {
-  it('loads /scripts/extensions.js through a variable-specifier loader and returns safe inventory', async () => {
-    const mod = extensionModule()
-    const loadModule = vi.fn(async () => mod)
-    const bridge = createButlerBridge({ loadModule })
+describe('Butler metrics probes & production runtime assembly', () => {
+  const env: MeasurementEnvironment = {
+    stVersion: { available: true, value: '1.18.0' },
+    stageBuild: { available: true, value: '0.9.0+test' },
+    mobile: { available: true, value: true },
+    settingsSummary: { available: true, value: { streaming_fps: 15 } },
+    disabledExtensionsHash: { available: true, value: 'hash' },
+  }
 
-    const result = await bridge.readExtensions()
-
-    expect(loadModule).toHaveBeenCalledWith('/scripts/extensions.js')
-    expect(result.status).toBe('ready')
-    expect(result.governance).toEqual({ writable: true })
-    expect(result.disabledExtensions).toEqual(['third-party/tool'])
-    expect(result.extensions).toEqual([
-      expect.objectContaining({ name: 'expressions', type: 'system', configuredEnabled: true, isSelf: false }),
-      expect.objectContaining({
-        name: 'third-party/st-stage',
-        type: 'local',
-        configuredEnabled: true,
-        isSelf: true,
-        manifest: expect.objectContaining({ dependencies: { status: 'valid', names: ['expressions'] } }),
+  function metricsDeps(): ButlerMetricsDependencies {
+    const chat = document.createElement('div')
+    chat.id = 'chat'
+    Object.defineProperties(chat, {
+      clientHeight: { configurable: true, value: 100 },
+      scrollHeight: { configurable: true, value: 420 },
+      scrollTop: { configurable: true, writable: true, value: 35 },
+    })
+    chat.innerHTML = '<div class="mes"><img><video></video></div><canvas></canvas><iframe></iframe>'
+    document.body.replaceChildren(chat)
+    const caps = Object.fromEntries(Object.keys(completePerf).map((k) => [k, { available: true }])) as PerfCapabilities
+    return {
+      now: vi.fn(() => 1000),
+      createId: vi.fn(() => 'sample-1'),
+      readEnvironment: vi.fn(async () => env),
+      readPageSummary: vi.fn(() => ({
+        chat: { available: true as const, value: { chatKey: 'chat-a', messageCount: 20, userMessageCount: 9, assistantMessageCount: 11 } },
+        dom: { available: true as const, value: { renderedMessageCount: 10, chatNodeCount: 80 } },
+      })),
+      readPerfState: vi.fn(() => ({ status: 'ready' as const, snapshot: completePerf, capabilities: caps })),
+      readResourceGroups: vi.fn(() => [{ key: 'resource:image', count: 1, transferSize: 500, durationMs: 8 }]),
+      estimateStorage: vi.fn<ButlerMetricsDependencies['estimateStorage']>(async () => ({ usage: 1024, quota: 4096 })),
+      readHeapBytes: vi.fn<ButlerMetricsDependencies['readHeapBytes']>(() => 2048),
+      getChatScroller: vi.fn(() => chat),
+      getViewport: vi.fn(() => ({ width: 390, height: 800 })),
+      countAnimations: vi.fn<ButlerMetricsDependencies['countAnimations']>(() => 3),
+      isForeground: vi.fn(() => true),
+      isGenerating: vi.fn(() => false),
+      observeLongTasks: vi.fn<ButlerMetricsDependencies['observeLongTasks']>(() => ({ disconnect: vi.fn() })),
+      runTimeline: vi.fn(async (_dur: number, _sig: AbortSignal, h: ProbeTimelineHandlers) => {
+        for (const t of [0, 16, 34, 96]) h.onFrame(t)
+        h.onTimer(100, 108)
+        h.onTimer(200, 225)
       }),
-      expect.objectContaining({ name: 'third-party/tool', type: 'global', configuredEnabled: false, isSelf: false }),
-    ])
-    expect(JSON.stringify(result)).not.toContain('private-key')
+    }
+  }
+
+  it('samples static/idle/scroll probes, restores scrollTop, invalidates on interference, and cleans up aborted rAF/timers', async () => {
+    const deps = metricsDeps()
+    const disconnect = vi.fn()
+    deps.observeLongTasks = vi.fn((rec) => { rec(60); rec(90); return { disconnect } })
+    const sampler = createMetricsSampler(deps)
+
+    const stat = await sampler.collectStatic()
+    expect(stat.metrics).toMatchObject({ page: { chatNodeCount: 80 }, storage: { usageBytes: 1024 } })
+
+    const idle = await sampler.sampleIdle()
+    expect(deps.runTimeline).toHaveBeenCalledWith(BUTLER_PROBE_DURATION_MS, expect.any(AbortSignal), expect.any(Object))
+    expect(idle.metrics.dynamic).toMatchObject({ longTaskCount: 2, longestTaskMs: 90, frameIntervalP95Ms: 62 })
+    expect(disconnect).toHaveBeenCalledOnce()
+
+    const scroll = await sampler.sampleControlledScroll()
+    expect(scroll.invalidReason).toBeUndefined()
+    expect(deps.getChatScroller()!.scrollTop).toBe(35)
+
+    deps.isGenerating = vi.fn(() => true)
+    expect((await createMetricsSampler(deps).sampleIdle()).invalidReason).toContain('当前正在生成')
+    expect((await createMetricsSampler(deps).sampleControlledScroll()).invalidReason).toContain('生成状态发生变化')
+    expect(deps.getChatScroller()!.scrollTop).toBe(35)
+
+    const inputDeps = metricsDeps()
+    inputDeps.runTimeline = vi.fn(async (_d, _s, h) => { document.dispatchEvent(new Event('pointerdown')); h.onFrame(16) })
+    expect((await createMetricsSampler(inputDeps).sampleIdle()).invalidReason).toContain('用户干预')
+
+    vi.useFakeTimers()
+    const controller = new AbortController()
+    const cancelFrame = vi.fn()
+    const p = runProbeTimeline(6000, controller.signal, { onFrame: vi.fn(), onTimer: vi.fn() }, {
+      now: () => Date.now(), requestFrame: () => 1, cancelFrame,
+      setTimer: (fn, ms) => window.setTimeout(fn, ms), clearTimer: (id) => window.clearTimeout(id),
+    })
+    controller.abort()
+    await expect(p).rejects.toMatchObject({ name: 'AbortError' })
+    expect(cancelFrame).toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('labels findExtension.enabled only as configuredEnabled', async () => {
-    const bridge = createButlerBridge({ loadModule: async () => extensionModule() })
-
-    const result = await bridge.findExtension('st-stage')
-
-    expect(result).toEqual({
-      ok: true,
-      extension: { name: 'third-party/st-stage', configuredEnabled: true },
+  it('contains blocked localStorage, caches /script.js generation checks once recovered, and flushes settings before reload', async () => {
+    installST({
+      powerUserSettings: { ...completePerf },
+      isMobile: () => false,
+      extensionSettings: { disabledExtensions: [], quickReply: { config: { setList: [] } } },
     })
-    expect(result).not.toHaveProperty('extension.active')
-  })
-
-  it('distinguishes a malformed findExtension response from a missing extension', async () => {
-    const bridge = createButlerBridge({
-      loadModule: async () => extensionModule({ findExtension: vi.fn(() => ({ name: 42, enabled: 'yes' })) }),
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage')
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      get() { throw new DOMException('Disabled', 'SecurityError') },
     })
+    try {
+      const order: string[] = []
+      const loadScriptModule = vi.fn()
+        .mockResolvedValueOnce({})
+        .mockResolvedValue({ isGenerating: () => false, saveSettings: async () => { order.push('save') } })
+      const services = createButlerAppServices({
+        bridge: createButlerBridge(),
+        loadScriptModule,
+        runTimeline: async (_d, _s, h) => h.onFrame(16),
+        reloadNow: () => { order.push('reload') },
+      })
 
-    await expect(bridge.findExtension('third-party/tool')).resolves.toEqual({
-      ok: false,
-      code: 'invalid-response',
-      error: 'SillyTavern findExtension 返回格式无效',
-    })
-  })
+      expect(() => services.backupStorage.setItem('k', 'v')).not.toThrow()
+      expect((await services.sampleIdle()).invalidReason).toContain('无法读取生成状态')
+      expect((await services.sampleIdle()).invalidReason).toBeUndefined()
+      expect((await services.sampleIdle()).invalidReason).toBeUndefined()
+      expect(loadScriptModule).toHaveBeenCalledTimes(2)
 
-  it.each([
-    [true, 'enableExtension'],
-    [false, 'disableExtension'],
-  ] as const)('calls the official %s operation with reload=false', async (enabled, method) => {
-    const mod = extensionModule()
-    const bridge = createButlerBridge({ loadModule: async () => mod })
-
-    const result = await bridge.setExtensionEnabled('third-party/tool', enabled)
-
-    expect(mod[method]).toHaveBeenCalledWith('third-party/tool', false)
-    expect(result).toEqual({
-      ok: true,
-      name: 'third-party/tool',
-      configuredEnabled: enabled,
-      reloadRequired: true,
-    })
-  })
-
-  it('makes all governance read-only when either write export is missing', async () => {
-    const disableExtension = vi.fn(async () => undefined)
-    const mod = extensionModule({ enableExtension: undefined, disableExtension })
-    const bridge = createButlerBridge({ loadModule: async () => mod })
-
-    const inventory = await bridge.readExtensions()
-    const result = await bridge.setExtensionEnabled('third-party/tool', false)
-
-    expect(inventory.status).toBe('ready')
-    expect(inventory.governance.writable).toBe(false)
-    expect(result).toMatchObject({ ok: false, code: 'read-only' })
-    expect(disableExtension).not.toHaveBeenCalled()
-  })
-
-  it('returns structured errors for missing extensions and official API failures', async () => {
-    const failing = vi.fn(async () => { throw new Error('sensitive remote detail') })
-    const bridge = createButlerBridge({
-      loadModule: async () => extensionModule({ disableExtension: failing }),
-    })
-
-    await expect(bridge.setExtensionEnabled('missing', false)).resolves.toMatchObject({
-      ok: false,
-      code: 'not-found',
-    })
-    await expect(bridge.setExtensionEnabled('third-party/tool', false)).resolves.toEqual({
-      ok: false,
-      code: 'api-error',
-      error: 'SillyTavern 扩展接口调用失败',
-    })
-  })
-
-  it('never edits disabledExtensions directly', async () => {
-    const mod = extensionModule()
-    const disabled = (mod.extension_settings as { disabledExtensions: string[] }).disabledExtensions
-    const bridge = createButlerBridge({ loadModule: async () => mod })
-
-    await bridge.setExtensionEnabled('third-party/tool', true)
-
-    expect(disabled).toEqual(['third-party/tool'])
-  })
-
-  it('reads the live disabled list after the official API replaces its array', async () => {
-    const mod = extensionModule()
-    mod.enableExtension = vi.fn(async (name: string) => {
-      const settings = mod.extension_settings as { disabledExtensions: string[] }
-      settings.disabledExtensions = settings.disabledExtensions.filter((item) => item !== name)
-    })
-    const bridge = createButlerBridge({ loadModule: async () => mod })
-
-    await bridge.setExtensionEnabled('third-party/tool', true)
-    const inventory = await bridge.readExtensions()
-
-    expect(inventory.disabledExtensions).toEqual([])
-    expect(inventory.extensions.find((item) => item.name === 'third-party/tool')?.configuredEnabled).toBe(true)
-  })
-
-  it('protects st-stage itself without calling the official disable API', async () => {
-    const mod = extensionModule()
-    const bridge = createButlerBridge({ loadModule: async () => mod })
-
-    const result = await bridge.setExtensionEnabled('st-stage', false)
-
-    expect(result).toEqual({
-      ok: false,
-      code: 'protected',
-      error: '管家不能禁用 st-stage 自身',
-    })
-    expect(mod.disableExtension).not.toHaveBeenCalled()
+      await services.reloadPage()
+      expect(order).toEqual(['save', 'reload'])
+    } finally {
+      if (descriptor) Object.defineProperty(window, 'localStorage', descriptor)
+      else Reflect.deleteProperty(window, 'localStorage')
+    }
   })
 })

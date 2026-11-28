@@ -198,7 +198,7 @@ export function createTheaterApp(): PhoneApp {
               const img = document.createElement('img')
               img.className = 'th-avatar-img'
               img.src = avatarUrl
-              img.alt = post.author
+              img.alt = post.author; img.onerror = () => { const badge = text('span', 'th-avatar', post.author.slice(0, 1)); badge.style.background = color(post.author); img.replaceWith(badge) }
               author.append(img)
             } else {
               const badge = text('span', 'th-avatar', post.author.slice(0, 1))
@@ -378,7 +378,7 @@ export function createTheaterApp(): PhoneApp {
         }
       }
 
-      const off = controller.subscribe(render)
+      const off = controller.subscribe(() => { clearAppBadge('theater'); render() })
       const offChar = typeof ctx.onCharacterChanged === 'function'
         ? ctx.onCharacterChanged(() => { diaryRoleFilter = ''; diaryDateFilter = ''; render() })
         : () => {}

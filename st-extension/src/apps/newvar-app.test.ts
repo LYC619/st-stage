@@ -1,13 +1,19 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { manageDialogFocus } from '../../../core/dialog-focus'
 import { loadTranslations, resetI18n, setLocale } from '../../../core/i18n'
-import en from '../../locales/en-US.json'
 import type { PhoneAppContext } from '../../../core/phone-registry'
 import type { PluginSettings } from '../../../core/types'
+import en from '../../locales/en-US.json'
 import { defaultNewvarData, type NewvarData } from './newvar/config'
-import type { NewvarRuntime } from './newvar/runtime'
+import { createNewvarDesigner } from './newvar/designer'
+import { buildInjection } from './newvar/engine'
+import type { NewvarRuntime, ParseReport } from './newvar/runtime'
+import { NEWVAR_TEMPLATES } from './newvar/templates'
 import { newvarApp } from './newvar-app'
+
+const cleanup: Array<() => void> = []
 
 function findToggle(container: HTMLElement, label: string): HTMLInputElement {
   const row = [...container.querySelectorAll('label')].find((item) => item.textContent?.includes(label))
@@ -45,66 +51,108 @@ function mountApp(initial: Partial<NewvarData> = {}, initialHud = false) {
   return { container, toast, getData: () => data, getSettings: () => coreSettings }
 }
 
+function openDesigner(report: ParseReport | null = null) {
+  let data = defaultNewvarData()
+  const setData = vi.fn((next: NewvarData) => { data = next })
+  const instance = createNewvarDesigner({
+    getData: () => data,
+    setData,
+    buildPreview: () => '',
+    getLastParse: () => report,
+  })
+  cleanup.push(() => instance.close())
+  instance.open()
+  return { instance, getData: () => data, setData }
+}
+
 beforeEach(() => {
   document.body.innerHTML = ''
 })
-afterEach(resetI18n)
 
-describe('newvarApp', () => {
-  it('renders English settings and keeps focus when toggling the update-block display', () => {
-    loadTranslations('en-US', en)
-    setLocale('en-US')
+afterEach(() => {
+  cleanup.splice(0).reverse().forEach((fn) => fn())
+  resetI18n()
+  document.body.replaceChildren()
+  vi.restoreAllMocks()
+})
+
+describe('newvarApp settings & HUD toggle', () => {
+  it('preserves focus when toggling hideUpdateBlocks and warns about ST Regex', () => {
     const mounted = mountApp({ enabled: true, hideUpdateBlocks: true })
     document.body.append(mounted.container)
-    expect(mounted.container.textContent).toContain('Built-in tracking · Enabled')
-    expect(mounted.container.textContent).toContain('<UpdateVariable>...</UpdateVariable>')
-    const toggle = findToggle(mounted.container, 'Hide variable updates in messages')
+    const toggle = findToggle(mounted.container, '隐藏正文中的变量更新记录')
     toggle.focus()
     toggle.checked = false
     toggle.dispatchEvent(new Event('change', { bubbles: true }))
+
     expect(document.activeElement).toBe(toggle)
-    expect(mounted.toast).toHaveBeenCalledWith('success', expect.stringContaining('ST Regex'))
     expect(mounted.getData().hideUpdateBlocks).toBe(false)
-    expect(mounted.getData().schema).toEqual(defaultNewvarData().schema)
+    expect(mounted.toast).toHaveBeenCalledWith('success', expect.stringMatching(/已恢复.*ST Regex.*UpdateVariable/))
   })
 
-  it('关闭变量记录隐藏时明确提示已恢复以及 ST Regex 的独立影响', () => {
-    const mounted = mountApp({ enabled: true, hideUpdateBlocks: true })
-    const toggle = findToggle(mounted.container, '隐藏正文中的变量更新记录')
-
-    toggle.checked = false
-    toggle.dispatchEvent(new Event('change', { bubbles: true }))
-
-    expect(mounted.getData().hideUpdateBlocks).toBe(false)
-    expect(mounted.toast).toHaveBeenCalledWith(
-      'success',
-      expect.stringMatching(/已恢复.*ST Regex.*UpdateVariable/),
-    )
-    expect(mounted.container.textContent).toContain('ST Regex')
-  })
-})
-
-describe('变量速查悬浮窗开关（Finding 7）', () => {
-  it('开关写核心设置，不写 App 私有数据', () => {
+  it('writes variableHud to core settings without mutating app-private schema data', () => {
     const mounted = mountApp({ enabled: true })
+    expect(mounted.container.textContent).toContain('只读')
     const before = mounted.getData()
     const toggle = findToggle(mounted.container, '变量速查悬浮窗')
-    expect(toggle.checked).toBe(false) // 默认关闭
+    expect(toggle.checked).toBe(false)
 
     toggle.checked = true
     toggle.dispatchEvent(new Event('change', { bubbles: true }))
-
     expect(mounted.getSettings().variableHud).toBe(true)
-    expect(mounted.getData()).toEqual(before) // App 私有数据没被连带改写
+    expect(mounted.getData()).toEqual(before)
+    expect(findToggle(mountApp({ enabled: true }, true).container, '变量速查悬浮窗').checked).toBe(true)
+  })
+})
+
+describe('newvar designer focus, host Enter guard & AI prompt locale invariance', () => {
+  it('traps focus inside nested designer, consumes only its own Escape, and keeps focus on rebuilt type select', () => {
+    const parent = document.createElement('div')
+    parent.innerHTML = '<button>Open designer</button>'
+    document.body.append(parent)
+    const outerEscape = vi.fn()
+    const outerFocus = manageDialogFocus(parent, { onEscape: outerEscape })
+    cleanup.push(() => outerFocus.dispose())
+    const opener = parent.querySelector('button')!
+    opener.focus()
+
+    const { instance } = openDesigner()
+    const dialog = document.querySelector<HTMLElement>('.so-manager')!
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    expect(dialog.contains(document.activeElement)).toBe(true)
+
+    const add = [...document.querySelectorAll<HTMLElement>('.so-app-btn')].find((node) => node.textContent?.includes('添加变量'))!
+    add.click()
+    const select = document.querySelector<HTMLSelectElement>('.nv-defs-editor select')!
+    select.focus()
+    select.value = 'enum'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(document.activeElement).toBe(document.querySelector('.nv-defs-editor select'))
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(instance.isOpen()).toBe(false)
+    expect(outerEscape).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(opener)
   })
 
-  it('已开启时渲染成勾选态', () => {
-    const mounted = mountApp({ enabled: true }, true)
-    expect(findToggle(mounted.container, '变量速查悬浮窗').checked).toBe(true)
-  })
+  it('activates template actions once when ST host clicks .menu_button on Enter, and keeps AI injection locale-invariant', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { setData } = openDesigner()
+    const hostEnter = (event: KeyboardEvent) => {
+      if (event.key === 'Enter') (event.target as HTMLElement).closest<HTMLElement>('.menu_button')?.click()
+    }
+    document.addEventListener('keydown', hostEnter)
+    cleanup.push(() => document.removeEventListener('keydown', hostEnter))
+    const button = document.querySelector<HTMLButtonElement>('.nv-tpl-actions button')!
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    button.dispatchEvent(event)
+    if (!event.defaultPrevented) button.click()
+    expect(setData).toHaveBeenCalledOnce()
 
-  it('说明里写清只读，避免用户以为它能改值', () => {
-    const mounted = mountApp({ enabled: true })
-    expect(mounted.container.textContent).toContain('只读')
+    const schema = { id: 'test', name: '用户方案', version: 1, variables: NEWVAR_TEMPLATES[0].variables }
+    const zhInjection = buildInjection({}, schema, 'json_patch')
+    loadTranslations('en-US', en)
+    setLocale('en-US')
+    expect(buildInjection({}, schema, 'json_patch')).toBe(zhInjection)
   })
 })

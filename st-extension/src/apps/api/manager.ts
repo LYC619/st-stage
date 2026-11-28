@@ -120,21 +120,30 @@ export function createApiManager(deps: ApiManagerDeps): ApiManager {
   }
 
   async function importCurrent(): Promise<void> {
-    const current = await readConnection(); if (!current || !draft) { notice = '未检测到 SillyTavern 运行时。'; return render() }
-    draft.mainApi = current.mainApi as MainApi; draft.source = current.source; draft.url = current.url; draft.model = current.model; draft.settings = { ...current.settings }; draft.secretId = current.secretId
-    if (current.key) draft.key = current.key
-    draft.secretMode = current.secretMode
+    const target = draft; if (!target) return; if (!target) return
+    const current = await readConnection()
+    if (!backdrop || draft !== target) return
+    if (!current) { notice = '未检测到 SillyTavern 运行时。'; return render() }
+    target.mainApi = current.mainApi as MainApi; target.source = current.source; target.url = current.url; target.model = current.model; target.settings = { ...current.settings }; target.secretId = current.secretId
+    if (current.key) target.key = current.key
+    target.secretMode = current.secretMode
     notice = current.secretMode === 'read' ? '已完整导入当前连接和密钥。' : '已导入连接设置；当前版本无法回读密钥，已保留表单中的 Key。'
     render()
   }
 
   async function loadModels(value: ProfileDraft): Promise<void> {
     if (!normalizeUrl(value.url)) { notice = '请先填写接口地址。'; return render() }
+    const target = draft; if (!target) return
     try {
-      const models = await fetchModels({ ...value }); const selected = window.prompt(`可用模型：\n${models.join('\n')}\n\n请输入要使用的模型 ID：`, value.model || models[0])
-      if (selected && draft) draft.model = selected
-    } catch (error) { notice = `获取模型失败：${error instanceof Error ? error.message : String(error)}` }
-    render()
+      const models = await fetchModels({ ...value })
+      if (!backdrop || draft !== target) return
+      const selected = window.prompt(`可用模型：\n${models.join('\n')}\n\n请输入要使用的模型 ID：`, value.model || models[0])
+      if (selected && backdrop && draft === target) target.model = selected
+    } catch (error) {
+      if (!backdrop || draft !== target) return
+      notice = `获取模型失败：${error instanceof Error ? error.message : String(error)}`
+    }
+    if (backdrop && draft === target) render()
   }
 
   function buildHelp(): HTMLElement {

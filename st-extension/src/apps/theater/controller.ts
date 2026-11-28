@@ -1,5 +1,6 @@
 import type { AppHost } from '../../../../core/phone-registry'
 import { abortable, captureStory, storyIdentity } from '../wechat/memory'
+import { isStorySwitchedError } from '../shared/chat-metadata'
 import { fingerprint } from '../wechat/moments-controller'
 import { getStoryAiConfig } from '../shared/story-ai'
 import { emitStoryEvent, incrementAppBadge } from '../shared/story-events'
@@ -76,8 +77,9 @@ export function createTheaterController(host: AppHost, options: { cooldownMs?: n
         tab: channel === 'all' ? undefined : channel,
       })
     } catch (error) {
+      if (!alive || job !== current || storyIdentity(host) !== story.key || isStorySwitchedError(error)) return
       if (!current.signal.aborted) console.warn('[st-stage] 小剧场生成失败', error)
-      if (alive && job === current) status.error = (error as Error).message
+      status.error = (error as Error).message
     } finally {
       clearTimeout(timeout)
       if (job === current) {

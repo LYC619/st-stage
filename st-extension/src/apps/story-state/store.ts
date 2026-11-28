@@ -1,5 +1,5 @@
 import type { AppHost } from '../../../../core/phone-registry'
-import { metadataContext, readChatMetadata, writeChatMetadata, storyIdentity } from '../shared/chat-metadata'
+import { metadataContext, readChatMetadata, writeChatMetadata, storyIdentity, StorySwitchedError } from '../shared/chat-metadata'
 export { metadataContext } from '../shared/chat-metadata'
 import { getLastMessageId, readVariables } from '../mvu/bridge'
 
@@ -44,7 +44,7 @@ export function readSyncSettings(host: AppHost): StoryStateSettings {
 export async function readStoryState(host: AppHost): Promise<StoryStateSnapshot> {
   const key = storyIdentity(host), id = getLastMessageId()
   const result = await readVariables({ type: 'message', message_id: id < 0 ? 'latest' : id }, id)
-  if (key !== storyIdentity(host)) throw new Error('聊天已切换。')
+  if (key !== storyIdentity(host)) throw new StorySwitchedError('聊天已切换。')
   const backend = result.isMvu && result.status === 'ready' ? 'mvu' : 'local'
   const raw = structuredClone(backend === 'mvu' ? result.data : record(record(readChatMetadata(META_KEY)).stat_data))
   return { key, backend, raw, state: normalize(raw) }

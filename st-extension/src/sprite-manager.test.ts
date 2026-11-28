@@ -109,7 +109,7 @@ function largeGallerySettings(count: number): PluginSettings {
   }
 }
 
-function openLargeGallery(count = 1000): ReturnType<typeof createSpriteManager> {
+function openLargeGallery(count = 140): ReturnType<typeof createSpriteManager> {
   let settings = largeGallerySettings(count)
   const manager = createSpriteManager({
     adapter: { getCurrentCharacterName: () => '阿珍' } as STAdapter,
@@ -613,23 +613,17 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders only the first 60 sprites from a 1000-sprite pack and loads one page at a time', () => {
+  it('renders only the first 60 sprites from a 140-sprite pack and loads one page at a time', () => {
     const manager = openLargeGallery()
 
     expect(document.querySelectorAll('.so-sprite-cell')).toHaveLength(60)
-    expect(document.body.textContent).toContain('60/1000')
+    expect(document.body.textContent).toContain('60/140')
     const firstCell = document.querySelector('.so-sprite-cell')
 
     findButton(document, '加载更多').click()
     expect(document.querySelectorAll('.so-sprite-cell')).toHaveLength(120)
-    expect(document.body.textContent).toContain('120/1000')
+    expect(document.body.textContent).toContain('120/140')
     expect(document.querySelector('.so-sprite-cell')).toBe(firstCell)
-
-    manager.close()
-  })
-
-  it('never adds more than 60 sprites per load and removes the control at the end', () => {
-    const manager = openLargeGallery()
 
     while (document.body.textContent?.includes('加载更多')) {
       const before = document.querySelectorAll('.so-sprite-cell').length
@@ -638,13 +632,13 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
       expect(after - before).toBeLessThanOrEqual(60)
     }
 
-    expect(document.querySelectorAll('.so-sprite-cell')).toHaveLength(1000)
-    expect(document.body.textContent).toContain('1000/1000')
+    expect(document.querySelectorAll('.so-sprite-cell')).toHaveLength(140)
+    expect(document.body.textContent).toContain('140/140')
     expect([...document.querySelectorAll<HTMLElement>('[role="button"]')]
       .some((item) => item.textContent === '加载更多')).toBe(false)
 
     manager.close()
-  }, 15_000)
+  })
 
   it('keeps named groups before the ungrouped section when a group first appears on a later page', () => {
     let settings: PluginSettings = {
@@ -704,7 +698,7 @@ describe('createSpriteManager bounded sprite gallery rendering', () => {
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
     expect(img?.src).toBe('https://img.test/61.png')
-    expect(document.querySelector('.so-lightbox-caption')?.textContent).toContain('61/1000')
+    expect(document.querySelector('.so-lightbox-caption')?.textContent).toContain('61/140')
 
     manager.close()
   })

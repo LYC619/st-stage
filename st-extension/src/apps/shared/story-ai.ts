@@ -1,5 +1,5 @@
 import type { AppHost, PhoneAppContext } from '../../../../core/phone-registry'
-import { API_APP_ID, sanitizeAppData } from '../api/core'
+import { API_APP_ID, extractUpstreamError, sanitizeAppData } from '../api/core'
 import { requestOpenApp } from './story-events'
 
 export const STORY_AI_APP_ID = 'story-ai'
@@ -38,6 +38,15 @@ const OPENAI_COMPAT_ENDPOINTS: Record<string, { url: string; defaultModel: strin
   mistralai: { url: 'https://api.mistral.ai/v1/chat/completions', defaultModel: 'mistral-small-latest' },
 }
 
+const KNOWN_HOST_DEFAULT_PATHS: Record<string, string> = {
+  'api.deepseek.com': '/chat/completions',
+  'api.openai.com': '/v1/chat/completions',
+  'openrouter.ai': '/api/v1/chat/completions',
+  'api.groq.com': '/openai/v1/chat/completions',
+  'api.x.ai': '/v1/chat/completions',
+  'api.mistral.ai': '/v1/chat/completions',
+}
+
 export function toCompletionsEndpoint(rawUrl: string): string {
   const trimmed = rawUrl.trim().replace(/\/+$/, '')
   if (!trimmed) return ''
@@ -50,6 +59,15 @@ export function resolveChatEndpoint(rawUrl?: string): string {
   if (!trimmed) return 'https://api.deepseek.com/chat/completions'
   if (trimmed.endsWith('/chat/completions')) return trimmed
   if (/\/v\d+$/i.test(trimmed)) return `${trimmed}/chat/completions`
+  try {
+    const parsed = new URL(trimmed)
+    const knownPath = (!parsed.pathname || parsed.pathname === '/')
+      ? KNOWN_HOST_DEFAULT_PATHS[parsed.hostname.toLowerCase()]
+      : undefined
+    if (knownPath) return `${parsed.origin}${knownPath}`
+  } catch {
+    // 非标准 URL 保持原样交由上层校验或请求报错
+  }
   return trimmed
 }
 
@@ -287,7 +305,12 @@ export async function requestChat(
     if (jsonMode && resp.status === 400) {
       resp = await doPost(false)
     }
-    if (!resp.ok) throw new Error('AI 连接失败（' + resp.status + '），请检查连接后重试。')
+    if (!resp.ok) {
+      const detail = typeof resp.json === 'function'
+        ? extractUpstreamError(await resp.json().catch(() => null)).slice(0, 160)
+        : ''
+      throw new Error('AI 连接失败（' + resp.status + (detail ? '：' + detail : '') + '），请检查连接后重试。')
+    }
     const data = await resp.json()
     const content = data?.choices?.[0]?.message?.content
     if (typeof content !== 'string' || !content.trim()) throw new Error('AI 返回了空回复，请重试。')

@@ -102,9 +102,12 @@ async function archive(
     }
     const next = upsertStorySprite(deps.getSettings(), story, stored)
     deps.updateSettings(next)
+    action.title = ''
     action.textContent = remoteOnly ? t('imageActions.saved_remote', '已保存远程引用') : t('imageActions.saved', '已保存')
   } catch (error) {
+    console.warn('[st-stage] 保存剧情图片到图库失败', error)
     action.disabled = false
+    action.title = error instanceof Error ? error.message : ''
     action.textContent = error instanceof Error ? t('imageActions.retry_save', '保存失败，重试') : t('imageActions.save_failed', '保存失败')
   }
 }

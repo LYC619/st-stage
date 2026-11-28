@@ -47,6 +47,7 @@ export interface PhonePillNotification {
   icon?: string
   text: string
   appId?: string
+  onActivate?: () => void
 }
 
 export interface PhoneShellDeps {
@@ -59,6 +60,7 @@ export interface PhoneShellDeps {
   readHomeSummary?(): Promise<PhoneHomeSummary>
   getWorldWidget?(): PhoneWorldWidget | null
   readWorldWidget?(): Promise<PhoneWorldWidget | null>
+  onOpenWorldAction?(action: { appId: string; tab?: string }): void
 }
 
 export interface PhoneShellController {
@@ -74,6 +76,8 @@ export interface PhoneShellController {
   refreshHome(): void
   /** 在手机顶部弹出灵动通知胶囊（点击可直达对应 App）。 */
   notifyPill(notification: PhonePillNotification): void
+  /** 收起顶部灵动通知胶囊（切会话等场景使用）。 */
+  dismissPill?(): void
   /** 更新各 App 与悬浮球的未读角标计数。 */
   setBadges(badges: Record<string, number>): void
   destroy(): void
@@ -252,9 +256,16 @@ export function createPhoneShell(
   island.className = 'so-phone-island'
   island.hidden = true
   let islandTargetApp = ''
+  let islandActivate: (() => void) | undefined
   island.addEventListener('click', () => {
     island.hidden = true
     clearTimeout(pillTimer)
+    const activate = islandActivate
+    islandActivate = undefined
+    if (activate) {
+      activate()
+      return
+    }
     if (islandTargetApp && deps.registry.get(islandTargetApp)) {
       navMotion = 'enter'
       leaveApp()
@@ -527,6 +538,10 @@ export function createPhoneShell(
       btn.className = 'so-phone-world-chip'
       btn.textContent = label
       btn.onclick = () => {
+        if (deps.onOpenWorldAction) {
+          deps.onOpenWorldAction({ appId, ...(appId === 'chronicle' ? { tab: 'calendar' } : {}) })
+          return
+        }
         navMotion = 'enter'
         activeApp = target
         renderScreen()
@@ -815,6 +830,7 @@ export function createPhoneShell(
       if (notification.appId && activeApp?.id === notification.appId) return
       clearTimeout(pillTimer)
       islandTargetApp = notification.appId || ''
+      islandActivate = notification.onActivate
       island.replaceChildren()
       if (notification.icon) {
         const ic = document.createElement('span')
@@ -829,7 +845,14 @@ export function createPhoneShell(
       island.hidden = false
       pillTimer = setTimeout(() => {
         island.hidden = true
+        islandActivate = undefined
       }, 3800)
+    },
+    dismissPill() {
+      clearTimeout(pillTimer)
+      island.hidden = true
+      islandTargetApp = ''
+      islandActivate = undefined
     },
     setBadges(badges: Record<string, number>) {
       if (destroyed) return

@@ -1,6 +1,6 @@
 import type { AppHost } from '../../../../core/phone-registry'
 import { abortable } from '../wechat/memory'
-import { storyIdentity, writeChatMetadata } from '../shared/chat-metadata'
+import { isStorySwitchedError, storyIdentity, writeChatMetadata } from '../shared/chat-metadata'
 import { getStoryAiConfig } from '../shared/story-ai'
 import { storyToday } from '../shared/story-date'
 import { emitStoryEvent, onStoryEvent } from '../shared/story-events'
@@ -19,7 +19,7 @@ export function createChronicleController(host: AppHost, options: { timeoutMs?: 
 
   function cancel() { job?.abort(); job = undefined; status.busy = false; status.error = ''; notify() }
 
-  async function refresh() {
+  async function refresh(): Promise<boolean> {
     const token = ++revision, key = storyIdentity(host)
     const settings = readChronicleSettings(host)
     const hasEntries = settings.inject && readChronicleData().entries.length > 0
@@ -30,18 +30,27 @@ export function createChronicleController(host: AppHost, options: { timeoutMs?: 
     }
     try {
       const today = await storyToday(host)
-      if (!alive || revision !== token || key !== storyIdentity(host)) return
+      if (!alive || revision !== token || key !== storyIdentity(host)) return false
       status.today = today
+      if (!status.busy) status.error = ''
       const latestSettings = readChronicleSettings(host)
       const entries = latestSettings.inject ? readChronicleData().entries : []
       const calendarText = latestSettings.injectCalendar ? readTodayCalendarSummary(today) : ''
       const injected = chronicleInjection(entries, today, calendarText)
       host.injectPrompt(injected, 999)
+      notify()
+      return true
     } catch (error) {
+      if (!alive || revision !== token) return false
+      if (key !== storyIdentity(host) || isStorySwitchedError(error)) {
+        void refresh()
+        return false
+      }
       console.warn('[st-stage] 纪要刷新失败', error)
-      if (alive && revision === token) status.error = (error as Error).message
+      status.error = (error as Error).message
+      notify()
+      return false
     }
-    if (alive && revision === token) notify()
   }
 
   async function trigger(manual = false) {
@@ -57,23 +66,25 @@ export function createChronicleController(host: AppHost, options: { timeoutMs?: 
     const current = new AbortController(); job = current; status.busy = true; status.error = ''; notify()
     const timeout = setTimeout(() => current.abort(new Error('纪要整理超时，请重试。')), options.timeoutMs ?? 60000)
     try {
-      data.lastMessageIndex = pending.lastMessageIndex
-      let newSummary = ''
+      let generatedEntry: Awaited<ReturnType<typeof generateChronicle>> | null = null
       if (generate) {
-        const content = await abortable(generateChronicle(host, pending, data.entries, current.signal), current.signal)
-        newSummary = content.summary
-        data.entries.push({ ...content, code: nextCode(data), createdAt: Date.now(), startIndex: cursorBefore })
-        data.lastMessageIndex = pending.endIndex
+        generatedEntry = await abortable(generateChronicle(host, pending, data.entries, current.signal), current.signal)
       }
-      if (!alive || job !== current || current.signal.aborted) return
-      if (await writeChatMetadata(host, key, CHRONICLE_KEY, data)) {
+      if (!alive || job !== current || current.signal.aborted || key !== storyIdentity(host)) return
+      const latest = readChronicleData()
+      latest.lastMessageIndex = generate ? pending.endIndex : pending.lastMessageIndex
+      if (generatedEntry) {
+        latest.entries.push({ ...generatedEntry, code: nextCode(latest), createdAt: Date.now(), startIndex: cursorBefore })
+      }
+      if (await writeChatMetadata(host, key, CHRONICLE_KEY, latest)) {
         await refresh()
-        if (newSummary) emitStoryEvent({ type: 'chronicle-updated', summary: newSummary })
+        if (generatedEntry?.summary) emitStoryEvent({ type: 'chronicle-updated', summary: generatedEntry.summary })
         if (generate && alive && job === current && !current.signal.aborted && key === storyIdentity(host)) void calendar.trigger()
       }
     } catch (error) {
+      if (!alive || job !== current || key !== storyIdentity(host) || isStorySwitchedError(error)) return
       if (!current.signal.aborted) console.warn('[st-stage] 纪要整理失败', error)
-      if (alive && job === current) status.error = (error as Error).message
+      status.error = (error as Error).message
     } finally {
       clearTimeout(timeout)
       if (job === current) { job = undefined; status.busy = false; notify() }
@@ -97,7 +108,6 @@ export function createChronicleController(host: AppHost, options: { timeoutMs?: 
   }
 
   async function updateEntry(code: string, patch: { summary: string; timeSpan: string; text: string }): Promise<boolean> {
-    if (job) return false
     const key = storyIdentity(host), data = readChronicleData()
     const target = data.entries.find(e => e.code === code)
     if (!target) return false
@@ -138,8 +148,8 @@ export function createChronicleController(host: AppHost, options: { timeoutMs?: 
   const offStoryEvent = onStoryEvent((event) => {
     if (!alive) return
     if (event.type === 'story-date-changed') {
-      void refresh().then(() => {
-        if (alive && readChronicleSettings(host).autoCalendar) void calendar.trigger(false)
+      void refresh().then((completed) => {
+        if (completed && alive && readChronicleSettings(host).autoCalendar) void calendar.trigger(false)
       })
     } else if (event.type === 'calendar-updated') {
       void refresh()

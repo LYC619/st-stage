@@ -103,19 +103,19 @@ export function mountMessagePostprocess(deps: PostprocessDeps): () => void {
     const bodies: HTMLElement[] = []
     if (messageId === null || messageId === undefined || `${messageId}` === '') {
       bodies.push(...Array.from(document.querySelectorAll<HTMLElement>('#chat .mes .mes_text')))
-      for (const body of bodies) deps.processMessage?.(body)
       deps.decorateImages?.(document)
+      for (const body of bodies) deps.processMessage?.(body)
       return
     }
     const id = `${messageId}`
     for (const message of Array.from(document.querySelectorAll('#chat .mes'))) {
       if (message.getAttribute('mesid') !== id) continue
+      deps.decorateImages?.(message)
       const body = message.querySelector<HTMLElement>('.mes_text')
       if (body) {
         bodies.push(body)
         deps.processMessage?.(body)
       }
-      deps.decorateImages?.(message)
     }
   }
   const handler = (...args: unknown[]) => {
@@ -257,8 +257,8 @@ export function reprocessAllMessages(settings: PluginSettings): void {
     }
   }
   for (const controller of postprocessControllers) {
-    controller.reprocessMessages?.()
     controller.decorateImages?.(document)
+    controller.reprocessMessages?.()
   }
 }
 

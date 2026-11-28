@@ -16,42 +16,71 @@ interface DialogEntry {
 const dialogs: DialogEntry[] = []
 const selector = 'button, a[href], input, select, textarea, summary, [contenteditable], [tabindex]'
 
-function isVisible(element: HTMLElement): boolean {
+function isCandidate(element: HTMLElement): boolean {
+  const editable = element.getAttribute('contenteditable')
+  const parentEditable = element.parentElement?.closest('[contenteditable]')?.getAttribute('contenteditable')
+  const editingHost = editable !== null && ['', 'true', 'plaintext-only'].includes(editable)
+    && (parentEditable === undefined || parentEditable === 'false')
+  return (element.tabIndex >= 0 || (editingHost && !element.hasAttribute('tabindex')))
+    && !element.matches(':disabled')
+}
+
+function isVisible(element: HTMLElement, styleCache = new Map<HTMLElement, boolean>()): boolean {
   if (!element.isConnected || element.closest('[hidden], [inert]')) return false
   // Reject closed disclosures before asking the browser for computed styles of every
   // hidden control. Large settings forms otherwise force work for their entire tree.
   for (let node = element.parentElement; node; node = node.parentElement) {
     if (node.tagName === 'DETAILS' && !node.hasAttribute('open') && !node.querySelector(':scope > summary')?.contains(element)) return false
   }
-  for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+  const checkStyle = (node: HTMLElement | null): boolean => {
+    if (!node) return true
+    const cached = styleCache.get(node)
+    if (cached !== undefined) return cached
+    if (!checkStyle(node.parentElement)) {
+      styleCache.set(node, false)
+      return false
+    }
     const style = getComputedStyle(node)
-    if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false
+    const visible = style.display !== 'none' && style.visibility !== 'hidden' && style.visibility !== 'collapse'
+    styleCache.set(node, visible)
+    return visible
   }
-  return true
+  return checkStyle(element)
 }
 
 function focusable(container: HTMLElement): HTMLElement[] {
+  const styleCache = new Map<HTMLElement, boolean>()
   const candidates = Array.from(container.querySelectorAll<HTMLElement>(selector))
-    .filter(element => {
-      const editable = element.getAttribute('contenteditable')
-      const parentEditable = element.parentElement?.closest('[contenteditable]')?.getAttribute('contenteditable')
-      const editingHost = editable !== null && ['', 'true', 'plaintext-only'].includes(editable)
-        && (parentEditable === undefined || parentEditable === 'false')
-      return (element.tabIndex >= 0 || (editingHost && !element.hasAttribute('tabindex')))
-        && !element.matches(':disabled') && isVisible(element)
-    })
-  return candidates.filter(element => {
+    .filter((element) => isCandidate(element) && isVisible(element, styleCache))
+  return candidates.filter((element) => {
     if (!(element instanceof HTMLInputElement) || element.type !== 'radio' || !element.name) return true
     const group = candidates.filter((candidate): candidate is HTMLInputElement => candidate instanceof HTMLInputElement
       && candidate.type === 'radio' && candidate.name === element.name && candidate.form === element.form)
-    return element === (group.find(radio => radio.checked) ?? group[0])
+    return element === (group.find((radio) => radio.checked) ?? group[0])
   })
     // Match native Tab order if a consumer supplies positive tabindex values.
     .sort((a, b) => (a.tabIndex > 0 ? a.tabIndex : Infinity) - (b.tabIndex > 0 ? b.tabIndex : Infinity))
 }
 
+function firstFocusable(container: HTMLElement): HTMLElement | undefined {
+  const raw = Array.from(container.querySelectorAll<HTMLElement>(selector))
+  if (raw.some((el) => el.tabIndex > 0)) return focusable(container)[0]
+  const styleCache = new Map<HTMLElement, boolean>()
+  for (const element of raw) {
+    if (!isCandidate(element) || !isVisible(element, styleCache)) continue
+    if (element instanceof HTMLInputElement && element.type === 'radio' && element.name) {
+      const group = raw.filter((c): c is HTMLInputElement => c instanceof HTMLInputElement
+        && c.type === 'radio' && c.name === element.name && c.form === element.form
+        && isCandidate(c) && isVisible(c, styleCache))
+      return group.find((radio) => radio.checked) ?? group[0]
+    }
+    return element
+  }
+  return undefined
+}
+
 function topDialog(): DialogEntry | undefined {
-  return dialogs.findLast(entry => entry.container.isConnected)
+  return dialogs.findLast((entry) => entry.container.isConnected)
 }
 
 export function manageDialogFocus(container: HTMLElement, options: DialogFocusOptions) {
@@ -63,7 +92,7 @@ export function manageDialogFocus(container: HTMLElement, options: DialogFocusOp
   const originalZIndex = layer.style.getPropertyValue('z-index')
   const originalZPriority = layer.style.getPropertyPriority('z-index')
   const zIndex = (node: HTMLElement) => Number.parseInt(getComputedStyle(node).zIndex, 10) || 0
-  const highestLayer = Math.max(9999, zIndex(layer), ...dialogs.filter(entry => entry.container.isConnected).map(entry => zIndex(entry.layer)))
+  const highestLayer = Math.max(9999, zIndex(layer), ...dialogs.filter((entry) => entry.container.isConnected).map((entry) => zIndex(entry.layer)))
   layer.style.setProperty('z-index', String(highestLayer + 1))
   if (originalTabIndex === null) container.tabIndex = -1
   let disposed = false
@@ -76,7 +105,7 @@ export function manageDialogFocus(container: HTMLElement, options: DialogFocusOp
     if (disposed || topDialog() !== entry) return
     const target = lastFocused && container.contains(lastFocused) && isVisible(lastFocused) && !lastFocused.matches(':disabled')
       ? lastFocused
-      : focusable(container)[0] ?? container
+      : firstFocusable(container) ?? container
     target.focus({ preventScroll: true })
   }
 

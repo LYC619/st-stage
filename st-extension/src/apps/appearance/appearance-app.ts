@@ -92,7 +92,7 @@ export function createAppearanceApp(deps: AppearanceDeps): PhoneApp {
         const row = text('label', 'ap-upload', label), input = document.createElement('input')
         input.type = 'file'; input.accept = 'image/*'; row.append(input)
         input.onchange = () => {
-          const file = input.files?.[0]; if (!file) return
+          const file = input.files?.[0]; input.value = ''; if (!file) return
           void act(async () => {
             input.disabled = true; status.textContent = '正在保存图片…'
             const image = await compressImage(file, { maxDimension: size })
@@ -294,7 +294,7 @@ export function createAppearanceApp(deps: AppearanceDeps): PhoneApp {
         const fileLabel = text('label', 'ap-upload', '选择外观包文件'), file = document.createElement('input')
         file.type = 'file'; file.accept = '.json,application/json'; fileLabel.append(file)
         file.onchange = () => {
-          const selected = file.files?.[0]; if (!selected) return
+          const selected = file.files?.[0]; file.value = ''; if (!selected) return
           void act(async () => { const value = await selected.text(); if (alive) applyPack(value) })
         }
         packs.append(

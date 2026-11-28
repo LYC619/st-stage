@@ -90,7 +90,7 @@ export function diaryCard(entry: DiaryEntry, actions: DiaryCardActions = {}): HT
     const img = document.createElement('img')
     img.className = 'th-avatar-img'
     img.src = actions.avatarUrl
-    img.alt = entry.role
+    img.alt = entry.role; img.onerror = () => { img.remove() }
     metaWrap.append(img)
   }
   const titleWrap = document.createElement('div')

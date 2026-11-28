@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { cpSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs'
+import { cpSync, mkdtempSync, mkdirSync, renameSync, symlinkSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync, spawnSync } from 'node:child_process'
@@ -47,10 +47,22 @@ for (const mutation of ['missing', 'changed', 'extra']) {
     assert.match(result.stderr, /assets\/wechat/)
   })
 }
-test('parity rejects stale generated README', t => {
-  const f = fixture(t)
+test('parity rejects stale generated README, case mismatches, and junction escapes in --release', t => {
+  const f = fixture(t), release = path.join(f.base, 'release')
+  cpSync(f.distribution, release, { recursive: true })
+  assert.equal(run('verify-runtime-parity.mjs', ['--root', f.root, '--distribution', f.distribution, '--release', release]).status, 0)
   put(f.distribution, 'README.md', 'outdated instructions')
   assert.notEqual(parity(f).status, 0)
+  put(f.distribution, 'README.md', '# Install\n')
+  rmSync(path.join(release, 'README.md'))
+  put(release, 'readme.md', '# Install\n')
+  assert.notEqual(run('verify-runtime-parity.mjs', ['--root', f.root, '--distribution', f.distribution, '--release', release]).status, 0)
+  rmSync(path.join(release, 'readme.md'))
+  put(release, 'README.md', '# Install\n')
+  const outside = path.join(f.base, 'outside')
+  renameSync(path.join(release, 'locales'), outside)
+  symlinkSync(outside, path.join(release, 'locales'), 'junction')
+  assert.notEqual(run('verify-runtime-parity.mjs', ['--root', f.root, '--distribution', f.distribution, '--release', release]).status, 0)
 })
 
 test('prepare creates a verified isolated package and records differences without changing release', t => {

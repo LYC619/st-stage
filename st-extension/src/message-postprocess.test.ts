@@ -638,3 +638,32 @@ describe('recentFloors 窗口', () => {
     expect(mesText(7).querySelector('img')).not.toBeNull()
   })
 })
+
+
+describe('message-postprocess ordering with renderer', () => {
+  it('runs decorateImages before processMessage so outsideSignature includes story-save buttons', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => void>()
+    const order: string[] = []
+    document.body.innerHTML = '<div id="chat"><div class="mes" mesid="0"><div class="mes_text">内容</div></div></div>'
+    window.SillyTavern = {
+      getContext: () => ({
+        eventTypes: { CHARACTER_MESSAGE_RENDERED: 'rendered' },
+        eventSource: {
+          on: (event: string, handler: (...args: unknown[]) => void) => handlers.set(event, handler),
+          removeListener: vi.fn(),
+        },
+      }),
+    } as never
+    const cleanup = mountMessagePostprocess({
+      getSettings: () => createDefaultSettings(),
+      decorateImages: () => { order.push('decorateImages') },
+      processMessage: () => { order.push('processMessage') },
+    })
+
+    handlers.get('rendered')?.(0)
+    await Promise.resolve()
+
+    expect(order).toEqual(['decorateImages', 'processMessage'])
+    cleanup()
+  })
+})

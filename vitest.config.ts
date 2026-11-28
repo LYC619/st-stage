@@ -13,7 +13,7 @@ export default defineConfig({
     environment: 'node',
     // forks 池的子进程在 Windows + Node 22 上退出期原生崩溃（uv_poll_stop），threads 池无此问题
     pool: 'threads',
-    // 默认并发会争抢资源，导致微信设置类测试超时。
-    maxWorkers: 2,
+    // 适度并发（4 worker）兼顾多核提速与 jsdom 内存平稳
+    maxWorkers: 4,
   },
 })

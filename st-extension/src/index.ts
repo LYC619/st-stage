@@ -46,7 +46,7 @@ import { buildRoleSummary, type ExternalVariableStatus } from './role-summary'
 import { registerPhoneCommand } from './slash-commands'
 import { createHudController } from './hud-controller'
 import { createSpriteRuntime } from './sprite-runtime'
-import { consumeAppDeepLink, getAppBadge, onOpenAppRequest, onStoryEvent, resetStoryEvents } from './apps/shared/story-events'
+import { consumeAppDeepLink, getAppBadge, onOpenAppRequest, onStoryEvent, requestOpenApp, resetStoryEvents } from './apps/shared/story-events'
 import { readCalendar, weatherIcon } from './apps/chronicle/calendar'
 import { formatStoryDate, storyToday } from './apps/shared/story-date'
 
@@ -299,7 +299,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
         return { characterName: charName, avatarUrl }
       }
     },
-    onStateChange: (state) => {
+    onOpenWorldAction: (action) => requestOpenApp(action), onStateChange: (state) => {
       if (!state.open && transientPhoneOpen) {
         transientPhoneOpen = false
         phoneVisible = settings.showPhone
@@ -315,7 +315,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
   syncPhoneAppearance()
   lifecycle.track(subscribeVarEvents(() => phone.refreshHome()))
 
-  openPhoneApp = (appId: string) => {
+  openPhoneApp = (appId: string) => { if (lifecycle.disposed) return
     if (!settings.showPhone) {
       transientPhoneOpen = true
       phoneVisible = true
@@ -333,7 +333,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
       return
     }
     if (registry.get(link.appId)) {
-      openPhoneApp(link.appId)
+      try { openPhoneApp(link.appId) } finally { consumeAppDeepLink(link.appId) }
     } else {
       consumeAppDeepLink(link.appId)
     }
@@ -355,13 +355,13 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
     }
     phone.refreshHome()
     if (event.type === 'theater-updated') {
-      phone.notifyPill?.({ icon: '🎪', text: event.summary, appId: 'theater' })
+      phone.notifyPill?.({ icon: '🎪', text: event.summary, appId: 'theater', onActivate: () => requestOpenApp({ appId: 'theater', tab: event.tab }) })
     } else if (event.type === 'story-state-updated' && event.summary) {
       phone.notifyPill?.({ icon: '🎒', text: event.summary, appId: 'story-state' })
     } else if (event.type === 'chronicle-updated' && event.summary) {
       phone.notifyPill?.({ icon: '📜', text: `新纪要：${event.summary}`, appId: 'chronicle' })
     } else if (event.type === 'calendar-updated' && event.summary) {
-      phone.notifyPill?.({ icon: '📅', text: event.summary, appId: 'chronicle' })
+      phone.notifyPill?.({ icon: '📅', text: event.summary, appId: 'chronicle', onActivate: () => requestOpenApp({ appId: 'chronicle', tab: 'calendar' }) })
     }
   }))
 
@@ -576,7 +576,7 @@ async function init(lifecycle: CapabilityTracker): Promise<void> {
 
   let cancelPendingNavigation = () => {}
   const handleChatNavigation = () => {
-    composerBridge.dispose()
+    composerBridge.dispose(); resetStoryEvents(); syncPhoneBadges(); phone.dismissPill?.()
     syncPhoneAppearance()
     phone.refreshHome()
     appCharacterHub.emit(null)

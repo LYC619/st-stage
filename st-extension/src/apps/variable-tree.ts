@@ -15,7 +15,7 @@ import { t } from '../../../core/i18n'
 import { captureVariableFocus, variableButton } from './newvar/ui-focus'
 
 import { el, appButton } from './widgets'
-import { splitPath, getNested, setNested, deleteNested } from './path-utils'
+import { isSafePath, splitPath, getNested, setNested, deleteNested } from './path-utils'
 
 // 路径工具从 path-utils 引入并转出，历史依赖方（mvu-app 等）仍从本模块导入
 export { splitPath, getNested, setNested, deleteNested }
@@ -445,6 +445,7 @@ export function createVariableTreeView(container: HTMLElement, handlers: Variabl
           err.hidden = false
           return
         }
+        if (!isSafePath(path)) { err.textContent = t('variableDesigner.unsafe_path', "变量路径不能包含 __proto__、prototype 或 constructor。"); err.hidden = false; return }
         const committed = handlers.commitSet(path, parseInputValue(valInput.value))
         if (committed && !committed.ok) {
           err.textContent = committed.error

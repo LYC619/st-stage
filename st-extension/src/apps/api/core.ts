@@ -35,11 +35,11 @@ export const API_SOURCES: readonly ApiSourceDescriptor[] = [
   chat('claude', 'Claude', { modelField: 'claude_model', secretKey: 'api_key_claude', modelSelector: '#model_claude_select', keySelector: '#api_key_claude' }),
   chat('openrouter', 'OpenRouter', { modelField: 'openrouter_model', secretKey: 'api_key_openrouter', modelSelector: '#model_openrouter_select', keySelector: '#api_key_openrouter' }),
   chat('makersuite', 'Google AI Studio', { modelField: 'google_model', secretKey: 'api_key_makersuite', modelSelector: '#model_google_select', keySelector: '#api_key_makersuite' }),
-  chat('mistralai', 'Mistral AI', { modelField: 'mistralai_model', secretKey: 'api_key_mistralai', modelSelector: '#mistralai_model', keySelector: '#api_key_mistralai' }),
-  chat('cohere', 'Cohere', { modelField: 'cohere_model', secretKey: 'api_key_cohere', modelSelector: '#cohere_model', keySelector: '#api_key_cohere' }),
-  chat('groq', 'Groq', { modelField: 'groq_model', secretKey: 'api_key_groq', modelSelector: '#groq_model', keySelector: '#api_key_groq' }),
-  chat('deepseek', 'DeepSeek', { modelField: 'deepseek_model', secretKey: 'api_key_deepseek', modelSelector: '#deepseek_model', keySelector: '#api_key_deepseek' }),
-  chat('xai', 'xAI', { modelField: 'xai_model', secretKey: 'api_key_xai', modelSelector: '#xai_model', keySelector: '#api_key_xai' }),
+  chat('mistralai', 'Mistral AI', { modelField: 'mistralai_model', secretKey: 'api_key_mistralai', modelSelector: '#model_mistralai_select', keySelector: '#api_key_mistralai' }),
+  chat('cohere', 'Cohere', { modelField: 'cohere_model', secretKey: 'api_key_cohere', modelSelector: '#model_cohere_select', keySelector: '#api_key_cohere' }),
+  chat('groq', 'Groq', { modelField: 'groq_model', secretKey: 'api_key_groq', modelSelector: '#model_groq_select', keySelector: '#api_key_groq' }),
+  chat('deepseek', 'DeepSeek', { modelField: 'deepseek_model', secretKey: 'api_key_deepseek', modelSelector: '#model_deepseek_select', keySelector: '#api_key_deepseek' }),
+  chat('xai', 'xAI', { modelField: 'xai_model', secretKey: 'api_key_xai', modelSelector: '#model_xai_select', keySelector: '#api_key_xai' }),
   chat('custom', '自定义（OpenAI 兼容）', { urlField: 'custom_url', modelField: 'custom_model', secretKey: 'api_key_custom', urlSelector: '#custom_api_url_text', modelSelector: '#custom_model_id', keySelector: '#api_key_custom', supportsModels: true }),
   { id: 'textgenerationwebui', mainApi: 'textgenerationwebui', label: 'Text Completion', urlField: 'api_server_textgenerationwebui', connectSelector: '#api_button_textgenerationwebui', urlSelector: '#api_url_text' },
   { id: 'novel', mainApi: 'novel', label: 'NovelAI', secretKey: 'api_key_novel', connectSelector: '#api_button_novel', keySelector: '#api_key_novel' },
@@ -84,6 +84,18 @@ export function emptyDraft(): ProfileDraft {
 export function normalizeUrl(value: string): string { return String(value ?? '').trim().replace(/\/+$/, '') }
 function str(value: unknown): string { return typeof value === 'string' ? value : '' }
 export function newProfileId(): string { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8) }
+
+export function extractUpstreamError(json: unknown): string {
+  if (!json || typeof json !== 'object') return ''
+  const rec = json as { error?: unknown; message?: unknown }
+  if (typeof rec.error === 'string' && rec.error.trim()) return rec.error.trim()
+  if (rec.error && typeof rec.error === 'object') {
+    const nested = (rec.error as { message?: unknown }).message
+    if (typeof nested === 'string' && nested.trim()) return nested.trim()
+  }
+  if (typeof rec.message === 'string' && rec.message.trim()) return rec.message.trim()
+  return ''
+}
 
 export function sanitizeAppData(raw: unknown): ApiAppData {
   const profiles: ApiProfile[] = []
@@ -169,8 +181,7 @@ export function profileSummary(profile: ApiProfile): string[] {
 
 export function parseModelList(json: unknown): string[] {
   if (json && typeof json === 'object' && 'error' in json && (json as { error: unknown }).error) {
-    const message = (json as { message?: unknown }).message
-    throw new Error(typeof message === 'string' && message ? message : '站点接口返回了错误')
+    throw new Error(extractUpstreamError(json) || '站点接口返回了错误')
   }
   const box = json as { data?: unknown; models?: unknown } | unknown[]
   const arr = Array.isArray(box) ? box : Array.isArray(box?.data) ? box.data : Array.isArray(box?.models) ? box.models : []
